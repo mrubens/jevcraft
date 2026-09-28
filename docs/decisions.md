@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-90 questions: 42 decision trees and 48 batched questions.
+91 questions: 43 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -755,6 +755,25 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `heading_(east\|south_east\|south\|south_west\|west\|north_west\|north\|north_east)` (pattern) | root | head this way | always; each says the biomes that way and how often this search went that way |
+
+### `nether_gather`
+
+**In the Nether, nothing of what the step mines is within reach: which way to get it, or go on without it?**
+
+- When: A mine step in the Nether (wood for a tool, or any block the Nether has) with none of its blocks within reach where the bot stands; asked each time the search would have walked, the chosen way carried out to its end, and a way that came no nearer resting from that spot five minutes.
+- Decision tree, choice; stakes medium; ledger kind `explore`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/nether-gather.js (netherGather, knownPlaces, wayTo, woodInReach), src/work.js (explore), src/nether-travel.js (surveyLeg, floorWay, walkFloorToward), src/bridging.js (surveyCrossing, spanBlockSources), src/nether-coverage.js
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `wood_in_view` | root | take the wood of any kind within reach here | wood is wanted and blocks of any wood (logs, stems, planks, the bot's own laid as cover among them) can be dug from ground walked to from here within twenty-four blocks; said with the kinds and counts, the nearest and the walk to it, about how long, the planks' worth against those carried, and what lies within reach but not to be dug from here now |
+| `(walk\|cross\|floor)_to_[1-3]` (pattern) | root | go to this place it is known, this way | up to three places, nearest first: blocks of it in view within 128 or remembered, gathered by kind within twenty-four of each other, or for Nether wood a forest noticed or in the loaded ground where none of its stems is known; one option for each way that makes ground: on foot (the pathfinder's route all the way, or as far as it goes where that is eight or more blocks nearer), straight across at this height as far as the blocks carried take it (four or more nearer), and down to the floor and along it (a way down found and eight or more cells of floor); each said with every way there (the route, or where the walk ends and the crossing on from there with the blocks carried; the crossing's cells, rock to dig and with what, blocks to lay against those carried, where it ends and what stops it, the floor), and whether the bot has stood within 32 blocks of it; places with no way are said in the state as knownPlaces |
+| `portal_trip` | root | go back through the portal to the Overworld for wood | wood is wanted, a nether portal is known, and the walk reaches it or the crossing with the blocks carried ends at it; said with the way, where it comes out and the wood remembered near there; otherwise said in the state as portal |
+| `leg_(east\|south\|west\|north)` (pattern) | root | search this way, sixty-four blocks | one for each heading whose line at this height is not closed at its first cell (lava, rock with lava behind it, or open air with no block carried to lay; those are said as legsClosed); said with the cells ahead, the Nether forests that way at this height as far as loaded, and the ground unseen within 128 blocks of its line |
+| `without` | root | go on without it: leave the rung it is for thirty minutes and go on with the ladder's next step | on the game ladder, with a rung in hand; said with what the wood is for, the rung (the errand and what it is for, where it is one) and what the ladder goes on with |
 
 ### `upkeep`
 

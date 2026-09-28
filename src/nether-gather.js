@@ -1,0 +1,433 @@
+'use strict';
+// Gathering in the Nether when nothing of what the step mines is within
+// reach. The search had been the Overworld's: walkable ground within
+// forty-eight blocks, sixteen of it surveyed half a second each and the
+// nearest to the target walked to. In the Nether that ground is broken up
+// by lava and drops, and from a span or a ledge there is often none.
+// mid-242-af-nether-2-fortress-3 (25591, note 608) stood on its own one-wide
+// cobblestone span at y 72 over the lava sea, no pickaxe, no block carried,
+// two health, wanting one crimson stem for the pickaxe the staircase back
+// to its portal needs: "No reachable surveyed ground while searching for
+// crimson_stem" over and over for twelve minutes, the stall's answers
+// none good to 0.46. Crimson stems were known 60 blocks east, warped stems
+// 47 to 53 west, its portal 66 off; and four of its own oak planks, laid as
+// cover from ghasts, stood 12 to 19 blocks along the span, two across it.
+//
+// A player looks at what is known and how to get there: the wood within
+// reach of any kind, each place the stems are known and the ways to it
+// (on foot, straight across at this height through rock and over the air
+// on blocks laid, down to the floor and along it), the portal back to the
+// Overworld's trees, legs of the search where nothing is known, and going
+// on without what the wood was for. Each is priced from where the bot
+// stands and put to Jev (nether_gather); a way that came to nothing rests
+// from here and is said.
+const { Vec3 } = require('vec3');
+const { goals } = require('mineflayer-pathfinder');
+const { surveyCrossing, bridgeTo, blocksCarried, spanBlockSources, gatherSpanBlocks } = require('./bridging');
+const { setAside, isSetAside } = require('./progress');
+const coverage = require('./nether-coverage');
+const travel = require('./nether-travel');
+
+const inNether = bot => /nether/.test(String(bot.game?.dimension || ''));
+const words = s => String(s).replaceAll('_', ' ');
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const retryable = err => !['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
+const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
+const at3 = p => `(${Math.round(p.x)}, ${Math.round(p.y)}, ${Math.round(p.z)})`;
+
+// Wood: what planks come from. A stem or log is four planks, a plank one.
+const WOOD = /^(?:stripped_)?[a-z_]+_(?:log|wood|stem|hyphae)$|^[a-z_]+_planks$/;
+const isWood = name => WOOD.test(name || '') && !/mushroom/.test(name);
+const STEM = /^(?:crimson|warped)_(?:stem|hyphae)$/;
+const planksOf = name => /_planks$/.test(name) ? 1 : 4;
+const woodNames = bot => Object.keys(bot.registry?.blocksByName || {}).filter(isWood);
+
+// How far the look goes for what is known: blocks in view within 128 (a
+// loaded chunk's worth round the bot and more), and those remembered.
+const SEE = 128;
+// Blocks of a kind within this of each other are one place.
+const PLACE_APART = 24;
+// The places said and offered, nearest first.
+const PLACES = 3;
+// A way's route survey, and how near it counts as there.
+const ROUTE_MS = 1500, THERE = 3;
+// A crossing surveyed this far at most (mob-hunt.js FORTRESS_CROSS).
+const CROSS_CELLS = 192;
+// A walk that ends this much nearer is ground made, offered as far as it goes.
+const PART_WAY = 8;
+// A way that came to nothing rests from this eight-block area.
+const WAY_REST_MS = 5 * 60000;
+// The wood within reach: looked for within this, walked to within this.
+const WOOD_REACH = 24, WOOD_WALK = 32, WOOD_MOST = 16;
+// A leg of the search where nothing is known: its length.
+const LEG = 64, LEG_FIRST = 4;
+const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+const HEADING_NAMES = ['east', 'south', 'west', 'north'];
+// The same headings among exploration.js's eight.
+const RAY_OF = [0, 2, 4, 6];
+
+// The blocks a step mines for `resource`, as explore reads them: any wood
+// for a log step, and in the Nether either stem for a stem.
+function resourceNames(bot, resource) {
+  const { MINEABLE } = require('./plan'), { sourceBlocks } = require('./knowledge');
+  if (STEM.test(resource)) return Object.keys(bot.registry.blocksByName).filter(n => STEM.test(n));
+  if (/_log$/.test(resource)) return Object.keys(bot.registry.blocksByName).filter(n => /_log$/.test(n));
+  return [...new Set([...Object.entries(MINEABLE || {}).filter(([name, data]) => name === resource || data.drops === resource).map(([name]) => name),
+    ...(bot.registry.blocksByName[resource] ? [resource] : []), ...(sourceBlocks(bot.registry, resource) || [])])];
+}
+// Whether a search for `resource` is one this gathers: a block the Nether
+// has, looked for in the Nether.
+function gathers(bot, resource) {
+  if (!inNether(bot) || typeof bot.blockAt !== 'function' || typeof bot.findBlocks !== 'function' || !bot.entity?.position) return false;
+  try { return resourceNames(bot, resource).length > 0; } catch (_) { return false; }
+}
+
+const find = (bot, names, reach, count) => {
+  const ids = names.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
+  return ids.length ? bot.findBlocks({ matching: ids, maxDistance: reach, count }) || [] : [];
+};
+
+// Where what is looked for is known: in view within 128 blocks, and
+// remembered (resource-observation.js), each kind's blocks gathered into
+// places, nearest first. A Nether forest noticed (exploration.js
+// landmarks) or a forest biome in the loaded ground stands for its stems
+// where none of them is known.
+function knownPlaces(bot, goal, names) {
+  const here = bot.entity.position;
+  const memory = goal?.resourceMemory || {}, dim = bot.game?.dimension || 'overworld';
+  const nameAt = p => bot.blockAt(p)?.name || memory[`${dim}:${p.x},${p.y},${p.z}`]?.name;
+  let remembered = [];
+  try { remembered = require('./resource-observation').knownResourceLocations(bot, goal, names); } catch (_) { remembered = []; }
+  const all = [...new Map([...find(bot, names, SEE, 512), ...remembered].map(p => [`${p}`, p])).values()]
+    .filter(p => names.includes(nameAt(p)) && !isSetAside(goal, 'reach', p))
+    .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+  const places = [];
+  for (const p of all) {
+    const name = nameAt(p);
+    const place = places.find(pl => pl.name === name && pl.at.distanceTo(p) <= PLACE_APART);
+    if (place) { place.n++; continue; }
+    places.push({ at: p, name, n: 1 });
+  }
+  if (names.some(n => STEM.test(n))) {
+    const { knownLandmarks, biomeView } = require('./exploration');
+    for (const [kind, stem] of [['warped_forest', 'warped_stem'], ['crimson_forest', 'crimson_stem']]) {
+      if (!names.includes(stem) || places.some(pl => pl.name === stem)) continue;
+      let l = null;
+      try { l = knownLandmarks(bot, goal, kind, 512)[0]?.landmark || null; } catch (_) { l = null; }
+      if (l) { places.push({ at: new Vec3(l.x, Number.isFinite(l.y) ? l.y : Math.round(here.y), l.z), name: stem, n: 0, forest: `the ${words(kind)} noticed there` }); continue; }
+      let b = null;
+      try { b = (biomeView(bot)?.biomesNearby || []).find(v => v.biome === kind) || null; } catch (_) { b = null; }
+      if (b) places.push({ at: new Vec3(b.x, Math.round(here.y), b.z), name: stem, n: 0, forest: `the ${words(kind)} the ground there is` });
+    }
+  }
+  // The nearest of each kind first (the crimson forest east as well as the
+  // warped one west), then the next nearest.
+  const d = pl => pl.at.distanceTo(here);
+  const byDistance = places.sort((a, b) => d(a) - d(b));
+  const firsts = byDistance.filter((pl, i) => byDistance.findIndex(q => q.name === pl.name) === i);
+  return [...firsts, ...byDistance.filter(pl => !firsts.includes(pl))].slice(0, PLACES).sort((a, b) => d(a) - d(b));
+}
+
+// The ways to a place from where the bot stands: on foot (the pathfinder's
+// own survey of the walk), straight across at this height (rock dug, open
+// air and lava laid over, against the blocks carried and the pickaxe), and
+// down to the floor below and along it (nether-travel.js).
+async function wayTo(bot, task, target) {
+  const here = bot.entity.position.clone();
+  const out = { from: Math.round(here.distanceTo(target)), target };
+  const m = bot.pathfinder?.movements;
+  if (m && (bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) {
+    let route = null;
+    try { route = await require('./skills').surveyRoute(bot, task, m, new goals.GoalNear(target.x, target.y, target.z, THERE), ROUTE_MS); }
+    catch (err) { task.check(); if (!retryable(err)) throw err; route = null; }
+    if (route) {
+      const path = route.path || [], end = path.at(-1);
+      // The blocks the pathfinder's own route lays (a tower, a bridge) and
+      // digs, each priced as the crossing prices it.
+      const placed = path.reduce((n, q) => n + (q.toPlace?.length || 0), 0), dug = path.reduce((n, q) => n + (q.toBreak?.length || 0), 0);
+      out.walk = { found: route.status === 'success', steps: path.length, placed, dug, end: end ? new Vec3(end.x, end.y, end.z) : null,
+        nearer: end ? Math.round(out.from - end.distanceTo(target)) : 0, seconds: Math.round(path.length / travel.WALK_SPEED + placed * travel.LAY_CELL_SECONDS + dug * travel.ROCK_CELL_SECONDS / 2) };
+    }
+  }
+  const carried = blocksCarried(bot);
+  // Where a walk that does not get there ends, what lies on from there:
+  // the crossing from its end with the blocks carried (a span's far end is
+  // a walk that makes ground and leads nowhere).
+  if (out.walk && !out.walk.found && out.walk.end && out.walk.nearer > 0) {
+    const there = Object.assign(Object.create(bot), { entity: { ...bot.entity, position: out.walk.end.offset(0.5, 0, 0.5) } });
+    out.walk.onFrom = surveyCrossing(there, target, { cells: CROSS_CELLS });
+  }
+  const whole = surveyCrossing(bot, target, { cells: CROSS_CELLS, blocks: 999 });
+  out.cross = { whole, now: whole.bridge <= carried ? whole : surveyCrossing(bot, target, { cells: CROSS_CELLS }), carried };
+  const down = travel.floorWay(bot);
+  const floor = down && travel.floorToward(bot, down, target);
+  if (floor && floor.floor >= travel.FLOOR_WALKABLE) out.floor = { down, floor };
+  return out;
+}
+// Which of those make ground, each as an option: the walk all the way or
+// part way, the crossing as far as the blocks carried take it, the floor.
+function waysOffered(way) {
+  const o = {};
+  if (way.walk?.found || way.walk?.nearer >= PART_WAY) o.walk = true;
+  if (way.cross.now.cells && way.cross.now.gain >= 4) o.cross = true;
+  if (way.floor) o.floor = true;
+  return o;
+}
+// No pickaxe: rock is dug by hand, slowly, and netherrack gives nothing.
+function rockSays(bot) {
+  const pick = (bot.inventory?.items?.() || []).find(i => /_pickaxe$/.test(i.name));
+  return pick ? `dug with the ${words(pick.name)}` : 'dug by hand, no pickaxe being carried: netherrack so dug drops nothing';
+}
+function walkSays(way) {
+  const w = way.walk;
+  if (!w) return 'On foot: not surveyed.';
+  const work = [w.placed && `laying ${plural(w.placed, 'block')} as it goes`, w.dug && `digging ${plural(w.dug, 'block')}`].filter(Boolean).join(' and ');
+  if (w.found) return `On foot: the pathfinder's route there is ${plural(w.steps, 'step')}${work ? `, ${work}` : ''}, about ${w.seconds} seconds.`;
+  const on = w.onFrom, carried = on?.carried ?? 0;
+  const onSays = !on ? '' : on.gain >= 1 ? ` From there, straight across with the ${plural(carried, 'block')} carried: ${plural(on.cells, 'cell')}, ${plural(Math.round(on.gain), 'block')} nearer${on.stoppedBy ? `, then ${on.stoppedBy}` : ''}.`
+    : ` From there, straight across: ${on.stoppedBy || 'no way on'} at the first cell, so the walk ends there.`;
+  return `On foot: the pathfinder finds no route there${w.end ? `; the nearest it walks to is ${at3(w.end)}, ${w.nearer > 0 ? `${w.nearer} blocks nearer` : 'no nearer'}` : ''}.${onSays}`;
+}
+function crossSays(bot, way) {
+  const { whole, now, carried } = way.cross, y = Math.round(bot.entity.position.y);
+  if (!whole.cells) return `Straight across at y ${y}: closed at the first cell (${whole.stoppedBy || 'nothing to cross'}).`;
+  const work = [whole.dig && `${whole.dig} of rock to dig (${rockSays(bot)}, about ${Math.round(whole.digSeconds)} seconds)`,
+    whole.bridge && `${whole.bridge} of open air or lava to lay a block over (${whole.overLava} over lava)`].filter(Boolean);
+  const end = whole.end, dy = Math.round(way.target.y - end.y);
+  const ends = `it ends ${plural(Math.round(flat(end, way.target)), 'block')} across from it${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'below' : 'above'} it` : ''}${whole.stoppedBy ? `, where ${whole.stoppedBy} stops it` : ''}`;
+  const short = whole.bridge > carried ? ` ${plural(carried, 'block')} carried: ${now.cells ? `they take it ${plural(now.cells, 'cell')}, ${plural(Math.round(now.gain), 'block')} nearer, and it stops at the first cell needing another` : 'it stops at the first cell needing one'}.` : whole.bridge ? ` ${plural(carried, 'block')} carried, ${carried - whole.bridge} left after.` : '';
+  return `Straight across at y ${y}, crouched: ${plural(whole.cells, 'cell')}, ${work.join(' and ') || 'all open ground'}, about ${travel.crossingSeconds(whole)} seconds; ${ends}.${short}`;
+}
+function floorSays(way) {
+  if (!way.floor) return '';
+  const { down, floor } = way.floor;
+  return ` Down to the floor and along it: ${travel.wayDownSays(down)} ${travel.floorWalkSays(floor, { along: 'on the straight line toward it' })}`;
+}
+// Where the way from here to a place rests, and the key it rests by.
+const wayKey = (bot, target, method) => { const h = bot.entity.position; return `${Math.floor(h.x / 8)},${Math.floor(h.y / 8)},${Math.floor(h.z / 8)}>${Math.round(target.x)},${Math.round(target.z)}:${method}`; };
+const wayResting = (bot, goal, target, method) => isSetAside(goal, 'gather_way', wayKey(bot, target, method));
+const WAY_SAYS = { walk: 'on foot', cross: 'straight across', floor: 'down to the floor and along it' };
+
+// Taken: the way chosen, and whether it came nearer. One that came no
+// nearer rests from here and is said as the step's failure.
+async function runWay(bot, task, goal, save, way, method, what, navigate) {
+  const target = way.target, key = wayKey(bot, target, method), before = bot.entity.position.distanceTo(target);
+  goal.step = { action: 'nether_gather', way: method, what, target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) } }; save();
+  let why = null;
+  try {
+    if (method === 'walk') {
+      const end = way.walk.found ? target : way.walk.end;
+      await navigate(bot, task, way.walk.found ? new goals.GoalNear(end.x, end.y, end.z, THERE) : new goals.GoalBlock(end.x, end.y, end.z), { timeoutMs: 60000, stallMs: 8000 });
+    } else if (method === 'cross') {
+      const now = way.cross.now;
+      await bridgeTo(bot, task, target, { maxBlocks: now.bridge, maxSteps: now.cells });
+    } else if (method === 'floor') {
+      const done = await travel.walkFloorToward(bot, task, goal, save, target, way.floor.down, navigate);
+      why = done.why || null;
+    }
+  } catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 160); }
+  const nearer = before - bot.entity.position.distanceTo(target);
+  if (nearer >= 1) return { nearer: Math.round(nearer) };
+  const said = `The way ${WAY_SAYS[method]} to ${what} came no nearer${why ? `: ${why}` : ''}; it rests from here`;
+  setAside(goal, 'gather_way', key, said.slice(0, 300), WAY_REST_MS); save();
+  throw new Error(said);
+}
+
+// The wood within reach, of any kind: blocks a walk from here (a step up,
+// level or down, nothing dug or laid) can dig, as the restock finds its
+// blocks (bridging.js spanBlockSources). The planks the bot laid as cover
+// on its span count too.
+function woodInReach(bot, goal) {
+  return spanBlockSources(bot, { reach: WOOD_REACH, walk: WOOD_WALK, names: woodNames(bot), skip: p => isSetAside(goal, 'reach', p) });
+}
+const talliedSays = tally => Object.entries(tally).sort((x, y) => y[1] - x[1]).map(([n, c]) => `${c} ${words(n)}`).join(', ');
+const planksCarried = bot => (bot.inventory?.items?.() || []).filter(i => isWood(i.name)).reduce((n, i) => n + i.count * planksOf(i.name), 0);
+function woodSays(bot, found) {
+  const here = bot.entity.position, s = found.sources, first = s[0];
+  const planks = s.slice(0, WOOD_MOST).reduce((n, x) => n + planksOf(x.name), 0);
+  const seconds = Math.round(first.walk / travel.WALK_SPEED + s.slice(0, WOOD_MOST).reduce((n, x) => n + ((typeof x.block?.digTime === 'function' ? x.block.digTime(null, false, false, false, [], {}) : 3000) / 1000) + 1 / travel.WALK_SPEED, 0));
+  const out = Object.keys(found.unreachable).length ? ` Within ${WOOD_REACH} blocks but not to be dug from ground walked to from here now: ${talliedSays(found.unreachable)}.` : '';
+  return `Take the wood within reach here: ${talliedSays(found.reachable)}, the nearest ${Math.round(first.p.distanceTo(here))} blocks off at ${at3(first.p)}, dug from ${first.walk ? `a walk of ${plural(first.walk, 'block')}` : 'where the bot stands'}, one after another; about ${seconds} seconds, by hand where no axe is carried. ` +
+    `That is ${plural(planks, 'plank')}' worth (a log or stem makes four planks, a plank is one); ${plural(planksCarried(bot), 'plank')}' worth carried now.${out} Taken, the step is looked at again with them.`;
+}
+
+// Back through the portal to the Overworld's trees: the nearest Nether
+// portal known and the way to it, the Overworld portal it leads to, and the
+// wood known near that.
+function portalsKnown(bot, goal) {
+  const here = bot.entity.position;
+  const out = (goal.portals || []).filter(p => /nether/.test(String(p.dimension || ''))).map(p => new Vec3(p.x, p.y, p.z));
+  for (const p of find(bot, ['nether_portal'], 64, 16)) if (!out.some(q => q.distanceTo(p) <= 8)) out.push(p);
+  return out.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+}
+function overworldWoodSays(goal, portal) {
+  const home = (goal.portals || []).filter(p => /overworld/.test(String(p.dimension || ''))).sort((a, b) => Math.hypot(a.x - portal.x * 8, a.z - portal.z * 8) - Math.hypot(b.x - portal.x * 8, b.z - portal.z * 8))[0];
+  const at = home || { x: portal.x * 8, y: portal.y, z: portal.z * 8 };
+  const logs = Object.values(goal.resourceMemory || {}).filter(e => /overworld/.test(String(e.dimension || '')) && /_log$/.test(e.name || ''))
+    .map(e => ({ e, d: Math.round(Math.hypot(e.position.x - at.x, e.position.z - at.z)) })).sort((a, b) => a.d - b.d);
+  const where = home ? `the Overworld portal at ${at3(home)}` : `the Overworld near ${Math.round(at.x)}, ${Math.round(at.z)}`;
+  return `It comes out at ${where}. ${logs.length ? `The nearest wood remembered there: ${words(logs[0].e.name)} ${logs[0].d} blocks from it.` : 'No tree is remembered near it: the surface search for wood looks from there.'}`;
+}
+
+// Going on without what the wood is for: the rung it is for left thirty
+// minutes and the ladder's next step taken up, as the climb's stay_below
+// does (work.js surfaceTrip).
+function withoutOption(bot, goal, save, { forItem, resource }) {
+  const phase = goal.rungTime?.phase || goal.gameProgress?.phase;
+  if (!phase || goal.kind !== 'win') return null;
+  const { nextGameStage, RUNG_WAIT_MS } = require('./game-progress');
+  let next = null;
+  try { const probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', phase, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe); }
+  catch (_) { next = null; }
+  const errand = phase === 'errand' && goal.errand ? ` (the trip to the ${goal.errand.dimension}${goal.errand.items?.length ? ` for ${goal.errand.items.map(i => words(i.item)).join(', ')}` : ''}${goal.errand.for ? `, for ${goal.errand.for}` : ''})` : '';
+  const wants = forItem ? `the ${words(forItem)} this ${words(resource)} is for` : `the ${words(resource)}`;
+  const items = next?.item ? ` (${next.count > 1 ? `${next.count} ${words(next.item)}${/s$/.test(next.item) ? '' : 's'}` : words(next.item)})` : '';
+  const goOn = next?.phase && next.phase !== phase ? `go on with the ${words(next.phase)}${items}` : 'the ladder\'s next step is looked for (none other is open now)';
+  return { description: `Go on without ${wants}: leave the ${words(phase)}${errand} for thirty minutes and ${goOn}. It comes back after, and this with it.`,
+    run: async () => {
+      setAside(goal, 'rung', phase, `Jev chose to go on without ${wants} for now`, RUNG_WAIT_MS);
+      delete goal.rungTime;
+      goal.step = { action: 'go_without', phase, need: resource }; save();
+    } };
+}
+
+// The step: what is known, the ways to each, put to Jev and taken.
+async function netherGather(bot, task, goal, save, resource, { navigate, returnOverworld = null, mineAt = null, forItem = null, client = task.opportunityClient } = {}) {
+  const here = bot.entity.position.clone();
+  const names = resourceNames(bot, resource);
+  const wood = isWood(resource);
+  const state = goal.fortressSearch || (goal.netherMap ||= {});
+  const dim = coverage.dimOf(bot);
+  try { coverage.stand(bot, state); coverage.look(bot, state); } catch (_) { /* nothing seen is nothing said */ }
+  const options = {}, facts = { looking: `${words(resource)}${wood ? ' (any wood serves: a stem or log makes four planks)' : ''}`, height: Math.round(here.y) };
+  const notOffered = [];
+
+  // The wood within reach, of any kind.
+  if (wood && mineAt) {
+    const found = woodInReach(bot, goal);
+    if (found.sources.length) options.wood_in_view = { description: woodSays(bot, found),
+      run: async () => {
+        goal.step = { action: 'nether_gather', way: 'wood_in_view', what: talliedSays(found.reachable) }; save();
+        // All within reach, those out of reach from here among them: a wall of
+        // the bot's own planks across its span opens the way to the rest.
+        const within = [...found.sources.map(x => [x.name, 1]), ...Object.entries(found.unreachable)].reduce((n, [name, c]) => n + c * planksOf(name), 0);
+        const want = planksCarried(bot) + Math.min(within, WOOD_MOST * 4);
+        const done = await gatherSpanBlocks(bot, task, want, { navigate, reach: WOOD_REACH, walk: WOOD_WALK, names: woodNames(bot), carried: planksCarried, what: 'wood',
+          skip: p => isSetAside(goal, 'reach', p), mineAt: s => mineAt(s.p, s.name) });
+        if (!done.gained) {
+          const why = `The wood within reach gave nothing${done.why ? `: ${done.why}` : ''}`;
+          for (const s of found.sources) setAside(goal, 'reach', s.p, why, WAY_REST_MS);
+          save(); throw new Error(why);
+        }
+      } };
+    else if (Object.keys(found.unreachable).length) facts.woodOutOfReach = `within ${WOOD_REACH} blocks but not to be dug from ground walked to from here: ${talliedSays(found.unreachable)}`;
+  }
+
+  // Each place it is known, and the ways there.
+  const places = knownPlaces(bot, goal, names);
+  const placesSaid = [];
+  for (const [i, place] of places.entries()) {
+    const way = await wayTo(bot, task, place.at);
+    const off = Math.round(flat(place.at, here)), dy = Math.round(place.at.y - here.y);
+    const where = place.n ? `the ${words(place.name)}s` : place.forest;
+    const whereSays = `${place.n ? `${plural(place.n, words(place.name))} known` : `No ${words(place.name)} is known yet in ${place.forest}`} at ${at3(place.at)}, ${off} blocks ${HEADING_NAMES[Math.round(Math.atan2(place.at.z - here.z, place.at.x - here.x) / (Math.PI / 2) + 4) % 4]}${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}`;
+    const stood = coverage.stoodNear(state, dim, place.at, 32);
+    const standSays = stood === null ? 'The bot has not stood within 32 blocks of it.' : `The bot has stood ${stood} blocks from it before.`;
+    const says = `${whereSays}. ${walkSays(way)} ${crossSays(bot, way)}${floorSays(way)} ${standSays}`;
+    const offered = waysOffered(way);
+    const keys = [];
+    for (const method of ['walk', 'cross', 'floor']) {
+      if (!offered[method]) continue;
+      if (wayResting(bot, goal, place.at, method)) { notOffered.push(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}: came to nothing from here a few minutes ago, resting`); continue; }
+      const key = `${method}_to_${i + 1}`;
+      keys.push(key);
+      const how = method === 'walk' ? (way.walk.found ? 'on foot, by the pathfinder\'s route' : `on foot as far as the pathfinder goes (${at3(way.walk.end)}, ${way.walk.nearer} blocks nearer), and the way on asked from there`)
+        : method === 'cross' ? `straight across at this height as far as the blocks carried take it (${way.cross.now.cells} cells, ${Math.round(way.cross.now.gain)} blocks nearer)`
+          : 'down to the floor and along it toward them';
+      options[key] = { description: `Go to ${where} ${how}. ${says}`, target: place.at, run: () => runWay(bot, task, goal, save, way, method, `${where} at ${at3(place.at)}`, navigate) };
+    }
+    placesSaid.push(`${says}${keys.length ? '' : ' No way from here makes ground toward it, so it is not offered.'}`);
+  }
+  if (placesSaid.length) facts.knownPlaces = placesSaid;
+  else facts.knownPlaces = `none: no ${words(resource)} seen within ${SEE} blocks or remembered${names.some(n => STEM.test(n)) ? ', and no Nether forest noticed' : ''}`;
+
+  // The portal back to the Overworld's trees.
+  if (wood && returnOverworld) {
+    const portal = portalsKnown(bot, goal)[0];
+    if (portal) {
+      const way = await wayTo(bot, task, portal);
+      const says = `The nether portal at ${at3(portal)}, ${Math.round(flat(portal, here))} blocks off. ${walkSays(way)} ${crossSays(bot, way)}`;
+      const reaches = way.walk?.found || (way.cross.now.cells && flat(way.cross.now.end, portal) <= THERE && way.cross.now.gain >= 1);
+      if (reaches && !isSetAside(goal, 'gather_way', wayKey(bot, portal, 'portal'))) {
+        options.portal_trip = { description: `Go back through the portal to the Overworld for wood, ${way.walk?.found ? 'on foot' : 'straight across at this height'}. ${says} ${overworldWoodSays(goal, portal)} The work here waits till the bot comes back through.`,
+          target: portal,
+          run: async () => {
+            const method = way.walk?.found ? 'walk' : 'cross';
+            try { await runWay(bot, task, goal, save, way, method, `the portal at ${at3(portal)}`, navigate); }
+            catch (err) { if (!retryable(err)) throw err; setAside(goal, 'gather_way', wayKey(bot, portal, 'portal'), err.message.slice(0, 300), WAY_REST_MS); save(); throw err; }
+            await returnOverworld(bot, task, goal, save);
+          } };
+      } else facts.portal = `${says} Neither the walk nor the crossing with the blocks carried reaches it from here, so going back through it is not offered.`;
+    } else facts.portal = 'no nether portal known in the Nether';
+  }
+
+  // Legs of the search, for what is not known yet.
+  const legsClosed = [];
+  const { biomeRay } = require('./exploration');
+  HEADINGS.forEach((h, i) => {
+    const name = HEADING_NAMES[i], survey = travel.surveyLeg(bot, h, { cells: LEG });
+    if (!survey) return;
+    // A leg whose line stops or runs out of blocks within its first few
+    // cells makes no ground to search from: said, not offered.
+    const goes = Math.min(...[survey.stoppedAt, survey.runsOut, survey.cells].filter(Number.isInteger));
+    if (goes < LEG_FIRST) { legsClosed.push(`leg ${name}: ${goes ? `goes ${plural(goes, 'cell')} at y ${Math.round(here.y)}, then` : `closed at the first cell at y ${Math.round(here.y)},`} ${Number.isInteger(survey.runsOut) && survey.runsOut === goes ? `open air with no floor and ${plural(survey.carried, 'block')} carried to lay` : survey.stoppedBy}`); return; }
+    if (wayResting(bot, goal, here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), 'leg')) { legsClosed.push(`leg ${name}: came to nothing from here a few minutes ago, resting`); return; }
+    let forests = [];
+    try { forests = biomeRay(bot, RAY_OF[i]).filter(s => /crimson_forest|warped_forest/.test(s.biome)); } catch (_) { forests = []; }
+    const seen = coverage.headingCoverage(state, dim, here, h, { length: LEG, bot });
+    const unseen = seen.cells ? ` Of the ground within ${seen.reveal} blocks of its line, about ${Math.round(seen.unseen / 16)} of ${Math.round(seen.cells / 16)} chunks are unseen (no line from the eyes has reached it through open air).${seen.stood ? ` The bot has stood on ${seen.stood} of its ${LEG} blocks before.` : ''}` : '';
+    const forestSays = !wood ? '' : forests.length ? ` The Nether forests that way at this height, as far as loaded: ${forests.map(s => `${words(s.biome)} from ${s.from} to ${s.to} blocks`).join(', ')}.` : ' No Nether forest lies that way at this height as far as loaded.';
+    options[`leg_${name}`] = { description: `Search ${name}: ${travel.legSays(survey, { direction: name, length: LEG, y: Math.round(here.y) })} Walked by the pathfinder first, then straight across where the walk gives out.${forestSays}${unseen}`,
+      run: async () => {
+        const target = here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), before = flat(target, bot.entity.position);
+        goal.step = { action: 'nether_gather', way: `leg_${name}`, what: words(resource), target: { x: target.x, y: target.y, z: target.z } }; save();
+        let why = null;
+        try { await navigate(bot, task, new goals.GoalNearXZ(target.x, target.z, 8), { timeoutMs: 45000, stallMs: 8000 }); }
+        catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 120); }
+        if (before - flat(target, bot.entity.position) < 2) {
+          const s = surveyCrossing(bot, target, { cells: 32 });
+          if (s.cells && s.gain >= 1) {
+            try { await bridgeTo(bot, task, target, { maxBlocks: s.bridge, maxSteps: s.cells }); }
+            catch (err) { task.check(); if (!retryable(err)) throw err; why = `${why ? `${why}; ` : ''}${String(err.message || err).slice(0, 120)}`; }
+          }
+        }
+        if (before - flat(target, bot.entity.position) < 2) {
+          const said = `The leg ${name} came no nearer${why ? `: ${why}` : ''}; it rests from here`;
+          setAside(goal, 'gather_way', wayKey(bot, target, 'leg'), said.slice(0, 300), WAY_REST_MS); save();
+          throw new Error(said);
+        }
+      } };
+  });
+  if (legsClosed.length) facts.legsClosed = legsClosed;
+  if (notOffered.length) facts.waysResting = notOffered;
+
+  const without = withoutOption(bot, goal, save, { forItem, resource });
+  if (without) options.without = without;
+  if (!Object.keys(options).length) throw new Error(`No way to ${words(resource)} from here: ${[...(Array.isArray(facts.knownPlaces) ? facts.knownPlaces : [facts.knownPlaces]), facts.portal, ...legsClosed].filter(Boolean).join('; ')}`.slice(0, 600));
+
+  facts.blocksCarried = blocksCarried(bot);
+  facts.pickaxe = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => words(i.name)).join(', ') || 'none: rock is dug by hand, slowly, and netherrack dug by hand drops nothing';
+  if (forItem) facts.for = words(forItem);
+  facts.health = bot.health; facts.food = bot.food;
+  try { facts.threatsInView = require('./danger').threats(bot, 64).filter(t => t.visible && (t.distance <= 32 || t.entity.name === 'ghast')).map(t => `${words(t.entity.name)} ${Math.round(t.distance)} blocks off`); } catch (_) { /* none said */ }
+  try { facts.seenSoFar = coverage.coverageSays(state, dim, here, LEG); } catch (_) { /* none said */ }
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: { x: Math.round(o.target.x), y: Math.round(o.target.y), z: Math.round(o.target.z) } } : {}) }]));
+  const unseen = Object.fromEntries(HEADING_NAMES.map((n, i) => [`leg_${n}`, options[`leg_${n}`] ? coverage.headingCoverage(state, dim, here, HEADINGS[i], { length: LEG }).unseen : null]));
+  const decision = await require('./decisions').decide('nether_gather', { client, bot, task, goal, save, tree, state: facts, context: { unseen } });
+  if (decision.stale) return false;
+  await options[decision.path.at(-1)].run();
+  return true;
+}
+
+module.exports = { netherGather, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };

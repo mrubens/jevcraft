@@ -313,8 +313,10 @@ async function stepOntoFooting(bot, task) {
 // has an open face, no lava beside it, and something under it for its drop
 // to land on; a floor with open air under it (a span, the bot's own among
 // them) is not counted: dug, the way back is a hole.
+// `names`: other blocks looked for the same way (the Nether's gathering
+// looks so for wood within reach, nether-gather.js).
 const DROP_OF = { stone: 'cobblestone' };
-function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false } = {}) {
+function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false, names = MATERIALS } = {}) {
   const out = { sources: [], reachable: {}, unreachable: {}, walkCells: 0 };
   if (typeof bot.findBlocks !== 'function' || typeof bot.blockAt !== 'function' || !bot.entity?.position) return out;
   const { restingCell } = require('./terrain'), { miningReach } = require('./mining-access');
@@ -337,7 +339,7 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false } = {
     }
   }
   out.walkCells = cells.size;
-  const ids = MATERIALS.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
+  const ids = names.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
   const faces = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
   // Keyed by number from where the walk began: a string key for each of
   // the few hundred cells in reach of each of the thousands of blocks was
@@ -346,8 +348,12 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false } = {
   const candidates = new Map();
   for (const p of bot.findBlocks({ matching: ids, maxDistance: reach, count: 4096 }) || []) {
     const b = at(p);
-    if (!b || !MATERIALS.includes(b.name) || skip(p)) continue;
-    const floorOverAir = standing(p.offset(0, 1, 0)) && !solid(at(p.offset(0, -1, 0)));
+    if (!b || !names.includes(b.name) || skip(p)) continue;
+    // A floor over a gap a block deep with ground under it is no span: dug,
+    // the way is a step down and up again. The planks mid-242-af-nether-2-
+    // fortress-3 laid on its span as cover, two high, were each a floor over
+    // air once the lower was dug (note 608).
+    const floorOverAir = standing(p.offset(0, 1, 0)) && !solid(at(p.offset(0, -1, 0))) && !solid(at(p.offset(0, -2, 0)));
     const diggable = !floorOverAir && !faces.some(f => /lava/.test(at(p.offset(...f))?.name || '')) && faces.some(f => open(at(p.offset(...f)))) &&
       (solid(at(p.offset(0, -1, 0))) || solid(at(p.offset(0, -2, 0))));
     if (diggable) candidates.set(num(p), { p, b, from: null });
@@ -376,18 +382,20 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false } = {
 // deadline passes. `mineAt` digs a block from where the bot stands and
 // picks up its drop (work.js mine). Returns what it gained and why it
 // stopped; a block that gained nothing is not tried again this round.
-async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = null, reach = 16, walk = 32, skip = () => false, onBlock = () => {} }) {
+// `names`, `carried` and `what`: other blocks gathered the same way, how
+// many of them are carried, and what they are called.
+async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = null, reach = 16, walk = 32, skip = () => false, onBlock = () => {}, names = MATERIALS, carried = blocksCarried, what = 'what a span is laid with' }) {
   const { goals } = require('mineflayer-pathfinder');
-  const start = blocksCarried(bot), tried = new Set();
+  const start = carried(bot), tried = new Set();
   let misses = 0, why = null;
-  while (blocksCarried(bot) < want) {
+  while (carried(bot) < want) {
     task.check();
     if (deadline && Date.now() > deadline) { why = 'the time it was said to take ran out twice over'; break; }
-    const { sources } = spanBlockSources(bot, { reach, walk, skip: p => tried.has(`${p}`) || skip(p) });
+    const { sources } = spanBlockSources(bot, { reach, walk, names, skip: p => tried.has(`${p}`) || skip(p) });
     const s = sources[0];
-    if (!s) { why = 'nothing more of what a span is laid with can be dug from ground walked to from here'; break; }
+    if (!s) { why = `nothing more of ${what} can be dug from ground walked to from here`; break; }
     tried.add(`${s.p}`); onBlock(s);
-    const before = blocksCarried(bot);
+    const before = carried(bot);
     try {
       const feet = bot.entity.position.floored();
       if (!feet.equals(s.from)) await navigate(bot, task, new goals.GoalBlock(s.from.x, s.from.y, s.from.z), { timeoutMs: 15000, stallMs: 4000 });
@@ -396,10 +404,10 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err;
       why = err.message;
     }
-    if (blocksCarried(bot) > before) { misses = 0; why = null; continue; }
+    if (carried(bot) > before) { misses = 0; why = null; continue; }
     if (++misses >= 3) { why = `three blocks in a row gave nothing${why ? ` (the last: ${why})` : ''}`; break; }
   }
-  return { gained: blocksCarried(bot) - start, why: blocksCarried(bot) >= want ? null : why };
+  return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
 module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, NATURAL };

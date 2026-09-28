@@ -1271,9 +1271,19 @@ async function breakOut(bot, task, toward) {
   return false;
 }
 
-async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly } = {}) {
+async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfaceResource(resource), frontier = surfaceOnly, forItem = null } = {}) {
   if (surfaceOnly && !surfaceReturnComplete(bot, goal)) {
     await surfaceTrip(bot, task, goal, save, LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '));
+    return;
+  }
+  // In the Nether, the Nether's search: what is known and the ways to it,
+  // the wood within reach, the portal back, legs, or going without, put to
+  // Jev (nether-gather.js). The walking search below surveys ground within
+  // forty-eight blocks, and from a span over the lava sea found none, over
+  // and over for twelve minutes (mid-242-af-nether-2-fortress-3, note 608).
+  if (!surfaceOnly && require('./nether-gather').gathers(bot, resource)) {
+    await require('./nether-gather').netherGather(bot, task, goal, save, resource, { navigate, returnOverworld: returnFromNether, forItem,
+      mineAt: (p, block) => mine(bot, task, { action: 'mine', block, sources: [block], drops: block, count: 1 }, goal, save, p) });
     return;
   }
   const surface = surfaceOnly ? surfaceMovement(bot) : null;
@@ -1580,10 +1590,14 @@ async function moveOnFromResource(bot, task, goal, save) {
 // oak and spruce looking for acacia (the user, 2026-09-24). Planks, sticks,
 // tables and fuel take any wood, and the next step plans from the pockets.
 const LOG = /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak)_log$/;
+// And either of the Nether's stems for the other: the Nether's search walks
+// to whichever forest is known (nether-gather.js, note 608).
+const NETHER_STEM = /^(crimson|warped)_stem$/;
 function logInView(bot, step) {
-  if (!LOG.test(step.block || '') || typeof bot.findBlocks !== 'function') return step;
+  const family = LOG.test(step.block || '') ? LOG : NETHER_STEM.test(step.block || '') ? NETHER_STEM : null;
+  if (!family || typeof bot.findBlocks !== 'function') return step;
   if (find(bot, [step.block], 32, 1).length) return step;
-  const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => LOG.test(n) && n !== step.block);
+  const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => family.test(n) && n !== step.block);
   const other = find(bot, names, 32, 1)[0];
   const name = other && bot.blockAt(other)?.name;
   if (!name) return step;
@@ -1825,7 +1839,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
         if (!target) throw new Error(`Every way down toward the ${String(step.block).replaceAll('_', ' ')} from here is set aside for now`);
       }
       await tunnelOrSetAside(bot, task, goal, save, target, step.block, ore);
-    } else await explore(bot, task, goal, save, step.block);
+    } else await explore(bot, task, goal, save, step.block, { forItem: step.forItem || null });
     return;
   }
   // Nearest first, and on through the vein: one block per call sent the
@@ -1897,7 +1911,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
   }
   save();
   if (selected) throw new Error(goal.lastMiningError || `No ${step.drops} collected at ${selected}`);
-  await explore(bot, task, goal, save, step.block);
+  await explore(bot, task, goal, save, step.block, { forItem: step.forItem || null });
 }
 
 // Which workstations this bot placed, so it can take them along later. Kept
@@ -2611,6 +2625,9 @@ async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY,
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'axe', 'stone', err.message, 600000); save(); }
     }
   }
+  // What a mine step's block is for, said where its search asks (nether-
+  // gather.js without); kept off the step as saved and compared.
+  if (step.action === 'mine' && item !== step.drops) Object.defineProperty(step, 'forItem', { value: item, enumerable: false, configurable: true });
   await executeAcquisition(bot, task, step, goal, save);
   return false;
 }

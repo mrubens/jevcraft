@@ -370,6 +370,30 @@ define({
   fallback: children => Object.keys(children)[0],
 });
 
+// Gathering in the Nether, where the Overworld's walking search found no
+// ground to walk to from a span over the lava sea (note 608).
+const GATHER_ORDER = ['wood_in_view', 'walk_to_1', 'floor_to_1', 'cross_to_1', 'walk_to_2', 'floor_to_2', 'cross_to_2', 'walk_to_3', 'floor_to_3', 'cross_to_3', 'portal_trip'];
+define({
+  id: 'nether_gather', area: 'resources', parent: 'rung_progress', kind: 'explore', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'In the Nether, nothing of what the step mines is within reach: which way to get it, or go on without it?',
+  trigger: 'A mine step in the Nether (wood for a tool, or any block the Nether has) with none of its blocks within reach where the bot stands; asked each time the search would have walked, the chosen way carried out to its end, and a way that came no nearer resting from that spot five minutes.',
+  source: 'src/nether-gather.js (netherGather, knownPlaces, wayTo, woodInReach), src/work.js (explore), src/nether-travel.js (surveyLeg, floorWay, walkFloorToward), src/bridging.js (surveyCrossing, spanBlockSources), src/nether-coverage.js',
+  options: [
+    { key: 'wood_in_view', label: 'take the wood of any kind within reach here', when: 'wood is wanted and blocks of any wood (logs, stems, planks, the bot\'s own laid as cover among them) can be dug from ground walked to from here within twenty-four blocks; said with the kinds and counts, the nearest and the walk to it, about how long, the planks\' worth against those carried, and what lies within reach but not to be dug from here now', level: 'root' },
+    { pattern: '(walk|cross|floor)_to_[1-3]', label: 'go to this place it is known, this way', when: 'up to three places, nearest first: blocks of it in view within 128 or remembered, gathered by kind within twenty-four of each other, or for Nether wood a forest noticed or in the loaded ground where none of its stems is known; one option for each way that makes ground: on foot (the pathfinder\'s route all the way, or as far as it goes where that is eight or more blocks nearer), straight across at this height as far as the blocks carried take it (four or more nearer), and down to the floor and along it (a way down found and eight or more cells of floor); each said with every way there (the route, or where the walk ends and the crossing on from there with the blocks carried; the crossing\'s cells, rock to dig and with what, blocks to lay against those carried, where it ends and what stops it, the floor), and whether the bot has stood within 32 blocks of it; places with no way are said in the state as knownPlaces', level: 'root', dynamic: true },
+    { key: 'portal_trip', label: 'go back through the portal to the Overworld for wood', when: 'wood is wanted, a nether portal is known, and the walk reaches it or the crossing with the blocks carried ends at it; said with the way, where it comes out and the wood remembered near there; otherwise said in the state as portal', level: 'root' },
+    { pattern: 'leg_(east|south|west|north)', label: 'search this way, sixty-four blocks', when: 'one for each heading whose line at this height is not closed at its first cell (lava, rock with lava behind it, or open air with no block carried to lay; those are said as legsClosed); said with the cells ahead, the Nether forests that way at this height as far as loaded, and the ground unseen within 128 blocks of its line', level: 'root', dynamic: true },
+    { key: 'without', label: 'go on without it: leave the rung it is for thirty minutes and go on with the ladder\'s next step', when: 'on the game ladder, with a rung in hand; said with what the wood is for, the rung (the errand and what it is for, where it is one) and what the ladder goes on with', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is in the Nether and needs `looking` (for `for`, where said); none is within reach where it stands. Choose how to get it, or to go on without it. knownPlaces are where it is known, each with every way there from here: on foot by the pathfinder, straight across at this height (rock dug, a block laid over each cell of open air or lava, crouched, against blocksCarried; rock dug without a pickaxe is slow and netherrack so dug drops nothing), and down to the floor and along it; a way that does not make ground is not offered. The Nether\'s ground is broken by lava and drops, and a block laid over open air with a ghast in sight is a fall. Legs search where nothing is known; the Overworld has trees where the Nether has none in reach.'),
+  // Without Jev: the wood at hand, then the nearest place by the walk, the
+  // floor, the crossing, the portal, the leg with the most unseen, and last
+  // going on without.
+  fallback: (children, path, context = {}) => GATHER_ORDER.find(k => children[k])
+    || Object.keys(children).filter(k => k.startsWith('leg_')).sort((a, b) => (context.unseen?.[b] ?? 0) - (context.unseen?.[a] ?? 0))[0]
+    || (children.without ? 'without' : Object.keys(children)[0]),
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
