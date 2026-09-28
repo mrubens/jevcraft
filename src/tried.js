@@ -241,7 +241,13 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.n
   if (!resting.length) return { tree: out, resting: [], allResting: false };
   const ways = resting.filter(r => !r.wait), waits = resting.filter(r => r.wait);
   const open = Object.keys(out).filter(k => !resting.some(r => r.key === k));
-  if (!sayOnly && !open.length && !waits.length) return { tree: out, resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)) };
+  // Every way resting: the question above is asked instead where there is
+  // one; where there is none, all stay on offer, each with its rest said
+  // (note 609).
+  if (!sayOnly && !open.length && !waits.length) {
+    for (const r of resting) out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here.`);
+    return { tree: out, resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)) };
+  }
   const left = [];
   if (!sayOnly && open.length) for (const r of ways) { delete out[r.key]; left.push(r); }
   // Waits: left out while two or more other ways, none of them resting,

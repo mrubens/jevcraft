@@ -195,6 +195,18 @@ const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:
 // escalated to it. Asked as the stall's question is, with the rung's best,
 // what has been tried, keeping at it, and the rung set aside for any rung.
 const isRungStall = stall => !!stall.rung || stall.escalated?.to === 'rung_progress';
+// What is above the stall's question when the rung's question will not be
+// asked: nothing, and why. Escalated there anyway, the stall came back to
+// its own question at once with the same ways resting, and escalated again:
+// 52,000 times in the idle loop on 25586, and twenty-odd passes a second
+// on 25587 with the errand set aside (note 609). Undefined: the rung's
+// question is above it and is asked.
+function stallAbove(goal, { idle = false, now = Date.now() } = {}) {
+  if (idle) return { parent: null, says: 'Between player requests: no rung is being worked on, so nothing above this question is asked; every way here stays on offer with its rest said.' };
+  const rung = goal.rungTime?.phase;
+  if (rung && isSetAside(goal, 'rung', rung, now)) return { parent: null, says: `The ${rung.replaceAll('_', ' ')} is set aside, and a rung set aside is not brought to its own question while it waits: nothing above this question is asked; every way here stays on offer with its rest said.` };
+  return undefined;
+}
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now(), failed = null, chose = {}, recoveryAdviser = null } = {}) {
   const stats = survival?.state || goal.survival || goal;
   const thing = thingOf(stall.key);
@@ -203,6 +215,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // (tried.js rungOf): the stall's question is asked instead (note 600).
   const rungAside = !!goal.rungTime?.phase && isSetAside(goal, 'rung', goal.rungTime.phase, now);
   const rungQuestion = isRungStall(stall) && !idle && !rungAside;
+  // The stall's question escalates to the rung's only where the rung's is
+  // asked: not between requests, and not for a rung set aside (note 609).
+  const above = rungQuestion ? undefined : stallAbove(goal, { idle, now });
   // Stuck in the terrain (in water, or under cover on the way up): worked
   // free one move at a time, Jev choosing each (unstuck.js). Trials 32 and
   // 33 each stalled here in a trap the escape routines had no answer for.
@@ -384,7 +399,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       : `Leave the ${thing} for the ${minutes} minute${minutes === 1 ? '' : 's'} until its rest ends and do other work meanwhile, chosen here a piece at a time, each piece given the time that is left; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. Nothing done here ends the rest sooner.`,
       run: async () => {
         goal.restHeld = { until: restUntil, reason: stall.key, at: now }; save();
-        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error || stall.escalated?.says });
+        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error || stall.escalated?.says, above });
       } };
     // The other answers' walks meet the same rest, said: a rest until a
     // time wherever the bot is (WaysResting), not the ways below by place.
@@ -444,7 +459,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
     ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}) };
-  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour' });
+  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour', above });
 }
 // What the ladder goes on with if the rung is set aside, and what it costs
 // from here, read from a copy of the goal with the rung left: the next
@@ -2846,12 +2861,12 @@ async function houseDecisionStep(bot, task, goal, save, client, onStep) {
 // How long a detour's record is kept for the stall it answered.
 const DETOUR_MEMORY_MS = 30 * 60000;
 
-async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}, id = 'resource_source') {
+async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}, id = 'resource_source', { above } = {}) {
   const observation = decisionObservation(bot, goal);
   const state = { ...observation, ...context };
   const fingerprint = () => decisionFingerprint(bot, { inventory: planningInventory, immediateThreat, needsAir });
   const initial = fingerprint();
-  const decision = await decide(id, { client, bot, task, goal, save, tree, state, context: state, isFresh: () => fingerprint() === initial });
+  const decision = await decide(id, { client, bot, task, goal, save, tree, state, context: state, isFresh: () => fingerprint() === initial, above });
   onStep(goal);
   if (decision.stale) return false;
   try { await decision.action.run(); }
@@ -4832,7 +4847,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
       return;
     }
     const rungAsk = up?.to === 'rung_progress' ? { escalated: { from: owner.q, to: 'rung_progress', says: up.says, passed: up.passed } } : {};
-    if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message });
+    if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message, above: stallAbove(goal) });
     else await answerStall(bot, task, goal, save, { key, work, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
   }
   finally {
@@ -5216,7 +5231,7 @@ const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
 const USEFUL_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
-async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null, id = 'stillness_detour' } = {}) {
+async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null, id = 'stillness_detour', above = undefined } = {}) {
   const ms = STALL_MS;
   // Held until a rest ends (holdForRest), the work has that long.
   const deadline = until > now ? until : now + DETOUR_MS;
@@ -5335,8 +5350,8 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   try {
     // Through decide whatever the client: the ledger reads and records every
     // answer to it, the one way and the code's own walk included.
-    if (!client) { const d = await decide(id, { client: null, bot, task, goal, save, tree, state: context, context }); if (!d.stale) await d.action.run(); }
-    else await decideAction(bot, task, goal, save, client, onStep, tree, context, id);
+    if (!client) { const d = await decide(id, { client: null, bot, task, goal, save, tree, state: context, context, above }); if (!d.stale) await d.action.run(); }
+    else await decideAction(bot, task, goal, save, client, onStep, tree, context, id, { above });
   } finally { goal.step = step; save(); }
   return true;
 }
@@ -5346,14 +5361,29 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
 // each picked by Jev, and the work that rested taken up again at the end.
 // With nothing on offer, or a detour over at once, the rest is waited out a
 // few seconds at a time rather than the rest met again and asked about.
-async function holdForRest(bot, task, goal, save, { client, survival, onStep = () => {}, reason, until, why = null }) {
+// With nothing on offer, the wait is said, once, with what it waits for and
+// until when, and kept on the step: on 25586 and 25587 the hold slept five
+// seconds at a time, "detours: none", with the step saying only "detour"
+// (note 609).
+function restWaitSays(reason, until, why, now = Date.now()) {
+  const what = String(reason || 'the work').replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
+  return `the ${what}'s rest to end, ${Math.max(1, Math.round((until - now) / 1000))} seconds more (at ${new Date(until).toISOString().slice(11, 19)}Z)${why ? `, set for: ${String(why).slice(0, 160)}` : ''}; nothing else is on offer from here meanwhile`;
+}
+async function holdForRest(bot, task, goal, save, { client, survival, onStep = () => {}, reason, until, why = null, above = undefined }) {
+  let waitSaid = false;
   try {
     while (Date.now() < until) {
       task.check();
       const started = Date.now(), minutes = Math.max(1, Math.ceil((until - started) / 60000));
       let worked = false;
-      try { worked = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why } }); }
+      try { worked = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why }, above }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+      if (!worked && !waitSaid) {
+        waitSaid = true;
+        const says = restWaitSays(reason, until, why);
+        console.log(`[wait] waiting for ${says}`);
+        goal.step = { ...(goal.step?.action === 'detour' ? goal.step : { action: 'detour', choice: 'until_rest_ends', from: reason }), waitingFor: says }; save(); onStep(goal);
+      }
       // Waited a quarter second at a time with the task's check between: a
       // five-second sleep met a preemption only at its end, and the arbiter's
       // watch stopping the hold for a crossbow piglin or a ghast by the drop
@@ -5771,8 +5801,13 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   watchStalls(bot, () => goal); task.stallCheck = () => checkStall(bot);
   const arbiterLive = require('./arbiter').mode() === 'live';
   require('./arbiter').watch(bot);
+  // Paced as runGoal's is: a stall answered at once, or an escalation
+  // thrown and caught, went straight round again with no pause, 52,000
+  // escalations in the idle loop of mid-242-ah-nether-1-fortress-1 (note 609).
+  const spin = spinGuard();
   try {
   while (!until()) {
+    await spin(goal);
     task.interruptCheck = undefined;
     // A stall is answered first, before anything can throw it again.
     const stall = takeStall(bot);
@@ -5868,6 +5903,25 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
 // step runs the vitals' own meal and douse.
 const reportedLayer = (before, after) => after?.at && after.at !== before && require('./vitals').ACTIONS.has(after.action) ? 'vitals' : null;
 
+// The loop yields to the event loop every pass, and more than twenty passes
+// a second is a spin: said with the step, and slowed. The line itself must
+// never throw: JSON.stringify of a missing survival action is undefined, and
+// its .slice threw out of runGoal, which parked the whole game "blocked";
+// mid-242-ah-nether-1-fortress-1 and mid-243-af-nether-3-fortress-2 then
+// stood in the idle loop for the rest of their trials (note 609).
+const shown = (v, n) => String(JSON.stringify(v) ?? 'none').slice(0, n);
+function spinGuard() {
+  let passes = [];
+  return async goal => {
+    await new Promise(resolve => setImmediate(resolve));
+    const now = Date.now(); passes = passes.filter(t => now - t < 1000); passes.push(now);
+    if (passes.length > 20) {
+      if (passes.length === 21 || passes.length % 200 === 0) console.log(`[loop] spinning: ${passes.length} passes in a second at ${shown(goal?.step, 200)} survival=${shown(goal?.survivalAction, 160)} error=${goal?.lastError || ''}`);
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  };
+}
+
 async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = () => {}, decisionClient, survival, recoveryAdviser, backoffMs = 3000 } = {}) {
   const save = () => store.save(goal);
   task.opportunityClient = decisionClient;
@@ -5891,14 +5945,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   // timed the player out and the process sat at 110% CPU four evenings
   // running. Every pass lets I/O run; more than twenty passes a second
   // is a spin, logged with the step so it can be found, and slowed.
-  let passes = [];
+  const spin = spinGuard();
   for (let n = 0; n < (goal.kind === 'follow' ? Infinity : goal.kind === 'build' ? Math.max(maxSteps, 30000) : maxSteps); n++) {
-    await new Promise(resolve => setImmediate(resolve));
-    const now = Date.now(); passes = passes.filter(t => now - t < 1000); passes.push(now);
-    if (passes.length > 20) {
-      if (passes.length === 21 || passes.length % 200 === 0) console.log(`[loop] spinning: ${passes.length} passes in a second at ${JSON.stringify(goal.step).slice(0, 200)} survival=${JSON.stringify(goal.survivalAction).slice(0, 160)} error=${goal.lastError || ''}`);
-      await new Promise(resolve => setTimeout(resolve, 250));
-    }
+    await spin(goal);
     task.interruptCheck = undefined;
     // A stall (stillness.js) is answered first, before anything can throw
     // it again: the same thing differently, something else, or later.

@@ -341,8 +341,16 @@ class NoSafeDefault extends Error {
 // sent it to the fallback. A single feasible leaf is taken without asking.
 // watchAir false: the question is about the breath or the lava itself
 // (body_way), which checkAir would stop at once.
-async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null }) {
-  const spec = question(id);
+async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined }) {
+  // The question above this one, where the caller knows it will not be
+  // asked here (`above`: { parent: null, says }): the stall's question with
+  // its rung set aside, or between requests, escalated to the rung's
+  // question, which answerStall does not ask then, and asked itself again at
+  // once, round and round: 52,000 escalations on 25586 and the spin that
+  // ended 25587's game (note 609). With nothing above to ask, every way
+  // resting is asked here, each with its rest said, and why nothing above
+  // is asked is said too.
+  const spec = above && above.parent !== undefined ? { ...question(id), parent: above.parent } : question(id);
   // The question's stages, from here (queued) to its record, each as
   // milliseconds since: asked (the turn taken), the client's sent, headers,
   // body and parsed (typesafe.js), stopped, settled, recorded. On the bot
@@ -367,6 +375,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (read.allResting && spec.parent !== undefined && spec.parent !== null) escalateFrom(bot, goal, spec, `every way it had from here rests: ${read.resting.join('; ')}`, { until: read.until });
     tree = read.tree;
     if (read.resting.length) resting = read.resting;
+    // Kept on offer with nothing above to ask, each says its own rest.
+    if (read.allResting) { resting = null; if (above?.says) state = { ...(state || {}), nothingAbove: above.says }; }
     below = tried.escalationsFor(goal, id);
   }
   const takeOne = (one, why = null) => {
