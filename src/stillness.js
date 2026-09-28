@@ -536,7 +536,27 @@ function preempted(p) {
   return err;
 }
 // The loop takes the stall to answer it; nothing throws it again after.
-function takeStall(bot) { const stall = bot._stalls?.stall; if (stall) delete bot._stalls.stall; return stall || null; }
+// A rung's question put off (deferStall) is taken once no other stall is
+// waiting.
+function takeStall(bot) {
+  const s = bot._stalls, stall = s?.stall;
+  if (stall) { delete s.stall; return stall; }
+  const put = s?.deferred;
+  if (put) delete s.deferred;
+  return put || null;
+}
+// The rung's question, taken and cut off before it was asked (a claim that
+// outranks the work, a threat, air): kept off the task's check, so the turn
+// it was cut off for is taken first, and asked at a later pass. Taken and
+// dropped, it was gone, and the rung's budget had begun again: on
+// mid-242-ba-fortress-5 the rods' ten minutes ran out at 17:29:41 with a
+// blaze's claim waiting, the question was never asked, and the next was ten
+// minutes off when the trial ended as a loop (note 620).
+function deferStall(bot, stall) {
+  const s = bot._stalls ||= { records: {}, marks: [] };
+  s.deferred = { ...stall, deferred: (stall.deferred || 0) + 1 };
+  return s.deferred;
+}
 // The survival layer asks before it starts an action: one that stalled is
 // refused for a while, and the layer falls through to its next answer.
 function refused(holder, key, now = Date.now()) { return require('./progress').isSetAside(holder, 'act', key, now); }
@@ -556,4 +576,4 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
 }
 
 module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, waitEnds, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
-  Stalled, checkStall, preempted, takeStall, refused, recordStill };
+  Stalled, checkStall, preempted, takeStall, deferStall, refused, recordStill };

@@ -195,6 +195,19 @@ const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:
 // escalated to it. Asked as the stall's question is, with the rung's best,
 // what has been tried, keeping at it, and the rung set aside for any rung.
 const isRungStall = stall => !!stall.rung || stall.escalated?.to === 'rung_progress';
+// How often the rung's question is put off when cut off before it is asked
+// (runGoal), before it is let go as any stall is.
+const RUNG_PUT_OFF = 20;
+// A stall answered (`answer`, inCatch's result: true when a turn-taking
+// error cut it off), or, the rung's question cut off before it went out,
+// put off (stillness.js deferStall) for a later pass. -> answered
+async function answerOrPutOff(bot, stall, answer) {
+  const cut = await answer() === true;
+  if (!(cut && isRungStall(stall) && !stall.asked && (stall.deferred || 0) < RUNG_PUT_OFF)) return true;
+  require('./stillness').deferStall(bot, stall);
+  console.log(`[rung] its question put off, cut off before it was asked: ${String(stall.rung?.says || stall.escalated?.says || stall.key).slice(0, 160)}`);
+  return false;
+}
 // What is above the stall's question when the rung's question will not be
 // asked: nothing, and why. Escalated there anyway, the stall came back to
 // its own question at once with the same ways resting, and escalated again:
@@ -460,6 +473,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
     ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}) };
+  // Reached: the question goes out (a rung's question cut off before here
+  // is put off to a later pass, runGoal).
+  stall.asked = true;
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour', above });
 }
 // What the ladder goes on with if the rung is set aside, and what it costs
@@ -5978,10 +5994,15 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     // An escalation to a plan's question (tried.js) is not answered here:
     // the step asks that question on this pass, with the failure below said.
     const stall = takeStall(bot);
+    // The rung's question cut off before it was asked (a claim that outranks
+    // the work was waiting, a threat, air): put off, and this pass goes on to
+    // the turn it was cut off for; a later pass asks it (note 620).
     if (stall) {
-      if (!escalatedToStep(stall)) await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, recoveryAdviser }));
-      goal.failures = 0; goal.stalls = 0; save(); onStep(goal);
-      if (!escalatedToStep(stall)) continue;
+      const answered = escalatedToStep(stall) || await answerOrPutOff(bot, stall, () => inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, recoveryAdviser })));
+      if (answered) {
+        goal.failures = 0; goal.stalls = 0; save(); onStep(goal);
+        if (!escalatedToStep(stall)) continue;
+      }
     }
     // Progress against the goal (tried.js watchRung): ten minutes on the
     // rung without a new best raises the rung's question, kept by the
@@ -6235,4 +6256,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };

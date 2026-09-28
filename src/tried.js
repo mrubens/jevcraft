@@ -138,6 +138,17 @@ function record(bot, goal, { q, method, target = null, outcome, why = null, gain
 // nearer (note 571). Something came of one when the rung has a new best
 // since.
 const RUNG_JUDGED = new Set(['stillness_detour', 'rung_progress']);
+// What a wait brought, by its mark: a walk off (cameOf's own measure), or
+// more carried of what is worth keeping; a block laid or dug is its own
+// building, and a block used up for its walls is not a gain either (a box
+// of wool or planks lowers what is carried).
+function waitBrought(before, bot) {
+  if (!before) return null;
+  const now = mark(bot);
+  const moved = cameOf({ ...before, worth: now.worth, blocks: now.blocks, progressAt: 0 }, now, Infinity);
+  if (moved) return moved;
+  return now.worth > before.worth ? 'more carried' : null;
+}
 function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null } = {}) {
   if (e.outcome !== 'pending') return false;
   const rung = goal?.tried?.rung;
@@ -145,7 +156,16 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
   // A stall's answer that brought something home (a hunt's meat, a block
   // of ore) got somewhere, though not on the rung; its walk alone did not.
   const carried = e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  // A wait's own building is not something come of it: the walls of a box,
+  // the blocks of a cover or a pocket, a window dug. Counted as getting
+  // somewhere, a box by a blaze spawner was chosen sixteen times in
+  // thirty-five minutes on mid-242-ba-fortress-5 and "2 of 3 getting
+  // somewhere" each time its walls went back in, with no blaze killed and
+  // nothing changed about it; it never came to nothing, never rested and was
+  // never said so (note 620). A wait is judged by its world (sceneChanges)
+  // and by what it brought (more carried, a walk off), not its blocks.
   const came = byRung ? (rung.bestAt > e.at ? `a new best on the ${rungSays(rung.rung)} (${rung.lastBest || 'progress'})` : carried === 'what is carried changed' ? carried : null)
+    : e.waiting ? waitBrought(e.mark, bot)
     : carried;
   if (onlyIf === 'decided' && !came && !error) return false;
   if (came) { e.outcome = 'progressed'; e.gained = came; }

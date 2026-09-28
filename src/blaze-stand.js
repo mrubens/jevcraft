@@ -1094,6 +1094,10 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     }
   }
   Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig }));
+  // The box and the corner are holds as the stands are: what the holds made
+  // from about here came to, said on them in the hunt and the stance alike
+  // (note 620).
+  for (const o of Object.values(options)) if (HOLD_TACTICS.has(o.kind)) o.description += heldHereSays(bot, holds) || '';
   // The hunt says what it is for, and what holding a stand is: a wait for
   // blazes to come to the sword, priced by whether any can see it, and by
   // what the holds already made from about here came to (note 585). The
@@ -1329,7 +1333,30 @@ function heldHereSays(bot, holds = [], now = Date.now()) {
   const last = near.at(-1);
   return ` Held from about here ${times(near.length)} in the last ${ago(now - first + (last.seconds || 0) * 1000)}, ${heldFor < 90 ? `${heldFor} seconds` : `${Math.round(heldFor / 6) / 10} minutes`} in all: ${kills} blaze${kills === 1 ? '' : 's'} killed, ${gained} rod${gained === 1 ? '' : 's'}, ${swings ? `${swings} swing${swings === 1 ? '' : 's'} at what came within reach` : 'no blaze came within the sword\'s reach'}, ${most ? `at most ${most} in sight at once` : 'none in sight'}${last.ended ? `; the last ended: ${ENDED[last.ended] || last.ended}` : ''}.`;
 }
-const ENDED = { time: 'its time was up', quiet: 'no blaze within twenty blocks for twenty seconds', rod: 'a rod in hand', hurt: 'under eight health' };
+const ENDED = { time: 'its time was up', quiet: 'no blaze within twenty blocks for twenty seconds', rod: 'a rod in hand', hurt: 'under eight health', cut: 'cut off, something else taking the turn' };
+// A box's and a corner's holds, kept where they were held as a stand's are
+// (note 620): the stance's box and corner kept nothing, and the hunt's kept
+// no place, so heldHereSays never found them. On mid-242-ba-fortress-5 a box
+// seven blocks from a spawner was chosen sixteen times in thirty-five
+// minutes with no blaze killed, and every asking offered it as the first
+// time.
+const HOLD_TACTICS = new Set(['box', 'corner']);
+const placeOf = option => {
+  const c = HOLD_TACTICS.has(option?.kind) ? option.site?.cell : null;
+  return c && Number.isFinite(c.x) ? { place: { x: c.x, y: c.y, z: c.z } } : {};
+};
+// A box's hold ends on its own quiet (holdBox), not a stand's; one stopped
+// by a throw is said as cut off, not by the reason its loop began with.
+const TACTIC_ENDED = { quiet: 'twenty seconds with no blaze in line with its window or within eight', time: 'its time was up' };
+function noteTacticHold(bot, goal, save, option, stats, { startedAt, before = 0 } = {}) {
+  if (!HOLD_TACTICS.has(option?.kind) || !goal) return;
+  const state = goal.mobHunt ||= {};
+  const gained = Math.max(0, require('./skills').countOf(bot, 'blaze_rod') - before);
+  const seconds = Number.isFinite(stats.seconds) && stats.seconds > 0 ? stats.seconds : Math.round((Date.now() - Date.parse(startedAt)) / 1000);
+  state.standResults = [...(state.standResults || []), { at: startedAt, kind: option.kind, ...placeOf(option), ...stats, seconds,
+    ended: option.kind === 'box' && TACTIC_ENDED[stats.ended] ? TACTIC_ENDED[stats.ended] : stats.ended, gained, health: bot.health }].slice(-12);
+  save?.();
+}
 
 // One beat of holding a stand: a swing if something is in reach, else
 // facing the way it comes from.
@@ -1374,8 +1401,10 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
     return true;
   }
   if (TACTICS.has(kind)) {
-    const stats = {};
-    await runTactic(bot, task, goal, save, option, { navigate, seconds: 15, stats });
+    const stats = {}, startedAt = new Date().toISOString(), before = require('./skills').countOf(bot, 'blaze_rod');
+    try { await runTactic(bot, task, goal, save, option, { navigate, seconds: 15, stats }); }
+    catch (err) { noteTacticHold(bot, goal, save, option, { ...stats, ended: 'cut' }, { startedAt, before }); throw err; }
+    noteTacticHold(bot, goal, save, option, stats, { startedAt, before });
     // A lighting that ran out of reach or torches with cells still dark has
     // not stopped the spawner: said, so the next question has it.
     if (kind === 'light' && stats.dark) throw Object.assign(new Error(`the spawner is not stopped: ${stats.dark} of its ${stats.cells} open cells still dark after ${stats.placed} torch${stats.placed === 1 ? '' : 'es'} placed`), { name: 'StanceFailed' });
@@ -1421,10 +1450,13 @@ async function huntFromStand(bot, task, goal, save, actions, option, { item = 'b
   if (TACTICS.has(option.kind)) {
     const state = goal.mobHunt ||= {};
     const stats = {}, startedAt = new Date().toISOString();
-    const result = () => { state.standResults = [...(state.standResults || []), { at: startedAt, kind: option.kind, ...stats, gained: countOf(bot, item) - before, health: bot.health }].slice(-12); save?.(); };
+    const result = (cut = false) => {
+      if (HOLD_TACTICS.has(option.kind)) return noteTacticHold(bot, goal, save, option, cut ? { ...stats, ended: 'cut' } : stats, { startedAt, before });
+      state.standResults = [...(state.standResults || []), { at: startedAt, kind: option.kind, ...stats, gained: countOf(bot, item) - before, health: bot.health }].slice(-12); save?.();
+    };
     return bunker.keepingStep(goal, save, async () => {
       try { await runTactic(bot, task, goal, save, option, { navigate: actions.navigate, item, want, stats }); }
-      catch (err) { result(); throw err; }
+      catch (err) { result(true); throw err; }
       if (option.kind === 'box') await bunker.collectRods(bot, task, goal, save, { mouth: option.site.cell.offset(0.5, 0, 0.5), inside: option.site.cell }, actions, item).catch(err => { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; });
       result();
       return countOf(bot, item) - before;
