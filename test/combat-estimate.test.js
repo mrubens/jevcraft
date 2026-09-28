@@ -170,6 +170,26 @@ test('a fight held facing a mob that does not come is given up after eight secon
   assert.equal(immediateThreat(bot), undefined, 'left be while it lands nothing');
 });
 
+test('a hold\'s eight seconds are its own: the record of one at the same mob half a minute before starts over (mid-208-k-nether-1, note 552)', async () => {
+  // The old record read as eight seconds without the hoglin coming nearer the moment a new fight began, and it was left be while it walked up.
+  const { Survival } = require('../src/survival');
+  const { immediateThreat } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const creeper = { id: 8, name: 'creeper', position: new Vec3(6, 67, 0), height: 1.7, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 8: creeper }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
+    world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    pathfinder: { movements: {} }, inventory: { items: () => [{ name: 'iron_sword', type: 1 }], slots: [] }, on() {}, health: 20, lookAt: async () => {} };
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const danger = [{ entity: creeper, distance: 6.3, visible: true }];
+  const fight = survival.stanceOptions({ check() {} }, {}, () => {}, danger, false).fight;
+  survival.state.standing = { id: 8, since: Date.now() - 30000, distance: 6.3, lastAt: Date.now() - 29000 };
+  assert.equal(await fight.run(), true, 'a new hold, not the old one\'s thirty seconds');
+  assert(Date.now() - survival.state.standing.since < 1000, 'the hold is counted from now');
+  assert.equal(immediateThreat(bot)?.entity, creeper, 'still a threat, not left be');
+  survival.state.standing.since = Date.now() - 9000;
+  assert.equal(await fight.run(), false, 'held on eight seconds of its own without it nearer: the stance failed');
+});
+
 test('a golden apple carried is offered in a fight, and not at full health', () => {
   // Trial 81: died to a spider with a golden apple from the dungeon chest in its pack.
   const { Survival } = require('../src/survival');

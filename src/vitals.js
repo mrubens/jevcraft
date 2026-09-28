@@ -572,8 +572,39 @@ function closeHostile(bot) {
   const creeperReach = LIGHTS_AT + APPROACH * 2 * EAT_MEAL_SECONDS;
   const SHOOTERS = { skeleton: 15, stray: 15, bogged: 15, pillager: 15, ...RANGE };
   const reach = name => name === 'creeper' ? Math.max(CLOSE, creeperReach) : Math.max(CLOSE, SHOOTERS[name] || 0);
+  // Hostile as the danger list has it (danger.js hostileEntities), not by
+  // the registry's type, which calls a hoglin an animal and a ghast, a
+  // magma cube, a slime and a phantom a mob: mid-208-k-nether-1 ate with a
+  // hoglin at 1.2 blocks and again at 2, bitten 9.4 to 4.6 and 4 to none
+  // while the meal stood still (note 552). A provoked neutral counts; a
+  // piglin left be by the gold worn does not.
+  const danger = require('./danger');
+  const listed = new Set(danger.hostileEntities(bot, 64));
+  const hostile = e => listed.has(e) || (!['piglin', 'zombified_piglin'].includes(e.name) && (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile'));
+  // And a biter coming at the bot is close when its own walk has it at the
+  // bot before the meal is done (danger.js coming, the jar's speeds): a
+  // hoglin comes about 3.9 blocks a second, past the five counted here in
+  // the meal's second and a half.
+  const soon = new Set(danger.coming(bot).filter(t => t.atBotIn <= EAT_MEAL_SECONDS).map(t => t.entity));
   return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
-    (bot.registry?.entitiesByName?.[e.name]?.type === 'hostile' || e.type === 'hostile') && e.position.distanceTo(here) <= reach(e.name) && reaches(e));
+    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && reaches(e));
+}
+
+// The biters coming at the bot while it would eat, for the meal's claim:
+// each with its speed, how soon it is at the bot against the meal's
+// seconds, and its hit through what is worn. mid-208-k-nether-1's claim
+// read "Eat beef now, about 1.6 seconds" with a hoglin eleven blocks off
+// walking up at 3.9 blocks a second, at the bot a second after the meal,
+// and turn_priority gave vitals the turn (note 552).
+function comingWhileEating(bot) {
+  if (!bot?.entity?.position) return [];
+  const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
+  const worn = armourOf([5, 6, 7, 8].map(s => bot.inventory?.slots?.[s]?.name).filter(Boolean));
+  return require('./danger').coming(bot).slice(0, 3).map(t => {
+    const m = MOBS[t.entity.name] || {};
+    return { name: t.entity.name, distance: Math.round(t.distance * 10) / 10, blocksASecond: Math.round(t.speed * 10) / 10, atBotInSeconds: Math.round(t.atBotIn * 10) / 10,
+      ...(m.hit ? { hitsFor: Math.round(afterArmour(m.hit, worn) * 10) / 10 } : {}), ...(m.note ? { note: m.note } : {}) };
+  });
 }
 // A second and six tenths eating (survival.js EAT_SECONDS).
 const EAT_MEAL_SECONDS = 1.6;
@@ -735,7 +766,9 @@ function claim(bot) {
   const food = chooseFood(bot) || lastResortFood(bot);
   if (!food) return null;
   const effect = sideEffectSays(food.name);
-  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 ? 'pressing' : 'routine', facts: { ...facts, item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...(effect ? { effect } : {}) }, cost: { seconds: EAT_MEAL_SECONDS } };
+  const coming = comingWhileEating(bot);
+  return { layer: 'vitals', action: 'eat', urgency: bot.food <= 6 ? 'pressing' : 'routine', facts: { ...facts, item: food.name, foodPoints: bot.registry.foodsByName?.[food.name]?.foodPoints, ...(effect ? { effect } : {}),
+    ...(coming.length ? { comingAtTheBot: coming } : {}) }, cost: { seconds: EAT_MEAL_SECONDS } };
 }
 
 // The actions this layer reports, wherever it is run from (survival.js

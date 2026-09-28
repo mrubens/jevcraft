@@ -194,3 +194,15 @@ test('a retreat\'s chasers still coming at the bot once its run is over stay the
   bot.world.raycast = from => ({ position: from.floored(), intersect: from });
   assert.equal(immediateThreat(bot), undefined, 'out of sight behind a wall: not counted as coming');
 });
+
+test('a walker left be as out of a charge\'s reach is a threat again once it walks at the bot (mid-208-k-nether-1, note 552)', () => {
+  // Marked out of reach at twelve blocks, the hoglin came on at four blocks a second, nothing claimed it, and it bit from two.
+  const { immediateThreat } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const hoglin = { id: 210, name: 'hoglin', type: 'animal', position: new Vec3(6.5, 64, 0.5), height: 1.4, width: 1.4, isValid: true };
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 },
+    entities: { 210: hoglin }, _unreachable: { ids: [210], until: Date.now() + 20000 } };
+  assert.equal(immediateThreat(bot), undefined, 'standing off, it is left be while it lands nothing');
+  bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 10.5, y: 64, z: 0.5 }]]]);
+  assert.equal(immediateThreat(bot)?.entity.id, 210, 'four blocks nearer in a second: coming, so a threat');
+});

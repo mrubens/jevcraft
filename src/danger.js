@@ -319,7 +319,11 @@ function immediateThreat(bot) {
     // skeleton, marked unreachable after a charge, shot it every three to
     // six seconds from eight blocks, each gap longer than the four seconds
     // "hurt" lasts, and nothing answered it, 9.7 to none (note 457).
-    (unreachable.includes(t.entity.id) && !shooter(t.entity) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
+    // Nor one walking at the bot: its own walk is the way a charge did not
+    // find. mid-208-k-nether-1's hoglin, left be as out of reach at twelve
+    // blocks, came on at four blocks a second while nothing claimed it and
+    // bit from two, where a hoglin's wide body already reaches (note 552).
+    (unreachable.includes(t.entity.id) && !shooter(t.entity) && !(t.approach >= COMING) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
   // A creeper within four blocks is one whether it is in sight or not: it
   // comes round the corner already at its fuse's distance. mid-79-b stood
   // recovering for five seconds with one out of sight beside it, and the

@@ -631,3 +631,31 @@ test('rotten flesh is eaten with no rule of ours on health, and offered with its
   assert.equal(meal?.name, 'rotten_flesh', 'with nothing safe, the last resort is a stance');
   assert.match(eatSays(bot, meal), /hunger 15 to 19, then health comes back.*It is the last resort: each eaten has a 80% chance of Hunger/);
 });
+
+test('a hoglin is hostile to the meal: none at arm\'s length, and one walking up is said on the claim with its speed and hit (mid-208-k-nether-1, note 552)', async () => {
+  // The registry calls a hoglin an animal: the bot ate with one at 1.2 blocks and at 2, bitten 9.4 to 4.6 and 4 to none.
+  const { maintainVitals, claim } = require('../src/vitals');
+  const { claimSays } = require('../src/arbiter');
+  const registry = require('minecraft-data')('26.1');
+  let eaten = 0;
+  const hoglin = { id: 210, name: 'hoglin', type: 'animal', position: new Vec3(2.2, 64, 0.5), height: 1.4, width: 1.4, isValid: true };
+  const slots = []; slots[5] = { name: 'iron_helmet' }; slots[6] = { name: 'iron_chestplate' }; slots[7] = { name: 'iron_leggings' }; slots[8] = { name: 'golden_boots' };
+  const bot = { registry, health: 4, food: 16, oxygenLevel: 20, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 210: hoglin }, game: { gameMode: 'survival', dimension: 'the_nether' },
+    time: { timeOfDay: 6000 }, world: { raycast: () => null }, inventory: { items: () => [{ name: 'beef', count: 1 }], slots }, heldItem: { name: 'beef' },
+    equip: async () => {}, consume: async () => { eaten++; bot.food += 3; }, deactivateItem() {}, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) };
+  assert.equal(claim(bot), null, 'no meal claimed with a hoglin at arm\'s length');
+  assert.equal(await maintainVitals(bot, new Task('hoglin at arm')), false);
+  assert.equal(eaten, 0);
+  // Eleven blocks off and walking up at about 3.9 blocks a second: at the bot a second after the meal.
+  hoglin.position = new Vec3(11.6, 64, 0.5);
+  bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 15.5, y: 64, z: 0.5 }]]]);
+  const c = claim(bot);
+  assert.equal(c?.action, 'eat');
+  assert.equal(c.facts.comingAtTheBot[0].name, 'hoglin');
+  assert.equal(c.facts.comingAtTheBot[0].blocksASecond, 3.9);
+  assert.match(claimSays(c), /standing still\..*The hoglin 11\.1 blocks off is coming at about 3\.9 blocks a second, at the bot in about 2\.5 seconds; each hit about 3\.\d through the armour worn \(3 to 8 a hit, and throws the bot about three blocks\)\./);
+  // Six blocks off and coming: at the bot before the meal is done, so no meal.
+  hoglin.position = new Vec3(6.5, 64, 0.5);
+  bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 10.5, y: 64, z: 0.5 }]]]);
+  assert.equal(claim(bot), null, 'one that is at the bot within the meal\'s seconds is close');
+});

@@ -1892,10 +1892,19 @@ class Survival {
         // stayed six blocks off for three minutes, beside a drop, and nothing
         // else was done. Eight seconds without it a block nearer and it is
         // left be like one a charge could not reach.
-        const held = this.state.standing;
-        if (!held || held.id !== nearest.entity.id) this.state.standing = { id: nearest.entity.id, since: Date.now(), distance: nearest.distance };
-        else if (nearest.distance < held.distance - 1) Object.assign(held, { since: Date.now(), distance: nearest.distance });
-        else if (Date.now() - held.since > 8000) {
+        // Eight seconds of this hold, not of any before it: the record of a
+        // hold at the same hoglin half a minute earlier, never cleared, read
+        // as eight seconds without it coming nearer the moment
+        // mid-208-k-nether-1's fight from footing began, the hoglin twelve
+        // blocks off and walking up; it was left be as out of reach, and
+        // bit the bot to death while it ate (note 552). A hold is one run
+        // after another a quarter second apart; two seconds between is a
+        // new one.
+        const held = this.state.standing, now = Date.now();
+        if (!held || held.id !== nearest.entity.id || now - (held.lastAt ?? held.since) > 2000) this.state.standing = { id: nearest.entity.id, since: now, distance: nearest.distance, lastAt: now };
+        else if (nearest.distance < held.distance - 1) Object.assign(held, { since: now, distance: nearest.distance, lastAt: now });
+        else if (now - held.since <= 8000) held.lastAt = now;
+        else {
           delete this.state.standing;
           bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
           return false;
