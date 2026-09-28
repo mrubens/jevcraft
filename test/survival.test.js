@@ -1698,6 +1698,116 @@ test('a zombie at arm\'s length comes before the bed: it is fought, not slept be
   assert.deepEqual(swung, ['zombie'], `struck, not slept beside (${goal.survivalAction?.action})`);
 });
 
+// mid-241-a (2026-09-27 23:26:53): 4.8 health, full iron, an iron sword, a
+// creeper 4.4 blocks off coming on and a stone wall at the bot's back. The
+// fight said "about 2.5 seconds and 0 damage"; Jev took it (0.41), the fight
+// closed on the creeper, backed into the wall unstruck, and it went off
+// three blocks off: 4.9 to none (note 529).
+function creeperBot({ weapon = 'iron_sword', health = 4.8, wall = true, wallAt = 0, hole = false, armour = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], creeper = null, attacked = [] } = {}) {
+  const registry = require('minecraft-data')('26.1');
+  const slots = { 45: { name: 'shield' } };
+  armour.forEach((name, i) => { slots[5 + i] = { name }; });
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health, food: 20, oxygenLevel: 20, entities: creeper ? { [creeper.id]: creeper } : {}, time: { timeOfDay: 13000 },
+    entity: { id: 1, position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, registry, heldItem: null,
+    inventory: { items: () => [{ name: weapon, count: 1 }, { name: 'cobblestone', count: 64 }], slots },
+    // The wall: stone below x = wallAt, the bot's back to it; or a hole,
+    // stone in every cell round the bot's.
+    blockAt: p => { const f = p.floored(); const solid = f.y < 64 || (wall && f.x < wallAt) || (hole && f.y < 66 && (f.x !== 0 || f.z !== 0)); return { position: f, name: solid ? 'stone' : 'air', boundingBox: solid ? 'block' : 'empty', diggable: true }; },
+    world: { raycast: () => null }, findBlocks: () => [],
+    equip: async item => { bot.heldItem = item; }, unequip: async () => {}, lookAt: async () => {}, look: async () => {}, attack: e => attacked.push(e.name),
+    pathfinder: { setGoal() {}, movements: {} }, clearControlStates() {}, setControlState() {}, activateItem() {}, deactivateItem() {}, chat() {} });
+  return bot;
+}
+
+test('a creeper coming on at a wall-backed bot is priced by where it goes off: the fight is not "0 damage"', () => {
+  const bot = creeperBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const creeper = { entity: { id: 9, name: 'creeper', position: new Vec3(4.95, 64, 0.5), height: 1.7 }, distance: 4.45, visible: true };
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
+  assert(options.fight.expects.damage > 4.8, `the fight's blast is counted: ${JSON.stringify(options.fight.expects)}`);
+  assert.match(options.fight.description, /about [\d.]+ seconds and ([5-9]|1\d)(\.\d)? damage to kill them all, from 4\.8 health \(more than the bot has\)/);
+  assert.match(options.fight.description, /With the iron sword, the creeper 4 blocks off takes 4 swings, the first about 0\.25 seconds after it lights and one each 0\.7 seconds after: about 2\.35 seconds, longer than the fuse, so it goes off first, about 3 blocks off \(no room to back out\): about 12 after the armour worn, more than the bot has/);
+  assert.doesNotMatch(options.fight.description, /Not counted there/);
+  // The dance meets it the same way and says it the same way.
+  assert.match(options.creeper_dance.description, /it goes off first, about 3 blocks off/);
+  assert.doesNotMatch(options.creeper_dance.description, /puts its fuse out/);
+  assert.match(options.creeper_dance.description, /Gone off where the dance backs to here, a blast is about 11\.5 after the armour worn: 1 of them ends it/);
+  // A block of room behind: four blocks off, still more than it has.
+  const oneBlock = new Survival(creeperBot({ wallAt: -1 }), { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
+    .stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
+  assert.match(oneBlock.fight.description, /goes off first, about 4 blocks off \(1 block of room behind the bot\): about 6 after the armour worn, more than the bot has/);
+  // With room behind, the bot backs out to where the blast does nothing.
+  const open = new Survival(creeperBot({ wall: false }), { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
+    .stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
+  assert.equal(open.fight.expects.damage, 0);
+  assert.match(open.fight.description, /goes off first, about 6 blocks off, where the blast does nothing/);
+});
+
+// mid-239-c (2026-09-27 23:51:32): in a hole with no cell open round it,
+// a helmet and a chestplate, 20 health, a zombie at 3.5 and a creeper come
+// to 3.1, the fight told "0 damage" and asked again and again while it
+// came; it went off there, 20 to 5.1 ("15 at 3 blocks" said beside).
+test('a creeper already lit is priced by the fuse it has left, where the bot can get to in it', () => {
+  const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
+  const metadata = []; metadata[keys.indexOf('swell_dir')] = 1; metadata[keys.indexOf('health')] = 20;
+  const lit = { id: 9, name: 'creeper', position: new Vec3(3.6, 64, 0.5), height: 1.7, metadata };
+  const bot = creeperBot({ health: 20, wall: false, hole: true, armour: ['iron_helmet', 'iron_chestplate'], creeper: lit });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  bot._creeperFuses.set(9, Date.now() - 1000);
+  const zombie = { entity: { id: 4, name: 'zombie', position: new Vec3(0.5, 64, 4), height: 1.95 }, distance: 3.5, visible: true };
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: lit, distance: 3.1, visible: true }, zombie], false);
+  assert.match(options.fight.description, /It is lit now, about 0\.5 seconds of its fuse left\./);
+  assert.match(options.fight.description, /longer than the fuse left, so it goes off first, about 3\.1 blocks off \(no room to back out\): about 15 after the armour worn/);
+  assert(options.fight.expects.damage >= 14, JSON.stringify(options.fight.expects));
+});
+
+// mid-230-v (2026-09-27 23:50:14): the dance closed in on a creeper lit 4.9
+// blocks off, whose fuse burns on within seven, and it went off: 1.8 to none.
+test('the dance does not close in on a creeper that is lit, however far off within seven', async () => {
+  const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
+  const metadata = []; metadata[keys.indexOf('swell_dir')] = 1; metadata[keys.indexOf('health')] = 20;
+  const creeper = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(5.4, 64, 0.5), height: 1.7, width: 0.6, isValid: true, metadata };
+  const bot = creeperBot({ weapon: 'diamond_sword', health: 1.8, wall: false, creeper });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const actions = [];
+  const report = survival.report.bind(survival);
+  survival.report = (goal, save, a) => { actions.push(a.action); return report(goal, save, a); };
+  const pressed = [];
+  bot.setControlState = (k, v) => { if (v) pressed.push(k); };
+  assert.equal(await survival.creeperDance(new Task('x'), {}, () => {}, [{ entity: creeper, distance: 4.9, visible: true }], false, { chosen: true }), true);
+  assert(!actions.includes('creeper_close_in'), actions.join(','));
+  assert(pressed.includes('back') && !pressed.includes('forward'), `backed out to where the blast does nothing: ${pressed.join(',')}`);
+});
+
+test('the dance strikes a creeper at reach before it backs off, and holds at reach while the swings left beat the fuse', async () => {
+  const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
+  const creeperAt = (health, lit) => { const metadata = []; metadata[keys.indexOf('health')] = health; metadata[keys.indexOf('swell_dir')] = lit ? 1 : -1; return { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(2.9, 64, 0.5), height: 1.7, width: 0.6, isValid: true, metadata }; };
+  const run = async ({ weapon, health, lit }) => {
+    const attacked = [], creeper = creeperAt(health, lit);
+    const bot = creeperBot({ weapon, health: 20, wall: false, creeper, attacked });
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    // Seen to light just now (the metadata listener's record).
+    if (lit) bot._creeperFuses.set(creeper.id, Date.now());
+    const actions = [];
+    const report = survival.report.bind(survival);
+    survival.report = (goal, save, a) => { actions.push(a.action); return report(goal, save, a); };
+    await survival.creeperDance(new Task('x'), {}, () => {}, [{ entity: creeper, distance: 2.4, visible: true }], false, { chosen: true });
+    return { attacked, actions };
+  };
+  // Not lit yet: struck, then backed from (it backed off unstruck before).
+  const first = await run({ weapon: 'iron_sword', health: 20, lit: false });
+  assert.deepEqual(first.attacked, ['creeper']);
+  assert.equal(first.actions.at(-1), 'creeper_back_off');
+  // Lit, 14 health left and a diamond sword: one swing after this one, 0.7
+  // seconds, inside the fuse: held.
+  const held = await run({ weapon: 'diamond_sword', health: 14, lit: true });
+  assert.deepEqual(held.attacked, ['creeper']);
+  assert.equal(held.actions.at(-1), 'creeper_hold');
+  // Lit, full health and an iron sword: three swings more do not fit, so out.
+  const out = await run({ weapon: 'iron_sword', health: 20, lit: true });
+  assert.equal(out.actions.at(-1), 'creeper_back_off');
+});
+
 test('with a creeper close or a mob at arm\'s length, building is still offered, with what it costs; the creeper dance is offered', () => {
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival' }, health: 3.2, food: 10, entities: {},
     entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
@@ -1712,9 +1822,13 @@ test('with a creeper close or a mob at arm\'s length, building is still offered,
   assert.match(withCreeper.seal.description, /creeper is 4 blocks off/);
   assert.match(withCreeper.pillar.description, /goes off/);
   // Trial 118: two creepers and a spider, no armour, twelve health, told only the fight's "6.7 damage".
-  assert.match(withCreeper.fight.description, /Not counted there: the creeper, whose blast takes 43 at point blank, 24 at 2 blocks, 16 at 3 blocks, 10 at 4 blocks health after the armour worn, two blocks off more than the bot has/);
-  assert.match(withCreeper.creeper_dance.description, /A blast takes 43 at point blank, 24 at 2 blocks, 16 at 3 blocks, 10 at 4 blocks health after the armour on/);
-  assert.match(withCreeper.creeper_dance.description, /1 of them ends it/);
+  // A diamond sword's three swings do not fit in the fuse; with room behind
+  // on open ground it goes off where the blast does nothing (note 529).
+  assert.match(withCreeper.fight.description, /With the diamond sword, the creeper 4 blocks off takes 3 swings.*about 1\.65 seconds, longer than the fuse, so it goes off first, about 6 blocks off, where the blast does nothing/);
+  assert.match(withCreeper.fight.description, /A blast by distance after the armour worn: 43 at point blank, 24 at 2 blocks, 16 at 3 blocks, 10 at 4 blocks/);
+  assert.match(withCreeper.creeper_dance.description, /A blast by distance after the armour worn: 43 at point blank, 24 at 2 blocks, 16 at 3 blocks, 10 at 4 blocks/);
+  assert.doesNotMatch(withCreeper.creeper_dance.description, /puts its fuse out/, 'a hit does not put the fuse out');
+  assert.doesNotMatch(withCreeper.creeper_dance.description, /of them ends? it/, 'gone off six blocks off, no blast to count');
   // mid-215-b: three creepers five to seven blocks off, told of one blast.
   const three = survival.stanceOptions(new Task('x'), {}, () => {}, [t('creeper', 5), t('creeper', 6), t('creeper', 7)], false);
   assert.match(three.creeper_dance.description, /3 creepers are here \(5, 6, 7 blocks off\): the dance hits one at a time/);
@@ -2606,7 +2720,8 @@ test('in a crowd every stance says what the mobs cost it over the same fifteen s
   assert.match(options.fight.description, /about [\d.]+ of it in the first fifteen seconds/);
   assert.match(options.fight.description, /Open ground all round: every biter can be at arm's length at once/);
   // The charge quotes the fight's estimate: what it leaves out is said there too.
-  assert.match(options.charge_shooter.description, /Not counted there: the creeper, whose blast takes 38 at point blank, 21 at 2 blocks/);
+  assert.match(options.charge_shooter.description, /A creeper's fuse lights once the bot is within 3 blocks.*With the diamond sword, the creeper 6 blocks off takes 3 swings.*longer than the fuse/);
+  assert.match(options.charge_shooter.description, /A blast by distance after the armour worn: 38 at point blank, 21 at 2 blocks/);
   // Down into the stone underfoot: three blocks (walled all round, the roof ring too), a block over the head.
   assert.match(options.dig_down.description, /Dig straight down 3 blocks where the bot stands, put a block over its head and wait inside for the mobs to lose interest/);
   assert.match(options.dig_down.description, priced);

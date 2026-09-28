@@ -197,7 +197,10 @@ async function defendNearby(bot, task, goal, save) {
   const weapon = defenseWeapon(bot), kind = weapon?.name.split('_').at(-1);
   // Bare hands: a mob struck is unhurt for half a second after, so a punch
   // sooner is wasted (the ledge replay landed every other one at 300 ms).
-  const cooldown = ({ sword: 700, axe: 1300, pickaxe: 950, shovel: 1200, trident: 1000 })[kind] || 500;
+  // The fight's estimate prices a creeper's race with its fuse by the same
+  // times (combat-estimate.js SWING_MS).
+  const { SWING_MS } = require('./combat-estimate');
+  const cooldown = SWING_MS[kind] || SWING_MS.fist;
   const remaining = cooldown - (Date.now() - (bot._defenseAttackAt || 0));
   if (remaining > 0) {
     // Keep trying to retreat from a creeper between knockback attempts.

@@ -28,10 +28,63 @@ test('the arena cave trio comes out near what it measured (about five, with a sh
   assert(e.fightHere.damageTaken > 4 && e.fightHere.damageTaken < 10, JSON.stringify(e.fightHere));
 });
 
-test('a shooter out of sight costs nothing while it is fought for; a creeper\'s blast is said, not summed', () => {
+test('a shooter out of sight costs nothing while it is fought for; a creeper backed from on open ground goes off where its blast does nothing', () => {
   const e = fightEstimate({ threats: [{ name: 'skeleton', distance: 10, shoots: true, visible: false }, { name: 'creeper', distance: 5, visible: true }], weapon: 'iron_sword' });
   assert.equal(e.fightHere.damageTaken, 0);
-  assert.match(e.fightHere.creeper, /goes off for about 24 after armour two blocks off \(43 at point blank, 24 at 2 blocks/);
+  assert.match(e.fightHere.creeper, /^counted: .*goes off first, about 6 blocks off, where the blast does nothing \(if there is room behind the bot/);
+  assert.match(e.fightHere.creeper, /A blast by distance after the armour worn: 43 at point blank, 24 at 2 blocks/);
+});
+
+const IRON_ARMOUR = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+// mid-241-a (2026-09-27 23:26:53): 4.8 health, full iron, an iron sword, a
+// creeper 4.4 blocks off coming on and a wall at the bot's back. The fight
+// was told "about 2.5 seconds and 0 damage", closed on it, and it went off
+// three blocks off: 4.9 to none (note 529).
+test('a creeper fought is priced by its fuse: the swings that do not fit in it leave its blast where the bot has backed to', () => {
+  const { creeperFought, afterArmour, creeperBlast } = require('../src/combat-estimate');
+  const iron = armourOf(IRON_ARMOUR);
+  const walled = fightEstimate({ threats: [{ name: 'creeper', distance: 4.4, visible: true, backRoom: 0 }], armour: IRON_ARMOUR, weapon: 'iron_sword', health: 4.8, shield: true });
+  assert.equal(walled.mobs[0].fought.goesOffAt, 3);
+  assert.equal(walled.fightHere.damageTaken, Math.round(afterArmour(creeperBlast(3), iron) * 10) / 10);
+  assert(walled.fightHere.healthAfter < 0, JSON.stringify(walled.fightHere));
+  assert.equal(walled.fightHere.inFifteenSeconds, walled.fightHere.damageTaken);
+  assert.match(walled.fightHere.creeper, /With the iron sword, the creeper 4 blocks off takes 4 swings, the first about 0\.25 seconds after it lights and one each 0\.7 seconds after: about 2\.35 seconds, longer than the fuse, so it goes off first, about 3 blocks off \(no room to back out\): about 12 after the armour worn, more than the bot has/);
+  // A block of room: four blocks off, still more than 4.8.
+  const oneBlock = fightEstimate({ threats: [{ name: 'creeper', distance: 4.4, visible: true, backRoom: 1 }], armour: IRON_ARMOUR, weapon: 'iron_sword', health: 4.8 });
+  assert(oneBlock.fightHere.damageTaken > 4.8 && oneBlock.fightHere.damageTaken < walled.fightHere.damageTaken, JSON.stringify(oneBlock.fightHere));
+  // mid-230-v (23:50:06 and 23:50:13): a diamond sword's three swings take
+  // 1.4 seconds after the first, and the first comes a moment after it
+  // lights: it went off twice, 4.8 to 1.8 and 1.8 to none.
+  const diamond = creeperFought({ weapon: 'diamond_sword', worn: iron, room: 0 });
+  assert.equal(diamond.diesFirst, false);
+  assert(fightEstimate({ threats: [{ name: 'creeper', distance: 4.6, visible: true, backRoom: 0 }], armour: IRON_ARMOUR, weapon: 'diamond_sword', health: 4.8 }).fightHere.healthAfter < 0);
+  // One already struck to 14 dies in two, inside the fuse.
+  const struck = fightEstimate({ threats: [{ name: 'creeper', distance: 4.4, visible: true, backRoom: 0, health: 14 }], armour: IRON_ARMOUR, weapon: 'diamond_sword', health: 4.8 });
+  assert.equal(struck.mobs[0].fought.diesBeforeItGoesOff, true);
+  assert.equal(struck.fightHere.damageTaken, 0);
+  assert.match(struck.fightHere.creeper, /\(14 health left\) takes 2 swings.*about 0\.95 seconds, inside the fuse, so held at reach it dies before it goes off/);
+  // An axe swings too slowly for that, and bare hands never.
+  assert.equal(creeperFought({ weapon: 'diamond_axe', worn: iron, room: 0 }).diesFirst, false);
+  assert.equal(creeperFought({ weapon: null, worn: iron, room: 0 }).swings, 20);
+  // A zombie beside it still bites while the creeper is met.
+  const both = fightEstimate({ threats: [{ name: 'creeper', distance: 4.4, visible: true, backRoom: 0 }, { name: 'zombie', distance: 5, visible: true }], armour: IRON_ARMOUR, weapon: 'iron_sword', health: 20 });
+  assert(both.fightHere.damageTaken > walled.fightHere.damageTaken, JSON.stringify(both.fightHere));
+});
+
+test('every stance that fights a creeper prices it as the fight does; a stance that builds meets it two blocks off', () => {
+  const { stanceCost } = require('../src/combat-estimate');
+  const e = fightEstimate({ threats: [{ name: 'creeper', distance: 4.4, visible: true, backRoom: 0 }], armour: IRON_ARMOUR, weapon: 'iron_sword', health: 4.8 });
+  // At the doorway (the bunker, one at a time, the creeper among the fought): the fight's blast.
+  const door = stanceCost({ mobs: e.mobs, setup: 0, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.name === 'creeper' });
+  assert.equal(door.damage, e.fightHere.damageTaken);
+  assert.equal(door.blasts[0].at, 3);
+  // Killed inside its fuse there, nothing.
+  const d = fightEstimate({ threats: [{ name: 'creeper', distance: 4.4, visible: true, backRoom: 0, health: 14 }], armour: IRON_ARMOUR, weapon: 'diamond_sword', health: 4.8 });
+  assert.equal(stanceCost({ mobs: d.mobs, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.name === 'creeper' }).damage, 0);
+  // Digging, the hands busy: it goes off beside the bot, two blocks off.
+  const dig = stanceCost({ mobs: e.mobs, setup: 7, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.name === 'creeper' });
+  assert.equal(dig.blasts[0].at, 2);
+  assert.equal(dig.damage, e.mobs[0].hitsBot);
 });
 
 test('a skeleton is not a quick kill: it backs off after each hit and shoots while it is closed on', () => {

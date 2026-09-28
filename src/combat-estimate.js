@@ -49,7 +49,7 @@ const MOBS = {
   spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, note: 'poisons' },
   skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
   pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, note: 'harming potions go through armour, and poison and slowness keep the bot from getting away' },
-  creeper: { hit: 24, health: 20, note: 'the hit is its blast, once, two blocks off, where one goes off beside a player backing from it (creeperBlast)' },
+  creeper: { hit: 24, health: 20, note: 'the hit is its blast two blocks off, once; fought, it goes off where the bot stands when its fuse ends (creeperFought)' },
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
   hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
@@ -109,6 +109,60 @@ function creeperBlast(distance) {
 // Said the same way wherever a creeper is: by distance, after what is worn.
 function creeperBlastSays(worn) {
   return [0, 2, 3, 4].map(d => `${Math.round(afterArmour(creeperBlast(d), worn))} ${d ? `at ${d} blocks` : 'at point blank'}`).join(', ');
+}
+
+// The time between the bot's own swings, by the tool's kind (combat.js
+// waits this long before striking again; a fist half a second, the time a
+// mob struck cannot be hurt again).
+const SWING_MS = { sword: 700, axe: 1300, pickaxe: 950, shovel: 1200, trident: 1000, fist: 500 };
+const swingMsOf = weapon => SWING_MS[weapon ? weapon.split('_').at(-1) : 'fist'] || SWING_MS.fist;
+// A creeper fought, by the game (26.1.2 SwellGoal and Creeper.tick): its
+// fuse lights once a player it targets is within three blocks, about where
+// the sword reaches; while lit it stands still, and the fuse burns on while
+// that player is within seven blocks and in its sight, whatever strikes it
+// (a hit and its knockback do not touch the fuse); beyond seven or out of
+// sight it burns back down a tick at a time. Thirty ticks after lighting
+// it goes off, and a blast six blocks off or more does nothing. So a fight
+// kills it first only when its swings fit in the fuse, the first landing a
+// moment after it lights (it lights about where the sword reaches, and the
+// look and the step in come first); otherwise it goes off where the bot has
+// backed to (the dance backs out to where the blast does nothing, room
+// behind allowing). mid-241-a was told "0 damage" for a creeper 4.4 blocks
+// off with an iron sword, walked at it, and it went off three blocks off
+// with the wall at the bot's back: 4.9 to none; mid-230-v was told the same
+// with a diamond sword, whose three swings at 0.7 seconds take 1.4 of the
+// fuse's 1.5 with no time to lose, and took two blasts (note 529).
+// A creeper already struck (its health, where the caller read it) needs
+// fewer. One already lit (litFor, seconds since the bot saw it light) has
+// that much less fuse, for the swings and for the backing out, which goes
+// at a walk (the back key does not sprint) from where it stands now:
+// mid-239-c's creeper came to 3.1 blocks while the fight was asked again
+// and again, and went off there, 20 to 5.1 (note 529).
+const BLAST_CLEAR = 6, FUSE_KEPT = 7, FIRST_SWING = 0.25, BACK_SPEED = 4.3;
+function creeperFought({ weapon = null, worn = { points: 0, toughness: 0 }, room = null, health = MOBS.creeper.health, distance = null, litFor = null } = {}) {
+  const [damage] = WEAPONS[weapon] || FIST;
+  const swingMs = swingMsOf(WEAPONS[weapon] ? weapon : null);
+  const swings = Math.max(1, Math.ceil(health / damage));
+  const killSeconds = FIRST_SWING + (swings - 1) * swingMs / 1000;
+  const lit = Number.isFinite(litFor), fuseLeft = lit ? Math.max(0, FUSE - litFor) : FUSE;
+  const base = { swings, killSeconds: round(killSeconds, 2), swingSeconds: swingMs / 1000, health: round(health), room, ...(lit ? { fuseLeft: round(fuseLeft) } : {}) };
+  if (killSeconds < fuseLeft) return { ...base, diesFirst: true };
+  const from = Math.min(Number.isFinite(distance) ? distance : LIGHTS_AT, lit ? Infinity : LIGHTS_AT);
+  const backs = Math.min(Math.max(0, room ?? Infinity), BACK_SPEED * Math.max(0, fuseLeft - FIRST_SWING));
+  const at = Math.min(BLAST_CLEAR, from + backs);
+  return { ...base, diesFirst: false, worn, goesOffAt: round(at), hitsBot: round(afterArmour(creeperBlast(at), worn)) };
+}
+// The same fight said wherever it is priced.
+function creeperFoughtSays(c, { weapon = null, health = 20, distance = null } = {}) {
+  const w = weapon && WEAPONS[weapon] ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands';
+  const rule = `A creeper's fuse lights once the bot is within ${LIGHTS_AT} blocks, about where a sword reaches, and it goes off ${FUSE} seconds later unless the bot is more than ${FUSE_KEPT} blocks from it or out of its sight by then; a hit does not put the fuse out, and a blast ${BLAST_CLEAR} blocks off or more does nothing.`;
+  const who = distance != null ? `the creeper ${Math.round(distance)} blocks off` : 'it';
+  const litSays = c.fuseLeft != null ? ` It is lit now, about ${c.fuseLeft} seconds of its fuse left.` : '';
+  const kill = `With ${w}, ${who}${c.health < MOBS.creeper.health ? ` (${c.health} health left)` : ''} takes ${c.swings} swing${c.swings === 1 ? '' : 's'}, the first about ${FIRST_SWING} seconds ${c.fuseLeft != null ? 'from now' : 'after it lights'}${c.swings > 1 ? ` and one each ${c.swingSeconds} seconds after` : ''}: about ${c.killSeconds} seconds`;
+  if (c.diesFirst) return ` ${rule}${litSays} ${kill}, inside the fuse, so held at reach it dies before it goes off.`;
+  const where = c.goesOffAt >= BLAST_CLEAR ? `about ${c.goesOffAt} blocks off, where the blast does nothing${c.room == null ? ' (if there is room behind the bot to back out that far; with a wall at its back, three blocks off, about ' + Math.round(afterArmour(creeperBlast(LIGHTS_AT), c.worn || { points: 0, toughness: 0 })) + ')' : ''}`
+    : `about ${c.goesOffAt} blocks off${c.room != null ? (c.room <= 0 ? ' (no room to back out)' : ` (${round(c.room)} block${c.room === 1 ? '' : 's'} of room behind the bot${c.fuseLeft != null ? ', backed at a walk in the fuse left' : ''})`) : ''}: about ${Math.round(c.hitsBot)} after the armour worn${c.hitsBot >= health ? ', more than the bot has' : ''}`;
+  return ` ${rule}${litSays} ${kill}, longer than the fuse${c.fuseLeft != null ? ' left' : ''}, so it goes off first, ${where}; counted in the fight's figures.`;
 }
 
 // How far a shooter shoots from: one further off walks in first. A witch
@@ -309,8 +363,12 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // A spear holder puts the bot back instead, a block a jab, and the bot
     // closes again: the same twice. mid-244-z was told 2.5 seconds and 7.2
     // damage, and was jabbed from 15.4 to 2.7 in six (note 497).
-    const seconds = shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
+    // A creeper is killed inside its fuse or goes off (creeperFought): the
+    // fight with it lasts the swings or the fuse.
+    const fought = t.name === 'creeper' && !t.split ? creeperFought({ weapon, worn, room: t.backRoom ?? null, distance: t.distance, litFor: t.litFor ?? null, ...(Number.isFinite(t.health) ? { health: t.health } : {}) }) : null;
+    const seconds = fought ? (fought.fuseLeft != null ? (fought.diesFirst ? fought.killSeconds : fought.fuseLeft) : (fought.diesFirst ? fought.killSeconds : FUSE) + Math.max(0, (t.distance || 0) - LIGHTS_AT) / WALK) : shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}),
+      ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
       hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.note ? { note: m.note } : {}) };
   });
@@ -330,16 +388,25 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // (2026-09-27).
   atOnce = Math.max(atOnce, order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length);
   const timeline = fightTimeline(order, { shield, atOnce });
-  const taken = within(timeline), seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
+  const seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
+  // Each creeper fought that is not killed inside its fuse goes off once,
+  // when its turn in the fight comes and the fuse has run.
+  const blasts = [];
+  order.reduce((t, m) => { if (m.fought?.blast > 0) blasts.push({ at: t + m.secondsToKill, damage: m.fought.blast }); return t + m.secondsToKill; }, 0);
+  const blastsWithin = s => blasts.filter(b => b.at <= s).reduce((n, b) => n + b.damage, 0);
+  const taken = within(timeline) + blastsWithin(Infinity);
   const creepers = order.filter(m => m.name === 'creeper');
+  const nearestCreeper = creepers[0];
+  const nearestThreat = nearestCreeper && threats.find(t => t.name === 'creeper' && !t.from && t.distance === nearestCreeper.distance);
+  const creeperSays = nearestCreeper && creeperFoughtSays(creeperFought({ weapon, worn, room: nearestThreat?.backRoom ?? null, distance: nearestCreeper.distance, litFor: nearestThreat?.litFor ?? null, ...(Number.isFinite(nearestThreat?.health) ? { health: nearestThreat.health } : {}) }), { weapon, health, distance: nearestCreeper.distance }).trim();
   return {
     armourPoints: worn.points, weapon: weapon || 'bare hands',
     mobs,
     fightHere: { seconds: round(seconds), damageTaken: round(taken), healthNow: round(health), healthAfter: round(health - taken),
       // The same stretch every stance is priced over (stanceCost below).
-      inFifteenSeconds: round(within(timeline, HOLD_SECONDS)),
+      inFifteenSeconds: round(within(timeline, HOLD_SECONDS) + blastsWithin(HOLD_SECONDS)),
       ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
-      ...(creepers.length ? { creeper: 'not counted: a creeper that reaches the bot goes off for about ' + round(afterArmour(MOBS.creeper.hit, worn)) + ' after armour two blocks off (' + creeperBlastSays(worn) + ')' } : {}),
+      ...(creepers.length ? { creeper: `counted: ${creeperSays} A blast by distance after the armour worn: ${creeperBlastSays(worn)}.` } : {}),
       ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}),
       ...(mobs.some(m => m.apart) ? { leftOut: `${mobs.filter(m => m.apart).length} with no way to the bot` } : {}) },
   };
@@ -377,8 +444,15 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // No way to the bot: it neither arrives nor goes off beside it.
     if (m.apart) continue;
     if (m.name === 'creeper') {
-      const at = arrives(m) + FUSE;
-      if (at <= setup || (at <= seconds && reaches(m))) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot }); damage += m.hitsBot; }
+      // One lit already goes off when its fuse left runs out.
+      const at = m.fought?.litNowFuseLeft ?? arrives(m) + FUSE;
+      // Fought where the stance fights (the fight's figures, creeperFought):
+      // killed inside its fuse, or gone off where the bot has backed to.
+      // While the bot builds or digs it goes off beside it, two blocks off.
+      const foughtHere = !!fight && !!m.fought && (!fight.only || fight.only(m)) && at > setup;
+      if (foughtHere) {
+        if (at <= seconds && m.fought.blast > 0) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.fought.blast, at: m.fought.goesOffAt }); damage += m.fought.blast; }
+      } else if (at <= setup || (at <= seconds && reaches(m))) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot, at: 2 }); damage += m.hitsBot; }
       if (reaches(m)) stillReach(m);
       continue;
     }
@@ -413,4 +487,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, creeperFought, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
