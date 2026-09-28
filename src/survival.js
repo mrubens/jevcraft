@@ -1737,11 +1737,13 @@ class Survival {
     // (mid-241-a, note 529).
     const blade = defenseWeapon(bot)?.name, [damage] = WEAPONS[blade] || [1];
     const healthOf = c => { const h = creeperHealth(bot, c); const hit = bot._creeperStruck?.id === c.id && Date.now() - bot._creeperStruck.at < 400 ? bot._creeperStruck.left : Infinity; return Math.min(h ?? 20, hit); };
-    if (!swung && canStrike(bot, e)) {
+    const strikeIt = async () => {
       const before = healthOf(e);
-      swung = await defendNearby(bot, task, goal, save);
-      if (swung && bot._struck?.id === e.id) bot._creeperStruck = { id: e.id, at: Date.now(), left: Math.max(0, before - damage) };
-    }
+      const hit = await defendNearby(bot, task, goal, save);
+      if (hit && bot._struck?.id === e.id) bot._creeperStruck = { id: e.id, at: Date.now(), left: Math.max(0, before - damage) };
+      return hit;
+    };
+    if (!swung && canStrike(bot, e)) swung = await strikeIt();
     const swelling = creepers.some(c => creeperSwelling(bot, c) && c.position.distanceTo(bot.entity.position) < 4);
     // Lit, and the swings still needed land before its fuse ends (from when
     // it was seen to light): held at reach, it dies first. A player finishes
@@ -1786,8 +1788,12 @@ class Survival {
     const lit = () => creepers.some(c => creeperSwelling(bot, c) && c.position.distanceTo(bot.entity.position) < FUSE_KEPT + 1);
     if (!lit()) {
       this.report(goal, save, { action: 'creeper_close_in', distance: Number(creeper.distance.toFixed(1)), health: bot.health });
-      await move(bot, task, { label: 'creeper_close_in', keys: ['forward'], sneak: false, why: 'closing to swing range on a creeper that is not lit', look, maxMs: 600, tick: 50,
+      await move(bot, task, { label: 'creeper_close_in', keys: ['forward'], sneak: false, why: 'closing to swing range on a creeper that is not lit', look: e.position.offset(0, 1, 0), maxMs: 600, tick: 50,
         until: () => canStrike(bot, e) || lit() });
+      // At reach and not lit: struck now, not on the next look. A close-in
+      // that hands back at reach with nothing swung gives the mob its turn
+      // first, as the fight's charge did (note 555).
+      if (!lit() && canStrike(bot, e)) await strikeIt();
       return true;
     }
     // Lit, out of reach and already backing room: nothing for the dance to
@@ -3888,7 +3894,13 @@ class Survival {
     if (movements) Object.assign(movements, { canDig: false, allow1by1towers: false, maxDropDown: Math.min(2, movements.maxDropDown ?? 2) });
     const from = bot.entity.position.clone();
     let failed = false;
-    try { await this.actions.navigate(bot, task, new goals.GoalNear(t.x, t.y, t.z, 1), { timeoutMs: 4000, stallMs: 2000 }); }
+    // After the mob where it is now, and done the moment the sword reaches
+    // it: the swing comes next. A route to the spot the mob started from,
+    // ended only there or on a stall, ran four seconds in both of note 550's
+    // wither skeleton deaths with the skeleton walked in to 0.9 to 1.8
+    // blocks, and it landed three hits, 20 to 6.6, before the first swing.
+    const mob = nearest.entity;
+    try { await this.actions.navigate(bot, task, new goals.GoalFollow(mob, 1), { timeoutMs: 4000, stallMs: 2000, stopWhen: () => mob.isValid === false || canStrike(bot, mob) }); }
     catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; failed = true; }
     finally { if (movements) Object.assign(movements, kept); }
     // A charge that went nowhere is not a charge: trial 66 "went for" a

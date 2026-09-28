@@ -89,7 +89,8 @@ async function hunt(bot, task, target, actions, goal, save) {
       if (preyFood(bot, target) !== item) throw new Error(`Food target ${target.name} is no longer an eligible passive adult`);
       if (!surface.isSurface(target.position)) throw new Error(`Food target ${target.name} moved away from safe surface terrain`);
       if (bot.entity.position.distanceTo(target.position) > 2.8) {
-        try { await actions.navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: 5000, stallMs: 2500, stopWhen: () => !valid() }); }
+        // Done at the swing's own distance, not at the follow's two blocks.
+        try { await actions.navigate(bot, task, new goals.GoalFollow(target, 2), { timeoutMs: 5000, stallMs: 2500, stopWhen: () => !valid() || bot.entity.position.distanceTo(target.position) <= 2.8 }); }
         catch (err) {
           task.check(); checkAir(bot); checkThreats(bot); if (err.name === 'NeedsAir') throw err;
           // Two walks that failed and got no nearer: this one cannot be got

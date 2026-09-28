@@ -392,7 +392,10 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
         // walked twenty blocks under an enderman's blows, 16.2 health to 1.1
         // in eight seconds, and the sword never had a turn.
         await actions.navigate(bot, task, route.destination, { timeoutMs: 18000, stallMs: 4000,
-          stopWhen: () => (initiallySafe && !safeEndPoint(bot, bot.entity.position)) || hostileEntities(bot, 4).some(e => live(bot, e)) });
+          // And the approach to a perched head ends as the sword reaches
+          // it, for strike_head to be offered, not at the spot walked to.
+          stopWhen: () => (initiallySafe && !safeEndPoint(bot, bot.entity.position)) || hostileEntities(bot, 4).some(e => live(bot, e)) ||
+            (focus?.name === 'ender_dragon_head' && (() => { const h = live(bot, dragon) && perchedHead(bot, dragon); return !!h && canStrike(bot, h); })()) });
       } };
     }
     // A pause can reveal a vulnerable phase, but it must not indefinitely
