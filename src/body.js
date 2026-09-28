@@ -31,8 +31,22 @@ const BURNS_AFTER = { lava: 15, fire: 8 };
 // (lava from full health).
 const ASK_MS = 1000;
 // A way Jev chose to leave be (burning left to burn out) is held until the
-// health has fallen this much more, or the burning could have ended.
+// health has fallen this much more, or half what it was when that is less
+// (so it is asked again before the health is gone: mid-244-bb chose to let
+// it burn at 8.3 and was asked next at 0.3, note 595), or the burning
+// could have ended, or a way not on offer then is on offer now.
 const HOLD_HEALTH = 4;
+const holdDrop = hp => Math.min(HOLD_HEALTH, (hp ?? 20) / 2);
+// The ways on offer now, for a hold to be looked at against: a way that
+// was not there when the burn was left be (the bucket that would not pour
+// with the feet at the lava's edge, or in the air over a step) is a new
+// question. mid-244-bb came out of lava at 12.3 with a water bucket, its
+// feet still in the lava's edge cell: burning out was the one way, held,
+// and the fire took it to 8.3 before anything was asked (note 595).
+const WAYS_NOW = { fire: bot => require('./vitals').inFire(bot) ? null : Object.keys(require('./vitals').fireWays(bot, null)) };
+// Looked at no oftener than this (a pond's search is some hundreds of
+// blocks read).
+const RECHECK_MS = 250;
 
 const round = n => Math.round(n * 10) / 10;
 // Fire resistance on the body (an enchanted golden apple's): lava and
@@ -97,7 +111,7 @@ function conditionSays(bot, key, facts = {}) {
     case 'lava': return `In lava at ${hp} health: it takes about ${l.losesPerSecond} health a second ${l.throughArmourWorn ? 'through the armour worn (fire protection not counted)' : 'before armour'}, about ${l.secondsToDeath} seconds to death at that rate; once out, the body burns on up to ${BURNS_AFTER.lava} seconds at a health a second unless put out in water.`;
     case 'fire': return facts.inFire
       ? `Standing in fire at ${hp} health: about ${l.losesPerSecond} health a second before armour, about ${l.secondsToDeath} seconds to death at that rate, and it burns on up to ${BURNS_AFTER.fire} seconds after the fire is left.`
-      : `Alight at ${hp} health, out of the fire: about ${l.fireLeftSeconds} second${l.fireLeftSeconds === 1 ? '' : 's'} of fire left (from the hurt that lit it: ${BURNS_AFTER.lava} after lava, ${BURNS_AFTER.fire} after fire, 5 after a fireball), a health a second that armour does not stop, about ${l.healthItTakes} health${l.burnsToDeath ? ', all the health the bot has' : ''}; water puts it out at once, and the Nether has no water.`;
+      : `Alight at ${hp} health, out of the fire: about ${l.fireLeftSeconds} second${l.fireLeftSeconds === 1 ? '' : 's'} of fire left (from the hurt that lit it: ${BURNS_AFTER.lava} after lava, ${BURNS_AFTER.fire} after fire, 5 after a fireball), a health a second that armour does not stop, about ${l.healthItTakes} health${l.burnsToDeath ? `, all the health the bot has: it dies of the burning in about ${l.secondsToDeath} seconds, before the fire ends, unless it is put out` : `, leaving about ${round(hp - l.healthItTakes)}`}; water puts it out at once, and the Nether has no water.`;
     case 'head_in_block': return `The head is in ${facts.block ? `a block of ${String(facts.block).replaceAll('_', ' ')}` : 'a block'} at ${hp} health: suffocating, about ${l.losesPerSecond} health a second, about ${l.secondsToDeath} seconds to death at that rate.`;
     case 'hot_floor': {
       const floor = String(facts.floor || 'hot floor').replaceAll('_', ' ');
@@ -108,11 +122,34 @@ function conditionSays(bot, key, facts = {}) {
   }
 }
 
+// The burning, for every other question asked while the body is alight
+// (decisions/index.js): mid-244-bb was asked survival_priority four times
+// burning, 12.3 to 0.3 health, and chose to walk for food each time, the
+// fire in no fact of it (note 595). With the way out left be, when it is
+// asked again.
+function burningSays(bot) {
+  if (!(bot?.entity?.metadata?.[0] & 1) || fireResistant(bot)) return null;
+  let standing = false; try { standing = require('./vitals').inFire(bot); } catch (_) { /* no world */ }
+  const hp = round(bot.health ?? 20);
+  const h = bot._bodyHeld?.key === 'fire' ? bot._bodyHeld : null;
+  const left = h ? ` The way out was left be: ${h.by === 'only' ? 'burning out was the only way there was' : 'Jev chose to let it burn out'} at ${round(h.health)} health; the way out is asked again at about ${round(Math.max(0, h.health - (h.drop ?? HOLD_HEALTH)))} health, when the burning could have ended, or when a way not on offer then (the water bucket poured, water run into) is on offer.` : '';
+  if (standing) return `The bot is standing in fire at ${hp} health: about ${RATE.in_fire} health a second, and it burns on up to ${BURNS_AFTER.fire} seconds after the fire is left.${left}`;
+  const l = lasts(bot, 'fire', { inFire: false });
+  return `The bot is alight at ${hp} health: about ${l.fireLeftSeconds} second${l.fireLeftSeconds === 1 ? '' : 's'} of fire left, a health a second that armour does not stop, about ${l.healthItTakes} health${l.burnsToDeath ? `, all the health the bot has: it dies of the burning in about ${l.secondsToDeath} seconds, before the fire ends, unless water puts it out first` : ''}. Water puts it out at once; the Nether has none.${left}`;
+}
+
 // A way Jev chose to leave be, still standing: burning left to burn out.
 function held(bot, key, now = Date.now()) {
   const h = bot?._bodyHeld;
   if (!h || h.key !== key) return null;
-  if (now > h.until || (bot.health ?? 20) <= h.health - HOLD_HEALTH) { delete bot._bodyHeld; return null; }
+  if (now > h.until || (bot.health ?? 20) <= h.health - (h.drop ?? HOLD_HEALTH)) { delete bot._bodyHeld; return null; }
+  if (h.offered && WAYS_NOW[key] && !(h.lookedAt > now - RECHECK_MS)) {
+    h.lookedAt = now;
+    let ways = null;
+    try { ways = WAYS_NOW[key](bot); } catch (_) { /* no world to look at: the hold stands */ }
+    const fresh = (ways || []).filter(k => !h.offered.includes(k));
+    if (fresh.length) { delete bot._bodyHeld; return null; }
+  }
   return h;
 }
 
@@ -152,10 +189,11 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   // with the fire as it did. Burning out as the only way was not held, and
   // mid-242-aa-nether-1-fortress-1, alight in the Nether with no apple, took
   // it forty times in fifteen minutes, every step (note 560).
-  if (way.hold && (by === 'jev' || by === 'only')) bot._bodyHeld = { key, choice, at: Date.now(), until: Date.now() + way.hold * 1000, health: bot.health ?? 20 };
+  // Kept with the ways it was chosen among: one that comes after is asked.
+  if (way.hold && (by === 'jev' || by === 'only')) bot._bodyHeld = { key, choice, by, at: Date.now(), until: Date.now() + way.hold * 1000, health: bot.health ?? 20, drop: holdDrop(bot.health), offered: keys };
   else if (bot?._bodyHeld?.key === key) delete bot._bodyHeld;
   const acted = await way.run();
   return { key: choice, by, acted: acted !== false };
 }
 
-module.exports = { answer, held, lasts, conditionSays, fireResistant, RATE, BURNS_AFTER, ASK_MS, HOLD_HEALTH };
+module.exports = { answer, held, holdDrop, burningSays, lasts, conditionSays, fireResistant, RATE, BURNS_AFTER, ASK_MS, HOLD_HEALTH };

@@ -389,6 +389,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     let healing = null; try { healing = require('../healing').healingSays(bot, goal); } catch (_) { /* no body */ }
     if (healing) state = { ...state, healing };
   }
+  // The body alight, with every such question but the body's own: while
+  // the way out was left be, mid-244-bb was asked survival_priority and
+  // turn_priority burning from 12.3 health to 0.3, the fire in none of
+  // their facts, and walked on for food (note 595).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && id !== 'body_way' && !state.alight) {
+    let alight = null; try { alight = require('../body').burningSays(bot); } catch (_) { /* no body */ }
+    if (alight) state = { ...state, alight };
+  }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.sculk) {

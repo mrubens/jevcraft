@@ -84,7 +84,7 @@ test('an enchanted golden apple is a way to act on burning, in the Nether too', 
   bot._alightUntil = Date.now() + 12000;
   const ways = vitals.fireWays(bot, new Task('t'));
   assert.deepEqual(Object.keys(ways).sort(), ['burn_out', 'eat_golden_apple']);
-  assert.match(ways.burn_out.description, /about 12 seconds of fire left, .* about 6 health, all the health the bot has; in the Nether nothing else puts it out/);
+  assert.match(ways.burn_out.description, /about 12 seconds of fire left at a health a second that armour does not stop is about 12 health, and the bot has 6: it dies of the burning in about 6 seconds, before the fire ends, unless something puts it out first; in the Nether nothing else puts it out/);
   assert.match(body.conditionSays(bot, 'fire', { inFire: false }), /about 12 seconds of fire left/);
 });
 

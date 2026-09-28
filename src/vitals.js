@@ -661,6 +661,27 @@ function fireToAnswer(bot) {
   return !!(bot.blockAt && pondNear(bot));
 }
 
+// Where a bucket poured at the feet goes: onto the top of a block under the
+// body's box, into an open cell the water then stands in with the body, the
+// cell under the middle first, then the others the box is over, from the
+// feet's level down two (a body in the air over a step lands in it). The
+// cell under the middle alone was open air twice for mid-244-bb, its box's
+// edge on the stone of a step as it walked up out of a cave burning, and
+// the bucket was not offered (note 595).
+function pourFloor(bot, p = bot.entity?.position) {
+  if (!p || typeof bot.blockAt !== 'function') return null;
+  const w = (bot.entity?.width ?? 0.6) / 2 - 0.001;
+  const cols = [];
+  for (let x = Math.floor(p.x - w); x <= Math.floor(p.x + w); x++) for (let z = Math.floor(p.z - w); z <= Math.floor(p.z + w); z++) cols.push([x, z]);
+  cols.sort((a, b) => Math.hypot(a[0] + 0.5 - p.x, a[1] + 0.5 - p.z) - Math.hypot(b[0] + 0.5 - p.x, b[1] + 0.5 - p.z));
+  const top = Math.floor(p.y + 1e-4);
+  for (let dy = 0; dy <= 2; dy++) for (const [x, z] of cols) {
+    const cell = new Vec3(x, top - dy, z), floor = cell.offset(0, -1, 0);
+    if (bot.blockAt(floor)?.boundingBox === 'block' && ['air', 'cave_air'].includes(bot.blockAt(cell)?.name)) return { cell, floor };
+  }
+  return null;
+}
+
 // Burning with no fire about (lava sets a body burning for a quarter of a
 // minute after it is left): water puts it out, as a player pours the bucket
 // at their feet and takes it back. mid-110-b stepped into the lava pool it
@@ -676,8 +697,9 @@ async function douse(bot, task, onAction = () => {}) {
     const pond = pondNear(bot);
     return pond ? intoWater(bot, task, pond, onAction) : false;
   }
-  const feet = bot.entity.position.floored(), below = feet.offset(0, -1, 0);
-  if (bot.blockAt(below)?.boundingBox !== 'block' || !['air', 'cave_air'].includes(bot.blockAt(feet)?.name)) return false;
+  const pour = pourFloor(bot);
+  if (!pour) return false;
+  const feet = pour.cell, below = pour.floor;
   onAction({ action: 'douse', health: bot.health });
   await bot.equip(bucket, 'hand'); task.check();
   await bot.lookAt(below.offset(0.5, 1, 0.5), true);
@@ -879,9 +901,15 @@ function fireWays(bot, task, onAction = () => {}) {
     return ways;
   }
   const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
-  const feet = bot.entity.position.floored();
-  const pours = bucket && !nether && bot.blockAt(feet.offset(0, -1, 0))?.boundingBox === 'block' && ['air', 'cave_air'].includes(bot.blockAt(feet)?.name);
-  if (pours) ways.douse_bucket = { description: 'Pour the water bucket at the feet, which puts the fire out at once, and take the water back: about a second.', run: () => douse(bot, task, onAction) };
+  const pours = bucket && !nether && pourFloor(bot);
+  // What each way costs is the burning it lets on (combat-estimate
+  // burnLeft at a health a second): mid-244-bb, alight at 8.3 with about
+  // 10.6 seconds of fire left, was told the bucket takes "about a second"
+  // and burning out takes "about 8.3 health, all the health the bot has",
+  // and let it burn (note 595).
+  const burn = require('./body').lasts(bot, 'fire', { inFire: false }), hp = round(bot.health ?? 20);
+  const burnTakes = burn.burnsToDeath ? `all ${hp} health the bot has, its death in about ${burn.secondsToDeath} seconds` : `about ${burn.healthItTakes} of the ${hp} health`;
+  if (pours) ways.douse_bucket = { description: `Pour the water bucket at the feet: the fire is out as the water reaches the body, about half a second from now (the bucket to the hand, the look down, the pour), a hurt of the burning at most meanwhile, where burning on takes ${burnTakes}. Then the water back into the bucket, about a second in all, standing where it is.`, run: () => douse(bot, task, onAction) };
   // The Nether has no water to run into (fireToAnswer).
   const pond = !nether && pondNear(bot);
   if (pond) {
@@ -889,8 +917,11 @@ function fireWays(bot, task, onAction = () => {}) {
     ways.to_water = { description: `Run into the water ${d} blocks off at (${pond.x}, ${pond.y}, ${pond.z}): about ${round(Math.max(0.3, d / SPRINT))} seconds at a sprint, burning meanwhile, and the fire is out.`,
       run: () => intoWater(bot, task, pond, onAction) };
   }
-  const left = Math.max(1, Math.round(require('./combat-estimate').burnLeft(bot))), hp = bot.health ?? 20;
-  ways.burn_out = { description: `Leave it to burn out and go on: about ${left} second${left === 1 ? '' : 's'} of fire left, a health a second that armour does not stop, about ${Math.min(left, round(hp))} health${left >= hp ? ', all the health the bot has' : ''}${nether ? '; in the Nether nothing else puts it out' : ''}. Asked again if health falls ${require('./body').HOLD_HEALTH} more.`,
+  const left = Math.max(1, Math.round(burn.fireLeftSeconds)), drop = round(require('./body').holdDrop(hp));
+  const ends = burn.burnsToDeath
+    ? `about ${left} second${left === 1 ? '' : 's'} of fire left at a health a second that armour does not stop is about ${left} health, and the bot has ${hp}: it dies of the burning in about ${burn.secondsToDeath} seconds, before the fire ends, unless something puts it out first`
+    : `about ${left} second${left === 1 ? '' : 's'} of fire left, a health a second that armour does not stop, about ${burn.healthItTakes} health, leaving about ${round(hp - burn.healthItTakes)}`;
+  ways.burn_out = { description: `Leave it to burn out and go on: ${ends}${nether ? '; in the Nether nothing else puts it out' : ''}. ${drop < 1 ? 'Asked again at the next hurt of the burning' : `Asked again at about ${round(Math.max(0, (bot.health ?? 20) - require('./body').holdDrop(bot.health)))} health (${drop} more)`}, or when another way to put it out comes.`,
     hold: 15, run: async () => false };
   if (apple) ways.eat_golden_apple = eat();
   // The old rule: the bucket poured where it can be, else (none carried)
@@ -1145,4 +1176,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
