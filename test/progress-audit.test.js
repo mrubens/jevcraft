@@ -317,3 +317,13 @@ test('note 598: the cohort, before and after a deploy, across the trial records'
   assert.equal(cohort({ at, since: a + min, root, dir: flight, now: b + 60 * min }).trials, 1);
   assert.match(cohortTable(c), /waitShare\s+45% \(9 min\)\s+OVER\s+0% \(0 min\)\s+ok/);
 });
+
+test('a trial whose bot went quiet and has no supervisor says nothing will start it again (mid-242-bd, mid-243-be)', () => {
+  const from = t0, to = t0 + 15 * min;
+  const frames = [{ kind: 'observation', t: from + 1000, snapshot: { position: { x: 0, y: 70, z: 0 }, dimension: 'overworld' } }];
+  const silent = m => m.flags.find(f => f.id === 'silent')?.text;
+  const bare = measure({ frames, history: [], from, to, minutes: 15, historyMinutes: 60, supervised: false });
+  assert.match(silent(bare), /no frame for 15 min and no supervisor is watching this port.*supervisor\.sh/);
+  const watched = measure({ frames, history: [], from, to, minutes: 15, historyMinutes: 60, supervised: true });
+  assert.equal(silent(watched), 'no frame for 15 min');
+});

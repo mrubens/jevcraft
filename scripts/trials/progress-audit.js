@@ -264,7 +264,7 @@ const human = s => String(s).replaceAll('_', ' ');
 const round = (x, d = 0) => Math.round(x * 10 ** d) / 10 ** d;
 
 // Everything the verdict is made of, from the parsed frames.
-function measure({ frames, history, from, to, trial = {}, botLog = null, minutes, historyMinutes, known = null, firstRodAt = null, clock = null }) {
+function measure({ frames, history, from, to, trial = {}, botLog = null, minutes, historyMinutes, known = null, firstRodAt = null, clock = null, supervised = null }) {
   const T = thresholds(minutes, historyMinutes);
   const positioned = frames.filter(f => f.snapshot?.position);
   const last = positioned.at(-1)?.snapshot || {};
@@ -354,6 +354,7 @@ function measure({ frames, history, from, to, trial = {}, botLog = null, minutes
     lastMilestone: latest ? { name: latest[0], minutesAgo: round((to - latest[1]) / 60000) } : null,
     minutesSinceMilestone: sinceMilestone === null ? null : round(sinceMilestone),
     trialMinutes: Number.isFinite(started) ? round((to - started) / 60000) : null,
+    supervised,
     lastFrameMinutesAgo: lastT === null ? null : round((to - lastT) / 60000, 1),
     clockedMinutes: round(clocked, 1), byDoing: byDoing.slice(0, 6), top,
     ground: { cells: cells.size, newCells: fresh, newShare: cells.size ? round(fresh / cells.size, 2) : null, walked: Math.round(walked), net: net === null ? null : Math.round(net), farthest: Math.round(far), dug, laid },
@@ -670,7 +671,7 @@ function reviewLines(m) {
 function flag(m, T, minutes) {
   const flags = [], g = m.ground, pct = x => `${Math.round(x * 100)}%`;
   const say = (id, text) => flags.push({ id, text, threshold: T[id].says });
-  if (m.lastFrameMinutesAgo !== null && m.lastFrameMinutesAgo >= T.silent.minutes) say('silent', `no frame for ${Math.round(m.lastFrameMinutesAgo)} min`);
+  if (m.lastFrameMinutesAgo !== null && m.lastFrameMinutesAgo >= T.silent.minutes) say('silent', `no frame for ${Math.round(m.lastFrameMinutesAgo)} min${m.supervised === false ? ' and no supervisor is watching this port, so nothing will start the bot again (note 640: mid-242-bd and mid-243-be sat down for 2.5 hours); sh scripts/trials/supervisor.sh <port> starts one' : ''}`);
   if (m.fortress && m.fortress.minutesThere >= T.fortress.minutes) {
     const lp = m.fortress.lastPass, poorPass = lp?.stretches && lp.reached * 2 < lp.stretches;
     if ((g.newShare !== null && g.newShare < T.fortress.share) || poorPass)
@@ -737,7 +738,7 @@ function auditTrial({ port, world }, { minutes, historyMinutes, now = Date.now()
   const w = trialWindow({ port, world }, { minutes, historyMinutes, now });
   // The minutes asked for, not the trial's so far: a trial five minutes old
   // has not spent "80% of the window" on anything.
-  return { port, world, ...measure({ ...w, minutes, historyMinutes }) };
+  return { port, world, ...measure({ ...w, minutes, historyMinutes, supervised: require('../../src/quiet-restart').supervised(port) }) };
 }
 
 function table(rows, minutes, historyMinutes) {

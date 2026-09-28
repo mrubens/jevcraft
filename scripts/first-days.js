@@ -214,6 +214,7 @@ async function startTrial(world) {
   const all = trials();
   all.push({ world, port: PORT, startedAt: new Date().toISOString() });
   saveTrials(all);
+  if (require('./lib/supervise').ensureSupervisor(PORT, ROOT)) console.log(`No supervisor was watching ${PORT}: one started (artifacts/supervisors/${PORT}.log).`);
   console.log(`Trial on ${world} started at ${all.at(-1).startedAt}; verdict from ${new Date(Date.now() + DAYS_MS).toISOString()}.`);
 }
 

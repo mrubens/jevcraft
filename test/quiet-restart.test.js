@@ -10,7 +10,7 @@ test('a restart asked for waits for a quiet moment: no hostile near, on the grou
   const zombie = { id: 2, name: 'zombie', type: 'hostile', position: new Vec3(3, 64, 0), height: 1.95, isValid: true };
   const bot = { isAlive: true, entity: { position: new Vec3(0, 64, 0), onGround: true }, entities: { 2: zombie }, quit() { this.quitted = true; } };
   let exited = 0;
-  const stop = watchRestartRequest(bot, file, { startedAt: Date.now() - 1000, every: 20, exit: () => { exited++; } });
+  const stop = watchRestartRequest(bot, file, { startedAt: Date.now() - 1000, every: 20, exit: () => { exited++; }, port: 25590, watched: () => true });
   fs.writeFileSync(file, '');
   await new Promise(r => setTimeout(r, 120));
   assert.equal(bot.quitted, undefined, 'a zombie three blocks off: not now');
@@ -33,4 +33,28 @@ test('a request older than the process is not one for it', async () => {
   await new Promise(r => setTimeout(r, 100));
   assert.equal(bot.quitted, undefined);
   stop();
+});
+
+test('with no supervisor watching the port a restart asked for is not taken (mid-242-bd and mid-243-be quit and stayed down three hours), and is once one is', async () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jev-')), 'restart-requested');
+  const bot = { isAlive: true, entity: { position: new Vec3(0, 64, 0), onGround: true }, entities: {}, quit() { this.quitted = true; } };
+  let supervisor = false, exited = 0, clock = 0;
+  const said = [];
+  const stop = watchRestartRequest(bot, file, { startedAt: Date.now() - 1000, every: 20, exit: () => { exited++; }, port: 25590, watched: () => supervisor, now: () => clock += 16000, say: m => said.push(m) });
+  fs.writeFileSync(file, '');
+  await new Promise(r => setTimeout(r, 200));
+  assert.equal(bot.quitted, undefined, 'no supervisor: stays up');
+  assert.equal(said.length, 1, 'and says so once');
+  assert.match(said[0], /no supervisor is watching port 25590.*supervisor\.sh 25590/);
+  supervisor = true;
+  await new Promise(r => setTimeout(r, 700));
+  assert.equal(bot.quitted, true, 'a supervisor came: quits');
+  assert.equal(exited, 1);
+  stop();
+});
+
+test('a supervisor is found by the process list; no port, none', () => {
+  const { supervised } = require('../src/quiet-restart');
+  assert.equal(supervised(null), false);
+  assert.equal(supervised(1), false);
 });
