@@ -115,3 +115,18 @@ test('on a span, a stance Jev chose and that holds is carried out, not the span\
   assert.equal(goal.survivalAction?.action, 'take_cover', JSON.stringify(goal.survivalAction));
   assert.ok(!asked.includes('encounter_stance'), `held, not asked: ${asked.join(',')}`);
 });
+
+test('on the span over the lava sea with a ghast in sight, return_fireball is priced by the fall a fireball that lands is, not by the fireball (note 574)', () => {
+  // mid-242-ab-nether-2 chose it at 19.3 health two blocks from a drop into
+  // lava, told "Priced with one fireball missed: about 4.8 damage"; the
+  // first fireball threw it in.
+  const ghast = ghastAt(190.5, 62, 160.5);
+  const { bot } = spanBot({ items: [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 20 }], ghast });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
+  assert.ok(options.return_fireball, Object.keys(options).join(','));
+  const back = options.return_fireball.description;
+  assert.match(back, /Priced by that record \(0 of the 6 fireballs that came to the bot sent back\): both of the next 2 fireballs landing, and here the first that lands is the push over the drop below: the price is that fall, the bot's death, and everything carried lost with it, not its 3\.4 damage\./);
+  assert.doesNotMatch(back, /Priced by that record[^.]*about [\d.]+ damage in about/);
+  assert.match(back, /Open here to the ghast 43 blocks off \(in sight\): one fireball that lands pushes the bot off its feet/);
+});

@@ -2944,6 +2944,7 @@ class Survival {
     // (ghast.js, note 551). mid-235-p-nether-4-fortress-2 was offered only
     // hiding and cover from one twenty-five to forty blocks off, and died.
     const ghastHere = danger.find(t => t.entity.name === 'ghast');
+    const overEdge = shotOverEdge(bot, feet);
     const ce = require('./combat-estimate');
     const ghastHit = this.lastGhastHit = !ghastHere ? null : mobs.find(m => m.name === 'ghast')?.hitsBot ?? Math.round(ce.afterArmour(ce.MOBS.ghast.hit, ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean))) * 10) / 10;
     if (ghastHere && !inWater(bot)) {
@@ -2952,12 +2953,18 @@ class Survival {
       // The wall against its push: which of the blocks carried its blast
       // breaks, the wall put from one that holds.
       if (options.rail_and_fight) options.rail_and_fight.description += ghast.coverSays(bot, shelter.buildingMaterials).replace('the cover is put from it', 'the wall is put from it').replace('the cover can be blown out by the fireball it stops', 'the wall can be blown out by the fireball whose push it stops');
-      const back = ghast.returnOption(bot, danger, { hit: ghastHit, others });
+      // Priced by what the strike has measured live, and over a drop a
+      // shot can push the bot off by that fall (note 574).
+      const back = ghast.returnOption(bot, danger, { hit: ghastHit, others, since: goal?.fireballReturns, over: overEdge });
       if (back) options.return_fireball = { expects: back.expects, description: back.description + edge,
         run: async () => {
           this.report(goal, save, { action: 'return_fireball', target: 'ghast', entityId: back.ghast.entity.id, distance: Math.round(back.ghast.distance * 10) / 10, health: bot.health, stance: true });
           const r = await ghast.returnFireball(bot, task, back.ghast.entity);
-          if (r.strikes) { goal.survivalAction = { ...goal.survivalAction, strikes: r.strikes, ...(r.ghastGone ? { ghastGone: true } : {}) }; save(); }
+          // What came of the watch, kept with the goal: the next asking
+          // says it and prices by it.
+          const was = goal.fireballReturns || {};
+          goal.fireballReturns = Object.fromEntries(['watches', 'came', 'struck', 'sentBack', 'killed', 'landed'].map(k => [k, (was[k] || 0) + (k === 'watches' ? 1 : r[k] || 0)]));
+          goal.survivalAction = { ...goal.survivalAction, strikes: r.strikes, came: r.came, struck: r.struck, sentBack: r.sentBack, landed: r.landed, ...(r.killed ? { ghastKilled: true } : {}), ...(r.ghastGone ? { ghastGone: true } : {}) }; save();
           return true;
         } };
       for (const t of shotTargets(bot, [ghastHere], { minimum: 20.01, maximum: ghast.GHAST.reach })) {
@@ -2991,7 +2998,7 @@ class Survival {
     // between the work, the fight and "none of these"; with the walled
     // price beside it, rail_and_fight 10 of 10 (replay case
     // span-ghast-hidden-keep-working).
-    const over = shotOverEdge(bot, feet);
+    const over = overEdge;
     if (over) for (const [k, o] of Object.entries(options)) {
       if (k === 'rail_and_fight' || (k === 'hold_on_span' && spanWalled)) { o.description += over.walled; continue; }
       if (CLOSES_THE_DROP.has(k)) continue;
