@@ -19,10 +19,10 @@
 // health falling, the food crossing a band, its winner doing nothing, or a
 // minute.
 //
-// Two modes (JEV_ARBITER): shadow, the default, where the old layers keep
-// the turn and the arbiter's ruling is only logged beside theirs; and live,
-// where the ruling gives the turn (take below, runGoal and runIdle) and the
-// watch stops a holder that a reflex or a newcomer outranks.
+// Two modes (JEV_ARBITER): live, the default, where the ruling gives the
+// turn (take below, runGoal and runIdle) and the watch stops a holder that a
+// reflex or a newcomer outranks; and shadow (JEV_ARBITER=shadow), where the
+// old layers keep the turn and the ruling is only logged beside theirs.
 const { STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
 const { LIGHTS_AT, APPROACH, FUSE } = require('./combat-estimate');
 
@@ -46,19 +46,10 @@ const IDLE_MS = 10000;
 // The watch looks four times a second: a creeper at its lighting distance
 // goes off in a second and a half.
 const WATCH_MS = 250;
-// Or live for the trial ports listed in .bot-state/arbiter-live (one a
-// line): a bot restarted by its supervisor or the quiet restart does not
-// carry the env, and half the trials live beside half in shadow is the
-// comparison (note 485). Read at most every ten seconds.
-let listed = { at: 0, ports: new Set() };
-const livePorts = () => {
-  if (Date.now() - listed.at < 10000) return listed.ports;
-  let ports = new Set();
-  try { ports = new Set(require('fs').readFileSync(require('path').join(__dirname, '..', '.bot-state', 'arbiter-live'), 'utf8').split(/\s+/).filter(Boolean)); } catch (_) {}
-  listed = { at: Date.now(), ports };
-  return ports;
-};
-const mode = () => process.env.JEV_ARBITER === 'live' || (process.env.JEV_ARBITER !== 'shadow' && livePorts().has(String(process.env.MC_PORT || ''))) ? 'live' : 'shadow';
+// Live everywhere since note 536: the half-and-half comparison of note 485
+// had served, and the deaths it showed were the old order's (a hunt that
+// ran before survival while fireballs landed, note 533).
+const mode = () => process.env.JEV_ARBITER === 'shadow' ? 'shadow' : 'live';
 // Hunger six and under, no sprinting; under eighteen, no healing (vitals.js).
 const FOOD_BANDS = [6, 17];
 const foodBand = food => FOOD_BANDS.filter(b => (food ?? 20) > b).length;

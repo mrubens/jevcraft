@@ -190,7 +190,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Which layer has the bot's turn now: survival, the meal and breath, the hunt, or the work?**
 
-- When: When two or more layers claim the turn and none of them is a reflex (JEV_ARBITER=live; in shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
+- When: When two or more layers claim the turn and none of them is a reflex (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
 - Decision tree, choice; stakes high; ledger kind `survival`
 - Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)

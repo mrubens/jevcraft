@@ -364,10 +364,10 @@ test('live: the survival step still runs first when survival claims nothing, and
   } finally { console.log = original; }
 });
 
-test('the mode is shadow unless JEV_ARBITER=live', () => {
+test('the mode is live unless JEV_ARBITER=shadow (note 536)', () => {
   const was = process.env.JEV_ARBITER;
   try {
-    delete process.env.JEV_ARBITER; assert.equal(arbiter.mode(), 'shadow');
+    delete process.env.JEV_ARBITER; assert.equal(arbiter.mode(), 'live');
     process.env.JEV_ARBITER = 'live'; assert.equal(arbiter.mode(), 'live');
     process.env.JEV_ARBITER = 'shadow'; assert.equal(arbiter.mode(), 'shadow');
   } finally { if (was === undefined) delete process.env.JEV_ARBITER; else process.env.JEV_ARBITER = was; }

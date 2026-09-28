@@ -318,7 +318,7 @@ define({
 define({
   id: 'turn_priority', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
   question: 'Which layer has the bot\'s turn now: survival, the meal and breath, the hunt, or the work?',
-  trigger: 'When two or more layers claim the turn and none of them is a reflex (JEV_ARBITER=live; in shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.',
+  trigger: 'When two or more layers claim the turn and none of them is a reflex (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.',
   source: 'src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js',
   instructions: {
     task: 'Several parts of the bot want its turn at once. Choose which one acts NEXT. Each option is what that part would do and what it observed; nothing here is a verdict.',

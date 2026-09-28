@@ -5183,7 +5183,7 @@ function shadowTurn(bot, goal, activeWork, survival) {
   return require('./arbiter').shadow(bot, () => [require('./survival').claim(bot, activeWork, survival), require('./vitals').claim(bot),
     require('./mob-hunt').claim(bot, activeWork), workClaim(goal)]);
 }
-// The arbiter live (JEV_ARBITER=live, src/arbiter.js): the turn goes to
+// The arbiter live (the default, src/arbiter.js): the turn goes to
 // the claim it rules for, and each claim runs its layer's own step as the
 // old loop ran it. The work's run only says it has the turn: the caller
 // goes on to the work below. The hunt is staked first, whoever wins: the
