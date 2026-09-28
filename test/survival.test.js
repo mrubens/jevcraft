@@ -856,8 +856,8 @@ test('Jev picks the stance once and it holds; unsure, its pick still stands', as
   assert(await controller.step(task, goal, () => {}));
   assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
   // A blaze among them and twenty blocks carried: the box and the corner
-  // too (note 606).
-  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['box_here', 'charge_shooter', 'corner_ambush', 'fight', 'keep_working', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
+  // too (note 606), and the close-in with no shield (note 614).
+  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['box_here', 'charge_shooter', 'close_in', 'corner_ambush', 'fight', 'keep_working', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
   assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
   assert.deepEqual(events, ['navigate'], 'the retreat ran');
   bot.entity.position = new Vec3(.5, 64, .5);
@@ -4940,6 +4940,35 @@ test('the stands against a blaze are priced with a biter out of sight that has a
   assert.match(alone.back_to_wall.description, /Back to the wall, the blaze still reaches it\.$/);
   assert.match(round.back_to_wall.description, /Back to the wall, the wither skeleton and the blaze still reach it\./);
   assert(round.back_to_wall.expects.damage > alone.back_to_wall.expects.damage + 5, `${round.back_to_wall.expects.damage} vs ${alone.back_to_wall.expects.damage}`);
+});
+
+test('at a blaze fight on the way to the rods, every stance says what it gains toward them, the charge is offered without a shield, and the fight says which it prices (mid-242-aa-fortress-5, note 614)', () => {
+  // 15:16:45: a stone sword, no armour, no shield, 20 health; one blaze 4.3
+  // off in sight, more behind the walls. Offered cover, holds, heal and
+  // retreat, each priced in damage alone; chose cover and heal again and
+  // again. The fight said "to kill them all" of the one in sight.
+  const make = goal => {
+    const bot = brickWorld(p => p.y <= 63, { items: ['stone_sword', 'cobblestone'] });
+    bot.inventory.slots = {};
+    const blaze = blazeAt(3, 4.8, 64.5, 0.5);
+    const hidden = [blazeAt(4, -9.5, 65, 4.5), blazeAt(5, -10.5, 65, -3.5)];
+    bot.entities = { 3: blaze, 4: hidden[0], 5: hidden[1] };
+    bot.world = { raycast: (from, dir, len) => { const to = from.plus(dir.scaled(len)); return hidden.some(h => h.position.distanceTo(to) < 2.5 || h.position.distanceTo(from) < 2.5) ? { position: from.plus(dir).floored(), intersect: from.plus(dir) } : null; } };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), goal, () => {}, [threat(bot, blaze)], false);
+  };
+  const options = make({ mobHunt: { item: 'blaze_rod', entity: 'blaze', targetCount: 8 }, step: { action: 'leave_and_heal' } });
+  assert(options.close_in && options.charge_nearest, Object.keys(options).join(','));
+  assert.match(options.charge_nearest.description, /no shield carried: walk straight in on it/);
+  assert.match(options.charge_nearest.description, /Toward the rods: about 1 blaze killed/);
+  assert.match(options.fight.description, /damage to kill the one in these figures, not those out of sight below, from 20 health/);
+  assert.match(options.fight.description, /Toward the rods: about 1 blaze killed in about [\d.]+ seconds?, about 0\.5 rods on the average \(a blaze drops one about half the time\); 8 rods still needed/);
+  for (const k of ['take_cover', 'retreat', 'seal', 'dig_down'].filter(k => options[k])) assert.match(options[k].description, /Toward the rods: none, no blaze killed; the blazes stay, and waiting does not send them away; 8 rods still needed\./, k);
+  assert(options.take_cover || options.retreat, Object.keys(options).join(','));
+  for (const [k, o] of Object.entries(options)) if (k !== 'none_good') assert.equal((o.description.match(/Toward the rods:/g) || []).length, 1, k);
+  // No rods wanted: nothing said.
+  const plain = make({});
+  for (const [k, o] of Object.entries(plain)) assert.doesNotMatch(o.description, /Toward the rods/, k);
 });
 
 test('with a blaze in sight beside a nether-brick wall, the stance offers a hole dug into it, its seconds from the pickaxe carried, and the wall at the back (notes 509, 512, 514)', async () => {

@@ -568,7 +568,8 @@ test('a fight among cave spiders counts the ones round the corner and names the 
   const fight = options.fight.description;
   assert.match(fight, /Counted in the figures though out of sight, each with a way to the bot: a cave spider 6 blocks off, a cave spider 6 blocks off\./);
   assert.match(fight, /Out of sight but about: a skeleton 8 blocks off/, 'the skeleton, a shooter out of sight, is said and not counted');
-  const damage = Number(fight.match(/seconds and ([\d.]+) damage to kill them all/)[1]);
+  // "Them all" said of the ones in the figures, the skeleton left out named (note 614).
+  const damage = Number(fight.match(/seconds and ([\d.]+) damage to kill the 3 in these figures, not those out of sight below/)[1]);
   assert(damage > 5, fight);
   assert.match(fight, /of it is poison/);
   // Said with every stance (stanceStep), with the mob it makes.

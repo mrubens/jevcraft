@@ -373,7 +373,10 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // picked up). A stance whose point is to strike (STRIKING_STANCES) and was
 // held to its end with none of these failed; any stance that ended without
 // them, with nothing changed about it since, would end the same again.
-const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling', 'close_in']);
+const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling', 'close_in', 'charge_nearest']);
+// The work's steps that are the blaze hunt going at them: carrying on with
+// one of these is not said to gain nothing toward the rods (note 614).
+const HUNT_STEPS = new Set(['stalk_mob', 'hunt', 'hunt_mob', 'close_in', 'charge_nearest', 'blaze_sortie', 'break_spawner', 'collect_rods', 'collect_drop', 'down_for_the_drop', 'dig_toward_them', 'dig_down_to_them', 'cross_toward', 'return_to_blazes']);
 const STANCE_IDLE_MS = 10 * 60000;
 const carriedCount = bot => { try { return bot.inventory?.items?.().reduce((n, i) => n + (i.count || 0), 0) ?? 0; } catch (_) { return 0; } };
 function stanceMark(bot) {
@@ -2924,8 +2927,13 @@ class Survival {
     // The decision audit (2026-09-25): what the lists above leave out. The
     // near ones out of sight that are counted are said so.
     const hiddenCounted = hiddenNear.filter(t => counted.slice(0, 8).includes(t));
-    const unseen = (hiddenCounted.length ? ` Counted in the figures though out of sight, each with a way to the bot: ${hiddenCounted.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}.` : '') +
-      require('./danger').unseenNote(bot, [...danger, ...hiddenCounted]);
+    const unseenLeft = require('./danger').unseenNote(bot, [...danger, ...hiddenCounted]);
+    const unseen = (hiddenCounted.length ? ` Counted in the figures though out of sight, each with a way to the bot: ${hiddenCounted.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}.` : '') + unseenLeft;
+    // "Them all" is the mobs in the figures: with more out of sight left
+    // out of them, it says which (note 614: one blaze priced as "them all"
+    // with four more behind the walls).
+    const countedHere = (estimate.mobs || []).filter(m => !m.apart).length;
+    const killWhom = unseenLeft ? `the ${countedHere === 1 ? 'one' : countedHere} in these figures, not those out of sight below` : 'them all';
     // A creeper the fight closes on is met as the dance meets it (strike,
     // then back out of the blast, or hold where the swings kill it first):
     // said once, with the figures (creeperFoughtText).
@@ -2954,6 +2962,11 @@ class Survival {
     // distance: mid-235-p-fortress-1 was thrown off an edge at 5.5 health by
     // one (note 509).
     const blazeAbout = danger.some(t => t.entity.name === 'blaze');
+    // The rods the goal still needs, with a blaze here (note 614), and the
+    // blazes the fight's own figures count.
+    const rodsNeed = blazeAbout ? require('./blaze-stand').rodsNeeded(bot, goal) : 0;
+    const standKeys = new Set();
+    const fightBlazes = (estimate.mobs || []).filter(m => m.name === 'blaze' && !m.apart).length;
     // With a hoglin or a zoglin able to get to the bot, the drop within its
     // toss (up to about four blocks back in the bot's own records, where a
     // knockback is three), said with the toss (note 587).
@@ -3218,7 +3231,7 @@ class Survival {
           return noStep ? true : options.fight.run();
         } };
     }
-    options.fight = { expects: noStep || noneCome ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noneCome ? 'None of them can get to the bot and none of them shoots: a fight here stands and waits for one that comes, with nothing to swing at meanwhile.' : noStep ? `${shootersOnly ? `None of them can be reached from here: ${apart.ids.size ? 'every one that can get to the bot' : 'every one'} shoots, none is at reach, and the ground toward the nearest carries no step.` : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill them all, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${cost.pace ? ` ${cost.pace}` : ''}${cost.poison ? ` ${cost.poison}` : ''}`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${spearSays}${edgeHits}${hitsLeft}`,
+    options.fight = { expects: noStep || noneCome ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noneCome ? 'None of them can get to the bot and none of them shoots: a fight here stands and waits for one that comes, with nothing to swing at meanwhile.' : noStep ? `${shootersOnly ? `None of them can be reached from here: ${apart.ids.size ? 'every one that can get to the bot' : 'every one'} shoots, none is at reach, and the ground toward the nearest carries no step.` : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill ${killWhom}, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${cost.pace ? ` ${cost.pace}` : ''}${cost.poison ? ` ${cost.poison}` : ''}`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${spearSays}${edgeHits}${hitsLeft}`,
       run: async () => {
         // Swung only where the swing can land (the swing's own test,
         // canStrike): a mob 3.2 blocks off counted as at reach by distance
@@ -3518,7 +3531,8 @@ class Survival {
       // back_to_wall read "about 0 damage ... none of them reaches it" with
       // a wither skeleton five blocks off round a corner, and it struck the
       // bot a second later (note 559).
-      const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function' });
+      const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function', need: rodsNeed });
+      for (const key of Object.keys(stands)) standKeys.add(key);
       for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
         run: async () => {
           this.report(goal, save, { action: key, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
@@ -4199,6 +4213,19 @@ class Survival {
       // ground"): it leaves the drop.
       if (k === 'fight' || k === 'seal' || k === 'bunker' || k === 'fight_from_footing') continue;
       o.description += k === 'rail_and_fight' ? speared.walled : k === 'shield_the_charge' ? speared.says + speared.shielded : speared.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that knocks the bot over.' : '');
+    }
+    // What each of the rest gains toward the rods the goal needs, as the
+    // blaze stands say theirs (note 614): the fight its kills by its own
+    // figures, a stance that strikes only what comes that, and the rest
+    // none, the blazes staying where they are.
+    if (rodsNeed > 0) {
+      const cage = require('./blaze-stand').spawnerAt(bot), live = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
+      const workHunts = HUNT_STEPS.has(goal?.step?.action);
+      for (const [k, o] of Object.entries(options)) {
+        if (standKeys.has(k) || k === 'none_good' || k.startsWith('shoot_') || (k === 'keep_working' && workHunts)) continue;
+        const gain = k === 'fight' ? (noStep || noneCome || !fightBlazes ? 'comes' : { kills: fightBlazes, seconds: cost.seconds, dies: cost.healthAfter <= 0, all: true }) : STRIKING_STANCES.has(k) ? 'comes' : 'none';
+        o.description += require('./blaze-stand').towardRods(rodsNeed, gain, { spawner: live });
+      }
     }
     // The hardest blow that can get to the bot, first on every stance
     // (blowsSay, note 576): each says after it whether that mob still

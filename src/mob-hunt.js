@@ -266,11 +266,18 @@ function fitness(bot) {
     // rest would bring (note 508).
     fit: health >= HUNT_FLOOR && food >= HUNT_FLOOR && (food >= 18 || foodCarried) && !(burning && health < 10) };
 }
+const KIT_WORDS = { head: 'iron or better helmet worn', torso: 'iron or better chestplate worn', legs: 'iron or better leggings worn', feet: 'iron, diamond, netherite or golden boots worn', 'off-hand': 'shield in the off hand' };
 function fitnessSays(bot, f = fitness(bot)) {
   const parts = [`Health ${f.health}${f.health < f.floor ? ` (under the ${f.floor} the code once required to start a fight)` : ''}`,
     `hunger ${f.food}: ${f.healing ? 'health comes back while it stays at eighteen or more' : `health does not come back under eighteen${f.foodCarried ? ', and food is carried to eat first' : ', and nothing is carried to eat: every point lost is gone for good'}`}`];
   if (f.burning) parts.push(`alight now: fire takes half a heart a second${dimension(bot) === 'nether' ? ', and in the Nether there is no water to put it out; only waiting burns it off' : ''}`);
-  if (f.kitMissing.length) parts.push(`the kit is short: no ${f.kitMissing.map(d => d === 'hand' ? 'sword or axe carried' : `${d} armour worn`).join(', no ')}`);
+  // Each piece by what the kit asks of it, iron or better (mob-policy
+  // combatGear): "no sword or axe carried" was said of a bot with a stone
+  // sword in hand, beside a fight option that struck with it (note 614).
+  if (f.kitMissing.length) {
+    const held = (w => /_(sword|axe)$/.test(w || '') ? w.replaceAll('_', ' ') : null)(defenseWeapon(bot)?.name);
+    parts.push(`the kit is short: no ${f.kitMissing.map(d => d === 'hand' ? `iron or better sword carried${held ? ` (${/^[aeiou]/.test(held) ? 'an' : 'a'} ${held} is)` : ''}` : KIT_WORDS[d] || `${d} armour worn`).join(', no ')}`);
+  }
   return `${parts.join('; ')}.`;
 }
 
@@ -534,6 +541,12 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const { RANGE } = require('./combat-estimate');
   const reaching = (() => { try { return threats(bot, 64).filter(t => shooter(t.entity) ? t.visible && t.distance <= (RANGE[t.entity.name] || 16) : t.distance <= 16); } catch (_) { return []; } })();
   const cage = state.entity === 'blaze' && reaching.length > 1 ? require('./blaze-stand').spawnerAt(bot) : null;
+  // What each option gains toward the rods (note 614): mid-242-aa-fortress-5
+  // deferred single blazes at full health twice, told what each fight cost
+  // and nothing of what leaving them gains, which is nothing.
+  const rodsNeed = state.entity === 'blaze' ? require('./blaze-stand').rodsNeeded(bot, goal) : 0;
+  const { towardRods } = require('./blaze-stand');
+  const liveCage = (c => !!c && c.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16)(state.entity === 'blaze' ? require('./blaze-stand').spawnerAt(bot) : null);
   const spawnerSays = cage ? ` A blaze spawner is ${Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position))} blocks off: while the bot is within sixteen of it, it makes up to four more every ten to forty seconds.` : '';
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
@@ -564,7 +577,9 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // Said as a sentence, as every other option is: mid-208-k-nether-3-
       // fortress-2 was shown each blaze as a JSON record beside a worded
       // defer, and deferred four times in two minutes (note 557).
-      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }),
+      // The one it goes at, by its own figures; the others' share is in the price.
+      const gain = one?.fightHere ? { kills: 1, seconds: one.fightHere.seconds, dies: one.fightHere.healthAfter <= 0, all: true } : { kills: 1 };
+      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage }),
         run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
@@ -582,7 +597,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // and left them four times (note 557).
   const blazesInSight = state.entity === 'blaze' ? threats(bot, 24).filter(t => t.entity.name === 'blaze') : [];
   if (blazesInSight.length && !isSetAside(goal, 'hunt_stand', 'blaze')) {
-    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [] });
+    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed });
     for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, run: async () => {
       try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, o, { item: state.item, want: countOf(bot, state.item) + 1 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
@@ -603,7 +618,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // What leaving them came to in the arena, where it was measured: the
   // blazes stay, and so does their fire (blaze-stand.js MEASURED).
   const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage })} Left, these are not offered again for two minutes.` : '';
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();

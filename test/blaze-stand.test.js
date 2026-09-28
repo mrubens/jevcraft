@@ -96,7 +96,7 @@ test('by a spawner on an open floor, the cage is offered with rock at the back, 
   assert.match(options.fight_at_spawner.description, /with rock at its back/);
 });
 
-test('close_in is offered with a shield and a blaze over ground the sword reaches from, not over lava, and not without the shield', () => {
+test('close_in is offered with a blaze over ground the sword reaches from, not over lava', () => {
   // A floor to x = 6, lava past it.
   const solid = p => p.y <= 63 && p.x <= 6;
   const lava = p => p.y === 63 && p.x > 6;
@@ -110,9 +110,74 @@ test('close_in is offered with a shield and a blaze over ground the sword reache
   // Over the lava ten out: no ground within the sword's reach of it.
   bot.entities = { 4: blazeAt(4, 11.5, 64.5, 0.5) };
   assert(!stand.blazeStands(bot, threats(bot, 24), { dig: false }).close_in, 'over lava');
-  const bare = brickWorld(solid, { lava, shield: false });
-  bare.entities = { 3: over };
-  assert(!stand.blazeStands(bare, threats(bare, 24), { dig: false }).close_in, 'no shield');
+});
+
+// mid-242-aa-fortress-5 at 15:16:45 (note 614): a stone sword, no armour,
+// no shield, 20 health, one blaze 4.3 off in sight and four more ten to
+// thirteen off behind the walls. Offered cover, holds, heal and retreat,
+// never the charge a player makes: close_in asked for a shield.
+function aaFight({ shield = false } = {}) {
+  const bot = brickWorld(openFloor, { items: ['stone_sword', 'cobblestone'], shield });
+  bot.inventory.slots = { ...(shield ? { 45: { name: 'shield' } } : {}) };
+  const hidden = [blazeAt(11, -9.5, 65, 4.5), blazeAt(12, -10.5, 65, -3.5), blazeAt(13, 6.5, 66, 10.5), blazeAt(14, 12.5, 65, -4.5)];
+  bot.entities = { 10: blazeAt(10, 4.8, 64.5, 0.5), ...Object.fromEntries(hidden.map(e => [e.id, e])) };
+  // Walls between the bot and the four: no line reaches them.
+  bot.world.raycast = (from, dir, len) => { const to = from.plus(dir.scaled(len)); return hidden.some(h => h.position.distanceTo(to) < 2.5 || h.position.distanceTo(from) < 2.5) ? { position: from.plus(dir).floored(), intersect: from.plus(dir) } : null; };
+  return bot;
+}
+test('without a shield the blaze in reach is still charged, as close_in and as the nearest alone, priced with every fireball landing at its chance (mid-242-aa-fortress-5, note 614)', () => {
+  const bot = aaFight();
+  const danger = threats(bot, 24);
+  assert.deepEqual(danger.filter(t => t.visible).map(t => t.entity.id), [10], 'the one in sight');
+  const options = stand.blazeStands(bot, danger, { dig: false });
+  const close = options.close_in, charge = options.charge_nearest;
+  assert(close && charge, Object.keys(options).join(','));
+  assert.match(close.description, /^Go at them with the sword: no shield carried: walk straight in on the nearest blaze ground reaches \(4\.3 blocks off/);
+  assert.match(close.description, /No shield is carried: every fireball from those that see the bot lands at its chance by distance/);
+  assert.doesNotMatch(close.description, /behind the shield|the lulls|with the shield down/);
+  // The arena's runs are said with their own kit, not "the same kit".
+  assert.match(close.description, /The arena's runs of it with an iron sword, a shield and iron armour unless a run says otherwise, not this bot's kit \(a stone sword, no armour, no shield\), fight by fight:/);
+  assert.doesNotMatch(close.description, /same kit/);
+  // The nearest alone: one kill, then asked again.
+  assert.equal(charge.cost.kills, 1);
+  // Those behind the walls count for the charge only with a line to where
+  // it strikes from; the close-in goes on toward them, and counts them all.
+  assert.equal(charge.cost.into, 0);
+  assert.equal(close.cost.into, 4);
+  assert.match(charge.description, /Worked from this fight: 1 blaze sees the bot now \(4 more about out of sight with no line to where the sword strikes it from, not counted until they see it\)\./);
+  assert.equal(charge.cost.deathAt, null);
+  assert(charge.cost.damage < close.cost.damage, `the one: ${charge.cost.damage}, all of them: ${close.cost.damage}`);
+  assert(charge.cost.damage < 20 && charge.cost.seconds < 10, JSON.stringify(charge.cost));
+  assert.match(charge.description, /^Charge the nearest blaze alone: 4\.3 blocks off, over ground the bot can stand on within a sword's reach of it; no shield carried: walk straight in on it, strike it until it dies/);
+  assert.match(charge.description, /About [\d.]+ damage over the [\d.]+ seconds to that one killed, from 20 health, [\d.]+ after\./);
+  // With a shield the same walk waits out the volleys behind it, and says so.
+  const shielded = stand.blazeStands(aaFight({ shield: true }), threats(aaFight({ shield: true }), 24), { dig: false });
+  assert.match(shielded.close_in.description, /stop and face each volley behind the shield/);
+  assert(shielded.charge_nearest.cost.firstWalk.wall > shielded.charge_nearest.cost.firstWalk.walk, 'with a shield the walk waits out the volleys');
+  assert.equal(charge.cost.firstWalk.wall, charge.cost.firstWalk.walk, 'without one it goes straight on');
+  // One blaze about: close_in is that charge; no second option for it.
+  const lone = brickWorld(openFloor, { items: ['stone_sword'], shield: false });
+  lone.inventory.slots = {};
+  lone.entities = { 3: blazeAt(3, 5.5, 64.5, 0.5) };
+  const one = stand.blazeStands(lone, threats(lone, 24), { dig: false });
+  assert(one.close_in && !one.charge_nearest, Object.keys(one).join(','));
+});
+
+test('every blaze option says what it gains toward the rods the goal still needs: the charge its kill, a hold a kill only if one comes, the heal none (note 614)', () => {
+  const bot = aaFight();
+  bot.health = 15;
+  bot.inventory.items = () => [{ name: 'stone_sword', count: 1 }, { name: 'cobblestone', count: 64 }, { name: 'cooked_mutton', count: 3 }];
+  const goal = { mobHunt: { item: 'blaze_rod', entity: 'blaze', targetCount: 8 } };
+  const need = stand.rodsNeeded(bot, goal);
+  assert.equal(need, 8);
+  const options = stand.blazeStands(bot, threats(bot, 24), { dig: false, need });
+  for (const [k, o] of Object.entries(options)) assert.match(o.description, / Toward the rods: /, k);
+  assert.match(options.charge_nearest.description, /Toward the rods: about 1 blaze killed in about [\d.]+ seconds, about 0\.5 rods on the average \(a blaze drops one about half the time\); 8 rods still needed\./);
+  if (options.back_to_wall) assert.match(options.back_to_wall.description, /Toward the rods: a kill only if a blaze comes within the sword's reach; 8 rods still needed/);
+  if (options.leave_and_heal) assert.match(options.leave_and_heal.description, /Toward the rods: none, no blaze killed; the blazes stay, and waiting does not send them away/);
+  // No hunt for rods: nothing said.
+  const none = stand.blazeStands(bot, threats(bot, 24), { dig: false, need: stand.rodsNeeded(bot, {}) });
+  for (const o of Object.values(none)) assert.doesNotMatch(o.description, /Toward the rods/);
 });
 
 test('a stand says what the arena measured of it, every fight measured, the one like this fight first', () => {

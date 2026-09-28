@@ -1359,7 +1359,12 @@ test('the hunt\'s health, hunger, food, fire and kit are facts on Jev\'s choice,
   assert.match(fitnessSays(make(9, true), lit), /Health 9 \(under the 14 the code once required to start a fight\); hunger 20: health comes back while it stays at eighteen or more; alight now: fire takes half a heart a second, and in the Nether there is no water to put it out; only waiting burns it off\./);
   assert.match(fitnessSays(make(11.9, false, 12)), /Health 11.9 \(under the 14 .*\); hunger 12: health does not come back under eighteen, and nothing is carried to eat: every point lost is gone for good\./);
   const bare = make(18, false); bare.inventory = { items: () => [], slots: {} };
-  assert.match(fitnessSays(bare), /the kit is short: no sword or axe carried, no head armour worn, no torso armour worn, no legs armour worn, no feet armour worn/);
+  assert.match(fitnessSays(bare), /the kit is short: no iron or better sword carried, no iron or better helmet worn, no iron or better chestplate worn, no iron or better leggings worn, no iron, diamond, netherite or golden boots worn, no shield in the off hand\./);
+  // A stone sword carried is said, not "no sword or axe carried" (note 614:
+  // mid-242-aa-fortress-5 was told so beside options striking with it).
+  const stone = make(20, false); stone.inventory = { items: () => [{ name: 'stone_sword' }], slots: {} };
+  assert.match(fitnessSays(stone), /the kit is short: no iron or better sword carried \(a stone sword is\), no iron or better helmet worn/);
+  assert.doesNotMatch(fitnessSays(stone), /no sword or axe carried/);
   // A passive chase has no armour behind it, so fire still calls it off.
   assert(!canBegin(make(18, true), { item: 'feather', passive: true }), 'a chase in shirtsleeves stops for fire');
   // In view at nine health, the fight is asked, the fitness on every option and in the state.
@@ -1821,6 +1826,26 @@ test('blazes heard through the fortress\'s walls are a worded fight, the stands 
   assert.match(state.blazes, /^2 blazes within forty-eight blocks \(0 in sight, the rest heard through the walls\), the nearest 16 blocks off, from 2 to 4 blocks above the bot's feet; these are the blazes the fortress search came for: 8 blaze rods still needed/);
   assert.equal(Object.keys(state).indexOf('blazes'), 3, 'with the resource and what is needed');
   assert(options.back_to_wall, `a stand is offered with the blazes out of sight: ${Object.keys(options)}`);
+});
+
+test('on a blaze hunt, leaving them says it gains nothing toward the rods and fighting one says its kill; the fitness names the sword carried (mid-242-aa-fortress-5, note 614)', async () => {
+  // 15:16:14: full health, a stone sword, ten blazes heard, hunt_target
+  // answered defer (0.50) over single blazes, told the fights' prices, a
+  // kit with "no sword or axe carried", and nothing of what leaving gains.
+  const { bot, task, goal } = fixture('blaze');
+  bot.inventory.items = () => [{ name: 'stone_sword', count: 1 }, { name: 'cooked_mutton', count: 4 }];
+  bot.inventory.slots = {};
+  goal.mobHunt.targetCount = 8;
+  let asked = null;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, options: questions.branch_0.criteria }; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  await huntObserved(bot, task, goal, () => {}, { navigate: async () => {} }, client);
+  assert(asked, 'asked');
+  const { options } = asked;
+  assert.match(options.defer, /Toward the rods: none, no blaze killed; the blazes stay, and waiting does not send them away; 8 rods still needed\. Left, these are not offered again for two minutes\./);
+  const hunt = Object.keys(options).find(k => /^hunt_\d+$/.test(k));
+  assert.match(options[hunt], /Toward the rods: about 1 blaze killed in about [\d.]+ seconds?, about 0\.5 rods on the average/);
+  for (const o of Object.values(options)) assert.doesNotMatch(o, /no sword or axe carried/);
+  assert.match(options.defer, /no iron or better sword carried \(a stone sword is\)/);
 });
 
 test('a stand no blaze can see is said as the wait it is, with the holds already made from about here and what came of them; a hold stopped leaves the work its own step (mid-242-ab-nether-3, note 585)', async () => {
