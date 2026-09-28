@@ -188,7 +188,7 @@ function looseEnds(goal, now = Date.now()) {
 // stalled is refused by the survival layer for ten minutes
 // (Survival.report), which falls through to its next answer; nothing more
 // is needed here.
-const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No reachable surveyed ground/i.test(errors.filter(Boolean).join(' '));
+const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No path to the goal|No reachable surveyed ground/i.test(errors.filter(Boolean).join(' '));
 const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
 // The rung's own question (note 571): its budget ran ten minutes with no
 // new best (tried.js watchRung), or a way below had nothing left to try and
@@ -207,7 +207,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // at y 71 by a spruce, was asked a heading every three seconds and chose
   // south each time, and every one found no ground to walk to; working free
   // was never on offer (2026-09-26).
-  const walksFailing = walksFailed(stall.error, goal.lastError);
+  // The last walk off that found no route is a walk failing too: on 25600
+  // "the walk off got 0 of 8 blocks ... (No route from here to ...)" was
+  // said at every asking from a ledge of its own stairs, and working free
+  // was never offered (note 588).
+  const wayOff = (goal.survival || goal).wayOffShort;
+  const walksFailing = walksFailed(stall.error, goal.lastError, wayOff && now - wayOff.at < DETOUR_MEMORY_MS ? wayOff.error : null);
   const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot, { walksFailing });
   if (stall.layer === 'survival') {
     recordStill(stats, stall.key, STALL_MS, { now, detour: terrain ? 'work_free' : 'refused' }); save();
@@ -297,6 +302,37 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       setAside(goal, 'rung', rung, `Jev set it aside at the rung's question${worked ? `, worked on ${worked.says}` : `, stalled ${stall.strikes} times`}`.slice(0, 300), RUNG_WAIT_MS); delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     } };
+  // A rung set aside earlier is offered back whenever the work in hand
+  // stalls, said with why and when it was left, what its rest has left,
+  // where its work is and what the ledger holds of it: whether to cut its
+  // rest short is Jev's. On 25600 the rods were set aside for the pearls,
+  // the pearls stalled for ten minutes with the fortress 66 blocks off, and
+  // no question offered the rods again (note 588).
+  const takeBack = !idle && goal.kind === 'win' ? require('./game-progress').takeBackRungs(bot, goal, now) : [];
+  for (const back of takeBack) {
+    const words = v => String(v || '').replaceAll('_', ' ');
+    const clock = goal.rungClocks?.[back.phase];
+    const place = takeBackPlace(bot, goal, back.phase, now);
+    const survey = place?.target ? await surveySays(bot, task, place.target) : '';
+    const lately = tried.summary(goal, { work: `step:rung:${back.phase}`, now });
+    answers[`take_up_${back.phase}`] = { description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${Math.max(1, Math.round((now - back.at) / 60000))} minutes ago (${back.why}), it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
+      run: async () => {
+        require('./game-progress').takeBackRung(goal, back.phase); save();
+        bot.chat?.(`Back to the ${words(back.phase)}.`);
+      } };
+  }
+  // Every way to the pearls from here, while they are the rung in hand
+  // (pearl-routes.js): the ladder's one route stalling was answered only
+  // with ways to keep at that route.
+  let pearlsNotOffered = null;
+  if (!idle && rung === 'obtain_ender_pearls') {
+    const routes = require('./pearl-routes').pearlRoutes(bot, goal, { now, save, actions: { navigate } });
+    for (const [key, option] of Object.entries(routes.options)) {
+      const survey = option.surveyTo ? await surveySays(bot, task, option.surveyTo) : '';
+      answers[key] = { description: `${option.description}${survey}`, ...(option.target ? { target: option.target } : {}), run: () => option.run(task) };
+    }
+    if (routes.notOffered.length) pearlsNotOffered = routes.notOffered;
+  }
   // Every way to it resting until a time: other work until then, as one
   // choice that holds, with the minutes said. mid-226-f kept its resting
   // portal way and answered the rest met again with "differently" forty-two
@@ -354,7 +390,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}),
     ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
-    ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}) };
+    ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
+    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour' });
 }
 // What the ladder goes on with if the rung is set aside, and what it costs
@@ -401,6 +438,32 @@ async function nextRungSays(bot, task, goal, rung, now = Date.now()) {
   const lately = require('./tried').summary(goal, { work: `step:rung:${next.phase}`, now });
   if (lately) parts.push(`tried for it lately: ${lately.slice(0, 3).join('; ')}`);
   return `${parts.join('; ')}.`;
+}
+// Where a rung taken back would go first, from here: the rods' fortress,
+// how far, and whether the search has left it for now.
+const RUNG_PLACE = { obtain_blaze_rods: 'nether_fortress' };
+function takeBackPlace(bot, goal, phase, now = Date.now()) {
+  const kind = RUNG_PLACE[phase];
+  if (!kind) return null;
+  let known = [];
+  try { known = require('./exploration').knownLandmarks(bot, goal, kind, 1024); } catch (_) { known = []; }
+  const words = String(kind).replaceAll('_', ' ');
+  if (!known.length) return { says: `No ${words} is known: its work begins with a search for one.` };
+  const k = known[0], l = k.landmark, here = bot.entity.position, dy = Number.isFinite(l.y) ? Math.round(l.y - here.y) : 0;
+  const shunned = (goal.fortressSearch?.shunned || []).find(s => Math.hypot(s.x - l.x, s.z - l.z) < 32 && s.until > now);
+  return { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(here.y), z: l.z },
+    says: `The nearest ${words} known is ${k.distance} blocks off${dy ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} at (${l.x}, ${l.z})${shunned ? `; the search left it for ${Math.max(1, Math.ceil((shunned.until - now) / 60000))} more minutes` : ''}.` };
+}
+// Whether a way to a place is found from here: the pathfinder's own look,
+// half a second of it, said as it came out (as nextRungSays does). On 25600
+// every walk from the ledge of its own stairs had found no route, and a
+// route offered without that was a route said as a walk.
+async function surveySays(bot, task, t) {
+  if (!t || !bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return '';
+  try {
+    const r = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNear(t.x, t.y, t.z, 3), 500);
+    return r?.status === 'success' ? ' A route survey from here found a way there.' : r?.status === 'noPath' ? ' A route survey from here found no way there.' : ' A half-second route survey from here did not finish (far, or a long way round).';
+  } catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; return ''; }
 }
 // Where a step was going, for the ledger (tried.js): its target, its
 // destination, the cell it worked; none, and the step is about its place.
@@ -5538,7 +5601,7 @@ function gameHandlers(bot, decisionClient) {
         // Pearls from the warped forest (warped-pearls.js).
         warped_pearls: (bot, task, goal, save, stage) => require('./warped-pearls').warpedPearls(bot, task, goal, save,
           { navigate, acquireStep, notice: (b2, g2, sv2) => noticeLandmarks(b2, g2, sv2, { force: true }),
-            tunnel: (b2, t2, g2, sv2, target) => tunnelStep(b2, t2, g2, sv2, target, { dig, navigate }) }, stage || goal.step),
+            tunnel: (b2, t2, g2, sv2, target, opts = {}) => tunnelStep(b2, t2, g2, sv2, target, { dig, navigate, within: opts.within || null }) }, stage || goal.step),
         // Wolves sit before a crossing and stand again after (wolves.js).
         wolves: (bot, task, goal, save, sit) => require('./wolves').commandWolves(bot, task, goal, save, sit),
         // Back for a death's drops (corpse-run.js).

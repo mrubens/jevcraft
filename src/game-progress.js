@@ -155,6 +155,41 @@ function asideRungs(bot, goal = {}, now = Date.now()) {
   }
   return out;
 }
+// The rungs set aside that the ladder would take up now were their rest
+// lifted, each with why and when: what taking one back would mean from here.
+// Read from a copy of the goal with the one rest cleared, so a rung the
+// ladder would not reach here (the shield, left for the Nether, while in the
+// Nether) is not offered. On 25600 the rods were set aside with their
+// fortress 66 blocks off and the pearls that replaced them stalled for ten
+// minutes, the stall's question never offering the rods back, and Jev
+// answered none_good seven times (note 588).
+function takeBackRungs(bot, goal = {}, now = Date.now()) {
+  const resting = attemptsFor(goal).of('rung', now);
+  const out = [];
+  for (const [phase, entry] of Object.entries(resting)) {
+    if (!/^[a-z_]+$/.test(phase) || phase === goal.rungTime?.phase) continue;
+    let next = null;
+    try { const probe = JSON.parse(JSON.stringify(goal)); attemptsFor(probe).clear('rung', phase); if (probe.elsewhere?.phase === phase) delete probe.elsewhere; next = nextGameStage(bot, probe); }
+    catch (_) { next = null; }
+    if (next?.phase === phase) out.push({ phase, why: entry.why, at: entry.at, until: entry.until });
+  }
+  return out;
+}
+// Taking a rung back: its rest lifted, a "go on here" or a held way out of
+// the Nether for it dropped, and its clock started afresh.
+function takeBackRung(goal, phase) {
+  attemptsFor(goal).clear('rung', phase);
+  if (goal.elsewhere?.phase === phase) delete goal.elsewhere;
+  if (goal.leaveNether?.reason === phase) delete goal.leaveNether;
+  if (goal.rungClocks?.[phase]) goal.rungClocks[phase].reasked = 0;
+  delete goal.rungTime;
+}
+
+// The pearls' route when Jev chose one (pearl-routes.js): held half an
+// hour, or until the pearls are carried.
+const PEARL_ROUTE_MS = 30 * 60000;
+const pearlRouteHeld = (goal, now = Date.now()) => goal.pearlRoute && goal.pearlRoute.until > now ? goal.pearlRoute : null;
+
 // The rungs open now, in ladder order: the first, and then each rung the
 // ladder would go on to if the ones before it waited their turn, for as long
 // as those before it may wait (DEFERRABLE). A rung that may not wait, or one
@@ -483,7 +518,15 @@ function nextGameStage(bot, goal, skip = new Set()) {
     if (restock) { const supply = restock.items.filter(m => m.want); if (supply.length) return { ...restock, phase: 'restock_supplies', action: 'home', home: { ...restock, items: supply, wants } }; }
   }
   const rodsShort = count(bot, 'blaze_rod') < rods;
-  if (rodsShort && where !== 'nether') return { phase: 'reach_nether', action: 'enter_nether' };
+  // The pearls from the Overworld's endermen, Jev's route while the rods
+  // wait (pearl-routes.js): back through the portal, and there the pearls
+  // before the Nether again. Without it, short of rods in the Overworld the
+  // ladder went straight back into the Nether, and the Overworld's hunt was
+  // no route at all while the rods were short (note 588).
+  const pearlsShort = count(bot, 'ender_pearl') < target - eyes;
+  const overworldPearls = pearlsShort && pearlRouteHeld(goal)?.pick === 'overworld';
+  if (overworldPearls && where === 'nether') return { phase: 'obtain_ender_pearls', action: 'return_overworld', item: 'ender_pearl', count: target - eyes, via: 'overworld_hunt' };
+  if (rodsShort && where !== 'nether' && !overworldPearls) return { phase: 'reach_nether', action: 'enter_nether' };
   if (rodsShort) {
     const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods }, skip);
     if (rodStage) return rodStage;
@@ -517,7 +560,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
     return { phase: 'obtain_ender_pearls', action: 'trade', item: 'ender_pearl', count: target - eyes };
   // A warped forest (remembered, or looked for) beats a night walk here:
   // the Overworld hunt is the fallback once the Nether search has rested.
-  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal))
+  if (count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal) && !overworldPearls)
     return { phase: 'obtain_ender_pearls', action: 'enter_nether', item: 'ender_pearl', count: target - eyes, via: 'warped_forest' };
   // Endermen when they show, and something worth doing while they do not:
   // walking rings about looking for one was the dullest hour of the run
@@ -735,4 +778,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

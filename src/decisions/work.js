@@ -195,6 +195,8 @@ define({
 const STALL_OPTIONS = [
     { key: 'differently', label: 'keep at the stalled work another way', when: 'work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search', level: 'root' },
     { key: 'set_aside_rung', label: 'leave the stalled rung for thirty minutes', when: 'the stall is on a game-ladder rung that can wait', level: 'root' },
+    { pattern: 'take_up_[a-z_]+', label: 'take up a rung set aside earlier, its rest cut short', when: 'on the way to beating the game, a rung set aside and still resting that the ladder would take up now were its rest lifted (src/game-progress.js takeBackRungs); said with why and when it was set aside, the minutes its rest has left, where its work is (the rods\' fortress) and what the ledger holds of it (note 588)', level: 'root', dynamic: true },
+    { pattern: 'pearls_(forest_[0-9]+|search|barter|overworld|nether)', label: 'another route to the ender pearls', when: 'the pearls are the rung in hand (src/pearl-routes.js): a warped forest known whose walk rests, taken up again; the sweep for another forest when it rests and no forest known is open; a barter walk toward a piglin, gold carried and none within thirty-two; back to the Overworld for its endermen, a portal remembered (held half an hour or until the pearls are carried); in the Overworld on that route, back to the Nether\'s forests. A route that is not real from here is said in stalled.pearlRoutesNotOffered with why (note 588)', level: 'root', dynamic: true },
     { key: 'until_rest_ends', label: 'other work until the rest ends, the minutes said, a choice that holds', when: 'every way to the stalled work rests until a time (WaysResting); the same rest met again goes back to that work, not to the question (note 490)', level: 'root' },
     { key: 'work_free', label: 'work free of the terrain one move at a time', when: 'the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev\'s (unstuck_move)', level: 'root' },
     { key: 'night_mine', label: 'dig a mine from here for the night', when: 'night in the Overworld, a pickaxe and nothing watching', level: 'root' },
@@ -215,14 +217,14 @@ define({
   trigger: 'A stall (src/stillness.js): forty-five seconds on one action without new ground, a gain, a block changed or getting nearer, outside a permitted wait; a single option is taken without asking.',
   source: 'src/work.js (answerStall, breakStillness), src/stillness.js (the rule)',
   options: STALL_OPTIONS,
-  instructions: workInstructions('The bot\'s work has stopped getting anywhere. `stalled` says what stalled and how many times in ten minutes. Choose: keep at it another way, leave its rung for later, or something useful from here for a few minutes, after which the stalled work gets its turn again. The same answer twice running seldom unsticks it.'),
+  instructions: workInstructions('The bot\'s work has stopped getting anywhere. `stalled` says what stalled and how many times in ten minutes. Choose: keep at it another way, another route to what the rung is for, take up a rung set aside earlier (its rest cut short), leave its rung for later, or something useful from here for a few minutes, after which the stalled work gets its turn again. The same answer twice running seldom unsticks it.'),
   // Without Jev, the order the rule kept: another way first, the rung left
   // at the third stall, a detour otherwise.
   fallback: (children, path, context = {}) => {
     const strikes = context.stalled?.strikes ?? 2;
     if (strikes === 1 && children.differently) return 'differently';
     if (strikes >= 3 && children.set_aside_rung) return 'set_aside_rung';
-    return Object.keys(children).find(k => !['differently', 'set_aside_rung'].includes(k)) || Object.keys(children)[0];
+    return Object.keys(children).find(k => !['differently', 'set_aside_rung'].includes(k) && !/^(take_up|pearls)_/.test(k)) || Object.keys(children)[0];
   },
 });
 
@@ -240,9 +242,9 @@ define({
     { key: 'keep_at_it', label: 'keep at the rung with the ways not yet tried here', when: 'always: the ledger\'s tries are said with it, and the budget starts again', level: 'root' },
     ...STALL_OPTIONS,
   ],
-  instructions: workInstructions('The bot has worked on this rung of the game for ten minutes without getting any nearer it (no more of what it is for, no milestone, no nearer its target, no new country), or every way it had from here has been tried and come to nothing. `rung` says what the rung is and its best so far; `tried` is what has been tried lately, each way with how often and how it ended; `whatFailedBelow` is the failure that brought this question. Choose: keep at it with the ways left, change the plan (another way at it, or a way the ledger has not tried), or set the rung aside for now. The same ways again seldom end differently.'),
+  instructions: workInstructions('The bot has worked on this rung of the game for ten minutes without getting any nearer it (no more of what it is for, no milestone, no nearer its target, no new country), or every way it had from here has been tried and come to nothing. `rung` says what the rung is and its best so far; `tried` is what has been tried lately, each way with how often and how it ended; `whatFailedBelow` is the failure that brought this question. Choose: keep at it with the ways left, change the plan (another way at it, another route to what the rung is for, or a way the ledger has not tried), take up a rung set aside earlier, or set the rung aside for now. The same ways again seldom end differently.'),
   // Without Jev: the rung aside where it may wait, another way otherwise.
-  fallback: (children) => children.set_aside_rung ? 'set_aside_rung' : children.differently ? 'differently' : Object.keys(children).find(k => k !== 'keep_at_it') || Object.keys(children)[0],
+  fallback: (children) => children.set_aside_rung ? 'set_aside_rung' : children.differently ? 'differently' : Object.keys(children).find(k => k !== 'keep_at_it' && !/^(take_up|pearls)_/.test(k)) || Object.keys(children)[0],
 });
 
 // Recovery after repeated failure: Jev picks among bounded options the code

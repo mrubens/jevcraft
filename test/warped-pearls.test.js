@@ -71,7 +71,8 @@ test('the sweep walks legs of sixty-four and rests after eight without a forest'
 test('a walk that fails at once is not a leg: the sweep tunnels on and gives up only after real tries', async () => {
   const { bot, goal } = fixture('the_nether');
   let tunnels = 0;
-  const actions = { navigate: async () => {}, tunnel: async () => { tunnels++; }, acquireStep: async () => {}, notice: () => {} };
+  // Each staircase makes a little ground, so no spot has every heading come to nothing from it (note 588).
+  const actions = { navigate: async () => {}, tunnel: async b => { tunnels++; b.entity.position = b.entity.position.offset(3, 0, 0); }, acquireStep: async () => {}, notice: () => {} };
   for (let i = 0; i < 10; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
   assert.equal(tunnels, 10, 'each stuck walk goes on through the netherrack');
   assert.equal(goal.warpedSearch.legs, 0, 'and ten stuck tries are not ten legs');
@@ -114,4 +115,35 @@ test('a warped forest whose walk came to nothing is not walked to again at once,
   setAside(goal, 'rung', 'warped_search', 'none found', 600000);
   assert.equal(warped.warpedOpen(goal), false, 'the forest\'s walk resting and the sweep resting: not open');
   assert.equal(nextGameStage(bot, goal).action, 'return_overworld', 'home the old way, not the pearl step spinning');
+});
+
+test('the sweep from a ledge where every walk and every staircase comes to nothing keeps one step\'s name, and once every heading has come to nothing from about here it rests and fails with each heading\'s why, not turning for a quarter of an hour (mid-242-ae-nether-2-fortress-2, note 588)', async () => {
+  // 25600 at 05:22 to 05:25: at (-41.5, 35, 81.5) on a ledge of its own stairs, both warped forests known set aside
+  // (their walks came no nearer), the sweep for a third: every walk "No path to the goal!", every staircase "no floor
+  // to step onto", the step named warped_search and tunnel in turn, "turning between tunnel and warped search 4 times
+  // in 8 seconds", 233 tries and no leg, for as long as the sweep's quarter of an hour ran.
+  const { bot, goal } = fixture('the_nether');
+  bot.entity.position = new Vec3(-41.5, 35, 81.5);
+  goal.landmarks = [{ kind: 'warped_forest', x: -77, y: 58, z: -4, dimension: 'nether' }, { kind: 'warped_forest', x: -61, y: 62, z: -147, dimension: 'nether' }];
+  for (const l of goal.landmarks) setAside(goal, 'landmark_trip', `warped_forest:${l.x},${l.z}`, 'the walk there came no nearer than before', 1800000);
+  const withins = [];
+  const actions = { navigate: async () => { throw new Error('No path to the goal!'); }, acquireStep: async () => assert.fail('no hunt'), notice: () => {},
+    tunnel: async (b, t, g, sv, target, opts = {}) => { withins.push(opts.within); throw new Error(`The staircase toward (${target.x}, ${target.y}, ${target.z}) is set aside (no safe step toward it: no floor to step onto (a gap, for a span or a pillar))`); } };
+  let failed = null, passes = 0;
+  while (passes < 40 && !failed) {
+    passes++;
+    try { await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 16 }); }
+    catch (err) { failed = err; }
+  }
+  assert(withins.length && withins.every(w => w?.action === 'warped_search'), 'the staircase is the sweep\'s phase: it is handed the sweep\'s step to keep its name');
+  assert.equal(passes, 12, 'three tries a heading, four headings, then done');
+  assert.match(failed?.message || '', /^The sweep for a warped forest got nowhere from \(-41, 35, 82\): every heading came to nothing \(\w+: the walk failed \(No path to the goal!\), the staircase failed \(The staircase toward .* no floor to step onto/);
+  assert.match(failed.message, /the sweep rests half an hour$/);
+  assert.equal(warped.warpedOpen(goal), false, 'the sweep rests');
+  assert.match(goal.tried.entries.find(e => e.q === 'step' && e.method === 'warped_pearls').why, /^The sweep for a warped forest got nowhere/, 'in the ledger');
+  // Somewhere else is a sweep afresh: the headings spent from the ledge are not carried off it.
+  require('../src/progress').attemptsFor(goal).clear('rung', 'warped_search');
+  bot.entity.position = new Vec3(20.5, 60, 20.5);
+  await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 16 });
+  assert.equal(goal.warpedSearch.spent, undefined);
 });
