@@ -73,6 +73,17 @@ const ARENAS = Object.freeze({
     open: [1715.5, 75, 1715.5],
     wall: [1715.5, 75, 1715.5],
   },
+  // A warped-forest cavern in the Nether, open well over head, the bot in a
+  // corner of its netherrack walls (rock at its east and north, as at
+  // mid-242-ah-fortress-1's death, 2026-09-28 11:43: a wither skeleton
+  // came at it across the cavern floor from twelve blocks).
+  cave_corner: {
+    shell: [1600, 58, 1600, 1630, 80, 1630],
+    hollow: [1605, 64, 1605, 1625, 73, 1625],
+    fills: [[[1605, 63, 1605, 1625, 63, 1625], 'warped_nylium']],
+    open: [1625.5, 64, 1605.5],
+    wall: [1625.5, 64, 1605.5],
+  },
   holding: {
     shell: [2096, 72, 2096, 2108, 84, 2108],
     hollow: [2101, 77, 2101, 2103, 79, 2103],
@@ -91,7 +102,15 @@ const FORTRESS_KIT = Object.freeze({
   offhand: 'shield',
   items: [['iron_sword', 1], ['iron_pickaxe', 1], ['cobblestone', 32], ['netherrack', 16], ['cooked_beef', 8]],
 });
-const kitOf = d => (d.loadout === 'fortress' ? FORTRESS_KIT : KIT);
+// What mid-242-ah-fortress-1 carried when a wither skeleton killed it: full
+// iron, an iron sword and a shield, a stone axe and no pickaxe, netherrack
+// and dirt to build with, mutton.
+const CAVE_KIT = Object.freeze({
+  armor: { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots' },
+  offhand: 'shield',
+  items: [['iron_sword', 1], ['stone_axe', 1], ['netherrack', 53], ['dirt', 6], ['mutton', 8]],
+});
+const kitOf = d => (d.loadout === 'fortress' ? FORTRESS_KIT : d.loadout === 'cave' ? CAVE_KIT : KIT);
 
 // The fortress loadout: the iron set with golden boots for the piglin
 // truce, a diamond sword, a shield, blocks to wall with and food to heal on.
@@ -191,6 +210,14 @@ const DRILLS = Object.freeze([
     loadout: 'fortress', fire: true, nudge: false,
     at: [[1814.5, 71, 1808.5], [1822.5, 73, 1811.5], [1833.5, 72.5, 1810.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
     why: 'mid-235-p-nether-4-fortress-4, 2026-09-28 04:34: a wither skeleton at 1.8 blocks and blazes eight to twenty-five off on a fortress floor; hit to 2.1, then withered to death while the questions went round.' },
+  { name: 'wither_cave_corner', mode: 'defend', entity: 'wither_skeleton', count: 1, arena: 'cave_corner', stand: 'open',
+    loadout: 'cave', nudge: false, health: 14.5, hungry: 8,
+    at: [[1618.5, 64, 1614.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 10 },
+    why: 'mid-242-ah-fortress-1, 2026-09-28 11:43: a wither skeleton came across a warped cavern at the bot in a netherrack corner (14.5 health, hunger 16, full iron, iron sword, shield, no pickaxe); it ate, was struck, withered, and went from 10 to none in six seconds while none of these was answered.' },
+  { name: 'wither_cave_pair', mode: 'defend', entity: 'wither_skeleton', count: 2, arena: 'cave_corner', stand: 'open',
+    loadout: 'cave', nudge: false, health: 14.5, hungry: 8,
+    at: [[1618.5, 64, 1614.5], [1614.5, 64, 1609.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 12 },
+    why: 'The same corner with a second wither skeleton, as a fortress has them (note 559: three at once): one alone was fought and killed five times in five.' },
   { name: 'blaze_pit_above', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 3, arena: 'pit', stand: 'open',
     loadout: 'fortress', fire: true, nudge: false,
     at: [[1719.5, 83, 1715.5], [1715.5, 84, 1710.5], [1711.5, 82, 1718.5]], seconds: 90, expect: { deaths: 0, drops: 1 },
@@ -296,8 +323,17 @@ function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
   commands.push(`item replace entity ${user} weapon.offhand with minecraft:${kit.offhand}`);
   for (const [item, n] of [...kit.items, ...(d.kit || [])]) commands.push(`give ${user} minecraft:${item} ${n}`);
   commands.push(`effect give ${user} minecraft:instant_health 1 20 true`, `effect give ${user} minecraft:saturation 1 20 true`);
+  // Where the death began hungry: from full, the Hunger effect at this
+  // strength wears the saturation away in about three seconds and then a
+  // hunger point every two thirds of a second; arena.js clears it at
+  // sixteen. The health is taken off after (healthCommand): with the
+  // saturation left, the 14.5 staged was 18 by the first question.
+  if (d.hungry) commands.push(`effect give ${user} minecraft:hunger ${d.hungry} 255 true`);
   return commands;
 }
+
+// The health a drill begins at, taken off past the armour.
+const healthCommand = (user, d) => (d.health ? `damage ${user} ${20 - d.health} minecraft:generic_kill` : null);
 
 // Every mob is tagged and persistent: a blaze that wandered off would end
 // the drill early and a despawn would look like a kill.
@@ -354,4 +390,4 @@ function table(rows) {
   return [line(header), `|${widths.map(w => '-'.repeat(w + 2)).join('|')}|`, ...body.map(line)].join('\n');
 }
 
-module.exports = { ARENAS, DRILLS, KIT, FORTRESS_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, median, summarise, table };
+module.exports = { ARENAS, DRILLS, KIT, FORTRESS_KIT, CAVE_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, healthCommand, spawnCommands, median, summarise, table };

@@ -39,7 +39,7 @@ const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1,
 
 // `at`, where the bot would stand instead of where it stands: the firm
 // ground a stance steps to, judged for the same walkers (note 566).
-function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {}) {
+function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null, dug = null, placed = null } = {}) {
   const none = { ids: new Set(), mobs: [], round: [] };
   const walkers = danger.filter(t => t.entity?.position && WALKERS.has(t.entity.name) && !shooter(t.entity) && !t.entity.vehicle);
   if (!walkers.length || typeof bot.blockAt !== 'function') return none;
@@ -52,20 +52,41 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {
   // (note 596). With both, each is searched for by its own reach.
   const creepers = walkers.filter(t => t.entity.name === 'creeper'), others = walkers.filter(t => t.entity.name !== 'creeper');
   if (creepers.length && others.length) {
-    const a = walkersApart(bot, creepers, { radius, cap, at }), b = walkersApart(bot, others, { radius, cap, at });
+    const a = walkersApart(bot, creepers, { radius, cap, at, dug, placed }), b = walkersApart(bot, others, { radius, cap, at, dug, placed });
     // In the order they were given, as one search gave them.
     const order = t => walkers.indexOf(t.t || t);
     return { ids: new Set([...a.ids, ...b.ids]), mobs: [...a.mobs, ...b.mobs].sort((x, y) => order(x) - order(y)), radius, round: [...(a.round || []), ...(b.round || [])].sort((x, y) => order(x) - order(y)) };
   }
+  // A walker stands only where its body fits: a wither skeleton, 2.4 high,
+  // cannot enter a space under three blocks (26.1.2 EntityType sized; a
+  // mob's box is not let into a block, Entity.collide). The cells were
+  // searched one high for every walker, so a space two high that a player
+  // fights a wither skeleton from was a way to the bot for it, and no stance
+  // under a low ceiling was ever priced as out of its reach (note 601). With
+  // walkers of different heights, each is searched for by its own.
+  const { bodyHeight: heightOf } = require('./combat-estimate');
+  const tall = t => Math.max(1, Math.ceil(heightOf(t.entity.name) - 1e-6));
+  const sizes = [...new Set(walkers.map(tall))];
+  if (sizes.length > 1) {
+    const parts = sizes.map(n => walkersApart(bot, walkers.filter(t => tall(t) === n), { radius, cap, at, dug, placed }));
+    const order = t => walkers.indexOf(t.t || t);
+    return { ids: new Set(parts.flatMap(p => [...p.ids])), mobs: parts.flatMap(p => p.mobs).sort((x, y) => order(x) - order(y)), radius, round: parts.flatMap(p => p.round || []).sort((x, y) => order(x) - order(y)) };
+  }
+  const cellsHigh = sizes[0];
   const lighter = creepers.length > 0;
   const here = at || bot.entity.position, feet = here.floored();
   const key = c => `${c.x},${c.y},${c.z}`;
   const cache = new Map();
   let unknown = false, outside = false;
-  const block = c => { const k = key(c); if (!cache.has(k)) cache.set(k, bot.blockAt(c) || null); const b = cache.get(k); if (!b) unknown = true; return b; };
+  // `dug` and `placed`, the cells a stance would open or fill, judged before
+  // it does (a low ceiling put over the bot, a hole dug into a wall).
+  const dugKeys = new Set((dug || []).map(key)), placedKeys = new Set((placed || []).map(key));
+  const AIR = { name: 'air', boundingBox: 'empty' }, ROCK = { name: 'stone', boundingBox: 'block' };
+  const block = c => { const k = key(c); if (!cache.has(k)) cache.set(k, placedKeys.has(k) ? ROCK : dugKeys.has(k) ? AIR : bot.blockAt(c) || null); const b = cache.get(k); if (!b) unknown = true; return b; };
   const water = b => !!b && /water|bubble_column|kelp|seagrass/.test(b.name);
   const open = c => { const b = block(c); return !!b && b.boundingBox === 'empty' && !/lava/.test(b.name); };
-  const standable = c => open(c) && (block(c.offset(0, -1, 0))?.boundingBox === 'block' || water(block(c)));
+  const fits = c => { for (let dy = 1; dy < cellsHigh; dy++) if (!open(c.offset(0, dy, 0))) return false; return true; };
+  const standable = c => open(c) && fits(c) && (block(c.offset(0, -1, 0))?.boundingBox === 'block' || water(block(c)));
   const inside = c => Math.abs(c.x - feet.x) <= radius && Math.abs(c.z - feet.z) <= radius && Math.abs(c.y - feet.y) <= DEPTH;
   // Where a walker touches the bot, or a creeper lights beside it.
   const seen = new Set(), queue = [];
@@ -157,7 +178,10 @@ function apartSays(bot, apart) {
   const drops = apart.mobs.map(t => bot.entity.position.y - t.entity.position.y);
   const lowest = Math.round(Math.min(...drops)), highest = Math.round(Math.max(...drops));
   const where = lowest >= 2 ? `, ${lowest === highest ? lowest : `${lowest} to ${highest}`} blocks below the bot's feet,` : '';
-  return ` ${who[0].toUpperCase()}${who.slice(1)}${where} ${apart.mobs.length === 1 ? 'has' : 'have'} no way to the bot: no ground ${apart.mobs.length === 1 ? 'it' : 'they'} can walk, step up or drop along within ${apart.radius} blocks comes within a walker's reach of it${names.includes('creeper') ? ', or within three blocks, where a creeper lights' : ''}. ${apart.mobs.length === 1 ? 'It is' : 'They are'} left out of the figures here while that holds; a block placed or dug, or the bot moving, can open a way.${round}`;
+  const { bodyHeight } = require('./combat-estimate');
+  const tallOnes = names.filter(n => bodyHeight(n) > 2);
+  const fit = tallOnes.length ? ` (a ${tallOnes.map(n => `${n.replaceAll('_', ' ')}, ${bodyHeight(n)} blocks tall,`).join(' or ')} fits only where there are ${Math.ceil(Math.max(...tallOnes.map(bodyHeight)))} blocks of headroom: a space two high keeps it out)` : '';
+  return ` ${who[0].toUpperCase()}${who.slice(1)}${where} ${apart.mobs.length === 1 ? 'has' : 'have'} no way to the bot: no ground ${apart.mobs.length === 1 ? 'it' : 'they'} can walk, step up or drop along within ${apart.radius} blocks${fit} comes within a walker's reach of it${names.includes('creeper') ? ', or within three blocks, where a creeper lights' : ''}. ${apart.mobs.length === 1 ? 'It is' : 'They are'} left out of the figures here while that holds; a block placed or dug, or the bot moving, can open a way.${round}`;
 }
 // The walkers whose only way, if any, goes round past the bounds.
 function roundSays(bot, apart) {

@@ -779,7 +779,12 @@ const bites = m => m.jab ?? m.hitsBot;
 // (the mobs' poisonedFor, fightEstimate) runs on whatever the stance.
 // `health`, where given, floors the poison at 1 in `damage`; `poison` is
 // its part either way, for the caller to floor (poisonFloored).
-function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false, health = null }) {
+// `effectsTo`, where the wither and poison the stretch's blows leave are
+// counted to (their own end, past the stretch): a meal is priced over its
+// second and a half, and a wither skeleton's blow landing in it withers the
+// bot for ten seconds after, five health it was priced as a tenth of
+// (mid-242-ah-fortress-1's meal, note 601).
+function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false, health = null, effectsTo = null }) {
   let damage = 0;
   // The hits as timeline pieces, summed at the end under the half second a
   // hurt body cannot be hurt again (within).
@@ -880,8 +885,11 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     for (const m of order) if (!m.shoots || m.visible) stillReach(m);
   }
   damage += within(pieces, seconds);
-  damage += spanned(clipped(withering, seconds)) * WITHER.perSecond;
-  const poison = spanned(clipped(poisoning, seconds)) * POISON.perSecond;
+  // An effect begun within the stretch runs to `effectsTo` where given.
+  const effectEnd = Math.max(seconds, effectsTo ?? seconds);
+  const begunWithin = spans => spans.filter(([a]) => a < seconds);
+  damage += spanned(clipped(begunWithin(withering), effectEnd)) * WITHER.perSecond;
+  const poison = spanned(clipped(effectsTo != null ? [...begunWithin(poisoning)] : poisoning, effectEnd)) * POISON.perSecond;
   damage = poisonFloored(damage + poison, poison, health ?? Infinity);
   const out = { seconds, setup: round(setup), damage: round(damage), ...(poison > 0 ? { poison: round(poison) } : {}), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds), ...(farIn.length ? { farIn } : {}) };
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });

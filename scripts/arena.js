@@ -19,7 +19,7 @@ const { Task, navigate, countOf } = require('../src/skills');
 const { createSurvival, dig, waitFor, Blocked } = require('../src/work');
 const { tunnelStep, resourceTunnelStep } = require('../src/tunneling');
 const { prepareMobHunt, huntObserved } = require('../src/mob-hunt');
-const { DRILLS, drill, arenaDir, kitOf, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, summarise, table } = require('./lib/arena');
+const { DRILLS, drill, arenaDir, kitOf, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, healthCommand, spawnCommands, summarise, table } = require('./lib/arena');
 
 const port = Number(process.env.MC_PORT || 25574);
 // The player's worlds and the dream run must never see an arena command.
@@ -149,6 +149,13 @@ async function runDrill(d, attempt) {
     arena = await verifyArena(d);
     if (!arena.ok) throw new Error(`The ${d.arena} arena is not built at ${JSON.stringify(arena.cell)}: feet ${arena.feet}, head ${arena.head}, floor ${arena.floor}`);
   }
+  // Hungry and hurt as the death began: the hunger worn down first, then the
+  // health taken off, so nothing heals it back before the mob comes.
+  // The effect is cleared at sixteen: left to run it starved the bot to 10
+  // and every run's damage was the hunger's.
+  if (d.hungry) { await waitFor(task, () => bot.food <= 16, (d.hungry + 4) * 1000).catch(() => {}); await command(`effect clear ${username} minecraft:hunger`); }
+  const hurt = healthCommand(username, d);
+  if (hurt) { await command(hurt); await waitFor(task, () => bot.health <= d.health + 0.5, 5000).catch(() => {}); }
   previousHealth = bot.health;
   run.minHealth = bot.health;
   run.damageTaken = 0;

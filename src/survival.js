@@ -140,6 +140,48 @@ function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runS
   const givesUp = [...new Set(chasers.map(t => t.entity.name))].filter(n => GIVES_UP[n]).map(n => ` By the game's rule, ${GIVES_UP[n]}.`).join('');
   return ` They follow a running player (the bot sprints about ${SPRINT} blocks a second): ${each.join('; ')}.${witherSays}${givesUp}`;
 }
+// What the biters that follow a run land on the bot in the next fifteen
+// seconds, the wither they leave with it: one at its reach now strikes as the
+// bot turns to run (a run opens the block and a half of its reach only after
+// it has started), one as fast as the run or faster strikes through it at
+// its pace, and one that is at the bot again after the run strikes on its
+// arrival. mid-242-ah-nether-1 ran from a wither skeleton at arm's length,
+// told only that it would be six blocks behind and at the bot 1.2 seconds
+// after the run: it struck as the run began, 5.1 to 0.6, and the wither did
+// the rest (note 601). -> { damage, says }
+const RUN_START = 0.3;
+function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runSeconds = null, seconds = 15 } = {}) {
+  if (!destination || !runSeconds) return { damage: 0, says: '' };
+  const ce = require('./combat-estimate');
+  const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const dest = new Vec3(destination.x + 0.5, destination.y, destination.z + 0.5);
+  const r1 = x => Math.round(x * 10) / 10;
+  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && !t.entity.vehicle && t.entity.name !== 'enderman' && t.entity.name !== 'creeper' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name) && ce.MOBS[t.entity.name]?.hit > 0);
+  let damage = 0, withering = null;
+  const parts = [];
+  for (const t of chasers) {
+    const m = ce.MOBS[t.entity.name], name = t.entity.name.replaceAll('_', ' ');
+    const hit = r1(ce.afterArmour(m.hit, worn)), every = m.blowEvery || 1, v = blocksPerSecond(t.entity.name);
+    const toDest = t.entity.position.distanceTo(dest), behind = toDest - v * runSeconds;
+    const blows = [];
+    const atReach = t.distance <= 2.5;
+    if (v >= SPRINT && (atReach || Math.max(0, toDest - 1.5) / v <= runSeconds)) for (let s = atReach ? RUN_START : Math.max(0, toDest - 1.5) / v; s < runSeconds; s += every) blows.push(s);
+    else if (atReach) blows.push(RUN_START);
+    else { const arrives = Math.max(0, toDest - 1.5) / v; if (arrives <= runSeconds) blows.push(arrives); }
+    // At the bot again after the run, where it follows that far.
+    if (v < SPRINT && behind <= followRange(t.entity.name)) { const again = Math.max(0, toDest - 1.5) / v; if (again > runSeconds && again < seconds) blows.push(again); }
+    if (!blows.length) continue;
+    damage += blows.length * hit;
+    if (m.withers) { const from = Math.min(...blows), to = Math.min(seconds, Math.max(...blows) + ce.WITHER.seconds); withering = [Math.min(withering?.[0] ?? from, from), Math.max(withering?.[1] ?? to, to)]; }
+    const when = blows.map(s => s <= RUN_START + 0.01 ? 'as the bot turns to run, being at its reach now' : s <= runSeconds ? `${r1(s)} seconds into the run` : `on reaching the bot again ${r1(s - runSeconds)} seconds after the run`);
+    parts.push(`the ${name} ${blows.length} blow${blows.length === 1 ? '' : 's'} (${[...new Set(when)].join(', ')}), about ${hit} each after armour`);
+  }
+  if (withering) damage += (withering[1] - withering[0]) * ce.WITHER.perSecond;
+  damage = r1(damage);
+  if (!parts.length) return { damage: 0, says: '' };
+  const h = r1(bot.health ?? 20);
+  return { damage, says: ` About ${damage} damage from those that follow in the next fifteen seconds this way, from ${h} health${damage >= h ? ' (more than the bot has)' : ''}: ${parts.join('; ')}${withering ? ', and the wither a wither skeleton\'s blow leaves, one health every two seconds for ten seconds after it that armour does not stop' : ''}; the stance is asked again when the run ends.` };
+}
 // The hardest blow of those that can get to the bot, said first on every
 // stance: what one blow takes through the armour worn, how many end the bot
 // from the health it has, and how soon the mob can be at arm's length at
@@ -331,7 +373,7 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // picked up). A stance whose point is to strike (STRIKING_STANCES) and was
 // held to its end with none of these failed; any stance that ended without
 // them, with nothing changed about it since, would end the same again.
-const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above']);
+const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling']);
 const STANCE_IDLE_MS = 10 * 60000;
 const carriedCount = bot => { try { return bot.inventory?.items?.().reduce((n, i) => n + (i.count || 0), 0) ?? 0; } catch (_) { return 0; } };
 function stanceMark(bot) {
@@ -809,6 +851,36 @@ const worldAge = bot => Number(bot.time?.age);
 
 const inLava = bot => require('./terrain').bodyInLava(bot);
 const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
+// The shield raised facing the nearest biter within four blocks (at its
+// reach, or there within the second or two the bot stands still), for a
+// moment of standing still: true when it was raised.
+async function guardFacing(bot) {
+  if (bot.inventory?.slots?.[45]?.name !== 'shield' || !bot.entity?.position) return false;
+  const wg = require('./wither-guard');
+  let near = [];
+  try { near = threats(bot, 4).filter(t => wg.guardable(t) && (t.visible || t.distance <= 2)).sort((a, b) => wg.bladeReaches(b.entity, bot.entity.position) - wg.bladeReaches(a.entity, bot.entity.position) || a.distance - b.distance); } catch (_) { return false; }
+  if (!near.length) return false;
+  const e = near[0].entity;
+  try { await bot.lookAt?.(e.position.offset(0, (e.height || bodyHeight(e.name)) * 0.6, 0), true); return raiseShield(bot); } catch (_) { return false; }
+}
+// Seconds between a biter's blows at its reach (a hoglin two, most one).
+const ce_blowEvery = name => require('./combat-estimate').MOBS[name]?.blowEvery || 1;
+// Walked to the middle of a cell, a few ticks at most: where a stance is
+// judged from the middle (a ceiling that keeps a tall walker a block and a
+// half off it, note 601).
+async function centreOn(bot, task, cell) {
+  const centre = new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5);
+  const off = () => Math.hypot(bot.entity.position.x - centre.x, bot.entity.position.z - centre.z);
+  try {
+    for (let i = 0; i < 20 && off() > 0.15; i++) {
+      task.check();
+      await bot.lookAt?.(centre.offset(0, bot.entity.position.y - centre.y + 1.62, 0), true);
+      // Crouched: a walk's step overshoots a tenth of a block.
+      bot.setControlState?.('sneak', true); bot.setControlState?.('forward', true);
+      await sleep(50);
+    }
+  } finally { bot.setControlState?.('forward', false); bot.setControlState?.('sneak', false); }
+}
 
 // A passage out of a pocket away from a creeper (Survival.passageOut): its
 // end at least this far from the creeper, more than the six blocks that keep
@@ -2672,7 +2744,16 @@ class Survival {
         const outOfSword = inReach(nearest) ? `: ${said} is ${Math.round(Math.abs(nearest.entity.position.y - bot.entity.position.y) * 10) / 10} blocks ${nearest.entity.position.y < bot.entity.position.y ? 'below' : 'above'} the feet and out of the sword's reach from where the bot stands (no clear swing at it)` : '';
         if (await this.charge(task, goal, save, nearest, false, { chosen: true })) return true;
         // Out of reach, and the charge showed it: a stance that failed.
-        if (bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) { this.state.stanceWhy = `nothing was struck${outOfSword}, and the run at ${said} found no way to it`; return false; }
+        // Not a walker that walk-reach finds a way to the bot for: the run's
+        // failing says only that the bot had no way to it, and it comes on
+        // its own. mid-242-ah-fortress-1's wither skeleton, struck and
+        // knocked back to 3.6 blocks, was run at with a route cut short;
+        // the fight ended there, was left out of the next asking, and the
+        // meal taken in its place was the bot's death (note 601). It is held
+        // for, facing it with the shield up, below.
+        const { WALKERS } = require('./walk-reach');
+        const comesOn = WALKERS.has(nearest.entity.name) && !shooter(nearest.entity) && coming.includes(nearest);
+        if (!comesOn && bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) { this.state.stanceWhy = `nothing was struck${outOfSword}, and the run at ${said} found no way to it`; return false; }
         // A shooter does not come into reach: held, the fight stood in its
         // fire. mid-100-e held one at eleven blocks from 5.9 health to 4 and
         // chose a pocket too late (2026-09-25). Not taken, so the stance is
@@ -2760,6 +2841,15 @@ class Survival {
           return true;
         } };
     }
+    // A biter met as a player meets a wither skeleton (wither-guard.js, note
+    // 601): the shield up facing it and the sword swung between its blows;
+    // or under a ceiling two high, which one 2.4 tall cannot come under.
+    // mid-242-ah-fortress-1 was offered neither, answered none of these at
+    // 0.40 twice, and was withered to death from 10 in six seconds.
+    const guardOpt = this.shieldGuardOption(task, goal, save, { coming, mobs, shielded, oneHit });
+    if (guardOpt) options.shield_guard = guardOpt;
+    const lowOpt = this.lowCeilingOption(task, goal, save, { coming, mobs, shielded, oneHit });
+    if (lowOpt) options.low_ceiling = lowOpt;
     // Already up is the stance held, not a stance that failed: read as a
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
@@ -3152,15 +3242,33 @@ class Survival {
     // as in sight a moment before, and it never ate (note 533).
     const seenIds = new Set(seenHere.map(e => e.id));
     const eatMobs = shooting.length ? mobs.map(m => m.shoots && m.id != null && !seenIds.has(m.id) ? Object.defineProperty({ ...m, visible: false }, 'id', { value: m.id }) : m) : mobs;
-    const eatCost = stanceCost({ mobs: eatMobs, setup: EAT_SECONDS, seconds: EAT_SECONDS });
+    // The wither and poison a blow in the meal leaves are counted whole,
+    // past the meal's own seconds (note 601).
+    const eatCost = stanceCost({ mobs: eatMobs, setup: EAT_SECONDS, seconds: EAT_SECONDS, effectsTo: EAT_SECONDS + 10 });
     const eatSight = shooting.length && seenIds.size < shooting.length ? ` Of the ${shooting.length} shooter${shooting.length === 1 ? '' : 's'} about, ${seenIds.size ? `${seenIds.size} ha${seenIds.size === 1 ? 's' : 've'}` : 'none has'} a line to the bot where it stands, and one without shoots while it eats only if it comes round to a line.` : '';
     // What the bot meets them with after it, beside what the fight here
     // costs: its figure is the meal's second and a half only, where every
     // other stance is priced over fifteen, and mid-229-r's replay took it at
     // 12.7 health five times in five with three zombies in the bot's cell,
     // the fight priced at 14 (note 526).
-    const eatLeaves = armsLength && !noStep ? (() => { const h = Math.round(Math.max(0, bot.health - eatCost.damage) * 10) / 10;
-      return ` It deals with none of them: they meet the bot with about ${h} health where it has ${Math.round(bot.health * 10) / 10} now, and the fight here is about ${cost.damageTaken} damage${cost.damageTaken >= h ? ` (more than ${h})` : ''}.`; })() : '';
+    // And one coming that is at the bot just as the meal ends, said with
+    // when: mid-242-ah-fortress-1 ate told "about 0 damage" with a wither
+    // skeleton 2.1 seconds off, and its blow landed 0.1 seconds after the
+    // meal, the shield down; 14.5 to 10, and the wither after (note 601).
+    // A shield raised is a quarter second from blocking.
+    const { arrives: arrivesAt } = require('./combat-estimate');
+    const nextBiter = !armsLength && !noStep ? eatMobs.filter(m => !m.apart && !m.far && !m.shoots && m.name !== 'creeper' && m.hitsBot > 0)
+      .map(m => ({ m, at: arrivesAt(m) })).filter(x => x.at < EAT_SECONDS + 1.5).sort((a, b) => a.at - b.at)[0] : null;
+    // Within the meal, it strikes with the hand busy and the shield down
+    // (mid-243-af-fortress-3 ate at 6.4 health told "about 5 damage", a
+    // wither skeleton 6.4 blocks off: its blow took 4.8 and the wither the
+    // rest, note 601).
+    const nextSays = nextBiter ? (() => { const m = nextBiter.m, r1 = x => Math.round(x * 10) / 10, blow = `about ${m.hitsBot} after armour${m.withers ? ', and the wither after it, about 5 more over ten seconds that armour does not stop' : ''}`;
+      return nextBiter.at < EAT_SECONDS
+        ? ` The ${m.name.replaceAll('_', ' ')} ${Math.round(m.distance)} blocks off, at its own speed, is at arm's length about ${r1(nextBiter.at)} seconds into the meal, the hand busy and the shield down: its blow, ${blow}, lands before the meal is eaten.`
+        : ` The ${m.name.replaceAll('_', ' ')} ${Math.round(m.distance)} blocks off, at its own speed, is at arm's length about ${r1(nextBiter.at - EAT_SECONDS)} seconds after the meal ends (${r1(nextBiter.at)} from now), the sword not yet back in hand and the shield a quarter second from blocking once raised: its first blow, ${blow}, can land as the meal ends.`; })() : '';
+    const eatLeaves = (armsLength || nextBiter) && !noStep ? (() => { const h = Math.round(Math.max(0, bot.health - eatCost.damage) * 10) / 10;
+      return `${nextSays} It deals with none of them: they meet the bot with about ${h} health where it has ${Math.round(bot.health * 10) / 10} now, and the fight here is about ${cost.damageTaken} damage${cost.damageTaken >= h ? ` (more than ${h})` : ''}.`; })() : '';
     // Held to what it was said to cost: mid-205-a chose to eat told about
     // 1.6 seconds, and ate on for four more with two zombies hitting and a
     // creeper walking up to it (2026-09-26).
@@ -3302,6 +3410,9 @@ class Survival {
       else footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, up to about ${Math.max(1, Math.round((scout.candidates - scout.tried) * 0.15))} seconds standing still.`;
     }
     const chase = chaseSays(bot, danger, { apartIds: apart.ids, destination: scouted?.destination, runSeconds: scouted?.destination ? scouted.blocks / SPRINT : null });
+    // What they land on the way and after, priced (note 601).
+    const runChase = chaseCost(bot, danger, { apartIds: apart.ids, destination: scouted?.destination, runSeconds: scouted?.destination ? scouted.blocks / SPRINT : null });
+    if (runExpects && runChase.damage) runExpects.damage = Math.round((runExpects.damage + runChase.damage) * 10) / 10;
     // A rider on a horse or a camel is faster than a running player:
     // mid-215-a ran four times from a zombie on a zombie horse with a spear,
     // caught each time, 11.3 health to 4.4 in one charge (2026-09-26).
@@ -3315,7 +3426,7 @@ class Survival {
     // and teleports toward one more than sixteen off (combat-estimate MOBS
     // and CHASE, note 578).
     const endermanSays = endermen ? ` An enderman after the bot runs at about ${Math.round(blocksPerSecond('enderman') * 10) / 10} blocks a second, faster than the bot sprints (${Math.round(PLAYER_SPRINT * 10) / 10}), and teleports toward it once it is more than sixteen blocks off: a run from one ends with it beside the bot again.` : '';
-    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + riderSays + endermanSays + footing + chase + unseen,
+    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + riderSays + endermanSays + footing + chase + runChase.says + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // With no way passing every mob, the way past the reach of what bites,
     // found before the question (scoutRetreat, reachFootings): the
@@ -3325,9 +3436,10 @@ class Survival {
     if (past) {
       const secs = Math.round(past.blocks / SPRINT * 10) / 10;
       const each = past.from.map(f => `${f.blocks} from the ${f.name.replaceAll('_', ' ')} (it follows a player to ${f.follows})`);
-      options.leave_reach = { expects: { damage: runShotCost(secs), seconds: Math.max(1, secs), oneHit },
+      const pastChase = chaseCost(bot, danger, { apartIds: apart.ids, destination: past.destination, runSeconds: secs });
+      options.leave_reach = { expects: { damage: Math.round((runShotCost(secs) + pastChase.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit },
         description: `Run past the reach of what bites, taking the shooters' fire on the way: ${past.blocks} blocks to footing ${each.length > 1 ? `${each.slice(0, -1).join(', ')} and ${each.at(-1)}` : each[0]}, nearer the bot than any of them, by a route that passes none of those that bite (the shooters are not kept clear of), about ${secs} seconds at a run.${runShot(secs)}` +
-          chaseSays(bot, danger, { apartIds: apart.ids, destination: past.destination, runSeconds: secs }) + unseen,
+          chaseSays(bot, danger, { apartIds: apart.ids, destination: past.destination, runSeconds: secs }) + pastChase.says + unseen,
         run: () => this.leaveReach(task, goal, save, danger) };
     }
     // In the Nether with its portal close, the way home is a stance too:
@@ -3675,10 +3787,13 @@ class Survival {
     // (holds.js, note 599): held on, 15, 30, then 60 seconds at a time, while
     // what it was chosen on stands; asked again when that is falsified (read
     // at every look while it is held on) or at its cap. Not a stance that
-    // leaves the mobs be or eats, and not a striking stance that has not
-    // acted (note 596's rule has it).
+    // leaves the mobs be or eats, not a run (its point is the run: held on
+    // past it, mid-242-ah-fortress-3's retreat stood searching for a way
+    // again while the wither skeleton it ran from came back and struck it
+    // twice, note 601), and not a striking stance that has not acted (note
+    // 596's rule has it).
     const striking = STRIKING_STANCES.has(held?.choice);
-    const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
+    const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple', 'retreat', 'leave_reach'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
     if (extendable) holding = false;
     let holdEnded = null;
     // About to ask: the run's way is looked for first, so the retreat says
@@ -4186,17 +4301,25 @@ class Survival {
     const bot = this.bot;
     const end = Date.now() + budgetMs;
     let tried = 0;
-    for (const p of candidates) {
-      if (Date.now() >= end) break;
-      tried++;
-      const route = await surveyRoute(bot, task, movements, new goals.GoalBlock(p.x, p.y, p.z), Math.max(20, Math.min(150, end - Date.now())));
-      if (route.status !== 'success') continue;
-      // Do not run through another hostile to escape the closest one.
-      if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
-      if (heavy && route.path.some(point => besideDrop(bot, pos(point).floored()))) continue;
-      return { p, route, tried };
-    }
-    return { p: null, tried };
+    // The search is the bot standing still, up to two seconds and more: with
+    // a biter at its reach, behind the shield facing it. mid-242-ah-fortress-
+    // 1's retreat stood 2.7 seconds searching with a wither skeleton at arm's
+    // length and the shield down, and took two blows and their wither, 9.1
+    // to 0.4 (note 601). Lowered again for the run.
+    const guarded = await guardFacing(bot);
+    try {
+      for (const p of candidates) {
+        if (Date.now() >= end) break;
+        tried++;
+        const route = await surveyRoute(bot, task, movements, new goals.GoalBlock(p.x, p.y, p.z), Math.max(20, Math.min(150, end - Date.now())));
+        if (route.status !== 'success') continue;
+        // Do not run through another hostile to escape the closest one.
+        if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
+        if (heavy && route.path.some(point => besideDrop(bot, pos(point).floored()))) continue;
+        return { p, route, tried };
+      }
+      return { p: null, tried };
+    } finally { if (guarded) lowerShield(bot); }
   }
 
   // The run's way found before the stance is asked, a few route searches at
@@ -5205,6 +5328,123 @@ class Survival {
         if (swings) return true;
         if (bot.entities?.[e.id] !== e || e.isValid === false) return true;
         throw Object.assign(new Error(`no swing could be made at the ${name}: ${belowReach(e, bot.entity.position.y) ? 'the sword does not reach it from where the bot stands' : 'it is no longer below the bot\'s feet'}`), { name: 'StanceFailed' });
+      } };
+  }
+
+  // The shield up facing a biter and the sword swung between its blows
+  // (wither-guard.js guard, note 601): offered where a shield is carried and
+  // a biter that can get to the bot (not a creeper, a shooter or a spear
+  // holder) is in sight or within five, within sixteen. Priced with the one
+  // faced blocking into the shield and the rest as the fight meets them;
+  // said with the game's rules and what the arena measured.
+  shieldGuardOption(task, goal, save, { coming, mobs, shielded, oneHit }) {
+    const bot = this.bot;
+    const wg = require('./wither-guard');
+    const carried = shielded || bot.inventory.items().some(i => i.name === 'shield');
+    if (!carried || inWater(bot)) return null;
+    const biters = coming.filter(t => (t.visible || t.distance <= 5) && t.distance <= 16 && wg.guardable(t));
+    if (!biters.length) return null;
+    const faced = biters[0], e = faced.entity, name = e.name.replaceAll('_', ' ');
+    const fm = mobs.find(m => m.id === e.id) || mobs.find(m => m.name === e.name && !m.apart);
+    // The one faced blocks into the shield: nothing, and no wither. The rest
+    // as the fight meets them, the first of them closed on.
+    const others = mobs.map(m => (m === fm ? { ...m, apart: true } : m));
+    const rest = others.filter(m => !m.apart && !m.far && m.name !== 'creeper');
+    const price = stanceCost({ mobs: others, ...(rest.length ? { fight: { lead: true } } : {}), shield: true, health: bot.health });
+    const weapon = defenseWeapon(bot);
+    const r1 = v => Math.round(v * 10) / 10;
+    const swings = fm?.swingsToKill;
+    const every = ce_blowEvery(e.name);
+    const kill = swings ? ` To kill: about ${swings} swing${swings === 1 ? '' : 's'} that land, one after each of its blows or as it comes in, about ${Math.max(1, Math.round(swings * every))} seconds once it is at reach.` : '';
+    const wither = fm?.withers ? ' A wither skeleton\'s wither comes only with a blow that hurts: a blow the shield takes gives none.' : '';
+    const crowd = rest.filter(m => !m.shoots).length;
+    const flank = crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '';
+    const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
+    return { expects: { damage: price.damage, seconds: 15, oneHit },
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}` + costSays(price, bot.health, others),
+      run: async () => {
+        this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
+        if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
+        const start = bot.health;
+        // Asked again once health has fallen by six, as every stance is.
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - 6 });
+        this.state.stanceWhy = `the guard ${r.ended === 'none left' ? 'ended with no biter left about' : `ran ${r.swings} swing${r.swings === 1 ? '' : 's'}`}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
+        return true;
+      } };
+  }
+
+  // Under a ceiling two high, which a walker taller than two blocks cannot
+  // come under (wither-guard.js lowCeilingPlan, walk-reach by its height,
+  // note 601): offered where such a walker can get to the bot, within
+  // sixteen, and the ceiling can be put in over the bot and round it with
+  // the blocks carried, or a hole two in and two high dug into the rock
+  // beside it. Priced: the seconds of building or digging with what gets
+  // there hitting, then the tall ones out of reach and the rest fought as
+  // they come; said with the rules and what the arena measured.
+  lowCeilingOption(task, goal, save, { coming, mobs, shielded, oneHit }) {
+    const bot = this.bot;
+    const wg = require('./wither-guard');
+    if (inWater(bot) || !bot.entity?.onGround) return null;
+    const tall = coming.filter(t => wg.tallWalker(t) && t.distance <= 16);
+    if (!tall.length) return null;
+    const plan = wg.lowCeilingPlan(bot, tall, { blockSeconds: BLOCK_SECONDS });
+    if (!plan) return null;
+    // A race, as the pocket's is: one at the bot before the cells round it
+    // are in stands where a block goes, the block does not go in, and it is
+    // fought there. The arena's corner, the ceiling's blocks put in the
+    // order they came, lost two runs in five that way (note 601).
+    const { arrives: arrivesAt } = require('./combat-estimate');
+    const first = mobs.filter(m => plan.tall.includes(m.id) && arrivesAt(m) < plan.shutAt);
+    const tallIds = new Set(plan.tall.filter(id => !first.some(m => m.id === id)));
+    const price = stanceCost({ mobs, setup: plan.seconds, fight: { only: m => !tallIds.has(m.id), lead: true }, reaches: m => m.shoots, shield: shielded, health: bot.health });
+    const raceSays = first.length ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the ${plan.kind === 'roof' ? 'blocks over the cells round the bot are in' : 'hole is dug'} (${plan.shutAt} seconds): one there first stands where a block goes or at the mouth, the ${plan.kind === 'roof' ? 'block does not go in (the game puts none where a body is)' : 'bot is struck while it digs'}, and it is fought there as in the fight, priced so.` : ` The ${plan.kind === 'roof' ? 'blocks over the cells round the bot go in first, those toward it first' : 'hole is dug'}: in after about ${plan.shutAt} seconds, before it can be at the bot.`;
+    const names = [...new Set(tall.map(t => t.entity.name))];
+    const who = names.map(n => `a ${n.replaceAll('_', ' ')} is ${bodyHeight(n)} blocks tall`).join(' and ');
+    const compass = ([dx, dz]) => dx > 0 ? 'east' : dx < 0 ? 'west' : dz > 0 ? 'south' : 'north';
+    const { digsWith } = require('./bunker');
+    const rock = plan.dug.length ? (bot.blockAt(plan.dug[0])?.name || 'rock').replaceAll('_', ' ') : '';
+    const setup = plan.kind === 'roof' && !plan.blocks
+      ? `${plan.steps ? 'Step one block along this level, under' : 'Stay under'} the ceiling two up over the bot and the cells round it, and fight from under it`
+      : plan.kind === 'roof'
+      ? `${plan.steps ? 'Step one block along this level, then put' : 'Put'} ${plan.blocks} block${plan.blocks === 1 ? '' : 's'} of ${plan.material.replaceAll('_', ' ')} in two up over the bot and over each cell round it that is open there (about ${plan.seconds} seconds of placing, the shield down meanwhile), and fight from under that ceiling`
+      : `Dig a hole two in and two high into the ${rock} to the ${compass(plan.dir)} (4 blocks ${digsWith(bot, bot.blockAt(plan.dug[0]))}, about ${plan.seconds} seconds of digging, the shield down meanwhile), step to its end and fight from there`;
+    const others = mobs.filter(m => !plan.tall.includes(m.id) && !m.apart && !m.far && !m.shoots && m.name !== 'creeper');
+    const shortSays = others.length ? ` The others that bite are shorter and come under it: fought there as they come.` : '';
+    return { expects: { damage: price.damage, seconds: price.seconds, oneHit },
+      description: `${setup}: ${who}, and its body does not go under a ceiling two high (the game's rule), so the nearest it can stand is a block and a half off, out of its own reach (a blow reaches about a block and a half centre to centre, sideways only) and within the sword's (three blocks from the eye); it is struck each time it comes to the edge, the shield up facing it between swings. Under it, a wither skeleton's blow cannot reach, and so it withers nothing.${raceSays}${shortSays}${wg.measuredSays('low', tall.filter(t => t.entity.name === 'wither_skeleton').length, { also: ['fight'] })}` + costSays(price, bot.health, mobs, { doing: plan.kind === 'roof' ? 'putting the ceiling in' : 'digging in', done: 'Under it' }),
+      run: async () => {
+        this.report(goal, save, { action: 'low_ceiling', kind: plan.kind, to: { ...plan.stand }, blocks: plan.blocks, health: bot.health, stance: true });
+        lowerShield(bot);
+        const movements = bot.pathfinder?.movements, kept = movements && { allow1by1towers: movements.allow1by1towers, canDig: movements.canDig, maxDropDown: movements.maxDropDown };
+        const walkTo = async cell => {
+          if (movements) Object.assign(movements, { allow1by1towers: false, canDig: false, maxDropDown: 0 });
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 4000, stallMs: 1500 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { if (movements) Object.assign(movements, kept); }
+          if (!bot.entity.position.floored().equals(cell)) throw Object.assign(new Error(`the step to (${cell.x}, ${cell.y}, ${cell.z}) ended at ${bot.entity.position.floored()}`), { name: 'StanceFailed' });
+        };
+        if (plan.kind === 'dig') {
+          for (const c of plan.dug) {
+            if (bot.blockAt(c)?.boundingBox !== 'block') continue;
+            try { await this.actions.dig(bot, task, c, { requireDrops: false }); }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; throw Object.assign(new Error(`the hole's block at (${c.x}, ${c.y}, ${c.z}) was not dug: ${err.message}`), { name: 'StanceFailed' }); }
+          }
+          await walkTo(plan.stand);
+        } else {
+          if (plan.steps) await walkTo(plan.stand);
+          // To the middle of the cell first: the ceiling keeps it out a
+          // block and a half from the middle, and less from its edge.
+          await centreOn(bot, task, plan.stand);
+          for (const c of plan.placed) {
+            if (bot.blockAt(c)?.boundingBox === 'block') continue;
+            try { await this.actions.place(bot, task, c, plan.material, { stay: true }); }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; throw Object.assign(new Error(`the ceiling's block at (${c.x}, ${c.y}, ${c.z}) did not go in: ${err.message}`), { name: 'StanceFailed' }); }
+          }
+        }
+        await centreOn(bot, task, plan.stand);
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: tall[0].entity.id, radius: 16 });
+        this.state.stanceWhy = `under the ceiling: ${r.swings} swing${r.swings === 1 ? '' : 's'}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
+        return true;
       } };
   }
 

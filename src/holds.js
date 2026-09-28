@@ -30,6 +30,9 @@ const EXTEND_MS = [15000, 30000, 60000];
 const HOLD_CAP_MS = 5 * 60000;
 const NEARER_BY = 4;
 const SPOT_MOVED = 1.5;
+// Where a biter's blow lands (a block and a half centre to centre), with room.
+const ARMS = 2;
+const isShooter = e => { try { return !!e && require('./combat').shooter(e); } catch (_) { return false; } };
 
 const name = n => String(n || '').replaceAll('_', ' ');
 const secs = ms => { const s = Math.round(ms / 1000); return s < 90 ? `${s} second${s === 1 ? '' : 's'}` : `${Math.round(s / 60)} minute${Math.round(s / 60) === 1 ? '' : 's'}`; };
@@ -60,6 +63,12 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
   for (const m of hold.against) {
     const t = mobs.find(x => x?.entity?.id === m.id);
     if (!t) return `the ${name(m.name)} it was chosen against is gone`;
+    // Come to arm's length, one that bites, from out of it: mid-242-ah-
+    // fortress-3's retreat was held on past its run with the wither skeleton
+    // it ran from at 4.2, 6.7 and then 2 blocks, never four nearer; it was
+    // struck twice standing, 13.5 to 5.3, before the stance was asked again
+    // (note 601).
+    if (t.distance <= ARMS && m.distance > ARMS + 1 && !t.shoots && !isShooter(t.entity)) return `the ${name(m.name)} it was chosen against came to arm's length, ${Math.round(t.distance * 10) / 10} blocks off`;
     if (t.distance <= m.distance - NEARER_BY) return `the ${name(m.name)} it was chosen against came from ${Math.round(m.distance)} to ${Math.round(t.distance)} blocks off`;
     if (!!t.visible !== m.visible) return `the ${name(m.name)} it was chosen against ${t.visible ? 'came into sight' : 'went out of sight'}, ${Math.round(t.distance)} blocks off`;
     if ((hurtBy[m.name] || 0) > hold.at) return `the ${name(m.name)} it was chosen against hit the bot`;
