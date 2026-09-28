@@ -17,7 +17,16 @@ const NATURAL = /^(netherrack|nether_gold_ore|nether_quartz_ore|crimson_nylium|w
 const passable = b => !b || b.boundingBox === 'empty';
 const solid = b => b?.boundingBox === 'block';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-const material = bot => MATERIALS.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
+// What a span is laid with from the pack: the rock kinds first, then the
+// nether and warped wart blocks, full blocks that hold where they are put
+// and do not burn (shelter.js counts them for walls and cover since note
+// 619). mid-242-ah-nether-1-fortress-5's trip back to the portal for food,
+// at 1.1 health, laid its span out of netherrack twenty blocks over the
+// cavern floor and stopped at its end "out of blocks (0 carried)" with
+// thirty-two warped wart blocks in the pack, 98 blocks from the portal
+// (note 622). Wool is left out: it burns, and lava sets it alight.
+const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block'];
+const material = bot => LAID.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
 // one-block span. The sneak itself is held by bridgeTo for the whole span.
@@ -127,7 +136,7 @@ function lavaBelow(bot, p, deepest = 48) {
   }
   return false;
 }
-const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => MATERIALS.includes(i.name)).reduce((n, i) => n + i.count, 0);
+const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => LAID.includes(i.name)).reduce((n, i) => n + i.count, 0);
 
 // Lay a level span toward `target` from where the bot stands, until beside
 // or above it, out of blocks, or `maxBlocks` placed. Returns the blocks laid.
@@ -410,4 +419,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, NATURAL };
+module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NATURAL };

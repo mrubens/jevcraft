@@ -347,6 +347,10 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // A stopped trip can leave our empty boat underfoot. Clear only that owned
   // boat before player physics attempts to walk through its solid hull.
   if (bot._ownedBoats?.size && !bot.vehicle) await require('./boats').clearOwnedBoatAtFeet(bot, task);
+  // Hanging by an edge over a fall that kills or costs half the health,
+  // back onto the footing before the pathfinder lets the crouch go (note
+  // 622, motion.js footingFirst).
+  if (bot.pathfinder && require('./motion').fallUnder(bot)) await require('./motion').footingFirst(bot);
   const movements = bot.pathfinder?.movements, sprinting = sprint && (bot.food ?? 20) > SPRINT_FOOD && !!movements;
   const walked = sprinting ? movements.allowSprinting : undefined;
   if (sprinting) movements.allowSprinting = true;

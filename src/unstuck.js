@@ -26,7 +26,10 @@ const isLava = n => /lava/.test(n || '');
 const falls = n => /^(sand|red_sand|gravel)$|_concrete_powder$/.test(n || '');
 const open = n => OPEN.test(n || '') || isWater(n);
 const solid = n => !!n && !open(n) && !isLava(n);
-const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'gravel', 'sand'];
+// The wart blocks too, as a span is laid with them (bridging.js LAID, note
+// 622): at the end of its own span twenty over the floor with thirty-two
+// warped wart blocks carried, the one block offered to put was gravel.
+const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'nether_wart_block', 'warped_wart_block', 'gravel', 'sand'];
 const ORE = /_ore$/;
 // Stone and ore take a pickaxe; the rest comes away in the hand.
 function digSeconds(name, view, inWater) {
@@ -143,9 +146,18 @@ function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
   if (!n) return null;
   if (into === 'unknown') return `a drop of ${n}+ blocks under it, the rest not loaded`;
   if (into === 'water') return `a drop of ${n} block${n === 1 ? '' : 's'} into water under it`;
-  if (into === 'none') return `no floor within ${reach} blocks under it: a fall that costs ${reach + extra - 3} health or more`;
+  if (into === 'none') return `no floor within ${reach} blocks under it: a fall that costs ${reach + extra - 3} health or more${ofHealth(view, reach + extra - 3)}`;
   const fall = n + extra;
-  return `a drop of ${n} block${n === 1 ? '' : 's'} under it${fall > 3 ? `: falling ${fall} blocks costs about ${fall - 3} health` : ''}`;
+  return `a drop of ${n} block${n === 1 ? '' : 's'} under it${fall > 3 ? `: falling ${fall} blocks costs about ${fall - 3} health${ofHealth(view, fall - 3)}` : ''}`;
+}
+// A fall's cost against the health the bot has, as a touch of lava is
+// (terrain.js lavaTouchSays): at 1.1 health for twenty minutes, mid-242-
+// ah-nether-1-fortress-5's steps were said "falling 20 blocks costs about
+// 17 health" and nothing of what that is to 1.1 (note 622).
+function ofHealth(view, damage) {
+  const hp = Number.isFinite(view.health) ? Math.round(view.health * 10) / 10 : null;
+  if (hp === null) return '';
+  return damage >= hp ? `, more than the ${hp} health the bot has: the fall is death` : `, of the ${hp} health the bot has`;
 }
 
 // A block dug to work free: natural ground, or one the bot laid itself

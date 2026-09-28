@@ -118,8 +118,8 @@ test('from the recorded spot, fortress_approach offers mining the blocks and cro
   assert(d, `offered: ${Object.keys(options)}`);
   assert.match(d, /^Mine netherrack for blocks here first, then go straight at the fortress with them, 98 blocks off and 11 blocks up\./);
   assert.match(d, /No pickaxe is carried, and netherrack dug by hand drops nothing: a wooden pickaxe is made first from what is carried \(4 logs, a crafting table\)/);
-  assert.match(d, /The crossing to its end lays 54 blocks \(12 over lava\) and digs 158 of rock in 135 cells; 0 carried\./);
-  assert.match(d, /Mined first: 54 from the \d+ that can be dug from ground walked to from here \(\d+ netherrack\)/);
+  assert.match(d, /The crossing to its end lays 54 blocks \(12 over lava\) and digs 158 of rock in 135 cells; 5 carried\./);
+  assert.match(d, /Mined first: 49 from the \d+ that can be dug from ground walked to from here \(\d+ netherrack\)/);
   assert.match(d, /Then, with them: Go straight at the fortress at the height the bot stands, 135 blocks, digging 158 blocks of rock and laying 54 blocks/);
   assert.match(d, /It ends 96 blocks nearer/);
   assert.match(d, /the nearest of the fortress's floors is \d+ blocks across and \d+ up/);
@@ -166,7 +166,9 @@ test('chosen, the blocks are mined first and the crossing laid with them, throug
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate, mineAt, tunnel: async () => { throw new Error('the staircase was not chosen'); } });
   assert.equal(client.asked.length, 1);
   assert.equal(goal.fortressSearch.approach.choice, 'blocks_then_cross');
-  assert.equal(mined.length, 54, 'the crossing\'s blocks, mined first');
+  // The five nether wart blocks carried are laid too (bridging.js LAID,
+  // note 622): 49 mined.
+  assert.equal(mined.length, 49, 'the crossing\'s blocks, mined first');
   assert.equal(laid.size, 54, 'and laid over its open air and lava');
   const at = bot.entity.position;
   assert(Math.hypot(at.x - 142.5, at.z - -562.5) <= 2, `under the fortress's floor: ${at}`);

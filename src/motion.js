@@ -69,16 +69,34 @@ function dropCell(bot, x, z, below, { deep = false } = {}) {
   }
   return null;
 }
-// Crouched with the body's middle over a fall into lava, held up by the
-// edge of a block beside: walked back, crouched, until the middle is over
-// that block, up to a second, then still for a tick. -> whether it moved.
-async function backOnFooting(bot, keys = [], { maxMs = 1000 } = {}) {
+// The fall under the body's middle, where no block is under it: one into
+// lava, or onto ground whose damage (a point a block past three) is half
+// the health or more (note 545's measure, dropCell's `deep`), or past
+// what is loaded. -> the fall (terrain.js fallFrom), or null.
+function fallUnder(bot) {
   const p = bot.entity?.position;
-  if (!p || typeof bot.blockAt !== 'function') return false;
+  if (!p || typeof bot.blockAt !== 'function') return null;
   const terrain = require('./terrain');
   const f = p.floored();
-  if (at(bot, f.x, f.y - 1, f.z)?.boundingBox === 'block') return false;
-  if (terrain.fallFrom(terrain.atOf(bot), { x: f.x, y: f.y - 1, z: f.z }).into !== 'lava') return false;
+  if (at(bot, f.x, f.y - 1, f.z)?.boundingBox === 'block') return null;
+  const fall = terrain.fallFrom(terrain.atOf(bot), { x: f.x, y: f.y - 1, z: f.z });
+  const hurts = fall.into === 'ground' ? Math.max(0, fall.n - 3) : fall.into === 'unknown' && fall.n >= 16 ? Infinity : 0;
+  return fall.into === 'lava' || hurts >= (bot.health ?? 20) / 2 ? fall : null;
+}
+// Crouched with the body's middle over a fall into lava, or one that
+// costs half the health or more, held up by the edge of a block beside:
+// walked back, crouched, until the middle is over that block, up to a
+// second, then still for a tick. -> whether it moved. mid-242-ah-nether-
+// 1-fortress-5 at 1.1 health walked crouched to a drop by a one-wide
+// ledge six over the lava sea's shore, its box on the netherrack by a
+// hundredth, and the restock's next walk let the crouch go: it slid the
+// hundredth off and fell six, three damage (note 622). Only lava was
+// walked back from.
+async function backOnFooting(bot, keys = [], { maxMs = 1000 } = {}) {
+  const p = bot.entity?.position;
+  if (!fallUnder(bot)) return false;
+  const terrain = require('./terrain');
+  const f = p.floored();
   const rest = terrain.restingCell(bot, p);
   if (!rest || (rest.x === f.x && rest.z === f.z)) return false;
   for (const key of keys) bot.setControlState(key, false);
@@ -95,8 +113,19 @@ async function backOnFooting(bot, keys = [], { maxMs = 1000 } = {}) {
     }
   } finally { bot.setControlState('forward', false); }
   await sleep(60);
-  console.log(`[motion] back onto the footing at (${rest.x}, ${rest.y - 1}, ${rest.z}) from over a fall into lava`);
+  const fall = terrain.fallFrom(terrain.atOf(bot), { x: f.x, y: f.y - 1, z: f.z });
+  console.log(`[motion] back onto the footing at (${rest.x}, ${rest.y - 1}, ${rest.z}) from over a fall ${fall.into === 'lava' ? 'into lava' : `of ${fall.n} at ${Math.round((bot.health ?? 20) * 10) / 10} health`}`);
   return true;
+}
+// Before a walk the pathfinder takes: it lets every key go, the crouch
+// with them, and a body hanging by an edge over such a fall goes over it
+// (note 622). Walked back onto the footing first, crouched, and the crouch
+// given back as it was. -> whether it moved.
+async function footingFirst(bot) {
+  if (typeof bot.setControlState !== 'function' || !fallUnder(bot)) return false;
+  const held = !!(bot.getControlState ? bot.getControlState('sneak') : bot.controlState?.sneak);
+  try { return await backOnFooting(bot); }
+  finally { bot.setControlState('forward', false); bot.setControlState('sneak', held); }
 }
 // A guard for a move that keeps to its own columns: stopped, keys let go,
 // where the body's middle leaves them. A body pressed against a wall slides
@@ -214,4 +243,4 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
   }
 }
 
-module.exports = { move, within, burningAhead, bodyBurning, MOVEMENT, MAX_MS };
+module.exports = { move, within, burningAhead, bodyBurning, fallUnder, footingFirst, MOVEMENT, MAX_MS };

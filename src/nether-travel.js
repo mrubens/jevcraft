@@ -506,7 +506,15 @@ async function walkFloorToward(bot, task, goal, save, target, down, navigate) {
 }
 function floorTowardSays(down, floor, { what, target }) {
   const off = Math.round(Math.hypot(target.x - down.way.end.x, target.z - down.way.end.z));
-  return `Go down to the floor and walk it toward ${what}. ${wayDownSays(down)} ${floorWalkSays(floor, { along: `on the straight line toward it (${off} blocks from the foot of the way down)` })}` +
+  // Where the foot lies against where the bot stands: the way down is the
+  // one found, whichever way it goes. mid-242-ah-nether-1-fortress-5's way
+  // down "toward the portal back", 99 blocks off, ended 158 from it, and
+  // the trip back for food at 1.1 health was left there (note 622).
+  const here = down.from ? Math.round(Math.hypot(target.x - down.from.x, target.z - down.from.z)) : null;
+  const versus = here === null || Math.abs(off - here) < 2 ? '' : off > here
+    ? `: the way down ends ${off - here} blocks farther from ${what} than the bot stands now, ${here} off`
+    : `, ${here - off} nearer than where the bot stands now`;
+  return `Go down to the floor and walk it toward ${what}. ${wayDownSays(down)} ${floorWalkSays(floor, { along: `on the straight line toward it (${off} blocks from the foot of the way down${versus})` })}` +
     `${backUpSays(down, target.y, what)}`;
 }
 

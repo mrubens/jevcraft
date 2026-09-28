@@ -508,7 +508,9 @@ function configureMovements(bot) {
   // the Nether the pockets hold netherrack, and with the cobblestone spent
   // on one span the bot could neither climb to the fortress nor cross to
   // it. Any plain stone the bot carries will do for scaffolding.
-  for (const name of ['netherrack', 'cobbled_deepslate', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'blackstone', 'basalt', 'deepslate', 'end_stone']) {
+  // The wart blocks as well, as a span is laid with them (bridging.js
+  // LAID, note 622).
+  for (const name of ['netherrack', 'cobbled_deepslate', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'blackstone', 'basalt', 'deepslate', 'end_stone', 'nether_wart_block', 'warped_wart_block']) {
     const id = bot.registry.itemsByName[name]?.id;
     if (id !== undefined && !movement.scafoldingBlocks.includes(id)) movement.scafoldingBlocks.push(id);
   }
