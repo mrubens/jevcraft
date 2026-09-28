@@ -10,7 +10,7 @@
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..', '..');
 const BEFORE = Number(process.argv[2] || 30) * 1000, AFTER = Number(process.argv[3] || 3) * 1000;
-const OUT = path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings');
+const OUT = (process.env.REPLAY_RECORDINGS || path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings'));
 const deaths = JSON.parse(fs.readFileSync(path.join(ROOT, 'artifacts', 'deaths.json'), 'utf8'));
 const FLIGHT = path.join(ROOT, '.bot-state', 'flight');
 

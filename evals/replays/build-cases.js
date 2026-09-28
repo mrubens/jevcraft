@@ -1,7 +1,7 @@
 'use strict';
 // How cases.jsonl was first built (2026-09-27), from flight records that have since rotated away: kept to show where each case came from. New cases are added to cases.jsonl directly.
 // Build evals/replays/cases.jsonl from recorded decisions, with the day's fixes applied to their text.
-process.chdir('/Users/matt/Code/jevcraft');
+process.chdir(require('path').join(__dirname, '..', '..'));
 const fs = require('fs'), path = require('path');
 function loadDecision(port, from, id, at, nth = 0) {
   const files = fs.readdirSync('.bot-state/flight').filter(f => f.includes(`-${port}-`));

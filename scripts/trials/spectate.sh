@@ -2,7 +2,7 @@
 # Puts a watching player in Spectator on Jev as soon as they join any trial
 # server, through the server's console. Only the watcher is touched; Jev
 # gets nothing.
-#   sh scripts/trials/spectate.sh DoloresDoodle &
+#   sh scripts/trials/spectate.sh <your player name> &
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 NAME=$1
 [ -n "$NAME" ] || { echo "usage: spectate.sh <player>"; exit 1; }

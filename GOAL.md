@@ -1,6 +1,6 @@
 # The goal
 
-jev-craft is built toward one demonstration: a decision model can play Minecraft Survival and make the decisions. Starting with an empty inventory in a fresh natural world on Normal difficulty, the bot should gather, craft, eat, shelter, fight, mine and build its way through the Overworld and the Nether, craft Eyes of Ender, find a stronghold, enter the End, defeat the Ender Dragon and return alive. Code owns the rules of the game and carries actions out; every judgment along the way is [Jev](https://typesafe.ai/)'s, asked as a choice among options code has checked, with the facts that bear on it.
+jevcraft is built toward one demonstration: a decision model can play Minecraft Survival and make the decisions. Starting with an empty inventory in a fresh natural world on Normal difficulty, the bot should gather, craft, eat, shelter, fight, mine and build its way through the Overworld and the Nether, craft Eyes of Ender, find a stronghold, enter the End, defeat the Ender Dragon and return alive. Code owns the rules of the game and carries actions out; every judgment along the way is [Jev](https://typesafe.ai/)'s, asked as a choice among options code has checked, with the facts that bear on it.
 
 It is also a companion: chat requests ("Jev build a house", "get me 32 purple concrete", "find a way to the Nether") are carried out in the same survival conditions, preserved across interruptions for food, shelter and danger, and resumed after a stop, a disconnect or a death.
 

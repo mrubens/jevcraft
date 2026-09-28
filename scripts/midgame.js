@@ -46,6 +46,13 @@ const alive = p => { try { process.kill(Number(p), 0); return true; } catch (_) 
 // rods as rods, powder (two a rod) and eyes (one powder each) together;
 // pearls as pearls and eyes.
 const MILESTONES = ['nether', 'fortress', 'blaze_rods', 'ender_pearls'];
+// The player made an operator on every trial server, to spectate and follow
+// Jev (Jev itself never is): TRIAL_WATCHER, from the environment or .env.
+// None set, no one is made an operator.
+function trialWatcher() {
+  if (process.env.TRIAL_WATCHER) return process.env.TRIAL_WATCHER;
+  try { return (fs.readFileSync(path.join(ROOT, '.env'), 'utf8').match(/^TRIAL_WATCHER=(\S+)/m) || [])[1] || null; } catch (_) { return null; }
+}
 function counts(inventory = {}) {
   const n = k => Number(inventory[k] || 0);
   return { rods: n('blaze_rod') + n('blaze_powder') / 2 + n('ender_eye') / 2, pearls: n('ender_pearl') + n('ender_eye') };
@@ -125,9 +132,9 @@ async function start(world, source, archive) {
     // The watcher is an operator from the start: its entries (both of its
     // UUIDs, the one the server resolves by name and the one it joins with)
     // copied from ops.json files where an op took.
-    try {
+    if (trialWatcher()) try {
       const ops = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return []; } };
-      const watcher = process.env.TRIAL_WATCHER || 'DoloresDoodle';
+      const watcher = trialWatcher();
       const known = new Map();
       for (const d of fs.readdirSync(ROOT).filter(d => d.startsWith('.clean-run'))) for (const o of ops(path.join(ROOT, d, 'ops.json'))) if (o.name === watcher) known.set(o.uuid, o);
       const mine = ops(path.join(SERVER, 'ops.json'));
@@ -139,9 +146,9 @@ async function start(world, source, archive) {
     const log = () => { try { return fs.readFileSync(path.join(SERVER, 'logs', 'latest.log'), 'utf8'); } catch (_) { return ''; } };
     for (let i = 0; i < 60 && !log().includes(`Preparing level "${world}"`); i++) await sleep(1000);
     if (!log().includes(`Preparing level "${world}"`)) throw new Error(`The server on ${PORT} did not load ${world}`);
-    // The watcher (TRIAL_WATCHER, DoloresDoodle) is made an operator on every
-    // trial server, to spectate and follow Jev; Jev itself never is.
-    fs.writeFileSync(path.join(SERVER, 'console.in'), `op ${process.env.TRIAL_WATCHER || 'DoloresDoodle'}\n`);
+    // The watcher (TRIAL_WATCHER) is made an operator on every trial server,
+    // to spectate and follow Jev; Jev itself never is.
+    if (trialWatcher()) fs.writeFileSync(path.join(SERVER, 'console.in'), `op ${trialWatcher()}\n`);
     for (let i = 0; i < 20; i++) { const other = botPid(); if (!other) break; process.kill(Number(other), 'SIGKILL'); await sleep(1500); }
     // This server's state set aside; the source trial's state in its place,
     // under this server's name.

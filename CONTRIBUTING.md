@@ -1,6 +1,6 @@
 # Contributing
 
-jev-craft exists to show what a System One model is good at, so the most useful contributions are the ones that keep the line between Jev and code sharp. Read [How Jev thinks](docs/how-jev-thinks.md) first; it is short and it is the design.
+jevcraft exists to show what a System One model is good at, so the most useful contributions are the ones that keep the line between Jev and code sharp. Read [How Jev thinks](docs/how-jev-thinks.md) first; it is short and it is the design.
 
 ## The two rules
 
@@ -19,7 +19,7 @@ cp .env.example .env   # add a TypeSafe key; a Minecraft server is optional
 npm test               # no network, no server
 ```
 
-Node 22 or newer. `npm test` runs about eleven hundred tests in about twenty seconds and needs no key.
+Node 22 or newer. `npm test` runs about two thousand tests in about a minute and needs no key.
 
 ## Kinds of change, and what to include
 

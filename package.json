@@ -1,5 +1,5 @@
 {
-  "name": "jev-craft",
+  "name": "jevcraft",
   "version": "0.1.0",
   "private": true,
   "description": "A Minecraft bot whose every judgment, from what a chat message means to when to fight or shelter, is a typed answer from TypeSafe's Jev decision model",
@@ -7,11 +7,11 @@
   "author": "Matt Rubens",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mrubens/jev-craft.git"
+    "url": "https://github.com/mrubens/jevcraft.git"
   },
-  "homepage": "https://github.com/mrubens/jev-craft#readme",
+  "homepage": "https://github.com/mrubens/jevcraft#readme",
   "bugs": {
-    "url": "https://github.com/mrubens/jev-craft/issues"
+    "url": "https://github.com/mrubens/jevcraft/issues"
   },
   "keywords": [
     "minecraft",

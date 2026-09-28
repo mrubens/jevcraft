@@ -8,7 +8,7 @@
 // Writes artifacts/deaths.json.
 const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const ROOT = path.join(__dirname, '..', '..');
-const OUT = process.argv[2] || path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings');
+const OUT = process.argv[2] || (process.env.REPLAY_RECORDINGS || path.join(process.env.HOME, 'Library/Application Support/PrismLauncher/instances/Jev Replays/minecraft/replay_recordings'));
 const DEATH = / Jev ((was|died|fell|drowned|blew|burned|hit the|tried|walked into|suffocated|experienced|went|froze|starved|withered|discovered)[^\n]*)/;
 const servers = fs.readdirSync(ROOT).filter(d => /^\.clean-run(-\d+)?$/.test(d));
 const deaths = [];

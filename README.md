@@ -1,6 +1,6 @@
-# jev-craft
+# jevcraft
 
-jev-craft is a harness that lets a decision model play Minecraft Survival. The model is [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model: it takes a state and a set of typed options and returns a choice with probabilities, in about 0.2 seconds. The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer). Code owns the mechanics of the game. Jev makes the judgments: when to fight or run, which way to go, when a plan has stopped working.
+jevcraft is a harness that lets a decision model play Minecraft Survival. The model is [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model: it takes a state and a set of typed options and returns a choice with probabilities, in about 0.2 seconds. The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer). Code owns the mechanics of the game. Jev makes the judgments: when to fight or run, which way to go, when a plan has stopped working.
 
 The goal is the whole game from a fresh world with an empty inventory: Overworld, Nether, blaze rods, Eyes of Ender, the stronghold and the dragon ([GOAL.md](GOAL.md)). Getting there has meant running many trials in parallel and triaging every death and every loop. This README is mostly about what that taught us: how to give a model real agency in a game, how to present decisions to it, and how to build the loop that improves the harness. Jev can also be used as an in-game chat companion; that material is [further down](#using-jev-as-a-chat-companion).
 
@@ -30,7 +30,7 @@ The first-days milestone, three in-game days with no deaths and iron tools, armo
 
 ## The split: code for mechanics, Jev for judgment
 
-Most "LLM plays Minecraft" projects hand a large model the whole problem and parse what comes back. jev-craft splits the work the other way.
+Most "LLM plays Minecraft" projects hand a large model the whole problem and parse what comes back. jevcraft splits the work the other way.
 
 **Code, mostly mineflayer and its plugins, owns the mechanics:**
 
@@ -246,8 +246,8 @@ You need:
 - A TypeSafe API key, or an OpenRouter key.
 
 ```sh
-git clone https://github.com/mrubens/jev-craft.git
-cd jev-craft
+git clone https://github.com/mrubens/jevcraft.git
+cd jevcraft
 npm ci
 cp .env.example .env
 ```
@@ -356,4 +356,4 @@ node scripts/eval-decisions.js     # trade-off judgments, asked live
 
 Gameplay tests, trials and the arena need a separate, disposable server. [scripts/README.md](scripts/README.md) lists every script and its port. Contributions are most useful when they turn a concrete failure into a test and a general fix; see [CONTRIBUTING.md](CONTRIBUTING.md). Flight records and logs can contain chat, player names and coordinates, so review them before sharing.
 
-The [roadmap](ROADMAP.md) has what comes next. jev-craft is released under the [MIT License](LICENSE).
+The [roadmap](ROADMAP.md) has what comes next. jevcraft is released under the [MIT License](LICENSE).
