@@ -1,42 +1,249 @@
 # jev-craft
 
-Jev is a Minecraft companion you talk to in game chat, built to show what a [System One](https://docs.typesafe.ai/concepts/system-one) model is good at. Ask Jev to gather supplies, build something, find a biome, or follow you on an adventure. Every judgment the bot makes about what you meant and what to do next is a typed answer from [TypeSafe's Jev](https://typesafe.ai/), with a probability attached, and every one is logged with the options it was chosen from.
+jev-craft is a harness that lets a decision model play Minecraft Survival. The model is [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model: it takes a state and a set of typed options and returns a choice with probabilities, in about 0.2 seconds. The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer). Code owns the mechanics of the game. Jev makes the judgments: when to fight or run, which way to go, when a plan has stopped working.
 
-**For Minecraft Java Edition 26.1.** Jev gathers, crafts, builds, explores and survives on its own, and beating the game from a fresh Survival start is the goal it is measured against ([where it stands](GOAL.md#where-it-stands)).
+The goal is the whole game from a fresh world with an empty inventory: Overworld, Nether, blaze rods, Eyes of Ender, the stronghold and the dragon ([GOAL.md](GOAL.md)). Getting there has meant running many trials in parallel and triaging every death and every loop. This README is mostly about what that taught us: how to give a model real agency in a game, how to present decisions to it, and how to build the loop that improves the harness. Jev can also be used as an in-game chat companion; that material is [further down](#using-jev-as-a-chat-companion).
 
-[Quick start](#quick-start) · [How Jev is used](#how-jev-is-used) · [Chat commands](#talking-to-jev) · [Building](#building) · [What Jev decided](#seeing-what-jev-decided) · [Roadmap](ROADMAP.md)
+- [Where it stands](#where-it-stands)
+- [The split: mineflayer and code for mechanics, Jev for judgment](#the-split-code-for-mechanics-jev-for-judgment)
+- [Giving Jev agency](#giving-jev-agency)
+- [How a decision is presented](#how-a-decision-is-presented)
+- [How fixes are made](#how-fixes-are-made)
+- [Loops, progress and the ledger](#loops-progress-and-the-ledger)
+- [The iteration loop](#the-iteration-loop)
+- [Tools and artifacts](#tools-and-artifacts)
+- [Running many trials at once](#running-many-trials-at-once)
+- [What did not work](#what-did-not-work)
+- [Code map](#code-map)
+- [Using Jev as a chat companion](#using-jev-as-a-chat-companion)
 
-## Why this project exists
+## Where it stands
 
-Most "AI plays Minecraft" bots hand a large language model the whole problem and parse whatever prose comes back. jev-craft does the opposite. Code owns Minecraft: recipes, movement, inventory, safety, and the checks that work is actually finished. Jev is asked only the questions code cannot answer, and it answers with a typed choice and how sure it is, in a few hundred milliseconds:
+As of 2026-09-28:
 
-- *Is this message for me, and what does it want?*
-- *Which of these catalog items did the player mean?*
-- *Should I keep building or get under cover before dark?*
-- *Which of these three sources of wood is worth walking to?*
-- *Does the design that came back actually answer the request?*
+- **The Overworld is mostly solved.** Fresh worlds reach the Nether in roughly 7 to 30 minutes of play.
+- **Fortresses are found often**, and many trials reach one.
+- **Blaze rods are the wall.** For most of the run's history, no trial had taken a single rod (note 577). On 2026-09-28 a few did: the fresh world mid-242-ba reached the Nether in 7 minutes and a fortress at minute 35 and took two rods; mid-243-ah (Nether at 23, fortress at 44) and mid-242-ba-fortress-4 took one each; the progress audit counts 5 fortress-start trials with a first rod. All then died to blazes. Six are needed.
+- **The current killers** are blazes at a live spawner, ghast fireballs that push the bot off a ledge into lava (notes 610, 612), and low health that never comes back in the Nether, where there is little food (note 607).
 
-When Jev is not sure enough, the bot asks a one-line question instead of guessing. When something has failed repeatedly, Jev picks between recovery options that code has already checked. The result is a bot whose behaviour you can inspect answer by answer, that costs about two thousand tokens per chat request, and that never executes anything the model invented.
+The first-days milestone, three in-game days with no deaths and iron tools, armor, a shield, a bed and a home by minute 45, has passed repeatedly ([GOAL.md](GOAL.md#where-it-stands)). The dragon has been fought in rehearsals from staged worlds, never reached from a fresh start. Every trial and what it changed is in [docs/trial-notes.md](docs/trial-notes.md), newest first.
 
-## What Jev can do
+## The split: code for mechanics, Jev for judgment
 
-- **Gather and craft.** Resolve items from the real Minecraft catalog and work through recipes, ingredients, harvest tools, smelting, and concrete hardening.
-- **Combine requests.** Plan shared materials for several outputs, batch compatible gathering and crafting, and track each delivery. Full diamond armor means all four pieces.
-- **Build from descriptions.** Turn a request and nearby terrain into a schematic, gather its materials, prepare the ground, and place the blocks. In Survival, or without a generative model, Jev configures building templates.
-- **Explore with you.** Come, follow, find observed blocks and creatures, search for biomes, swim, and use boats for surveyed crossings.
-- **Remember your world.** Save named places and notes, recall past tasks, learn a wood preference from ordinary requests, and return to remembered locations after reconnecting.
-- **Handle survival needs.** Seek food and shelter, cook and eat, replace worn tools, respond to hazards, and recover without forgetting your request.
-- **Show its work.** Every Jev judgment is logged with the question, the options offered and their probabilities, and a flight recording keeps what the bot saw and did for the audits.
+Most "LLM plays Minecraft" projects hand a large model the whole problem and parse what comes back. jev-craft splits the work the other way.
 
-## Quick start
+**Code, mostly mineflayer and its plugins, owns the mechanics:**
+
+- **Movement.** Pathfinding is `mineflayer-pathfinder` with custom movement rules in [src/movement.js](src/movement.js): lava shores, jumps priced by what is under the gap, and moves refused where they would drop a gravel or sand floor lying on lava (note 592).
+- **Digging.** A dig guard wraps `bot.dig` ([src/skills.js](src/skills.js) `digGuardPlugin`) and refuses a dig that would let lava in, drop the bot into lava, or collapse the gravel or sand floor it stands on (note 600).
+- **Physics.** Knockback, falls and whether a step holds are checked with prismarine-physics ([src/motion.js](src/motion.js), [src/combat-estimate.js](src/combat-estimate.js)).
+- **Crafting.** Recipes, smelting and plans come from the real game data ([src/knowledge.js](src/knowledge.js), [src/plan.js](src/plan.js), [src/batch-plan.js](src/batch-plan.js)).
+- **Building.** Bridging, pillaring, shelters and schematics ([src/bridging.js](src/bridging.js), [src/shelter.js](src/shelter.js), [src/builds.js](src/builds.js)).
+- **Feasibility.** Code works out what is possible right now: which routes exist, which blocks are carried, which stances can be carried out from here.
+- **Bookkeeping.** What has been tried, and what came of it.
+
+Built-in skills live in `src/*.js`, one file per capability: [src/tunneling.js](src/tunneling.js), [src/blaze-tactics.js](src/blaze-tactics.js), [src/nether-travel.js](src/nether-travel.js), [src/portal-cast.js](src/portal-cast.js), [src/mob-hunt.js](src/mob-hunt.js), [src/healing.js](src/healing.js), and so on. A skill knows *how* to do something. It does not decide *whether* to do it.
+
+**Jev owns the judgments.** It picks the stance in a fight, the way toward a fortress, whether to keep at a rung of the game or set it aside, which way out of lava, and which layer of the bot gets the turn. All 91 questions are defined in [src/decisions/](src/decisions/index.js) and listed with their options in [docs/decisions.md](docs/decisions.md), which is generated from that code.
+
+Two rules keep the line sharp ([CONTRIBUTING.md](CONTRIBUTING.md)):
+
+1. **Jev chooses, code enumerates.** The model never names a coordinate, an item or a command. Code builds the options from the game state, and Jev's pick is checked against what was offered before anything runs.
+2. **Judgments go to Jev, with the facts.** Offer a real choice as options, with the numbers that bear on it. Do not settle it with a rule.
+
+## Giving Jev agency
+
+The operator's standing instruction was: *"Let Jev choose: judgments go to Jev as options with honest facts, not hidden rules. Hard rules only for physical safety."* It took several passes to take that seriously.
+
+**Pass 1: confidence gates came off play decisions.** Early on, a stance Jev picked with low confidence went to hand-written rules for fifteen seconds. Now Jev's pick is taken at any confidence on every play question. Confidence bars remain only where a person is on the other end: a chat request, a server command, a build that would replace something. Below the bar, the bot asks the player. [docs/rule-audit.md](docs/rule-audit.md) lists each rule that was handed over and the probe that checked it.
+
+**Pass 2: hidden options came out.** Health thresholds that hid a stance, a creeper dance that ran before the question was asked, and a three-failure rule that moved on by itself all became options with their costs stated.
+
+**Pass 3: reflexes went to Jev (note 549).** The operator asked: "Which reflexes do we have? Can we get rid of them and just ask Jev". The answer was yes, for almost all of them:
+
+- **Lava, fire, suffocation and air** are one question, `body_way` ([src/body.js](src/body.js)). Each way out comes with where it goes, how many seconds it takes, and how long the body lasts at the current damage rate.
+- **The encounter's first moves** are stance options: holding on a one-block span, fighting from an edge, blocking a creeper's line.
+- **The shield** is `shield_policy`. A shot is in the air for less time than an answer takes, so Jev is asked in advance what to do about the shooters that are around.
+
+Code still acts in these moments, but only as each question's **fallback**: the answer used when Jev cannot be reached or has not answered in time. The fallback is part of the question's definition (`define` in [src/decisions/index.js](src/decisions/index.js)), not a rule that runs first.
+
+**Pass 4: who acts is Jev's too (notes 536, 539).** The survival layer, the meal and the work each used to take the turn by their own rules. Now each layer states what it would do as a *claim* with the facts behind it. The arbiter ([src/arbiter.js](src/arbiter.js)) sends two or more claims to Jev as one question, `turn_priority`. This is live on every trial. `JEV_ARBITER=shadow` keeps the old order, logged beside Jev's ruling for comparison. The one lesson that pushed back (note 539): a question can hang. So the arbiter watches its own question and gives the turn by the fallback if the bot is hurt while waiting or five seconds pass.
+
+This only works because of speed. Answers come back in about 0.2 seconds. Note 530 measured 518 to 539 decisions an hour per trial at 0.17 to 0.18 seconds on average, the slowest 0.8. A frontier LLM taking several seconds per call could not make a stance decision while a blaze is firing. A System One model can.
+
+## How a decision is presented
+
+Every question is a tree of typed options. Each option has a `description` that says three things: what the option does, what it costs in damage and seconds from this bot's health, and what it gains toward the goal. Here is a real question from the replay suite (case `poisoned-by-witch-apple-offered`, from note 442). The bot is at 1 health, poisoned, in full iron, with a witch 19 blocks off. The descriptions are shortened here:
+
+> **fight**: Fight here ... about 10.2 seconds and 14.4 damage to kill them all, from 1 health (more than the bot has) ... At 1 health, 1 potion from the witch (about 6 each after armour) end it.
+>
+> **pillar**: Go two blocks straight up ... Two up does not stop a witch (throws potions up) ...
+>
+> **eat_golden_apple**: Eat the golden apple now (2 carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds.
+>
+> **retreat**: Run for footing out of the mobs' reach and sight ... A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.
+
+The phrase "more than the bot has" does a lot of work. So do the facts about each mob's behavior, which are read from the game's own code.
+
+**The state carries the context a player would have.** Besides health, armor, threats and a fight estimate, play questions get:
+
+- `riskNow`: how bad things are right now.
+- `deathWouldCost`: what would drop, the walk back from respawn, and the real minutes to make it all again.
+- `healing`: whether health comes back here at all.
+- `runClock` and pace: minutes spent, set against how fast a practiced player gets there.
+- `recentPositions`: where the bot has been over the last few minutes, so it can see a loop.
+- The ledger's record of what was already tried from here (below).
+
+The shared guidance explaining each of these fields is added to the instructions only when the field is present (`withRealTime` in [src/decisions/index.js](src/decisions/index.js)).
+
+**`none_good` is always on offer.** Every play question with two or more options also offers "none of these options are good: the move a player would make here is not among them." Picking it records a missing option in the log, and the best listed option is taken in the meantime. The recorded misses became a worklist: many options in [docs/decisions.md](docs/decisions.md) exist because Jev said one was missing. Two confident `none_good` answers in a row to the same situation mark that question as spent, and the question above it is asked instead (note 599).
+
+**A question with one feasible option is not asked.** The one way is taken and logged as such. The decision log then shows how often the model was actually needed.
+
+For the full anatomy of one request, with real latencies and token counts, see [How Jev thinks](docs/how-jev-thinks.md).
+
+## How fixes are made
+
+When Jev chooses badly in a trial, the fix is almost never a rule. The question to ask is: *what did Jev not know, or what did the code get wrong about the game?* The operator's shorthand was "no bandaids; give Jev facts, not hidden thresholds." In practice, a fix is usually one of three things:
+
+- **An honest fact.** A price was wrong, a fact was false, or something the choice turns on was missing.
+- **A price from the game's own numbers.** How far a blaze hovers, when a spawner fails in light, and how hard a ghast fireball pushes were all read from the 26.1.2 server jar, then checked on a test server.
+- **The missing option.** Offer the whole game tree: every route a player would really consider, as an option with its price.
+
+Note 614 is a typical example. The operator, watching a trial, said: "It seems like it should charge the thing more." A blaze was four blocks off, and Jev kept choosing cover and retreat. The triage found no bad judgment, but several things the question got wrong:
+
+> close_in ... was offered only with a shield in the off hand; this bot had none, so neither question could offer it. ... several facts were false or missing. ... fight_at_spawner, dig_in_at_spawner, box_here and corner_ambush each said "the shield up" ... with no shield carried. ... And no option said what it gains toward the rods: cover, heal, retreat and seal were priced in damage alone.
+
+The fix offered `close_in` without a shield, priced accordingly. It added `charge_nearest`, which goes after one blaze and asks again after the kill. It corrected the false facts. And every blaze option now says what it gains toward the rods; for cover, heal, retreat and defer, that is nothing. No threshold was added, and Jev still decides.
+
+Each fix is tested twice:
+
+- **Unit tests** that fail without the fix.
+- **A live probe.** The recorded question is asked of Jev five times before the change and five times after. If the answers don't move, the fix hasn't landed yet.
+
+## Loops, progress and the ledger
+
+Deaths are easy to see. The harder failure is a bot that is **busy but not progressing**: walking back and forth at a fortress for seventy minutes (note 558), or sitting in a sealed pocket for half an hour (notes 589, 597). The operator pushed to judge trials by progress, not only by deaths, and most of the harness's structure came out of that.
+
+**One ledger of what was tried ([src/tried.js](src/tried.js), note 571).** Every place that offered ways used to keep its own memory of what had failed. There were seven or more such memories, each with its own radius and clock, and none saw the others. On one trial, `fortress_approach` was answered `other_way` 4,423 times. Now every answer, asked or taken as the only way, is a ledger entry with its question, where it was going, and what came of it: progressed, blocked with a reason, waited, or pending. Every play question reads the ledger:
+
+- An option tried from here recently and come to nothing says so in its description.
+- Come to nothing twice, it **rests** for five minutes, left out and listed in `waysResting`.
+- When every option rests, the question is **not asked again**. Its parent is asked instead, told what failed below (`whatFailedBelow`). Parents are declared in each question's definition: step, way, plan, rung.
+
+**Waits and holds are entries too (notes 599, 611).** The first ledger left out the layer where most of the day's loops lived: stances, pockets, pillars and `turn_priority`. Now a wait records the scene it began in. If that scene did not change (same health, same place, same mobs, no swing), the wait came to nothing and rests like any other way. A held stance ([src/holds.js](src/holds.js)) ends when something observed contradicts what it was chosen on, not when a clock runs out. Note 611 found four leaks in the hold rule, among them that nested answers were never held and that a hold could fall out of a capped ledger. Each was fixed in general.
+
+**Rungs have a budget (notes 583, 588, 605).** Each rung of the game ladder, such as "obtain blaze rods", gets ten minutes on the wall clock with nothing to show: no milestone, no new best distance to its target, no new ground. Then `rung_progress` asks Jev whether to keep at it, change the plan, or set it aside, with what has been tried in front of it. Setting aside and taking up again are both Jev's answers.
+
+## The iteration loop
+
+The harness improved through a loop that ran for days with an operator (an AI agent) and a human user:
+
+1. **About 14 to 20 trials run in parallel**, each on its own Minecraft server and port. Some start from fresh worlds. Most start from saved stages (below), so the hard parts get tried many times an hour.
+2. **A watcher wakes the operator** on a death or a loop. Every hour or so the operator also runs the progress audit and looks at trail maps for trials that are busy but getting nowhere.
+3. **Each death, loop or stall is triaged by an Opus subagent** in its own git worktree. It reads the flight record, the death timeline and the world's region files, finds the cause, and fixes the general rule: facts, prices or options, not a special case. It adds tests that fail without the fix, probes live Jev five times on the recorded question before and after, and writes a numbered entry in [docs/trial-notes.md](docs/trial-notes.md). Notes 500 to 614 were written this way.
+4. **Fixes are squash-merged in a separate merge worktree.** There they run through `npm test` (about 2,000 tests, no network), a `JEV_ARBITER=shadow` check, and the replay suite. Then main is fast-forwarded. Merging in the main checkout directly once crashed 23 running bots, because the bots load code from that checkout and it briefly held conflict markers.
+5. **Running bots pick up the new code through a quiet restart.** The operator touches `.bot-state/restart-requested`. Each bot quits once nothing hostile is within sixteen blocks and it stands on dry ground, or after five minutes ([src/quiet-restart.js](src/quiet-restart.js)), and its supervisor starts it again. Killing bots mid-fight had caused deaths right after restarts.
+6. **Every three hours a Fable subagent gives read-only design advice** on the open problems. The operator acts on the advice that holds up and doesn't wait on the rest. One review found that holds and stances were exempt from the ledger, which explained a whole class of loops (note 599). Another recommended one shared ledger instead of seven separate memories (note 571).
+
+## Tools and artifacts
+
+These tools were built as the loop needed them. Each exists because something was being missed.
+
+**The flight record** ([src/recorder/](src/recorder/index.js)). What the bot saw and did, one frame a second and one at every decision, in `.bot-state/flight/`. Each decision is framed the moment Jev answers, with its options, probabilities and latency. `node scripts/flight.js --deaths` prints the frames before each death.
+
+**Death timeline** ([scripts/death-timeline.js](scripts/death-timeline.js)). A trial's last seconds, frame by frame: health, position, who held the turn, the mobs about, and each Jev decision with its weights, how long it took and the health when it was asked. `--options` prints the option descriptions. This is the first thing a triage reads.
+
+**Replay suite** ([scripts/replay-suite.js](scripts/replay-suite.js), [evals/replays/cases.jsonl](evals/replays/cases.jsonl)). Recorded questions from deaths and loops, each with the answers that are acceptable and the ones that are forbidden. Each case is asked live five times, in seconds, with no Minecraft server. A case passes when most answers are expected and at most a third are forbidden. Some cases are marked `known`: gaps that are listed, not failed. Borderline cases get loosened when every option is fatal. In the witch case above, at 1 health, the apple and the retreat are both accepted, because neither is clearly right. It runs before every merge that touches what Jev is told.
+
+**The arena** ([scripts/arena.js](scripts/arena.js), [scripts/lib/arena.js](scripts/lib/arena.js)). Drills staged on a separate server, such as a live blaze spawner, a wither skeleton pair or a hoglin herd. Each drill runs the real survival and hunting code against the encounter and measures damage, time to kill, rods taken and deaths. `ARENA_LOADOUT=trial` uses the kit trials actually carry. `ARENA_PREFER` forces one tactic, to measure it alone. The arena's rows are quoted to Jev in the option descriptions ("as measured"). Note 606 built four player tactics against blazes (a box with a window, lighting the spawner, a corner ambush, retreating to heal). None beat walking straight in (`close_in`) at a live four-blaze spawner. The ones that were safe once set up, but killed nothing, are offered with their numbers. The ones that could not be done under fire are offered only in the arena.
+
+**Stage saves** ([scripts/trials/checkpoint.sh](scripts/trials/checkpoint.sh), [start-stage.sh](scripts/trials/start-stage.sh)). Every 30 seconds, each trial's world and bot state go into a ring of snapshots. When the bot dies, the last three are kept. The first time a trial reaches the Nether or a fortress, a snapshot is promoted to a stage save. `start-stage.sh <port> fortress` starts a new trial from the least-used save, so most trials start at the hard part. [start-fresh.sh](scripts/trials/start-fresh.sh) starts one from a first-days world instead.
+
+**Trail maps** ([scripts/trials/trail-map.js](scripts/trials/trail-map.js), note 562). One PNG per trial: a top-down map of the ground it walked, read from the server's saved region files, with a side view underneath. The path is colored by what the bot was doing, with a dot each minute, deaths and mobs marked, and the audit's flags in the header. A bot pacing a bridge, stuck on a pillar or circling a fortress wall is obvious at a glance. Written with a pure-JS PNG writer and no new dependencies. The human user especially liked these.
+
+**Progress audit** ([scripts/trials/progress-audit.js](scripts/trials/progress-audit.js), notes 558, 573, 598). Per trial over a recent window, it reports:
+
+- Where the trial is, and how long since its last milestone.
+- Minutes by step or rung.
+- New ground covered against ground walked before.
+- The questions asked most and their commonest answer.
+- The loop measures: `reaskAfterHold`, `quickNothing` (answers that came back within seconds with nothing to show), `stallShare`, `waitShare`, the stance rate while nothing changes, and the longest `none_good` run.
+
+Each flag states its threshold. `--cohort <time>` sums the measures over every trial before and after a deploy, which is how a fix is shown to have worked, or not (note 611 traced a deploy after which re-asks following a hold jumped from about 7 an hour to about 103).
+
+**Death replays.** Trial servers run Fabric with ServerReplay, which records the bot from join to leave. [scripts/trials/death-camera.js](scripts/trials/death-camera.js) writes a third-person camera path around each death into the replay, so ReplayMod can render real footage of what happened.
+
+**Supporting scripts:**
+
+- [watch.sh](scripts/trials/watch.sh) returns when a trial's verdict is done or has failed by a death or a loop. Each check has a two-minute limit; a check that hung once kept it silent for five hours while trials failed.
+- [supervisor.sh](scripts/trials/supervisor.sh) restarts a bot whose flight record goes quiet for 60 seconds.
+- [scripts/midgame.js](scripts/midgame.js) starts a trial and gives it a verdict. It also makes a watching player (`TRIAL_WATCHER`, DoloresDoodle by default) an operator on every trial server, so the human can spectate ([spectate.sh](scripts/trials/spectate.sh)).
+- [setup.sh](scripts/trials/setup.sh) builds the trial servers from scratch: Java 25, the 26.1.2 server, Fabric and ServerReplay.
+
+The ports and server folders are listed in [scripts/README.md](scripts/README.md).
+
+## Running many trials at once
+
+Operational lessons from running 14 to 20 trials on one 16-core machine:
+
+- **CPU is the real limit.** Twenty trials saturated 16 cores, and bots stalled for 2 to 4 seconds at a time, which is fatal in a fight. The cap became about 14. The ReplayMod client is closed when not in use. The human user later asked for 7, to keep the machine usable.
+- **Disk fills quietly.** Death snapshots reached 53 GB (190 deaths in a day). Now a death keeps three snapshots for six hours, and the oldest go first when free space drops below 25 GB ([checkpoint.sh](scripts/trials/checkpoint.sh)).
+- **Never pattern-kill processes.** On macOS, a subagent's `pkill -f ... -P 1` killed every process with "1" in its command line, including every trial server. Agents now stop only the exact process IDs they started, and restarts go through the quiet-restart file.
+- **The decision service can go down.** During outages (503s and 520s) the bot walks each question's fallback and says so once in chat. Deploys and triage pause until the service is healthy, and deaths during an outage are not triaged: they say nothing about Jev.
+- **A watcher needs its own watchdog.** Any check that can hang needs a time limit (see `watch.sh`).
+- **Slow answers are usually the service, not the prompt.** Note 614 found stance questions of 1,500 and 8,000 tokens equally slow in the same minute, and equally fast a minute later.
+
+## What did not work
+
+- **Confidence gates on play.** Handing an unsure pick to rules for fifteen seconds meant the rules played most of the hard moments. Taking Jev's pick at any confidence, with honest prices, did better.
+- **Reflexes run before the question.** They pre-empted Jev in exactly the moments that mattered, and several deaths started with a reflex (note 548).
+- **Per-feature memories of failure.** Seven or more separate "tried here" lists, each blind to the others, produced loops of thousands of re-asks (note 571).
+- **Clock-based holds.** Asking a held stance again every fifteen seconds produced 48 identical answers over a crossbow piglin that never shot (note 590). Holds now end on observed change.
+- **Prices from the wrong fight.** Quoting the arena's median against three distant blazes to a bot facing four at a spawner made `close_in` look cheap (note 602). Prices now come from the fight at hand.
+- **Player tactics that sound right.** Boxing in, lighting the spawner and corner ambushes are safe, but at a live spawner they don't produce rods (note 606).
+- **A second opinion from a generative model** on recovery decisions agreed with Jev in fourteen seconds at a hundred times the cost, and was removed ([How Jev thinks](docs/how-jev-thinks.md#when-things-go-wrong)).
+- **Judging trials by deaths alone.** Several of the worst trials never died. They walked in circles for an hour.
+
+## Code map
+
+| Area | Where |
+| --- | --- |
+| Every question Jev is asked; `decide`, `none_good`, escalation | [src/decisions/](src/decisions/index.js) |
+| The TypeSafe client | [src/typesafe.js](src/typesafe.js) |
+| Who gets the turn (`turn_priority`) | [src/arbiter.js](src/arbiter.js) |
+| The ledger of what was tried | [src/tried.js](src/tried.js), [src/decisions/repeats.js](src/decisions/repeats.js) |
+| Stance holds | [src/holds.js](src/holds.js) |
+| Stall detection and waits | [src/stillness.js](src/stillness.js) |
+| Survival, stances, the body's dangers | [src/survival.js](src/survival.js), [src/body.js](src/body.js), [src/vitals.js](src/vitals.js) |
+| Fight prices | [src/combat-estimate.js](src/combat-estimate.js), [src/blaze-stand.js](src/blaze-stand.js), [src/risk.js](src/risk.js) |
+| The game ladder and its rungs | [src/game-progress.js](src/game-progress.js), [src/strategy.js](src/strategy.js), [src/work.js](src/work.js) |
+| Nether travel and fortresses | [src/nether-travel.js](src/nether-travel.js), [src/fortress-map.js](src/fortress-map.js) |
+| Movement and pathfinding rules | [src/movement.js](src/movement.js), [src/terrain.js](src/terrain.js), [src/motion.js](src/motion.js) |
+| Flight recording | [src/recorder/](src/recorder/index.js) |
+| Trial scripts | [scripts/trials/](scripts/trials/), [scripts/midgame.js](scripts/midgame.js), [scripts/first-days.js](scripts/first-days.js) |
+
+Further reading:
+
+- [How Jev thinks](docs/how-jev-thinks.md): one request, end to end.
+- [Every question](docs/decisions.md): the generated list of questions and options.
+- [Rule audit](docs/rule-audit.md): what code still decides.
+- [Trial notes](docs/trial-notes.md): the lab notebook.
+- [docs/](docs/README.md): everything else.
+
+---
+
+## Using Jev as a chat companion
+
+The same bot is a Minecraft companion you talk to in game chat. Ask it to gather, craft, build, find a biome, or chase a long-term goal. Every judgment about what you meant goes through the same questions and is logged.
+
+### Quick start
 
 You need:
 
-- Node.js **22 or newer** and npm.
-- A running **Minecraft Java Edition 26.1** server and a client to play alongside the bot. The repository does not include or start a game server.
-- A **TypeSafe API key** (or an OpenRouter key). The bot runs locally; model calls require network access.
-
-### 1. Install
+- Node.js 22 or newer.
+- A Minecraft Java Edition 26.1 server you run. The repository does not include one.
+- A TypeSafe API key, or an OpenRouter key.
 
 ```sh
 git clone https://github.com/mrubens/jev-craft.git
@@ -45,13 +252,11 @@ npm ci
 cp .env.example .env
 ```
 
-### 2. Configure
-
-Edit `.env` with your server address and a model provider:
+Edit `.env`:
 
 ```dotenv
 TYPESAFE_API_KEY=your_typesafe_key
-# Alternatively, set OPENROUTER_API_KEY=your_openrouter_key
+# or OPENROUTER_API_KEY=your_openrouter_key
 
 MC_HOST=localhost
 MC_PORT=25565
@@ -60,249 +265,95 @@ MC_USERNAME=Jev
 MC_AUTH=offline
 ```
 
-Use `MC_AUTH=offline` when your server allows it. For an authenticated server, use `MC_AUTH=microsoft` with the bot's own Minecraft account and complete the sign-in prompt. Your player and the bot need separate identities.
+Use `MC_AUTH=microsoft` on an authenticated server, with the bot's own account. Then start the bot with `npm start`, join the same server, and try `Jev come here`, `Jev craft me a chest` or `Jev build a house`. The console prints each step and the decision behind it.
 
-### 3. Start and join
+### Talking to Jev
 
-```sh
-npm start
-```
-
-Join the same server from **Multiplayer → Direct Connection**, then try:
-
-```text
-Jev come here
-Jev craft me a chest
-Jev build a house
-```
-
-Keep the bot process running while you play; its console prints each step and the decision behind it.
-
-## How Jev is used
-
-Jev answers three kinds of question: a **Choice** among options code lists, a **Noul** (a yes/no probability), and a **Score** along described levels. Every question the bot asks is built from the real game state, and every answer is checked against the options that were offered before anything runs. This is the complete map of where the model sits.
-
-| Moment | What Jev is asked | Primitive | What code does with the answer |
-| --- | --- | --- | --- |
-| A chat message arrives | Whether it is addressed to the bot, whether it asks for action or is just talk, which of sixteen objectives it is, the quantity, the recipient, a target player, the wood species chosen, how much the wording presses for speed, and speculatively: which word-overlap catalog item is meant, what kind of thing to find, and what a note says about wood | Noul + Choices + a Score, one batched call | Routes to a handler. Below a confidence bar the bot asks a one-line question instead; the bar is higher for builds, commands, the Nether and beating the game, and higher still for forgetting or dropping the dream. Urgency travels with the task into later trade-offs |
-| The item is not settled | Which branch of the real item catalog holds it, one level at a time | Choice per hop | Copies the catalog name. An unsure leaf with a close runner-up becomes "did you mean X or Y?" |
-| Several outputs are named | For each catalog branch, whether it holds one of the requested outputs; then coverage, quantity and recipient per item | Nouls, then Choices | Builds the combined plan; incomplete coverage asks the player |
-| A memory request | What operation it is, which saved entry it means, which verbatim span is the place name, which observed position is "here" | Choices over spans | Saves, recalls, forgets, or walks. Jev cannot invent a name or a coordinate |
-| A step needs materials | Which **source** to work: sources differ in block, count within reach, distance and climb | Choice per tree level | Picks the nearest block inside the chosen source. A single feasible option is never sent to Jev |
-| Dusk or hunger while working | Continue the request (at night: stay up), walk home to the bed, secure a shelter, or forage; and which forage option | Choice | Eating carried food and air are rules in code, not choices |
-| Night | How to shelter (the saved shelter, a room at a site, a pocket here, a shaft, a mine); once sealed in, whether to stay, leave, go to bed, open the wall on a watching mob, or mine; which ore the night mine goes for, or a torch in the tunnel | Choices | Each option carries its distance, the blocks it needs against those carried, and whether it is dark enough for monsters |
-| Hostile mobs close | The stance: fight, pillar, dig into a wall, seal in, run, shoot, charge the shooters, dance with a creeper, or leave them be and keep working | Choice | Told what the fight would cost *this* bot: each mob's hit after its armour, swings to kill with its weapon, and the health to kill them all. The swing at arm's length and the shield against an arrow already in flight stay reflexes |
-| The work gets nowhere | Try it another way, leave the step for later, or a detour, after forty-five seconds without progress or five failures | Choice | The stall detector is code; the answer is Jev's, told how many times and why |
-| Between steps | Whether to make a spare pickaxe or top up wood and blocks now; how much of a vein to take; what to do while the furnace cooks; what to drop when the pockets are full; where the home goes; which chore before bed | Choices | Each option says what is carried and what it is for |
-| A build request | Whether it continues a standing structure and where it goes; in template mode, which style, floors, size and material | Choices | The generative designer draws custom shapes; templates need no generation |
-| A design comes back | Whether the validated design answers the request in kind, scale and material | Noul | A poor fit goes back to the designer with Jev's verdict as feedback, before hours of placing blocks |
-| Something keeps failing | Which code-checked recovery action is most likely to unblock the original request | Choice | Executes it under a budget. An unsure Jev does nothing from the advice |
-| A boat, an ore, a mob, a stronghold, the dragon | Whether a surveyed crossing is worth a boat; whether a nearby ore is worth a detour; the next bounded combat or search action | Choices | Bounded, verified execution with safety reflexes in code |
-| An operator command | Each branch of the server's own command tree, the argument roles, then whether the result faithfully implements the request | Choices + Noul | Runs the command once, only from allowed players, only above a faithfulness bar |
-
-Every one of these questions is defined in one place, [`src/decisions`](src/decisions/index.js), with its stakes, the confidence bar its answer must clear and what happens below it, and the code's own answer for when Jev cannot be reached. The in-game decision trees are asked through one runner (`decide`) and the batched questions through `ask`, so the outage walk, the abort on cancellation, the staleness check and the decision log are the same everywhere; nothing else in `src` calls the model, and a test holds it to that. The full list, generated from the definitions, is in [docs/decisions.md](docs/decisions.md).
-
-[How Jev thinks](docs/how-jev-thinks.md) walks through one recorded request with the real answers, confidences, latency and token counts, and ships the recorded trace.
-
-The one place a generative model is used, optionally, through OpenRouter and only in Creative, is the one that needs generation: drawing a custom schematic from a request and terrain survey. Everything else is selection, and selection is what a System One model does well.
-
-If Jev cannot be reached (the service is down, a request times out), the bot does not stop. The same decision tree is walked with a code default, shelter before food before the request and otherwise the first option listed, the decision is recorded as a *code default*, and the bot says so once in chat and once more when Jev is back. The decision log marks those as code defaults, so an outage is visible rather than silent.
-
-Two design rules run through all of it. **Jev chooses, code enumerates**: the model never sees an option code did not construct and check, so it cannot invent a coordinate, a command or a quantity. **Judgments are Jev's, with the facts**: when the bot plays, a tactical or strategic choice is put to Jev as options with the numbers that bear on it, not decided by a hand-written rule, and Jev's pick is taken at any confidence; code keeps the mechanics, what is possible now, and reflexes faster than a question. Where a person is on the other end (a chat request, a server command, a build that would replace something), confidence is a second axis: below the bar the bot asks instead of acting. The [rule audit](docs/rule-audit.md) lists what has been handed to Jev and what code still decides.
-
-## Talking to Jev
-
-Start a request with **"Jev …"** or the bot's configured username. These are examples, not a fixed vocabulary:
+Start a message with "Jev" or the bot's username. These are examples, not a fixed vocabulary:
 
 | Request | What it does |
 | --- | --- |
-| `Jev come here` | Move toward the speaker. |
-| `Jev follow me` | Keep following until stopped or replaced. |
-| `Jev get me a pumpkin` | Find, collect, and deliver one pumpkin. |
-| `Jev make eight birch stairs` | Gather ingredients and craft the quantity. |
-| `Jev give me full diamond armor and a bed` | Plan all four pieces and a bed together, sharing materials. |
-| `Jev get me 32 purple concrete` | Obtain ingredients, craft powder, harden it in water, deliver. |
+| `Jev follow me` | Follow until stopped or replaced. |
+| `Jev get me a pumpkin` | Find, collect and deliver one. |
+| `Jev give me full diamond armor and a bed` | Plan all five items together, sharing materials. |
+| `Jev get me 32 purple concrete` | Craft the powder, harden it in water, deliver. |
 | `Jev find a cherry biome` | Explore using observed biome data. |
-| `Jev find a sheep` | Look for and approach a sheep without attacking it. |
-| `Jev build a small cherry mansion` | Request a custom building design. |
-| `Jev find a way to the Nether` | Gather what a portal needs, build or find one, and verify the crossing. |
+| `Jev build a small cherry mansion` | Design and build a structure. |
+| `Jev find a way to the Nether` | Build or find a portal and cross. |
+| `Jev status` / `stop` / `resume` | Report, pause or continue the current task. |
 
-**"For me" requests delivery.** `Jev craft me a chest` brings the chest to you; `Jev craft a chest` keeps it. Stay nearby for handovers. If there is no safe throwing spot, Jev can use or place a nearby chest, verify the stored items, and tell you its coordinates.
+"For me" means delivery: `Jev craft me a chest` brings it to you. A new request replaces the active one. Tasks survive reconnects and restarts; state lives in `.bot-state/`. When Jev is unsure what you meant, it asks ("Did you mean short grass or grass block?") instead of guessing. The confidence it needs scales with the stakes: 0.5 to come here, 0.65 for builds and the Nether, 0.75 to forget something.
 
-| Control | Effect |
-| --- | --- |
-| `Jev status` | Describe the current task or survival activity. |
-| `Jev stop` | Cancel active movement and pause work, saving progress. |
-| `Jev resume` | Continue a saved task or resume idle survival behaviour. |
+### Dreams
 
-A new request replaces the active task. Put related item requests in one message to have them planned together. Combined requests support up to 16 item types. Running tasks resume after reconnects and restarts; stopped or blocked tasks wait for `resume`. State lives in `.bot-state/`, per server and bot identity.
-
-If Jev is not sure what you meant, it says so and asks: *"I'm not sure whether you want me to design and build something or build a small house. Could you say it another way?"* or *"Did you mean short grass or grass block?"* Nothing starts until you answer.
-
-## Give Jev a dream
-
-Jev doesn't have to wait to be told what to do. Give it a dream and it chases it whenever nothing else needs it:
+Give Jev a standing goal and it pursues it whenever nothing else needs it:
 
 ```text
-Jev your dream is to build a village
 Jev your dream is to beat the game
-Jev what's your dream?
+Jev your dream is to build a village
 Jev set your dream aside
 Jev chase your dream
-Jev forget your dream
 ```
 
-With **build a village**, code lists the parts a village still lacks from the buildings that actually stand, and Jev picks the next one and scores how village-like the place already is. The part is then chosen from a shelf of forty-five ready-made, validated designs (cottages, a mansion, a tower, wells, farm plots, chapels, barns, lamp posts, plazas) with Jev picking the design that suits what already stands, so in Survival no generative model is ever called. In Creative with the designer, the shelf only says which parts a village can have: each part is drawn by the designer instead. Each part goes beside the newest one so the village grows as a cluster, and the decision log records the dream and the village score with each part.
+**Beat the game** follows the survival ladder: stone tools, iron, a shield, a bucket, a home base with a bed, farm and stash chest, iron armor, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Progress is read from the world, never from a counter.
 
-With **beat the game**, the idle loop hands Jev the survival ladder: stone tools, a stone sword, an iron pickaxe, a shield, an iron sword, a bucket, a home base, iron armour, golden boots, a bow and arrows, then the Nether, blaze rods, Eyes of Ender, the stronghold and the dragon. Each rung is something the planner can already do, and progress is only ever read off the world, never off a counter.
+**Build a village** has Jev pick the next part from what already stands, choosing from 45 validated designs.
 
-A chat request always takes priority and the dream resumes afterwards. Setting it aside stops the current milestone and holds it; chasing it again picks the partly built milestone back up. A milestone that could not be finished waits out a cool-down. Between milestones, with shelter and food sufficient, Jev also chooses among small chores: cooking raw food it carries, making stone tools, stocking wood, and once the base stands, tending the farm, baking bread and breeding the cows.
+A chat request always comes first, and the dream resumes afterward.
 
-### Home base
-
-Deaths and food have been the recurring cost of the beat-the-game run: six times the full kit was lost to a death that then cost a climb from world spawn, and every food reserve was a hunt of unknown length. So the ladder has a **home** rung, taken after the bucket and before the long descents, the order any survival walkthrough keeps: iron tools, then a base and a bed, then the mine.
-
-- **One site per world.** Code looks for level, tillable ground beside water near the first Overworld portal the bot has used, else the house it built, else where it stands, and keeps it in the shared survival state so every later request and restart sees the same base.
-- **A bed first.** Wool from sheep (the same chase that gets mutton), a bed crafted through the ordinary recipe path, placed and used once so the respawn point moves home. A missing bed reopens the rung.
-- **A wheat plot.** A wooden hoe, nine cells of farmland against the water, seeds from clearing grass (kept in the pockets now rather than tossed), planted and left to grow. Growth takes in-game time, so the plot is tended on return visits rather than watched.
-- **A cow pen.** A fenced five-by-five ring with a gate, two cows led in with wheat and bred for steak, cooked through the existing furnace path.
-- **A stash chest.** Eight planks, placed once beside the foot of the bed right after the bed is claimed, and remembered in the base state with its contents as of the last time the lid was opened.
-
-**Villages are remembered too.** A bell, several hay bales or a pair of villagers within forty-eight blocks is a village; the main loop looks rarely (every thirtieth step, or once the bot has moved on), keeps one entry per village beside the remembered portals with its bell, bed count and hay count, and says so once in chat. A remembered village is then offered where the ladder already wants what it has: the bed rung prefers walking to a village with beds within two hundred blocks over hunting sheep, and digs one up; a village within that reach anchors the home base, so the bed and the stash chest go up among the houses; and the food rules add a village within a hundred and twenty blocks beside any hunt in view, taking the ripe wheat, carrots and potatoes (the seed goes back in), a hay bale when the farms are bare, and baking bread through the planner. Jev chooses the rung, the site and the food option as before. Trading is not implemented.
-
-The chest holds a **spare kit**: a stone pickaxe and a stone sword (iron when there is an iron one to spare), eight logs, a stack of cobblestone, eight pieces of cooked food, a crafting table, a furnace, and a water bucket if a second one is carried. "Stock the stash" is an idle chore like the farm ones, offered whenever the pockets hold something the kit is short of, and Jev chooses it or not: the best tool of each kind stays in hand and the next best goes in, wood and stone go in beyond what a descent keeps, food goes in beyond the twelve-point expedition reserve. Before a Nether crossing the ladder also leaves the valuables at home when the base is within reach: diamonds once the diamond pickaxe exists, gold, emeralds, raw ore and every iron ingot beyond eight. On a respawn at the bed, or whenever the bot is within reach of the base with an empty kit, a **restock** rung runs ahead of the preparation rungs and takes out what the pockets are short of plus whatever the next rung was about to go and gather, so a death costs a walk of two blocks rather than an hour from a wooden pickaxe. The decision to restock is read from the remembered contents; the walk only happens when the chest has something, and a chest found missing reopens the home rung for another. Beside the kit the chest keeps **keepsakes**, things useless now and precious later: wool over three, string, feathers, bones, gunpowder, leather, obsidian, arrows over a quiver, flint and iron over a tool's worth, gold beyond what golden boots need, diamonds once the diamond pickaxe exists, logs over eight, coal over sixteen, seeds and crops over a stack. They go in with the same chore and come out when a rung wants them: the bed rung draws its wool, and an acquire rung's plan is read backwards against the chest so a stored ingredient answers the craft and the gathering beneath it is skipped. Along the way the bot is opportunistic about them too: a keepsake or kit item lying within eight blocks of a mine or tunnel step is picked up by rule in a ten-second detour, and a lone sheep or chicken in view while wool or feathers are short is offered to Jev as a bounded chase, the way nearby ore is.
-
-The idle chores then include tending the farm, harvesting and baking, leading cows in and breeding them, stocking the stash, and Jev chooses between them like the rest. The food rules treat bread and steak at the base as a reserve within reach: when the base is within about a hundred and thirty blocks and has something to eat, walking home replaces the wander for animals, and it stands beside any hunt that is actually in view for Jev to weigh. Everything is read off the world: farmland, crop age, fence blocks, cows inside the ring, the bed's two halves.
-
-## Memory
-
-Jev keeps a local notebook across reconnects and restarts:
+### Memory
 
 ```text
 Jev remember this as home
 Jev go home
-Jev where is home?
 Jev remember I prefer cherry planks
-Jev get me two of my favorite planks
-Jev what did I ask you to do last time?
 Jev make another one like last time
 Jev forget home
 ```
 
-"Here" means the speaking player's observed position. Named places include their dimension. "Again" starts a fresh copy of a remembered request; `resume` continues saved progress. Memory never replays operator commands.
+Places carry their dimension. Jev also learns a soft wood preference from ordinary requests. Notebooks are per player, in `.bot-state/*-memory.json`.
 
-Jev also learns a **soft wood preference from ordinary requests**: after "Jev give me a cherry log", "Jev give me two planks" favours cherry. Current instructions come first, then explicit notes such as "I prefer birch", then the most recent learned choice. `Jev what wood do I prefer?` explains it; `Jev forget my wood preference` removes it. Each player's notes and places are separate, and `Jev forget everything you remember about me` clears a notebook. Notebook files live in `.bot-state/*-memory.json`, excluded from Git. Set `MC_WORLD_ID` to give a replacement world at the same address a fresh memory namespace.
+### Building
 
-## Building
+In Creative with an OpenRouter key, a generative designer draws a schematic from the request and a terrain survey. Code validates it, and Jev judges whether it answers the request before any blocks are placed. In Survival, Jev configures cottage, mansion or tower templates, or picks from 45 ready-made designs in `data/schematics`. Structures go up to 25 × 16 × 25 in the ordinary case, with at most 16 materials. Jev never builds over a structure it did not place.
 
-Describe the structure, material, and features you want:
-
-```text
-Jev build a compact cherry mansion with two floors and big windows
-Jev build a small sandstone watchtower
-Jev build a cobblestone sculpture
-```
-
-In Creative with an OpenRouter key, the designer receives the request, a terrain heightmap, inventory, game mode, and the supported palette, and returns a schematic. Code validates its geometry; Jev judges whether it answers the request; then the bot gathers materials through ordinary recipes (or the Creative inventory) and builds it. Jev prefers level ground but can cut terrain, fill gaps, and set a foundation in shallow water, within bounded earthworks that only move natural ground. Jev's own earlier buildings and anything a player built are built around, never over.
-
-The executor supports structures up to **25 × 16 × 25 blocks** in the ordinary case and larger ones when a request calls for it, with at most **16 materials**. Stairs, slabs and wooden doors carry their orientation; fluids, gravity blocks and redstone are not supported schematic elements.
-
-In Survival, with `BUILD_DESIGNER=jev`, or with `auto` and no OpenRouter key, Jev selects and configures cottage, mansion, or tower templates, or picks a ready-made design from the shelf of forty-five in `data/schematics` and the generators (chapels, wells, farms, barns, pavilions, monuments and more). These designs are built as they are, with no separate fit review. A plain `Jev build a house` uses the compact shelter workflow, except in Creative with the designer, where every build request, a plain house included, is drawn by the designer instead of coming from the catalog. Ask to extend, finish, or change a building Jev already built and it works out which one you mean; without the custom designer a change is built beside the original instead, since a template cannot be drawn against it.
-
-## Model configuration
+### Configuration
 
 | Setting | Purpose |
 | --- | --- |
 | `TYPESAFE_API_KEY` | Use Jev through TypeSafe. |
-| `OPENROUTER_API_KEY` | Use Jev through OpenRouter and enable the optional building designer in Creative. |
-| `JEV_PROVIDER` | Force `typesafe` or `openrouter`. Otherwise a TypeSafe key takes precedence. |
-| `TYPESAFE_DEFAULT_MODEL` | TypeSafe decision model; default `jev-latest`. |
-| `OPENROUTER_JEV_MODEL` | OpenRouter decision model; default `typesafe/jev-1.13`. |
-| `BUILD_DESIGNER` | `auto` uses OpenRouter in Creative when configured, otherwise templates; `jev` always uses templates; `openrouter` requires generated designs in Creative. Survival always uses templates. |
-| `OPENROUTER_BUILD_MODEL` | Generative building model. |
-| `RECOVERY_ADVISER` | `jev` (default) lets Jev pick a code-checked action after repeated failures; `off` disables it. |
+| `OPENROUTER_API_KEY` | Use Jev through OpenRouter, and enable the Creative designer. |
+| `JEV_PROVIDER` | Force `typesafe` or `openrouter`. |
+| `TYPESAFE_DEFAULT_MODEL` | Default `jev-latest`. |
+| `OPENROUTER_JEV_MODEL` | Default `typesafe/jev-1.13`. |
+| `BUILD_DESIGNER` | `auto`, `jev` (templates only) or `openrouter`. |
+| `OPENROUTER_BUILD_MODEL` | The generative building model; default `anthropic/claude-opus-5.5`. |
+| `RECOVERY_ADVISER` | `jev` (default) or `off`. |
+| `JEV_ARBITER` | Live by default; `shadow` keeps the old turn order and logs Jev's ruling beside it. |
+| `JEV_FLIGHT` | `0` turns off the flight recording. |
+| `MC_COMMAND_USERS` | Players allowed to ask for server commands (see below). |
 
-The building model defaults to `anthropic/claude-opus-5.5`. Recovery advice can only select implemented actions and has call, time, and execution limits. See [`.env.example`](.env.example) for connection and viewer settings. Keep credentials in `.env`, which is excluded from Git.
+See [.env.example](.env.example) for the rest. Keep credentials in `.env`, which git ignores.
 
-## Seeing what Jev decided
+**Operator commands.** With `MC_COMMAND_USERS` set and the bot given permissions, requests like `Jev make it daytime` are translated into server commands. Jev walks the server's own command tree and checks the result against the request before running it. Commands are never used on the bot's own initiative.
 
-- **The console.** Each step prints a JSON line: the step, the decision behind it (the question, the path taken and Jev's probabilities) and any error.
-- **The decision trail.** Every decision is kept with the task in `.bot-state/`, including single-option steps marked as never having reached the model and code defaults used when Jev could not be reached.
-- **The flight recording.** What the bot saw and did, sampled every few seconds and at every decision, written to `.bot-state/flight/` and kept for a day (`JEV_FLIGHT=0` turns it off). `node scripts/flight.js --deaths` prints the frames before each death; `node scripts/audit-day.js` audits a day for standing still, retries, pacing and damage.
-- **The run ledger.** Jev calls, tokens and latency per run, split by the kind of question, written to `.bot-state/run-ledger.md` as each run finishes.
-- **The questions themselves.** [docs/decisions.md](docs/decisions.md) lists every question with its options, trigger and fallback.
+### Seeing what Jev decided
 
-## Optional operator commands
+- **The console** prints a JSON line per step, with the decision, its path and Jev's probabilities.
+- **The decision trail** is kept with each task in `.bot-state/`, including one-way steps and fallback decisions.
+- **The flight recording** is in `.bot-state/flight/`, kept for a day. `node scripts/audit-day.js` audits a day for standing still, retries and damage.
+- **The run ledger**, `.bot-state/run-ledger.md`, has calls, tokens and latency per run.
 
-Jev can translate explicit requests such as `Jev make it daytime` or `Jev teleport me to you` into server commands, walking the server's own command tree one branch at a time and checking the result against the request before running it. Grant the bot the required permissions and list allowed players:
-
-```dotenv
-MC_COMMAND_USERS=YourPlayerName,AnotherPlayer
-```
-
-Leave this empty to disable command requests. Commands execute as the bot, require a fresh request from an allowed player, and are never used autonomously for gathering, building, or recovery.
-
-## Development
-
-The application is CommonJS JavaScript. The main pieces are:
-
-| Area | Entry points |
-| --- | --- |
-| Connection, chat, and persistence | `index.js`, `src/session.js`, `src/objectives.js` |
-| Jev questions and catalog routing | `src/decisions/` (every question Jev is asked), `src/typesafe.js`, `src/catalog.js`, `src/decision-options.js` |
-| Recipes, combined tasks, and execution | `src/knowledge.js`, `src/batch-plan.js`, `src/item-bundle.js`, `src/work.js` |
-| Survival, travel, and recovery | `src/survival.js`, `src/stillness.js` (the stall rule), `src/combat-estimate.js`, `src/torches.js`, `src/movement.js`, `src/boats.js`, `src/recovery-adviser.js` |
-| Beating the game | `src/game-progress.js` (the ladder), `src/strategy.js` (which rung next), `src/dream.js` |
-| Schematics and design review | `src/designer.js`, `src/design-review.js` |
-| The flight recording | `src/recorder/` |
-
-Run the local checks without a Minecraft server or API key:
+### Development
 
 ```sh
-npm test
+npm test                           # about 2,000 tests, no server or key
+npm run plan -- iron_pickaxe 1     # the recipe planner, offline
+node scripts/replay-suite.js       # recorded decisions, asked live
+node scripts/eval-intents.js       # chat routing, asked live
+node scripts/eval-decisions.js     # trade-off judgments, asked live
 ```
 
-`npm run plan` prints what the planner would do for a request, using the same planner and extracted recipe data the bot executes in game:
+Gameplay tests, trials and the arena need a separate, disposable server. [scripts/README.md](scripts/README.md) lists every script and its port. Contributions are most useful when they turn a concrete failure into a test and a general fix; see [CONTRIBUTING.md](CONTRIBUTING.md). Flight records and logs can contain chat, player names and coordinates, so review them before sharing.
 
-```sh
-npm run plan -- cherry_planks 8
-npm run plan -- iron_pickaxe 1 oak_log=10,cobblestone=30
-```
-
-Two evaluations make live Jev calls but need no game server. The intent eval sends forty-nine chat messages through the interpreter and checks the routing, item, quantity and recipient. The decision eval holds the judgments code cannot make from a rule, such as whether to keep working at dusk and which source of wood to walk to:
-
-```sh
-node scripts/eval-intents.js
-node scripts/eval-decisions.js
-```
-
-Both write their full judgments to `artifacts/` so a regression can be read, not just counted.
-
-Gameplay tests need a **separate, disposable Minecraft server**. Read each script's setup instructions first; controlled fixtures can place blocks, grant items, or change game settings. For an acceptance trial:
-
-```sh
-MC_HOST=127.0.0.1 MC_PORT=25579 MC_VERSION=26.1 npm run accept -- build a house
-```
-
-The acceptance runner requires an explicit isolated port, a separate bot identity, and writes evidence under `artifacts/`. A controlled fixture passing is not proof that the same task works from an empty inventory in a natural world.
-
-Two harnesses measure the bot playing on its own:
-
-- **First-days trials** (`scripts/first-days.js`) start a fresh Normal world, let the bot play the first three in-game days toward beating the game, and audit the run from its flight recording: no deaths, no step retried in a loop, never standing still for over a minute outside a shelter, and iron tools, iron armour, a shield, a bed and a home. The trials and what each one taught are written up in [docs/trial-notes.md](docs/trial-notes.md).
-- **The combat arena** (`scripts/arena.js`) spawns known mobs beside the bot in known gear and measures damage taken, time to kill and deaths per drill, with the stance question asked of Jev (`ARENA_JEV=1`) or answered by the code's fallback.
-
-Both need their own disposable server; see [scripts/README.md](scripts/README.md).
-
-Contributions are most useful when they turn a concrete gameplay failure into a small reproducible test and an improvement to a general capability. See [CONTRIBUTING.md](CONTRIBUTING.md) for the two design rules, what to include with each kind of change, and how the evals fit in. Review flight recordings and logs before sharing them: they can contain chat, player names, and world coordinates. Unit tests run on every push and pull request; the live Jev evals run on `main` when the repository has a TypeSafe key configured.
-
-jev-craft is released under the [MIT License](LICENSE).
-
-## Scope
-
-- **Minecraft Java 26.1**, Survival or Creative, on a server you run. The bot joins as an ordinary player; it needs operator rights only for the optional server commands.
-- **Getting things:** mining, crafting and smelting from the real recipe data; hunting, farming the home plot, breeding and shearing; trading with villagers and bartering with piglins; enchanting at a table. Asked for an item with no Survival route, Jev says so rather than trying.
-- **Getting around:** walking, swimming, climbing out of holes, bridging, boats across water it has surveyed, and flight in Creative.
-- **Building:** templates in Survival and generated designs in Creative, on ground it levels itself. It never demolishes a structure it did not place.
-- **Beating the game:** the full run from an empty inventory to the dragon is the goal, measured in trials on fresh worlds; [GOAL.md](GOAL.md) says where it stands.
-
-The [roadmap](ROADMAP.md) has what comes next.
+The [roadmap](ROADMAP.md) has what comes next. jev-craft is released under the [MIT License](LICENSE).
