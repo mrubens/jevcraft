@@ -609,6 +609,31 @@ const { SLEEP_FROM, SLEEP_UNTIL } = DAY;
 const sleepWaiting = holder => isSetAside(holder, 'sleep', 'bed');
 // Real minutes until dawn: what a night waited out costs the run.
 const minutesToDawn = bot => Math.round(((DAY.DAWN - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 1200);
+// The work a night plan leaves waiting, in words: the ladder's step, else
+// the step in hand. The night's ways said their own minutes and never what
+// they held up, and mid-220-h and mid-226-g spent a third of three hours on
+// nights, the portal work twenty to forty minutes (note 531).
+function workWaiting(goal, bot = null) {
+  const phase = goal?.rungTime?.phase || goal?.gameProgress?.phase;
+  // The portal's state, what the work still needs, beside the step's name.
+  if (phase === 'reach_nether' && bot?.entity?.position && typeof bot.blockAt === 'function') {
+    const here = bot.entity.position, far = p => Math.round(here.distanceTo(new Vec3(p.x, p.y, p.z)));
+    const frame = goal.portalFrame, way = goal.portalMethod?.kind, near = goal.portalMethod?.near;
+    const placed = frame ? frame.blocks.filter(p => bot.blockAt(new Vec3(p.x, p.y, p.z))?.name === 'obsidian').length : 0;
+    const parts = [frame ? `${placed} of the frame's ten obsidian in, the frame ${far(frame.origin)} blocks off` : 'no frame begun',
+      way === 'cast' ? 'to be cast from lava and water' : way === 'build' ? 'from ten obsidian mined' : way === 'ruin' ? 'a ruined portal to finish' : null,
+      near ? `the lava chosen ${far(near)} blocks off` : null].filter(Boolean);
+    return `the reach nether step (the portal: ${parts.join('; ')})`;
+  }
+  if (phase && phase !== 'complete') return `the ${phase.replaceAll('_', ' ')} step`;
+  const step = goal?.step;
+  const what = step?.item || step?.block || (step?.action && !['game_progression', 'stay_below'].includes(step.action) ? step.action : null);
+  return what ? `the work on ${String(what).replaceAll('_', ' ')}` : goal?.request ? 'the request' : null;
+}
+// Underground the night is the dark the bot works in all day: mobs spawn
+// by light, not by the hour, so nightfall changes nothing below; only the
+// surface turns dangerous, until dawn burns its zombies and skeletons.
+const BELOW_NIGHT = 'Underground the dark is the same at any hour: mobs spawn wherever the light is low, by day as by night, and nightfall changes nothing down here; only the surface is night, with its mobs, until dawn.';
 // A sealed wait for daylight, when health does not come back: in the
 // Overworld, hurt, under eighteen hunger. Its price is the minutes to dawn
 // (by day, through dusk and the whole night) and about no hunger, standing
@@ -2986,7 +3011,7 @@ class Survival {
         const site = bedSiteNear(bot);
         if (site) options.bed_beside = { description: `Seal a pocket where the bot stands, as seal_here does (${stock} blocks carried), and at bedtime (from ${SLEEP_FROM}, about ${Math.max(0, Math.round((SLEEP_FROM - (bot.time?.timeOfDay ?? 0)) / 20))} seconds off) open it, put the carried bed down on level ground ${Math.round(site.foot.distanceTo(bot.entity.position))} blocks off and sleep: the night passes in seconds instead of about ${minutesToDawn(bot)} real minutes in the pocket, and the bed is picked back up after. Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${monstersByBed(bot, site.foot) || 'none'} now; refused, the pocket is there to go back to.${pocketRace(bot, near)}${creeperNoteFor(near)}` };
       }
-      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: 'Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes.' + creeperSays(bot) };
+      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: `Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes, about ${minutesToDawn(bot)} real minutes of the run to dawn${workWaiting(goal, bot) ? `, with ${workWaiting(goal, bot)} waiting` : ''}. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}` + creeperSays(bot) };
       if (!Object.keys(options).length) {
         // Nowhere, nothing to build with, no ground to dig: failing that every
         // tick was trial 9's loop at minute ten, with no wood yet to make any
@@ -3001,6 +3026,7 @@ class Survival {
       const decision = Object.keys(tree).length === 1 ? { path: [Object.keys(tree)[0]] }
         : await this.decide(task, goal, save, { id: 'shelter_method', tree, state: { timeOfDay: bot.time?.timeOfDay, health: bot.health, food: bot.food, buildingBlocks: stock, darkHere: darkHere(bot), torches: countOf(bot, 'torch'),
           underground: !surfaceObserver(bot)(bot.entity.position), pickaxe: bot.inventory.items().find(i => /_pickaxe$/.test(i.name))?.name || null,
+          ...(!options.night_mine && this.nightMineOff() ? { nightMineOff: this.nightMineOff() } : {}),
           nearbyThreats: threats(bot).filter(t => t.distance < 24).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })),
           riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal) } });
       if (decision.stale) return true;
@@ -4044,7 +4070,31 @@ class Survival {
     // eleven minutes of the second audited night.
     const sleeping = this.state.nightPlan?.until > Date.now() ? this.state.nightPlan.plan !== 'shelter' : true;
     if (sleeping && sleepable(bot) && !sleepWaiting(this) && (bedCarried(bot) || bedToSleepIn(bot, goal))) return false;
+    // A mine that would not dig a block is not a way to spend the night.
+    if (this.nightMineOff()) return false;
     return true;
+  }
+
+  // Why the night mine would not dig from here, or null when it would: the
+  // best pickaxe already under the uses kept for a dug climb out, and no
+  // spare to be made from what is carried (nightMine keeps them). It was
+  // offered all the same, said as "the mine stops when it gets down to
+  // that", and chosen, and each pick sat the bot in its pocket: mid-220-h
+  // chose the mine some 330 times, five seconds apart, at 48 uses of 52
+  // kept, 99 of 110, 120 of 124, and waited out the nights (note 531).
+  nightMineOff() {
+    const bot = this.bot;
+    const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
+    // As nightMine keeps them: only where a pickaxe can be made at all.
+    if (!picks.length || !this.actions.acquireStep) return null;
+    const best = Math.max(0, ...picks.map(i => remainingUses(bot, i)));
+    const keep = usesToClimbOut(bot);
+    if (best >= keep) return null;
+    const make = pickaxeCraftable(bot);
+    if (make && !isSetAside(this, 'night_pickaxe', make)) return null;
+    const r = pickaxeReserve(bot, bot.entity.position.floored());
+    const spare = make ? `the ${make.replaceAll('_', ' ')} it could make is set aside after a failed try` : `no spare can be made from what is carried (${r.sticksAvailable} sticks' worth of wood; a pickaxe is two sticks and three cobblestone or iron ingots, at a table)`;
+    return `the best pickaxe has ${best} uses left, under the ${keep} kept for a dug climb out from here${r.blocksToOpenSky ? ` (${r.blocksToOpenSky} blocks of rock and ground overhead)` : ''}, and ${spare}: the mine would not dig a block`;
   }
 
   // Which ore the night mine goes for, or a branch deeper: Jev's, with each
@@ -4591,8 +4641,14 @@ class Survival {
           try { return await require('./blaze-stand').takeStand(bot, task, goal, save, opening, { navigate: this.actions.navigate }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
         } };
+      // What the night in the pocket holds up, said on every way to spend
+      // it: mid-202-q mined fifty minutes of nights, the portal its rung,
+      // each night told the ore and never the minutes or the work (note 531).
+      const waiting = workWaiting(goal, bot);
+      const below = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+      const nightCost = night ? ` Until dawn is about ${minutesToDawn(bot)} real minutes of the run${waiting ? `, with ${waiting} waiting` : ''}.` : '';
       if (night && !watcher && !refused(this, 'survival:night_mine') && this.canNightMine(goal))
-        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}${outside}`, run: () => this.nightMine(task, goal, save) };
+        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}${nightCost}${outside}`, run: () => this.nightMine(task, goal, save) };
       // Work that needs no walking: the ladder's next item made from what is
       // carried. Trial 30 sat out its second night in a pocket with 29 raw
       // iron, coal and a furnace in its pack, the armour the one thing left.
@@ -4619,7 +4675,9 @@ class Survival {
       // and died among them in a minute (2026-09-26).
       const hp = Math.round((bot.health ?? 20) * 10) / 10;
       const healthNow = hp >= 20 ? '' : (bot.food ?? 20) >= 18 ? `, healing from ${hp} health` : `, not healing: ${hp} health and hunger ${bot.food}, and health comes back only at eighteen or more`;
-      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes with nothing gained${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + lidSays + wardenSays(bot) + placeSays,
+      // Why no mine is on offer when it is not (note 531).
+      const mineOff = night && !options.night_mine ? this.nightMineOff() : null;
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.`) + lidSays + wardenSays(bot) + placeSays,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -4690,7 +4748,7 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
           return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
         } };
-      options.leave = { description: `Open the pocket and go back to work${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays,
+      options.leave = { description: `Open the pocket and go back to ${waiting || 'work'}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays,
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
@@ -4700,6 +4758,16 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'leave' };
           await this.leave(task, goal, save, refuge, undefined, { past: true }); return true;
         } };
+      // A choice that did nothing when it ran is not on offer again for a
+      // minute, and why is said: the stay it fell back to was asked about
+      // again five seconds later, the same choice came back, and did nothing
+      // again, all night (note 531).
+      const notNow = {};
+      for (const [k, entry] of Object.entries(attemptsFor(this).of('pocket_option'))) {
+        if (!options[k] || k === 'stay') continue;
+        delete options[k];
+        notNow[k] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - Date.now()) / 1000))} seconds`;
+      }
       // Without Jev, the old order.
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
         ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
@@ -4718,6 +4786,7 @@ class Survival {
         const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
           state: { timeOfDay: bot.time?.timeOfDay, night, daylight: night ? 'night' : (bot.time?.timeOfDay ?? 0) >= 22000 ? 'dawn: zombies and skeletons in the open burn once the sun is up' : 'day',
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
+            ...(night ? { underground: below, minutesToDawn: minutesToDawn(bot) } : {}), ...(mineOff ? { nightMineOff: mineOff } : {}), ...(Object.keys(notNow).length ? { notNow } : {}),
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
@@ -4727,7 +4796,11 @@ class Survival {
         choice = decision.path.at(-1);
         this.state.pocketPlan = { choice, key, until: Date.now() + 90000 };
       }
-      if (!(await options[choice].run())) { delete this.state.pocketPlan; await options.stay.run(); }
+      if (!(await options[choice].run())) {
+        delete this.state.pocketPlan;
+        if (choice !== 'stay') { setAside(this, 'pocket_option', choice, `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket`, 60000); save(); }
+        await options.stay.run();
+      }
       onStep(goal); return true;
     }
     // The hunt Jev chose for the night, while it holds.
@@ -4942,10 +5015,15 @@ class Survival {
     const about = state.riskNow.hostilesWithin;
     const nowAbout = about.count ? ` Within ${about.blocks} blocks now: ${about.count} hostile mob${about.count === 1 ? '' : 's'}${about.count > about.inSight ? `, ${about.count - about.inSight} of them out of sight` : ''}${about.kinds.includes('creeper') ? ', creepers among them' : ''}.` : '';
     const healing = (bot.food ?? 20) >= 18 ? '' : ` Health does not come back meanwhile: hunger ${bot.food}, below eighteen.`;
+    // The work the night holds up, named on the ways to spend it, and
+    // underground that the night changes nothing there (note 531).
+    const waiting = workWaiting(goal, bot);
     const tree = {
       continue_request: { description: stayUp
-        ? `Stay up and keep working the request ${underground ? 'underground' : 'outside in the dark'}, two minutes at a time. ${underground ? 'Underground the night is no darker, but the surface it comes back up to is full of mobs until dawn' : 'Hostile mobs spawn around the bot all night'}; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${healing}`
-        : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.' : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
+        ? `Stay up and keep on with ${waiting || 'the request'} ${underground ? 'underground' : 'outside in the dark'}, two minutes at a time. ${underground ? `${BELOW_NIGHT} The way back up comes out among the surface's mobs until dawn` : 'Hostile mobs spawn around the bot all night'}; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${healing}`
+        : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.'
+          : underground ? `Keep on with ${waiting || 'the request'} underground. ${BELOW_NIGHT} Nightfall on the surface is about ${Math.round(((DAY.NIGHT - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 1200)} real minutes off.${nowAbout}${healing}`
+            : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
     };
     if (stayUp) {
@@ -5009,7 +5087,7 @@ class Survival {
     // not leave at daylight (mid-220-g, note 476).
     if (needsShelter || woundedBelow) tree.secure_shelter = { description: (woundedBelow
       ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}`
-      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off; in the shelter it can mine or wait.`) + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}` : ''}`) + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.

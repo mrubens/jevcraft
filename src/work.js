@@ -10,7 +10,7 @@ const { navigate, surveyRoute, equipBestTool, pickaxeTier, pickaxeDurability, co
 const { MINEABLE, TOOL_TIERS } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
-const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports } = require('./build-sites');
+const { reservedForConstruction, portalSiteClear, selectPortalSite, portalSiteDig, portalSupports } = require('./build-sites');
 const { updateDigCapabilities } = require('./movement');
 const { resourceTunnelStep, tunnelStep, staircaseResting, safeExcavation } = require('./tunneling');
 const { maintainVitals, checkAir, needsAir, chooseFood, digWithAirGuard, safeFood } = require('./vitals');
@@ -1390,7 +1390,7 @@ async function surfaceStep(bot, task, goal, save) {
 // first three minutes of stairs and the rest by hand, made the pickaxe in
 // twenty seconds at the top and was back down within twenty minutes; the
 // climbs were 100 of its 180 minutes, none of them asked (note 511).
-async function surfaceTrip(bot, task, goal, save, need) {
+async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava = null } = {}) {
   const held = goal.surfaceTrip;
   // Chosen, the climb holds to the top: not asked again at each stair.
   if (held?.pick === 'climb' && held.need === need && goal.surfaceReturn) return surfaceStep(bot, task, goal, save);
@@ -1410,13 +1410,39 @@ async function surfaceTrip(bot, task, goal, save, need) {
     catch (_) { next = null; }
     if (next?.phase && next.phase !== phase) tree.stay_below = { description: `Stay down here: leave the ${words(phase)} for thirty minutes and go on with ${words(next.phase)}${next.item ? ` (${next.count || ''} ${words(next.item)})` : ''}. It comes back after, and this climb with it unless the work has gone up by then.` };
   }
+  // A portal site is a room dug out of the rock as well as ground up top:
+  // said beside the climb with its blocks, and what the climb does to a
+  // cast beside the lava chosen (note 531).
+  if (lava && cost) {
+    const above = bot.entity.position.floored().y + cost.up - lava.y;
+    tree.climb.description += ` The frame then goes down up there, about ${above} blocks above the lava chosen to cast beside (y ${lava.y}): each bucket of the cast a trip down to it and back up.`;
+  }
+  if (siteDig && client && pickaxeTier(bot) >= 1) {
+    const o = siteDig.origin, n = siteDig.cells.length;
+    tree.dig_site = { description: `Dig a site for the frame out of the rock here instead: the frame's cells and a walkway either side of it, four across and five high, ${n ? `${n} blocks to dig (${siteDig.kinds.join(', ')}), about ${Math.max(5, Math.round(n * 1.5))} seconds and ${n} pickaxe uses` : 'already open'}, at ${o.x}, ${o.y}, ${o.z} where the bot stands; the floor under it is solid and no water, lava or falling block is beside it. The frame goes down there${lava ? `, ${Math.round(Math.hypot(lava.x - o.x, lava.y - o.y, lava.z - o.z))} blocks from the lava chosen` : ''}.` };
+  }
   let pick = 'climb';
-  if (tree.stay_below) {
+  if (tree.stay_below || tree.dig_site) {
     const decision = await require('./decisions').decide('surface_trip', { client, bot, task, goal, save, tree,
       state: { need, step: phase ? words(phase) : null, ...(cost ? { blocksToOpenSky: cost.up, quickerWayOut: cost.way, minutesUp: Math.round(cost.seconds / 60), pickaxes: cost.state.pickaxes, pickaxeUsesLeft: cost.state.pickaxeUsesLeft } : {}),
-        goOnWith: `${words(next.phase)}${next.item ? `: ${next.count || ''} ${words(next.item)}` : ''}` } });
+        ...(tree.stay_below ? { goOnWith: `${words(next.phase)}${next.item ? `: ${next.count || ''} ${words(next.item)}` : ''}` } : {}),
+        ...(tree.dig_site ? { siteToDig: { at: { ...siteDig.origin }, blocks: siteDig.cells.length } } : {}) } });
     if (decision.stale) return;
     pick = decision.path.at(-1);
+  }
+  if (pick === 'dig_site') {
+    goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), at: new Date().toISOString() };
+    goal.portalSiteDug = { ...siteDig.origin };
+    goal.step = { action: 'dig_portal_site', origin: { ...siteDig.origin }, blocks: siteDig.cells.length }; save();
+    const cellOrder = [...siteDig.cells].sort((a, b) => b.y - a.y || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    try { for (const c of cellOrder) { task.check(); await dig(bot, task, c, { requireDrops: false }); } }
+    catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      // Left as a site that failed: not dug at again, and said when asked next.
+      (goal.portalSitesLeft ||= []).push({ ...siteDig.origin }); delete goal.portalSiteDug; save();
+      throw new Error(`Digging a portal site at ${siteDig.origin.x}, ${siteDig.origin.y}, ${siteDig.origin.z}: ${err.message}`);
+    }
+    return;
   }
   goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), ...(cost ? { up: cost.up } : {}), at: new Date().toISOString() };
   if (pick === 'stay_below') {
@@ -3862,6 +3888,11 @@ async function portalStep(bot, task, goal, save, client) {
     // site picked about where the bot then stands.
     const near = casting && goal.portalMethod.near;
     if (near && goal.portalMethod.intoCave) { await intoCave(bot, task, goal, save, goal.portalMethod.intoCave); return false; }
+    // A climb chosen for the frame's site holds to the top, not undone by
+    // the walk back to the lava each pass: mid-220-h went six stairs up and
+    // back down to the lava for thirteen minutes (note 531).
+    const siteClimb = goal.surfaceTrip?.pick === 'climb' && /^a portal site/.test(goal.surfaceTrip.need || '') && goal.surfaceReturn;
+    if (near && siteClimb) { await surfaceTrip(bot, task, goal, save, goal.surfaceTrip.need); return false; }
     if (near && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
       const at = new Vec3(near.x, near.y, near.z);
       // Three walks that come no nearer and the lava is not walked to:
@@ -3925,12 +3956,16 @@ async function portalStep(bot, task, goal, save, client) {
       }
       return false;
     }
-    const site = selectPortalSite(bot, { avoid: (goal.portalSitesLeft || []).map(pos) });
+    const avoid = (goal.portalSitesLeft || []).map(pos);
+    // A site dug out of the rock is the one to use once dug (note 531).
+    const dug = goal.portalSiteDug && !avoid.some(q => q.distanceTo(pos(goal.portalSiteDug)) < 6) && portalSiteClear(bot, goal.portalSiteDug) ? pos(goal.portalSiteDug) : null;
+    const site = dug || selectPortalSite(bot, { avoid });
     if (!site) {
       if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
-      else await surfaceTrip(bot, task, goal, save, 'a portal site (none level and dry down here)');
+      else await surfaceTrip(bot, task, goal, save, 'a portal site (none level and dry down here)', { siteDig: portalSiteDig(bot, { avoid }), lava: casting ? near : null });
       return false;
     }
+    delete goal.portalSiteDug;
     const o = pos(site);
     // Minimal frame: two bottom/top blocks, three on each side, no corners.
     goal.portalFrame = { origin: { ...o }, blocks: cornerlessFrame(o), ...(casting ? { axis: 'x', cast: true, castTemp: [] } : {}) };

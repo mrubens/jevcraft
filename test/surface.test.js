@@ -621,3 +621,42 @@ test('a climb to the surface for the ladder\'s log is Jev\'s trip, said with its
   items.splice(0, 1);
   assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe');
 });
+
+test('a portal site is dug out of the rock where the bot stands: natural rock only, solid floor, nothing flowing or falling beside (note 531)', () => {
+  const { portalSiteDig } = require('../src/build-sites');
+  const { bot, blocks } = shaft();
+  const site = portalSiteDig(bot);
+  assert(site, 'a site in plain stone');
+  assert.equal(site.cells.length, 34, 'the frame four by five and its walkways, the shaft\'s two open cells already dug');
+  assert.deepEqual(site.kinds, ['stone']);
+  const o = new Vec3(site.origin.x, site.origin.y, site.origin.z), feet = new Vec3(0, 40, 0);
+  assert(feet.x >= o.x && feet.x <= o.x + 3 && Math.abs(feet.z - o.z) <= 1 && feet.y >= o.y && feet.y <= o.y + 1, 'the bot stands in it, every cell in reach');
+  // Water over the bot's head, in or beside every placing: no site.
+  blocks.set(`${new Vec3(0, 42, 0)}`, 'water');
+  assert.equal(portalSiteDig(bot), null, 'water in or beside every placing');
+  // Gravel over the frame's top: not under it.
+  blocks.delete(`${new Vec3(0, 42, 0)}`);
+  for (let x = -3; x <= 3; x++) for (let z = -1; z <= 1; z++) blocks.set(`${new Vec3(x, 45, z)}`, 'gravel');
+  assert.equal(portalSiteDig(bot), null, 'gravel would fall into the frame');
+});
+
+test('underground with no portal site, digging one out is offered beside the climb, and the climb says it takes the frame above the lava (mid-220-h, note 531)', async () => {
+  const { surfaceTrip } = require('../src/work');
+  const { portalSiteDig } = require('../src/build-sites');
+  const { bot } = shaft({ items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 64 }] });
+  Object.assign(bot, { time: { timeOfDay: 6000 }, entities: {} });
+  bot.inventory.slots = [];
+  const goal = { kind: 'win', gameProgress: { phase: 'reach_nether', milestones: {} } };
+  const task = new Task('win');
+  const asked = [];
+  task.opportunityClient = { systemOne: async ({ state, questions }) => { asked.push(state); return { answers: { branch_0: { choice: 'dig_site', confidence: 0.9 } } }; } };
+  const siteDig = { ...portalSiteDig(bot), cells: [] };
+  await surfaceTrip(bot, task, goal, () => {}, 'a portal site (none level and dry down here)', { siteDig, lava: { x: 6, y: 30, z: 0 } });
+  assert.equal(asked.length, 1, 'the climb is asked, not made');
+  const decision = goal.decisions.find(d => d.id === 'surface_trip');
+  assert(decision.options.climb && decision.options.dig_site, 'the climb and the site dug here');
+  assert.match(decision.options.climb.description, /The frame then goes down up there, about 34 blocks above the lava chosen to cast beside \(y 30\)/);
+  assert.match(decision.options.dig_site.description, /Dig a site for the frame out of the rock here instead/);
+  assert.deepEqual(goal.portalSiteDug, { ...siteDig.origin });
+  assert.equal(bot.entity.position.y, 40, 'no stair dug');
+});

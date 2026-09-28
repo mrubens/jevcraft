@@ -3110,7 +3110,7 @@ test('underground at night nothing is asked until two nights awake, and then sta
   bot.time.age += SLEEP_DEBT_TICKS + 1;
   await survival.step(new Task('t', 'night'), goal, () => {});
   assert.equal(seen.length, 1, 'two nights awake: the night is a question again');
-  assert.match(seen[0].continue_request.description, /keep working the request underground/);
+  assert.match(seen[0].continue_request.description, /keep on with the request underground/);
   assert.doesNotMatch(seen[0].continue_request.description, /outside/);
 });
 
@@ -4892,4 +4892,82 @@ test('by a wall no blaze has a line to, the meal is priced by the lines to where
   assert(stands.back_to_wall, Object.keys(stands).join(','));
   await assert.rejects(takeStand(bot, new Task('x'), {}, () => {}, stands.back_to_wall, { navigate: async () => { throw new Error('No route'); } }),
     { name: 'StanceFailed', message: 'the walk to its cell at (0, 64, 0) ended 2 blocks short: No route' });
+});
+
+// mid-220-h (note 531): the night mine offered in the pocket at 99 uses with
+// 110 kept for the climb out, chosen, refused inside, and the bot sat the
+// night out, asked every five seconds; some 330 picks over the run.
+function pocketAt40({ uses = 99, items = [] } = {}) {
+  const origin = new Vec3(0, 40, 0);
+  // Rock from y 40 to y 90 over the pocket: 2 * 50 + 16 = 116 kept for the climb.
+  const solid = p => !(p.equals(origin) || p.equals(origin.offset(0, 1, 0))) && p.y <= 90;
+  const registry = require('minecraft-data')('26.1');
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20, registry,
+    time: { timeOfDay: 16000 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1, durabilityUsed: 250 - uses }, { name: 'cobblestone', count: 32 }, ...items], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: solid(p) ? 'stone' : 'air', boundingBox: solid(p) ? 'block' : 'empty', position: p }), findBlocks: () => [],
+    world: { raycast: () => null } });
+  const survival = new Survival(bot, { acquireStep: async () => {}, dig: async () => {}, navigate: async () => {} },
+    { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  survival.wait = async () => {};
+  return { bot, survival };
+}
+
+test('a night mine that would not dig a block is not offered from the pocket, and the stay says why', async () => {
+  const { survival } = pocketAt40({ uses: 99 });
+  const asked = [];
+  survival.decide = async (task, goal, save, { id, tree, state }) => { asked.push({ id, tree, state }); return { path: ['stay'], stale: false }; };
+  await survival.step(new Task('night'), { kind: 'win', gameProgress: { phase: 'reach_nether' } }, () => {});
+  const pocket = asked.find(a => a.id === 'pocket_next');
+  assert(pocket, 'pocket_next is asked');
+  assert(!pocket.tree.night_mine, 'under the uses kept for the climb and no spare to make: no mine on offer');
+  assert.match(pocket.tree.stay.description, /No night mine from here: the best pickaxe has 99 uses left, under the 116 kept for a dug climb out from here/);
+  assert.match(pocket.tree.stay.description, /the reach nether step \(the portal: no frame begun\) waiting/);
+  assert.match(pocket.state.nightMineOff, /would not dig a block/);
+  assert.equal(survival.canNightMine({ kind: 'win' }), false);
+});
+
+test('a night mine over the uses kept, or with a spare to make, is still offered', async () => {
+  const { survival } = pocketAt40({ uses: 200 });
+  assert.equal(survival.nightMineOff(), null, '200 uses, 116 kept: the mine digs');
+  assert(survival.canNightMine({ kind: 'win' }));
+  const spare = pocketAt40({ uses: 99, items: [{ name: 'stick', count: 2 }, { name: 'crafting_table', count: 1 }] }).survival;
+  assert.equal(spare.nightMineOff(), null, 'a stone pickaxe can be made: the mine makes it first');
+});
+
+test('a pocket choice that did nothing is not offered again at once, and why is said', async () => {
+  const { survival } = pocketAt40({ uses: 200 });
+  const asked = [];
+  survival.nightMine = async () => false;
+  survival.decide = async (task, goal, save, { id, tree, state }) => { asked.push({ id, tree, state }); return { path: [asked.length === 1 ? 'night_mine' : 'stay'], stale: false }; };
+  const goal = { kind: 'win', gameProgress: { phase: 'reach_nether' } };
+  await survival.step(new Task('night'), goal, () => {});
+  await survival.step(new Task('night'), goal, () => {});
+  const pockets = asked.filter(a => a.id === 'pocket_next');
+  assert.equal(pockets.length, 2, 'asked again after the choice did nothing');
+  // mid-202-q: fifty minutes of night mines, told the ore and not the run's minutes or the portal work waiting.
+  assert.match(pockets[0].tree.night_mine?.description || '', /Until dawn is about 6 real minutes of the run, with the reach nether step \(the portal: no frame begun\) waiting/);
+  assert.match(pockets[0].tree.leave.description, /go back to the reach nether step \(the portal: no frame begun\) in the dark/);
+  assert(!pockets[1].tree.night_mine, 'the mine that did nothing rests');
+  assert.match(pockets[1].state.notNow?.night_mine || '', /did nothing from this pocket; back in about \d+ seconds/);
+});
+
+test('underground at dusk, carrying on names the work and says the night changes nothing below; the shelter says what it holds up', async () => {
+  const { SLEEP_DEBT_TICKS } = require('../src/survival');
+  const open = p => p.y >= 20 && p.y <= 21 && Math.floor(p.z) === 0;
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival', minY: -64, height: 384 }, entities: {}, time: { timeOfDay: 10000, age: 100000 + SLEEP_DEBT_TICKS + 1 },
+    entity: { position: new Vec3(0.5, 20, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    blockAt: p => ({ name: open(p) || p.y > 80 ? 'air' : 'stone', boundingBox: open(p) || p.y > 80 ? 'empty' : 'block', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { state: { sleptAtAge: 100000 }, client: { systemOne: async () => ({}) } });
+  const seen = [];
+  survival.decide = async (task, goal, save, { tree }) => { seen.push(tree); return { path: ['continue_request'], action: tree.continue_request, stale: false }; };
+  await survival.step(new Task('t', 'dusk'), { kind: 'win', request: 'beat the game', gameProgress: { phase: 'reach_nether' }, portalMethod: { kind: 'cast', near: { x: 30, y: 20, z: 0 } } }, () => {});
+  assert.equal(seen.length, 1, 'two nights awake: the night is asked');
+  const [tree] = seen;
+  assert.match(tree.continue_request.description, /Keep on with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) underground/);
+  assert.match(tree.continue_request.description, /nightfall changes nothing down here/);
+  assert.doesNotMatch(tree.continue_request.description, /while outside/);
+  assert.match(tree.secure_shelter.description, /real minutes off: that much of the run with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) waiting/);
+  assert.match(tree.secure_shelter.description, /Underground the dark is the same at any hour/);
 });

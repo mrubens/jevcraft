@@ -32,11 +32,11 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `continue_request` | root | carry on with the request | always; by day it is held five minutes, until hunger falls two or health four, or dusk; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option |
+| `continue_request` | root | carry on with the request | always; by day it is held five minutes, until hunger falls two or health four, or dusk; at night it is staying up, two minutes at a time, with the kit, the bed and the nights without sleep said in the option; the work it goes on with is named (the ladder's step), and underground, by day or night, that the dark there is the same at any hour, mobs spawning by light and not by the hour (note 531) |
 | `go_home_for_night` | root | walk home to the bed and wait there for bedtime | from dusk, with a bed at home more than six blocks off and a way there; underground only after two nights awake (climbing out of the mine first) |
 | `sleep_in_bed` | root | sleep in a bed | bedtime, a bed is carried (with room to place it) or one is in reach, and no mob within ten blocks |
 | `sleep_in_nook` | root | dig a bed nook beside the bot and sleep in the carried bed | bedtime, a bed carried, no two level cells beside the feet (a staircase, a shaft), two cells in a line that can be dug with their floor kept, no liquid beside and nothing that falls over them, and no mob within ten blocks; the monsters within eight blocks sideways and five up or down of the bed (vanilla refuses the sleep) are counted in the option |
-| `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night |
+| `secure_shelter` | root | seal a shelter for the night | from dusk; beside a bed the option says the bed is the quicker night; said with the real minutes to dawn as minutes of the run with the work named waiting, whether a night mine could dig from there (and why not), and underground that the dark there is the same at any hour (note 531) |
 | `obtain_food` | root | get food | food carried is under the reserve and hunger or a stock top-up calls for it (at night with the spawning and the hunger said) |
 | `hunt_[a-z_]+` (pattern) | root | go out and hunt this kind of mob for its drops | at night in the Overworld where staying up is on offer, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | put the valuables in the stash chest first | at night where staying up is on offer, a stash chest within 128 blocks and valuables carried |
@@ -70,7 +70,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `build_at_site` | root | build a small room at a dry site | a dry site within reach has a route to it |
 | `seal_here` | root | seal a pocket where the bot stands | always (with too few blocks it digs in instead) |
 | `shaft_pocket` | root | dig straight down and cap it | always; fails where the ground cannot be dug |
-| `night_mine` | root | dig a mine from here for the night | a pickaxe (or one can be made) and nothing watching; health is Jev's to weigh |
+| `night_mine` | root | dig a mine from here for the night | a pickaxe (or one can be made) and nothing watching, and the mine would dig: not with the best pickaxe under the uses kept for a dug climb out and no spare to make (nightMineOff, said in the state; note 531); said with the ore about, the pickaxe's uses, the real minutes to dawn and the work they hold up; health is Jev's to weigh |
 | `bed_nook` | root | the carried bed in a nook dug beside the bot | a bed carried in the Overworld and a nook can be dug here: at bedtime it is dug and slept in now; before it, a pocket is sealed here and the nook, closed in rock, is dug out of its wall at bedtime and slept in (held, not asked again) |
 
 ### `pocket_next`
@@ -89,7 +89,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `go_to_bed` | root | open the pocket and go to the bed | bedtime, with the base bed near (on the surface or within ten blocks of its level) or a bed carried on the surface |
 | `sleep_in_nook` | root | dig a bed nook out of the pocket's wall and sleep in the carried bed | bedtime, a bed carried, and a nook beside the bot closed in rock all round, so the pocket stays shut (its wall goes back after); taken without asking when the shelter method chosen tonight was the bed nook; the monsters within eight blocks sideways and five up or down of the bed are counted in the option |
 | `open_on_watcher` | root | open the wall toward the watching mob and fight it | a mob within four and a half blocks and a sword or axe carried |
-| `night_mine` | root | mine from the pocket through the night | night, nothing watching, and a pickaxe carried or makeable (no health floor: Jev weighs the risk); it stays in the pocket when no mine can be dug from here |
+| `night_mine` | root | mine from the pocket through the night | night, nothing watching, and a pickaxe carried or makeable (no health floor: Jev weighs the risk), and the mine would dig: not with the best pickaxe under the uses kept for a dug climb out and no spare to make, said then on stay and in the state (nightMineOff, note 531); said with the real minutes to dawn and the work they hold up (the ladder's step, and for the portal its frame, way and lava); it stays in the pocket when no mine can be dug from here, and a choice that did nothing rests a minute (notNow) |
 | `work_here` | root | stay and make the ladder's next item in the pocket | on the game ladder, nothing watching, and the next item can be made from what is carried by smelting and crafting alone |
 | `hunt_[a-z_]+` (pattern) | root | open the pocket and hunt this kind of mob for its drops | night, nothing watching, one for each kind of mob within thirty-two blocks whose drops are known, with the drops, their uses, a one-mob fight estimate and what a death would drop; two minutes, six health lost hands back |
 | `stash_valuables` | root | open the pocket and put the valuables in the stash chest | night, nothing watching, a stash chest within 128 blocks and valuables carried |
@@ -97,8 +97,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `tunnel_from_warden` | root | dig a passage out through the far wall, away from the warden, to beyond its boom, and go back to work from its end | a warden within thirty-two blocks, the bot not in water, digging and walking at hand, and the rock away from it safe to dig for at least four cells to a point seventeen or more blocks across from it (its boom reaches fifteen), twenty-four cells at most; said with the direction, the cells, about how long, the clearance, that digging is a vibration it follows, what a warden does, and the booms taken in the last minute |
 | `tunnel_out` | root | dig a passage out through the far wall, away from what keeps the pocket (a spawner in reach, a creeper, or the mob at the wall), and go back to work from its end | the bot not in water, digging and walking at hand, and the rock safe to dig for at least four cells: away from a mob spawner within sixteen blocks to a point seventeen or more across from it (and ten from a creeper about), twenty-four cells at most; else away from a creeper within sixteen blocks (the rule that keeps a door within six of one shut would refuse the doors) to ten or more from it; else away from the mob watching the pocket (not a warden) to ten or more from it; said with the direction, the cells, about how long, the clearance at its end, how long the same mob has kept the pocket, and that it stops, the bot still enclosed, if that kind of mob comes round toward its head within six blocks |
 | `dig_in_and_fight` | root | open the pocket's wall toward the blazes, one wide and two high, and fight them from inside | a blaze within twenty-four blocks, a sword or axe carried, digging at hand, and the wall toward them safe to dig with the pocket's rock on the other three sides and over it; said with the blocks, the tool, the seconds, how many would see in, what a blaze does, its fireball's chance to land by distance and its push, and the damage in the next fifteen seconds |
-| `stay` | root | stay in the pocket | always; said with what the place is (mobSourceAbout: a spawner in reach, a dungeon or mineshaft remembered within twenty-four, the mobs met and hits taken within sixteen in the last fifteen minutes) |
-| `leave` | root | open the pocket and go back to work | always; said with what the place is, as stay |
+| `stay` | root | stay in the pocket | always; said with what the place is (mobSourceAbout: a spawner in reach, a dungeon or mineshaft remembered within twenty-four, the mobs met and hits taken within sixteen in the last fifteen minutes), and at night with the minutes to dawn, the work they hold up, and why no night mine is on offer when it is not |
+| `leave` | root | open the pocket and go back to work | always; said with what the place is, as stay, the work named, and underground at night that the dark there is the same at any hour |
 
 ### `night_mine_target`
 
@@ -333,9 +333,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `surface_trip`
 
-**The step in hand wants the surface and the bot is underground: climb to open sky for it, or leave the step for now and go on down here with the ladder's next one?**
+**The step in hand wants the surface and the bot is underground: climb to open sky for it, leave the step for now and go on down here with the ladder's next one, or, for a portal site, dig one out of the rock here?**
 
-- When: Underground in the Overworld, the work's step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with; asked when the climb would begin, and held to the top once chosen.
+- When: Underground in the Overworld, the work's step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with, or for a portal site with one that can be dug out here; asked when the climb would begin, and held to the top once chosen.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -345,6 +345,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `climb` | root | climb to open sky for it | always; said with the height, the quicker way out and its time, the pickaxe uses it wears, and the way back down it leaves |
 | `stay_below` | root | leave the step thirty minutes and go on with the ladder's next step here | the ladder has another step to go on with, and it is the work's turn |
+| `dig_site` | root | dig a site for the portal frame out of the rock where the bot stands | the need is a portal site, a pickaxe carried, and a site takes in the bot's feet whose frame and walkways are natural rock to dig, with solid floor and no water, lava or falling block beside; said with the blocks, the seconds and the uses, and how far it is from the lava chosen to cast beside, where the climb says how far above that lava the frame would go (note 531) |
 
 ### `leave_nether`
 

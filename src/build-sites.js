@@ -67,6 +67,62 @@ function selectPortalSite(bot, { avoid = [] } = {}) {
   return surfaces.find(p => portalSiteClear(bot, p) && !avoid.some(q => q.distanceTo(p) < 6)) || null;
 }
 
+// A site for the frame dug out of the rock where none stands open: the
+// frame's cells and its two approaches (as portalSiteClear reads them), each
+// natural ground a pickaxe digs, nothing liquid beside any, nothing that
+// falls over one, the floor under all of it solid, and the bot's feet in
+// it so every cell is in reach. Underground beside the lava Jev chose to
+// cast at, "no site level and dry down here" was a climb to open sky:
+// mid-220-h went up six stairs, walked back down to the lava, and up again,
+// thirteen minutes, for a site a minute of digging makes (note 531).
+const SITE_ROCK = /^(stone|deepslate|tuff|andesite|diorite|granite|calcite|dirt|coarse_dirt|rooted_dirt|grass_block|cobblestone|cobbled_deepslate|mossy_cobblestone|netherrack|blackstone|basalt|smooth_basalt|dripstone_block|clay|terracotta|\w+_terracotta|(deepslate_)?\w+_ore)$/;
+const LIQUID = /^(water|lava|flowing_water|flowing_lava|bubble_column)$/;
+const FALLS = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel|pointed_dripstone)$|_concrete_powder$/;
+function portalSiteCells(o) {
+  const cells = [];
+  for (let x = 0; x < 4; x++) for (let z = -1; z <= 1; z++) for (let y = 0; y < (z === 0 ? 5 : 2); y++) cells.push(o.offset(x, y, z));
+  return cells;
+}
+function portalSiteDig(bot, { avoid = [] } = {}) {
+  const feet = bot.entity.position.floored();
+  let best = null;
+  // Its floor the bot's own: a site whose floor is under the feet digs
+  // out the block the bot stands on.
+  for (let x = 0; x < 4; x++) for (let z = -1; z <= 1; z++) {
+    const o = feet.offset(-x, 0, -z);
+    if (avoid.some(q => q.distanceTo(o) < 6)) continue;
+    const cells = portalSiteCells(o), keys = new Set(cells.map(String));
+    let ok = true;
+    for (let fx = 0; fx < 4 && ok; fx++) for (let fz = -1; fz <= 1 && ok; fz++) {
+      const floor = bot.blockAt(o.offset(fx, -1, fz));
+      if (!floor || floor.boundingBox !== 'block' || FALLS.test(floor.name)) ok = false;
+    }
+    const dig = [];
+    for (const c of cells) {
+      if (!ok) break;
+      const b = bot.blockAt(c);
+      if (!b) { ok = false; break; }
+      if (air(b)) continue;
+      if (!SITE_ROCK.test(b.name) || b.diggable === false) { ok = false; break; }
+      dig.push(c);
+    }
+    // Nothing that flows in or falls in once the cells are open.
+    for (const c of cells) {
+      if (!ok) break;
+      for (const d of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]) {
+        const n = c.offset(...d);
+        if (keys.has(String(n))) continue;
+        const b = bot.blockAt(n);
+        if (!b || LIQUID.test(b.name) || [true, 'true'].includes(b.getProperties?.().waterlogged) || (d[1] === 1 && FALLS.test(b.name))) { ok = false; break; }
+      }
+    }
+    if (ok && (!best || dig.length < best.cells.length)) best = { origin: o, cells: dig };
+  }
+  if (!best) return null;
+  const kinds = [...new Set(best.cells.map(c => bot.blockAt(c).name.replaceAll('_', ' ')))].slice(0, 4);
+  return { ...best, kinds };
+}
+
 // Temporary portal anchors can use ordinary non-burning full blocks already
 // collected underground. Obsidian stays reserved for the actual frame.
 const portalSupportBlocks = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', 'stone', 'deepslate',
@@ -78,4 +134,4 @@ function portalSupports(bot) {
   return { count: materials.reduce((sum, [, count]) => sum + count, 0), material: materials[0]?.[0] };
 }
 
-module.exports = { reservedForConstruction, portalSiteClear, selectPortalSite, portalSupports };
+module.exports = { reservedForConstruction, portalSiteClear, selectPortalSite, portalSiteDig, portalSiteCells, portalSupports };
