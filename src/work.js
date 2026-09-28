@@ -39,7 +39,7 @@ const { strategyStep, rungTakes, pickaxeLeft } = require('./strategy');
 const { openChest } = require('./chest-delivery');
 const { barterStep, gatherBastionGold } = require('./bartering');
 const { descendPillar, pillarUp, pillarSite } = require('./pillar-recovery');
-const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS } = require('./game-progress');
+const { gameStep, watchGameProgress, dimension, nextGameStage, DEFERRABLE, RUNG_WAIT_MS, agoSays, asideStands } = require('./game-progress');
 const { carriedEquipment } = require('./mob-policy');
 const { huntObserved, prepareMobHunt, prepareCombatGear } = require('./mob-hunt');
 const { findStronghold } = require('./stronghold');
@@ -199,7 +199,10 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const stats = survival?.state || goal.survival || goal;
   const thing = thingOf(stall.key);
   const tried = require('./tried');
-  const rungQuestion = isRungStall(stall) && !idle;
+  // A rung set aside is not brought to its own question while it waits
+  // (tried.js rungOf): the stall's question is asked instead (note 600).
+  const rungAside = !!goal.rungTime?.phase && isSetAside(goal, 'rung', goal.rungTime.phase, now);
+  const rungQuestion = isRungStall(stall) && !idle && !rungAside;
   // Stuck in the terrain (in water, or under cover on the way up): worked
   // free one move at a time, Jev choosing each (unstuck.js). Trials 32 and
   // 33 each stalled here in a trap the escape routines had no answer for.
@@ -297,9 +300,18 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // whose walk came to nothing at once and then spun (note 583).
   const worked = rung && rungQuestion ? tried.workedOn(goal, { work, here: bot.entity.position, now }) : null;
   const instead = rung && rungQuestion ? await nextRungSays(bot, task, goal, rung, now) : null;
-  if (rung && (DEFERRABLE.has(rung) || rungQuestion)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
+  // Every way below resting until a time (an escalation, decisions/index.js
+  // escalateFrom): when the first comes off rest.
+  const restUntil = stall.until > now ? stall.until : 0;
+  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
     run: async () => {
       setAside(goal, 'rung', rung, `Jev set it aside at the rung's question${worked ? `, worked on ${worked.says}` : `, stalled ${stall.strikes} times`}`.slice(0, 300), RUNG_WAIT_MS); delete goal.rungTime;
+      // What it was set aside for, from where, and until when that stands:
+      // the ways below resting from here, or the ledger's own rest for an
+      // answer (tried.js REST_MS). Taking it up again reads this (note 600).
+      const at = bot.entity.position;
+      goal.rungAside = { phase: rung, at: now, where: { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, until: restUntil || now + tried.REST_MS,
+        why: String(stall.escalated?.says || stall.rung?.says || stall.error || `stalled ${stall.strikes} times`).slice(0, 300) };
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     } };
   // A rung set aside earlier is offered back whenever the work in hand
@@ -309,13 +321,22 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // the pearls stalled for ten minutes with the fortress 66 blocks off, and
   // no question offered the rods again (note 588).
   const takeBack = !idle && goal.kind === 'win' ? require('./game-progress').takeBackRungs(bot, goal, now) : [];
+  const takeUpNotOffered = [];
   for (const back of takeBack) {
     const words = v => String(v || '').replaceAll('_', ' ');
+    // Not taken up again while what it was set aside for still stands from
+    // here: on 25583 the rods were set aside at 11:33:56 and taken up at
+    // 11:33:57, told "set aside 1 minutes ago", and the same resting ways
+    // brought the rung's question back in the same second (note 600). Said.
+    const standing = asideStands(bot, goal, back.phase, now);
+    if (standing) { takeUpNotOffered.push(standing); continue; }
     const clock = goal.rungClocks?.[back.phase];
     const place = takeBackPlace(bot, goal, back.phase, now);
     const survey = place?.target ? await surveySays(bot, task, place.target) : '';
     const lately = tried.summary(goal, { work: `step:rung:${back.phase}`, now });
-    answers[`take_up_${back.phase}`] = { description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${Math.max(1, Math.round((now - back.at) / 60000))} minutes ago (${back.why}), it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
+    const aside = goal.rungAside?.phase === back.phase ? goal.rungAside : null;
+    const from = aside?.where ? ` from (${aside.where.x}, ${aside.where.y}, ${aside.where.z}), ${Math.round(Math.hypot(aside.where.x + 0.5 - bot.entity.position.x, aside.where.z + 0.5 - bot.entity.position.z))} blocks from here` : '';
+    answers[`take_up_${back.phase}`] = { description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${agoSays(now - back.at)} ago${from} (${back.why})${aside?.why ? `, for this: ${aside.why}` : ''}; it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
       run: async () => {
         require('./game-progress').takeBackRung(goal, back.phase); save();
         bot.chat?.(`Back to the ${words(back.phase)}.`);
@@ -338,16 +359,22 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // portal way and answered the rest met again with "differently" forty-two
   // times, each an eight-block walk of seconds, until the rest ended; the
   // loop auditor counted the same failure four times over (note 490).
-  const restUntil = stall.until > now ? stall.until : 0;
   if (restUntil) {
     const minutes = Math.max(1, Math.ceil((restUntil - now) / 60000));
-    answers.until_rest_ends = { description: `Leave the ${thing} for the ${minutes} minute${minutes === 1 ? '' : 's'} until its rest ends and do other work meanwhile, chosen here a piece at a time, each piece given the time that is left; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. Nothing done here ends the rest sooner.`,
+    // The ways below resting from here (an escalation): they rest by place,
+    // and the rung stays the one in hand. The rung's question offered only
+    // keeping at it, another way or thirty minutes set aside (note 600).
+    const below = stall.escalated ? String(stall.escalated.from || 'the question below').replaceAll('_', ' ') : null;
+    answers.until_rest_ends = { description: below
+      ? `Other work for the ${minutes} minute${minutes === 1 ? '' : 's'} until the first of the ${below}'s ways comes off its rest here, chosen here a piece at a time, each piece given the time that is left; the ${thing} stays the work in hand, is not set aside, and is taken up again when that rest ends. Ground eight blocks off (another way) leaves these rests behind; waiting here does not end them sooner.`
+      : `Leave the ${thing} for the ${minutes} minute${minutes === 1 ? '' : 's'} until its rest ends and do other work meanwhile, chosen here a piece at a time, each piece given the time that is left; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. Nothing done here ends the rest sooner.`,
       run: async () => {
         goal.restHeld = { until: restUntil, reason: stall.key, at: now }; save();
-        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error });
+        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error || stall.escalated?.says });
       } };
-    // The other answers' walks meet the same rest, said.
-    if (answers.differently) answers.differently.description += ` The way rests ${minutes} more minute${minutes === 1 ? '' : 's'} whatever is done: come at it again from fresh ground, it meets the same rest until then.`;
+    // The other answers' walks meet the same rest, said: a rest until a
+    // time wherever the bot is (WaysResting), not the ways below by place.
+    if (answers.differently && !below) answers.differently.description += ` The way rests ${minutes} more minute${minutes === 1 ? '' : 's'} whatever is done: come at it again from fresh ground, it meets the same rest until then.`;
   }
   Object.assign(answers, nether);
   // The failed step again as it was: only this answer puts it back in hand
@@ -378,7 +405,10 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // Keeping at the rung, with what has been tried said: its budget starts
   // again, and the ways resting from here stay resting.
   const triedSaid = tried.summary(goal, { work, now });
-  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
+  // With every way below resting from here, keeping at it here meets those
+  // rests at the next pass, and this question comes again: said.
+  const keepMeets = restUntil && stall.escalated ? ` Every way the ${String(stall.escalated.from || 'question below').replaceAll('_', ' ')} had from here rests ${agoSays(restUntil - now)} more: kept at from here now, the next pass meets the same rests and this question comes again.` : '';
+  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
     run: async () => { if (goal.tried?.rung) goal.tried.rung.idleMs = 0; } };
   // What it is stuck on, named: a step for another dimension (note 476).
   const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
@@ -391,7 +421,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
-    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}) };
+    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour' });
 }
 // What the ladder goes on with if the rung is set aside, and what it costs

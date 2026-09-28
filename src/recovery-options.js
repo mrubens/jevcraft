@@ -9,6 +9,7 @@ const { recipeSourceGroups } = require('./resource-observation');
 const { surfaceReturnComplete } = require('./surface');
 const shelter = require('./shelter');
 const { pillarDescent, descendPillar } = require('./pillar-recovery');
+const { standsInLava, atOf } = require('./terrain');
 const pos = p => new Vec3(p.x, p.y, p.z);
 const stock = bot => Object.fromEntries(bot.inventory.items().map(i => [i.name, countOf(bot, i.name)]));
 
@@ -70,7 +71,9 @@ async function recoveryOptions(bot, task, goal, actions) {
     const ids = ['stone', 'dirt', 'grass_block', 'cobblestone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
     const candidates = bot.findBlocks({ matching: ids, maxDistance: 12, count: 96,
       useExtraInfo: b => dryStanding(bot, b.position.offset(0, 1, 0)) })
-      .map(p => p.offset(0, 1, 0)).filter(p => p.distanceTo(origin) >= 2 && safeFromHostiles(bot, p));
+      // No footing where the body stands in lava (terrain.js standsInLava,
+      // note 580): a relocation is a step like any other (note 600).
+      .map(p => p.offset(0, 1, 0)).filter(p => p.distanceTo(origin) >= 2 && safeFromHostiles(bot, p) && !standsInLava(atOf(bot), p));
     const areas = new Set();
     let checked = 0, selected = 0;
     for (const p of candidates) {

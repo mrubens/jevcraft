@@ -16,6 +16,7 @@
 //   view.pickaxe      the best pickaxe carried, or null
 const { Vec3 } = require('vec3');
 const { natural } = require('./tunneling');
+const terrain = require('./terrain');
 
 const DIRS = { north: new Vec3(0, 0, -1), east: new Vec3(1, 0, 0), south: new Vec3(0, 0, 1), west: new Vec3(-1, 0, 0) };
 const UP = new Vec3(0, 1, 0), DOWN = new Vec3(0, -1, 0);
@@ -101,20 +102,46 @@ function waterAir(view, cell, feet, { reach = 32, nodes = 4096 } = {}) {
   return { swim: null, floods };
 }
 
+// A block at p for the lava rules (terrain.js standsInLava, hangingFloor):
+// the live view's own, or one made from the name (a replay's view).
+function blockOf(view, p) {
+  if (typeof view.block === 'function') return view.block(p);
+  const n = view.name(p);
+  if (n == null) return null;
+  return { name: n, boundingBox: solid(n) ? 'block' : 'empty' };
+}
+const atOfView = view => q => blockOf(view, new Vec3(q.x, q.y, q.z));
+// Where the body stands at `feet` is in lava: the game's own test, the
+// body's box against each lava cell's surface over the floor (note 580).
+const landsInLava = (view, feet) => terrain.standsInLava(atOfView(view), feet);
+
 // The fall under an opened cell, down to the next solid block or water:
 // a dig down or to the side was told what it opened onto and nothing of
 // the drop past it (the decision audit, 2026-09-25). A fall of more than
-// three blocks hurts, a point a block past three.
-function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
+// three blocks hurts, a point a block past three. A fall that ends in lava
+// says so, with what a touch costs this body (view.lavaTouch): on 25583
+// the step south was told "one block past it, a drop of 7 blocks under it:
+// falling 7 blocks costs about 4 health", and the seven blocks ended in
+// the lava sea; the step ran on past its cell and the body burned from
+// 19.6 to nothing (note 600).
+function dropInto(view, cell, { reach = 24 } = {}) {
   let n = 0;
   for (; n < reach; n++) {
     const name = view.name(cell.offset(0, -n - 1, 0));
-    if (name == null) return n ? `a drop of ${n}+ blocks under it, the rest not loaded` : null;
-    if (isWater(name)) return n ? `a drop of ${n} block${n === 1 ? '' : 's'} into water under it` : null;
-    if (!open(name)) break;
+    if (name == null) return { n, into: 'unknown' };
+    if (isWater(name)) return { n, into: 'water' };
+    if (isLava(name)) return { n, into: 'lava' };
+    if (!open(name)) return { n, into: 'ground' };
   }
+  return { n, into: 'none' };
+}
+function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
+  const { n, into } = dropInto(view, cell, { reach });
+  if (into === 'lava') return `${n ? `a drop of ${n} block${n === 1 ? '' : 's'} into lava under it` : 'lava right under it'}: a fall there is into the lava${view.lavaTouch ? ` (${view.lavaTouch})` : ''}`;
   if (!n) return null;
-  if (n >= reach) return `no floor within ${reach} blocks under it: a fall that costs ${reach + extra - 3} health or more`;
+  if (into === 'unknown') return `a drop of ${n}+ blocks under it, the rest not loaded`;
+  if (into === 'water') return `a drop of ${n} block${n === 1 ? '' : 's'} into water under it`;
+  if (into === 'none') return `no floor within ${reach} blocks under it: a fall that costs ${reach + extra - 3} health or more`;
   const fall = n + extra;
   return `a drop of ${n} block${n === 1 ? '' : 's'} under it${fall > 3 ? `: falling ${fall} blocks costs about ${fall - 3} health` : ''}`;
 }
@@ -125,6 +152,7 @@ function dropBelow(view, cell, { reach = 24, extra = 0 } = {}) {
 // by default).
 function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, breathS = 13 } = {}) {
   let moves = [];
+  const notOffered = [];
   const inWater = isWater(view.name(feet));
   const headroom = open(view.name(feet.offset(0, 2, 0))) && !isWater(view.name(feet.offset(0, 2, 0)));
   const where = p => {
@@ -157,8 +185,12 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       // What lies one past it, where a step that runs on ends up: mid-236-h
       // swam a block south onto dry ground, ran on past it and fell
       // fifty-eight blocks into a ravine the option never named (note 474).
-      const past = land.plus(d), pastDrop = open(view.name(past)) && open(view.name(past.plus(UP))) ? dropBelow(view, past) : null;
-      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}.`, kind: 'move', to: land, ...(pastDrop ? { effects: [`one block past it, ${pastDrop}`] } : {}), ...where(land) });
+      const past = land.plus(d), pastOpen = open(view.name(past)) && open(view.name(past.plus(UP)));
+      const pastDrop = pastOpen ? dropBelow(view, past) : null;
+      // Past it into lava: the step is crouched where it stays level, and
+      // said, a run past its cell being a fall into the lava (note 600).
+      const pastLava = pastOpen && dropInto(view, past).into === 'lava';
+      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}.`, kind: 'move', to: land, ...(pastDrop ? { effects: [`one block past it, ${pastDrop}`] } : {}), ...(pastLava ? { pastLava: true } : {}), ...where(land) });
     }
     // Up a block onto the next cell: the cell over the head must be open to
     // rise into, out of water too (the game lifts a swimmer only then).
@@ -175,7 +207,14 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     }
     // A block placed into water or air beside, at the feet: a step at the
     // waterline, or a wall.
-    const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
+    // Gravel or sand put where nothing holds it under falls at once: not a
+    // step. On 25592 a gravel went into the space east over a fifteen-block
+    // drop, fell into the lava sea, and the climb onto it read the block
+    // before it went and took the body down after it (note 600).
+    const holdsUnder = solid(view.name(level.plus(DOWN)));
+    const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0 && (holdsUnder || !falls(n)));
+    const fallsOnly = !block && open(view.name(level)) && !isWater(view.name(level)) && PLACEABLE.some(n => (view.carried?.[n] || 0) > 0);
+    if (fallsOnly) notOffered.push(`place ${dir}: a block that falls (${PLACEABLE.filter(n => (view.carried?.[n] || 0) > 0).map(n => n.replaceAll("_", " ")).join(", ")}) put there falls at once, nothing under it holding it${(() => { const d = dropBelow(view, level); return d ? ` (${d})` : ""; })()}`);
     if (block && open(view.name(level)) && [DOWN, ...Object.values(DIRS)].some(f => solid(view.name(level.plus(f))))) {
       // A step out of the water only where there is air over the step: in a
       // column flooded to its ceiling it is a block with water on it.
@@ -211,6 +250,32 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // beside and over its head with lava behind it, the option saying so,
   // and burned in what poured in (2026-09-26). The other moves stay Jev's.
   moves = moves.filter(m => m.kind !== 'dig' || !(m.effects || []).some(e => /^lava beside it/.test(e)));
+  // No move that ends with the body in lava (terrain.js standsInLava: a
+  // floor under the lava's surface, the soul sand shore of note 580), and
+  // none that drops the floor stood on into lava or a fall of half the
+  // health (a block laid or dug beside the lowest of a column of gravel or
+  // sand resting on nothing, note 592). Physical safety: said in `here`,
+  // not offered.
+  const at = atOfView(view), body = { x: feet.x + 0.5, y: feet.y, z: feet.z + 0.5 };
+  moves = moves.filter(m => {
+    if (m.to && landsInLava(view, m.to)) { notOffered.push(`${m.key.replaceAll('_', ' ')}: the body would stand in lava at (${m.to.x}, ${m.to.y}, ${m.to.z})`); return false; }
+    // The floor dug out from under the feet: the body falls where the dig opens.
+    if (m.key === 'dig_down' && dropInto(view, m.cell).into === 'lava') { notOffered.push(`dig down: the body would fall into lava under (${m.cell.x}, ${m.cell.y}, ${m.cell.z})`); return false; }
+    // The one check every dig near the body goes through (terrain.js
+    // digExposes, the dig guard on bot.dig): said here, not offered.
+    const exposes = m.kind === 'dig' ? terrain.digExposes(at, body, m.cell, { health: view.health ?? 20 }) : null;
+    if (exposes) { notOffered.push(`${m.key.replaceAll('_', ' ')}: ${exposes}`); return false; }
+    const changed = m.kind === 'pillar' ? feet : m.cell;
+    const drops = changed && !inWater ? terrain.floorDrops(at, floor, changed) : null;
+    if (drops && terrain.floorDropDeadly(drops, view.health ?? 20)) { notOffered.push(`${m.key.replaceAll('_', ' ')}: ${terrain.floorDropSays(drops, floor)}`); return false; }
+    const hangs = m.to ? terrain.hangingFloor(at, m.to.plus(DOWN)) : null;
+    // Onto a floor of gravel or sand resting on nothing over lava: the next
+    // block changed beside it drops it, and one just put there is already
+    // going (25592, note 600). Not offered.
+    if (hangs && terrain.floorDropDeadly(hangs, view.health ?? 20)) { notOffered.push(`${m.key.replaceAll('_', ' ')}: ${terrain.floorDropSays(hangs, m.to.plus(DOWN)).replace('underfoot', 'it would end on')}`); return false; }
+    return true;
+  });
+  for (const m of moves) m.from = feet;
   // A dig that lets water in says where that water's air is. And none that
   // fills the pocket over the head with the air farther than the breath
   // there is: air is physical safety (mid-244-y, note 477). With the head
@@ -223,7 +288,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     m.effects.push(swim != null ? `the nearest air through that water is a swim of ${swim} block${swim === 1 ? '' : 's'} from here (about ${Math.round(swim * STEP_S * 10) / 10} s)` : `no air through that water within a swim of ${reach} blocks`);
     return !(headDry && floods && (swim == null || swim * STEP_S + (m.seconds || 0) > breathS));
   });
-  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet) } };
+  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet), ...(notOffered.length ? { notOffered } : {}) } };
 }
 
 // The moves as Jev is shown them: one option each, with its facts.
@@ -255,7 +320,9 @@ const PICKS = ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pi
 function liveView(bot) {
   const carried = {};
   for (const i of bot.inventory.items()) carried[i.name] = (carried[i.name] || 0) + i.count;
-  return { name: p => bot.blockAt(p)?.name ?? null, carried, pickaxe: PICKS.find(n => carried[n]) || null };
+  let lavaTouch = null;
+  try { lavaTouch = terrain.lavaTouchSays(bot); } catch (_) { /* no body to price */ }
+  return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p) ?? null, carried, pickaxe: PICKS.find(n => carried[n]) || null, health: bot.health ?? 20, lavaTouch };
 }
 
 // Where the bot has to get: out of water onto dry ground, or up to the
@@ -285,11 +352,23 @@ async function perform(bot, task, m, { dig }) {
   const feet = bot.entity.position.floored();
   const inWater = isWater(bot.blockAt(feet)?.name);
   const equipBlock = async name => { const item = bot.inventory.items().find(i => i.name === name); if (!item) throw new Error(`No ${name} carried`); await bot.equip(item, 'hand'); };
+  // A move read from another cell is not this cell's: on 25583 the moves
+  // were read while the body fell from y 41 to 38 (the feet taken at 40),
+  // and the step south "dropping 1" was run from the cell under, against
+  // a wall, and slid off the ledge into the lava sea (note 600).
+  if (m.from && !feet.equals(m.from)) throw new Error(`The body is at (${feet.x}, ${feet.y}, ${feet.z}), not at (${m.from.x}, ${m.from.y}, ${m.from.z}) where the move was read`);
   if (m.kind === 'move') {
     const to = m.to, up = to.y > feet.y;
     const keys = m.key === 'swim_up' ? ['jump'] : up || inWater ? ['forward', 'jump'] : ['forward'];
-    await move(bot, task, { label: `unstuck_${m.key}`, keys, sneak: false, why: `one move out of being stuck: ${m.key.replaceAll('_', ' ')}`,
-      look: to.offset(0.5, up ? 1.1 : 0.6, 0.5), maxMs: 2500, tick: 50,
+    // Crouched where the step stays level and past it is a fall into lava:
+    // the crouch holds the body at the edge it runs on to.
+    const sneak = !!m.pastLava && !up && to.y === feet.y && !inWater;
+    // Only through its own two columns, the feet's and the target's: a body
+    // pressed against a wall slides along it, and on 25583 slid a block east
+    // off the ledge it stood on (note 600). Stopped where it leaves them.
+    const guard = require('./motion').within(bot, [feet, to], `the ${m.key.replaceAll('_', ' ')}`);
+    await move(bot, task, { label: `unstuck_${m.key}`, keys, sneak, why: `one move out of being stuck: ${m.key.replaceAll('_', ' ')}`,
+      look: to.offset(0.5, up ? 1.1 : 0.6, 0.5), maxMs: 2500, tick: 50, guard,
       // In the cell is enough: waiting to be on the ground there kept the
       // keys down, and a swimmer's jump out of the water onto land is not
       // on the ground, so forward ran on past it (mid-236-h, note 474).
@@ -316,6 +395,12 @@ async function perform(bot, task, m, { dig }) {
   }
 }
 
+// Until the body is on the ground or in a liquid, up to two seconds.
+async function landed(bot, task, { maxMs = 2000, tick = 50 } = {}) {
+  const inLiquid = () => /water|lava|bubble_column/.test(bot.blockAt?.(bot.entity.position.floored())?.name || '');
+  for (const end = Date.now() + maxMs; bot.entity.onGround === false && !inLiquid() && Date.now() < end;) { task.check(); await new Promise(r => setTimeout(r, tick)); }
+}
+
 // Working free, Jev choosing each move: until the bot is where it has to
 // be, the moves run out, or four in a row change nothing.
 async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim = aimFor(bot) } = {}) {
@@ -331,6 +416,10 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   const { checkThreats } = require('./danger');
   for (let n = 0; n < maxMoves; n++) {
     task.check(); checkThreats(bot);
+    // Read from where the body stands, not a cell it is falling through:
+    // on 25583 the moves were read at y 40 with the body falling from 41 to
+    // 38, and every move was a move from the wrong cell (note 600).
+    await landed(bot, task);
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
@@ -380,4 +469,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { moveReached, dropBelow, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

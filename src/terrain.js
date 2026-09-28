@@ -191,6 +191,74 @@ function floorDropSays(h, floor) {
 }
 const atOf = bot => p => bot.blockAt(new Vec3(p.x, p.y, p.z));
 
+// Where a body goes that falls down the column from `cell` (the first cell
+// it falls through): { n (blocks fallen through), into: 'lava' | 'water' |
+// 'ground' | 'unknown', landing (the cell it stands in on ground) }. Ground
+// where the body stands in lava is lava (standsInLava, note 580). The
+// whole fall, not the four blocks the walks had looked: on 25583 the fall
+// past a step was seven blocks and on 25600 thirty-eight, both into the
+// lava sea (note 600).
+const LAVA_NAME = /^(flowing_)?lava$/;
+function fallFrom(at, cell, { deepest = 64 } = {}) {
+  for (let n = 0; n <= deepest; n++) {
+    const c = { x: cell.x, y: cell.y - n, z: cell.z }, b = at(c);
+    if (!b) return { n, into: 'unknown' };
+    if (LAVA_NAME.test(b.name || '')) return { n, into: 'lava' };
+    if (/water|bubble_column/.test(b.name || '')) return { n, into: 'water' };
+    if (b.boundingBox === 'block') {
+      const landing = { x: c.x, y: c.y + 1, z: c.z };
+      return { n, into: standsInLava(at, landing) ? 'lava' : 'ground', landing };
+    }
+  }
+  return { n: deepest, into: 'unknown' };
+}
+
+// The one check for a block dug near the body, whoever digs it (skills.js
+// digGuardPlugin wraps bot.dig): whether digging `cell` opens the body
+// standing at `pos` to lava. Lava beside or over the cell flows into it
+// where the cell touches the body's space; the floor under the body dug
+// out with nothing else holding it drops the body down the column, and a
+// fall that ends in lava (at any depth, or on ground where it stands in
+// lava) is refused; a block dug beside the lowest of a column of gravel or
+// sand the body stands on, resting on lava, drops it and the body into the
+// lava (note 592). Four of the fortress cohort's eight deaths of 2026-09-28
+// were the bot's own dig or step into lava (note 600). -> the words, or null.
+function digExposes(at, pos, cell, { health = 20, height = 1.8 } = {}) {
+  if (!pos || !cell) return null;
+  const floorY = Math.floor(pos.y - 0.01), feetY = floorY + 1, head = Math.floor(pos.y + height - 0.01);
+  const cols = [];
+  for (let x = Math.floor(pos.x - 0.3); x <= Math.floor(pos.x + 0.3); x++) for (let z = Math.floor(pos.z - 0.3); z <= Math.floor(pos.z + 0.3); z++) cols.push([x, z]);
+  // Already in lava: a dig is a way out, as a move that starts in it is.
+  if (cols.some(([x, z]) => { for (let y = feetY; y <= head; y++) if (LAVA_NAME.test(at({ x, y, z })?.name || '')) return true; return false; })) return null;
+  const where = `(${cell.x}, ${cell.y}, ${cell.z})`;
+  const near = cols.some(([x, z]) => Math.abs(cell.x - x) <= 1 && Math.abs(cell.z - z) <= 1) && cell.y >= floorY && cell.y <= head + 1;
+  if (near) {
+    // Any of its six neighbours, source or flowing: beside or over it the
+    // lava flows in, under it the cell opened beside the body is a hole
+    // onto lava.
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]) {
+      const n = at({ x: cell.x + dx, y: cell.y + dy, z: cell.z + dz });
+      if (n && LAVA_NAME.test(n.name || '')) return dy < 0 ? `lava under ${where}: opened beside the body, it is a hole onto the lava` : `lava beside ${where} flows in, into the body's space`;
+    }
+  }
+  // The floor under the body.
+  const under = cols.some(([x, z]) => x === cell.x && z === cell.z) && cell.y === floorY;
+  if (under) {
+    const held = cols.some(([x, z]) => (x !== cell.x || z !== cell.z) && at({ x, y: floorY, z })?.boundingBox === 'block');
+    if (!held) {
+      const fall = fallFrom(at, { x: cell.x, y: cell.y - 1, z: cell.z });
+      if (fall.into === 'lava') return `the floor under the body at ${where} dug out, it falls ${fall.n + 1} block${fall.n ? 's' : ''} into lava`;
+    }
+  }
+  // A floor of gravel or sand resting on lava, dropped by the dig beside it.
+  for (const [x, z] of cols) {
+    const floor = { x, y: floorY, z };
+    const h = floorDrops(at, floor, cell);
+    if (h && (h.into === 'lava' || h.damage >= health)) return floorDropSays(h, floor);
+  }
+  return null;
+}
+
 // What one touch of lava costs this body now: the lava's hits through the
 // armour worn while it gets out (a second, two hits, at the least), then the
 // fifteen seconds of fire lava sets, a point a second that armour does not
@@ -434,4 +502,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { fallFrom, digExposes, hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

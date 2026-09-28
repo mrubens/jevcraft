@@ -204,16 +204,30 @@ async function shakeLoose(bot, task, deadline, { random = Math.random, settleMs 
     const floor = below.findIndex(b => b && b.boundingBox === 'block');
     if (floor < 0) return false;
     const { standsInLava } = require('./terrain');
-    return !standsInLava(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z)), cell.offset(dx, -floor, dz));
+    if (standsInLava(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z)), cell.offset(dx, -floor, dz))) return false;
+    return !(floor === 0 && runsIntoLava(dx, dz));
+  };
+  // Nor a step whose run past its cell falls into lava: the step is held
+  // until the body has moved a block and goes on a little after. On 25600
+  // (mid-243-af-fortress-2) the step south ran on off a ledge thirty-eight
+  // blocks over the lava sea (note 600).
+  const runsIntoLava = (dx, dz) => {
+    const past = cell.offset(2 * dx, 0, 2 * dz);
+    if (![past, past.offset(0, 1, 0)].every(c => bot.blockAt?.(c)?.boundingBox === 'empty')) return false;
+    const { fallFrom, atOf } = require('./terrain');
+    return fallFrom(atOf(bot), past.offset(0, -1, 0)).into === 'lava';
   };
   const step = async (dx, dz) => {
-    await bot.lookAt?.(cell.offset(dx + 0.5, 1.62, dz + 0.5), true);
-    bot.setControlState?.('jump', true); bot.setControlState?.('forward', true);
-    const end = Date.now() + settleMs;
+    // Through the held-key helper (motion.js): upright, it refuses a drop
+    // into lava ahead at any depth, and it keeps to the two cells.
+    const { within } = require('./motion');
     // Every wait watches the air: sand dug from over the head in a desert
     // fell into its place, and trial 9's bot suffocated here for twelve
     // seconds while the loop watched only for mobs (2026-09-24).
-    while (Date.now() < end) { await sleep(50); task.check(); checkAir(bot); guard?.(); if (moved()) break; }
+    try {
+      await move(bot, task, { label: 'shake_loose_step', keys: ['forward', 'jump'], sneak: false, why: 'a blind step out of being wedged', look: cell.offset(dx + 0.5, 1.62, dz + 0.5),
+        maxMs: settleMs, tick: 50, until: moved, guard: () => { checkAir(bot); guard?.(); within(bot, [cell, cell.offset(dx, 0, dz)], 'the blind step')(); } });
+    } catch (err) { if (!/^Left the cells/.test(err.message)) throw err; }
     bot.clearControlStates?.();
     return moved();
   };
@@ -286,6 +300,33 @@ function wholeGoal(goal) {
   if (typeof goal.isValid !== 'function') goal.isValid = () => true;
   if (typeof goal.hasChanged !== 'function') goal.hasChanged = () => false;
   return goal;
+}
+
+// Every dig goes through one check (terrain.js digExposes): a block the
+// bot stands on or beside is not dug where that opens the body to lava
+// flowing in, a fall into lava, or a floor of gravel or sand dropped into
+// it. Each dig had its own rules or none (the unstuck move, the mine, the
+// bunker, the bridge, the pathfinder's own), and on 2026-09-28 four of the
+// fortress cohort's eight deaths were the bot's own dig or step into lava
+// (note 600). Refused, the dig throws and says why; the caller's failure
+// path takes it from there.
+function digGuardPlugin(bot) {
+  const dig = bot.dig;
+  if (typeof dig !== 'function' || dig._guarded) return;
+  const guarded = function (block, ...rest) {
+    const p = bot.entity?.position, cell = block?.position;
+    let why = null;
+    try { why = p && cell ? require('./terrain').digExposes(require('./terrain').atOf(bot), p, cell, { health: bot.health ?? 20 }) : null; } catch (_) { why = null; }
+    if (why) {
+      const err = Object.assign(new Error(`Not dug: the ${String(block.name || 'block').replaceAll('_', ' ')} at (${cell.x}, ${cell.y}, ${cell.z}): ${why}`), { name: 'DigRefused' });
+      console.log(`[dig] ${err.message}`);
+      try { bot.emit?.('dig_refused', { block: block.name, at: { x: cell.x, y: cell.y, z: cell.z }, why }); } catch (_) { /* the log has it */ }
+      return Promise.reject(err);
+    }
+    return dig.call(this ?? bot, block, ...rest);
+  };
+  guarded._guarded = true;
+  bot.dig = guarded;
 }
 
 function goalGuardPlugin(bot) {
@@ -615,7 +656,7 @@ async function openWindow(bot, task, open, { block = null, what = 'the window', 
   return value;
 }
 
-module.exports = { openWindow, wholeGoal, goalGuardPlugin, pickaxeDurability,
+module.exports = { openWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

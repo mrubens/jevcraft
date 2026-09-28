@@ -218,7 +218,7 @@ define({
     { pattern: 'dig_(north|east|south|west)_(feet|head|over)', label: 'dig the block that way', when: 'a natural block there, and a tool for it if it needs one', level: 'root', dynamic: true },
     { pattern: 'dig_up|dig_down|swim_up|pillar', label: 'dig over the head or underfoot, swim up, or pillar', when: 'what is over the head or underfoot allows it', level: 'root', dynamic: true },
   ],
-  instructions: { task: 'The bot is stuck and has to get somewhere: `aim` says where. Choose the next single move.', guidance: 'Each move says what it does and what the code has worked out about the result: what digging would bring down or let in, whether the move rises, whether it ends on dry ground or under open sky, and whether the bot has stood there before. `here` is where the bot stands now; `recentMoves` are the moves already made and what each did. A move that changed nothing last time will change nothing again.' },
+  instructions: { task: 'The bot is stuck and has to get somewhere: `aim` says where. Choose the next single move.', guidance: 'Each move says what it does and what the code has worked out about the result: what digging would bring down or let in, whether the move rises, whether it ends on dry ground or under open sky, and whether the bot has stood there before. `here` is where the bot stands now, read once it has landed, and `here.notOffered` the moves left out and why (one that would stand the body in lava, fall into it, or drop the floor it stands on into it); `recentMoves` are the moves already made and what each did. A drop past a step that ends in lava is said with what a touch costs. A move that changed nothing last time will change nothing again.' },
   fallback: children => Object.keys(children)[0],
 });
 

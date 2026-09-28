@@ -241,7 +241,7 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.n
   if (!resting.length) return { tree: out, resting: [], allResting: false };
   const ways = resting.filter(r => !r.wait), waits = resting.filter(r => r.wait);
   const open = Object.keys(out).filter(k => !resting.some(r => r.key === k));
-  if (!sayOnly && !open.length && !waits.length) return { tree: out, resting: resting.map(r => r.says), allResting: true };
+  if (!sayOnly && !open.length && !waits.length) return { tree: out, resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)) };
   const left = [];
   if (!sayOnly && open.length) for (const r of ways) { delete out[r.key]; left.push(r); }
   // Waits: left out while two or more other ways, none of them resting,
@@ -252,7 +252,7 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.n
     out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here, kept on offer: fewer than two other ways are open.`);
   }
   for (const r of resting) if (!left.includes(r) && !waits.includes(r) && out[r.key]) out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here.`);
-  if (!sayOnly && !left.length && !Object.keys(out).some(k => !resting.some(r => r.key === k))) return { tree: out, resting: resting.map(r => r.says), allResting: true };
+  if (!sayOnly && !left.length && !Object.keys(out).some(k => !resting.some(r => r.key === k))) return { tree: out, resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)) };
   return { tree: out, resting: left.map(r => r.says), allResting: false };
 }
 
@@ -386,7 +386,8 @@ function workedOn(goal, { work = null, here = null, now = Date.now() } = {}) {
     if (sp.at && sp.at >= from && sp.open.length) open.push({ q, at: sp.at, keys: sp.open });
   }
   const ms = since === null ? null : now - since;
-  const long = ms === null ? 'in the last ten minutes' : `in ${ms < 600000 ? (Math.round(ms / 6000) / 10).toFixed(1) : Math.round(ms / 60000)} minutes on it`;
+  const before = rung?.beforeMs >= 60000 ? ` in this session (and ${Math.round(rung.beforeMs / 60000)} minutes before the save it was taken up from)` : '';
+  const long = ms === null ? 'in the last ten minutes' : `in ${ms < 600000 ? (Math.round(ms / 6000) / 10).toFixed(1) : Math.round(ms / 60000)} minutes on it${before}`;
   const says = `${long}: ${plural(answers.length, 'answer')} given, ${n('blocked')} coming to nothing, ${n('progressed')} getting somewhere${n('cut') ? `, ${n('cut')} cut short by the survival layer` : ''}${n('pending') ? `, ${n('pending')} still under way` : ''}; the step failed ${plural(steps, 'time')}` +
     `${open.length ? `; not yet tried from here: ${open.map(o => `${label(o.q)} (asked ${ago(now - o.at)} ago): ${o.keys.map(label).join(', ')}`).join('; ')}` : ''}`;
   return { ms, answers: answers.length, cameToNothing: n('blocked'), progressed: n('progressed'), steps, open, says };
@@ -406,6 +407,19 @@ function resumed(goal, { savedAt, now = Date.now() } = {}) {
   for (const e of t.escalations || []) move(e, ['at', 'consumed']);
   if (t.rung) move(t.rung, ['since', 'lastAt', 'bestAt']);
   if (t.rung?.due) move(t.rung.due, ['at']);
+  // A save that lay unplayed longer than the rung's own budget is a new
+  // session on it (a trial begun from a stage's save), not a restart: the
+  // rung's budget and its count of what was given start here, and the
+  // minutes before the save are kept and said beside them. On 25583 the
+  // rods were brought to the rung's question 58 seconds into a trial from a
+  // fortress save, told "worked on this rung in 31 minutes on it: 48
+  // answers given", 30 of those minutes and all but a handful of the
+  // answers from before the save, and set aside (note 600).
+  if (t.rung && gap >= RUNG_MS) {
+    const before = Math.max(0, savedAt + gap - t.rung.since) + (t.rung.beforeMs || 0);
+    Object.assign(t.rung, { since: now, lastAt: now, bestAt: now, idleMs: 0, asked: 0, beforeMs: before });
+    delete t.rung.due;
+  }
   return gap;
 }
 // Whether any blocked way for this work rests by place alone (a step off
@@ -430,10 +444,16 @@ function placeBound(goal, { work = null, now = Date.now() } = {}) {
 // sleep, a batch cooking, health coming back, daylight coming).
 const RUNG_ITEMS = { obtain_blaze_rods: ['blaze_rod'], obtain_ender_pearls: ['ender_pearl', 'ender_eye'], craft_eyes: ['ender_eye'], reach_nether: ['obsidian', 'flint_and_steel'] };
 const RUNG_KINDS = new Set(['win', 'nether', 'obtain', 'craft']);
-function rungOf(goal) {
+// A rung set aside is not the rung in hand while its rest lasts: the ladder
+// is on other work, or waits it out (the rods' rods_waiting). Its budget
+// does not run, and its question is not asked: on 25584 the rods, set
+// aside at 11:37:00, were brought to the rung's question again at 11:40:00
+// and 11:42:33 while they waited, and set aside again each time (note 600).
+function rungOf(goal, now = Date.now()) {
   if (!RUNG_KINDS.has(goal?.kind)) return null;
-  if (goal.kind === 'win') return goal.rungTime?.phase || goal.gameProgress?.phase || null;
-  return `${goal.kind}${goal.item ? `:${goal.item}` : ''}`;
+  if (goal.kind !== 'win') return `${goal.kind}${goal.item ? `:${goal.item}` : ''}`;
+  const rung = goal.rungTime?.phase || goal.gameProgress?.phase || null;
+  return rung && require('./progress').isSetAside(goal, 'rung', rung, now) ? null : rung;
 }
 // A rung in words: the game's rung by name, a request by what it is for.
 const rungSays = rung => /:/.test(rung) ? `${label(rung.split(':').slice(1).join(':'))} request` : label(rung);

@@ -340,7 +340,11 @@ test('a saved ledger is judged by its own times: a trial begun from a stage\'s s
   const until = tried.restsUntil(tried.about(goal, { q: 'fortress_approach', method: 'tunnel', target: SPOT, here, now }), now);
   assert.equal(until, now + 4.5 * 60000, 'resting four and a half more minutes, as it was at the save');
   assert(tried.owed(goal, 'fortress_leg', now), 'the escalation is still owed');
-  assert.match(tried.workedOn(goal, { now }).says, /^in 17 minutes on it/);
+  // A save that lay unplayed longer than the rung's budget is a new session
+  // on the rung: its budget and its count start at the resume, and the
+  // minutes before the save are said beside them (note 600).
+  assert.match(tried.workedOn(goal, { now }).says, /^in 0\.0 minutes on it in this session \(and 17 minutes before the save it was taken up from\): 0 answers given/);
+  assert.equal(goal.tried.rung.idleMs, 0); assert.equal(goal.tried.rung.bestAt, now);
 });
 
 test('an answer cut short by the survival layer is not a try that came to nothing (note 583)', async t => {

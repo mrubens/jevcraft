@@ -308,13 +308,19 @@ function plainOf(tree, original) { return Object.fromEntries(Object.keys(tree).m
 // parent that is a plan's question is asked by its step on the next pass;
 // the rung's question is asked at once (answerStall).
 function parentOf(id) { try { return question(id).parent || null; } catch (_) { return null; } }
-function escalateFrom(bot, goal, spec, why) {
+// `until`: when the first of the ways below comes off rest, with every one
+// resting. Said to the question above as a stall's rest (answerStall's
+// until_rest_ends): on 25584 fortress_leg's ways all rested five minutes,
+// and each pass asked fortress_leg, escalated, and asked the rung's
+// question again, fifteen times in two minutes, until keeping at it rested
+// too and setting the rods aside was the answer left (note 600).
+function escalateFrom(bot, goal, spec, why, { until = 0 } = {}) {
   const { to, says, passed } = tried.escalate(goal, { from: spec.id, to: spec.parent || null, why, parentOf, here: bot?.entity?.position });
   // The answer above that led here came to this.
   if (spec.parent) tried.markBlocked(tried.latestOf(goal, spec.parent), says);
   if (to && to !== spec.parent) tried.markBlocked(tried.latestOf(goal, to), says);
   const { raiseFor, Stalled } = require('../stillness');
-  throw new Stalled(raiseFor(bot, goal, says, Date.now(), { escalated: { from: spec.id, to, says, passed } }));
+  throw new Stalled(raiseFor(bot, goal, says, Date.now(), { escalated: { from: spec.id, to, says, passed }, ...(until > Date.now() ? { until } : {}) }));
 }
 
 class NoSafeDefault extends Error {
@@ -349,7 +355,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (ledgered) {
     tried.settle(bot, goal, { q: id });
     const read = tried.read(bot, goal, id, tree, { target, sayOnly: SAY_ONLY.has(id) });
-    if (read.allResting && spec.parent !== undefined && spec.parent !== null) escalateFrom(bot, goal, spec, `every way it had from here rests: ${read.resting.join('; ')}`);
+    if (read.allResting && spec.parent !== undefined && spec.parent !== null) escalateFrom(bot, goal, spec, `every way it had from here rests: ${read.resting.join('; ')}`, { until: read.until });
     tree = read.tree;
     if (read.resting.length) resting = read.resting;
     below = tried.escalationsFor(goal, id);
@@ -451,7 +457,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       // have gone to the rung with its heights, the blocks to dig and the
       // Overworld's stone never offered (note 583).
       const after = ledgered && !SAY_ONLY.has(id) ? tried.read(bot, goal, id, original, { target }) : null;
-      if (!after || after.allResting || !Object.keys(after.tree).length || methods.some(m => after.tree[m])) escalateFrom(bot, goal, spec, holding.says);
+      if (!after || after.allResting || !Object.keys(after.tree).length || methods.some(m => after.tree[m])) escalateFrom(bot, goal, spec, holding.says, { until: after?.allResting ? after.until : 0 });
       tree = after.tree; resting = after.resting.length ? after.resting : null;
       const left = oneWay(tree);
       if (left) return takeOne(left);

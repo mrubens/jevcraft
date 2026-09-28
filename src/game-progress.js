@@ -175,9 +175,28 @@ function takeBackRungs(bot, goal = {}, now = Date.now()) {
   }
   return out;
 }
+// A span of time in words: seconds under a minute and a half, else minutes.
+const agoSays = ms => { const s = Math.max(1, Math.round(ms / 1000)); return ms < 90000 ? `${s} second${s === 1 ? "" : "s"}` : `${Math.round(ms / 60000)} minutes`; };
+// Whether what a rung was set aside for still stands from here (work.js
+// answerStall's set_aside_rung keeps it: the ways below resting from where
+// it was set aside, until the first comes off rest, or the ledger's rest for
+// an answer): within four blocks of that place and before that time, taking
+// it up again meets the same. mid-242-af-fortress-1 set the rods aside at
+// 11:33:56, and the stall's question took them up at 11:33:57 ("set aside
+// 1 minutes ago"); mid-242-af-nether-2-fortress-1's leave_nether took them
+// up in the same second three times over (note 600). -> the words, or null.
+function asideStands(bot, goal, phase, now = Date.now()) {
+  const a = goal?.rungAside, here = bot?.entity?.position;
+  if (!a || a.phase !== phase || !(a.until > now) || !a.where || !here) return null;
+  const { NEAR } = require('./tried');
+  const off = Math.hypot(a.where.x + 0.5 - here.x, a.where.y - here.y, a.where.z + 0.5 - here.z);
+  if (off > NEAR) return null;
+  return `the ${phase.replaceAll('_', ' ')} taken up again: set aside ${agoSays(now - a.at)} ago from about here for this: ${a.why}; that stands ${agoSays(a.until - now)} more from here, and taken up now it meets the same. It is offered again once the bot is more than ${NEAR} blocks from there or that time is out.`;
+}
 // Taking a rung back: its rest lifted, a "go on here" or a held way out of
 // the Nether for it dropped, and its clock started afresh.
 function takeBackRung(goal, phase) {
+  if (goal.rungAside?.phase === phase) delete goal.rungAside;
   attemptsFor(goal).clear('rung', phase);
   if (goal.elsewhere?.phase === phase) delete goal.elsewhere;
   if (goal.leaveNether?.reason === phase) delete goal.leaveNether;
@@ -468,11 +487,15 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   const searched = search ? ` The fortress search so far: ${search.legs || 0} leg${search.legs === 1 ? '' : 's'} in ${search.since ? Math.round((now - search.since) / 60000) : 0} minutes${search.lastLegError ? `; the last ended: ${search.lastLegError}` : ''}.` : '';
   const tree = {
     go_back: { description: `Go back to the Overworld while the rods wait. ${portalTrip(bot, goal)} Back there the ladder's next step is the Nether again for the rods; the trip is for what the Overworld gives meanwhile (food, ore, the stash), and the way in again is the same portal.${searched}` },
-    search_on: { description: `Take the rods step up again now, its rest lifted: the fortress search goes on from here.${searched}` },
   };
+  // Not taken up again where what they were set aside for still stands
+  // (asideStands): mid-242-af-nether-2-fortress-1 set the rods aside and
+  // took them up here in the same second, three times (note 600). Said.
+  const standing = asideStands(bot, goal, stage.phase, now);
+  if (!standing) tree.search_on = { description: `Take the rods step up again now, its rest lifted: the fortress search goes on from here.${searched}` };
   if (stage.until) tree.wait_here = { description: `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.` };
   const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
-    state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, ...(minutes ? { minutesLeft: minutes } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
+    state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
   goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now }; save();
@@ -784,4 +807,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
