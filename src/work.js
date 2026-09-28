@@ -190,9 +190,16 @@ function looseEnds(goal, now = Date.now()) {
 // is needed here.
 const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No reachable surveyed ground/i.test(errors.filter(Boolean).join(' '));
 const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
-async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now() } = {}) {
+// The rung's own question (note 571): its budget ran ten minutes with no
+// new best (tried.js watchRung), or a way below had nothing left to try and
+// escalated to it. Asked as the stall's question is, with the rung's best,
+// what has been tried, keeping at it, and the rung set aside for any rung.
+const isRungStall = stall => !!stall.rung || stall.escalated?.to === 'rung_progress';
+async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now(), failed = null, chose = {}, recoveryAdviser = null } = {}) {
   const stats = survival?.state || goal.survival || goal;
   const thing = thingOf(stall.key);
+  const tried = require('./tried');
+  const rungQuestion = isRungStall(stall) && !idle;
   // Stuck in the terrain (in water, or under cover on the way up): worked
   // free one move at a time, Jev choosing each (unstuck.js). Trials 32 and
   // 33 each stalled here in a trap the escape routines had no answer for.
@@ -221,7 +228,15 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // shaft began from the same spot (note 485).
   const short = turn.wayOffShort && now - turn.wayOffShort.at < DETOUR_MEMORY_MS ? turn.wayOffShort : null;
   const shortSays = short && `the last time, the walk off got ${short.moved} of ${short.aimed} blocks from (${short.from.x}, ${short.from.y}, ${short.from.z}), no fresh ground${short.error ? ` (${short.error})` : ''}`;
-  if (!idle) answers.differently = { description: mine
+  // Another way, from ground eight blocks off, only while a way not in the
+  // ledger is left from here: when every way tried for this work lately was
+  // tied to its own target, a step off leaves none of them behind, and the
+  // planner derives the same way again (25592: other_way 4,423 times, each
+  // hold answered "differently", note 571). Said, when left out.
+  const bound = tried.placeBound(goal, { work: stall.key, now });
+  const differentlyOpen = !bound.any || bound.byPlace > 0;
+  const noDifferently = !differentlyOpen ? `another way from ground eight blocks off is not offered: every way tried for the ${thing} lately (${bound.byTarget}) was toward its own target and rests from anywhere near here, so a step off leaves none of them behind` : null;
+  if (!idle && differentlyOpen) answers.differently = { description: mine
     ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.`
     : `Keep at the ${thing} another way: step eight blocks off to fresh ground and come at it again from there; the search turns to a heading not tried, and the shaft or site it was using is dropped.${shortSays ? ` Chosen before: ${shortSays}.` : ''}`,
   run: async () => {
@@ -262,7 +277,11 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const { RUNG_WHY, WITHOUT } = require('./strategy');
   const piece = /^iron_(helmet|chestplate|leggings|boots)$/.test(rung || '') ? 'iron_armour' : rung;
   const rungWhy = rung ? RUNG_WHY[rung] || RUNG_WHY[piece] : null;
-  if (rung && DEFERRABLE.has(rung)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}`,
+  // Asked as the rung's question, any rung may be set aside: one the game
+  // cannot be beaten without says so, and the ladder takes up what it can
+  // do meanwhile (the rods' own question is leave_nether).
+  const needed = rung && !DEFERRABLE.has(rung) ? ' The game cannot be beaten without it: for those thirty minutes the ladder goes on with whatever else it can do, and the rung comes back first after.' : '';
+  if (rung && (DEFERRABLE.has(rung) || rungQuestion)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}`,
     run: async () => {
       setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
@@ -284,6 +303,36 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     if (answers.differently) answers.differently.description += ` The way rests ${minutes} more minute${minutes === 1 ? '' : 's'} whatever is done: come at it again from fresh ground, it meets the same rest until then.`;
   }
   Object.assign(answers, nether);
+  // The failed step again as it was: only this answer puts it back in hand
+  // (persist), and not while it rests from here in the ledger.
+  let againRests = null;
+  if (failed?.action && !idle) {
+    const here = bot.entity.position, target = stepTarget(failed);
+    const list = tried.about(goal, { q: 'step', method: failed.action, target, here, now });
+    const until = tried.restsUntil(list, now);
+    const said = tried.triedSays(list, { here, now, toward: !!target });
+    if (until) againRests = `the ${String(failed.action).replaceAll('_', ' ')} step as it was: ${said} It rests ${Math.max(1, Math.ceil((until - now) / 60000))} more minutes from here.`;
+    else answers.again = { description: `Try the ${String(failed.action).replaceAll('_', ' ')} step again as it was${failed.item || failed.block ? ` (${String(failed.item || failed.block).replaceAll('_', ' ')})` : ''}, from here.${said ? ` ${said}` : ''}`,
+      run: async () => { chose.again = true; } };
+  }
+  // The recovery moves the code checks from here (recovery-options.js),
+  // among these answers: they were a second question asked on the same
+  // failures (recovery_action), and now one question answers a failure.
+  if (stall.error && client && !idle && !rungQuestion) {
+    let observed = null;
+    const adviser = recoveryAdviser || createRecoveryAdviser(bot, client);
+    try { observed = await adviser.observe(bot, task, goal, adviser.actions); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    for (const [i, option] of (observed?.options || []).slice(0, 6).entries()) {
+      answers[`recover_${i + 1}`] = { description: `${require('./recovery-adviser').describeOption(option)} A bounded move the code checked from here; the work is taken up again after it.`,
+        run: async () => { adviser.adopt(goal, save, option, observed.context); } };
+    }
+  }
+  // Keeping at the rung, with what has been tried said: its budget starts
+  // again, and the ways resting from here stay resting.
+  const triedSaid = tried.summary(goal, { work: stall.key, now });
+  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
+    run: async () => { if (goal.tried?.rung) goal.tried.rung.idleMs = 0; } };
   // What it is stuck on, named: a step for another dimension (note 476).
   const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
   // A staircase set aside for want of ground gained is the failure, with
@@ -291,8 +340,16 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // stall itself said only strikes (mid-230-s, note 485).
   const stairs = goal.staircaseStalled && now - goal.staircaseStalled.at < require('./tunneling').STAIRCASE_REST_MS ? goal.staircaseStalled : null;
   const failure = stall.error || (stairs && `the staircase is set aside: ${stairs.why}`);
-  const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}) };
-  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
+  const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}),
+    ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
+    ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}) };
+  await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour' });
+}
+// Where a step was going, for the ledger (tried.js): its target, its
+// destination, the cell it worked; none, and the step is about its place.
+function stepTarget(step) {
+  const P = v => v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? v : null;
+  return P(step?.target) || P(step?.destination) || P(step?.to) || P(step?.cell) || P(step?.portal) || null;
 }
 
 // A spare is on offer when every pickaxe is nearly worn, or when the uses
@@ -3438,7 +3495,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   // Every way from here tried and come to nothing: said, and the way rests
   // (the stall's question answers it), not asked again.
   if (!Object.keys(tree).length) throw new WaysResting(`${says} Every way offered from here was tried in this rest and came to nothing: ${triedSays.join('; ')}.`, Math.max(until, now + PORTAL_WAY_TRIED_MS));
-  const decision = await decide('portal_way', { client, bot, task, goal, save, tree,
+  const decision = await decide('portal_way', { client, bot, task, goal, save, tree, target: p,
     state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), ...(triedSays.length ? { triedFromHereToNothing: triedSays } : {}), health: bot.health, food: bot.food } });
   if (decision.stale) return true;
   const pick = decision.path.at(-1);
@@ -4523,10 +4580,16 @@ const turnSearch = search => Object.fromEntries(Object.entries(search || {})
   .map(([resource, entry]) => [resource, Number.isInteger(entry.frontier?.heading)
     ? { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0 } }
     : { attempts: 0, origin: entry.origin, leg: (entry.leg || 0) + 1 }]));
-// Failing again and again is getting nowhere, and is answered the way a
-// stall is (answerStall): Jev chooses another way, the rung for later, or a
-// detour, with the failure and how many times it has come as facts.
-async function persist(bot, task, goal, save, err, onStep, { client, survival } = {}) {
+// Failing again and again is getting nowhere. It is written in the ledger
+// (tried.js) as the step's way from here, and answered once, one way, up
+// the chain (note 571): the question whose answer this step was carrying
+// out is asked again with the failure said and that answer marked come to
+// nothing (step, then way, plan, rung); with no such question, the stall's
+// question is asked with the failure (answerStall: another way, a recovery
+// move, the rung left, other work, or the step again). The failed step is
+// not put back in hand unless Jev chose to try it again: put back each time,
+// the same step failed the same way from the same cell (25592, note 571).
+async function persist(bot, task, goal, save, err, onStep, { client, survival, recoveryAdviser } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message, from: goal.lastErrorFrom };
   if (goal.struggles === 1 || goal.struggles % 5 === 0) {
@@ -4534,6 +4597,9 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival } 
   }
   const failed = goal.lastStruggleStep || goal.step;
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
+  const tried = require('./tried');
+  const work = require('./stillness').actionOf(goal).key;
+  tried.record(bot, goal, { q: 'step', method: failed?.action || 'none', target: stepTarget(failed), outcome: 'blocked', why: err.message });
   // What is retried and where it was going, named: mid-202-o-nether-2's
   // persist ran from attempt 1 to 12 on "No route from here to the
   // destination", neither said (note 500).
@@ -4544,16 +4610,31 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival } 
   // question (note 490).
   const until = err.name === 'WaysResting' && err.until > Date.now() ? err.until : 0;
   const held = until && goal.restHeld?.until === until ? goal.restHeld : null;
+  // The answer this step was carrying out: asked again, not the step.
+  const owner = !until && tried.owner(goal, { work, skip: new Set(['stillness_detour', 'rung_progress']) });
+  const what = `the ${String(failed?.action || 'step').replaceAll('_', ' ')} step failed${goal.struggles === 1 ? '' : ` ${goal.struggles} times running`}: ${String(err.message).slice(0, 160)}`;
+  const up = owner ? tried.escalate(goal, { from: 'step', to: owner.q, why: what, parentOf: require('./decisions').parentOf }) : null;
+  if (owner) tried.markBlocked(owner, what);
+  const chose = {};
   try {
+    if (up?.to && up.to !== 'rung_progress' && up.to !== 'stillness_detour') {
+      console.log(`[escalate] step -> ${up.to.replaceAll('_', ' ')}: ${up.says}`);
+      return;
+    }
+    const rungAsk = up?.to === 'rung_progress' ? { escalated: { from: owner.q, to: 'rung_progress', says: up.says } } : {};
     if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message });
-    else await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}) }, { client, survival, onStep });
+    else await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
   }
   finally {
-    // Not back in hand where it cannot be done: a step for another dimension
-    // is left for the ladder to plan again (note 433).
+    // Back in hand only when Jev chose to try it again, and not where it
+    // cannot be done: a step for another dimension is left for the ladder
+    // to plan again (note 433).
     const home = failed?.block ? require('./knowledge').dimensionOfBlock(failed.block) : null;
     const here = String(bot.game?.dimension || 'overworld').replace('minecraft:', '').replace('the_', '');
-    if (goal.step?.action === 'persist') { if (home && home !== here) { delete goal.step; delete goal.lastStruggleStep; } else goal.step = failed; }
+    if (goal.step?.action === 'persist') {
+      if (chose.again && !(home && home !== here)) goal.step = failed;
+      else { delete goal.step; delete goal.lastStruggleStep; }
+    }
     goal.failures = 0; goal.stalls = 0; attemptsFor(goal).clearAction('option'); delete goal.lastError; delete goal.lastErrorAt; save(); onStep(goal);
   }
 }
@@ -4591,14 +4672,10 @@ async function keepRoom(bot, task, goal) {
   }
 }
 
-async function tryRecovery(adviser, task, goal, save) {
-  try { return await adviser.suggest(task, goal, save); }
-  catch (err) {
-    task.check();
-    if (['NeedsAir', 'NeedsSafety'].includes(err.name)) return true;
-    throw err;
-  }
-}
+// An escalation to a question a step asks (a way's, a plan's): the step's
+// own pass asks it, with the failure below said (tried.js escalationsFor).
+// The stall's question and the rung's are asked by answerStall.
+const escalatedToStep = stall => !!stall?.escalated?.to && !['rung_progress', 'stillness_detour'].includes(stall.escalated.to);
 
 // A handler that runs inside the loop's catch must not throw past it: an
 // exception there leaves runGoal, and the session marks the request blocked
@@ -4929,7 +5006,7 @@ const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
 const USEFUL_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
-async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null } = {}) {
+async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null, id = 'stillness_detour' } = {}) {
   const ms = STALL_MS;
   // Held until a rest ends (holdForRest), the work has that long.
   const deadline = until > now ? until : now + DETOUR_MS;
@@ -4947,9 +5024,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     portals: goal.portals, villages: goal.villages, blueprint: goal.blueprint };
   const attempts = attemptsFor(goal);
   const tree = {};
-  const offer = (key, description, run) => {
+  const offer = (key, description, run, target = null) => {
     if (attempts.resting('detour', key, now)) return;
-    tree[key] = { description, run: async () => {
+    tree[key] = { description, ...(target ? { target } : {}), run: async () => {
       goal.step = { action: 'detour', choice: key, from: reason }; save(); narrate(bot, goal);
       try { await run(); }
       catch (err) {
@@ -4961,7 +5038,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   };
   // The stalled work's own answers (answerStall): done differently, or its
   // rung left for later. They run on the player's goal, not the scratch one.
-  for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run);
+  for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target);
   const overworld = dimension(bot) === 'overworld';
   const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
   if (survival?.canNightMine?.(goal)) offer('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
@@ -5023,7 +5100,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   if (!options.length) return false;
   const step = goal.step;
   const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
-  const context = { situation: holding
+  const context = { situation: id === 'rung_progress'
+    ? `${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : `Every way the ${what} had from here has been tried and come to nothing.`} Choose: keep at it with the ways left, change the plan, or set the rung aside for now.`
+    : holding
     ? `The ${what} rests ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}${holding.why ? ` (${holding.why})` : ''}, and Jev chose other work until then. Choose the work for now; it has until the rest ends.`
     : stalled?.failure
     ? `${what} keeps failing (${stalled.failure}), round ${stalled.strikes} of failures. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
@@ -5044,9 +5123,10 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     tree[key].run = (...args) => { log[reason] = [...tried, { choice: key, at: now }].slice(-20); return run(...args); };
   }
   try {
-    if (options.length === 1) await tree[options[0]].run();
-    else if (!client) await tree[question('stillness_detour').fallback(tree, [], context)].run();
-    else await decideAction(bot, task, goal, save, client, onStep, tree, context, 'stillness_detour');
+    // Through decide whatever the client: the ledger reads and records every
+    // answer to it, the one way and the code's own walk included.
+    if (!client) { const d = await decide(id, { client: null, bot, task, goal, save, tree, state: context, context }); if (!d.stale) await d.action.run(); }
+    else await decideAction(bot, task, goal, save, client, onStep, tree, context, id);
   } finally { goal.step = step; save(); }
   return true;
 }
@@ -5402,7 +5482,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
     task.interruptCheck = undefined;
     // A stall is answered first, before anything can throw it again.
     const stall = takeStall(bot);
-    if (stall) { await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, idle: true })); failures = 0; save(); onStep(goal); continue; }
+    if (stall && !escalatedToStep(stall)) { await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, idle: true })); failures = 0; save(); onStep(goal); continue; }
     // A preemption is the arbiter's to pick up, below.
     const held = loopCheck(task);
     if (held && !held.preempted) { await inCatch(task, goal, () => survival.step(task, goal, save, onStep)); save(); onStep(goal); continue; }
@@ -5433,10 +5513,9 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) failures++;
       noteError(goal, err); save(); onStep(goal);
       if (!['NeedsAir', 'NeedsSafety'].includes(err.name)) recoveryAdviser.recordFailure(goal, err);
-      // Every way resting goes to Jev at once, as in runGoal's loop.
-      if (err.name !== 'WaysResting' && failures >= 3 && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) { failures = 0; continue; }
-      // Survival never gives up either: shake loose, back off, go again.
-      if (err.name === 'WaysResting' || failures >= 5) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival })); failures = 0; continue; }
+      // Every way resting goes to Jev at once, as in runGoal's loop; three
+      // failures go to persist, one mechanism, as there (note 571).
+      if (err.name === 'WaysResting' || failures >= 3) { await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival, recoveryAdviser })); failures = 0; continue; }
     } finally { task.interruptCheck = undefined; }
     for (let n = 0; n < 10 && !bot._stalls?.stall; n++) { if (loopCheck(task)) break; await sleep(100); }
   }
@@ -5527,11 +5606,19 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     task.interruptCheck = undefined;
     // A stall (stillness.js) is answered first, before anything can throw
     // it again: the same thing differently, something else, or later.
+    // An escalation to a plan's question (tried.js) is not answered here:
+    // the step asks that question on this pass, with the failure below said.
     const stall = takeStall(bot);
     if (stall) {
-      await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep }));
-      goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
+      if (!escalatedToStep(stall)) await inCatch(task, goal, () => answerStall(bot, task, goal, save, stall, { client: decisionClient, survival, onStep, recoveryAdviser }));
+      goal.failures = 0; goal.stalls = 0; save(); onStep(goal);
+      if (!escalatedToStep(stall)) continue;
     }
+    // Progress against the goal (tried.js watchRung): ten working minutes
+    // on the rung without a new best raises the rung's question.
+    const rungDue = require('./tried').watchRung(bot, goal, { waiting: require('./stillness').permittedWait(bot, goal) });
+    // Asked of the work, whatever the survival layer was doing at the time.
+    if (rungDue) { const k = require('./stillness').actionOf(goal).key; require('./stillness').raiseFor(bot, goal, rungDue.says, Date.now(), { rung: rungDue, layer: 'work', key: /^survival:/.test(k) ? `step:rung:${rungDue.rung}` : k }); continue; }
     // A signal the watchdogs hold for the survival layer: its turn now. A
     // preemption is the arbiter's to pick up, below.
     const held = loopCheck(task);
@@ -5549,7 +5636,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     const before = JSON.stringify(inventory(bot));
     const constructionBefore = constructionObservation(bot, goal);
     const location = bot.entity.position.clone();
-    let turnShadow = null, layerNow = null;
+    let turnShadow = null, layerNow = null, passError = null;
     try {
       let complete = false;
       const activeWork = goal.kind === 'bundle' ? goal.batchWork || goal.tasks.find(child => child.status !== 'complete') || goal : goal;
@@ -5656,9 +5743,10 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
         constructionBefore === constructionObservation(bot, goal);
       goal.stalls = unchanged && goal.kind !== 'follow' ? (goal.stalls || 0) + 1 : 0;
-      // Progress ends a struggle: the persistence counter is for one stuck
-      // stretch, not a lifetime tally read out in chat as "attempt 50".
-      if (!unchanged && goal.struggles) { goal.struggles = 0; }
+      // A struggle ends on progress against the goal (tried.js watchRung, a
+      // new best on the rung), not on any movement: an eight-block walk off
+      // and back set it to nothing, and "attempt 1" came round again and
+      // again at the same failure (note 571).
       // A restock that changes nothing (the chest does not hold what its
       // record says, or the kit slot is already met another way) would be
       // planned again at once: the replay run restocked a furnace forty
@@ -5670,6 +5758,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // Thrown before a layer said it had the turn: the one that was
       // running (not bot._turn, which the hunt marks before it looks).
       turnShadow?.gave(layerNow);
+      // What ended the answers under way: a failure or a stall, not the
+      // survival layer taking the turn (the answer is not over).
+      if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && !err.stall?.escalated) passError = err.message;
       if (err.name === 'Stalled' || bot._stalls?.stall) continue;
       if (loopCheck(task)) { noteError(goal, err); save(); onStep(goal); continue; }
       noteError(goal, err);
@@ -5719,18 +5810,16 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // (2026-09-27). Jev hears it at once, as the failure.
       if (err.name === 'WaysResting') {
         if (goal.step?.action !== 'persist') goal.lastStruggleStep = goal.step;
-        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival }));
+        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival, recoveryAdviser }));
         continue;
       }
       goal.failures = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 2 &&
         constructionBefore === constructionObservation(bot, goal) ? goal.failures + 1 : 0;
       recoveryAdviser.recordFailure(goal, err);
-      // A state only the player can settle is parked before any recovery:
-      // no recovery option changes whether a handover was picked up.
-      const parked = err.name === 'Blocked' && (err.needsPlayer || IMPOSSIBLE.test(err.message));
-      if (!parked && (err.name === 'Blocked' || goal.failures >= 3) && await inCatch(task, goal, () => tryRecovery(recoveryAdviser, task, goal, save))) {
-        goal.failures = 0; goal.stalls = 0; save(); onStep(goal); continue;
-      }
+      // One mechanism answers a failure (note 571): persist, below, whose
+      // question offers the recovery moves among its answers. The recovery
+      // adviser had been asked first on the same failures, a second question
+      // with its own limits and memory, and persist after it.
       // Parked, not retried: a request no survival route can serve, or a
       // state only the player can settle (items dropped for them whose
       // pickup nobody saw). The regex is the old list; `needsPlayer` is
@@ -5744,15 +5833,21 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
         bot.chat(`${friendlyProblem(err)} I saved our progress. ${recoveryHint(err)}`);
         return { ok: false, reason: err.message, goal };
       }
-      if (err.name === 'Blocked' || goal.failures >= 5) {
+      if (err.name === 'Blocked' || goal.failures >= 3) {
         // The step that failed, not the last retry: a step that throws
         // before it names itself leaves the retry's name on the goal.
         if (goal.step?.action !== 'persist') goal.lastStruggleStep = goal.step;
-        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival }));
+        await inCatch(task, goal, () => persist(bot, task, goal, save, err, onStep, { client: decisionClient, survival, recoveryAdviser }));
         continue;
       }
       await sleep(300);
-    } finally { task.interruptCheck = undefined; }
+    } finally {
+      task.interruptCheck = undefined;
+      // What came of the answers given this pass (tried.js): settled where
+      // something came of them or the pass failed; one still under way (a
+      // leg walked over many passes) stays open.
+      require('./tried').settle(bot, goal, { passEnd: true, error: passError });
+    }
     save(); onStep(goal);
   }
   goal.status = 'blocked'; goal.lastError = 'Action budget reached'; save();

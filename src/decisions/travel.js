@@ -8,7 +8,7 @@ const leastVisited = children => Object.keys(children).sort((a, b) =>
   (children[a].description.remainingDistanceToEstimatedTarget - children[b].description.remainingDistanceToEstimatedTarget))[0];
 
 define({
-  id: 'stronghold_waypoint', area: 'endgame', kind: 'stronghold', primitive: 'choice', stakes: 'medium', tree: true, thinking: true,
+  id: 'stronghold_waypoint', area: 'endgame', parent: 'rung_progress', kind: 'stronghold', primitive: 'choice', stakes: 'medium', tree: true, thinking: true,
   question: 'Following thrown Eyes of Ender, which surveyed waypoint should the bot walk to next?',
   trigger: 'Each step of the stronghold search once an Eye has given a bearing.',
   source: 'src/stronghold.js (walkBearing)',
@@ -31,7 +31,7 @@ const approachFallback = (children, path, context = {}) => {
   return APPROACH_ORDER.find(k => children[k] && !failed.has(k)) || (children.keep_searching ? 'keep_searching' : children.other_way ? 'other_way' : Object.keys(children)[0]);
 };
 define({
-  id: 'fortress_approach', area: 'endgame', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
+  id: 'fortress_approach', area: 'endgame', parent: 'fortress_leg', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   question: 'A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?',
   trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also where a walk on foot to a place Jev chose failed (state.stretch says which: a stretch of the fortress\'s floors, or where blazes were seen): the way is then to that place, asked afresh for each, the failed walk among what failed, and leaving it (other_way) leaves that way, not the fortress.',
   source: 'src/mob-hunt.js (fortressApproaches, approachFortress, crossingOptions), src/bridging.js (surveyCrossing, crossAlong), src/fortress-map.js (crossing), src/nether-travel.js (crossingSays)',
@@ -80,7 +80,7 @@ const legFallback = (children, path, context = {}) => {
   return surveyed.includes(context.current) && open[context.current] === best ? context.current : surveyed.find(k => open[k] === best);
 };
 define({
-  id: 'fortress_leg', area: 'endgame', kind: 'fortress', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'fortress_leg', area: 'endgame', parent: 'rung_progress', kind: 'fortress', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Searching the Nether for a fortress: which way should the next leg go, should the bot first dig toward the heights fortresses stand at, or first get blocks to lay spans with?',
   trigger: 'On the fortress search, each time a leg begins: at the start, when the last leg reached its end, when a leg ended within eight blocks of where it began (its heading then rests from there), when the sweep turned for a leg that made no ground, and on a fortress\'s floors when the bot has walked all it can reach of what it has seen of it (the map: floors seen through open air, walked, and running on into unseen space).',
   source: 'src/mob-hunt.js (chooseLeg, findFortressStep), src/nether-travel.js (surveyLeg, legSays)',

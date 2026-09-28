@@ -115,16 +115,27 @@ test('supply recovery budgets include gathering and the final inventory verifica
   assert.match(goal.recoveryAdvice.history[0].outcome, /Recovery actions completed/);
 });
 
-test('runGoal escalates repeated survival failures, executes the plan, then verifies the retained objective', async () => {
-  const { bot, goal, task } = fixture(); let recovered = false, asks = 0, failures = 0;
-  const adviser = new RecoveryAdviser(bot, {}, { ...config, judge: async (...args) => { asks++; return advice(...args); },
+test('runGoal answers repeated failures with one question, whose recovery moves the adviser carries out, then verifies the retained objective (note 571)', async () => {
+  const { bot, goal, task } = fixture(); let recovered = false, judged = 0, failures = 0;
+  bot.findBlocks = () => [];
+  const adviser = new RecoveryAdviser(bot, {}, { ...config, judge: async (...args) => { judged++; return advice(...args); },
     execute: async () => { recovered = true; return true; } });
   const survival = { state: goal.survival, step: async () => {
     if (!recovered) { failures++; throw new Error('Cannot reach shelter'); }
     return false;
   } };
-  const result = await runGoal(bot, task, goal, { save() {} }, { survival, recoveryAdviser: adviser, maxSteps: 8 });
-  assert(result.ok); assert.equal(failures, 3); assert.equal(asks, 1);
+  // Jev, asked the stall's question with the failure, picks the recovery move offered among its answers.
+  const asked = [];
+  const decisionClient = { model: 'jev', systemOne: async ({ questions }) => {
+    const answers = {};
+    for (const [id, q] of Object.entries(questions)) { const keys = Object.keys(q.criteria || {}); asked.push(keys); answers[id] = { choice: keys.find(k => /^recover_/.test(k)) || keys[0], confidence: 0.9 }; }
+    return { answers };
+  } };
+  const result = await runGoal(bot, task, goal, { save() {} }, { survival, recoveryAdviser: adviser, decisionClient, maxSteps: 8 });
+  assert(result.ok); assert.equal(failures, 3);
+  assert.equal(judged, 0, 'the separate recovery question is not asked: one question answers a failure');
+  assert(asked.some(keys => keys.includes('recover_1')), 'the recovery move is among the stall question\'s answers');
+  assert.equal(goal.recoveryAdvice.history.at(-1).source, 'stall question');
   assert.equal(goal.item, 'pumpkin'); assert.equal(goal.count, 1); assert.equal(goal.status, 'complete');
 });
 

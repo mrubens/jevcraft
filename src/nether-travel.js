@@ -585,7 +585,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   const target = legTarget(bot, goal);
   if (target && typeof bot.blockAt === 'function') {
     const survey = surveyCrossing(bot, target.at, { cells: CROSS_STRETCH });
-    if (survey.cells && survey.gain >= 1 && !crossingResting(bot, goal, target.at)) answers.cross_toward = { description: crossingSays(survey, `${target.what}, ${Math.round(flat(target.at, bot.entity.position))} blocks off${Math.abs(target.at.y - bot.entity.position.y) >= 4 ? ` and ${Math.abs(Math.round(target.at.y - bot.entity.position.y))} blocks ${target.at.y > bot.entity.position.y ? 'up' : 'down'}` : ''}`),
+    if (survey.cells && survey.gain >= 1 && !crossingResting(bot, goal, target.at)) answers.cross_toward = { target: target.at, description: crossingSays(survey, `${target.what}, ${Math.round(flat(target.at, bot.entity.position))} blocks off${Math.abs(target.at.y - bot.entity.position.y) >= 4 ? ` and ${Math.abs(Math.round(target.at.y - bot.entity.position.y))} blocks ${target.at.y > bot.entity.position.y ? 'up' : 'down'}` : ''}`),
       run: async () => {
         // The leg goes on from where the crossing ends, not a new one.
         if (!target.portal && goal.fortressSearch && !goal.fortressSearch.target) goal.fortressSearch.target = { x: target.at.x, y: target.at.y, z: target.at.z };
@@ -595,7 +595,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
     // ground below is walkable and a way down is found (note 568).
     const down = !isSetAside(goal, 'floor_toward', floorKey(bot, target.at)) && actions.navigate ? floorWay(bot) : null;
     const floor = down && floorToward(bot, down, target.at);
-    if (floor && floor.floor >= FLOOR_WALKABLE) answers.floor_toward = { description: floorTowardSays(down, floor, { what: target.what, target: target.at }),
+    if (floor && floor.floor >= FLOOR_WALKABLE) answers.floor_toward = { target: target.at, description: floorTowardSays(down, floor, { what: target.what, target: target.at }),
       run: async () => {
         if (!target.portal && goal.fortressSearch && !goal.fortressSearch.target) goal.fortressSearch.target = { x: target.at.x, y: down.y, z: target.at.z };
         await walkFloorToward(bot, task, goal, save, target.at, down, actions.navigate);

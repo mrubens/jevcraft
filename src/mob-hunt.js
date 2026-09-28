@@ -1337,12 +1337,12 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   if (about.length && !(spots[0] && spots[0].spot.at > Date.now() - 60000 && Math.hypot(spots[0].spot.x - about[0].entity.position.x, spots[0].spot.y - about[0].entity.position.y, spots[0].spot.z - about[0].entity.position.z) <= 16)) {
     const b = about[0], p = b.entity.position.floored(), ended = state.goToEnded?.blazes_about;
     options.go_to_blazes_about = { description: `Go to the blazes about now: ${blazesAboutSays(about)}. The hunt takes each one as it comes into view within its reach. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at blazes about ended: ${ended.why}.` : ''}`,
-      run: () => { state.goTo = { x: p.x, y: p.y, z: p.z, kind: 'blazes_about', since: Date.now() }; save(); return 'goto'; } };
+      target: { x: p.x, y: p.y, z: p.z }, run: () => { state.goTo = { x: p.x, y: p.y, z: p.z, kind: 'blazes_about', since: Date.now() }; save(); return 'goto'; } };
   }
   if (spots.length) {
     const best = spots[0], s = best.spot, ended = state.goToEnded?.blazes;
     options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
-      run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', since: Date.now() }; save(); return 'goto'; } };
+      target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', since: Date.now() }; save(); return 'goto'; } };
   }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
   if (short && actions.mineAt && actions.navigate) {
@@ -1361,7 +1361,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // and the stall's own question takes it from there.
   const left = waysLeftSays(state, here);
   if (!Object.keys(options).length) throw new Error(`Every leg from here ended at once and rests: ${resting.join('; ')}${left ? `; and the ways Jev left: ${left.join('; ')}` : ''}`);
-  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
   const facts = { ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
@@ -1655,7 +1655,7 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   if (!pick) {
     const tree = Object.fromEntries(Object.entries(options).map(([key, o]) => [key, { description: o.description, run: o.run }]));
     const decision = await decide('fortress_approach', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
-      context: { failed: approach.failed.map(f => f.choice) } });
+      context: { failed: approach.failed.map(f => f.choice) }, target: found });
     if (decision.stale) return;
     pick = decision.path.at(-1);
     approach.choice = pick; approach.until = Date.now() + APPROACH_HOLD_MS; save();
@@ -1871,7 +1871,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
       others[`unwalked_${i + 1}`] = { description: `Go to the fortress's unwalked floors seen ${g.off} blocks off${dy}, at (${g.at[0]}, ${g.at[1] + 1}, ${g.at[2]}): ${g.cells} floor${g.cells === 1 ? '' : 's'} seen there, ${g.open} of them running on into unseen space${more}; no floor seen joins them to where the bot stands` +
         `${across.way ? `: the way across along the ground is ${across.says}` : gap ? `: no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to (${gap.from[0]}, ${gap.from[1] + 1}, ${gap.from[2]}), between them ${gap.says}${gap.dy ? `, ${Math.abs(gap.dy)} ${gap.dy > 0 ? 'up' : 'down'}` : ''}` : ''}. ` +
         `The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: covering the lava, digging through the rock, a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
-        run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, keys: groups.map(p => p.key), since: Date.now() }; save(); return 'goto'; } };
+        target: { x: g.at[0], y: g.at[1] + 1, z: g.at[2] }, run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, keys: groups.map(p => p.key), since: Date.now() }; save(); return 'goto'; } };
     });
     const patrol = planned.patrol.length ? { key: 'stay_in_fortress',
       description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.`,

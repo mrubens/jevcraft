@@ -5,7 +5,7 @@ const { define, firstOption } = require('./index');
 const { endDecisionInstructions } = require('./end-state');
 
 define({
-  id: 'hunt_target', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true,
+  id: 'hunt_target', area: 'combat', parent: 'rung_progress', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true,
   question: 'The request needs a mob\'s drop: which observed mob should the bot fight now, or leave them for now?',
   trigger: 'A mob hunt step with at least one candidate in view that is reachable and isolated, or on a blaze hunt a blaze within twenty-four, in sight or heard through the walls, and a stand to take them from, the bot on ground it can fight from (dry, not on a one-wide span, air to breathe). A blaze whose every way in the open ends within a fireball\'s push of lava or a deep drop is not offered to fight in the open (notFoughtInTheOpen in the state).',
   source: 'src/mob-hunt.js (huntObserved, fitness, fitnessSays)',
@@ -29,7 +29,7 @@ define({
 // stone sword planned iron ore it could not dig there, 1,130 times in
 // twenty-five minutes (mid-227-r-nether-1, note 476).
 define({
-  id: 'combat_kit', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'combat_kit', area: 'combat', parent: 'rung_progress', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Pieces of the combat kit (iron-or-better sword, helmet, chestplate, leggings, boots, a shield) are missing: go on with what is carried, make them here first, or go back to the Overworld for them?',
   trigger: 'Before a hunt of a mob that fights back, or the crossing into the Nether or the End, with a piece of the kit neither carried nor set aside, and more than one way on; held ten minutes while the same options stand.',
   source: 'src/mob-hunt.js (prepareCombatGear, kitChoice, kitPieces)',
@@ -56,7 +56,7 @@ function endFallback(safe) {
 }
 
 define({
-  id: 'dragon_fight', area: 'endgame', kind: 'end', primitive: 'choice', stakes: 'high', tree: true,
+  id: 'dragon_fight', area: 'endgame', parent: null, kind: 'end', primitive: 'choice', stakes: 'high', tree: true,
   question: 'In the Ender Dragon fight, what is the most useful action now?',
   trigger: 'Each step of the dragon fight in the End.',
   source: 'src/end-combat.js (fightEndStep)',

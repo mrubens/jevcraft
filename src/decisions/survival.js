@@ -21,7 +21,7 @@ const FOOD_OPTIONS = [
 ];
 
 define({
-  id: 'survival_priority', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
+  id: 'survival_priority', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'What should the bot handle next: the player\'s request, sleep, a shelter, a night hunt, the valuables to the chest, or food (and which food)?',
   trigger: 'Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.',
   source: 'src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)',
@@ -49,7 +49,7 @@ define({
 
 // How the night is sheltered, once a shelter is the answer.
 define({
-  id: 'shelter_method', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'shelter_method', area: 'survival', parent: 'survival_priority', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'A shelter for the night: the saved one, a room at a site, a pocket here, a shaft pocket, a mine, or the carried bed in a nook dug for it?',
   trigger: 'When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).',
   source: 'src/survival.js (refugeStep)',
@@ -69,7 +69,7 @@ define({
 
 // Sealed in a pocket: stay, leave, go to bed, open on a watcher, or mine.
 define({
-  id: 'pocket_next', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'pocket_next', area: 'survival', parent: 'survival_priority', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Sealed in a pocket: stay, leave, go out for food, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a spawner, a creeper, the mob at the wall or the blazes about, mine the night away, hunt mobs for their drops, or take the valuables to the chest?',
   trigger: 'Each survival step inside a sealed pocket, unless a mob is inside or at arm\'s length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.',
   source: 'src/survival.js (stepOnce: the pocket)',
@@ -98,7 +98,7 @@ define({
 
 // The night mine's next target.
 define({
-  id: 'night_mine_target', area: 'survival', kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'night_mine_target', area: 'survival', parent: 'survival_priority', kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Mining through the night: which ore next, or a branch deeper?',
   trigger: 'Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near.',
   source: 'src/survival.js (nightMine, nightTarget)',
@@ -114,7 +114,7 @@ define({
 
 // At home before bedtime: a chore, or wait for the bed.
 define({
-  id: 'evening_chore', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'evening_chore', area: 'survival', parent: 'survival_priority', kind: 'survival', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Home before bedtime: which chore now (the stash, the wheat, the farm, the cows, the plot), or wait for the bed?',
   trigger: 'At home within six blocks of the bed, from the walk-home hour until bedtime, with a chore on offer; waiting, once chosen, holds until a new chore appears.',
   source: 'src/survival.js (step), src/home-base.js (homeChores), src/home-stash.js (stashChores)',
@@ -135,7 +135,7 @@ define({
 
 // A shooter in view and a bow in the pack: shoot, retreat or dig in.
 define({
-  id: 'ranged_response', area: 'combat', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
+  id: 'ranged_response', area: 'combat', parent: 'survival_priority', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'A mob that shoots is in clear view at bow range: shoot it, run for cover, or dig in?',
   trigger: 'A shooting mob is in clear view at bow range, a bow and arrows are carried, health is eight or more and no melee mob is within three blocks.',
   source: 'src/survival.js (rangedChoice)',
@@ -156,7 +156,7 @@ define({
 // stanceStep). Jev's pick stands, sure or not; the rules answer only when
 // Jev cannot be reached, or with JEV_ENCOUNTERS=0.
 define({
-  id: 'encounter_stance', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
+  id: 'encounter_stance', area: 'combat', parent: 'survival_priority', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'Hostile mobs are near the bot: fight here, go up, step out of the shooters\' line, block a creeper\'s line, dig into the wall, dig down, seal in, run, eat, shoot, strike a ghast\'s fireball back, charge the shooters, dance with the creeper, or leave them be and keep working?',
   trigger: 'An encounter (a threat the survival step answers, a mob at arm\'s length among them, in a sealed pocket too, and a hurt beside a deep drop while the hunt waits to heal), asked before anything is done about it while no stance holds: the swing at arm\'s length is part of the stance chosen, the step off a ledge is fight_from_footing, the hold on a span is hold_on_span, and the shield at shots is shield_policy (the code does these first only when Jev cannot be reached); with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it); a stance that hid the bot from the shooters (out_of_sight, nook) is asked again once a shooter has a line to where it hid, or the bot is off that spot; out_of_sight, nook and take_cover are asked again once a shooter they were chosen against lands a hit. A stance that failed stays on offer, its option saying how long ago and how it failed here. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.',
   source: 'src/survival.js (stanceOptions)',
@@ -203,7 +203,7 @@ module.exports = { safetyOrder, FOOD_OPTIONS };
 // from where the bot stands, each with what the code works out about it.
 // A prototype, run on replays of the traps that stalled trials 32 and 33.
 define({
-  id: 'unstuck_move', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'unstuck_move', area: 'survival', parent: 'stillness_detour', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?',
   trigger: 'A stall while the bot is in water, or under cover on the way up (the survival layer\'s stall, or the work stall\'s work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing.',
   source: 'src/unstuck.js (localMoves)',
@@ -220,7 +220,7 @@ define({
 // mid-243-ab stood an hour on its own tower twenty over the canopy, every
 // walk "no route", and was never asked how to come down.
 define({
-  id: 'way_down', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'way_down', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'On a top with no way down at a walk: dig down through the column, ride a poured waterfall down, or step off a side?',
   trigger: 'A walk to somewhere off the top (not on it, nor a place just above it) from a top whose every side falls more than three blocks, with no mob at hand; asked again from wherever the way chosen leaves the bot while it is still on a top, up to four times a walk.',
   source: 'src/way-down.js (perchOf, waysDown, comeDownFirst); asked from src/skills.js navigate',
@@ -238,7 +238,7 @@ define({
 // climbing, three digs a block of height, and went on by hand at over
 // twenty seconds a stair twice when the last pickaxe wore out on the way.
 define({
-  id: 'climb_out', area: 'survival', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'climb_out', area: 'survival', parent: 'surface_trip', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Climbing out of the mine by digging: a staircase toward open ground, straight up the column overhead, or a span across open cave toward the way up?',
   trigger: 'A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, a way not offered before is open, the column would not rise, or a span has been laid.',
   source: 'src/surface.js (returnToSurface, chooseClimb, climbOptions)',
@@ -259,7 +259,7 @@ define({
 // valuables walked home (the decision review, 2026-09-26). One question now,
 // every item said with what is carried against what the code would take.
 define({
-  id: 'crossing_kit', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'crossing_kit', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?',
   trigger: 'In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take or valuables carried that could be left; held until what is on offer changes or for ten working minutes.',
   source: 'src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)',
@@ -286,7 +286,7 @@ define({
 // twenty-five minutes, and the set-aside the loop made was never read
 // (note 476).
 define({
-  id: 'rung_elsewhere', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'rung_elsewhere', area: 'strategy', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The step the game needs next cannot be done in this dimension: go where its sources are, or go on with what the ladder has next here?',
   trigger: 'On the game ladder, a step whose plan from here needs a block found only in another dimension, or a step set aside for that.',
   source: 'src/game-progress.js (elsewhereStep, nextGameStage)',
@@ -304,7 +304,7 @@ define({
 // for one log for a spare pickaxe's table, 100 of its 180 minutes on
 // climbs nothing asked about (note 511).
 define({
-  id: 'surface_trip', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'surface_trip', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The step in hand wants the surface and the bot is underground: climb to open sky for it, leave the step for now and go on down here with the ladder\'s next one, dig the ore in view first with the uses the climb does not need, or, for a portal site, dig one out of the rock here?',
   trigger: 'Underground in the Overworld, the work\'s step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with (the rungs after it that want the same climb are left with it), or for a portal site with one that can be dug out here; asked when the climb would begin, and held to the top once Jev chose it (a climb made with nothing else on offer holds nothing and is looked at again; wood chosen at upkeep is its climb chosen) (note 543).',
   source: 'src/work.js (surfaceTrip), src/surface.js (tripCost), src/game-progress.js (nextGameStage)',
@@ -323,7 +323,7 @@ define({
 // back to the drowned that had just killed it, and mid-231-b died four
 // times in two and a half minutes going back (2026-09-26).
 define({
-  id: 'corpse_run', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'corpse_run', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Go back for what the last death dropped, or leave it and go on?',
   trigger: 'After a death whose drops are worth fetching (what was worn and in the off hand among them) and still there, once the bot is in their dimension, whatever it wears; asked once a death. With no answer, it goes only with the kit worn (in the Nether or below sea level) or by day (note 559).',
   source: 'src/corpse-run.js (corpseRunStep)',
@@ -339,7 +339,7 @@ define({
 // breath. They were reflexes, one way out taken by rule; the ways are Jev's
 // now (the user, 2026-09-28: "Ask Jev"), the old order the fallback.
 define({
-  id: 'body_way', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
+  id: 'body_way', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
   question: 'The body is in danger of its own (in lava, alight or in fire, the head in a block, out of breath under water): which way out, now?',
   trigger: 'The moment a step meets the condition (the survival step for lava and burning, the vitals step for fire, a head in a block and the breath), with two or more ways out (one is taken without asking); asked again each time the step meets it, unless burning was chosen to be left to burn out, which holds until it could have burned out or health falls four more.',
   source: 'src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, headWays, airWays)',
@@ -373,7 +373,7 @@ define({
 // shield's own quarter second to rise: the shot itself cannot be a
 // question. What to do about shots while shooters are about can.
 define({
-  id: 'shield_policy', area: 'combat', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'shield_policy', area: 'combat', parent: 'encounter_stance', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Shooters can hit the bot and a shield is carried: raise the shield at each shot on its way, or leave it down and keep on?',
   trigger: 'In an encounter (the survival step\'s answer to a threat), a shield in the off hand and a shooter in sight or a shot on its way, with no choice standing for these shooters; held until a shooter not counted comes, health falls four, or a minute.',
   source: 'src/survival.js (shieldPolicy), src/projectile-guard.js (deflect)',
@@ -392,7 +392,7 @@ define({
 // fell through to the work at 0.9 health because the survival plan had
 // failed and returned false (notes 465, 466): now it is a claim like any.
 define({
-  id: 'turn_priority', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
+  id: 'turn_priority', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
   question: 'Which layer has the bot\'s turn now: survival, the meal and breath, the hunt, or the work?',
   trigger: 'When two or more layers claim the turn and none of them is the body\'s own danger (lava, fire, a head in a block, the breath: that layer\'s step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.',
   source: 'src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js',

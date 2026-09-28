@@ -300,21 +300,26 @@ function airWatch(bot, now = Date.now()) {
 
 function unwatchStalls(bot) { if (bot._stalls?.timer) { clearInterval(bot._stalls.timer); delete bot._stalls.timer; } }
 
-function raise(bot, goal, seen, now = Date.now(), because = null) {
+function raise(bot, goal, seen, now = Date.now(), because = null, extra = {}) {
   const { record: r, action } = seen;
+  // An escalation to a question above is not the action standing still:
+  // the question above is asked, the action is not refused nor struck
+  // (tried.js).
+  const above = !!extra.escalated?.to && extra.escalated.to !== 'rung_progress';
   r.idle = 0; r.blocks = {};
-  r.strikes = [...r.strikes.filter(t => now - t < MEMORY_MS), now];
+  r.strikes = [...r.strikes.filter(t => now - t < MEMORY_MS), ...(above ? [] : [now])];
   const why = because || `${Math.round(STALL_MS / 1000)} seconds on ${action.key.replace(/^\w+:/, '').replaceAll('_', ' ')} without getting anywhere`;
   const { setAside } = require('./progress');
-  setAside(goal, 'act', action.key, why, MEMORY_MS);
+  if (!above) setAside(goal, 'act', action.key, why, MEMORY_MS);
   // A flip is not a wait: a hold that trades turns with another step is
   // refused as well, for a while. dig_in, a hold, traded turns with the
   // way back to the surface twenty-three times in mid-205-c, its lid placed
   // and dug out again every second and a half, and five strikes against it
   // changed nothing (2026-09-26).
   if (because && FLIPPING.test(because)) setAside(goal, 'flip', action.key, why, FLIP_REST_MS);
-  bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now, ...(action.blocker ? { blocker: action.blocker } : {}) };
-  console.log(`[stall] ${action.key}: strike ${r.strikes.length} (${why})`);
+  bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now, ...(action.blocker ? { blocker: action.blocker } : {}), ...extra };
+  if (extra.escalated) console.log(`[escalate] ${String(extra.escalated.from).replaceAll('_', ' ')} -> ${String(extra.escalated.to || 'the stall question').replaceAll('_', ' ')}: ${why}`);
+  else console.log(`[stall] ${action.key}: strike ${r.strikes.length} (${why})`);
   return bot._stalls.stall;
 }
 
@@ -322,11 +327,11 @@ function raise(bot, goal, seen, now = Date.now(), because = null) {
 // whose same answer to the same facts came back at once, again and again,
 // with nothing coming of it (decisions/repeats.js, note 560). Answered by the
 // loop as any stall is: another way, a detour, the rung left for later.
-function raiseFor(bot, goal, why, now = Date.now()) {
+function raiseFor(bot, goal, why, now = Date.now(), extra = {}) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
   const action = actionOf(goal, now);
   const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
-  return raise(bot, goal, { record, action }, now, why);
+  return raise(bot, goal, { record, action }, now, why, extra);
 }
 
 // Two steps handing the turn back and forth is a stall however busy each

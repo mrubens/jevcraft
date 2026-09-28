@@ -39,6 +39,10 @@
 //   unreachable    for a batched question, what happens when Jev cannot be
 //                  reached (a tree's is its fallback)
 //   batch          the batch a question rides in, when it rides in one
+//   parent         for a question about playing the game, the question
+//                  asked next up when this one has nothing left to try:
+//                  step, way (fortress_approach), plan (fortress_leg,
+//                  portal_way), rung (rung_progress); null where none is
 //
 // and every tree decision goes through decide() below, which applies the
 // definition. Batched questions are asked with ask() and judged with
@@ -47,6 +51,7 @@ const { decideTree, announceFallback, firstOption } = require('./tree');
 const { checkAir } = require('../vitals');
 const { stage } = require('../typesafe');
 const repeats = require('./repeats');
+const tried = require('../tried');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -71,6 +76,12 @@ function define(spec) {
   if (!spec.source) problems.push('a source');
   if (spec.tree && !(Array.isArray(spec.options) && spec.options.length && spec.options.every(o => (o.key || o.pattern) && o.label && o.when))) problems.push('an option catalogue ({ key or pattern, label, when })');
   if (!spec.tree && !spec.unreachable) problems.push('an unreachable description');
+  // The question asked next up when this one has nothing left to try (every
+  // option resting in the ledger), its same answer is held, or the step it
+  // chose keeps failing: step, way, plan, rung (tried.js, note 571). null
+  // where there is none above: the stall question takes it as before.
+  if (spec.tree && GAMEPLAY_AREAS.has(spec.area) && !Object.hasOwn(spec, 'parent')) problems.push('a parent (the question asked when this one has nothing left to try), or parent: null');
+  if (spec.parent != null && (typeof spec.parent !== 'string' || spec.parent === spec.id)) problems.push('a parent that is another question\'s id');
   if (problems.length) throw new Error(`Decision ${spec.id || '(unnamed)'} needs ${problems.join(', ')}`);
   const frozen = Object.freeze({ ...spec });
   QUESTIONS.set(spec.id, frozen);
@@ -136,13 +147,14 @@ const CLOCK = 'runClock is the run so far: minutes played toward the goal, when 
 const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
 const HEALING = 'healing is the bot\'s health and hunger, whether health comes back, the food carried by kind (the last resort with what it may cost), the nearest food known, the time to daylight, and what standing still costs.';
 const AGAIN = 'sameAnswerAgain says what this question was answered last with these same facts, and that nothing came of it; lastAnswersCameToNothing, the last answers to it in a row that each came back within seconds with nothing coming of them, whatever the facts said between; answersThatCameToNothing, the answers held as failed in the last two minutes, and why. The same answer again seldom ends differently.';
+const LEDGER = 'An option tried from about here lately says so, how often and how it ended; waysResting are the options left out because each was tried from here and came to nothing twice (or was held), and when they come back; whatFailedBelow is what the question below this one tried and why it ended, which brought this question. The same way again seldom ends differently.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '');
   return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
@@ -267,6 +279,29 @@ function waitingByChoice(goal, id, now = Date.now()) {
   return HOLDS.has(goal?.step?.action);
 }
 
+// Not in the ledger: the routing between the layers, asked every turn.
+const UNLEDGERED = new Set(['turn_priority']);
+// Said, never left out nor escalated: a stance against mobs about, the
+// body's way out of the lava or the fire, the shield (note 521: a failed
+// stance stays on offer with its failure said; Jev weighs it).
+const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shield_policy', 'ranged_response']);
+// The tree as offered, less what the ledger left out, without its words.
+function plainOf(tree, original) { return Object.fromEntries(Object.keys(tree).map(k => [k, original[k] || tree[k]])); }
+// To the question above (define's `parent`), with this one's failure said:
+// thrown as a stall held on the bot, so a step that swallows it meets it
+// again at its next check, and the loop takes it (work.js runGoal): a
+// parent that is a plan's question is asked by its step on the next pass;
+// the rung's question is asked at once (answerStall).
+function parentOf(id) { try { return question(id).parent || null; } catch (_) { return null; } }
+function escalateFrom(bot, goal, spec, why) {
+  const { to, says } = tried.escalate(goal, { from: spec.id, to: spec.parent || null, why, parentOf });
+  // The answer above that led here came to this.
+  if (spec.parent) tried.markBlocked(tried.latestOf(goal, spec.parent), says);
+  if (to && to !== spec.parent) tried.markBlocked(tried.latestOf(goal, to), says);
+  const { raiseFor, Stalled } = require('../stillness');
+  throw new Stalled(raiseFor(bot, goal, says, Date.now(), { escalated: { from: spec.id, to, says } }));
+}
+
 class NoSafeDefault extends Error {
   constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
 }
@@ -276,7 +311,7 @@ class NoSafeDefault extends Error {
 // sent it to the fallback. A single feasible leaf is taken without asking.
 // watchAir false: the question is about the breath or the lava itself
 // (body_way), which checkAir would stop at once.
-async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true }) {
+async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null }) {
   const spec = question(id);
   // The question's stages, from here (queued) to its record, each as
   // milliseconds since: asked (the turn taken), the client's sent, headers,
@@ -284,16 +319,33 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // while it is out, for the flight frames; on the decision's record after.
   const trace = { id, t0: performance.now(), at: new Date().toISOString(), stages: [{ stage: 'queued', ms: 0 }] };
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  const original = tree;
   // One way: taken and said, not asked. A question with one option was
   // recorded as asked, took the turn and stood in the flight record as a
   // decision: mid-242-aa's body_way "asked" burn_out forty times in fifteen
   // minutes, alight in the Nether with nothing else to do (note 560).
+  // What has been tried (tried.js): the answer before this one has ended,
+  // since it is being asked again; the options read against the ledger,
+  // each blocked try said on its option, those resting left out while
+  // another is on offer; with every option resting, the question above is
+  // asked instead, with this one's failure said (escalate).
+  const ledgered = !!bot && !!goal && GAMEPLAY_AREAS.has(spec.area) && !UNLEDGERED.has(id);
+  let resting = null, below = null;
+  if (ledgered) {
+    tried.settle(bot, goal, { q: id });
+    const read = tried.read(bot, goal, id, tree, { target, sayOnly: SAY_ONLY.has(id) });
+    if (read.allResting && spec.parent !== undefined && spec.parent !== null) escalateFrom(bot, goal, spec, `every way it had from here rests: ${read.resting.join('; ')}`);
+    tree = read.tree;
+    if (read.resting.length) resting = read.resting;
+    below = tried.escalationsFor(goal, id);
+  }
   const one = oneWay(tree);
   if (one) {
     sayOnce(bot, id, one.path);
     const decision = { ...one, id, only: true };
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
+    if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: waitingByChoice(goal, id) });
     return decision;
   }
   // How the bot died lately, with every question about playing the game:
@@ -337,7 +389,9 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // said in the facts; held as failed when it came back at once twice
   // running, and the step's stall path takes it from here.
   const tracked = !!bot && !!goal && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area);
-  const print = tracked ? repeats.fingerprint(state, tree) : null;
+  // The facts as they were offered, without the ledger's words on them: a
+  // try said on an option is not new facts (repeats.js).
+  const print = tracked ? repeats.fingerprint(state, plainOf(tree, original)) : null;
   if (tracked) {
     const waiting = waitingByChoice(goal, id);
     const again = repeats.before(bot, goal, id, print, { waiting });
@@ -349,13 +403,18 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       const why = `${id.replaceAll('_', ' ')}: ${holding.says}`;
       repeats.held(bot, id, holding.says);
       console.log(`[repeat] ${why}`);
-      const { raiseFor, Stalled } = require('../stillness');
-      throw new Stalled(raiseFor(bot, goal, why));
+      // Held, the answers rest from here (the ledger), and the question
+      // above is asked with this failure said: not the same question, and
+      // not a detour that walks eight blocks and comes back to it (note 571).
+      const methods = holding.run ? [holding.run.choice] : holding.streak.map(s => s.choice);
+      if (ledgered) tried.hold(bot, goal, id, methods, holding.says, { target, targets: Object.fromEntries(methods.map(m => [m, tree[m]?.target])) });
+      escalateFrom(bot, goal, spec, holding.says);
     }
     const lately = repeats.heldSays(bot);
     const quickly = !again && quick ? quick.says : null;
     if (again || quickly || lately) state = { ...state, ...(again ? { sameAnswerAgain: again.says } : {}), ...(quickly ? { lastAnswersCameToNothing: quickly } : {}), ...(lately ? { answersThatCameToNothing: lately } : {}) };
   }
+  if (state && typeof state === 'object' && (resting || below)) state = { ...state, ...(resting ? { waysResting: resting } : {}), ...(below ? { whatFailedBelow: below } : {}) };
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
   // each question offers; test/decisions.test.js turns it back on).
   const offerNoneGood = process.env.JEV_NONE_GOOD !== '0' && !!client && GAMEPLAY_AREAS.has(spec.area) && Object.keys(tree).length >= 2 && !tree[NONE_GOOD_KEY];
@@ -417,6 +476,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
+  if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: waitingByChoice(goal, id) });
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');
@@ -465,7 +525,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

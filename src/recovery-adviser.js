@@ -107,6 +107,19 @@ class RecoveryAdviser {
       this.bot.emit?.('recovery_advice', record); return false;
     } finally { task.interruptCheck = previous; }
   }
+  // A move chosen as an answer to the stall's question (work.js answerStall,
+  // note 571): the plan this adviser carries out, as a pick of its own
+  // question was. One question answers a failure; this carries it out.
+  adopt(goal, save, option, context = null) {
+    const state = this.state(goal), now = Date.now();
+    const record = { signature: JSON.stringify([goal.lastError, goal.step?.action, goal.step?.item, goal.step?.drops]), at: now, status: 'planned', source: 'stall question',
+      objective: identity(goal), life: life(goal), dimension: this.bot.game.dimension, ...(context ? { context } : {}), steps: [structuredClone(option)] };
+    state.history.push(record); state.history = state.history.slice(-LIMITS.calls);
+    state.active = { historyAt: now, objective: record.objective, life: record.life, dimension: record.dimension,
+      steps: [structuredClone(option)], cursor: 0, attempts: 0, expiresAt: now + LIMITS.planMs, anchor: { ...this.bot.entity.position } };
+    save?.(); this.bot.emit?.('recovery_advice', record);
+    return true;
+  }
   finish(goal, save, outcome) {
     const state = this.state(goal), active = state.active;
     const record = state.history.find(h => h.at === active?.historyAt);
@@ -155,4 +168,4 @@ class RecoveryAdviser {
     }
   }
 }
-module.exports = { RecoveryAdviser, askJev, LIMITS };
+module.exports = { RecoveryAdviser, askJev, LIMITS, describeOption };

@@ -45,7 +45,7 @@ const IDLE_OPTIONS = [
 // made first for a cast. Held on a clock, as a rung is: re-asked every
 // twenty working minutes with the minutes and what they made.
 define({
-  id: 'portal_method', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'portal_method', area: 'work', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?',
   trigger: 'In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin\'s frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in), or when a frame with obsidian in it fails at its site (said with what is cast, the failures since the last block went in and why, and those a mob in the way caused, not counted).',
   source: 'src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)',
@@ -69,7 +69,7 @@ define({
 // its Overworld portal across water, threw "No way back" three times and
 // the run ended, with a lava pool known and a bucket carried (note 495).
 define({
-  id: 'portal_way', area: 'work', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'portal_way', area: 'work', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The portal the bot is making for cannot be reached from here: the walk, the boat and the staircase have failed. Make a portal here, climb to its height, go round another way, take the boat again, or other work until the staircase\'s rest ends?',
   trigger: 'On the way to a remembered portal or one in view (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests or stalls; asked once for each rest from each place (its eight-block area and height), the answer kept (said as every way resting when met again). A way chosen from a place that moved the bot under four blocks and no nearer is not offered from there again for five minutes in that rest, and is said (triedFromHereToNothing); with every way so tried, the way rests and is not asked.',
   source: 'src/work.js (walkToKnownPortal, portalWay, lineSays)',
@@ -91,7 +91,7 @@ define({
 // hunger seventeen with nothing to eat, by a rule in the hunt, unasked,
 // and came out into the night (note 495).
 define({
-  id: 'leave_nether', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'leave_nether', area: 'strategy', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Go back through the portal to the Overworld now, or stay in the Nether: the rods step taken up again, other work here until its rest ends, or going on without food?',
   trigger: 'In the Nether on the game ladder: the blaze rods step waits (set aside, not for its sources being elsewhere) and the ladder would go back; or a hunt short of fitness, hungry under eighteen with nothing to eat. The answer kept while its reason stands.',
   source: 'src/game-progress.js (leaveNetherStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)',
@@ -106,7 +106,7 @@ define({
 });
 
 define({
-  id: 'resource_source', area: 'resources', kind: 'source', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'resource_source', area: 'resources', parent: 'rung_progress', kind: 'source', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Which source (tree, vein, deposit) should the bot work for the resource the request needs?',
   trigger: 'An acquisition step needs a material and no chosen source is still being worked; a single feasible option is taken without asking.',
   source: 'src/work.js (executePlannedAcquisition), src/decision-options.js (resourceSources)',
@@ -121,7 +121,7 @@ define({
   fallback: firstOption,
 });
 define({
-  id: 'house_build_step', area: 'build', kind: 'build', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'house_build_step', area: 'build', parent: null, kind: 'build', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Which house-building step next: choose a site, gather materials, clear the inside, or place a block?',
   trigger: 'Each step of a small-house request.',
   source: 'src/work.js (houseDecisionStep)',
@@ -140,7 +140,7 @@ define({
   fallback: firstOption,
 });
 define({
-  id: 'idle_work', area: 'idle', kind: 'idle', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'idle_work', area: 'idle', parent: null, kind: 'idle', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'With no request and shelter and food sufficient, how should the bot spend spare daylight?',
   trigger: 'Between player requests, by day, with health fourteen or more, hunger twelve or more and no threat.',
   source: 'src/work.js (idleOptions), src/home-base.js (homeChores)',
@@ -155,7 +155,7 @@ define({
 // 2026-09-26: twenty-odd options in one list, the first labelled the
 // ladder's).
 define({
-  id: 'win_strategy', area: 'strategy', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'win_strategy', area: 'strategy', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'On the way to beating the game, which of the open steps, the Nether now, or a side trip should the bot do next; and if a side trip, which?',
   trigger: 'Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder\'s next step or the top-level choices change (a side trip coming into view among others does not), or ten minutes pass. A side trip runs once and then rests ten minutes.',
   source: 'src/strategy.js (strategyOptions, strategyTree, homeOption), src/game-progress.js (openRungs), src/work.js (sideTrips)',
@@ -189,12 +189,9 @@ define({
   instructions: workInstructions('On the way to beating the game, several things are open: steps toward the Nether, the Nether now, or a side trip off the way. Which should the bot do next? Each option says what it is for and what it takes; choose the one that serves the run best now (a chest that holds what a step is digging for, levels that should go on the sword before the fights, a step that has stalled).'),
   fallback: firstOption,
 });
-define({
-  id: 'stillness_detour', area: 'idle', kind: 'idle', primitive: 'choice', stakes: 'low', tree: true,
-  question: 'The work has got nowhere for forty-five seconds: keep at it another way, leave its rung for later, or do something useful from here for a few minutes?',
-  trigger: 'A stall (src/stillness.js): forty-five seconds on one action without new ground, a gain, a block changed or getting nearer, outside a permitted wait; a single option is taken without asking.',
-  source: 'src/work.js (answerStall, breakStillness), src/stillness.js (the rule)',
-  options: [
+// What a stall or a failure can be answered with (answerStall, breakStillness),
+// for the stall's question and the rung's.
+const STALL_OPTIONS = [
     { key: 'differently', label: 'keep at the stalled work another way', when: 'work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search', level: 'root' },
     { key: 'set_aside_rung', label: 'leave the stalled rung for thirty minutes', when: 'the stall is on a game-ladder rung that can wait', level: 'root' },
     { key: 'until_rest_ends', label: 'other work until the rest ends, the minutes said, a choice that holds', when: 'every way to the stalled work rests until a time (WaysResting); the same rest met again goes back to that work, not to the question (note 490)', level: 'root' },
@@ -208,7 +205,15 @@ define({
     { key: 'portal_here', label: 'build a portal where the bot stands and go through', when: 'in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried', level: 'root' },
     { key: 'keep_on', label: 'go on in the Nether without going back for food', when: 'in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes', level: 'root' },
     ...IDLE_OPTIONS.filter(o => o.key !== 'long_game').map(o => ({ ...o, when: `by day in the Overworld, and ${o.when}`, level: 'root' })),
-  ],
+    { key: 'again', label: 'try the failed step again as it was', when: 'a step failed again and again (persist), and it does not rest in the ledger from here (src/tried.js): tried twice from here and come to nothing, it rests five minutes; only this answer puts the failed step back in hand', level: 'root' },
+    { pattern: 'recover_[0-9]+', label: 'a recovery move the code checked (gather footing, the surface, another standing spot, another source, down off a pillar)', when: 'a step failed again and again, and src/recovery-options.js found the move feasible from here (it was the separate recovery_action question, folded in here in note 571)', dynamic: true, level: 'root' },
+];
+define({
+  id: 'stillness_detour', area: 'idle', parent: 'rung_progress', kind: 'idle', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'The work has got nowhere for forty-five seconds: keep at it another way, leave its rung for later, or do something useful from here for a few minutes?',
+  trigger: 'A stall (src/stillness.js): forty-five seconds on one action without new ground, a gain, a block changed or getting nearer, outside a permitted wait; a single option is taken without asking.',
+  source: 'src/work.js (answerStall, breakStillness), src/stillness.js (the rule)',
+  options: STALL_OPTIONS,
   instructions: workInstructions('The bot\'s work has stopped getting anywhere. `stalled` says what stalled and how many times in ten minutes. Choose: keep at it another way, leave its rung for later, or something useful from here for a few minutes, after which the stalled work gets its turn again. The same answer twice running seldom unsticks it.'),
   // Without Jev, the order the rule kept: another way first, the rung left
   // at the third stall, a detour otherwise.
@@ -220,12 +225,31 @@ define({
   },
 });
 
+// The rung's own question (note 571): ten working minutes on a rung with
+// no new best (more of what it is for, a milestone, nearer its target, new
+// country), or a way below that had nothing left to try (tried.js
+// escalate). What has been tried is said from the ledger; the answers are
+// the stall's, with keeping at it and setting the rung aside.
+define({
+  id: 'rung_progress', area: 'strategy', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Ten minutes on this rung with no new best, or every way below it spent from here: keep at it with the ways left, change the plan, or set the rung aside?',
+  trigger: 'The rung\'s budget (src/tried.js watchRung): ten working minutes, waits not counted, without more of the rung\'s item, a milestone, a new best distance to its target or sixteen blocks of new country; or an escalation from a question below whose every way rests from here, or whose same answer was held (src/decisions/index.js escalateFrom).',
+  source: 'src/work.js (answerStall with the rung\'s stall), src/tried.js (the budget and the ledger)',
+  options: [
+    { key: 'keep_at_it', label: 'keep at the rung with the ways not yet tried here', when: 'always: the ledger\'s tries are said with it, and the budget starts again', level: 'root' },
+    ...STALL_OPTIONS,
+  ],
+  instructions: workInstructions('The bot has worked on this rung of the game for ten minutes without getting any nearer it (no more of what it is for, no milestone, no nearer its target, no new country), or every way it had from here has been tried and come to nothing. `rung` says what the rung is and its best so far; `tried` is what has been tried lately, each way with how often and how it ended; `whatFailedBelow` is the failure that brought this question. Choose: keep at it with the ways left, change the plan (another way at it, or a way the ledger has not tried), or set the rung aside for now. The same ways again seldom end differently.'),
+  // Without Jev: the rung aside where it may wait, another way otherwise.
+  fallback: (children) => children.set_aside_rung ? 'set_aside_rung' : children.differently ? 'differently' : Object.keys(children).find(k => k !== 'keep_at_it') || Object.keys(children)[0],
+});
+
 // Recovery after repeated failure: Jev picks among bounded options the code
 // already checked. There is no generative second opinion.
 define({
   id: 'recovery_action', area: 'recovery', kind: 'recovery', primitive: 'choice', stakes: 'medium',
   question: 'After repeated failure at a step, which offered recovery action is most likely to unblock the request?',
-  trigger: 'The same step has failed three times, or a failure was Blocked.',
+  trigger: 'Only when a caller asks the recovery adviser directly (RecoveryAdviser.suggest). The loop no longer asks it: a failure goes to one question, the stall\'s (work.js persist, answerStall), whose recover_ options are these same moves (note 571).',
   source: 'src/recovery-options.js (the options), src/recovery-adviser.js (askJev)',
   unreachable: 'the failure goes on to persist (a clean slate and a backoff)',
   gate: { threshold: 0.6, below: 'caller', why: 'unsure, or none, nothing is done from the advice' },
@@ -237,7 +261,7 @@ define({
 
 // How much of a source to take, once the step has what it asked for.
 define({
-  id: 'gather_more', area: 'resources', kind: 'source', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'gather_more', area: 'resources', parent: 'rung_progress', kind: 'source', primitive: 'choice', stakes: 'low', tree: true,
   question: 'The step has what it asked for and more of the same is within reach: keep taking it, or stop?',
   trigger: 'Once per source, when a mining step has met its count and more of the trunk, vein or stone face is within six blocks, up to a cap (eight logs, thirty-two of an ore, two dozen stone).',
   source: 'src/work.js (moreOfSource)',
@@ -251,7 +275,7 @@ define({
 
 // Where the home base goes.
 define({
-  id: 'home_site', area: 'home', kind: 'home', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'home_site', area: 'home', parent: null, kind: 'home', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Of the sites found for the home base, which should it be?',
   trigger: 'The home rung\'s site step, when two or more sites fit the layout (up to four, eight blocks apart, the level ones first).',
   source: 'src/home-base.js (chooseBaseSite, pickHomeSite)',
@@ -264,7 +288,7 @@ define({
 
 // Full pockets: which stack goes.
 define({
-  id: 'inventory_drop', area: 'resources', kind: 'inventory', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'inventory_drop', area: 'resources', parent: null, kind: 'inventory', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The pockets are full and something needs room: which stack is dropped, or none?',
   trigger: 'An item the work wants (a drop, a craft, a smelt, food) has no slot; asked up to three times until there is room.',
   source: 'src/inventory-tidy.js (makeRoom, jevMakesRoom)',
@@ -281,7 +305,7 @@ define({
 
 // While a furnace batch cooks.
 define({
-  id: 'while_cooking', area: 'resources', kind: 'smelting', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'while_cooking', area: 'resources', parent: null, kind: 'smelting', primitive: 'choice', stakes: 'low', tree: true,
   question: 'A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?',
   trigger: 'Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible.',
   source: 'src/work.js (smelt, whileCooking)',
@@ -297,7 +321,7 @@ define({
 
 // Dug into water or lava.
 define({
-  id: 'dug_into_liquid', area: 'resources', kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
+  id: 'dug_into_liquid', area: 'resources', parent: null, kind: 'mining', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Water or lava ran into a block the bot just dug: plug the gap, or carry on?',
   trigger: 'After a dig beside water or lava, when the liquid is seen in the dug cell, the bot is on dry ground, and a building block is carried.',
   source: 'src/work.js (dig, leakResponse)',
@@ -312,7 +336,7 @@ define({
 
 // Where to look for sheep, for a bed.
 define({
-  id: 'sheep_search', area: 'resources', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'sheep_search', area: 'resources', parent: 'rung_progress', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
   question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, or craft wool from string carried?',
   trigger: 'Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.',
   source: 'src/home-base.js (searchForSheep), src/exploration.js (biomeView)',
@@ -331,7 +355,7 @@ define({
 // the eight headings with the biomes that way, as far as the world is
 // loaded, and how often this search has gone that way already.
 define({
-  id: 'search_heading', area: 'resources', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'search_heading', area: 'resources', parent: 'rung_progress', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Searching for a resource with none in view: which way to head?',
   trigger: 'A surface search (logs, sand, clay and the like) that needs a new heading: at its start, when a leg is walked, or after three walks that got nowhere. The heading is held until then; the leg is up to 512 blocks.',
   source: 'src/work.js (explore), src/exploration.js (biomeRay)',
@@ -345,7 +369,7 @@ define({
 
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
-  id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?',
   trigger: 'Between work steps, when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs\' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).',
   source: 'src/work.js (upkeepStep)',
@@ -365,7 +389,7 @@ define({
 // Work within reach of sculk: mid-230-n made its obsidian four blocks over
 // a shrieker and the warden it called killed it (notes 412, 414).
 define({
-  id: 'sculk_work', area: 'work', kind: 'upkeep', primitive: 'choice', stakes: 'high', tree: true,
+  id: 'sculk_work', area: 'work', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'high', tree: true,
   ungated: 'Jev\'s pick is taken at any confidence: every answer is held only five minutes, so a close call is soon asked again, and the warden is not a rule code can weigh for it',
   question: 'The work is within reach of sculk (a sensor that hears the bot, or a shrieker that calls a warden): carry on as now, carry on crouched, or take the work out of its reach?',
   trigger: 'Between work steps in the Overworld, with Jev reachable, when the bot is within a sculk sensor\'s hearing (eight blocks) or sixteen blocks of a shrieker that can call a warden; once per patch, the answer held five minutes.',
@@ -403,7 +427,7 @@ define({
 });
 
 define({
-  id: 'trade_choice', area: 'resources', kind: 'trade', primitive: 'choice', stakes: 'low', tree: true,
+  id: 'trade_choice', area: 'resources', parent: 'rung_progress', kind: 'trade', primitive: 'choice', stakes: 'low', tree: true,
   question: 'At a village with the villagers\' offers read: which one trade to make?',
   trigger: 'A trade step (the idle trade option, or the pearl rung when a cleric\'s pearls are known) once the offers of the villagers in reach are read and at least one trade is feasible.',
   source: 'src/trading.js (tradeStep, tradeOptions)',

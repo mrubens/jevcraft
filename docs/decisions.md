@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-89 questions: 41 decision trees and 48 batched questions.
+90 questions: 42 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -29,6 +29,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; the safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -62,6 +63,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (refugeStep)
+- Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -82,6 +84,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (stepOnce: the pocket)
+- Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -117,6 +120,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (nightMine, nightTarget)
+- Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -134,6 +138,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (step), src/home-base.js (homeChores), src/home-stash.js (stashChores)
+- Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -156,6 +161,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/unstuck.js (localMoves)
+- Nothing left to try: asks `stillness_detour` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -172,6 +178,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/way-down.js (perchOf, waysDown, comeDownFirst); asked from src/skills.js navigate
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -188,6 +195,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/surface.js (returnToSurface, chooseClimb, climbOptions)
+- Nothing left to try: asks `surface_trip` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -204,6 +212,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/corpse-run.js (corpseRunStep)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -219,6 +228,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the code's old order answers only when Jev cannot be reached or has not answered in a second
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, headWays, airWays)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -247,6 +257,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -266,6 +277,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence; the health rule answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (rangedChoice)
+- Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -282,6 +294,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
 - Jev unreachable: stops: no safe default
 - Options built in: src/survival.js (stanceOptions)
+- Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -322,6 +335,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/survival.js (shieldPolicy), src/projectile-guard.js (deflect)
+- Nothing left to try: asks `encounter_stance` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -337,6 +351,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference, and the outage default is the same nearest target
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/mob-hunt.js (huntObserved, fitness, fitnessSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -355,6 +370,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/mob-hunt.js (prepareCombatGear, kitChoice, kitPieces)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -373,6 +389,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -396,6 +413,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/game-progress.js (elsewhereStep, nextGameStage)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -411,6 +429,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (surfaceTrip), src/surface.js (tripCost), src/game-progress.js (nextGameStage)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -428,6 +447,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/game-progress.js (leaveNetherStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -445,6 +465,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/strategy.js (strategyOptions, strategyTree, homeOption), src/game-progress.js (openRungs), src/work.js (sideTrips)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -474,6 +495,62 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `smelt_stock` | side_trip | smelt the raw ore carried into ingots | at any hour, eight or more raw iron or gold carried and the fuel for all of it |
 | `enchanting_table` | side_trip | make an enchanting table | no table known, two diamonds and three lapis carried, level five or more, obsidian carried or a diamond pickaxe, and gear unenchanted |
 
+### `rung_progress`
+
+**Ten minutes on this rung with no new best, or every way below it spent from here: keep at it with the ways left, change the plan, or set the rung aside?**
+
+- When: The rung's budget (src/tried.js watchRung): ten working minutes, waits not counted, without more of the rung's item, a milestone, a new best distance to its target or sixteen blocks of new country; or an escalation from a question below whose every way rests from here, or whose same answer was held (src/decisions/index.js escalateFrom).
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (answerStall with the rung's stall), src/tried.js (the budget and the ledger)
+- Nothing left to try: the stall's question, as before (nothing above it)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `keep_at_it` | root | keep at the rung with the ways not yet tried here | always: the ledger's tries are said with it, and the budget starts again |
+| `differently` | root | keep at the stalled work another way | work stalled (not idle time): a mine leaves this patch of the resource, anything else turns its search |
+| `set_aside_rung` | root | leave the stalled rung for thirty minutes | the stall is on a game-ladder rung that can wait |
+| `until_rest_ends` | root | other work until the rest ends, the minutes said, a choice that holds | every way to the stalled work rests until a time (WaysResting); the same rest met again goes back to that work, not to the question (note 490) |
+| `work_free` | root | work free of the terrain one move at a time | the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev's (unstuck_move) |
+| `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
+| `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
+| `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |
+| `cross_toward` | root | tunnel or bridge straight toward where the stalled Nether work was going | in the Nether, a target known (the portal back, the fortress leg, the tunnel's end), and the cells ahead at this height let it come nearer: rock with no lava behind it, open air or lava to lay the blocks carried over (src/nether-travel.js) |
+| `floor_toward` | root | go down to the floor below and walk a stretch of it toward where the stalled Nether work was going | in the Nether, a target known, ground four or more below under eight or more of the sixty-four columns round the bot, a way down to it found within thirty-two blocks, and eight or more cells of floor on the line toward the target; said with the way down, the floor on that line and the height back up (src/nether-travel.js) |
+| `hoglin_food` | root | hunt a hoglin for porkchops | in the Nether, hungry with nothing to eat or on the way back for food, and a hoglin in view or seen within 192 blocks |
+| `portal_here` | root | build a portal where the bot stands and go through | in the Nether on the way back (or hungry), ten obsidian, flint and steel or a fire charge, and three blocks for the lintel carried |
+| `keep_on` | root | go on in the Nether without going back for food | in the Nether, hungry with nothing to eat or on the way back for food; the trip back is left out for twenty minutes |
+| `cook_food` | root | cook the raw food carried | by day in the Overworld, and raw meat is carried |
+| `stone_tools` | root | make stone tools | by day in the Overworld, and a stone pickaxe, axe or sword is missing |
+| `stock_wood` | root | stock up to sixteen logs | by day in the Overworld, and fewer than sixteen logs are carried and a tree is in view |
+| `explore` | root | explore the nearest unexplored area | by day in the Overworld, and in the Overworld, with an unexplored area within 512 blocks of home |
+| `loot` | root | open the chests of a remembered structure | by day in the Overworld, and in the Overworld, with a ruined portal, dungeon, temple or mineshaft within 256 blocks whose chests are unopened |
+| `earn_xp` | root | smelt raw ore for experience | by day in the Overworld, and eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty |
+| `enchant` | root | enchant gear at the enchanting table | by day in the Overworld, and a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
+| `trial_chambers` | root | an expedition to the trial chambers | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed |
+| `tame_wolf` | root | tame a wolf | by day in the Overworld, and a wild adult wolf in view and bones carried, fewer than two tamed |
+| `breed_cows_here` | root | breed two cows in the field | by day in the Overworld, and two adult cows near and two wheat carried |
+| `breed_sheep` | root | breed two sheep | by day in the Overworld, and two adult sheep near and two wheat carried |
+| `breed_chickens` | root | breed two chickens | by day in the Overworld, and two adult chickens near and two seeds carried |
+| `fetch_cache` | root | fetch the things left in a field cache | by day in the Overworld, and a full field cache between 48 and 512 blocks away |
+| `cache_valuables` | root | leave the valuables in a chest here | by day in the Overworld, and in the Overworld, home's chest out of reach, valuables carried, and a chest or the wood for one |
+| `copper_armour` | root | make copper armour first | by day in the Overworld, and in the Overworld with a stone pickaxe or better and no armour worn or carried |
+| `travel_[a-z_]+` (pattern) | root | walk to a nearby biome | by day in the Overworld, and in the Overworld, another biome twenty-four or more blocks off (the nearest four), said with what it holds |
+| `deep_dark` | root | an expedition to the deep dark | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed, no warden rest, and no city already done |
+| `trade` | root | trade at a remembered village | by day in the Overworld, and a village is remembered within 256 blocks and emeralds or spare items to sell are carried |
+| `torches` | root | craft torches | by day in the Overworld, and coal is carried and fewer than eight torches |
+| `harvest_and_bake` | root | harvest the home plot and bake bread | by day in the Overworld, and wheat on the home plot is ripe |
+| `tend_farm` | root | tend the home plot | by day in the Overworld, and the home plot needs tilling, planting or a look |
+| `breed_cows` | root | breed the cows in the home pen | by day in the Overworld, and two adult cows are penned and wheat is carried |
+| `lure_cows` | root | lead loose cows into the home pen | by day in the Overworld, and the pen has fewer than two cows and cows are in view |
+| `fetch_cows` | root | walk to cows seen earlier and lead two back to the pen | by day in the Overworld, and the pen has fewer than two cows, none in view, wheat carried, and cows remembered within 160 blocks |
+| `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
+| `light_home` | root | put torches where monsters could spawn around home | by day in the Overworld, and the bed and the chest are down, ground around home is dark, and torches are carried or can be made |
+| `wall_home` | root | build a wall two blocks high round home, with a door by the bed | by day in the Overworld, and the bed and the chest are down and home is not walled yet |
+| `again` | root | try the failed step again as it was | a step failed again and again (persist), and it does not rest in the ledger from here (src/tried.js): tried twice from here and come to nothing, it rests five minutes; only this answer puts the failed step back in hand |
+| `recover_[0-9]+` (pattern) | root | a recovery move the code checked (gather footing, the surface, another standing spot, another source, down off a pillar) | a step failed again and again, and src/recovery-options.js found the move feasible from here (it was the separate recovery_action question, folded in here in note 571) |
+
 ## work
 
 ### `portal_method`
@@ -485,6 +562,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -507,6 +585,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (walkToKnownPortal, portalWay, lineSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -527,6 +606,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence: every answer is held only five minutes, so a close call is soon asked again, and the warden is not a rule code can weigh for it
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (sculkStep)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -545,6 +625,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (executePlannedAcquisition), src/decision-options.js (resourceSources)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -563,6 +644,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (moreOfSource)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -578,6 +660,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: dropped stacks lie where they fell and can be picked up again; the only-tool and block-reserve facts are said in each option
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/inventory-tidy.js (makeRoom, jevMakesRoom)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -594,6 +677,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (smelt, whileCooking)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -611,6 +695,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: a plug is one block, taken back up as easily; the choice is asked again at the next leak
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (dig, leakResponse)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -626,6 +711,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/home-base.js (searchForSheep), src/exploration.js (biomeView)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -644,6 +730,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (explore), src/exploration.js (biomeRay)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -658,6 +745,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (upkeepStep)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -697,6 +785,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/trading.js (tradeStep, tradeOptions)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -714,6 +803,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (houseDecisionStep)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -838,6 +928,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (idleOptions), src/home-base.js (homeChores)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -879,6 +970,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/work.js (answerStall, breakStillness), src/stillness.js (the rule)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -921,6 +1013,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `stock_stash` | root | put spares in the stash chest | by day in the Overworld, and the stash chest is within reach and spares are carried |
 | `light_home` | root | put torches where monsters could spawn around home | by day in the Overworld, and the bed and the chest are down, ground around home is dark, and torches are carried or can be made |
 | `wall_home` | root | build a wall two blocks high round home, with a door by the bed | by day in the Overworld, and the bed and the chest are down and home is not walled yet |
+| `again` | root | try the failed step again as it was | a step failed again and again (persist), and it does not rest in the ledger from here (src/tried.js): tried twice from here and come to nothing, it rests five minutes; only this answer puts the failed step back in hand |
+| `recover_[0-9]+` (pattern) | root | a recovery move the code checked (gather footing, the surface, another standing spot, another source, down off a pillar) | a step failed again and again, and src/recovery-options.js found the move feasible from here (it was the separate recovery_action question, folded in here in note 571) |
 
 ## recovery
 
@@ -928,7 +1022,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **After repeated failure at a step, which offered recovery action is most likely to unblock the request?**
 
-- When: The same step has failed three times, or a failure was Blocked.
+- When: Only when a caller asks the recovery adviser directly (RecoveryAdviser.suggest). The loop no longer asks it: a failure goes to one question, the stall's (work.js persist, answerStall), whose recover_ options are these same moves (note 571).
 - Batched question, choice; stakes medium; ledger kind `recovery`
 - Bar: 0.6: unsure, or none, nothing is done from the advice
 - Jev unreachable: the failure goes on to persist (a clean slate and a backoff)
@@ -945,6 +1039,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/home-base.js (chooseBaseSite, pickHomeSite)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -961,6 +1056,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: Jev's pick is taken at any confidence and asked again each step; the fixed order (out of danger, crystals, head, arrow, position) answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/end-combat.js (fightEndStep)
+- Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -980,6 +1076,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/stronghold.js (walkBearing)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -994,6 +1091,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/mob-hunt.js (fortressApproaches, approachFortress, crossingOptions), src/bridging.js (surveyCrossing, crossAlong), src/fortress-map.js (crossing), src/nether-travel.js (crossingSays)
+- Nothing left to try: asks `fortress_leg` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
@@ -1018,6 +1116,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
 - Options built in: src/mob-hunt.js (chooseLeg, findFortressStep), src/nether-travel.js (surveyLeg, legSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |

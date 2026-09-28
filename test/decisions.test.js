@@ -283,15 +283,15 @@ test('a question with one option is not asked: the one way is taken and said, no
   assert.equal(bot._turn, undefined, 'no turn taken for a question not asked');
 });
 
-test('the same answer to the same facts, come back at once with nothing measurable, is said and then held as failed', async () => {
+test('the same answer to the same facts, come back at once with nothing measurable, is said, then rests from here, and with nothing left the question above is asked (notes 560, 571)', async () => {
   // mid-242-ab: portal_method answered cast_frame 532 times in fifteen minutes, each pass ending at once
   // ("Nowhere to stand to pour into the frame slot at (18, 75, 58)").
   const { decide } = require('../src/decisions');
   const { Vec3 } = require('vec3');
   const bot = { entity: { position: new Vec3(16.5, 71, 60.5) }, game: { dimension: 'overworld' }, inventory: { items: () => [] } };
   const goal = { kind: 'win', step: { action: 'enter_nether', phase: 'reach_nether' } };
-  const seen = [];
-  const client = { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.9 } } }; } };
+  const seen = [], asked = [];
+  const client = { systemOne: async ({ state, questions }) => { seen.push(state); asked.push(questions); return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.9 } } }; } };
   const tree = n => ({ cast_frame: { description: `Cast in place. The frame has failed at its site ${n} times: "Nowhere to stand".` }, build_new: { description: 'Build from ten obsidian.' } });
   const ask = n => decide('portal_method', { client, bot, goal, tree: tree(n), state: { obsidian: 0, minutesOnWay: 30 + n } });
   await ask(1);
@@ -299,13 +299,17 @@ test('the same answer to the same facts, come back at once with nothing measurab
   goal.lastFailure = { why: 'Nowhere to stand to pour into the frame slot at (18, 75, 58)', at: Date.now() };
   await ask(2);
   assert.match(seen[1].sameAnswerAgain, /^cast frame was chosen 1 time in the last \d+ seconds? with these same facts, and nothing measurable came of it .*: Nowhere to stand to pour/);
-  await assert.rejects(ask(3), err => err.name === 'Stalled' && /portal method: cast frame was chosen 2 times .* each came back within a second: Nowhere to stand/.test(err.message));
+  assert.match(JSON.stringify(asked[1]), /Cast in place.*Tried once from here in the last \d+ seconds?, and it came to nothing: Nowhere to stand to pour/, 'the try said on its option');
+  // Blocked twice from here, it rests (tried.js): not asked a third time, the one way left taken unasked.
+  const third = await ask(3);
+  assert.deepEqual(third.path, ['build_new']); assert.equal(third.only, true);
   assert.equal(seen.length, 2, 'not asked a third time');
+  await ask(4);
+  // Every way from here resting: the question above is asked (the rung's), with this one's failure said.
+  await assert.rejects(ask(5), err => err.name === 'Stalled' && /^Stalled: portal method: every way it had from here rests: cast frame: Tried 2 times from here .* Nowhere to stand .*; build new: Tried 2 times from here/.test(err.message));
+  assert.equal(seen.length, 2, 'Jev asked twice in all');
   assert.equal(bot._stalls.stall.key, 'step:enter_nether', 'the step\'s stall path takes it');
-  // Said to the questions that follow, the detour's among them.
-  delete bot._stalls.stall;
-  await decide('corpse_run', { client: { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'go_back' } } }; } }, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
-  assert.match(seen.at(-1).answersThatCameToNothing[0], /^portal method: cast frame was chosen 2 times/);
+  assert.equal(bot._stalls.stall.escalated.to, 'rung_progress');
 });
 
 test('answers that come back at once with nothing coming of them are said and held whatever the facts, one answer or two in turn (note 570)', async () => {
@@ -328,7 +332,10 @@ test('answers that come back at once with nothing coming of them are said and he
   assert.match(seen[1].lastAnswersCameToNothing, /^the last answer, around right, came back within a second and nothing measurable came of it \(no new ground, nothing gained, no block dug or placed\), whatever the facts said between; the last ended: No path to the goal!$/);
   await ask(3);
   assert.match(seen[2].lastAnswersCameToNothing, /^the last 2 answers to this question in a row \(around right 1 time, around left 1 time, in the last 1 second\) each came back within a second/);
-  await assert.rejects(ask(4), err => err.name === 'Stalled' && /portal way: the last 3 answers to this question in a row \(around right 2 times, around left 1 time/.test(err.message));
+  // Around right has come to nothing twice from here and rests; around left is the one way left.
+  const fourth = await ask(4);
+  assert.deepEqual(fourth.path, ['around_left']); assert.equal(fourth.only, true);
+  await assert.rejects(ask(5), err => err.name === 'Stalled' && err.stall.escalated?.to === 'rung_progress' && /every way it had from here rests: around right: Tried 2 times/.test(err.message));
   assert.equal(seen.length, 3, 'not asked a fourth time');
   // The stance against mobs about is said, never held: mid-244-ad's out_of_sight, forty-one times in eleven seconds
   // under a crossbow piglin, health falling between each, the bot moving 1.4 blocks.
@@ -340,7 +347,7 @@ test('answers that come back at once with nothing coming of them are said and he
   // Something coming of an answer starts afresh.
   delete bot._stalls.stall;
   picks.push('around_left', 'around_left');
-  await ask(5); bot.entity.position = new Vec3(-160.5, 107, 60.1); await ask(6);
+  bot.entity.position = new Vec3(-157.5, 107, 60.1); await ask(6); bot.entity.position = new Vec3(-150.5, 107, 60.1); await ask(7);
   assert.equal(seen.at(-1).lastAnswersCameToNothing, undefined, 'moved seven blocks: something came of it');
 });
 
@@ -356,6 +363,8 @@ test('an answer that got somewhere, or new facts, starts afresh; a wait chosen i
   await ask(); bot.entity.position = new Vec3(5.5, 64, 0.5); await ask(); await ask();
   assert.equal(seen[1].sameAnswerAgain, undefined, 'walked five blocks: something came of it');
   assert.match(seen[2].sameAnswerAgain, /ore 0 was chosen 1 time/);
+  // Ten minutes on, the ledger's tries from here have gone by; the repeat rule reads new facts afresh.
+  for (const e of goal.tried.entries) e.at -= 11 * 60000;
   await ask({ ore: 'gold' });
   assert.equal(seen[3].sameAnswerAgain, undefined, 'new facts');
   // A pillar held up top: asked again with nothing new, and that is the point.

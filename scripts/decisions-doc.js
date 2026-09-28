@@ -33,7 +33,8 @@ function render() {
         `- ${q.tree ? 'Decision tree' : 'Batched question'}, ${q.primitive}; stakes ${q.stakes}; ledger kind \`${q.kind}\`${q.batch ? `; batch **${q.batch}**` : ''}`,
         `- Bar: ${cell(bar)}`,
         `- Jev unreachable: ${cell(unreachable)}`,
-        `- Options built in: ${cell(q.source)}`, '');
+        `- Options built in: ${cell(q.source)}`,
+        ...(Object.hasOwn(q, 'parent') ? [`- Nothing left to try: ${q.parent ? `asks \`${q.parent}\` next up, with this one's failure said` : 'the stall\'s question, as before (nothing above it)'}`] : []), '');
       if (q.tree) {
         lines.push('| Option | Level | What it is | Offered when |', '| --- | --- | --- | --- |');
         for (const o of q.options) lines.push(`| \`${cell(o.key || o.pattern)}\`${o.pattern ? ' (pattern)' : ''} | ${o.level || 'root'} | ${cell(o.label)} | ${cell(o.when)} |`);

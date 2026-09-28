@@ -173,4 +173,4 @@ function heldSays(bot, now = Date.now()) {
   return list.length ? list.map(h => `${h.id.replaceAll('_', ' ')}: ${h.says}`) : null;
 }
 
-module.exports = { fingerprint, mark, cameOf, before, quickBefore, after, held, heldSays, says, quickSays, AT_ONCE_MS, HOLD_AFTER, QUICK_HOLD, GROUND };
+module.exports = { fingerprint, mark, cameOf, whyItEnded, before, quickBefore, after, held, heldSays, says, quickSays, AT_ONCE_MS, HOLD_AFTER, QUICK_HOLD, GROUND };
