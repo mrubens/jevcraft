@@ -491,7 +491,10 @@ test('a cave spider\'s bite poisons: priced a point each 1.25 seconds through ar
   const v = require('../src/combat-estimate').blocksPerSecond('cave_spider');
   assert.equal(one.poison, Math.round((15 - 3.5 / v - 0.75) * 0.8 * 10) / 10);
   assert.equal(two.poison, one.poison);
-  assert.ok(Math.abs((two.damage - one.damage) - (15 - 4 / v) * 0.9) <= 0.1, 'the second adds its bites alone, from its arrival');
+  // Its first bite lands as it arrives, 0.13 seconds after the first
+  // spider's: within the half second a body struck cannot be hurt again by
+  // a blow no bigger, so that much of it is lost (note 587).
+  assert.ok(Math.abs((two.damage - one.damage) - ((15 - 4 / v) * 0.9 - 2 * 0.9 * (3.5 / v + 0.5 - 4 / v))) <= 0.1, 'the second adds its bites alone, from its arrival');
   // Floored at 1 where the health is given: the poison alone never kills.
   const low = stanceCost({ mobs: whole.mobs, reaches: () => true, health: 3 });
   assert.equal(low.damage, Math.round(((15 - 3.5 / v) * 0.9 + 2) * 10) / 10);

@@ -124,7 +124,26 @@ const MOBS = {
   // is walked back at its speed before its next blow is due.
   enderman: { hit: 7, health: 40, struck: 0.7, note: 'while it is the one being struck it still lands about 0.7 of its hits a second (most mobs a swing knocks back land a third); a sword\'s blow does not make it teleport, an arrow does (and does nothing to it); a shield raised toward it takes its blow; it is 2.9 tall and cannot come into a space under three blocks high, so a two-high pocket or hole keeps it out; angry, it runs at about 8.7 blocks a second, faster than the bot sprints, and teleports toward a player more than sixteen blocks off' }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20, armor: 2 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
-  hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
+  // A hoglin or a zoglin, from the 26.1.2 jar (HoglinBase.hurtAndThrowTarget,
+  // HoglinAi, Zoglin): a blow is half its six and up to five more, three to
+  // eight before armour, five and a half on the average (`least`, `most`);
+  // one blow every forty ticks (MeleeAttack.create(40); a baby's is fifteen,
+  // for half a point, and throws nothing), where most biters strike every
+  // twenty (`blowEvery`); its 0.6 knockback resistance keeps a sword's
+  // knockback from putting it back, so being struck does not thin its blows
+  // (`struck`, blows a second while it is the one struck). Each blow that
+  // lands throws the target on top of the usual knockback (throwTarget:
+  // 0.2 to 0.7 of a block a tick back, up to half a block a tick up). In the
+  // bot's 37 recorded hoglin blows (flight records to 2026-09-28) the body
+  // was carried up to 4.2 blocks back and 2.9 up within a second and a half
+  // (1.3 back on the median, walls and ceilings stopping many), and the
+  // blows came two seconds apart while it fought (mid-208-k-nether-1:
+  // 01:29:28.6, 30.6, 32.8, 34.9, 36.9). Said as a blow a second and six a
+  // blow, mid-208-k-nether-1 and nether-4-fortress-1 fought and ate between
+  // hoglins told "5 blows end the bot" where a hardest blow is 4.8 through
+  // their iron and three did (note 587).
+  hoglin: { hit: 5.5, least: 3, most: 8, health: 40, blowEvery: 2, struck: 0.5, toss: 4, note: 'three to eight a blow before armour, one blow every two seconds at arm\'s length whether struck or not (a sword\'s knockback barely moves it), and each blow that lands throws the bot up and back, up to about four blocks back and three up; a baby hits for half a point and throws nothing' },
+  zoglin: { hit: 5.5, least: 3, most: 8, health: 40, blowEvery: 2, struck: 0.5, toss: 4, note: 'three to eight a blow before armour, one blow every two seconds at arm\'s length whether struck or not, and each blow that lands throws the bot up and back, up to about four blocks back and three up' },
   wither_skeleton: { hit: 8, health: 20, withers: WITHER.perSecond, note: 'each hit withers the bot for ten seconds, renewed by the next: about one health every two seconds that armour does not stop, and it can take the last' }, blaze: { hit: 5, health: 20, shoots: true, burns: 1, note: 'sets alight: each fireball that lands burns for five seconds more, about one a second through armour, and there is no water in the Nether to put it out' },
   magma_cube: { hit: 6, health: 16, note: 'a big one: it splits into two to four mediums (4 a hit), each of those into two to four smalls (3 a hit)', splits: [{ size: 'medium', count: 3, hit: 4, health: 4 }, { size: 'small', count: 9, hit: 3, health: 1 }] }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
   // Every mob the danger list names (the decision audit, 2026-09-25): one
@@ -436,6 +455,10 @@ const shotPieces = (m, shield, from, to) => {
 // note 526 left it open). Summed hit by hit, eight zombies round the bot
 // were priced at eight hits a second. The wither and a burn are not hits.
 const HURT_PER_SECOND = 2;
+// One blow at `at`, as a piece: its whole hit over the half second after it
+// that a hurt body cannot be hurt again, so two landing together count as
+// the bigger (within), and one landing before a stretch ends counts whole.
+const blowAt = (at, hit) => ({ from: at, to: at + 1 / HURT_PER_SECOND, perSecond: hit * HURT_PER_SECOND, hit, blow: true });
 
 // The fight where the bot stands, as a timeline: nearest first; every mob
 // still standing hits meanwhile, biters once a second at arm's length,
@@ -482,10 +505,13 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
         if (m.poisons && m.visible && end > from && !poisoning.has(m)) poisoning.set(m, from);
         return;
       }
+      // A hoglin strikes every two seconds, struck or not (MOBS blowEvery,
+      // struck; note 587).
       let perSecond;
+      const rate = 1 / (MOBS[m.name]?.blowEvery || 1);
       if (m.jab) perSecond = m.jab;
       else if (++biters > atOnce) return;
-      else perSecond = (j === 0 && !m.inCell ? MOBS[m.name]?.struck ?? STRUCK : 1) * m.hitsBot;
+      else perSecond = (j === 0 && !m.inCell ? MOBS[m.name]?.struck ?? STRUCK * rate : rate) * m.hitsBot;
       // Closed on first: its hits as they came while the bot got to it.
       const closing = j === 0 && led > 0 && !m.jab && !m.inCell ? Math.min(led, end - from) : 0;
       if (closing > 0) pieces.push({ from, to: from + closing, perSecond: PACE.leadBites * m.hitsBot, hit: m.hitsBot });
@@ -509,7 +535,8 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
 // moment the strongest of its pieces, not their sum (four blazes in sight
 // were four health a second of burning, where the game burns one).
 function within(pieces, seconds = Infinity) {
-  const end = p => Math.min(p.to, seconds);
+  // A blow that lands inside the stretch counts whole (blowAt).
+  const end = p => p.blow ? (p.from < seconds ? p.to : p.from) : Math.min(p.to, seconds);
   const hits = pieces.filter(p => p.hit > 0 && end(p) > p.from);
   let total = pieces.filter(p => !(p.hit > 0) && p.effect !== 'burn').reduce((n, p) => n + p.perSecond * Math.max(0, end(p) - p.from), 0);
   const burns = pieces.filter(p => p.effect === 'burn' && end(p) > p.from);
@@ -654,7 +681,11 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       ...(!fought && !shoots ? { secondsASwing: round(every * (spear ? 2 : 1), 2) } : {}), ...(m.armor && !t.split ? { armor: m.armor, eachSwing: round(dealt) } : {}),
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)),
+      // A blow that varies (a hoglin's three to eight): its least and its
+      // hardest through the armour worn, and how often it comes (note 587).
+      ...(m.most && !spear ? { hitsBotLeast: round(afterArmour(m.least, worn)), hitsBotMost: round(afterArmour(m.most, worn)) } : {}), ...(m.blowEvery && !spear ? { blowEvery: m.blowEvery } : {}),
+      swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
@@ -755,9 +786,24 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   // The fire on the bot now burns on whatever the stance (burnLeft).
   const burningFor = mobs.find(m => m.burningFor > 0)?.burningFor || 0;
   if (burningFor > 0) pieces.push({ from: 0, to: burningFor, perSecond: BURN_PER_SECOND, effect: 'burn' });
-  const hurts = (m, from, to, shielded) => {
+  // A biter that comes to the bot during the stance (`anchor`, when it
+  // arrives or can reach again) strikes the moment it is there, a whole
+  // blow (within), then at its pace: one blow each `blowEvery` seconds (a
+  // second for most, two for a hoglin). Spread as a steady rate from its
+  // arrival, a hoglin at the bot 0.7 seconds before a meal's end was
+  // priced 2.3 where its first blow, 3.1 to 4.8 through the armour worn,
+  // lands at once (mid-208-k-nether-4-fortress-1, note 587). One at arm's
+  // length already has been striking at its own pace: where in it the
+  // next blow falls is not known, so its blows are its steady rate.
+  const hurts = (m, from, to, shielded, anchor = from) => {
     if (!(to > from)) return;
-    if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to)); else pieces.push({ from, to, perSecond: bites(m), hit: bites(m) });
+    if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to));
+    else {
+      const every = m.jab ? 1 : MOBS[m.name]?.blowEvery || 1, hit = bites(m);
+      const steady = anchor > 0 ? anchor + every : from;
+      if (anchor > 0 && anchor >= from && anchor < to) pieces.push(blowAt(anchor, hit));
+      if (to > Math.max(from, steady)) pieces.push({ from: Math.max(from, steady), to, perSecond: hit / every, hit });
+    }
     if (m.withers && !m.shoots) withering.push([from, to + WITHER.seconds]);
     // A shielded arrow is not a hit: a bogged's poison comes with the half
     // that land, from the first.
@@ -806,7 +852,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
       const start = Math.max(setup, from, again);
       if (again > 0 && Math.max(setup, again) >= seconds) continue;
       if (again > setup) later.push({ name: m.name, seconds: round(again) }); else stillReach(m);
-      hurts(m, start, seconds, shield);
+      hurts(m, start, seconds, shield, Math.max(from, again));
     }
   }
   if (fight && seconds > setup) {

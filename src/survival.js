@@ -164,7 +164,17 @@ function blowsSay(mobs, health) {
   const when = soon <= 0.1 ? 'it is at arm\'s length now' : `at its own speed (about ${Math.round(v * 10) / 10} blocks a second) it can be at arm's length in about ${soon} second${soon === 1 ? '' : 's'}`;
   // One out of sight is said so: its blow is the same round the rock (note 581).
   const unseen = m.visible === false ? ', out of sight,' : '';
-  return `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen}${hardest} hits for about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}, a blow a second at arm's length: ${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health, and ${when}.`;
+  // A blow that varies is said from its least to its hardest, and the
+  // blows that end the bot at its hardest; its pace as the jar has it (a
+  // hoglin's every two seconds). "Hits for about 3.4 ... 5 blows end the
+  // bot from 13.9" was said of a hoglin whose hardest is 4.8 through that
+  // iron: three did (mid-208-k-nether-4-fortress-1, note 587).
+  const most = m.hitsBotMost, fewest = most ? Math.max(1, Math.ceil(h / most)) : blows;
+  const every = MOBS[m.name]?.blowEvery || 1;
+  const size = most ? `${m.hitsBotLeast} to ${most} a blow through the armour worn, about ${m.hitsBot} on the average (${MOBS[m.name].least} to ${MOBS[m.name].most} before it)` : `about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}`;
+  const pace = every === 1 ? 'a blow a second at arm\'s length' : `a blow every ${every} seconds at arm's length`;
+  const ends = most && fewest < blows ? `${fewest === 1 ? 'one blow at its hardest ends' : `${fewest} blows at their hardest end`} the bot from ${h} health (${blows} on the average)` : `${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health`;
+  return `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen}${hardest} hits for ${size}, ${pace}: ${ends}, and ${when}.`;
 }
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -2270,6 +2280,12 @@ class Survival {
     const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
     const feet = bot.entity.position.floored();
     const headroom = [1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); });
+    // And the climb's own test for each of its two blocks (pillar-recovery
+    // climbStop): offered where the climb stops at once, mid-244-ab-nether-3's
+    // pillar put no block down and the question came again with a hoglin at
+    // arm's length (note 587).
+    const { climbStop } = require('./pillar-recovery');
+    const pillarStop = headroom ? climbStop(bot, feet) || climbStop(bot, feet.offset(0, 1, 0)) : null;
     // Nothing is built, dug or drawn with a mob at arm's length that does
     // not shoot: a pillar, a pocket, a bunker and a bow each take a second
     // or more of standing still, and every one of those seconds is its hit.
@@ -2335,7 +2351,7 @@ class Survival {
     const hardest = (estimate.mobs || []).filter(m => m.name !== 'creeper' && !m.apart && m.hitsBot > 0).sort((a, b) => b.hitsBot - a.hitsBot)[0];
     // Each shooter's shot by its name: a ghast's fireballs were said as "2
     // arrows from the ghast" (note 551).
-    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? shotWord(hardest.name) : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '';
+    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? shotWord(hardest.name) : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour${hardest.hitsBotMost ? `, up to ${hardest.hitsBotMost}: ${Math.max(1, Math.ceil(bot.health / hardest.hitsBotMost))} at the hardest` : ''}) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '';
     // The estimate counts each creeper's blast where it goes off, or none
     // where the swings kill it inside its fuse, and says why beside the
     // figures: trial 118 fought two creepers and a spider with no armour at
@@ -2375,7 +2391,14 @@ class Survival {
     // distance: mid-235-p-fortress-1 was thrown off an edge at 5.5 health by
     // one (note 509).
     const blazeAbout = danger.some(t => t.entity.name === 'blaze');
-    const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health, bot) + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
+    // With a hoglin or a zoglin able to get to the bot, the drop within its
+    // toss (up to about four blocks back in the bot's own records, where a
+    // knockback is three), said with the toss (note 587).
+    const tosser = coming.map(t => t.entity.name).find(n => require('./combat-estimate').MOBS[n]?.toss);
+    const tossReach = tosser ? require('./combat-estimate').MOBS[tosser].toss : 3;
+    const dropHere = require('./terrain').dropNear(bot, feet, tossReach);
+    const tossSays = tosser && dropHere ? ` A ${tosser}'s blow throws the bot up and back, up to about ${tossReach} blocks back and three up, not a step.` : '';
+    const edge = require('./terrain').dropNote(dropHere, bot.health, bot) + tossSays + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
     // How many can be at arm's length at once, said where it is not all of
     // them: in a tunnel a crowd comes one or two at a time.
     const inCellSays = inCell.length ? ` ${ownCellsSays(inCell)}, at arm's length whatever the cells round it hold.` : '';
@@ -2686,7 +2709,7 @@ class Survival {
       ? `Go two blocks straight up on placed blocks and fight from there. Here two up is no cover from any of the mobs that bite: ${mobList([...new Set(biters.map(t => t.entity.name))], biters.map(t => ({ name: t.entity.name })))} reach${biters.length === 1 ? 'es' : ''} its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit.`
       : 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.';
     const knockSays = topReachers.length ? ` A blow that lands knocks the bot back (the game's knockback, with a hop): on a top one block wide the first leaves it at the edge and the next puts it off, two blocks down among them, where it is the fight here.` : '';
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: pillarOpens + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    if ((scaffold >= 2 && headroom && !pillarStop) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: pillarOpens + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       // Held up there, the stance is kept: facing the nearest, the swing and
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
@@ -3176,7 +3199,7 @@ class Survival {
       ? bot.findBlocks({ matching: portalId, maxDistance: 8, count: 1 })[0] : null;
     if (portal) {
       const blocks = Math.round(portal.distanceTo(bot.entity.position));
-      options.portal_back = { description: `Go back through the portal ${blocks} block${blocks === 1 ? '' : 's'} off, to the Overworld where the bot came from: about ${Math.max(1, Math.round(blocks / 4.3))} second${blocks > 4 ? 's' : ''} to it and about four standing in it before it takes the bot, shot at meanwhile; the mobs here stay here. The work comes back through it afterwards.` + (armsLength ? ' Something that bites is at arm\'s length now, and follows the walk.' : ''),
+      options.portal_back = { description: `Go back through the portal ${blocks} block${blocks === 1 ? '' : 's'} off, to the Overworld where the bot came from: about ${Math.max(1, Math.round(blocks / 4.3))} second${blocks > 4 ? 's' : ''} to it and about four standing in it before it takes the bot, shot at meanwhile; the mobs here stay here. The work comes back through it afterwards.` + (armsLength ? ' Something that bites is at arm\'s length now, and follows the walk.' : '') + (coming.some(t => t.entity.name === 'hoglin') ? ' A hoglin shuns a nether portal\'s blocks as it does a warped fungus: within 8 blocks of them across and 4 up or down it attacks nothing and walks off.' : ''),
         run: async () => { this.report(goal, save, { action: 'portal_back', portal: { x: portal.x, y: portal.y, z: portal.z }, threats: danger.map(t => t.entity.name) }); await this.actions.returnOverworld(bot, task, goal, save); return true; } };
     }
     // What each shot is up against: arrows to bring it down (about six a
@@ -3315,6 +3338,8 @@ class Survival {
     }
     const blockCreeper = this.creeperBlockOption(task, goal, save, { coming, mobs, shielded, oneHit, edge });
     if (blockCreeper) options.block_creeper = blockCreeper;
+    const fungus = this.warpedFungusOption(task, goal, save, { coming, mobs, shielded, oneHit, edge });
+    if (fungus) options.warped_fungus = fungus;
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { expects: (c => ({ damage: c.damage, seconds: c.seconds, oneHit }))(shotCost(t)), description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + costSays(shotCost(t), bot.health, mobs, { doing: 'drawing', done: 'The shooter down' }) + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
     // A ghast: its fireball struck back, and the bow past the twenty above
@@ -4150,7 +4175,8 @@ class Survival {
       // mid-229-r chose the pillar again twice with the zombies still in
       // the cell its block went into (note 526).
       const inCell = inOwnCells(bot, danger, feet);
-      this.state.stanceWhy = inCell.length ? `${placed ? `${placed} of 2 blocks went down; ` : 'no block went down: '}${ownCellsSays(inCell).replace(/^./, c => c.toLowerCase())}, where the pillar's block goes` : `${placed} of 2 blocks went down`;
+      const stop = require('./pillar-recovery').climbStop(bot, bot.entity.position.floored());
+      this.state.stanceWhy = inCell.length ? `${placed ? `${placed} of 2 blocks went down; ` : 'no block went down: '}${ownCellsSays(inCell).replace(/^./, c => c.toLowerCase())}, where the pillar's block goes` : `${placed} of 2 blocks went down${stop ? `: the climb stops at ${stop}` : ''}`;
       return false;
     }
     this.state.pillar = { x: feet.x, y: feet.y, z: feet.z, at: Date.now() };
@@ -4951,6 +4977,61 @@ class Survival {
           }
         }
         if (blockPlan(bot, e).stoppedBy) cut();
+        return true;
+      } };
+  }
+
+  // A warped fungus set down beside the bot, where hoglins can get to it
+  // and one is carried (hoglin-repellent.js): hoglins within eight across
+  // and four up or down of the block attack nothing and walk off from it.
+  // Priced with every mob hitting while it is placed and the second before
+  // the hoglins notice it, then the rest but the hoglins. The bots carry
+  // warped fungus picked up in the forests, and none was ever offered it:
+  // mid-208-k-nether-1 and nether-4-fortress-1 were bitten to death by
+  // hoglins while they ate and fought between them (note 587).
+  warpedFungusOption(task, goal, save, { coming, mobs, shielded, oneHit, edge = '' }) {
+    const bot = this.bot;
+    if (typeof this.actions.place !== 'function' || inWater(bot)) return null;
+    const { REPELLED, ACROSS, NOTICE_SECONDS, fungusPlan, ruleSays } = require('./hoglin-repellent');
+    const hoglins = coming.filter(t => REPELLED.has(t.entity.name));
+    if (!hoglins.length) return null;
+    const stance = this.state.stance?.choice === 'warped_fungus' ? this.state.stance : null;
+    const set = stance?.fungus?.at && bot.blockAt(new Vec3(stance.fungus.at.x, stance.fungus.at.y, stance.fungus.at.z))?.name === 'warped_fungus' ? stance.fungus.at : null;
+    const plan = set ? null : fungusPlan(bot);
+    if (!set && !plan?.cells) return null;
+    const r1 = v => Math.round(v * 10) / 10;
+    const here = bot.entity.position;
+    const them = hoglins.map(t => `the hoglin ${Math.round(t.distance)} blocks off`).join(', ');
+    const n = plan?.cells?.length || 0, setup = set ? 0 : r1(n * BLOCK_SECONDS + NOTICE_SECONDS);
+    const cost = stanceCost({ mobs, setup, reaches: m => !REPELLED.has(m.name), shield: shielded });
+    const outside = hoglins.filter(t => t.distance > ACROSS + 2);
+    const outsideSays = outside.length ? ` ${outside.length === 1 ? 'One hoglin is' : `${outside.length} hoglins are`} more than ${ACROSS} blocks from where it goes: each is calmed when it comes that near.` : '';
+    if (set) {
+      const d = r1(here.distanceTo(new Vec3(set.x + 0.5, set.y, set.z + 0.5)));
+      return { expects: { damage: cost.damage, seconds: cost.seconds, oneHit },
+        description: `Stay by the warped fungus set down at ${set.x}, ${set.y}, ${set.z}, ${d} blocks off, against ${them}.${ruleSays()}${outsideSays} It stays where it is set; broken, it comes back as the item at a touch.` + costSays(cost, bot.health, mobs, { done: 'By the fungus' }) + edge,
+        run: async () => { await sleep(250); return true; } };
+    }
+    const at = plan.cell, d = r1(here.distanceTo(at.offset(0.5, 0, 0.5)));
+    const how = plan.laid ? `on a block of ${plan.on.replaceAll('_', ' ')} laid first from the ${plan.on.replaceAll('_', ' ')} carried (nothing here takes it)` : `on the ${plan.on.replaceAll('_', ' ')} there`;
+    const description = `Set a warped fungus down at ${at.x}, ${at.y}, ${at.z}, ${d} blocks off, ${how} (${plan.carried} carried), against ${them}: about ${r1(n * BLOCK_SECONDS)} seconds placing ${n === 1 ? 'one block' : `${n} blocks`}, the shield down, and about ${NOTICE_SECONDS} second more before the hoglins notice it; then stay by it.${ruleSays()}${outsideSays} It stays where it is set; broken, it comes back as the item at a touch.` + costSays(cost, bot.health, mobs, { doing: 'placing', done: 'By the fungus' }) + edge;
+    return { expects: { damage: cost.damage, seconds: cost.seconds, oneHit }, description,
+      run: async () => {
+        const held = this.state.stance?.choice === 'warped_fungus' ? this.state.stance : null;
+        const placed = held?.fungus?.at;
+        if (placed && bot.blockAt(new Vec3(placed.x, placed.y, placed.z))?.name === 'warped_fungus') { await sleep(250); return true; }
+        const now = fungusPlan(bot);
+        if (!now?.cells) throw Object.assign(new Error(now?.none || 'no warped fungus carried'), { name: 'StanceFailed' });
+        this.report(goal, save, { action: 'warped_fungus', hoglins: hoglins.map(t => r1(t.distance)), at: { x: now.cell.x, y: now.cell.y, z: now.cell.z }, on: now.on, health: bot.health });
+        for (const c of now.cells) {
+          task.check();
+          try { await this.actions.place(bot, task, c.at, c.item, { stay: true }); }
+          catch (err) {
+            task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+            throw Object.assign(new Error(`${String(err.message || err).slice(0, 160)} (the ${c.item.replaceAll('_', ' ')} at ${c.at})`), { name: 'StanceFailed' });
+          }
+        }
+        if (held) held.fungus = { at: { x: now.cell.x, y: now.cell.y, z: now.cell.z } };
         return true;
       } };
   }

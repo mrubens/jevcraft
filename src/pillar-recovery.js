@@ -126,6 +126,30 @@ const DIGGABLE_ABOVE = /^(netherrack|stone|deepslate|cobblestone|cobbled_deepsla
 // `canDig` says which blocks overhead may be dug: a climb out of the mine
 // passes its own test, the one its column was looked over by.
 const diggableAbove = block => DIGGABLE_ABOVE.test(block.name) && block.diggable;
+// Why the climb stops before its next block from `feet`, or null: nothing
+// wet or burning in or beside the cells the body will pass through, and
+// over the head only what may be dug and has nothing falling over it
+// (dug from beneath, the column comes down onto the head: mid-83-g
+// pillared up at seven health into gravel and suffocated in four seconds,
+// 2026-09-26). The one test for pillarUp and for the stance that offers a
+// pillar: offered on a looser one (three cells of air over the feet),
+// mid-244-ab-nether-3's pillar from two hoglins at 5.1 health stopped
+// before its first block, "0 of 2 blocks went down", and the next
+// question, 0.6 seconds on with the hoglin at 2.7, took the fight; two
+// blows ended it (note 587).
+const FALLS = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/;
+function climbStop(bot, feet, { canDig = diggableAbove } = {}) {
+  const head = feet.offset(0, 2, 0), above = bot.blockAt(head);
+  if (!above) return 'the block over the head is not loaded';
+  const liquid = c => /lava|water/.test(bot.blockAt(c)?.name || '');
+  const passing = [feet.offset(0, 1, 0), head, head.offset(0, 1, 0)];
+  const wet = passing.find(liquid) || passing.slice(0, 2).flatMap(c => directions.map(d => c.plus(d))).find(liquid);
+  if (wet) return `${bot.blockAt(wet).name.replaceAll('_', ' ')} at ${wet.x}, ${wet.y}, ${wet.z}, in or beside the cells the body rises through`;
+  if (dryPassable(above)) return null;
+  if (!canDig(above)) return `${above.name.replaceAll('_', ' ')} over the head, which the climb does not dig`;
+  if (FALLS.test(above.name) || FALLS.test(bot.blockAt(head.offset(0, 1, 0))?.name || '')) return `${above.name.replaceAll('_', ' ')} over the head with a block that falls in it or over it`;
+  return null;
+}
 async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = true, canDig = diggableAbove, blocks = SCAFFOLD } = {}) {
   const { move } = require('./motion');
   let placed = 0;
@@ -134,20 +158,8 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
     task.check(); checkAir(bot); if (threats) checkThreats(bot);
     const feet = bot.entity.position.floored();
     const head = feet.offset(0, 2, 0), above = bot.blockAt(head);
-    if (!above) break;
-    // Nothing wet or burning in or beside the cells the body will pass
-    // through, or over the block it is about to dig.
-    const liquid = c => /lava|water/.test(bot.blockAt(c)?.name || '');
-    const passing = [feet.offset(0, 1, 0), head, head.offset(0, 1, 0)];
-    if (passing.some(liquid) || passing.slice(0, 2).some(c => directions.some(d => liquid(c.plus(d))))) break;
+    if (climbStop(bot, feet, { canDig })) break;
     if (!dryPassable(above)) {
-      if (!canDig(above)) break;
-      // Not under a block that falls, nor one with a falling block over it:
-      // dug from beneath, the column comes down onto the head. mid-83-g
-      // pillared up at seven health into gravel and suffocated in four
-      // seconds (2026-09-26).
-      if (/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(above.name) ||
-        /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(bot.blockAt(head.offset(0, 1, 0))?.name || '')) break;
       await dig(bot, task, head, { requireDrops: false });
       continue;
     }
@@ -200,4 +212,4 @@ function pillarSite(bot, targetY, target, { radius = 5 } = {}) {
   return sites.sort((a, b) => far(a) - far(b))[0] || null;
 }
 
-module.exports = { pillarHeight, pillarDescent, descendPillar, pillarUp, pillarSite, SCAFFOLD };
+module.exports = { pillarHeight, pillarDescent, descendPillar, pillarUp, pillarSite, climbStop, SCAFFOLD };

@@ -108,6 +108,10 @@ function hostileEntities(bot, radius = 24) {
     // blaze's fire ended it too, and the swing reflex then started a second
     // fight with a whole group of them.
     if (entity.name === 'piglin' && wearingGold(bot) && !provoked(bot, entity)) return false;
+    // A hoglin with a warped fungus, a nether portal or a respawn anchor
+    // within its sensing box drops its target and attacks nothing while it
+    // stays that near, struck or not (hoglin-repellent.js, note 587).
+    if (require('./hoglin-repellent').pacified(bot, entity)) return false;
     return entity.position.distanceTo(position) <= radius;
   });
 }

@@ -808,7 +808,11 @@ function comingWhileEating(bot) {
   return require('./danger').coming(bot).slice(0, 3).map(t => {
     const m = MOBS[t.entity.name] || {};
     return { name: t.entity.name, distance: Math.round(t.distance * 10) / 10, blocksASecond: Math.round(t.speed * 10) / 10, atBotInSeconds: Math.round(t.atBotIn * 10) / 10,
-      ...(m.hit ? { hitsFor: Math.round(afterArmour(m.hit, worn) * 10) / 10 } : {}), ...(m.note ? { note: m.note } : {}) };
+      ...(m.hit ? { hitsFor: Math.round(afterArmour(m.hit, worn) * 10) / 10 } : {}),
+      // A blow that varies, its hardest too; and a pace other than a blow a
+      // second (a hoglin's three to eight, every two seconds: note 587).
+      ...(m.most ? { hitsForAtMost: Math.round(afterArmour(m.most, worn) * 10) / 10 } : {}), ...(m.blowEvery ? { blowEverySeconds: m.blowEvery } : {}),
+      ...(m.note ? { note: m.note } : {}) };
   });
 }
 // A second and six tenths eating (survival.js EAT_SECONDS).

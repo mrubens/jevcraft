@@ -760,7 +760,10 @@ test('a hoglin is hostile to the meal: none at arm\'s length, and one walking up
   assert.equal(c?.action, 'eat');
   assert.equal(c.facts.comingAtTheBot[0].name, 'hoglin');
   assert.equal(c.facts.comingAtTheBot[0].blocksASecond, 3.9);
-  assert.match(claimSays(c), /standing still\..*The hoglin 11\.1 blocks off is coming at about 3\.9 blocks a second, at the bot in about 2\.5 seconds; each hit about 3\.\d through the armour worn \(3 to 8 a hit, and throws the bot about three blocks\)\./);
+  assert.match(claimSays(c), /standing still\..*The hoglin 11\.1 blocks off is coming at about 3\.9 blocks a second, at the bot in about 2\.5 seconds; each hit about 3(\.\d)? through the armour worn \(three to eight a blow before armour, one blow every two seconds at arm's length/);
+  // Its hardest blow through that iron and its pace, in the facts (note 587).
+  assert.equal(c.facts.comingAtTheBot[0].hitsForAtMost, 4.8);
+  assert.equal(c.facts.comingAtTheBot[0].blowEverySeconds, 2);
   // Six blocks off and coming: at the bot before the meal is done, so no meal.
   hoglin.position = new Vec3(6.5, 64, 0.5);
   bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 10.5, y: 64, z: 0.5 }]]]);
