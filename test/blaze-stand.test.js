@@ -279,6 +279,50 @@ test('break_spawner is priced as the close-in is, the walk to the cage and the d
   assert.equal(o.cost.spawning, false, 'broken, it makes no more');
   assert(o.cost.phases[0].what === 'walk' && o.cost.phases[1].what === 'dig', JSON.stringify(o.cost.phases));
   assert.match(o.description, /Worked from this fight: 4 blazes see the bot now/);
-  assert.match(o.description, /The digging is done with the shield down, the others shooting meanwhile; after it no more come\./);
+  assert.match(o.description, /the digging is done with the shield down, (the others|each) shooting meanwhile[^.]*; after it no more come\./i);
   assert.doesNotMatch(o.description, /as measured\./);
+});
+
+test('break_spawner is priced at the cage with the blazes out of sight round it: mid-242-bc-fortress-2 read 7.8 damage from one blaze in sight and lost 12.6 in three seconds (note 623)', () => {
+  // 25587, 17:56:27: one blaze in sight 4.3 off, five more out of sight
+  // eight to ten off, hovering round the cage five blocks' walk away; the
+  // bot at 13.3 in an iron helmet and chestplate with a shield. A wall of
+  // brick at x 3 stands between the bot and the cage.
+  const wall = p => p.y <= 63 || (p.x === 3 && p.z >= -2 && p.z <= 2 && p.y <= 66);
+  const bot = brickWorld(wall, { spawner: new Vec3(8, 64, 0) });
+  bot.inventory.slots = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 45: { name: 'shield' } };
+  bot.health = 13.3;
+  // The rays stop at the wall (a step of a tenth along the line).
+  bot.world.raycast = (from, u, length) => {
+    for (let s = 0; s <= length; s += 0.1) { const p = from.plus(u.scaled(s)); if (wall(p.floored())) return { position: p.floored(), intersect: p }; }
+    return null;
+  };
+  bot.entities = { 1: blazeAt(1, 1.5, 65, 4.8), 2: blazeAt(2, 9.5, 66, 1.5), 3: blazeAt(3, 9, 66, -1.5), 4: blazeAt(4, 10.5, 66, 0.5), 5: blazeAt(5, 8.5, 66, 2.5), 6: blazeAt(6, 7.5, 66, -2.5) };
+  const danger = threats(bot, 24).filter(t => t.visible);
+  assert.deepEqual(danger.map(t => t.entity.id), [1], 'the stance\'s list: the one in sight');
+  const o = stand.blazeStands(bot, danger).break_spawner;
+  assert(o, 'offered');
+  assert(o.cost.into >= 5, `the five out of sight within sixteen counted: ${JSON.stringify(o.cost)}`);
+  assert(o.cost.atCage && o.cost.atCage.within5 >= 3, `at the cage, three or more within five: ${JSON.stringify(o.cost.atCage)}`);
+  assert(o.expects.damage >= 13.3 && o.cost.deathAt != null, `more than the bot has, as it was: ${o.expects.damage}, ${JSON.stringify(o.cost.phases)}`);
+  assert.match(o.description, /Broken, it makes no more, ever: the 6 about now stay/);
+  assert.match(o.description, /At the cell by the cage \d of them are within five blocks, the nearest [\d.]+ off/);
+  assert.match(o.description, /It runs \d+ seconds, or until six health is gone, and is asked again then\./);
+});
+
+test('breaking the spawner ends once six health is gone, walk and dig counted, and does not go on to the close-in (note 623)', async () => {
+  const bot = brickWorld(openFloor, { spawner: new Vec3(8, 64, 0) });
+  bot.health = 14.3;
+  bot.entities = { 1: blazeAt(1, 9.5, 66, 1.5) };
+  const { Task } = require('../src/skills');
+  let walks = 0;
+  const navigate = async () => { walks++; bot.health -= 3.9; await new Promise(r => setTimeout(r, 20)); };
+  Object.assign(bot, { clearControlStates() {}, deactivateItem() {}, activateItem() {}, lookAt: async () => {}, equip: async () => {}, dig: async () => {}, heldItem: null });
+  const site = stand.breakSite(bot);
+  const started = Date.now();
+  const result = await stand.breakSpawner(bot, new Task('t'), {}, () => {}, site, { navigate, seconds: 10 });
+  assert(Date.now() - started < 3000, `ended on the health, not the ten seconds: ${Date.now() - started} ms`);
+  assert.equal(walks, 2, 'two fireballs: 7.8 gone, asked again');
+  assert.equal(result.ended, 'health down');
+  assert.equal(result.kills, 0);
 });

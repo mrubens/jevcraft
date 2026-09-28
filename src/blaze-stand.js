@@ -305,8 +305,8 @@ const bearing = (from, to) => Math.atan2(to.z - from.z, to.x - from.x) * 180 / M
 const angleOff = (a, b) => { const d = Math.abs(((a - b) % 360 + 540) % 360 - 180); return d; };
 // Which blazes a shield faced at their middle covers: the middle of the arc
 // they span round the bot (the widest gap between them left behind it).
-function shieldArc(bot, entities) {
-  const here = bot.entity.position;
+// `here`: where the bot will stand (the cage's cell for break_spawner).
+function shieldArc(bot, entities, here = bot.entity.position) {
   const angles = entities.map(e => bearing(here, e.position)).sort((a, b) => a - b);
   if (!angles.length) return { facing: 0, spread: 0, covered: new Set() };
   let gap = -1, after = 0;
@@ -403,14 +403,34 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   let firstWalk = null;
   // The spawner broken first (break_spawner): the walk to its cage in the
   // lulls, the digging with the shield down, and no more come after.
+  // Priced where it is done: the digging from the cell by the cage, each
+  // blaze by its distance from there (within two it swings), the shield's
+  // cover as faced from there, and the walk from halfway. Priced from where
+  // the bot stood, mid-242-bc-fortress-2 (25587, 17:56:27) read "about 7.8
+  // damage over the 7 seconds" for a walk of five blocks to the cage the
+  // blazes hovered round, one to five off it; two fireballs and a blow
+  // took it from 14.3 to 1.7 in three seconds (note 623).
+  let atCage = null;
   if (breakFirst) {
     const seeing = alive.filter(b => b.sees).length;
+    const cell = breakFirst.at || null, there = cell ? cell.offset(0.5, 0, 0.5) : null;
+    const half = there ? here.plus(there).scaled(0.5) : null;
+    const standingAt = p => {
+      if (!p) return alive;
+      const arcThere = shieldArc(bot, alive.filter(b => b.sees).map(b => ({ id: b.id, position: b.at })), p);
+      return alive.map(b => ({ ...b, d: b.at.distanceTo(p), covered: arcThere.covered.has(b.id) }));
+    };
+    const walking = standingAt(half), digging = standingAt(there);
     const wall = breakFirst.steps / WALK / (shield ? lull(seeing) : 1);
     firstWalk = { walk: round(breakFirst.steps / WALK), wall: round(wall), seeing };
-    spend(wall, rate(alive, { shieldUp: true, extra, extraAt: spawnAt ?? 8 }), 'walk');
-    spend(breakFirst.digSeconds, rate(alive, { shieldUp: false, extra, extraAt: spawnAt ?? 8 }), 'dig');
+    spend(wall, rate(walking, { shieldUp: true, extra, extraAt: spawnAt ?? 8 }), 'walk');
+    spend(breakFirst.digSeconds, rate(digging, { shieldUp: false, extra, extraAt: spawnAt ?? 8 }), 'dig');
     spawning = false;
-    if (breakFirst.at) from = breakFirst.at;
+    if (cell) {
+      from = cell; alive = digging;
+      const ds = digging.filter(b => b.sees).map(b => b.d).sort((a, b) => a - b);
+      atCage = { nearest: ds.length ? round(ds[0]) : null, within2: ds.filter(d => d <= ce.FIREBALL.meleeReach).length, within5: ds.filter(d => d <= 5).length };
+    }
   }
   while (t < horizon && deathAt == null && kills < upTo && order().length) {
     const target = order()[0];
@@ -434,7 +454,7 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
     if (deathAt == null && damage + bite.damage >= hp) deathAt = round(Math.max(0.5, t * hp / (damage + bite.damage)));
     damage += bite.damage;
   }
-  return { bite, shield: !!shield, upTo, strikeOnly: !!strikeAt, damage: round(damage), seconds: round(t), deathAt, kills, seeing: seen.length, covered: seen.filter(t => arc.covered.has(t.entity.id)).length, spread: arc.spread,
+  return { bite, shield: !!shield, upTo, strikeOnly: !!strikeAt, atCage, damage: round(damage), seconds: round(t), deathAt, kills, seeing: seen.length, covered: seen.filter(t => arc.covered.has(t.entity.id)).length, spread: arc.spread,
     reachable: blazes.filter(t => strikeCells(bot, t.entity).length).length, blazes: blazes.length, unseen: blazes.length - seen.length - into.length, into: into.length, firstWalk, strikeSeconds, swings, every,
     lull: round(lull(seen.length), 2), fireHit: round(fireHit), meleeHit: round(meleeHit), spawning: !!spawning, phases, striking: round(open.hits + open.burn) };
 }
@@ -452,7 +472,8 @@ function closeInSays(c, hp, { breaking = false } = {}) {
   if (c.firstWalk && c.firstWalk.walk > 0 && c.shield === false) parts.push(` The ${c.firstWalk.walk} seconds of walking to ${breaking ? 'the cage' : 'the nearest'} go straight on, in their fire.`);
   else if (c.firstWalk && c.firstWalk.walk > 0) parts.push(` Each throws three about every ${Math.round(ce.FIREBALL.volleySeconds)} seconds and the shield is up about ${Math.round(DUE_SECONDS * 10) / 10} seconds of each, so with ${n(c.firstWalk.seeing, 'blaze')} at it the walk has the lulls, about ${inHundred((1 - DUE_SECONDS / ce.FIREBALL.volleySeconds) ** c.firstWalk.seeing)} in 100 of the time: the ${c.firstWalk.walk} seconds of walking to ${breaking ? 'the cage' : 'the nearest'} take about ${c.firstWalk.wall}.`);
   parts.push(` Each blaze in reach takes about ${c.swings} swings of the sword, about ${c.strikeSeconds} seconds${c.shield === false ? '' : ' with the shield down'}, while ${c.blazes === 1 ? 'it shoots' : 'every one that sees the bot shoots'}${c.shield === false ? '' : ' as if it were down'}${c.striking > 0 ? ` (about ${c.striking} damage a second from those in sight now, the burning with it)` : ''}; a fireball that lands is about ${c.fireHit} through the armour worn and five seconds alight at a health a second, and a blaze within two blocks swings for about ${c.meleeHit} once a second instead.`);
-  if (breaking) parts.push(' The digging is done with the shield down, the others shooting meanwhile; after it no more come.');
+  if (breaking && c.atCage?.nearest != null) parts.push(` At the cell by the cage ${c.atCage.within5 ? `${c.atCage.within5} of them ${c.atCage.within5 === 1 ? 'is' : 'are'} within five blocks, the nearest ${c.atCage.nearest} off${c.atCage.within2 ? `, ${c.atCage.within2} within two, swinging` : ''}` : `the nearest is ${c.atCage.nearest} off`}: the digging is done with the shield down, each shooting meanwhile from where it is to there; after it no more come.`);
+  else if (breaking) parts.push(' The digging is done with the shield down, the others shooting meanwhile; after it no more come.');
   else if (c.spawning) parts.push(' The spawner within sixteen blocks puts in about one more every six seconds (four every ten to forty), up to six about, and those are fought too.');
   const reach = c.reachable < c.blazes ? ` (${c.reachable} of the ${c.blazes} over ground the sword reaches from; the rest shoot on throughout)` : '';
   if (c.bite?.damage > 0) parts.push(` ${c.bite.biters.map(b => `The ${words(b.name)} ${b.distance} blocks off`).join('; ')} ${c.bite.biters.length === 1 ? 'gets' : 'get'} to the bot meanwhile and ${c.bite.biters.length === 1 ? 'strikes' : 'strike'} until the sword, turning to ${c.bite.biters.length === 1 ? 'it' : 'each'} first, has killed ${c.bite.biters.length === 1 ? 'it' : 'them'}: about ${c.bite.damage} of the damage below, the wither and the like counted.`);
@@ -566,7 +587,11 @@ async function putOutFlames(bot, task) {
 // on the arena server (scripts/blaze-probe.js, one blaze five blocks off,
 // iron armour, 2026-09-28): standing with the shield down, 15.5 damage in
 // 31 seconds, 8 of it the fire; timed to the glow, 1 in 36.
-async function shieldVolley(bot, task, { holdMs = 4500, graceMs = 300, toward = null } = {}) {
+// `face`: a point to face instead of the blazes due, where every shot must
+// come through it (a box's window): turned to the one blaze glowing, a box
+// at the cage left those in line with the window on its other side outside
+// the half the shield covers, and two fireballs came in (note 623).
+async function shieldVolley(bot, task, { holdMs = 4500, graceMs = 300, toward = null, face = null } = {}) {
   if (bot.inventory?.slots?.[45]?.name !== 'shield') return false;
   volleyWatch(bot);
   const due = () => blazesSeeing(bot).filter(e => volleyDue(bot, e));
@@ -588,7 +613,7 @@ async function shieldVolley(bot, task, { holdMs = 4500, graceMs = 300, toward = 
       // every moment, the volley only if it lands.
       if (flamesTouching(bot).length) { await putOutFlames(bot, task); }
       const c = last.reduce((sum, e) => sum.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / last.length);
-      await bot.lookAt(c.offset(0, 0.9, 0), true);
+      await bot.lookAt(face || c.offset(0, 0.9, 0), true);
       raiseShield(bot);
       bot._threatResponseAt = Date.now();
       // Going somewhere the shield faces: on, crouched behind it, which
@@ -728,9 +753,17 @@ async function breakSpawner(bot, task, goal, save, site, { navigate, seconds = C
   const within = () => bot.entity.position.offset(0, 1.62, 0).distanceTo(centre) <= 4.4;
   goal.step = { action: 'break_spawner', spawner: { ...cage } }; save?.();
   const biter = require('./blaze-tactics').biterWatch(bot);
+  // Asked again once as much health is gone as a stance holds for, as the
+  // close-in is, the walk and the digging counted with what follows: run on
+  // to the cage, mid-242-bc-fortress-2 went from 14.3 to 1.7 in three
+  // seconds, a blaze's blow after two fireballs, and was asked only then
+  // (note 623).
+  const startHealth = bot.health ?? 20, { STANCE_HEALTH } = require('./danger');
+  const hurt = () => startHealth - (bot.health ?? 20) >= STANCE_HEALTH;
   let came = null;
   while (Date.now() - started < seconds * 1000 && bot.blockAt(cage)?.name === 'spawner') {
     task.check();
+    if (hurt()) { came = 'health down'; debug('break: health down', round(startHealth - bot.health)); break; }
     if ((came = biter())) break;
     bot._threatResponseAt = Date.now();
     claimBlazes(bot);
@@ -755,8 +788,8 @@ async function breakSpawner(bot, task, goal, save, site, { navigate, seconds = C
   const broke = bot.blockAt(cage)?.name !== 'spawner';
   debug('spawner', broke ? 'broken' : 'standing');
   const left = seconds - (Date.now() - started) / 1000;
-  const { kills } = left > 3 && !came ? await closeIn(bot, task, goal, save, { navigate, seconds: left, item, want }) : { kills: 0 };
-  return { broke, kills };
+  const { kills } = left > 3 && !came ? await closeIn(bot, task, goal, save, { navigate, seconds: left, item, want, startHealth }) : { kills: 0 };
+  return { broke, kills, ...(came ? { ended: came } : {}) };
 }
 
 // The fight a player with a sword and a shield takes to blazes: at the
@@ -765,7 +798,7 @@ async function breakSpawner(bot, task, goal, save, site, { navigate, seconds = C
 // striking whatever is in reach, and picking up a rod that falls near
 // between volleys. Ends after `seconds`, with `want` rods carried, or with
 // no blaze left that ground reaches.
-async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = 'blaze_rod', want = Infinity, upTo = Infinity, stallMs = ce.FIREBALL.volleySeconds * 1000 } = {}) {
+async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = 'blaze_rod', want = Infinity, upTo = Infinity, stallMs = ce.FIREBALL.volleySeconds * 1000, startHealth: begunAt = null } = {}) {
   const { threats } = require('./danger');
   const { canStrike, defendNearby, defenseWeapon, strike } = require('./combat');
   const { countOf } = require('./skills');
@@ -810,7 +843,9 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
     // Asked again once as much health is gone as a stance holds for
     // (danger.js STANCE_HEALTH): the fight's price is Jev's to weigh again
     // with what is left, not the close-in's to run on to its end.
-    const startHealth = bot.health ?? 20, { STANCE_HEALTH } = require('./danger');
+    // `begunAt`: the health the stance began at, when the close-in follows
+    // its walk and digging (breakSpawner).
+    const startHealth = begunAt ?? bot.health ?? 20, { STANCE_HEALTH } = require('./danger');
     const biter = require('./blaze-tactics').biterWatch(bot);
     while (Date.now() < deadline && countOf(bot, item) < want && kills < upTo) {
       task.check();
@@ -975,6 +1010,11 @@ const overSays = (cost, doing) => cost.setup ? `in the next ${cost.seconds} seco
 
 // The stands for the blazes in `danger`, as options: { key: { description,
 // expects, site, kind } }. Only with a blaze among them and a sword or axe.
+// The stance's own list (those in sight) and every other blaze within
+// sixteen: a stand that walks in on them puts the bot in their sight.
+function withinSixteen(bot, danger) {
+  try { return [...danger, ...require('./danger').threats(bot, 16).filter(t => t.entity.name === 'blaze' && !danger.some(d => d.entity?.id === t.entity.id))]; } catch (_) { return danger; }
+}
 function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, holds = [], need = 0 } = {}) {
   const blazes = danger.filter(t => t.entity.name === 'blaze');
   const { defenseWeapon, shooter } = require('./combat');
@@ -1030,10 +1070,12 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     // Priced as the close-in is (note 602), the walk and the digging first:
     // by the drill's row alone it read 34.1 with four blazes nine off, and
     // was taken twice to death there once close_in said its sum.
-    const sum = closeInCost(bot, danger, { breakFirst: { steps: breaking.steps, digSeconds: breaking.digMs / 1000, at: breaking.cell } });
+    // With every blaze within sixteen, seen or not, as the close-in is
+    // (note 606's rule): the walk goes to the cage they hover round.
+    const sum = closeInCost(bot, withinSixteen(bot, danger), { breakFirst: { steps: breaking.steps, digSeconds: breaking.digMs / 1000, at: breaking.cell } });
     options.break_spawner = { kind: 'break', site: breaking, cost: sum, expects: { damage: sum.damage, seconds: Math.max(1, sum.seconds), oneHit: oneHit(standCost(bot, danger, {}).mobs) },
-      description: `Break the blaze spawner: walk ${breaking.steps} block${breaking.steps === 1 ? '' : 's'} (about ${seconds(walk)}, behind the shield for each volley as it comes) to within reach of its cage and break it with the ${words(breaking.pick)} (about ${seconds(round(breaking.digMs / 1000))} of digging), then go at the blazes left with the sword as close_in does. Broken, it makes no more, ever: the ${blazes.length} about now stay, and after them the rods come only from the blazes a fortress makes on its own, one at a time in its corridors; left standing, it makes up to four more every ten to forty seconds while the bot is within sixteen of it, until six are about.` +
-        fire + closeInSays(sum, hp, { breaking: true }) + rowsSays(m) };
+      description: `Break the blaze spawner: walk ${breaking.steps} block${breaking.steps === 1 ? '' : 's'} (about ${seconds(walk)}, behind the shield for each volley as it comes) to within reach of its cage and break it with the ${words(breaking.pick)} (about ${seconds(round(breaking.digMs / 1000))} of digging), then go at the blazes left with the sword as close_in does. Broken, it makes no more, ever: the ${aboutAll.length} about now stay, and after them the rods come only from the blazes a fortress makes on its own, one at a time in its corridors; left standing, it makes up to four more every ten to forty seconds while the bot is within sixteen of it, until six are about.` +
+        fire + closeInSays(sum, hp, { breaking: true }) + rowsSays(m) + ` It runs ${CLOSE_SECONDS} seconds, or until six health is gone, and is asked again then.` };
   }
   const spawner = spawnerSite(bot, undefined, { avoid: biting });
   if (spawner) {
@@ -1073,8 +1115,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     // Priced with every blaze within sixteen, seen or not, as the hunt's
     // is: the stance's own list has only those in sight, and the walk in
     // puts the bot in the others' sight (note 606's rule, closeInCost into).
-    let priced = danger;
-    try { priced = [...danger, ...require('./danger').threats(bot, 16).filter(t => t.entity.name === 'blaze' && !danger.some(d => d.entity?.id === t.entity.id))]; } catch (_) { priced = danger; }
+    const priced = withinSixteen(bot, danger);
     const sum = closeInCost(bot, priced);
     const how = shield
       ? `walk in on the nearest blaze ground reaches (${round(first.distance)} blocks off, about ${seconds(walk)} of walking) while their volleys rest, stop and face each volley behind the shield as it comes, strike each in reach, and pick up the rods between volleys`

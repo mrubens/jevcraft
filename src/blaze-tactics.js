@@ -359,7 +359,8 @@ async function holdBox(bot, task, goal, save, site, { navigate, seconds = 45, it
       if (!inBox(bot, site)) { debug('hold: back in'); await require('./bunker').stepTo(bot, task, site.cell); continue; }
       if (await stand.putOutFlames(bot, task)) { debug('hold: flames'); continue; }
       if (await strikeInReach(bot, task)) { stats.swings++; continue; }
-      if (await stand.shieldVolley(bot, task)) continue;
+      // Behind the window: every shot comes through it (note 623).
+      if (await stand.shieldVolley(bot, task, { face })) continue;
       if (await fetchRods(bot, task, site, { navigate, item })) { debug('hold: rods'); continue; }
       // A wall knocked out (a fireball does not break blocks, but the bot's
       // own swing at the window can): put back.

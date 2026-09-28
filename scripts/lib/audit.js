@@ -117,7 +117,18 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   // two actions six times or more within a minute.
   const flips = [];
   const changes = [];
-  for (const o of obs) { const a = stepOf(o.snapshot); if (a && changes.at(-1)?.a !== a) changes.push({ a, t: o.t, s: o.snapshot }); }
+  // A hold's own swing is not a second step: a bunker or a box held with a
+  // blaze just past the sword steps out to strike it (blaze_sortie, set by
+  // the sortie and reset by the hold's next look), so the step trades names
+  // for the length of the hold. mid-242-bc-fortress-4 (25587, 2026-09-28)
+  // was failed as "flipping hold_bunker <-> blaze_sortie" on one hold at
+  // full health, no loop in it (note 623).
+  const HOLDS_OWN = { blaze_sortie: /^hold_(bunker|box)$/ };
+  for (const o of obs) {
+    const a = stepOf(o.snapshot), held = changes.at(-1)?.a;
+    if (a && HOLDS_OWN[a]?.test(held || '')) continue;
+    if (a && held !== a) changes.push({ a, t: o.t, s: o.snapshot });
+  }
   for (let i = 0; i + 6 < changes.length; i++) {
     const win = changes.slice(i, i + 7);
     const names = new Set(win.map(c => c.a));

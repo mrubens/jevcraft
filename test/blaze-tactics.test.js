@@ -158,6 +158,27 @@ test('the hold ends in a whole box with the shield up and facing the window: the
   assert.equal(bot._shieldRaised, false);
 });
 
+test('in the box the shield meets a volley facing the window, not the blaze it comes from: every shot comes through the window (mid-242-bc, 25581, 18:01:44, note 623)', async () => {
+  // Six blazes in line with the window, spread over some eighty degrees;
+  // turned to the one glowing, 41 degrees west of the window, the shield
+  // left those east of it 72 to 78 degrees off, and two fireballs came in.
+  const bot = floorWorld({ at: new Vec3(0.5, 64, 9.5) });
+  const site = T.boxSite(bot, { from: new Vec3(0.5, 64.5, 0.5) });
+  for (const c of site.walls) bot.placed.set(`${c}`, 'cobblestone');
+  const glowing = blazeAt(bot, 9, 4.5, 65.5, 5.5);
+  glowing.metadata[16] = 1;
+  const looks = [];
+  Object.assign(bot, { lookAt: async p => { looks.push(`${p}`); }, activateItem() {}, deactivateItem() {}, equip: async () => {}, clearControlStates() {}, setControlState() {}, attack() {} });
+  stand.volleyWatch(bot);
+  bot.emit('entityUpdate', glowing);
+  setTimeout(() => { glowing.metadata[16] = 0; bot.emit('entityUpdate', glowing); }, 150);
+  const { Task } = require('../src/skills');
+  await T.holdBox(bot, new Task('x'), {}, null, site, { seconds: 0.3 }).catch(() => {});
+  const face = `${site.window.offset(0.5, 0.5, 0.5)}`;
+  assert(looks.length > 3, `the volley was met: ${looks.length} looks`);
+  assert.deepEqual([...new Set(looks)], [face], 'faced the window throughout');
+});
+
 test('the corner: behind rock a blaze has no line past, the cell beside it in their line; with no rock near, a corner of two blocks built where the bot stands; said with what a blaze out of sight does', () => {
   // A pillar of brick two wide at x 2..3, z 0, y 64..65, the blaze east.
   const pillar = p => p.y <= 63 || (p.y <= 65 && p.z === 0 && (p.x === 2 || p.x === 3));

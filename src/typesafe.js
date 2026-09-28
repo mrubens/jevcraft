@@ -43,6 +43,27 @@ function stage(trace, name, extra = null) {
   (trace.stages ||= []).push({ stage: name, ms: Math.round(performance.now() - trace.t0), ...(extra || {}) });
 }
 
+// A choice's answer is the option with the highest probability (the
+// service's Choice contract), read from the distribution it returns: now
+// and then the `choice` field names one a hundredth below another in the
+// same response (36 of 12,070 judgments in the flight records of
+// 2026-09-27 and 28, each by 0.01). mid-242-bc-fortress-2 took
+// break_spawner at 0.26 over leave_and_heal at 0.27 and died of it
+// (note 623); what is taken, logged and weighed must be the one the
+// distribution puts first. A tie keeps the service's pick; `served` keeps
+// what it said.
+function pickByDistribution(response) {
+  for (const answer of Object.values(response?.answers || {})) {
+    const p = answer?.probabilities;
+    if (!answer || typeof answer.choice !== 'string' || !p || typeof p !== 'object') continue;
+    const mine = Number(p[answer.choice]) || 0;
+    let best = answer.choice, top = mine;
+    for (const [key, value] of Object.entries(p)) if (Number(value) > top) { best = key; top = Number(value); }
+    if (best !== answer.choice) { answer.served = { choice: answer.choice, probability: mine }; answer.choice = best; }
+  }
+  return response;
+}
+
 class TypeSafe {
   constructor({ provider = process.env.JEV_PROVIDER || (process.env.TYPESAFE_API_KEY ? 'typesafe' : process.env.OPENROUTER_API_KEY ? 'openrouter' : 'typesafe'),
     apiKey, model, timeout = 10000, maxRetries = 2 } = {}) {
@@ -145,7 +166,7 @@ class TypeSafe {
           throw err;
         }
 
-        const parsed = JSON.parse(text);
+        const parsed = pickByDistribution(JSON.parse(text));
         stage(trace, 'parsed');
         return parsed;
       } catch (err) {
@@ -164,4 +185,4 @@ class TypeSafe {
   }
 }
 
-module.exports = { TypeSafe, TypeSafeError, choice, noul, score, withRequestSignal, stage };
+module.exports = { TypeSafe, TypeSafeError, choice, noul, score, withRequestSignal, stage, pickByDistribution };

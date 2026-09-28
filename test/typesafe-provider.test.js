@@ -70,3 +70,27 @@ test('a service that is down is asked again in a minute, not by every caller mea
   await client.systemOne({ state: {}, questions: {} });
   assert.equal(client.openUntil, undefined, 'an answer closes it');
 });
+
+test('a choice is the option its distribution puts first: mid-242-bc-fortress-2 was served break_spawner at 0.26 beside leave_and_heal at 0.27 (note 623)', async t => {
+  // The recorded answer, 2026-09-28 17:56:27Z on 25587.
+  const probabilities = { retreat: 0.1, nook: 0, leave_and_heal: 0.27, fight_at_spawner: 0.03, back_to_wall: 0.01, eat: 0.01, dig_in_and_fight: 0, take_cover: 0.07, pillar: 0.02,
+    charge_nearest: 0.09, seal: 0, keep_working: 0.01, break_spawner: 0.26, none_good: 0, out_of_sight: 0.01, close_in: 0.02, fight: 0.04, box_here: 0.02, dig_down: 0.01, corner_ambush: 0.03, bunker: 0 };
+  const served = { answers: { branch_0: { type: 'choice', choice: 'break_spawner', confidence: 0.23, probabilities }, tied: { choice: 'a', probabilities: { a: 0.4, b: 0.4, c: 0.2 } }, yes: { probability: 0.7 } } };
+  t.mock.method(global, 'fetch', async () => ({ ok: true, headers: { get: () => null }, text: async () => JSON.stringify(served) }));
+  const result = await new TypeSafe({ provider: 'typesafe', apiKey: 'k' }).systemOne({ state: {}, questions: {} });
+  assert.equal(result.answers.branch_0.choice, 'leave_and_heal');
+  assert.deepEqual(result.answers.branch_0.served, { choice: 'break_spawner', probability: 0.26 });
+  assert.equal(result.answers.tied.choice, 'a', 'a tie keeps the service\'s pick');
+  assert.equal(result.answers.tied.served, undefined);
+  assert.deepEqual(result.answers.yes, { probability: 0.7 }, 'a noul is left alone');
+});
+
+test('the decision tree takes the option the distribution puts first', async () => {
+  const { decideTree } = require('../src/decisions/tree');
+  const { pickByDistribution } = require('../src/typesafe');
+  const client = { systemOne: async () => pickByDistribution({ answers: { branch_0: { choice: 'b', probabilities: { a: 0.27, b: 0.26, c: 0.21 } } } }) };
+  const tree = { a: { description: 'A' }, b: { description: 'B' }, c: { description: 'C' } };
+  const d = await decideTree(client, { state: {}, tree });
+  assert.deepEqual(d.path, ['a']);
+  assert.equal(d.judgments[0].served.choice, 'b');
+});

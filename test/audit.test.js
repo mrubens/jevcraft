@@ -12,3 +12,13 @@ test('a fall to nothing is a death however small the last step', () => {
   const a = analyse({ identity: id, from: t0 - 1000, to: t0 + 10000, dir });
   assert.equal(a.deaths.length, 1);
 });
+
+test('a bunker hold that steps out to strike a blaze and back is one hold, not a flip between hold_bunker and blaze_sortie (note 623)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'audit-'));
+  const id = '127_0_0_1-2-Jev', t0 = Date.parse('2026-09-28T18:08:40Z');
+  const obs = (s, action) => JSON.stringify({ kind: 'observation', label: 'observation', at: new Date(t0 + s * 1000).toISOString(), snapshot: { health: 20, position: { x: 0, y: 64, z: 0 }, goal: { step: { action } } } });
+  const file = path.join(dir, `${id}-2026-09-28T18-08-00-000Z.jsonl`);
+  const run = names => { fs.writeFileSync(file, names.map((n, i) => obs(i * 3, n)).join('\n') + '\n'); return analyse({ identity: id, from: t0 - 1000, to: t0 + 60000, dir }).flips; };
+  assert.deepEqual(run(Array.from({ length: 16 }, (_, i) => (i % 2 ? 'blaze_sortie' : 'hold_bunker'))), []);
+  assert.equal(run(Array.from({ length: 16 }, (_, i) => (i % 2 ? 'mine' : 'walk_to_ore'))).length > 0, true, 'two other steps trading names are still a flip');
+});

@@ -555,7 +555,9 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
       }
       const struck = await defendNearby(bot, task, goal, save);
       if (struck) met.swings++;
-      const swung = struck || await stand.shieldVolley(bot, task) || await stand.sortie(bot, task, goal, save, bunker.inside);
+      // A volley met facing the door, not the blaze it comes from: every
+      // shot comes in through it (note 623).
+      const swung = struck || await stand.shieldVolley(bot, task, { face: watch.offset(0.5, 1.2, 0.5) }) || await stand.sortie(bot, task, goal, save, bunker.inside);
       if (!swung) {
         // Back in place and facing the door between swings.
         const p = bot.entity.position, c = bunker.inside.offset(0.5, 0, 0.5);
