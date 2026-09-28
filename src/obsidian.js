@@ -55,6 +55,37 @@ function pourSpots(bot, surface, { limit = 8 } = {}) {
   return [...spots.values()].sort((a, b) => b.reach - a.reach || a.feet.distanceTo(here) - b.feet.distanceTo(here)).slice(0, limit);
 }
 
+// Where lava is scooped from: any dry place to stand a block or two above
+// the pool with a surface source in a bucket's reach and nothing solid in
+// the line to it, as a player scoops across the flowing lava at a pool's
+// edge. Not only the shore beside a source, as a pour is: each bucket taken
+// from the edge leaves flowing lava there, and mid-242-aa, ten trips into
+// its pool, found no source beside any shore and dug round the pool's rim
+// for four minutes toward the air over sources two blocks in (note 546).
+// Ranked by the sources in reach, up to the buckets to fill, then nearness.
+function scoopSpots(bot, surface, { want = 1, limit = 8 } = {}) {
+  const here = bot.entity.position, spots = new Map();
+  const visible = (eye, p) => {
+    const aim = p.offset(0.5, 0.5, 0.5), delta = aim.minus(eye), d = delta.norm();
+    if (d > REACH) return false;
+    const hit = bot.world?.raycast?.(eye, delta.scaled(1 / d), d);
+    return !hit || eye.distanceTo(hit.intersect || hit.position) >= d - 0.1;
+  };
+  for (const p of surface) for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (const dy of [1, 2]) {
+    const feet = p.offset(dx, dy, dz), key = `${feet}`;
+    if (spots.has(key)) continue;
+    spots.set(key, null);
+    const shore = feet.plus(DOWN);
+    if (!solid(bot.blockAt(shore)) || !open(bot.blockAt(feet)) || !open(bot.blockAt(feet.plus(UP)))) continue;
+    if (!dryStanding(bot, feet) || !safeFromHostiles(bot, feet.offset(0.5, 0, 0.5))) continue;
+    const eye = feet.offset(0.5, 1.62, 0.5);
+    const inReach = surface.filter(q => q.y < feet.y && visible(eye, q)).length;
+    if (inReach) spots.set(key, { shore, feet, reach: inReach });
+  }
+  return [...spots.values()].filter(Boolean)
+    .sort((a, b) => Math.min(b.reach, want) - Math.min(a.reach, want) || a.feet.distanceTo(here) - b.feet.distanceTo(here)).slice(0, limit);
+}
+
 // Crust blocks safe to open: obsidian with nothing molten beside or beneath,
 // so opening one lets no lava in and the drop lands on a floor.
 function safeCrust(bot, origin, { distance = 12, count = 64 } = {}) {
@@ -221,6 +252,10 @@ function castTo(bot, goal) {
 const legSeconds = (a, b) => a.distanceTo(b) / 4.3 + (Math.abs(a.y - b.y) > 8 ? Math.abs(a.y - b.y) * 3 : 0);
 const carrySeconds = (here, lava, to) => legSeconds(here, lava) + (to ? legSeconds(lava, to) : 0);
 
+// Where a walk to lava is judged from: one that came no nearer from here
+// is not tried again from here to the next spot along the same shore.
+const walkArea = p => ({ x: Math.floor(p.x / 16) * 16, y: Math.floor(p.y / 16) * 16, z: Math.floor(p.z / 16) * 16 });
+
 // Lava in buckets, for a portal frame cast in place (portal-cast.js): from
 // dry ground at a pool's edge, the same shore a pour of water is made from,
 // an empty bucket used on each surface source in reach. The feet are a block
@@ -260,12 +295,16 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
       if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
     }
   }
-  const spots = pourSpots(bot, surface);
+  const spots = scoopSpots(bot, surface, { want: step.count || 1 });
+  let unsurveyed = null;
   for (const spot of spots) {
     task.check();
     const destination = new goals.GoalBlock(spot.feet.x, spot.feet.y, spot.feet.z);
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 500);
-    if (route.status !== 'success') continue;
+    if (route.status !== 'success') {
+      if (route.status === 'timeout' && !unsurveyed && !isSetAside(goal, 'lava_walk', walkArea(here))) unsurveyed = spot;
+      continue;
+    }
     goal.step = { ...step, phase: 'scoop', position: { ...spot.feet } }; save();
     if (!bot.entity.position.floored().equals(spot.feet)) await navigate(bot, task, destination, { timeoutMs: 20000, stallMs: 5000 });
     if (!bot.entity.position.floored().equals(spot.feet)) continue;
@@ -293,6 +332,24 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     }
     if (filled) return;
     if (noRoom) { goal.step = { ...step, phase: 'no_room' }; save(); throw new Error('No room in my pockets for a lava bucket: each takes a slot of its own, and nothing was dropped for one'); }
+  }
+  // A spot whose route search ran out of its half second is not a spot with
+  // no way to it: the walk there is made, with a walk's own time to find it.
+  // mid-242-aa's frame was forty blocks from its pool and eighteen below it;
+  // every search from the frame ran out, and each of ten trips dug a
+  // staircase up instead, about four minutes a trip, where the walk the
+  // stall's detour took there was thirty-three seconds (note 546). A walk
+  // that comes no nearer is set aside for ten minutes, and the staircase is
+  // the way from here meanwhile.
+  if (unsurveyed) {
+    const feet = unsurveyed.feet, start = bot.entity.position.clone(), from = start.distanceTo(feet);
+    goal.step = { ...step, phase: 'to_lava', position: { ...feet } }; save();
+    try { await navigate(bot, task, new goals.GoalBlock(feet.x, feet.y, feet.z), { timeoutMs: 60000, stallMs: 8000, sprint: true }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (!bot.entity.position.floored().equals(feet) && from - bot.entity.position.distanceTo(feet) < 4) {
+      setAside(goal, 'lava_walk', walkArea(start), 'the walk to the lava came no nearer', 600000); save();
+    }
+    return;
   }
   // Lava whose staircase is resting is not lava to dig toward: mid-215-f
   // saw a pool two blocks below it with no scooping spot a route reached,
@@ -344,4 +401,4 @@ function noLavaWay(bot, goal, surface = []) {
   return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
-module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
+module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };

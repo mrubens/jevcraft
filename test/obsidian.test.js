@@ -196,6 +196,8 @@ test('lava in buckets: planned from empty buckets, scooped from the dry shore a 
   await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 2 }, {}, () => {}, actions);
   assert.equal(items.find(i => i.name === 'lava_bucket').count, 2);
   assert.equal(scooped.length, 2);
+  // Where it stood, walked to or already there: the pool is in reach from two blocks off (note 546).
+  stood ||= bot.entity.position.floored();
   assert.equal(stood.y, 11, 'a block above the pool');
   assert.equal(bot.blockAt(stood.offset(0, -1, 0)).name, 'stone', 'on dry ground');
   assert(scooped.every(c => c.y === 10 && !(c.x === stood.x && c.z === stood.z)), 'from the pool, never where it stands');
@@ -369,4 +371,73 @@ test('lava for a cast frame is fetched by the carry to the frame: the pool besid
   assert.equal(walked.length, 0);
   assert.equal(dug.length, 1);
   assert.equal(dug[0].y, LAVA_DEPTH);
+});
+
+// A bot at world()'s pool whose empty buckets take the source looked at.
+function scooper(world0) {
+  const { bot, items, blocks } = world0;
+  items.splice(0, items.length, { name: 'bucket', count: 1 });
+  const scooped = [];
+  let look;
+  bot.equip = async () => {}; bot.deactivateItem = () => {};
+  bot.lookAt = async p => { look = p; };
+  bot.world = { raycast: () => null };
+  bot.activateItem = () => {
+    const c = look.floored();
+    scooped.push(c);
+    blocks.delete(`${c.x},${c.y},${c.z}`);
+    items[0].count--;
+    items.push({ name: 'lava_bucket', count: 1 });
+  };
+  return scooped;
+}
+
+test('lava is scooped from where a source is in reach, not only from the shore beside one: the edge taken, the middle is scooped across it', async () => {
+  // mid-242-aa (note 546): ten trips into its pool left flowing lava all round the edge; with no source beside any
+  // shore the fetch dug round the rim toward the air over the sources two blocks in, four minutes, turning with its retreat.
+  const { collectLava, scoopSpots } = require('../src/obsidian');
+  const w = world();
+  for (let x = 0; x < 3; x++) for (let z = 0; z < 3; z++) if (x !== 1 || z !== 1) w.set(x, 10, z, 'lava', { getProperties: () => ({ level: 2 }) });
+  const surface = poolSurface(w.bot);
+  assert.equal(surface.length, 1, 'only the middle is a source');
+  assert.equal(pourSpots(w.bot, surface).length, 0, 'no shore beside it');
+  const spots = scoopSpots(w.bot, surface);
+  assert(spots.length, 'somewhere to scoop it from');
+  assert(spots.every(s => s.feet.y >= 11 && w.bot.blockAt(s.shore).name === 'stone'), 'a block above the pool, on dry ground');
+  const scooped = scooper(w);
+  const dug = [];
+  const actions = { navigate: async (b, t, g) => { w.bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  await collectLava(w.bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, {}, () => {}, actions);
+  assert.equal(dug.length, 0, `not dug toward: ${dug.map(String)}`);
+  assert.deepEqual(scooped.map(String), ['(1, 10, 1)']);
+});
+
+test('a scooping spot whose route search ran out of time is walked to, not dug toward; a walk that comes no nearer rests and the staircase is the way', async () => {
+  // mid-242-aa (note 546): from its frame forty blocks off and eighteen below, every half-second search ran out, and each
+  // of ten trips dug a staircase up to the pool, about four minutes a trip; the walk there took thirty-three seconds.
+  const { collectLava } = require('../src/obsidian');
+  const w = world();
+  w.bot.entity.position = new Vec3(30.5, 11, 1.5);
+  w.bot.pathfinder = { movements: {}, getPathTo: async () => ({ status: 'timeout', path: [] }) };
+  scooper(w);
+  const walked = [], dug = [];
+  const goal = {};
+  let moves = true;
+  const actions = { navigate: async (b, t, g) => { walked.push(new Vec3(g.x, g.y, g.z)); if (moves) w.bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
+  await collectLava(w.bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);
+  assert.equal(dug.length, 0, `not dug toward: ${dug.map(String)}`);
+  assert.equal(walked.length, 1);
+  assert.equal(goal.step.phase, 'to_lava');
+  assert.equal(walked[0].y, 11, 'to a spot above the pool');
+  // A walk that goes nowhere: set aside, and the next pass digs.
+  moves = false;
+  w.bot.entity.position = new Vec3(30.5, 11, 1.5);
+  walked.length = 0;
+  await collectLava(w.bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);
+  assert.equal(walked.length, 1);
+  await collectLava(w.bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);
+  assert.equal(walked.length, 1, 'not walked at again');
+  assert.equal(dug.length, 1, 'the staircase instead');
 });

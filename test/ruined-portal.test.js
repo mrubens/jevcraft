@@ -236,6 +236,33 @@ test('with no lava carried the cast goes for lava, as many as the empty buckets 
   assert.equal(obsidian(), 4);
 });
 
+test('a fetch for lava is named once, not once a pass: the fill\'s stairs, a block a pass, are not a flip between the cast and the fill', async () => {
+  // mid-242-aa (note 546): every pass named the cast's fetch, then the fill's staircase stepped a block and named the
+  // fill: two changes a stair, and four blocks in five seconds were raised as "turning between cast portal and fill
+  // bucket 4 times in 2 seconds without getting anywhere", strike 4.
+  const { Task } = require('../src/skills');
+  const { flipWatch } = require('../src/stillness');
+  const { bot, actions, add } = castingBot({ water_bucket: 1, bucket: 1, cobblestone: 64 });
+  const goal = { portalFrame: newFrame('x') };
+  let t = 5_000_000, raised = null;
+  const named = [];
+  const save = () => { named.push(`${goal.step?.action}:${goal.step?.phase}`); raised = flipWatch(bot, goal, t) || raised; };
+  actions.acquireStep = async (b, task, item) => {
+    goal.step = { action: 'fill_bucket', item, phase: 'tunnel' }; save();
+    bot.entity.position = bot.entity.position.offset(0.7, 0, 0);
+    return false;
+  };
+  for (let pass = 0; pass < 6; pass++) { t += 800; assert.equal(await cast.castFrame(bot, new Task('cast'), goal, save, actions), false); }
+  assert.equal(raised, null, raised?.why);
+  assert.equal(named.filter(n => n === 'cast_portal:fetch_lava').length, 1, 'the fetch named once');
+  // Any other phase of the cast names it afresh: back with lava, the pour is the cast's, and the next fetch is named again.
+  add('bucket', -1); add('lava_bucket', 1);
+  named.length = 0;
+  await cast.castFrame(bot, new Task('cast'), goal, save, actions);
+  assert(named.includes('cast_portal:lava'), named.join(' '));
+  assert.equal(named.filter(n => n === 'cast_portal:fetch_lava').length, 1, named.join(' '));
+});
+
 test('carried obsidian is placed in a cast frame, not cast', async () => {
   const { Task } = require('../src/skills');
   const { bot, w, log, actions } = castingBot({ obsidian: 10, cobblestone: 8 });

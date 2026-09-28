@@ -338,7 +338,7 @@ async function castFrame(bot, task, goal, save, actions) {
   const check = () => { task.check(); checkAir(bot); checkThreats(bot); };
   const untrack = p => { frame.castTemp = frame.castTemp.filter(t => !at(t).equals(p)); };
   const track = (p, material) => { untrack(p); frame.castTemp.push({ x: p.x, y: p.y, z: p.z, material }); };
-  const stepIs = (p, phase, extra = {}) => { goal.step = { action: 'cast_portal', item: 'obsidian', slot: { x: p.x, y: p.y, z: p.z }, phase, ...extra }; save(); };
+  const stepIs = (p, phase, extra = {}) => { delete frame.fetchingLava; goal.step = { action: 'cast_portal', item: 'obsidian', slot: { x: p.x, y: p.y, z: p.z }, phase, ...extra }; save(); };
   const order = castOrder(frame);
   for (const p of order) {
     if (w.name(p) === 'obsidian') continue;
@@ -403,7 +403,14 @@ async function castFrame(bot, task, goal, save, actions) {
         // working clock: the pace so far, said beside the estimate (note 470).
         const m = goal.portalMethod;
         if (m && !Number.isFinite(m.tripFrom)) m.tripFrom = m.activeMs || 0;
-        stepIs(p, 'fetch_lava', { buckets: want, left }); await acquireStep(bot, task, 'lava_bucket', want, goal, save); return false;
+        // Named once a fetch, not once a pass: the fetch's own steps (the
+        // fill's staircase, a stair a pass) took the name back every pass,
+        // two changes a stair, and mid-242-aa's stairs toward its pool,
+        // four blocks in five seconds, were raised as a flip between the
+        // cast and the fill without getting anywhere (note 546). Any other
+        // phase of the cast names it afresh.
+        if (!frame.fetchingLava) { stepIs(p, 'fetch_lava', { buckets: want, left }); frame.fetchingLava = true; }
+        await acquireStep(bot, task, 'lava_bucket', want, goal, save); return false;
       }
       const walls = wallsFor(p, w.solidAt);
       if (!walls) throw new Error(`Nothing to build the walls round the frame slot at ${p} against`);
