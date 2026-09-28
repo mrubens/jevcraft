@@ -216,3 +216,55 @@ test('a decision records when it was asked beside when it was answered, and tell
   assert.ok(Date.parse(entry.askedAt) <= Date.parse(entry.at) - 25, `${entry.askedAt} then ${entry.at}`);
   assert.equal(heard.length, 1); assert.equal(heard[0], entry);
 });
+
+// Note 540: mid-243-q-nether-3's turn_priority said "asking Jev" for 5.6
+// seconds while its task check threw at every look; whatever held the
+// request under it, the question must end when it is stopped.
+test('a question ends when its task check throws, even if the request under it never settles, and says so a second on', async () => {
+  const { decide, endsWhenStopped } = require('../src/decisions');
+  const { EventEmitter } = require('node:events');
+  const bot = new EventEmitter(); bot.entity = { position: { x: 0, y: 64, z: 0 } }; bot.game = { dimension: 'overworld' };
+  bot._turn = { holder: 'work', phase: 'mine', since: Date.now() };
+  let stop = false, seen = null;
+  const task = { check() { if (stop) { const e = new Error('Preempted by lava'); e.name = 'NeedsSafety'; throw e; } } };
+  // A client that ignores the abort: the hang, whatever its cause.
+  const client = { systemOne: ({ trace }) => { seen = trace; return new Promise(() => {}); } };
+  setTimeout(() => { stop = true; }, 60).unref();
+  const started = Date.now();
+  const ended = decide('turn_priority', { client, bot, task, tree: { survival: { description: 'a' }, work: { description: 'b' } }, state: {}, watchMs: 20 });
+  assert.equal(bot._asking?.id, 'turn_priority', 'the question out is on the bot for the flight frames');
+  await assert.rejects(Promise.race([ended, new Promise((_, reject) => setTimeout(() => reject(new Error('still asking after two seconds')), 2000).unref())]),
+    err => err.name === 'NeedsSafety');
+  assert.ok(Date.now() - started < 1000);
+  assert.equal(bot._turn.holder, 'work', 'the turn mark is given back');
+  assert.equal(bot._asking, undefined);
+  assert.deepEqual(seen.stages.map(s => s.stage), ['queued', 'asked', 'stopped']);
+  assert.match(seen.stages[2].why, /Preempted by lava/);
+
+  // Still out a second after the stop, it is said with its stages; settling
+  // late, that is said too.
+  const lines = [], controller = new AbortController();
+  let settle;
+  const trace = { id: 'q', t0: performance.now(), stages: [{ stage: 'queued', ms: 0 }, { stage: 'sent', ms: 3 }] };
+  const asking = endsWhenStopped(new Promise(resolve => { settle = resolve; }), controller.signal, trace, line => lines.push(line));
+  controller.abort(new Error('stopped'));
+  await assert.rejects(asking, /stopped/);
+  await new Promise(r => setTimeout(r, 1100));
+  assert.match(lines[0], /^\[question\] q stopped 1s ago and its request is still out: queued 0, sent 3/);
+  settle({ answers: {} });
+  await new Promise(r => setImmediate(r));
+  assert.match(lines[1], /^\[question\] q's request settled \d+ ms after it was stopped/);
+  assert.equal(trace.stages.at(-1).stage, 'settled');
+});
+
+test('a question answered records the time of each stage, from queued through the request to its record', async t => {
+  const { decide } = require('../src/decisions');
+  t.mock.method(global, 'fetch', async () => ({ ok: true, status: 200, headers: { get: () => null },
+    text: async () => JSON.stringify({ answers: { branch_0: { choice: 'go_back', confidence: 0.9 } } }) }));
+  const goal = {};
+  const decision = await decide('corpse_run', { client: new TypeSafe({ apiKey: 'unit-test' }), goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
+  const entry = goal.decisions.at(-1);
+  assert.deepEqual(entry.stages.map(s => s.stage), ['queued', 'asked', 'sent', 'headers', 'body', 'parsed', 'recorded']);
+  assert.equal(decision.stages, entry.stages);
+  assert.ok(entry.stages.every((s, i, all) => !i || s.ms >= all[i - 1].ms));
+});

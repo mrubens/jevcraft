@@ -259,7 +259,10 @@ async function arbitrate(bot, claims, ctx = {}) {
     const winner = (!out.cut && live.find(c => c.layer === decision?.path?.[0])) || rulesPick(live);
     // Cut short, the rules' pick holds only until Jev can be asked again.
     state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + (out.cut ? IDLE_MS : RULING_MS), ...seen };
-    if (out.cut) console.log(`[arbiter] turn_priority cut short (${out.cut}): gave ${winner.layer} ${winner.action} by the rules`);
+    // Said with how far the question had got (decisions/index.js), the
+    // stages a question that never came back could not show (note 540).
+    const got = bot?._asking?.id === 'turn_priority' ? `; the question had got to ${bot._asking.stages.map(s => `${s.stage} ${s.ms}`).join(', ')}` : '';
+    if (out.cut) console.log(`[arbiter] turn_priority cut short (${out.cut}): gave ${winner.layer} ${winner.action} by the rules${got}`);
     Object.assign(result, { winner, by: out.cut ? 'rules' : 'jev', ...(out.cut ? { cut: out.cut } : {}), ruling: state.ruling });
     delete result.pending;
   }
@@ -479,7 +482,7 @@ function outranks(bot, reflex, holder, now = Date.now()) {
 // -> the preemption, or null
 function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = probe, log = console.log } = {}) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
-  if (bot._preempt) return bot._preempt;
+  if (bot._preempt) return physicsOver(bot, bot._preempt, { now, look, log });
   const state = bot._arbiter ||= {};
   const holder = live ? state.holder || null : bot._turn ? { layer: bot._turn.holder, action: bot._turn.phase } : null;
   const top = observeReflexes(bot, state.reflexes || [], look)[0];
@@ -502,6 +505,25 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   bot._preempt = { ...p, at: now, over };
   const was = require('./turn').stopForTurn(bot, p.why);
   log(`[arbiter] preempted ${over}: ${JSON.stringify(was)}`);
+  return bot._preempt;
+}
+// While a preemption waits to be picked up, the body's physics is still
+// looked for (lava, fire, the head in a block, air), and one above what
+// waits takes its place: the holder is stopped again and the arbiter picks
+// up the physics. mid-243-q-nether-3 was knocked into lava with a newcomer's
+// preemption waiting, the watch looking at nothing (note 540). Newcomers
+// and alerts are not looked for until the arbiter has ruled: the same
+// enderman coming on from four blocks to three to two preempted three times
+// and cut the question each time (note 539). A newcomer's id is kept, so
+// the ruling still knows it.
+function physicsOver(bot, pending, { now = Date.now(), look = probe, log = console.log } = {}) {
+  const state = bot._arbiter ||= {};
+  const top = observeReflexes(bot, state.reflexes || [], { ...look, mobs: () => [] }).filter(r => !ALERTS.has(r.key))[0];
+  if (!top || (REFLEX_RANK[top.key] ?? 99) >= (REFLEX_RANK[pending.by] ?? 99)) return pending;
+  const why = `${top.action.replaceAll('_', ' ')} ${JSON.stringify(top.facts)}`;
+  bot._preempt = { by: top.key, layer: top.layer, action: top.action, facts: top.facts, why, ...(pending.id !== undefined ? { id: pending.id } : {}), at: now, over: pending.over, waited: pending.by };
+  const was = require('./turn').stopForTurn(bot, why);
+  log(`[arbiter] preempted ${pending.over || 'nothing held'} again, ${pending.by} waiting: ${JSON.stringify(was)}`);
   return bot._preempt;
 }
 // Four looks a second beside the stall watch, from the loop's start to its

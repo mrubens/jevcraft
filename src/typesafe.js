@@ -35,6 +35,14 @@ function withRequestSignal(client, signal) {
   } };
 }
 
+// A stage of a call, marked on its trace as milliseconds since the trace
+// began (trace.t0) and kept in order: { stage, ms, ...extra }. Cheap and
+// always on; a trace with no t0 is left alone.
+function stage(trace, name, extra = null) {
+  if (!trace || !Number.isFinite(trace.t0)) return;
+  (trace.stages ||= []).push({ stage: name, ms: Math.round(performance.now() - trace.t0), ...(extra || {}) });
+}
+
 class TypeSafe {
   constructor({ provider = process.env.JEV_PROVIDER || (process.env.TYPESAFE_API_KEY ? 'typesafe' : process.env.OPENROUTER_API_KEY ? 'openrouter' : 'typesafe'),
     apiKey, model, timeout = 10000, maxRetries = 2 } = {}) {
@@ -63,11 +71,14 @@ class TypeSafe {
   // decisions during an outage would stand the bot still for minutes. While
   // the breaker is open a call fails at once and its caller takes its
   // rule-based fallback.
-  async systemOne({ state, questions, model = this.model, signal, run, kind }) {
-    if (this.openUntil > Date.now()) throw new TypeSafeError(`The decision service is not answering; asking again in ${Math.ceil((this.openUntil - Date.now()) / 1000)}s`, { status: 503 });
+  // `trace`, when given, is marked with the time of each stage of the call
+  // (stage() below): a question that never came back (mid-243-q-nether-3,
+  // note 540) could not say where it stood.
+  async systemOne({ state, questions, model = this.model, signal, run, kind, trace }) {
+    if (this.openUntil > Date.now()) { stage(trace, 'breaker'); throw new TypeSafeError(`The decision service is not answering; asking again in ${Math.ceil((this.openUntil - Date.now()) / 1000)}s`, { status: 503 }); }
     const started = performance.now();
     try {
-      const response = await this.exchange({ state, questions, model, signal });
+      const response = await this.exchange({ state, questions, model, signal, trace });
       this.charge({ run, kind, usage: response?.usage, latencyMs: performance.now() - started, ok: true });
       delete this.openUntil;
       return response;
@@ -84,7 +95,7 @@ class TypeSafe {
     try { this.ledger.record(entry); } catch (err) { console.error('[ledger]', err.message); }
   }
 
-  async exchange({ state, questions, model = this.model, signal }) {
+  async exchange({ state, questions, model = this.model, signal, trace }) {
     // OpenRouter accepts omitted optional criteria, but rejects explicit null
     // for Noul questions. Preserve the caller's native questions unchanged.
     const wireQuestions = this.provider === 'openrouter' ? Object.fromEntries(Object.entries(questions).map(([id, question]) => {
@@ -99,12 +110,14 @@ class TypeSafe {
       signal?.throwIfAborted();
       if (attempt > 0) {
         const backoff = Math.min(500 * 2 ** (attempt - 1), 5000);
+        stage(trace, 'retry', { attempt, backoffMs: Math.round(backoff) });
         await require('node:timers/promises').setTimeout(backoff * (1 - Math.random() * 0.25), undefined, { signal });
       }
 
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeout);
       try {
+        stage(trace, 'sent', attempt ? { attempt } : null);
         const res = await fetch(this.endpoint, {
           method: 'POST',
           headers: {
@@ -116,7 +129,9 @@ class TypeSafe {
         });
 
         const requestId = res.headers.get('x-request-id') || undefined;
+        stage(trace, 'headers', { status: res.status, ...(requestId ? { requestId } : {}) });
         const text = await res.text();
+        stage(trace, 'body', { bytes: text.length });
 
         if (!res.ok) {
           const err = new TypeSafeError(
@@ -130,8 +145,11 @@ class TypeSafe {
           throw err;
         }
 
-        return JSON.parse(text);
+        const parsed = JSON.parse(text);
+        stage(trace, 'parsed');
+        return parsed;
       } catch (err) {
+        stage(trace, 'failed', { error: String(err?.name || err).slice(0, 40), aborted: !!signal?.aborted });
         signal?.throwIfAborted();
         // Timeouts and connection failures are worth another attempt; a 4xx is not.
         if (err instanceof TypeSafeError && !RETRY_STATUSES.has(err.status)) throw err;
@@ -146,4 +164,4 @@ class TypeSafe {
   }
 }
 
-module.exports = { TypeSafe, TypeSafeError, choice, noul, score, withRequestSignal };
+module.exports = { TypeSafe, TypeSafeError, choice, noul, score, withRequestSignal, stage };

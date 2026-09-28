@@ -19,7 +19,7 @@ function announceFallback(bot, goal, decision) {
   } else if (goal.jevOutage) { delete goal.jevOutage; bot.chat?.('Jev is back.'); }
 }
 
-async function decideTree(client, { state, tree, isFresh = () => true, signal, rootInstructions, fallback, kind }) {
+async function decideTree(client, { state, tree, isFresh = () => true, signal, rootInstructions, fallback, kind, trace }) {
   const questions = {};
   const branches = new Map();
   let serial = 0;
@@ -40,7 +40,7 @@ async function decideTree(client, { state, tree, isFresh = () => true, signal, r
   const started = performance.now();
   let response = { answers: {}, usage: null };
   if (Object.keys(questions).length) {
-    try { response = await client.systemOne({ state, questions, signal, kind }); }
+    try { response = await client.systemOne({ state, questions, signal, kind, ...(trace ? { trace } : {}) }); }
     catch (err) {
       if (signal?.aborted) throw signal.reason || err;
       if (!fallback || !transient(err)) throw err;

@@ -532,3 +532,61 @@ test('a newcomer picked up is known to the holder: the same mob coming closer do
   assert.equal(bot._preempt, undefined);
   assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 2, 4414)] }), log: () => {} }), null);
 });
+
+// Note 540: mid-243-q-nether-3 was knocked into lava with a newcomer's
+// preemption waiting, and the watch looked at nothing while it waited.
+test('while a preemption waits, the body\'s physics is still watched and takes its place; newcomers and alerts are not', () => {
+  const { bot, stopped } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'find_fortress', since: 0, ids: [] } };
+  const lines = [];
+  const waiting = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 4, 4414)] }), log: line => lines.push(line) });
+  assert.equal(waiting.by, 'newcomer');
+  stopped.length = 0;
+  // Another newcomer, and a creeper within its fuse's reach: the one waiting
+  // stands, nothing is stopped again (note 539's loop stays shut).
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 2, 4414), mob('zombie', 3, 9)] }), log: line => lines.push(line) }), waiting);
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: creeperNear(), log: line => lines.push(line) }), waiting);
+  assert.deepEqual(stopped, []);
+  // Knocked into lava: the lava takes the newcomer's place and the holder
+  // is stopped again; the newcomer's id is kept for the ruling.
+  const lava = arbiter.watchOnce(bot, { live: true, look: look({ lava: true, mobs: [mob('enderman', 2, 4414)] }), log: line => lines.push(line) });
+  assert.equal(lava.by, 'lava'); assert.equal(lava.waited, 'newcomer'); assert.equal(lava.id, 4414); assert.equal(lava.over, 'work find_fortress');
+  assert.equal(bot._preempt, lava);
+  assert.deepEqual(stopped.sort(), ['dig', 'keys', 'walk']);
+  assert.match(lines.at(-1), /^\[arbiter\] preempted work find_fortress again, newcomer waiting/);
+  assert.throws(() => checkStall(bot), err => err.name === 'NeedsSafety' && err.preempted.by === 'lava');
+  // Fire ranks below the lava: the lava stands.
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ lava: true, fire: true }), log: () => {} }), lava);
+  // The arbiter picks up the lava, gives it the turn, and knows the enderman.
+  const out = arbiter.rule(bot, [reflex('lava'), claim('work'), claim('survival', 'pressing')], { state: bot._arbiter, mobs: [] });
+  assert.equal(out.winner.reflex, 'lava'); assert.equal(bot._preempt, undefined);
+  assert(bot._arbiter.holder.ids.includes(4414));
+});
+
+test('a waiting alert gives way to the body\'s physics, and a waiting reflex to one above it only', () => {
+  const { bot } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'mine', since: 0, ids: [] } };
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: creeperNear(), log: () => {} }).by, 'creeper');
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ fire: true }), log: () => {} }).by, 'fire');
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ head: true }), log: () => {} }).by, 'fire', 'the head in a block ranks below the fire');
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ lava: true }), log: () => {} }).by, 'lava');
+});
+
+test('with a turn_priority question out and a newcomer waiting, the watch still takes up the lava', async () => {
+  const { bot } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'find_fortress', since: 0, ids: [] } };
+  const task = new Task('t', 'win');
+  task.stallCheck = () => checkStall(bot);
+  let inLava = false;
+  arbiter.watch(bot, { live: true, look: { ...look(), inLava: () => inLava }, log: () => {} });
+  try {
+    const asked = arbiter.take(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter, decide: never, task, mobs: [], askMs: 60000 });
+    // The question is out; the enderman a step closer waits as a newcomer's
+    // preemption, then the knock into the lava.
+    bot._preempt = { by: 'newcomer', id: 77, over: 'work find_fortress', at: Date.now() };
+    inLava = true;
+    await assert.rejects(within(asked), err => err.name === 'NeedsSafety');
+    await new Promise(r => setTimeout(r, arbiter.WATCH_MS * 2));
+    assert.equal(bot._preempt.by, 'lava'); assert.equal(bot._preempt.id, 77);
+  } finally { arbiter.unwatch(bot); }
+});

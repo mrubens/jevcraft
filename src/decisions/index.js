@@ -45,6 +45,7 @@
 // confident(), so their bars live here too.
 const { decideTree, announceFallback, firstOption } = require('./tree');
 const { checkAir } = require('../vitals');
+const { stage } = require('../typesafe');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -189,6 +190,36 @@ function recordMissing(id, decision, listed, { bot, goal, state }, { near = fals
   } catch (_) { /* the flight record still has it */ }
 }
 
+// A question stopped (the task's check, the air, its caller) ends then,
+// whatever its request is doing. mid-243-q-nether-3's turn_priority said
+// "asking Jev" for 5.6 seconds while its check threw every look (a
+// preemption and the hurt watchdog's stop, both standing), until the death:
+// the abort had not ended the request under it, for reasons the record
+// could not show (note 540). The request is still watched: one still out a
+// second after the stop, or settling late, is said with its stages.
+const SLOW_MS = 3000, LATE_MS = 250, STILL_OUT_MS = 1000;
+const saysStages = trace => (trace.stages || []).map(s => `${s.stage} ${s.ms}${Object.keys(s).length > 2 ? ` ${JSON.stringify(Object.fromEntries(Object.entries(s).filter(([k]) => k !== 'stage' && k !== 'ms')))}` : ''}`).join(', ') +
+  (trace.lookedMs !== undefined ? `; last looked ${trace.lookedMs}` : '');
+function endsWhenStopped(asking, signal, trace, log = console.log) {
+  return new Promise((resolve, reject) => {
+    let settled = false, stoppedAt = null;
+    const onStop = () => {
+      stoppedAt = performance.now();
+      reject(signal.reason);
+      setTimeout(() => { if (!settled) log(`[question] ${trace.id} stopped ${STILL_OUT_MS / 1000}s ago and its request is still out: ${saysStages(trace)}`); }, STILL_OUT_MS).unref?.();
+    };
+    const done = () => {
+      settled = true; signal.removeEventListener('abort', onStop);
+      if (stoppedAt === null) return;
+      stage(trace, 'settled');
+      const late = performance.now() - stoppedAt;
+      if (late >= LATE_MS) log(`[question] ${trace.id}'s request settled ${Math.round(late)} ms after it was stopped: ${saysStages(trace)}`);
+    };
+    if (signal.aborted) onStop(); else signal.addEventListener('abort', onStop, { once: true });
+    asking.then(value => { done(); resolve(value); }, err => { done(); reject(err); });
+  });
+}
+
 class NoSafeDefault extends Error {
   constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
 }
@@ -198,6 +229,11 @@ class NoSafeDefault extends Error {
 // sent it to the fallback. A single feasible leaf is taken without asking.
 async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100 }) {
   const spec = question(id);
+  // The question's stages, from here (queued) to its record, each as
+  // milliseconds since: asked (the turn taken), the client's sent, headers,
+  // body and parsed (typesafe.js), stopped, settled, recorded. On the bot
+  // while it is out, for the flight frames; on the decision's record after.
+  const trace = { id, t0: performance.now(), at: new Date().toISOString(), stages: [{ stage: 'queued', ms: 0 }] };
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
   // How the bot died lately, with every question about playing the game:
   // it walked back to the drowned that had just killed it, and chose to
@@ -246,6 +282,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
   const turnBefore = takeTurn(bot, 'decision', `asking Jev: ${id}`), mark = bot?._turn;
+  stage(trace, 'asked');
+  if (bot) bot._asking = trace;
   // When the question went out, beside `at`, when its answer came back.
   const askedAt = new Date().toISOString();
   let decision;
@@ -256,17 +294,21 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   } else {
     const controller = new AbortController();
     const watcher = setInterval(() => {
+      // When the watcher last looked: a check starved would show here.
+      trace.lookedMs = Math.round(performance.now() - trace.t0);
       try { task?.check(); if (bot) checkAir(bot); interrupt(); }
-      catch (err) { controller.abort(err); }
+      catch (err) { if (!controller.signal.aborted) { stage(trace, 'stopped', { why: String(err?.message || err).slice(0, 100) }); controller.abort(err); } }
     }, watchMs);
     const stopThinking = spec.thinking && bot ? require('../speech').thinking(bot) : () => {};
     try {
-      decision = await decideTree(client, { state, tree, signal: controller.signal, fallback, kind: spec.kind,
-        rootInstructions: withRealTime(spec, state), isFresh });
+      decision = await endsWhenStopped(decideTree(client, { state, tree, signal: controller.signal, fallback, kind: spec.kind,
+        rootInstructions: withRealTime(spec, state), isFresh, trace }), controller.signal, trace);
     } catch (err) {
       if (!fallback && !controller.signal.aborted && err.name === 'TypeSafeError') throw new NoSafeDefault(id, err.message);
       throw err;
     } finally { clearInterval(watcher); stopThinking(); }
+    const tookMs = performance.now() - trace.t0;
+    if (tookMs >= SLOW_MS) console.log(`[question] ${id} answered in ${(tookMs / 1000).toFixed(1)}s: ${saysStages(trace)}`);
     task?.check(); if (bot) checkAir(bot); interrupt();
     // The gate: a judgment below the question's threshold is not acted on
     // as asked. Where the fallback is the safer answer, it is taken.
@@ -285,13 +327,19 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // Given back only while the mark is still this question's: a question set
   // aside by its caller (arbiter.js answerOrCut) ends after the layer given
   // the turn has marked it, and must not put "asking Jev" back over it.
-  } finally { if (!bot || bot._turn === mark) giveBack(bot, turnBefore); }
+  } finally {
+    if (!bot || bot._turn === mark) giveBack(bot, turnBefore);
+    if (bot?._asking === trace) delete bot._asking;
+  }
   decision.id = id;
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
+  stage(trace, 'recorded');
+  if (client) decision.stages = trace.stages;
   if (goal) {
     goal.decisions ||= [];
     goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
+      ...(client ? { stages: trace.stages } : {}),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
       stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}) });
     goal.decisions = goal.decisions.slice(-40); save();
@@ -332,7 +380,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { recentDeaths, define, question, decide, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

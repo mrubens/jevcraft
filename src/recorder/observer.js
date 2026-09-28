@@ -68,6 +68,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // of silence while hurt (notes 358, 366, 391) had no holder in the
       // record.
       turn: turnHeld(bot, now),
+      // The question out, and how far it has got (decisions/index.js): the
+      // stages a question that never came back had reached (note 540).
+      question: bot._asking ? { id: bot._asking.id, at: bot._asking.at, stages: bot._asking.stages.map(s => ({ ...s })), ...(bot._asking.lookedMs !== undefined ? { lookedMs: bot._asking.lookedMs } : {}) } : undefined,
       // What the arbiter, in shadow, would have given the last pass to,
       // beside the layer that took it (src/arbiter.js shadow).
       arbiter: bot._arbiterShadow ? { would: bot._arbiterShadow.would, gave: bot._arbiterShadow.gave } : undefined,
