@@ -4,7 +4,7 @@
 
 Meet Jev. It is trying to beat Minecraft, and so far the Nether is winning.
 
-Jev does not write text or code to decide what to do. Code lists the actions the bot can really take (fight, retreat, take cover, eat, keep working), and [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model, picks one in about 0.2 seconds. **Code decides what is possible. Jev decides what to do.** The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer).
+Jev does not write text or code to decide what to do. Code lists the actions the bot can really take (fight, retreat, take cover, eat, keep working), and [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model, picks one in about 0.2 seconds, for about 1.7 cents per bot-hour. **Code decides what is possible. Jev decides what to do.** The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer).
 
 One hard rule: Jev never hurts a chicken or a pig. They are my daughters' favorite animals.
 
@@ -27,7 +27,7 @@ A loss: Jev chose to `fight` (p=0.22) a ghast, and a fireball knocked it off its
 - Early game: four trials have passed the first-days audit (three in-game days with no deaths, and iron tools and armor, a shield, a bed and a home). The goal asks for two passes in a row, and that has not happened yet ([GOAL.md](GOAL.md)).
 - The Nether: 15 of 40 fresh worlds on 2026-09-28 got there, in a median of 28 minutes (7 to 143). Most of the other 25 died or were still going when this was counted.
 - Blaze rods: a few trials have taken one or two. None has taken the six needed. The bot now dies to blazes at a spawner, to fireballs that push it into lava, and from running out of health in the Nether with little food.
-- Cost and speed, measured the same day: 22,800 decisions over about 178 bot-hours, a median answer of 186 ms (90th percentile 292 ms), about 3,100 input tokens a decision. At TypeSafe's published price of $0.042 per million input tokens (output is free), that is about 1.7 cents per bot-hour.
+- Cost and speed, measured the same day: **about 1.7 cents per bot-hour**. That is 22,800 decisions over about 178 bot-hours, a median answer of 186 ms (90th percentile 292 ms) and about 3,100 input tokens a decision, at TypeSafe's published $0.042 per million input tokens (output is free).
 - The dragon: only fought from staged worlds.
 
 The next problem is surviving the blaze spawner. The [roadmap](ROADMAP.md) has the order of work, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how a concrete failure becomes a test and a general fix.
