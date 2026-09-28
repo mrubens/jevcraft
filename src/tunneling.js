@@ -471,13 +471,20 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   // few cells and pace them again. Trial 64 was in an air pocket in an
   // underground lake, every way down water; three rounds of that were
   // fifty seconds and a loop, when the first had already shown it.
+  // Pacing anywhere is the same: a new round begun where it paced begins
+  // in those cells. mid-243-af-fortress-1 and mid-243-ag-fortress-3's
+  // staircases back to the portal paced three cells ((-145, 60, 337) to
+  // (-145, 60, 339)), started a round there, went to the crossing between
+  // rounds and paced again, "turning between tunnel and cross toward" each
+  // time, before the second round's pacing rested the staircase (note 603).
   const entrance = tunnel.entrance && new Vec3(tunnel.entrance.x, tunnel.entrance.y, tunnel.entrance.z);
-  if (pacing && entrance && entrance.distanceTo(bot.entity.position.floored()) <= 3) {
-    const why = `paced the same few cells round where the round began, ${Math.round(tunnel.best ?? bot.entity.position.distanceTo(target))} blocks from it`;
+  if (pacing) {
+    const where = entrance && entrance.distanceTo(bot.entity.position.floored()) <= 3 ? 'round where the round began' : `about ${choice.destination}`;
+    const why = `paced the same few cells ${where}, ${Math.round(tunnel.best ?? bot.entity.position.distanceTo(target))} blocks from it`;
     Object.assign(tunnel, { staleRounds: 0, visited: {} }); delete tunnel.best;
     throw staircaseStalled(goal, save, target, why);
   }
-  if (tunnel.sinceBest >= 48 || pacing) {
+  if (tunnel.sinceBest >= 48) {
     tunnel.staleRounds = (tunnel.staleRounds || 0) + 1;
     Object.assign(tunnel, { entrance: { ...bot.entity.position.floored() }, steps: 0, retreats: 0, retreatVisited: {}, rounds: (tunnel.rounds || 0) + 1, sinceBest: 0 });
     delete tunnel.workPosition;

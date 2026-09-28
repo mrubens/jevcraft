@@ -134,37 +134,51 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   const costRecipes = Object.entries(data.recipes).flatMap(([output, recipes]) =>
     recipes.filter(recipe => !unpacking(output, recipe)).map(recipe => ({ output, slots: slots(recipe), count: recipe.count })));
   function estimate(name) {
-    if (!estimates) {
-      let costs = {};
-      // Carried is free, but not a handful of something whose only source is
-      // in another dimension: ten gold nuggets made nuggets look free, the
-      // ingot was planned from nuggets, and the other twenty-six were to be
-      // mined in the Nether while the bot stood in the Overworld.
-      const onlyElsewhere = item => (data.sources[item] || []).length > 0 && (data.sources[item] || []).every(source => elsewhere(source.block));
-      for (const [item, amount] of Object.entries(stock)) if (amount > 0) costs[item] = onlyElsewhere(item) && amount < 32 ? TRIP_COST : 0;
-      for (const [item, sources] of Object.entries(data.sources)) for (const source of sources) {
-        if (source.enchantment || !usableSource(item, source)) continue;
-        const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0) + (elsewhere(source.block) ? TRIP_COST : 0);
-        costs[item] = Math.min(costs[item] ?? 1000, cost);
-      }
-      for (const [item, sources] of Object.entries(data.mobSources)) costs[item] = Math.min(costs[item] ?? 1000, ...sources.map(s => s.cost ?? 80));
-      // Six dependency layers are sufficient for this preference heuristic.
-      // Exact dependency execution below still detects cycles and checks the
-      // full recipe/tool chain, with its separate expansion budget.
-      for (let pass = 0; pass < 6; pass++) {
-        const next = { ...costs };
-        for (const recipe of costRecipes) {
-          const cost = recipe.slots.reduce((sum, alternatives) => sum + Math.min(...alternatives.map(item => costs[item] ?? 1000)), 0) / recipe.count + 1;
-          next[recipe.output] = Math.min(next[recipe.output] ?? 1000, cost);
-        }
-        for (const [output, inputs] of Object.entries(data.smelting)) for (const input of inputs) {
-          next[output] = Math.min(next[output] ?? 1000, (costs[input] ?? 1000) + 12);
-        }
-        costs = next;
-      }
-      estimates = costs;
-    }
+    if (!estimates) estimates = costTable(stock);
     return estimates[name] ?? 1000;
+  }
+  // What one more of an item costs once what is carried of it is spoken
+  // for: its own carried stack left out of the table. One oak plank carried
+  // in the Nether priced oak planks at nothing, so a recipe's second plank
+  // was oak too, made from an oak log mined there; mid-243-af-nether-3-
+  // fortress-1 was told "No oak log in the nether" for half an hour, with
+  // the crimson stems its planks could be made of (note 603).
+  let without = {};
+  function estimateWithout(name) {
+    if (!estimates) without = {};
+    estimate(name);
+    if (!(name in without)) without[name] = costTable({ ...stock, [name]: 0 })[name] ?? 1000;
+    return without[name];
+  }
+  function costTable(seed) {
+    let costs = {};
+    // Carried is free, but not a handful of something whose only source is
+    // in another dimension: ten gold nuggets made nuggets look free, the
+    // ingot was planned from nuggets, and the other twenty-six were to be
+    // mined in the Nether while the bot stood in the Overworld.
+    const onlyElsewhere = item => (data.sources[item] || []).length > 0 && (data.sources[item] || []).every(source => elsewhere(source.block));
+    for (const [item, amount] of Object.entries(seed)) if (amount > 0) costs[item] = onlyElsewhere(item) && amount < 32 ? TRIP_COST : 0;
+    for (const [item, sources] of Object.entries(data.sources)) for (const source of sources) {
+      if (source.enchantment || !usableSource(item, source)) continue;
+      const cost = (observed.has(source.block) ? 1 : 8) + (source.tool ? 8 : 0) + (source.allowedTools.length ? 4 : 0) + (elsewhere(source.block) ? TRIP_COST : 0);
+      costs[item] = Math.min(costs[item] ?? 1000, cost);
+    }
+    for (const [item, sources] of Object.entries(data.mobSources)) costs[item] = Math.min(costs[item] ?? 1000, ...sources.map(s => s.cost ?? 80));
+    // Six dependency layers are sufficient for this preference heuristic.
+    // Exact dependency execution below still detects cycles and checks the
+    // full recipe/tool chain, with its separate expansion budget.
+    for (let pass = 0; pass < 6; pass++) {
+      const next = { ...costs };
+      for (const recipe of costRecipes) {
+        const cost = recipe.slots.reduce((sum, alternatives) => sum + Math.min(...alternatives.map(item => costs[item] ?? 1000)), 0) / recipe.count + 1;
+        next[recipe.output] = Math.min(next[recipe.output] ?? 1000, cost);
+      }
+      for (const [output, inputs] of Object.entries(data.smelting)) for (const input of inputs) {
+        next[output] = Math.min(next[output] ?? 1000, (costs[input] ?? 1000) + 12);
+      }
+      costs = next;
+    }
+    return costs;
   }
   // An ingredient whose every source lies in another dimension: its block
   // mined only there, or (one recipe down) made only from such.
@@ -177,7 +191,7 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   }
   function chooseIngredient(alternatives, counts) {
     const preference = name => ({ oak_log: -4, oak_planks: -4, crimson_stem: -4, warped_stem: -3, cobblestone: -3, stone: -2, coal: -1 }[name] || 0);
-    const cost = name => have(name) > (counts[name] || 0) ? -100 : estimate(name) + (onlyElsewhere(name) ? TRIP_COST : 0);
+    const cost = name => have(name) > (counts[name] || 0) ? -100 : (have(name) > 0 ? estimateWithout(name) : estimate(name)) + (onlyElsewhere(name) ? TRIP_COST : 0);
     return alternatives.filter(name => registry.itemsByName[name] && !visiting.has(name)).sort((a, b) =>
       (cost(a) - cost(b)) ||
       preference(a) - preference(b) || a.localeCompare(b))[0];

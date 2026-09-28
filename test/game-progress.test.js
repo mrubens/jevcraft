@@ -276,6 +276,23 @@ test('the blaze rods set aside because their sources are in the Overworld: the l
   assert.equal(typeof handed, 'function', 'the ladder\'s acquire carries the elsewhere answer');
 });
 
+test('an errand set aside waits its rest like any rung: the loop\'s set-aside and Jev\'s set_aside_rung are read', async () => {
+  // mid-243-af-nether-3-fortress-1 (note 603): the errand for an oak log (the goal as archived at 12:06), its way back
+  // needing the log, set itself aside ninety times a minute for ten minutes ("the errand step set aside ten minutes"),
+  // and set_aside_rung chosen at 12:05:32 and 12:05:35 changed nothing: errandStage read no set-aside.
+  const { setAside } = require('../src/progress');
+  const { bot, goal } = fixture();
+  bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
+  goal.errand = { dimension: 'overworld', items: [{ item: 'oak_log', count: 1 }], for: 'obtain_blaze_rods', at: Date.now() - 30 * 60000 };
+  assert.deepEqual(nextGameStage(bot, goal), { phase: 'errand', action: 'return_overworld', for: 'obtain_blaze_rods' });
+  setAside(goal, 'rung', 'errand', 'No oak log in the nether: it is only found in the overworld', 600000);
+  assert.notEqual(nextGameStage(bot, goal).phase, 'errand', 'set aside, the ladder goes on');
+  // Its rest over, the errand comes back while its hour lasts.
+  setAside(goal, 'rung', 'errand', 'rested', 1);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(nextGameStage(bot, goal).phase, 'errand');
+});
+
 test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why they wait, the trip and the hour on the other side', async () => {
   // mid-218-m-nether-1 and the mid-202-o-nether trials (note 495): a ladder short of rods whose step waited went back
   // through the portal unasked (nextGameStage's return_overworld), whatever the reason the rods waited.

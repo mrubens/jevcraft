@@ -40,6 +40,32 @@ test('a table from two oak planks and five jungle logs is made of jungle planks,
   }
 });
 
+test('in the Nether with one oak log, the pickaxe\'s other planks are crimson, not a second oak log mined there', () => {
+  // mid-243-af-nether-3-fortress-1 (note 603): its iron pickaxe worn out at a fortress with one oak log carried, the
+  // staircase back planned a stone pickaxe whose sticks took the log's last plank and a second oak log "mined" in the
+  // Nether: "No oak log in the nether" 90 times a minute for half an hour. The pockets as the flight recorded them at
+  // 11:34:04, the pickaxe gone.
+  const registry = require('minecraft-data')('26.1');
+  const { Vec3 } = require('vec3');
+  const { catalogPlan, planningInventory } = require('../src/work');
+  const { elsewhereOf } = require('../src/knowledge');
+  const stock = { crimson_roots: 1, oak_log: 1, water_bucket: 1, gravel: 16, coal: 128, quartz: 2, crafting_table: 1, bucket: 8, black_wool: 1, leather: 3,
+    flint: 1, raw_gold: 5, raw_copper: 16, leaf_litter: 32, white_bed: 1, iron_boots: 1, raw_iron: 30, egg: 1, iron_sword: 1, netherrack: 186, nether_bricks: 4, flint_and_steel: 1, mutton: 3 };
+  const items = Object.entries(stock).map(([name, count], i) => ({ name, count, type: registry.itemsByName[name].id, slot: 9 + i, durabilityUsed: 0 }));
+  const bot = { registry, version: '26.1', game: { gameMode: 'survival', dimension: 'minecraft:the_nether' }, entity: { position: new Vec3(-230, 53, -225) }, inventory: { items: () => items, slots: [] }, blockAt: () => null, findBlocks: () => [], entities: {} };
+  for (const tool of ['wooden_pickaxe', 'stone_pickaxe']) {
+    const plan = catalogPlan(bot, tool, 1, planningInventory(bot), {});
+    const said = JSON.stringify(plan.map(st => [st.action, st.item || st.block]));
+    assert(!plan.some(st => st.action === 'mine' && st.block === 'oak_log'), `${tool}: ${said}`);
+    assert.equal(elsewhereOf(plan, 'the_nether'), null, `${tool}: nothing in the plan lies in another dimension: ${said}`);
+    assert(plan.some(st => st.action === 'craft' && st.item === 'oak_planks'), `${tool}: the log carried is used: ${said}`);
+    assert(plan.some(st => st.action === 'mine' && st.block === 'crimson_stem'), `${tool}: ${said}`);
+  }
+  // In the Overworld one oak log still plans more oak, not crimson from the Nether.
+  const { planCatalog } = require('../src/knowledge');
+  assert(planCatalog(registry, 'wooden_pickaxe', 1, { oak_log: 1 }, { dimension: 'overworld' }).some(st => st.action === 'mine' && st.block === 'oak_log'));
+});
+
 test('a blaze hunt in the Nether with a stone sword and no armour plans the hunt, not iron ore: the kit is offered, not required', () => {
   // mid-227-r-nether-1 planned iron ore in the Nether for the kit 1,130 times in twenty-five minutes, then died (note 476).
   const { planCatalog, elsewhereOf } = require('../src/knowledge');

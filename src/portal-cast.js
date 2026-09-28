@@ -502,6 +502,31 @@ async function castFrame(bot, task, goal, save, actions) {
     // Water still running off the last slot fills the cells to stand in
     // for a moment.
     if (!stand && wetAbout(bot, p)) { stepIs(p, 'drain'); await sleep(500); return false; }
+    // A stand made for this slot is gone to, the whole walk with the
+    // blocks carried to build up by, not a half-second survey; and one
+    // that is not reached is the cast's failure here, said, not a reason
+    // to make another. mid-244-be and mid-244-bd, nine of ten cast, made a
+    // stand for the last slot every pass and never stood on one: fourteen
+    // stands in a minute and a half about (82, 27, 147), the pass handing
+    // the turn back each time (note 603).
+    const slotKey = key(p);
+    const made = ((frame.standsMade ||= {})[slotKey] ||= []).map(at);
+    if (!stand && made.length) {
+      const standing = made.find(f => stands.some(s => s.feet.equals(f)));
+      if (!standing) { delete frame.standsMade[slotKey]; save(); throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${made.at(-1)} is no longer one`); }
+      const saved = { allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks };
+      if (scaffoldId !== undefined) Object.assign(movements, { allow1by1towers: true, scafoldingBlocks: [...new Set([...(movements.scafoldingBlocks || []), scaffoldId])] });
+      let why = null;
+      try {
+        stepIs(p, 'to_stand', { stand: { x: standing.x, y: standing.y, z: standing.z }, made: true });
+        await navigate(bot, task, new goals.GoalBlock(standing.x, standing.y, standing.z), { timeoutMs: 30000, stallMs: 5000 });
+      } catch (err) { task.check(); if (fatal(err)) throw err; why = String(err.message || err).slice(0, 100); }
+      finally { Object.assign(movements, saved); }
+      if (!bot.entity.position.floored().equals(standing)) {
+        throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${standing} could not be walked to from ${bot.entity.position.floored()} (${why || 'the walk ended short of it'})`);
+      }
+      stand = stands.find(s => s.feet.equals(standing));
+    }
     // No cell beside the slot has a floor: one is made, a temporary block
     // put under a cell that would do otherwise. mid-218-c's part-cast frame
     // had no floor beside its next slot, and "nowhere to stand" came back
@@ -513,6 +538,7 @@ async function castFrame(bot, task, goal, save, actions) {
         .filter(x => x.chain && x.chain.length <= 2)
         .sort((a, b) => a.chain.length - b.chain.length || a.s.feet.distanceTo(bot.entity.position) - b.s.feet.distanceTo(bot.entity.position))[0];
       if (make) {
+        frame.standsMade[slotKey] = [{ x: make.s.feet.x, y: make.s.feet.y, z: make.s.feet.z }];
         for (const c of [...make.chain, make.s.feet.plus(DOWN)]) {
           stepIs(p, 'make_stand', { at: { x: c.x, y: c.y, z: c.z } });
           await place(bot, task, c, material); track(c, material); save();

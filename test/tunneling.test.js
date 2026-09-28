@@ -468,11 +468,13 @@ test('a staircase stepping between two cells ends its round within a few steps, 
   // Pacing where the round began (trial 64, an air pocket in a flooded
   // cave): no new round in the same cells; the ore is set aside at once.
   await assert.rejects(tunnelStep(bot, new Task('pace'), goal, () => {}, target, { dig, navigate }), e => e.name === 'StaircaseStalled' && /same few cells/.test(e.message));
-  // Pacing a long way from where the round began: a new round from here.
+  // Pacing a long way from where the round began is the same: a round begun here would pace these cells. It was a new
+  // round from here, and mid-243-ag-fortress-3's staircase back to the portal paced three cells, began a round there,
+  // went to the crossing between rounds, and paced again, "turning between tunnel and cross toward" (note 603).
   const later = { tunnel: { ...goal.tunnel, entrance: { x: -30, y: 70, z: 0 }, best: 10, sinceBest: 9, staleRounds: 0, visited: {} } };
   for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) for (const y of [69, 70]) later.tunnel.visited[`(${x}, ${y}, ${z})`] = 4;
-  await assert.rejects(tunnelStep(bot, new Task('pace'), later, () => {}, target, { dig, navigate }), /not gaining on it/);
-  assert.equal(later.tunnel.staleRounds, 1);
+  await assert.rejects(tunnelStep(bot, new Task('pace'), later, () => {}, target, { dig, navigate }), e => e.name === 'StaircaseStalled' && /paced the same few cells about \(/.test(e.message));
+  assert.equal(later.tunnel.staleRounds, 0, 'no round begun in the cells it paced');
 });
 
 test('pinned below two skeletons at full health, the staircase claims them and climbs toward them; hurt, it does not', () => {

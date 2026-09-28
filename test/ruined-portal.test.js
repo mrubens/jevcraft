@@ -553,6 +553,44 @@ test('a stand no walk reaches is built up to with the blocks carried, as a playe
   assert.equal(bot.pathfinder.movements.allow1by1towers, undefined, 'the towering let go after');
 });
 
+test('a stand made for the last slot is walked to; one no walk reaches is the cast\'s failure, said, not a reason to make another', async () => {
+  // mid-244-be (25585) and mid-244-bd (25581), note 603: nine of ten cast, the last slot at the top, every walk to a stand
+  // failing; each pass made another stand ((81, 26, 145), (83, 26, 149), (82, 26, 149) ...) and handed the turn back,
+  // "turning between cast portal and enter nether", for as long as the blocks lasted.
+  const { Task } = require('../src/skills');
+  const setUp = () => {
+    const made = castingBot({ water_bucket: 1, lava_bucket: 1, cobblestone: 64, flint_and_steel: 1 });
+    const frame = newFrame('x');
+    const last = cast.castOrder(frame).at(-1);
+    for (const p of frame.blocks) if (!new Vec3(p.x, p.y, p.z).equals(last)) made.w.set(new Vec3(p.x, p.y, p.z), 'obsidian');
+    // Standing on the ground beside the frame, the top slot within reach, and no route to any stand from here.
+    made.bot.entity.position = new Vec3(last.x + 0.5, frame.origin.y, last.z - 1.5);
+    made.actions.surveyRoute = async () => ({ status: 'noPath' });
+    return { ...made, frame, last, goal: { portalFrame: frame } };
+  };
+  // No walk reaches a stand: one is made, then walked to, and failing that the cast fails with it said.
+  const { bot, actions, frame, last, goal } = setUp();
+  const placedFor = [];
+  const place = actions.place; actions.place = async (b, t, p, m) => { if (goal.step?.phase === 'make_stand') placedFor.push(p.clone()); await place(b, t, p, m); };
+  const go = actions.navigate; actions.navigate = async (b, t, g) => { if (g.y > frame.origin.y + 1) throw new Error('No path to the goal!'); await go(b, t, g); };
+  assert.equal(await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions), false);
+  assert.equal(goal.step.phase, 'make_stand');
+  const stand = goal.portalFrame.standsMade[`${last.x},${last.y},${last.z}`][0];
+  const madeFirst = placedFor.length;
+  await assert.rejects(cast.castFrame(bot, new Task('cast'), goal, () => {}, actions),
+    err => new RegExp(`Nowhere to stand to pour into the frame slot at \\(${last.x}, ${last.y}, ${last.z}\\): the stand made for it at \\(${stand.x}, ${stand.y}, ${stand.z}\\) could not be walked to .*No path to the goal`).test(err.message));
+  assert.equal(placedFor.length, madeFirst, 'no second stand made');
+  // Thrown as "Nowhere to stand", it is a site failure (work.js buildPortalFrame): with nine cast, the way to a portal
+  // is asked with it said (the part-cast frame test below).
+  // A made stand the walk does reach is poured from.
+  const second = setUp();
+  second.actions.navigate = async (b, t, g) => { second.bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); };
+  let done = false;
+  for (let pass = 0; pass < 4 && !done; pass++) done = await cast.castFrame(second.bot, new Task('cast'), second.goal, () => {}, second.actions);
+  assert(done, 'cast from the stand it made');
+  assert.equal(second.w.nameAt(second.last), 'obsidian');
+});
+
 test('a source feeding a slot that the bucket cannot scoop is filled with a block instead', async () => {
   // mid-242-r tried to scoop a source inside its own cast walls round after round until the loop watch ended the trial (2026-09-27).
   const { Task } = require('../src/skills');

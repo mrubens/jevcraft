@@ -419,6 +419,12 @@ const ERRAND_MS = 60 * 60000;
 function errandStage(bot, goal, where, now = Date.now()) {
   const errand = goal.errand;
   if (!errand || now - (errand.at || 0) > ERRAND_MS) return null;
+  // Set aside (Jev's set_aside_rung, or the loop's for a step it cannot do
+  // here), the errand waits its rest like any rung. It was read nowhere:
+  // mid-243-af-nether-3-fortress-1's errand for an oak log set itself aside
+  // ninety times a minute for ten minutes, each pass the same way back that
+  // needed the log, and Jev's set_aside_rung twice changed nothing (note 603).
+  if (isSetAside(goal, 'rung', 'errand', now)) return null;
   const left = (errand.items || []).filter(i => count(bot, i.item) < i.count);
   // Nothing named to bring is a trip there, and the ladder there after.
   if (errand.items?.length ? !left.length : where === errand.dimension) return null;
@@ -468,6 +474,11 @@ function netherLeaveHeld(goal, reason, now = Date.now(), { sealedAt = 0 } = {}) 
   const held = goal.leaveNether;
   if (!held || held.reason !== reason || held.pick !== 'go_back') return false;
   if (goal.gameProgress?.here?.at > held.at) return false;
+  // The way back failing below it (a flip of the staircase and the
+  // crossing, a step's failure) is owed to leave_nether: asked again with
+  // it said, not held. mid-243-af-fortress-1 and mid-243-ag-fortress-3 held
+  // go_back while the staircase back paced three cells (note 603).
+  if (require('./tried').owed(goal, 'leave_nether', now)) return false;
   const upTo = sealedAt > held.at && sealedAt < now ? sealedAt : now;
   return held.until ? held.until > now && rodsRest(goal, reason, now).until === held.until : upTo - held.at < NETHER_LEAVE_MS;
 }

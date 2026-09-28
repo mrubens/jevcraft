@@ -196,6 +196,20 @@ function newGround(stalls, here, now) {
   return fresh;
 }
 const blockKey = p => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+// A block dug or placed, as it happens. `marked` counts only a cell not
+// dug or placed in the last MEMORY_MS, the look's own rule below: a block
+// put in a cell and dug out of it again is nothing done. mid-243-af-
+// fortress-1's way out put a gravel north and dug it back six times in ten
+// seconds, each answer "a block was dug or placed" and so getting somewhere
+// in the ledger, and neither ever rested (note 603).
+function markCell(stalls, p, now = Date.now()) {
+  stalls.marks.push(p);
+  const cells = stalls.markedCells ||= new Map(), k = blockKey(p);
+  const last = cells.get(k);
+  cells.delete(k); cells.set(k, now);
+  for (const [key, at] of cells) { if (cells.size <= 512 && now - at <= MEMORY_MS) break; cells.delete(key); }
+  if (last === undefined || now - last > MEMORY_MS) stalls.marked = (stalls.marked || 0) + 1;
+}
 
 // One look: the current action's record is brought up to date and the
 // time since its last progress returned. `dt` is how long this look covers.
@@ -258,12 +272,12 @@ function watchStalls(bot, goalOf) {
   // Counted as they come, too: a question asked again a fraction of a
   // second after its answer reads them before the next look (decisions/
   // repeats.js, note 560).
-  bot.on?.('diggingCompleted', block => { if (block?.position) { stalls.marks.push(block.position); stalls.marked = (stalls.marked || 0) + 1; } });
+  bot.on?.('diggingCompleted', block => { if (block?.position) markCell(stalls, block.position); });
   if (typeof bot.placeBlock === 'function' && !bot.placeBlock._stallMarked) {
     const place = bot.placeBlock.bind(bot);
     bot.placeBlock = Object.assign(async (reference, face, ...rest) => {
       const result = await place(reference, face, ...rest);
-      if (reference?.position && face) { stalls.marks.push(reference.position.plus(face)); stalls.marked = (stalls.marked || 0) + 1; }
+      if (reference?.position && face) markCell(stalls, reference.position.plus(face));
       return result;
     }, { _stallMarked: true });
   }
@@ -274,7 +288,7 @@ function watchStalls(bot, goalOf) {
     const activate = bot.activateBlock.bind(bot);
     bot.activateBlock = Object.assign(async (block, ...rest) => {
       const result = await activate(block, ...rest);
-      if (block?.position) { stalls.marks.push(block.position); stalls.marked = (stalls.marked || 0) + 1; }
+      if (block?.position) markCell(stalls, block.position);
       return result;
     }, { _stallMarked: true });
   }
@@ -367,6 +381,12 @@ const FLIP_CHANGES = 5, FLIP_MS = 45000, FLIP_REST_MS = 2 * FLIP_MS;
 const FLIPPING = /^turning between /;
 function worth(bot) { return (bot.inventory?.items?.() || []).filter(i => !FILLER.test(i.name)).reduce((n, i) => n + i.count, 0); }
 const countKey = step => step ? `${step.action}:${step.drops || step.item || ''}` : null;
+// The step a retry is retrying is the step: a step and its own persist are
+// one piece of work failing, which the ledger and persist answer, not two
+// steps trading the turn. mid-243-af-nether-3-fortress-1's search for a
+// crimson stem failed at once and went to persist fifteen times in eighty
+// seconds, raised besides as "turning between mine and persist" (note 603).
+const workName = goal => RETRY_STEPS.has(goal.step?.action) && goal.lastStruggleStep?.action ? goal.lastStruggleStep.action : goal.step?.action;
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
   const here = bot.entity?.position;
@@ -377,10 +397,10 @@ function flipWatch(bot, goal, now = Date.now()) {
   // every two seconds for twenty seconds before it opened the pocket to a
   // creeper.
   const recent = goal.survivalAction?.action && now - Date.parse(goal.survivalAction.at || 0) < 8000 ? goal.survivalAction.action : null;
-  for (const [layer, a] of [['work', goal.step?.action], ['survival', recent]]) {
+  for (const [layer, a] of [['work', workName(goal)], ['survival', recent]]) {
     if (!a) continue;
     const changes = (stalls.changes ||= {})[layer] ||= [];
-    if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), count: goal.step?.count, countKey: countKey(goal.step) });
+    if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step) });
     while (changes.length > FLIP_CHANGES) changes.shift();
     if (changes.length < FLIP_CHANGES) continue;
     const first = changes[0], names = new Set(changes.map(c => c.a));
@@ -390,11 +410,24 @@ function flipWatch(bot, goal, now = Date.now()) {
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
     if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) continue;
     if (worth(bot) > first.worth) continue;
+    // A block dug or placed in a cell not worked lately is getting
+    // somewhere, as the stall watch counts it (look): the ladder names the
+    // rung's step each pass and the step under it names its own, and
+    // mid-244-bd's staircase to its frame, a new step dug every few seconds,
+    // was raised three times as "turning between tunnel and enter nether",
+    // each answered by a detour that dropped the shaft (note 603). A block
+    // put back where one was dug (markCell) is not.
+    if ((stalls.marked || 0) > (first.blocks || 0)) continue;
     // The step's own count going down is progress, filler or not (the
     // audit's rule too): a mine for cobblestone and its pickups trade names.
     if (Number.isFinite(goal.step?.count) && changes.some(c => c.countKey === countKey(goal.step) && Number.isFinite(c.count) && goal.step.count < c.count)) continue;
     const pair = [...names].map(n => n.replaceAll('_', ' ')).join(' and ');
-    const action = actionOf(goal, now);
+    // The work's flip is the work's: a stance answered a few seconds before
+    // (actionOf's recent survival action) is not what traded the turn.
+    // mid-242-ae-nether-3-fortress-3's legs and their crossings, each ending
+    // at once, were struck as "survival:keep_working" and the keep-working
+    // stance set aside for it (note 603).
+    const action = layer === 'work' ? actionOf({ ...goal, survivalAction: null }, now) : actionOf(goal, now);
     const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
     stalls.changes = {};
     const why = `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`;
@@ -404,9 +437,36 @@ function flipWatch(bot, goal, now = Date.now()) {
     // return to the surface and sealed shelter traded turns through eight
     // strikes (2026-09-26).
     if (layer === 'survival') { const { setAside } = require('./progress'); for (const n of names) if (!EMERGENCIES.has(n)) setAside(goal, 'flip', `survival:${n}`, why, FLIP_REST_MS); }
+    if (layer === 'work') flipFailed(bot, goal, action, why, now);
     return raise(bot, goal, { record, action }, now, why);
   }
   return null;
+}
+// Two steps trading the turn are one failure of the work, and the ledger
+// has it as a step's failure is had (work.js persist, note 571): written as
+// the step's, and the answer the work was carrying out marked come to
+// nothing with the flip said, owed to its question (tried.escalate), so it
+// rests at the second as any way does and a hold on it that reads what is
+// owed ends (netherLeaveHeld). The flip is still the stall's, raised below
+// as before, for the work's own answers. mid-242-ae-nether-3-fortress-3 set
+// the rods aside at the rung's question and took them up again at
+// leave_nether's search_on a second later, four times in a second,
+// "turning between find fortress and rods waiting", and search_on was
+// offered each time as untried; mid-243-af-fortress-1 and mid-243-ag-
+// fortress-3 held leave_nether's go_back while the staircase back and the
+// crossing traded the turn in the same three cells (note 603).
+function flipFailed(bot, goal, action, why, now = Date.now()) {
+  try {
+    const tried = require('./tried');
+    const failed = RETRY_STEPS.has(goal.step?.action) && goal.lastStruggleStep ? goal.lastStruggleStep : goal.step;
+    tried.record(bot, goal, { q: 'step', method: failed?.action || 'none', outcome: 'blocked', why, now });
+    const owner = tried.owner(goal, { now, work: action.key, skip: new Set(['stillness_detour', 'rung_progress']) });
+    if (!owner) return null;
+    const what = `the work was ${why}`;
+    const up = tried.escalate(goal, { from: 'step', to: owner.q, why: what, parentOf: require('./decisions').parentOf, here: bot.entity?.position, now });
+    tried.markBlocked(owner, what, now);
+    return up;
+  } catch (_) { return null; }
 }
 
 // Where the bot has been, and on what, for every choice to see: a loop is
