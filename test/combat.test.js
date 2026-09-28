@@ -143,9 +143,24 @@ test('a shot lowers the shield to draw, releases after the draw, then covers beh
   lowerShield(bot); assert.equal(events.at(-1), 'lower shield'); lowerShield(bot); assert.equal(events.length, 7, 'lowering twice is once');
 });
 
-test('a swing jumps for a critical hit when it safely can, and swings plainly under a low roof, beside a drop, or at a creeper', async () => {
+// A crit jump's rise lasts 40 ms against a 10 ms poll: on the wall clock a
+// stalled event loop skipped it and the swing came out plain. Time is
+// driven by hand, 5 ms at a time, with the loop drained between steps.
+function mockClock(t) {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  return async promise => {
+    let done = false, result, error;
+    promise.then(r => { done = true; result = r; }, e => { done = true; error = e; });
+    for (let ms = 0; ms < 5000 && !done; ms += 5) { await new Promise(resolve => setImmediate(resolve)); if (!done) t.mock.timers.tick(5); }
+    assert(done, 'the swing settles within five seconds'); if (error) throw error;
+    return result;
+  };
+}
+
+test('a swing jumps for a critical hit when it safely can, and swings plainly under a low roof, beside a drop, or at a creeper', async t => {
   const { strike, critReady } = require('../src/combat');
   const { Vec3 } = require('vec3');
+  const drive = mockClock(t);
   const ground = p => p.y < 10 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' };
   const make = (blockAt = ground) => {
     const bot = { entity: { position: new Vec3(0.5, 10, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, entities: {}, controlState: {}, attacks: [],
@@ -157,12 +172,12 @@ test('a swing jumps for a critical hit when it safely can, and swings plainly un
   };
   const open = make();
   assert.equal(critReady(open.bot, open.zombie), true);
-  assert.equal(await strike(open.bot, new Task('crit'), open.zombie), 'critical');
+  assert.equal(await drive(strike(open.bot, new Task('crit'), open.zombie)), 'critical');
   assert.deepEqual(open.bot.attacks, ['air'], 'the swing lands on the way down');
   assert(open.bot.entity.velocity.y < 0, 'after the top of the jump, not on the way up');
   const low = make(p => p.y < 10 || p.y === 12 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' });
   assert.equal(critReady(low.bot, low.zombie), false, 'a two-block roof leaves no room for the jump');
-  assert.equal(await strike(low.bot, new Task('plain'), low.zombie), 'plain');
+  assert.equal(await drive(strike(low.bot, new Task('plain'), low.zombie)), 'plain');
   const edge = make(p => (p.y < 10 && p.z >= 0) ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' });
   assert.equal(critReady(edge.bot, edge.zombie), false, 'not with a drop beside it');
   // Trial 114: jumped for a crit on a zombie with a creeper under four blocks off, and was blown up mid-jump.
@@ -175,13 +190,14 @@ test('a swing jumps for a critical hit when it safely can, and swings plainly un
   assert.equal(critReady(c.bot, c.zombie), false, 'never at a creeper');
   // mid-239-b: the crit's jump went first each time the pillar was chosen, and the pillar was never built.
   const building = make(); building.bot._stance = { choice: 'pillar' };
-  assert.equal(await strike(building.bot, new Task('stance'), building.zombie), 'plain', 'no jump while a stance other than the fight holds');
+  assert.equal(await drive(strike(building.bot, new Task('stance'), building.zombie)), 'plain', 'no jump while a stance other than the fight holds');
   const fighting = make(); fighting.bot._stance = { choice: 'fight' };
-  assert.equal(await strike(fighting.bot, new Task('fight'), fighting.zombie), 'critical', 'the fight keeps its criticals');
+  assert.equal(await drive(strike(fighting.bot, new Task('fight'), fighting.zombie)), 'critical', 'the fight keeps its criticals');
 });
 
-test('a crit jump that comes down out of reach is not tried again at that mob: the next swings are plain', async () => {
+test('a crit jump that comes down out of reach is not tried again at that mob: the next swings are plain', async t => {
   const { strike } = require('../src/combat');
+  const drive = mockClock(t);
   const { Vec3 } = require('vec3');
   const bot = { entity: { position: new Vec3(0.5, 10, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, entities: {}, controlState: {}, attacks: [],
     blockAt: p => p.y < 10 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty' }, lookAt: async () => {},
@@ -191,9 +207,9 @@ test('a crit jump that comes down out of reach is not tried again at that mob: t
       setTimeout(() => { this.entity.velocity = new Vec3(0, -0.2, 0); this.entity.position = new Vec3(0.5, 14, 0.5); }, 60); setTimeout(() => { this.entity.onGround = true; }, 90); } } };
   const zombie = { id: 7, name: 'zombie', position: new Vec3(2, 10, 0.5), height: 1.95, width: 0.6, isValid: true };
   bot.entities[7] = zombie;
-  assert.equal(await strike(bot, new Task('stairs'), zombie), 'missed');
+  assert.equal(await drive(strike(bot, new Task('stairs'), zombie)), 'missed');
   bot.entity.position = new Vec3(0.5, 10, 0.5);
-  assert.equal(await strike(bot, new Task('stairs'), zombie), 'plain', 'no second jump at the same zombie');
+  assert.equal(await drive(strike(bot, new Task('stairs'), zombie)), 'plain', 'no second jump at the same zombie');
   assert.deepEqual(bot.attacks, ['hit']);
 });
 
