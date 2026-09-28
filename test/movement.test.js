@@ -463,3 +463,28 @@ test('a walk the lava rule leaves no route for says the way passes beside lava; 
   bot.pathfinder.goto = async () => {};
   await assert.rejects(navigate(bot, new Task('test', 'test'), new goals.GoalBlock(10, 64, 0)), err => err.name === 'NoRoute' && !/lava/.test(err.message));
 });
+
+test('no drop of two or more onto a ledge the walk\'s own pace carries past into a fall that kills', () => {
+  // mid-244-ac dropped three from a cave floor onto a one-wide ledge at walking pace, missed it, and fell forty at full health (note 545).
+  for (const deep of [true, false]) {
+    // A cave floor at feet 70 for x >= 1; a one-wide ledge at x 0 (feet 67); beyond it at x <= -1 a pit to y 20, or ground at feet 66.
+    const movement = namedWorld('overworld', p => p.x >= 1 ? (p.y <= 69 ? 'stone' : 'air') : p.x === 0 ? (p.y <= 66 ? 'stone' : 'air')
+      : p.y <= (deep ? 19 : 65) ? 'stone' : 'air');
+    movement.bot.health = 20;
+    const down = movement.getNeighbors({ x: 1, y: 70, z: 0, remainingBlocks: 0 }).filter(n => n.x === 0 && n.y === 67 && n.z === 0);
+    assert.equal(down.length, deep ? 0 : 1, deep ? 'not down onto the ledge over the pit' : 'down to the ledge over low ground as before');
+  }
+});
+
+test('no block laid level beside the floor from a cell over lava or a fall that kills, on any side', () => {
+  // mid-235-q-nether-2-fortress-2, in the Overworld at 10.6 health, backed off its tower's top mid-jump the other way from the block it meant to lay and fell six into a lava pool (note 545).
+  for (const pool of [true, false]) {
+    // A bank at z <= -1 (floor y 47); a tower at x 0, z 0 up to y 48; round it a lava pool at y 43, or ground at y 46.
+    const movement = namedWorld('overworld', p => p.z <= -1 ? (p.y <= 47 ? 'stone' : 'air') : p.x === 0 && p.z === 0 ? (p.y <= 48 ? 'cobblestone' : 'air')
+      : pool ? (p.y < 43 ? 'stone' : p.y === 43 ? 'lava' : 'air') : p.y <= 46 ? 'stone' : 'air');
+    movement.bot.health = 10.6;
+    const laid = movement.getNeighbors({ x: 0, y: 49, z: 0, remainingBlocks: 64 }).filter(n => n.toPlace.some(p => p.dy === 0 && (p.dx || p.dz)));
+    if (pool) assert.equal(laid.length, 0, 'nothing laid off the tower top over the pool');
+    else assert(laid.some(n => n.x === 0 && n.y === 49 && n.z === -1), 'over a short fall the tower still bridges to the bank');
+  }
+});

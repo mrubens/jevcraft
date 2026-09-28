@@ -161,6 +161,9 @@ class SurvivalMovements extends Movements {
         if (why) { kept.splice(i, 1); this.lavaRefusals = (this.lavaRefusals || 0) + (why === 'lava' ? 1 : 0); this.edgeRefusals = (this.edgeRefusals || 0) + (why === 'edge' ? 1 : 0); }
       }
     }
+    // In every dimension, no move that leaves the ground beside a fall that
+    // kills (note 545, overFall below).
+    for (let i = kept.length - 1; i >= 0; i--) if (this.overFall(node, kept[i])) kept.splice(i, 1);
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
@@ -168,6 +171,59 @@ class SurvivalMovements extends Movements {
     // Nor back onto the edge the bot has just stepped back from, while the
     // mobs it stepped back from are about (terrain.js holdOffEdge).
     return this.bot?._edgeHold ? kept.filter(next => !edgeHeld(this.bot, next, this._hostileObservation.entities)) : kept;
+  }
+
+  // Note 545, a fall-height check on the walk's own moves, in every
+  // dimension: a move whose body is off the ground or backing blind is
+  // refused where the fall it can run into lands in lava or costs half the
+  // health or more. Two such moves:
+  //  - a drop of two or more, or a gap jump: the body carries on past the
+  //    cell it was aimed at, in its direction. mid-244-ac dropped three from
+  //    a cave floor onto a one-wide ledge at walking pace, missed it, and
+  //    fell forty to its death at full health; the lava-shore rule above
+  //    (mid-220-e) is this for lava only. Measured one cell on, and the cells
+  //    either side of that.
+  //  - a block laid level beside the floor: the pathfinder backs to the edge
+  //    crouched, turning as it goes, and a crouch holds nothing off the
+  //    ground. mid-235-q-nether-2-fortress-2, in the Overworld at 10.6
+  //    health, towered one block and backed off the tower's top mid-jump,
+  //    its yaw not yet round, the other way from the block it meant to lay,
+  //    and fell six into a lava pool. Measured on every side of the cell it
+  //    backs from, since the way it drifts is not the way it means to go.
+  // Walking level beside an edge is not refused here: on the ground the
+  // body stops where its feet do.
+  overFall(node, next) {
+    const health = this.bot?.health ?? 20;
+    const dx = Math.sign(next.x - node.x), dz = Math.sign(next.z - node.z);
+    const reach = Math.max(Math.abs(next.x - node.x), Math.abs(next.z - node.z));
+    if ((dx || dz) && (node.y - next.y >= 2 || reach >= 2)) {
+      const ahead = dx && dz ? [[dx, dz], [dx, 0], [0, dz]] : dx ? [[dx, 0], [dx, 1], [dx, -1]] : [[0, dz], [1, dz], [-1, dz]];
+      for (const [ax, az] of ahead) { const fall = this.fallOff(next, ax, az, health); if (fall) return fall; }
+    }
+    for (const p of next.toPlace || []) {
+      if (p.useOne || p.dy !== 0 || !(p.dx || p.dz)) continue;
+      const feet = { x: p.x, y: p.y + 1, z: p.z };
+      for (const [ax, az] of AROUND) { const fall = this.fallOff(feet, ax, az, health); if (fall) return fall; }
+    }
+    return null;
+  }
+  // The fall from the cell beside `feet` (dx, dz), open at the feet: into
+  // lava at any depth, or onto ground whose damage (a point a block past
+  // three) is half the health or more; water breaks it. Unknown is no fact.
+  fallOff(feet, dx, dz, health = 20) {
+    const cell = this.getBlock(feet, dx, 0, dz);
+    if (cell.name === undefined || cell.physical) return null;
+    if (/lava/.test(cell.name)) return { into: 'lava', fall: 0 };
+    if (cell.liquid) return null;
+    const deadly = Math.min(DROP_DEEPEST, Math.ceil(health / 2) + 4);
+    for (let dy = 1; dy <= deadly; dy++) {
+      const under = this.getBlock(feet, dx, -dy, dz);
+      if (under.name === undefined) return null;
+      if (/lava/.test(under.name)) return { into: 'lava', fall: dy - 1 };
+      if (under.liquid) return null;
+      if (under.physical) return dy - 1 - 3 >= health / 2 ? { into: 'ground', fall: dy - 1 } : null;
+    }
+    return { into: 'deep', fall: deadly };
   }
 
   // The note 516 rule for a cell: 'lava' for lava in any of the eight
