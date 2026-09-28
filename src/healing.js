@@ -114,13 +114,25 @@ function healingSays(bot, goal) {
   const health = round(bot.health), hunger = bot.food ?? 20;
   const carried = foodCarried(bot);
   const points = carried.reduce((n, f) => n + f.count * f.points, 0);
+  // At full hunger with saturation left it is quicker (FoodData: a point
+  // each half second at six saturation, spending it): mid-243-f came back
+  // 0.3 a half second after eating (note 542).
   const comesBack = hunger >= 18
-    ? health >= 20 ? 'health is full' : `yes: at hunger ${hunger}, about one health each four seconds while hunger stays at eighteen or more, each point spending a hunger point and a half`
+    ? health >= 20 ? 'health is full' : hunger >= 20 && bot.foodSaturation > 0 ? `yes: at full hunger with ${round(bot.foodSaturation)} saturation, up to a point each half second while the saturation lasts (spending it), then about one each four seconds while hunger stays at eighteen or more` : `yes: at hunger ${hunger}, about one health each four seconds while hunger stays at eighteen or more, each point spending a hunger point and a half`
     : health >= 20 ? `health is full; at hunger ${hunger} a point lost would not come back until the bot eats to eighteen`
     : `no: hunger ${hunger}, under eighteen; every point lost stays lost until the bot eats to eighteen`;
   const eaten = Math.min(20, hunger + points);
+  // Poison does not stop healing (26.1 FoodData looks at no effect), but it
+  // takes a point each 1.25 seconds to healing's one each four: said beside
+  // it, so "yes" is not read as holding even. mid-243-f was poisoned from
+  // 8.1 to 0.23 (note 542).
+  const poisoned = require('./combat-estimate').effectLeft(bot, 'poison');
+  const poisonSays = poisoned && poisoned.seconds > 0 && health > 1
+    ? `poisoned, about ${Math.round(poisoned.seconds)} seconds left: one health each 1.25 seconds that armour does not stop, about ${Math.min(Math.floor(poisoned.seconds / 1.25), Math.ceil(health - 1))} more before it ends, ${hunger >= 20 && bot.foodSaturation > 0 ? 'while hunger is full and saturation lasts health comes back as fast or faster (up to a point each half second), after that a point each four seconds, which it outruns three to one' : hunger >= 18 ? 'three times as fast as health comes back here' : 'and none comes back meanwhile'}; it takes a point only while health is above 1, so it never kills on its own, but it leaves the bot at 1 or just under for the next hit`
+    : null;
   return {
     health, hunger, healthComesBack: comesBack,
+    ...(poisonSays ? { poison: poisonSays } : {}),
     foodCarried: carried.length ? carried.map(f => f.says) : 'nothing to eat',
     ...(hunger < 18 && carried.length ? { eatingItAll: `brings hunger to ${eaten}${eaten >= 18 ? ', where health comes back' : ', still under eighteen'}` } : {}),
     nearestFood: (() => { const n = nearestFood(bot, goal); return n.length ? n : 'none known'; })(),

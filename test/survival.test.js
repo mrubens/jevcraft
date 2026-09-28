@@ -4196,8 +4196,9 @@ test('poisoned, every stance says poison never takes the last health but a harmi
   bot.registry = require('minecraft-data')('26.1');
   bot.entity.effects = { 18: { id: 18, amplifier: 0, duration: 300 } };
   await controller.step(task, goal, () => {});
-  assert.match(calls[0].state.effectsNow || '', /poisoned, about 15 seconds left: poison takes about one health .* never the last one/);
-  for (const [k, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /never the last one/, k);
+  // Its rate from the game (one every 25 ticks), not "about one a second or so" (note 542).
+  assert.match(calls[0].state.effectsNow || '', /poisoned, about 15 seconds left: one health every 1\.25 seconds .* never kills, but a bite, a hit or a harming potion after it does/);
+  for (const [k, c] of Object.entries(calls[0].questions.branch_0.criteria)) assert.match(JSON.stringify(c), /never kills/, k);
 });
 
 test('on a span, hurt twice in six seconds, the encounter goes to Jev instead of the span\'s own answers', async () => {

@@ -24,6 +24,41 @@ const WALK = 4; // blocks a second, closing on a mob
 // blade alone; it was gone at 7.2, and the wither and the fire left 4.2
 // (note 528).
 const WITHER = { perSecond: 0.5, seconds: 10 };
+// Poison I, as a cave spider's bite, a bee's sting, a bogged's arrow or a
+// witch's potion gives it, read from the 26.1.2 server jar: one health
+// every twenty-five ticks (PoisonMobEffect, 25 >> amplifier), magic, which
+// armour does not stop, and only while health is above 1 (it takes a whole
+// point from 1.23 and leaves 0.23, and nothing from 1: the poison alone
+// never kills; the bite after it does). It ticks when the time left is a
+// multiple of twenty-five, so a fresh bite's first point comes three
+// quarters of a second after it. A bite renews it to its full length, one
+// poison over another adds nothing. Its length by difficulty (CaveSpider
+// and Bee doHurtTarget): a cave spider's seven seconds on Normal (fifteen
+// on Hard), a bee's ten (eighteen); a bogged's arrow five (Bogged, a
+// hundred ticks); a witch's thrown potion forty-five (Potions.POISON).
+// Natural healing goes on beside it (FoodData does not look at effects),
+// a point each four seconds at eighteen hunger or more: the poison outruns
+// it three to one. mid-243-f, at 6.1 health among cave spiders by their
+// spawner, was told the fight cost 0.4 (the bites alone, one spider); the
+// poison took a point every 1.25 seconds from 8.1 to 0.23 and a bite
+// finished it (note 542).
+const POISON = { perSecond: 20 / 25, first: 0.75, floor: 1 };
+// What a poison of `poison` damage leaves of `damage` in all against
+// `health`: the poison takes nothing below 1.
+const poisonFloored = (damage, poison, health) => !(poison > 0) || !Number.isFinite(health) ? damage : damage - poison + Math.min(poison, Math.max(0, health - POISON.floor));
+// A poison or wither running on the bot now: the seconds left, the time
+// the server sent it being stamped where it came (session.js effectAt);
+// mineflayer keeps the duration it was sent, not what is left.
+function effectLeft(bot, name, now = Date.now()) {
+  const effects = bot?.entity?.effects || {};
+  for (const [id, e] of Object.entries(effects)) {
+    const n = (bot.registry?.effects?.[id]?.name || bot.registry?.effectsArray?.find(x => x.id === Number(id))?.name || '').toLowerCase();
+    if (n !== name || !Number.isFinite(e?.duration)) continue;
+    const gone = Number.isFinite(e.at) ? (now - e.at) / 1000 : 0;
+    return { seconds: Math.max(0, e.duration / 20 - gone), amplifier: e.amplifier || 0 };
+  }
+  return null;
+}
 // The seconds a set of [from, to] spans covers, overlaps counted once.
 function spanned(spans) {
   let total = 0, end = -Infinity;
@@ -33,22 +68,25 @@ function spanned(spans) {
   }
   return total;
 }
-// The same spans merged, as timeline pieces at the wither's rate.
-function witherPieces(spans) {
-  const out = [];
+// The same spans merged, as timeline pieces at an effect's rate (the
+// wither's, or the poison's), marked with which it is.
+function effectPieces(spans, effect = 'wither') {
+  const out = [], perSecond = effect === 'poison' ? POISON.perSecond : WITHER.perSecond;
   for (const [a, b] of spans.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0])) {
     const last = out.at(-1);
-    if (last && a <= last.to) last.to = Math.max(last.to, b); else out.push({ from: a, to: b, perSecond: WITHER.perSecond });
+    if (last && a <= last.to) last.to = Math.max(last.to, b); else out.push({ from: a, to: b, perSecond, effect });
   }
   return out;
 }
+// The spans an effect covers, each [from, to] clipped to [0, end].
+const clipped = (spans, end) => spans.map(([a, b]) => [Math.max(0, a), Math.min(b, end)]);
 
 // Damage per hit on Normal, and health.
 const MOBS = {
   zombie: { hit: 3, health: 20 }, husk: { hit: 3, health: 20 }, drowned: { hit: 3, health: 20 }, zombie_villager: { hit: 3, health: 20 },
-  spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, note: 'poisons' },
-  skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, note: 'poisons' },
-  pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, note: 'harming potions go through armour, and poison and slowness keep the bot from getting away' },
+  spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, poisons: 7, note: 'each bite that lands poisons the bot for seven seconds, renewed by the next: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
+  skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, poisons: 5, note: 'each arrow that lands poisons the bot for five seconds: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
+  pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, poisons: 45, note: 'harming potions go through armour; its first at a bot not yet poisoned is poison, forty-five seconds of one health every 1.25 seconds that armour does not stop, only while health is above 1; slowness keeps the bot from getting away' },
   creeper: { hit: 24, health: 20, note: 'the hit is its blast two blocks off, once; fought, it goes off where the bot stands when its fuse ends (creeperFought)' },
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
@@ -65,7 +103,7 @@ const MOBS = {
   goat: { hit: 2, health: 10, note: 'rams now and then unprovoked, and throws the bot several blocks' }, polar_bear: { hit: 6, health: 30, note: 'goes for a player near its cubs' },
   // Neutral until struck or hurt by the bot (danger.js provoked), then a
   // pack: mid-218-k (2026-09-27).
-  wolf: { hit: 4, health: 8, note: 'the whole pack turns on a player that strikes one' }, bee: { hit: 2, health: 10, note: 'the hive turns together, and each sting poisons' },
+  wolf: { hit: 4, health: 8, note: 'the whole pack turns on a player that strikes one' }, bee: { hit: 2, health: 10, poisons: 10, note: 'the hive turns together, and each sting poisons the bot for ten seconds: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
   llama: { hit: 1, health: 22, shoots: true, note: 'spits, and the herd spits together' }, trader_llama: { hit: 1, health: 22, shoots: true, note: 'spits, and the herd spits together' },
   iron_golem: { hit: 15, health: 100, note: 'throws the bot high' }, panda: { hit: 6, health: 20 }, dolphin: { hit: 3, health: 10 },
 };
@@ -306,8 +344,14 @@ const HURT_PER_SECOND = 2;
 // the open); the rest wait their turn. [{ from, to, perSecond }] pieces.
 // A wither skeleton that bites withers the bot from then until ten seconds
 // after it dies, steady while it hits (WITHER).
-function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
-  const pieces = [], killed = new Map(), withering = new Map();
+// A poisoner poisons the bot from its first bite (three quarters of a
+// second on, the first tick) until its poison's length after it dies, one
+// poison however many bite, with the poison already on the bot
+// (`poisonedFor`, its seconds left). The first bite is taken to land as it
+// comes, the struck third or not: each of mid-243-f's three fights with a
+// cave spider took a bite within a second of its start (note 542).
+function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor = 0 } = {}) {
+  const pieces = [], killed = new Map(), withering = new Map(), poisoning = new Map();
   let t = 0;
   order.forEach((m0, i) => {
     const end = t + m0.secondsToKill;
@@ -325,18 +369,24 @@ function fightTimeline(order, { shield = false, atOnce = Infinity } = {}) {
       // once a second while it was struck, where a third as often was
       // reckoned for the one fought (note 535).
       const from = Math.max(t, m.shoots ? inRange(m) : 0);
-      if (m.shoots) { pieces.push(...shotPieces(m, shield, from, end)); return; }
+      if (m.shoots) {
+        pieces.push(...shotPieces(m, shield, from, end));
+        if (m.poisons && m.visible && end > from && !poisoning.has(m)) poisoning.set(m, from);
+        return;
+      }
       let perSecond;
       if (m.jab) perSecond = m.jab;
       else if (++biters > atOnce) return;
       else perSecond = (j === 0 && !m.inCell ? STRUCK : 1) * m.hitsBot;
       if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond, hit: m.jab ?? m.hitsBot });
       if (m.withers && !m.shoots && !withering.has(m)) withering.set(m, from);
+      if (m.poisons && perSecond > 0 && end > from && !poisoning.has(m)) poisoning.set(m, from);
     });
     killed.set(m0, end);
     t = end;
   });
-  pieces.push(...witherPieces([...withering].map(([m, from]) => [from, killed.get(m) + WITHER.seconds])));
+  pieces.push(...effectPieces([...withering].map(([m, from]) => [from, killed.get(m) + WITHER.seconds])));
+  pieces.push(...effectPieces([...[...poisoning].map(([m, from]) => [from + POISON.first, killed.get(m) + m.poisons]), [0, poisonedFor || 0]], 'poison'));
   return pieces;
 }
 // The damage a timeline deals in its first `seconds` (all of it without):
@@ -357,6 +407,16 @@ function within(pieces, seconds = Infinity) {
   return total;
 }
 
+// The poison in a fight's figures, said with them: who poisons, its rate,
+// how much of the figure it is, and that it stops at 1.
+function poisonFightSays(order, poison, { health = 20, poisonedFor = 0 } = {}) {
+  if (!(poison > 0)) return '';
+  const kinds = [...new Set(order.filter(m => m.poisons).map(m => m.name))];
+  const who = kinds.length ? `each ${kinds.map(k => ({ cave_spider: 'cave spider bite', bee: 'bee sting', bogged: 'bogged arrow', witch: 'witch potion' }[k] || k.replaceAll('_', ' '))).join(' or ')} that lands poisons the bot (${kinds.map(k => `${k.replaceAll('_', ' ')} ${MOBS[k].poisons} seconds`).join(', ')}, renewed by the next)` : '';
+  const running = poisonedFor > 0 ? `the poison on the bot now has about ${round(poisonedFor)} seconds left` : '';
+  const capped = Math.min(poison, Math.max(0, health - POISON.floor));
+  return `About ${round(capped)} of it is poison: ${[running, who].filter(Boolean).join(', and ')}; one health every 1.25 seconds that armour does not stop, however many poison it, and only while health is above 1, so the poison alone leaves the bot at 1 or just under, never dead: the next bite or hit then kills.`;
+}
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
 // weapon: the item name or null; atOnce: how many biters can be at arm's
 // length together where the bot stands.
@@ -371,7 +431,8 @@ const SPEAR_HIT = 13;
 // knocked the bot about a block back and the zombie followed to its reach:
 // it does not back off, the bot is put back (note 497).
 const SPEAR = { jab: 5, reach: 3, knock: 1 };
-function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity }) {
+// `poisonedFor`: the seconds of poison already on the bot (effectLeft).
+function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity, poisonedFor = 0 }) {
   const worn = armourOf(armour);
   const [damage, rate] = WEAPONS[weapon] || FIST;
   const unknown = [];
@@ -417,7 +478,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}), ...(t.inCell ? { inCell: true } : {}),
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.note ? { note: m.note } : {}) };
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) };
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
@@ -425,6 +486,9 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // gave its id: a stance's cost asks where that one mob can get to.
   mobs.forEach((m, i) => { if (m && !threats[i].from && threats[i].id != null) Object.defineProperty(m, 'id', { value: threats[i].id }); });
   mobs = mobs.filter(Boolean);
+  // The poison already on the bot, off the record on each mob: every
+  // stance priced from these mobs counts it (stanceCost).
+  if (poisonedFor > 0) mobs.forEach(m => Object.defineProperty(m, 'poisonedFor', { value: poisonedFor }));
   // One with no way to the bot (walk-reach.js) is not fought, and does not
   // hit (mid-205-v, note 525).
   const order = mobs.filter(m => !m.apart).sort((a, b) => a.distance - b.distance);
@@ -434,14 +498,18 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // nothing; mid-235-f took it at 0.91 from 5.9 health and was killed
   // (2026-09-27).
   atOnce = Math.max(atOnce, order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length);
-  const timeline = fightTimeline(order, { shield, atOnce });
+  const timeline = fightTimeline(order, { shield, atOnce, poisonedFor });
   const seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
   // Each creeper fought that is not killed inside its fuse goes off once,
   // when its turn in the fight comes and the fuse has run.
   const blasts = [];
   order.reduce((t, m) => { if (m.fought?.blast > 0) blasts.push({ at: t + m.secondsToKill, damage: m.fought.blast }); return t + m.secondsToKill; }, 0);
   const blastsWithin = s => blasts.filter(b => b.at <= s).reduce((n, b) => n + b.damage, 0);
-  const taken = within(timeline) + blastsWithin(Infinity);
+  // The poison takes nothing below 1: counted to 1 at most, the bites and
+  // blasts beside it as they come.
+  const poisonPart = s => within(timeline.filter(p => p.effect === 'poison'), s);
+  const taken = poisonFloored(within(timeline) + blastsWithin(Infinity), poisonPart(Infinity), health);
+  const poisonSays = poisonFightSays(order, poisonPart(Infinity), { health, poisonedFor });
   const creepers = order.filter(m => m.name === 'creeper');
   const nearestCreeper = creepers[0];
   const nearestThreat = nearestCreeper && threats.find(t => t.name === 'creeper' && !t.from && t.distance === nearestCreeper.distance);
@@ -451,7 +519,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     mobs,
     fightHere: { seconds: round(seconds), damageTaken: round(taken), healthNow: round(health), healthAfter: round(health - taken),
       // The same stretch every stance is priced over (stanceCost below).
-      inFifteenSeconds: round(within(timeline, HOLD_SECONDS) + blastsWithin(HOLD_SECONDS)),
+      inFifteenSeconds: round(poisonFloored(within(timeline, HOLD_SECONDS) + blastsWithin(HOLD_SECONDS), poisonPart(HOLD_SECONDS), health)),
+      ...(poisonSays ? { poison: poisonSays } : {}),
       ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
       ...(creepers.length ? { creeper: `counted: ${creeperSays} A blast by distance after the armour worn: ${creeperBlastSays(worn)}.` } : {}),
       ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}),
@@ -480,13 +549,27 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
 // A spear holder hits from its reach, and at its jab.
 const arrives = m => Math.max(0, ((m.distance || 0) - (m.name === 'creeper' ? LIGHTS_AT : m.reach || 1.5)) / APPROACH);
 const bites = m => m.jab ?? m.hitsBot;
-function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false }) {
+// A wither skeleton or a poisoner that gets to the bot leaves its effect on
+// it past the reach: the wither ten seconds after its last hit, the poison
+// its length (POISON), within the stretch. The poison already on the bot
+// (the mobs' poisonedFor, fightEstimate) runs on whatever the stance.
+// `health`, where given, floors the poison at 1 in `damage`; `poison` is
+// its part either way, for the caller to floor (poisonFloored).
+function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => false, fight = null, shield = false, health = null }) {
   let damage = 0;
   // The hits as timeline pieces, summed at the end under the half second a
   // hurt body cannot be hurt again (within).
   const pieces = [];
-  const hurts = (m, from, to, shielded) => { if (!(to > from)) return; if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to)); else pieces.push({ from, to, perSecond: bites(m), hit: bites(m) }); };
-  const blasts = [], still = new Set(), later = [], withering = [];
+  const withering = [], poisoning = [[0, mobs.find(m => m.poisonedFor > 0)?.poisonedFor || 0]];
+  const hurts = (m, from, to, shielded) => {
+    if (!(to > from)) return;
+    if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to)); else pieces.push({ from, to, perSecond: bites(m), hit: bites(m) });
+    if (m.withers && !m.shoots) withering.push([from, to + WITHER.seconds]);
+    // A shielded arrow is not a hit: a bogged's poison comes with the half
+    // that land, from the first.
+    if (m.poisons && (!m.shoots || m.visible)) poisoning.push([from + POISON.first, to + m.poisons]);
+  };
+  const blasts = [], still = new Set(), later = [];
   // Which mobs, not only their kinds: "3 zombies still reach it" was said
   // where one of three did (note 526).
   const stillMobs = new Set(), stillReach = m => { still.add(m.name); stillMobs.add(m); };
@@ -512,7 +595,6 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // Building or digging: every mob that gets there, from when it does,
     // the shield down.
     hurts(m, from, setup, false);
-    if (m.withers && !m.shoots) withering.push([from, setup]);
     // `reaches` may say from when: a shooter out of its line that walks to
     // a new one reaches the bot from the second it has it (bunker.js
     // lineRegained), not never.
@@ -522,21 +604,25 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
       if (again > 0 && Math.max(setup, again) >= seconds) continue;
       if (again > setup) later.push({ name: m.name, seconds: round(again) }); else stillReach(m);
       hurts(m, start, seconds, shield);
-      if (m.withers && !m.shoots) withering.push([start, seconds]);
     }
   }
   if (fight && seconds > setup) {
     const order = mobs.filter(fought).sort((a, b) => a.distance - b.distance);
     const reach = order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length;
-    for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) })) if (p.from < seconds - setup) pieces.push({ ...p, from: p.from + setup, to: Math.min(seconds, p.to + setup) });
+    // The fought ones' wither and poison join the rest's: one effect each,
+    // however many give it.
+    for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) })) {
+      if (p.effect) (p.effect === 'poison' ? poisoning : withering).push([p.from + setup, p.to + setup]);
+      else if (p.from < seconds - setup) pieces.push({ ...p, from: p.from + setup, to: Math.min(seconds, p.to + setup) });
+    }
     for (const m of order) if (!m.shoots || m.visible) stillReach(m);
   }
   damage += within(pieces, seconds);
-  // Withering while one not fought bites, from its first hit to the end
-  // of the stretch (the fought wither in their timeline).
-  damage += spanned(withering.map(([a, b]) => [a, Math.min(b, seconds)])) * WITHER.perSecond;
-  const out = { seconds, setup: round(setup), damage: round(damage), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
+  damage += spanned(clipped(withering, seconds)) * WITHER.perSecond;
+  const poison = spanned(clipped(poisoning, seconds)) * POISON.perSecond;
+  damage = poisonFloored(damage + poison, poison, health ?? Infinity);
+  const out = { seconds, setup: round(setup), damage: round(damage), ...(poison > 0 ? { poison: round(poison) } : {}), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked,creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked,creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

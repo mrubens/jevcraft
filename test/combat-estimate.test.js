@@ -267,7 +267,9 @@ test('a shooter out of its range walks in before it shoots, and a shield does no
   const witch = fightEstimate({ threats: [{ name: 'witch', distance: 6, shoots: true, visible: true }], armour: IRON, weapon: 'iron_sword' }).mobs;
   const shielded = stanceCost({ mobs: witch, reaches: () => true, shield: true }), bare = stanceCost({ mobs: witch, reaches: () => true, shield: false });
   assert.equal(shielded.damage, bare.damage);
-  assert.equal(bare.damage, 30, 'six a potion, one each three seconds, for fifteen seconds');
+  assert.equal(bare.damage - bare.poison, 30, 'six a potion, one each three seconds, for fifteen seconds');
+  // And its poison, from three quarters of a second after the first (note 542).
+  assert.equal(bare.poison, Math.round(14.25 * 0.8 * 10) / 10);
 });
 
 test('a mob with a spear is reckoned at its thrust, not its hand', () => {
@@ -395,4 +397,99 @@ test('two zombies in the bot\'s own cell each bite at full rate while struck: mi
   // 1.4 a bite: two a second for 2.5 seconds, then one for 2.5.
   assert.equal(now.fightHere.damageTaken, 10.5);
   assert(now.mobs.every(m => m.inCell));
+});
+
+// mid-243-f, "slain by Cave Spider" at y 39 by a cave spider spawner (note 542).
+const IRON_KIT = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+test('a cave spider\'s bite poisons: priced a point each 1.25 seconds through armour, and only down to 1 (mid-243-f, told 0.4 at 6.1 health, note 542)', () => {
+  const { POISON, stanceCost } = require('../src/combat-estimate');
+  assert.equal(POISON.perSecond, 0.8, 'one health every twenty-five ticks');
+  const spider = [{ name: 'cave_spider', distance: 5, visible: true }];
+  // As asked at 00:50:48.4: one cave spider in view, the poison of a bite
+  // 2.4 seconds before on the bot. Told 1.3 seconds and 0.4 damage.
+  const e = fightEstimate({ threats: spider, armour: IRON_KIT, weapon: 'iron_sword', health: 6.1, poisonedFor: 4.6 });
+  assert.equal(e.mobs[0].poisons, 7, 'seven seconds on Normal');
+  // The bites: a third of 0.88 a second for 1.25 seconds; the poison to
+  // seven seconds past the kill, 8.25 seconds, floored at 1: 5.1 of it.
+  assert.equal(e.fightHere.damageTaken, 5.5, JSON.stringify(e.fightHere));
+  assert.equal(e.fightHere.healthAfter, 0.6);
+  assert.match(e.fightHere.poison, /^About 5\.1 of it is poison: the poison on the bot now has about 4\.6 seconds left, and each cave spider bite that lands poisons the bot \(cave spider 7 seconds, renewed by the next\); one health every 1\.25 seconds that armour does not stop, however many poison it, and only while health is above 1/);
+  // At full health the same fight's poison is whole: one bite at the
+  // start and one at the kill, 0.75 to 8.25 seconds.
+  const whole = fightEstimate({ threats: spider, armour: IRON_KIT, weapon: 'iron_sword', health: 20 });
+  assert.equal(whole.fightHere.damageTaken, Math.round((1.25 * 0.88 / 3 + 7.5 * 0.8) * 10) / 10);
+  // Two poison the bot no faster than one: one poison, renewed.
+  const one = stanceCost({ mobs: whole.mobs, reaches: () => true });
+  const two = stanceCost({ mobs: fightEstimate({ threats: [...spider, { name: 'cave_spider', distance: 5.5, visible: true }], armour: IRON_KIT, weapon: 'iron_sword' }).mobs, reaches: () => true });
+  // From its first bite on arriving (5 blocks, less the reach, at three a
+  // second), three quarters of a second on.
+  assert.equal(one.poison, Math.round((15 - 3.5 / 3 - 0.75) * 0.8 * 10) / 10);
+  assert.equal(two.poison, one.poison);
+  assert.equal(Math.round((two.damage - one.damage) * 10) / 10, Math.round((15 - 4 / 3) * 0.9 * 10) / 10, 'the second adds its bites alone, from its arrival');
+  // Floored at 1 where the health is given: the poison alone never kills.
+  const low = stanceCost({ mobs: whole.mobs, reaches: () => true, health: 3 });
+  assert.equal(low.damage, Math.round(((15 - 3.5 / 3) * 0.9 + 2) * 10) / 10);
+});
+
+test('a stance a poisoner or a wither skeleton reaches while it builds keeps the effect past the reach (note 542)', () => {
+  const { stanceCost } = require('../src/combat-estimate');
+  // Shut in after 3.6 seconds of building with a cave spider at arm's
+  // length: its bites while the blocks go down, and its poison for seven
+  // seconds after the last.
+  const spider = fightEstimate({ threats: [{ name: 'cave_spider', distance: 1, visible: true }], armour: IRON_KIT, weapon: 'iron_sword' }).mobs;
+  const seal = stanceCost({ mobs: spider, setup: 3.6 });
+  assert.equal(seal.poison, Math.round((3.6 + 7 - 0.75) * 0.8 * 10) / 10, JSON.stringify(seal));
+  // A wither skeleton's wither runs ten seconds past its last hit, where it
+  // stopped with the hits.
+  const wither = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1, visible: true }], armour: IRON_KIT, weapon: 'iron_sword' }).mobs;
+  const pillar = stanceCost({ mobs: wither, setup: 1.5 });
+  assert.equal(pillar.damage, Math.round((1.5 * 4.5 + 11.5 * 0.5) * 10) / 10);
+  // The poison already on the bot runs in every stance, whatever reaches.
+  const running = fightEstimate({ threats: [{ name: 'zombie', distance: 10, visible: true }], armour: IRON_KIT, weapon: 'iron_sword', poisonedFor: 5 }).mobs;
+  assert.equal(stanceCost({ mobs: running, setup: 0 }).poison, 4);
+});
+
+test('the poison on the bot is said with what is left of it now, its rate and that it stops at 1 (mid-243-f, note 542)', () => {
+  const { effectsSay } = require('../src/survival');
+  const registry = require('minecraft-data')('26.1');
+  const id = registry.effectsByName?.poison?.id ?? registry.effectsArray.find(x => /poison/i.test(x.name)).id;
+  // Seven seconds sent 2.4 seconds ago: "about 7 seconds left" was said.
+  const bot = { registry, health: 6.07, entity: { effects: { [id]: { id, amplifier: 0, duration: 140, at: Date.now() - 2400 } } } };
+  const says = effectsSay(bot);
+  assert.match(says, /The bot is poisoned, about 5 seconds left: one health every 1\.25 seconds that armour does not stop, about 3 more before it ends, whatever is chosen; it takes a point only while health is above 1, so on its own it leaves the bot at 1 or just under and never kills, but a bite, a hit or a harming potion after it does/);
+  assert.match(says, /a point each four seconds does not keep up/);
+  const { healingSays } = require('../src/healing');
+  const h = healingSays({ ...bot, food: 18, game: { gameMode: 'survival' }, inventory: { items: () => [] } }, null);
+  assert.match(h.poison, /^poisoned, about 5 seconds left: one health each 1\.25 seconds that armour does not stop, about 3 more before it ends, three times as fast as health comes back here/);
+});
+
+test('a fight among cave spiders counts the ones round the corner and names the spawner making them (mid-243-f, note 542)', () => {
+  const { Survival } = require('../src/survival');
+  const { threats } = require('../src/danger');
+  const { Vec3 } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const spider = (id, x, z) => ({ id, name: 'cave_spider', position: new Vec3(x, 64, z), height: 0.5, width: 0.7, isValid: true });
+  const entities = { 1: spider(1, 5.5, 0.5), 2: spider(2, 0.5, 6.1), 3: spider(3, 0.5, 6.3), 4: { id: 4, name: 'skeleton', position: new Vec3(-7.5, 64, 0.5), height: 1.99, isValid: true } };
+  const spawnerAt = new Vec3(-2, 64, -6);
+  const bot = { registry, entity: { position: new Vec3(0.5, 64, 0.5), effects: {} }, entities, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
+    // Rock toward +z and -x: the two spiders there and the skeleton are out of sight.
+    world: { raycast: (from, dir) => dir.z > 0.5 || dir.x < -0.5 ? { position: from.offset(dir.x, 0, dir.z).floored(), intersect: from.offset(dir.x, 0, dir.z) } : null },
+    blockAt: p => p.equals(spawnerAt) ? { name: 'spawner', boundingBox: 'block', position: p, blockEntity: { SpawnData: { entity: { id: 'minecraft:cave_spider' } } } }
+      : { name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p },
+    findBlocks: () => [spawnerAt],
+    pathfinder: { movements: {} }, inventory: { items: () => [{ name: 'iron_sword' }], slots: [] }, on() {}, health: 6.1 };
+  const survival = new Survival(bot, {});
+  const danger = threats(bot).filter(t => t.visible);
+  assert.deepEqual(danger.map(t => t.entity.id), [1], 'one in view, as the question had it');
+  const options = survival.stanceOptions({ check() {} }, {}, () => {}, danger, false);
+  const fight = options.fight.description;
+  assert.match(fight, /Counted in the figures though out of sight, each with a way to the bot: a cave spider 6 blocks off, a cave spider 6 blocks off\./);
+  assert.match(fight, /Out of sight but about: a skeleton 8 blocks off/, 'the skeleton, a shooter out of sight, is said and not counted');
+  const damage = Number(fight.match(/seconds and ([\d.]+) damage to kill them all/)[1]);
+  assert(damage > 5, fight);
+  assert.match(fight, /of it is poison/);
+  // Said with every stance (stanceStep), with the mob it makes.
+  const { spawnerAbout } = require('../src/survival');
+  assert.match(spawnerAbout(bot).says, /^ A cave spider spawner is 7 blocks off: while a player is within 16 blocks of it, it makes more cave spiders, up to four at a time/);
+  assert.equal(spawnerAbout(bot).mob, 'cave_spider');
 });

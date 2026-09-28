@@ -72,6 +72,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // again told nothing of it (note 412).
     if (type === 'sonic_boom') (bot._sonicBooms ||= []).push(Date.now());
   });
+  // When each of the bot's own effects came: mineflayer keeps the length the
+  // server sent, and what is left of a poison or a wither is that less the
+  // time since (combat-estimate effectLeft; note 542).
+  bot.on('entityEffect', (entity, effect) => { if (entity === bot.entity && effect) effect.at = Date.now(); });
   // Each shriek of a sculk shrieker darkens the players about it: counted
   // as the warnings toward a warden (sculk.js).
   bot.on('entityEffect', (entity, effect) => {
