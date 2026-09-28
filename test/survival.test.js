@@ -3379,7 +3379,10 @@ test('at the foot of a shaft open onto a tunnel, the mobs drop into the bot\'s o
   assert.match(inCell.fight.description, /3 zombies stand in the bot's own cells with it, at arm's length whatever the cells round it hold/);
   // One of three in its cell: the one shut in with it is said, not the kind.
   const one = survival.stanceOptions(new Task('t'), {}, () => {}, [zombie(1, 0.5, 9, 0.5), zombie(2, 0.5, 11, 2.5), zombie(3, 0.5, 11, 3.5)], false);
-  assert.match(one.seal.description, /A zombie stands in the bot's own cells with it: it is inside the pocket, and closed, it shuts it in with the bot\..*Shut in, the zombie still reaches it\./);
+  // And the one at the shaft's lip 2.8 blocks off can drop in before the
+  // lid's 0.6 seconds are done (note 581): it is in with the bot too; the
+  // one behind it at 3.6 finds the lid on.
+  assert.match(one.seal.description, /A zombie stands in the bot's own cells with it: it is inside the pocket, and closed, it shuts it in with the bot\..*Shut in, 2 zombies still reach it\./);
 });
 
 test('in water with a drowned, the stances say so, no pillar, pocket or bunker is offered, and getting out of the water is', () => {

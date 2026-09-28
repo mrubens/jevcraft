@@ -742,14 +742,23 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // that land, from the first.
     if (m.poisons && (!m.shoots || m.visible)) poisoning.push([from + POISON.first, to + m.poisons]);
   };
-  const blasts = [], still = new Set(), later = [];
+  const blasts = [], still = new Set(), later = [], farIn = [];
   // Which mobs, not only their kinds: "3 zombies still reach it" was said
   // where one of three did (note 526).
   const stillMobs = new Set(), stillReach = m => { still.add(m.name); stillMobs.add(m); };
-  const fought = m => !!fight && !m.apart && m.name !== 'creeper' && (!fight.only || fight.only(m));
+  // A far one not there before the setup is done is not counted at all.
+  const fought = m => !!fight && !m.apart && !(m.far && !(arrives(m) < setup)) && m.name !== 'creeper' && (!fight.only || fight.only(m));
   for (const m of mobs) {
     // No way to the bot: it neither arrives nor goes off beside it.
     if (m.apart) continue;
+    // A biter out of sight past the eight a biter is counted from (`far`,
+    // survival.js farBiters) counts where it can be at the bot before the
+    // building or digging is done: that long the bot stands open to it,
+    // wherever it is now. mid-242-ad-nether-3's pocket was priced at 0 with
+    // a sword piglin 15.7 blocks off round the rock, 2.7 seconds away at
+    // its own speed, and 13.8 seconds of building (note 581).
+    if (m.far && !(arrives(m) < setup)) continue;
+    if (m.far) farIn.push({ name: m.name, distance: round(m.distance), seconds: round(arrives(m)) });
     if (m.name === 'creeper') {
       // One lit already goes off when its fuse left runs out.
       const at = m.fought?.litNowFuseLeft ?? arrives(m) + FUSE;
@@ -803,8 +812,8 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   damage += spanned(clipped(withering, seconds)) * WITHER.perSecond;
   const poison = spanned(clipped(poisoning, seconds)) * POISON.perSecond;
   damage = poisonFloored(damage + poison, poison, health ?? Infinity);
-  const out = { seconds, setup: round(setup), damage: round(damage), ...(poison > 0 ? { poison: round(poison) } : {}), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds) };
+  const out = { seconds, setup: round(setup), damage: round(damage), ...(poison > 0 ? { poison: round(poison) } : {}), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds), ...(farIn.length ? { farIn } : {}) };
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };

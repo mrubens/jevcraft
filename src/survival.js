@@ -162,7 +162,9 @@ function blowsSay(mobs, health) {
   const name = m.name.replaceAll('_', ' ');
   const hardest = biters.length > 1 ? `, the hardest hitter of the ${biters.length} here that can get to the bot,` : '';
   const when = soon <= 0.1 ? 'it is at arm\'s length now' : `at its own speed (about ${Math.round(v * 10) / 10} blocks a second) it can be at arm's length in about ${soon} second${soon === 1 ? '' : 's'}`;
-  return `The ${name} ${Math.round(m.distance || 0)} blocks off${hardest} hits for about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}, a blow a second at arm's length: ${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health, and ${when}.`;
+  // One out of sight is said so: its blow is the same round the rock (note 581).
+  const unseen = m.visible === false ? ', out of sight,' : '';
+  return `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen}${hardest} hits for about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}, a blow a second at arm's length: ${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health, and ${when}.`;
 }
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -171,18 +173,69 @@ function blowsSay(mobs, health) {
 // it runs", stood three seconds searching, and a creeper walked up and went
 // off (note 534).
 const NO_ROUTE_YET = ' No route is checked yet: it is searched for before the bot moves, up to 24 spots at up to 0.15 seconds each (about 3.6 seconds standing still at most); where it ends, how high and how lit, is found then.';
+// The pocket is built the way a player closes one against what comes: the
+// cells a walker comes in by or strikes from first (the eight round the bot
+// at its feet and at its head, and the one over its head where a walker can
+// get up level with it), those toward the biter that can be there soonest
+// first; then the floor's and the roof's corners. mid-242-ad-nether-3's was
+// built nearest cell first, the whole roof last, with ground two up beside
+// its column: the walls went up, a sword piglin walked in along that ground
+// and dropped in over the bot's head with the roof not begun (note 581).
+// `plan.shutAt`, the seconds until no walker can get in; `plan.seconds`,
+// the whole building.
+function pocketPlan(bot, feet, biters = []) {
+  let missing;
+  try { missing = shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }); } catch (_) { return null; }
+  const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); };
+  const floor = p => bot.blockAt(p)?.boundingBox === 'block';
+  // Over the head is a way in when a walker can stand level with the top
+  // of the walls: ground two up beside the column, or a step up just
+  // outside them (onto the walls' top once they stand).
+  let over = !!columnOpening(bot, feet, 2);
+  for (let dx = -2; dx <= 2 && !over; dx++) for (let dz = -2; dz <= 2 && !over; dz++) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== 2) continue;
+    for (const up of [1, 2]) { const c = feet.offset(dx, up, dz); if (open(c) && open(c.offset(0, 1, 0)) && floor(c.offset(0, -1, 0))) { over = true; break; } }
+  }
+  const way = c => (c.y === feet.y || c.y === feet.y + 1) ? !(c.x === feet.x && c.z === feet.z) : over && c.y === feet.y + 2 && c.x === feet.x && c.z === feet.z;
+  // The side over a drop first, lowest first: a hit while the pocket goes
+  // up throws the bot a block, and mid-242-e, sealing beside a hole with
+  // zombies at arm's length, was knocked twenty-two blocks down before
+  // that side was walled (2026-09-27).
+  const { dropAt } = require('./terrain');
+  const overDrop = c => dropAt(bot, new Vec3(c.x, feet.y, c.z));
+  // How soon a biter can be at a cell, at its own speed: the side toward it.
+  const soonest = c => biters.length ? Math.round(Math.min(...biters.map(t => t.entity.position.distanceTo(c.offset(0.5, 0.5, 0.5)) / blocksPerSecond(t.entity.name))) * 10) / 10 : 0;
+  const here = bot.entity.position;
+  const cells = missing.map(c => ({ c, drop: overDrop(c), way: way(c), soon: soonest(c), d: c.distanceTo(here) }))
+    .sort((a, b) => (b.drop - a.drop) || (a.drop && a.c.y - b.c.y) || (b.way - a.way) || (a.soon - b.soon) || (a.d - b.d)).map(x => x.c);
+  const last = cells.map(way).lastIndexOf(true);
+  return { cells, ways: cells.filter(way).length, over, shutAt: Math.round((last + 1) * BLOCK_SECONDS * 10) / 10, seconds: Math.round(cells.length * BLOCK_SECONDS * 10) / 10 };
+}
+// The biters a pocket is built against: those within the twenty-four a
+// stance counts and their own follow range, seen or not.
+function pocketBiters(bot) {
+  try { return threats(bot, 24).filter(t => !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name) && t.distance <= followRange(t.entity.name)); } catch (_) { return []; }
+}
 // The race a pocket is: blocks to place against the nearest biter's walk.
 // Trial 70 chose to seal with four zombies coming, the nearest six blocks
 // off, told nothing of either, and went from twelve to nothing with the
 // pocket half built.
-function pocketRace(bot, danger) {
-  const feet = bot.entity.position.floored();
+// And the order the blocks go down in, and when the ways in are shut
+// against when that biter can be there (pocketPlan, note 581).
+function pocketRace(bot, danger, plan = null) {
+  const biters = danger.filter(t => !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name));
+  plan = plan || pocketPlan(bot, bot.entity.position.floored(), biters);
+  if (!plan) return '';
+  const n = plan.cells.length;
   // At its own speed (combat-estimate), as dig_down's race: a spider is at
   // the bot in half a zombie's time (note 544).
   const walkIn = t => Math.max(0, t.distance - 1.5) / blocksPerSecond(t.entity.name);
-  const biter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((x, y) => walkIn(x) - walkIn(y))[0];
-  const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
-  return shellCells != null ? ` About ${shellCells} block${shellCells === 1 ? '' : 's'} to place here, some ${Math.round(shellCells * BLOCK_SECONDS)} seconds of building${biter ? `; the nearest ${biter.entity.name.replaceAll('_', ' ')}, ${Math.round(biter.distance)} blocks off${biter.visible === false ? ' and out of sight' : ''}, can be at the bot in about ${Math.max(0, Math.round((biter.distance - 1.5) / blocksPerSecond(biter.entity.name)))} seconds` : ''}.` : '';
+  const biter = biters.slice().sort((x, y) => walkIn(x) - walkIn(y))[0];
+  const at = biter ? Math.round(walkIn(biter) * 10) / 10 : null;
+  const race = biter ? `; the nearest ${biter.entity.name.replaceAll('_', ' ')}, ${Math.round(biter.distance)} blocks off${biter.visible === false ? ' and out of sight' : ''}, can be at the bot in about ${at} seconds at its own speed` : '';
+  const ways = plan.ways && plan.ways < n ? ` The cells a walker comes in by or strikes from go first${biter ? `, those toward the ${biter.entity.name.replaceAll('_', ' ')} first` : ''} (the walls round the bot at its feet and head${plan.over ? ', and the one over its head: there is ground level with the walls\' top, and a walker there drops in' : ''}): shut to walkers after ${plan.ways} block${plan.ways === 1 ? '' : 's'}, about ${plan.shutAt} seconds; the corners of the floor and roof after.` : '';
+  const first = biter && plan.ways ? (at < plan.shutAt ? ` The ${biter.entity.name.replaceAll('_', ' ')} can be there before they are shut: one there first stands in a gap${plan.over ? ' or drops in over the head' : ''}, and the pocket does not close on it.` : ` They are shut before the ${biter.entity.name.replaceAll('_', ' ')} can be there.`) : '';
+  return ` About ${n} block${n === 1 ? '' : 's'} to place here, some ${Math.round(plan.seconds)} seconds of building${race}.${ways}${first}`;
 }
 // A shaft pocket's seconds, from the top of its column to its foot: each
 // block's dig with the tool it takes, and a second more a block to turn,
@@ -337,6 +390,10 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   const poison = cost.poison > 0 ? Math.round(Math.min(cost.poison, Math.max(0, health - 1)) * 10) / 10 : 0;
   const poisonSays = poison > 0 ? ` About ${poison} of it is poison (one health every 1.25 seconds, only while health is above 1: it leaves the bot at 1 or just under, and the next bite or hit kills).` : '';
   let s = ` About ${damage} damage from the mobs here ${over}${setupSays}, from ${h} health${damage >= health ? ' (more than the bot has)' : ''}.${poisonSays}`;
+  // The biters out of sight further off that can come in while the bot
+  // builds or digs, said as counted (farBiters, note 581).
+  const farIn = cost.farIn || [];
+  if (farIn.length) s += ` Counted though out of sight, at the bot before the ${doing || 'setting up'} is done at its own speed: ${farIn.map(f => `the ${f.name.replaceAll('_', ' ')} ${Math.round(f.distance)} blocks off, in about ${f.seconds} second${f.seconds === 1 ? '' : 's'}`).join(', ')}.`;
   for (const b of cost.blasts) s += ` The creeper ${Math.round(b.distance)} blocks off can go off beside the bot in about ${b.seconds} seconds${doing && cost.setup ? `, ${b.seconds <= cost.setup ? 'before' : 'after'} the ${doing} is done` : ''}: about ${Math.round(b.hitsBot)} ${b.at && b.at !== 2 ? `${b.at} blocks off, where it goes off fought,` : 'two blocks off'} after the armour worn${b.hitsBot >= health ? ', more than the bot has' : ''}.`;
   // Those that reach it again partway (a shooter walked to a new line) are
   // said with when, and counted from then.
@@ -356,6 +413,50 @@ function unseenBiters(bot, danger) {
   if (!near.length) return [];
   const apart = walkersApart(bot, near);
   return near.filter(t => !apart.ids.has(t.entity.id)).map(t => ({ ...t, unseen: true }));
+}
+// The biters out of sight past those eight, within the twenty-four a stance
+// counts and their own follow range (a piglin's 16), with a way to the bot:
+// not a threat by themselves, but a stance that stands the bot still
+// building or digging for many seconds is open to each that can come in
+// that time. mid-242-ad-nether-3 chose a pocket of 23 blocks, told "about 0
+// damage ... the 13.8 seconds of building included", with a sword piglin
+// 15.7 blocks off round the rock, said only as "out of sight but about";
+// it was at the bot, dropped in through the roof not yet built, eleven
+// seconds later, and three blows ended it (note 581).
+function farBiters(bot, counted = []) {
+  let far = [];
+  try {
+    far = threats(bot, 24).filter(t => !t.visible && !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name) &&
+      t.distance > UNSEEN_BITER_REACH && t.distance <= followRange(t.entity.name) && !counted.some(d => d.entity?.id === t.entity.id));
+  } catch (_) { return []; }
+  if (!far.length) return [];
+  const apart = walkersApart(bot, far);
+  return far.filter(t => !apart.ids.has(t.entity.id)).map(t => ({ ...t, unseen: true, far: true }));
+}
+// Why the piglins about are after the bot, and what it would take to stop
+// it, said in the stance question: mid-242-ad-nether-3 met four of them in
+// an iron helmet and chestplate with no gold on, and no question it was
+// asked said that gold was the whole of their quarrel (note 581). The rule
+// is the game's (PiglinAi: a player wearing any gold armour piece is not a
+// target, save to one angry with it, and the anger spreads to the piglins
+// near the one struck); a brute ignores gold.
+const GOLD_SLOTS = { golden_helmet: [5, 'head'], golden_chestplate: [6, 'chest'], golden_leggings: [7, 'legs'], golden_boots: [8, 'feet'] };
+function piglinGoldSays(bot, danger = []) {
+  if (!danger.some(t => t.entity?.name === 'piglin')) return null;
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  if (worn.some(n => /^golden_/.test(n))) return null;
+  const said = n => n.replaceAll('_', ' ');
+  const rule = 'The piglins here go for the bot because it wears no gold: a piglin leaves a player wearing any one piece of gold armour alone, save one angry with it (struck by that player, and the piglins near the one struck, for about 30 seconds); a piglin brute goes for a player whatever is worn.';
+  const piece = bot.inventory.items().find(i => GOLD_SLOTS[i.name]);
+  if (piece) {
+    const [slot, where] = GOLD_SLOTS[piece.name];
+    const on = bot.inventory.slots?.[slot]?.name;
+    const { armourOf } = require('./combat-estimate');
+    const less = on ? armourOf([on]).points - armourOf([piece.name]).points : 0;
+    return `${rule} ${said(piece.name).replace(/^./, c => c.toUpperCase())} ${piece.count > 1 ? 'are' : 'is'} carried: putting it on is one move in the inventory, under half a second standing still, ${on ? `in place of the ${said(on)}${less > 0 ? ` (${less} armour point${less === 1 ? '' : 's'} less)` : ''}` : `on the ${where}, bare now, so nothing worn comes off`}.`;
+  }
+  const ingots = countOf(bot, 'gold_ingot');
+  return `${rule} No gold armour is carried${ingots ? `; ${ingots} gold ingot${ingots === 1 ? '' : 's'} carried, and golden boots take four at a crafting table` : ', nor gold to make any (golden boots take four ingots at a crafting table)'}.`;
 }
 // How many biters can be at arm's length at once where the bot stands: the
 // cells round it a mob could stand in (room for a body, ground under it or
@@ -2108,7 +2209,22 @@ class Survival {
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: opening ? Infinity : open + inCell.length,
       poisonedFor: require('./combat-estimate').effectLeft(bot, 'poison')?.seconds || 0, burningFor: require('./combat-estimate').burnLeft(bot) });
     const cost = estimate.fightHere;
-    const mobs = estimate.mobs || [];
+    // And the biters out of sight further off, within their own follow range
+    // and with a way to the bot (farBiters): each counted in a stance's
+    // building or digging where it can be at the bot before that is done, at
+    // its own speed and with its own blow, and in the fight after it once
+    // there; not in the fight here (combat-estimate stanceCost `far`).
+    const far = this.lastFar = farBiters(bot, counted);
+    const farMobs = far.length ? fightEstimate({ threats: far.map(t => ({ name: t.entity.name, distance: t.distance, shoots: false, ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: false, id: t.entity.id, unseen: true })),
+      armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded }).mobs.map(m => Object.assign(m, { far: true })) : [];
+    const mobs = [...(estimate.mobs || []), ...farMobs];
+    // A shelter built or dug under their noses holds back only the biters
+    // that come after it is closed: one at the bot before is in with it, in
+    // the pocket's gap, the bunker's tunnel or down the open shaft (note
+    // 581). When each can be there, at its own speed (combat-estimate
+    // arrives).
+    const { arrives } = require('./combat-estimate');
+    const bites = m => !m.shoots && m.name !== 'creeper' && !m.apart;
     // One blow from the hardest hitter here: the give a stance's pace is
     // allowed before it is asked again (holding below).
     const oneHit = Math.max(0, ...mobs.filter(m => m.name !== 'creeper' && !m.apart).map(m => m.hitsBot || 0));
@@ -2477,10 +2593,23 @@ class Survival {
     const bunkerMs = nearWall(bot, centroid(danger), { dug }) ? require('./bunker').bunkerDigMs(bot, centroid(danger), { dug }) : Infinity;
     const undug = !inDug && Number.isFinite(bunkerMs) ? require('./bunker').liquidBehind(bot, bot.entity.position.floored(), centroid(danger)) : [];
     const undugSays = undug.length ? ` Not dug where ${undug.length === 1 ? 'there is' : 'there are'} ${undug.slice(0, 3).join('; ')}: a cell opened there lets it in, and lava in a tunnel spreads faster than a body moves through it.` : '';
+    // The biters at the bot before it is in follow it in and are fought
+    // there together, as here; the doorway holds back those that come after.
+    // mid-244-ag dug in a cave told "about 8.9 damage ... at the doorway, one
+    // biter at a time", five zombies within ten blocks, three of them out of
+    // sight and uncounted past eight: all five were at it while it dug, and
+    // they hit it fourteen times from 20 to none (note 581).
+    const bunkerSays = () => {
+      const setup = bunkerMs / 1000 + BLOCK_SECONDS;
+      const first = mobs.filter(m => bites(m) && arrives(m) < setup);
+      const c = stanceCost({ mobs, setup, fight: { atOnce: Math.max(1, first.length), only: m => !m.shoots }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded });
+      const done = first.length > 1 ? `In it, with the ${first.length} there before it is dug in fought together in the tunnel (the doorway holds back only those after)` : first.length ? `In it, with the ${first[0].name.replaceAll('_', ' ')} there before it is dug in in the tunnel and the rest one at a time at the doorway` : 'At the doorway, one biter at a time';
+      return costSays(c, bot.health, mobs, { doing: 'digging in', done });
+    };
     if (Number.isFinite(bunkerMs)) options.bunker = { description: (inDug
       ? `Stay in the bunker already dug here, at its inside cell facing the doorway, so only one mob at a time can reach, and fight them there: no more digging.`
       : `Dig into the nearby wall, three blocks in and one to the side at the end where the rock allows, so only one mob at a time can reach, and fight them at the doorway: about ${Math.round(bunkerMs / 100) / 10} seconds of digging with the tools carried, shot at meanwhile.${undugSays}`) + buildCost + creeperNote + witchNote +
-      costSays(stanceCost({ mobs, setup: bunkerMs / 1000 + BLOCK_SECONDS, fight: { atOnce: 1, only: m => !m.shoots }, reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield: shielded }), bot.health, mobs, { doing: 'digging in', done: 'At the doorway, one biter at a time' }),
+      bunkerSays(),
       run: async () => { this.report(goal, save, { action: 'dig_in_bunker', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
         try { this.state.bunkerDug = await digBunker(bot, task, goal, save, { from: centroid(danger), navigate: this.actions.navigate, dug: this.state.bunkerDug }); save(); return true; }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; } } };
@@ -2634,15 +2763,23 @@ class Survival {
           } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
         } };
     }
-    const race = pocketRace(bot, coming);
+    // Built against the biters that can get to the bot, seen or not, the
+    // side toward the soonest first (pocketPlan, note 581).
+    const pocketFor = [...coming, ...hiddenNear, ...far].filter(t => !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name));
+    const plan = pocketPlan(bot, feet, pocketFor);
+    const race = pocketRace(bot, pocketFor, plan);
     // Underground the dawn changes nothing: no mob there burns in it.
     const nightLong = shelterNeeded(bot) && surfaceObserver(bot)(bot.entity.position) ? ` At night the mobs outside do not lose interest: about ${minutesToDawn(bot)} real minutes to dawn.` : '';
     // The blocks against what the crowd deals while they go down: mid-92-e
     // and mid-83-d chose pockets of twenty to thirty-four blocks with a
     // zombie at arm's length and four shooters about, and neither was shut.
-    const shellCells = (() => { try { return shelter.missingShell(bot, { origin: { x: feet.x, y: feet.y, z: feet.z } }).length; } catch (_) { return null; } })();
-    // A mob in the bot's own cells is inside the pocket: shut in with it.
-    const sealPriced = shellCells != null ? stanceCost({ mobs, setup: shellCells * BLOCK_SECONDS, reaches: m => inCellIds.has(m.id) }) : null;
+    // A biter at the bot before the ways in are shut stands in a gap or
+    // drops in (sealHere does not place a block where a body is), and the
+    // pocket does not close on it: it hits from when it is there on; one
+    // that comes after finds them shut. A mob in the bot's own cells is
+    // inside the pocket: shut in with it.
+    const getsIn = m => bites(m) && !!plan && arrives(m) < plan.shutAt;
+    const sealPriced = plan ? stanceCost({ mobs: mobs.filter(m => !bites(m) || getsIn(m)), setup: plan.seconds, reaches: m => inCellIds.has(m.id) || getsIn(m) }) : null;
     const sealCost = (inCell.length ? ` ${ownCellsSays(inCell)}: ${inCell.length === 1 ? 'it is' : 'they are'} inside the pocket, and closed, it shuts ${inCell.length === 1 ? 'it' : 'them'} in with the bot.` : '') + (sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '');
     if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (high ? ` The bot stands ${high} block${high === 1 ? '' : 's'} above the ground beside it: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
@@ -2664,7 +2801,9 @@ class Survival {
       // down three with one seventeen blocks off, told "none of them reaches
       // it", and the blast came through the cap fourteen seconds later
       // (2026-09-26).
-      const digCost = stanceCost({ mobs, setup, reaches: m => m.name === 'creeper' || m.name === 'warden' });
+      // A biter at the shaft's top before the lid drops in onto the bot and
+      // stays (note 581).
+      const digCost = stanceCost({ mobs, setup, reaches: m => m.name === 'creeper' || m.name === 'warden' || (bites(m) && arrives(m) < setup) });
       // The race it is, as the pocket's is said: mid-229-r dug down with a
       // zombie eight blocks off, 5.4 seconds of digging against its two of
       // walking; the three came to the shaft's top before the lid, the dig
@@ -3309,6 +3448,8 @@ class Survival {
         ...(farther ? { shootersFartherInSight: farther.list } : {}),
         ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
+        // Gold, where piglins are about and none is worn (note 581).
+        ...((g => g ? { piglinsAndGold: g } : {})(piglinGoldSays(bot, [...danger, ...(this.lastFar || [])]))),
 
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
@@ -4207,16 +4348,11 @@ class Survival {
     // off and the dance are the answers to a creeper that near.
     if (creeperRace(bot, shelter.missingShell(bot, refuge).length)) return false;
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
-    // The nearest cells first: the ones a mob could step into.
     const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
-    // The side over a drop first, lowest first: a hit while the pocket goes
-    // up throws the bot a block, and mid-242-e, sealing beside a hole with
-    // zombies at arm's length, was knocked twenty-two blocks down before
-    // that side was walled (2026-09-27).
-    const { dropAt } = require('./terrain');
-    const feetY = bot.entity.position.floored().y;
-    const overDrop = c => dropAt(bot, new Vec3(c.x, feetY, c.z));
-    const cells = shelter.missingShell(bot, refuge).sort((a, b) => (overDrop(b) - overDrop(a)) || (overDrop(a) && a.y - b.y) || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    // The side over a drop first, then the ways a walker comes in by, the
+    // side toward the soonest biter first, as the seal was priced
+    // (pocketPlan, note 581).
+    const cells = pocketPlan(bot, origin, pocketBiters(bot))?.cells || shelter.missingShell(bot, refuge);
     // Beside a drop the bot does not move to place: what it can reach from
     // where it stands, and nothing else (place's `stay`).
     const stay = dropWithin(bot, origin, 2);
@@ -6572,4 +6708,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
