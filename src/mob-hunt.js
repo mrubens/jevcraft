@@ -16,7 +16,7 @@ const { collectNearbyDrops } = require('./drop-collection');
 const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
-const { bridgeTo, surveyCrossing, underFire, blocksCarried, MATERIALS } = require('./bridging');
+const { bridgeTo, surveyCrossing, underFire, blocksCarried, stepOntoFooting, MATERIALS } = require('./bridging');
 const { crossToward, crossingSays, nearer, surveyLeg, legSays, WALK_SPEED } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -521,6 +521,12 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   const tree = {}, positions = new Map(), pushed = [];
   const footing = state.entity === 'blaze' ? require('./blaze-stand').knockSays(bot) : '';
+  // What reaches the bot where it would fight: a shooter in sight within
+  // its own reach (a blaze's forty-eight), anything else within sixteen.
+  const { RANGE } = require('./combat-estimate');
+  const reaching = (() => { try { return threats(bot, 64).filter(t => shooter(t.entity) ? t.visible && t.distance <= (RANGE[t.entity.name] || 16) : t.distance <= 16); } catch (_) { return []; } })();
+  const cage = state.entity === 'blaze' && reaching.length > 1 ? require('./blaze-stand').spawnerAt(bot) : null;
+  const spawnerSays = cage ? ` A blaze spawner is ${Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position))} blocks off: while the bot is within sixteen of it, it makes up to four more every ten to forty seconds.` : '';
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
@@ -530,17 +536,30 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // audit, 2026-09-25): a hoglin's toss or a blaze's knockback beside
       // lava or a drop is the fall, not the fight.
       const distance = target.position.distanceTo(bot.entity.position);
-      const one = fightEstimate({ threats: [{ name: target.name, distance, shoots: shooter(target), ...(target.heldItem?.name ? { held: target.heldItem.name } : {}), visible: true }], armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean),
-        weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+      const asThreat = (e, d) => ({ name: e.name, distance: d, shoots: shooter(e), ...(e.heldItem?.name ? { held: e.heldItem.name } : {}), visible: true });
+      const kit = { armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean),
+        weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' };
+      const one = fightEstimate({ threats: [asThreat(target, distance)], ...kit });
       const mob = one.mobs[0];
+      // The fight as it will be: the others that reach the bot where it
+      // fights fight too. mid-235-p-nether-3 took a blaze at four blocks
+      // told "5.9 damage, 14.2 health after" with another blaze seven off
+      // and the spawner three away; four blazes' fire took it from twenty
+      // to nine in five seconds, the stances beside it priced at 22 to 40
+      // (note 533).
+      const others = reaching.filter(t => t.entity !== target);
+      const all = others.length ? fightEstimate({ threats: [asThreat(target, distance), ...others.slice(0, 7).map(t => asThreat(t.entity, t.distance))], ...kit }) : null;
       const at = target.position.floored();
       const lavaNear = require('./survival').lavaBeside(bot, at), dropNear = dropWithin(bot, at, 3);
       tree[`hunt_${target.id}`] = { description: { action: handler.passive ? 'Chase this observed animal and strike it with what is carried, then verify item pickup.' :
-        handler.ranged && bowReady(bot) ? 'Fight this observed isolated mob: arrows from range while it is in view, then the sword, shield and armor up close; verify item pickup.' :
-        'Fight this observed isolated mob with carried armor, sword and shield, then verify item pickup.',
+        handler.ranged && bowReady(bot) ? `Fight this observed ${all ? 'mob' : 'isolated mob'}: arrows from range while it is in view, then the sword, shield and armor up close; verify item pickup.` :
+        `Fight this observed ${all ? 'mob' : 'isolated mob'} with carried armor, sword and shield, then verify item pickup.`,
         entity: target.name, position: { ...target.position }, distance,
         item: state.item, randomDrop: true,
-        ...(mob && !handler.passive ? { fight: { hitsBot: mob.hitsBot, seconds: one.fightHere.seconds, damageTaken: one.fightHere.damageTaken, healthAfter: one.fightHere.healthAfter, ...(mob.note ? { note: mob.note } : {}) } } : {}),
+        ...(mob && !handler.passive ? { fight: { hitsBot: mob.hitsBot, ...(all ? {
+          withTheOthers: `${mobsSaid(others)} reach${others.length === 1 ? 'es' : ''} the bot here too and fight${others.length === 1 ? 's' : ''} with it: all of them, about ${all.fightHere.seconds} seconds and ${all.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${all.fightHere.healthAfter <= 0 ? ' (more than the bot has)' : ''}; this one alone would be about ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken}.${spawnerSays}`,
+          seconds: all.fightHere.seconds, damageTaken: all.fightHere.damageTaken, healthAfter: all.fightHere.healthAfter }
+          : { seconds: one.fightHere.seconds, damageTaken: one.fightHere.damageTaken, healthAfter: one.fightHere.healthAfter }), ...(mob.note ? { note: mob.note } : {}) } } : {}),
         ...(lavaNear ? { lavaNearIt: 'lava within two blocks of it: a knockback there lands in it' } : {}),
         // Where the bot stands, the push against the drop (note 469).
         ...(target.name === 'blaze' && footing ? { footing: footing.trim() } : {}),
@@ -572,7 +591,11 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     if (typeof option.description === 'string') option.description += ` ${fitSaid}`;
     else option.description.fitness = fitSaid;
   }
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved. ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  // Leaving them is not leaving their fire: said, so it is not read as a
+  // way out (note 533).
+  const firing = reaching.filter(t => shooter(t.entity));
+  const stillShoot = firing.length ? ` Leaving them does not take the bot out of their fire: ${mobsSaid(firing)}, in sight and within reach, keep${firing.length === 1 ? 's' : ''} shooting where it stands; getting out of their line (a retreat, out of sight, cover) is the encounter's own choice once they claim the bot.` : '';
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
@@ -1232,7 +1255,7 @@ function columnBelow(bot) {
 
 // Each way to the fortress that can be tried from here, with what it
 // meets. `run` returns why it ended, when it did not throw.
-async function fortressApproaches(bot, task, goal, save, actions, state, nearest) {
+async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = []) {
   const here = bot.entity.position.clone(), flat = Math.round(flatTo(nearest, here)), dy = Math.round(nearest.y + 1 - here.y);
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
   const inView = threatsInView(bot);
@@ -1303,9 +1326,15 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       run: async () => { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null; } };
   }
   const minutes = state.legSince ? Math.round((Date.now() - state.legSince) / 60000) : null;
-  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side.`,
+  // The fortress left is all of it in view, not sixteen blocks of it:
+  // mid-235-p-nether-3 chose to leave its fortress seven times in three
+  // seconds, each time the next brick past sixteen blocks a fortress found
+  // anew and its ways asked again (note 533).
+  const extent = fortressExtent(bricks, nearest);
+  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.`,
     run: async () => {
-      state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000 }); delete state.target; save();
+      state.shunned.push({ x: nearest.x, z: nearest.z, radius: extent, until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on' });
+      delete state.target; save();
       bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
       return null;
     } };
@@ -1332,13 +1361,17 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     ...(state.approach?.failed?.length ? { failed: state.approach.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
 }
 
-async function approachFortress(bot, task, goal, save, actions, state, nearest) {
+async function approachFortress(bot, task, goal, save, actions, state, nearest, bricks = []) {
+  // Every way is surveyed and walked from a cell with a floor: crouched
+  // over an edge on the block beside, the bot steps back onto it first.
+  try { await stepOntoFooting(bot, task); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; }
   const found = { x: nearest.x, y: nearest.y, z: nearest.z };
   if (!state.approach || Math.hypot(state.approach.found.x - found.x, state.approach.found.z - found.z) > SAME_FORTRESS) state.approach = { found, failed: [] };
   const approach = state.approach;
   approach.found = found;
   goal.step = { action: 'find_fortress', found, legs: state.legs }; save();
-  const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest);
+  const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks);
   let pick = approach.choice && approach.until > Date.now() && options[approach.choice] ? approach.choice : null;
   if (!pick) {
     const tree = Object.fromEntries(Object.entries(options).map(([key, o]) => [key, { description: o.description, run: o.run }]));
@@ -1353,7 +1386,8 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest) 
   let why = null;
   try { why = await options[pick].run(); }
   catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
-  if (pick === 'keep_searching') { delete state.approach; save(); return; }
+  // What failed is kept with the fortress: going back to it says so.
+  if (pick === 'keep_searching') { delete approach.choice; delete approach.until; save(); return; }
   // Closer counts; a shuffle along the shelf does not.
   if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return; }
   approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
@@ -1371,6 +1405,25 @@ function fortressFloors(bot, bricks) {
 // blocks of it. The one test for the patrol, the approach and staying.
 function onFortressFloor(here, floors) {
   return floors.some(f => Math.abs(f.y + 1 - here.y) <= 1.5 && Math.hypot(f.x + 0.5 - here.x, f.z + 0.5 - here.z) <= 6);
+}
+// How far a fortress runs from `from` across the ground: its bricks in view
+// joined to it with gaps of no more than `link` blocks, the farthest of
+// them, and at least sixteen.
+function fortressExtent(bricks, from, link = 8) {
+  const key = (x, z) => `${Math.floor(x / link)},${Math.floor(z / link)}`;
+  const grid = new Map();
+  for (const b of bricks) { const k = key(b.x, b.z); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(b); }
+  const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const joined = new Set(), queue = [from];
+  let far = 16;
+  while (queue.length) {
+    const b = queue.pop(), gx = Math.floor(b.x / link), gz = Math.floor(b.z / link);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const c of grid.get(`${gx + dx},${gz + dz}`) || []) {
+      if (joined.has(c) || flat(b, c) > link) continue;
+      joined.add(c); queue.push(c); far = Math.max(far, Math.ceil(flat(from, c)) + 2);
+    }
+  }
+  return far;
 }
 // How far the fortress's bricks in view run from here along each heading
 // (east, south, west, north): a corridor goes on past its last brick seen.
@@ -1516,7 +1569,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const floors = fortressFloors(bot, bricks);
     const nearest = byNear(bricks)[0];
     state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
-    if (!onFortressFloor(here, floors)) { await approachFortress(bot, task, goal, save, actions, state, byNear(floors.length ? floors : bricks)[0]); return; }
+    if (!onFortressFloor(here, floors)) { await approachFortress(bot, task, goal, save, actions, state, byNear(floors.length ? floors : bricks)[0], bricks); return; }
     // Inside: walk the structure. The farthest brick not yet walked to is
     // the next stretch of corridor; blazes come into view on the way and
     // the observed hunt takes them. Standing on the first brick found was

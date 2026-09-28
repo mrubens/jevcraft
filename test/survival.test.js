@@ -4864,3 +4864,32 @@ test('knocked off the shaft it is digging, the bot steps back over it before the
   assert(digs.slice(1).every(d => d.over), `every block after the knock is dug from over the shaft: ${JSON.stringify(digs)}`);
   assert.equal(Math.floor(bot.entity.position.z), 0, 'the bot ends in its shaft');
 });
+
+test('by a wall no blaze has a line to, the meal is priced by the lines to where the bot stands, as the wall is; a stand whose walk ends short says why (note 533)', async () => {
+  // mid-235-p-nether-3 stood twenty seconds at 0.5 health and hunger 16 by a wall no blaze had a line to, mutton
+  // carried: the wall was priced at 0 and the meal at 7.2 from blazes counted in sight a moment before; it never ate,
+  // and the wall stance then failed forty times in seven seconds, each said as "it failed".
+  const solid = p => p.y <= 63 || (p.x <= -1 && p.y <= 67);
+  const bot = brickWorld(solid, { items: ['iron_sword', 'iron_pickaxe', 'netherrack', 'bread'] });
+  bot.health = 0.5; bot.food = 16;
+  const blaze = blazeAt(3, 3.5, 64.5, 0.5);
+  bot.entities = { 3: blaze };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const inLine = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
+  assert(inLine.eat, Object.keys(inLine).join(','));
+  assert(inLine.eat.expects.damage > 0, 'in its line, the blaze shoots while the bot eats');
+  // Rock between: no line from the blaze reaches the bot's cell, though it was counted in sight a moment ago.
+  bot.world = { raycast: from => ({ position: from.floored(), intersect: from }) };
+  const hidden = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
+  assert.equal(hidden.eat.expects.damage, 0);
+  assert.match(hidden.eat.description, /About 0 damage from the mobs here while it eats, from 0\.5 health\. Of the 1 shooter about, none has a line to the bot where it stands/);
+  // The wall's walk ended short: said as why.
+  const { blazeStands, takeStand } = require('../src/blaze-stand');
+  bot.world = { raycast: () => null };
+  bot.entity.position = new Vec3(2.5, 64, 0.5);
+  const far = blazeAt(3, 8.5, 64.5, 0.5); bot.entities = { 3: far };
+  const stands = blazeStands(bot, [threat(bot, far)]);
+  assert(stands.back_to_wall, Object.keys(stands).join(','));
+  await assert.rejects(takeStand(bot, new Task('x'), {}, () => {}, stands.back_to_wall, { navigate: async () => { throw new Error('No route'); } }),
+    { name: 'StanceFailed', message: 'the walk to its cell at (0, 64, 0) ended 2 blocks short: No route' });
+});

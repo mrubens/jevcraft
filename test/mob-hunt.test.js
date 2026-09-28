@@ -1377,3 +1377,66 @@ test('a blaze over the lava beside a fortress bridge is not walked under: the fi
   assert(asked?.hunt_7, Object.keys(asked || {}).join(','));
   assert.equal(asked.hunt_7.footing, 'A blaze\'s fireball that lands pushes the bot about 2 blocks, shield raised or not; the drop into lava is 3 blocks off: about 2 landing in turn put it over.');
 });
+
+// mid-235-p-nether-3 (note 533): crouched at the corner of a ledge, its middle over the air, every way to the fortress
+// failed at once ("Nothing solid underfoot to bridge from", no route), and leaving it left sixteen blocks of it: the next
+// brick past those was a fortress found anew, fifteen questions in three seconds.
+function fortressFromLedge(position, length = 60) {
+  const rock = p => p.y <= 31 ? 'lava' : p.y === 64 && p.z === 0 && p.x >= 30 && p.x < 30 + length ? 'nether_bricks'
+    : p.y === 64 && (p.x <= -1 || (p.x <= 0 && p.z >= 1)) ? 'netherrack' : null;
+  const world = netherWorld(position, rock);
+  const bricks = Array.from({ length }, (_, i) => new Vec3(30 + i, 64, 0));
+  world.bot.findBlocks = () => bricks;
+  world.bot.time = { timeOfDay: 6000 };
+  return world;
+}
+const pickFirst = picks => { const asked = []; return { asked, systemOne: async ({ kind, state, questions }) => {
+  asked.push({ kind, state, options: questions.branch_0.criteria });
+  return { answers: { branch_0: { choice: picks.shift() || Object.keys(questions.branch_0.criteria)[0], confidence: 0.9 } } };
+} }; };
+
+test('crouched over an edge on the block beside, the bot steps back onto it before any way to the fortress is surveyed or walked (note 533)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { restingCell } = require('../src/terrain');
+  const { bot, laid } = fortressFromLedge(new Vec3(0.30000001, 65, 0.65));
+  assert.equal(`${restingCell(bot)}`, '(-1, 65, 0)', 'the box rests on the netherrack beside, the cell under its middle open');
+  const client = pickFirst(['cross_level']);
+  const goal = { fortressSearch: { axis: 1, legs: 7, target: { x: 96, y: 65, z: 0 } } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} });
+  assert.equal(client.asked.length, 1);
+  assert.match(client.asked[0].options.cross_level, /It ends \d+ blocks nearer/);
+  assert(laid.size >= 25, `the span went down from the block the bot stood on (${laid.size} laid)`);
+  assert(bot.entity.position.x >= 28, `across, at ${bot.entity.position}`);
+});
+
+test('leaving a fortress leaves all of it in view, not sixteen blocks of it: the next question is the leg, not the same fortress found again (note 533)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = fortressFromLedge(new Vec3(-2.5, 65, 0.5));
+  const client = pickFirst(['keep_searching']);
+  const goal = { fortressSearch: { axis: 1, legs: 7, target: { x: 96, y: 65, z: 0 } } };
+  const actions = { client, navigate: async () => {}, tunnel: async () => {} };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+  assert.match(client.asked[0].options.keep_searching, /Left is all of it in view, its bricks out to 61 blocks from the nearest\./);
+  assert.equal(goal.fortressSearch.shunned.at(-1).radius, 61);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 2);
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg', 'the bricks past sixteen blocks are the same fortress, left');
+});
+
+test('a hunt fight with others that reach the bot is priced with them, and leaving them is said not to leave their fire (note 533)', async () => {
+  // mid-235-p-nether-3 took a blaze at four blocks told 5.9 damage and 14.2 health after, another blaze seven off, the
+  // spawner three away; four blazes took it from twenty to nine in five seconds.
+  const { bot, task, target, goal } = fixture('blaze');
+  target.position = new Vec3(4.5, 64, .5);
+  bot.entities[8] = { id: 8, uuid: 'other', name: 'blaze', position: new Vec3(7.5, 64, 3.5), width: .6, height: 1.8, isValid: true };
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  assert.equal(await huntObserved(bot, task, goal, () => {}, {}, client), false);
+  const fight = asked.hunt_7.fight;
+  assert.match(asked.hunt_7.action, /^Fight this observed mob with/, 'not "isolated" with another in reach');
+  assert.match(fight.withTheOthers, /^a blaze 8 blocks off reaches the bot here too and fights with it: all of them, about [\d.]+ seconds and [\d.]+ damage from 20 health.*; this one alone would be about [\d.]+ seconds and [\d.]+\./);
+  const alone = Number(/this one alone would be about [\d.]+ seconds and ([\d.]+)/.exec(fight.withTheOthers)[1]);
+  assert(fight.damageTaken > alone, `priced with both (${fight.damageTaken}) above the one alone (${alone})`);
+  assert.match(asked.defer, /Leaving them does not take the bot out of their fire: a blaze 4 blocks off, a blaze 8 blocks off, in sight and within reach, keep shooting where it stands/);
+});

@@ -40,6 +40,29 @@ function supportCell(point) {
   return new Vec3(Math.floor(point.x), Math.ceil(point.y) - 1, Math.floor(point.z));
 }
 
+// The cell the body stands in, by the block it rests on. Crouched at an
+// edge a player's middle hangs over the air, its box resting on the block
+// beside: the cell under the floored feet is open and the floor is a
+// neighbour's. mid-235-p-nether-3 stood so on its fortress approach, and
+// every way from the cell under its middle failed at once, the span with
+// "nothing solid underfoot" and the pathfinder with no route (note 533).
+// The box counts where it touches, as the game lets it stand there.
+function restingCell(bot, p = bot.entity?.position) {
+  if (!p || typeof bot.blockAt !== 'function') return null;
+  const solid = c => bot.blockAt(c)?.boundingBox === 'block';
+  const y = Math.ceil(p.y - 1e-4) - 1;
+  const feet = new Vec3(Math.floor(p.x), y + 1, Math.floor(p.z));
+  if (solid(feet.offset(0, -1, 0))) return feet;
+  const w = (bot.entity?.width ?? 0.6) / 2 + 0.001;
+  const open = c => [0, 1].every(dy => { const b = bot.blockAt(c.offset(0, dy, 0)); return !!b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name || ''); });
+  const cells = [];
+  for (let x = Math.floor(p.x - w); x <= Math.floor(p.x + w); x++) for (let z = Math.floor(p.z - w); z <= Math.floor(p.z + w); z++) {
+    const c = new Vec3(x, y + 1, z);
+    if (!c.equals(feet) && solid(c.offset(0, -1, 0)) && open(c)) cells.push(c);
+  }
+  return cells.sort((a, b) => Math.hypot(a.x + 0.5 - p.x, a.z + 0.5 - p.z) - Math.hypot(b.x + 0.5 - p.x, b.z + 0.5 - p.z))[0] || null;
+}
+
 // Beside a drop: a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it. See survival.js flee.
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -184,4 +207,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

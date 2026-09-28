@@ -260,12 +260,19 @@ const at = (bot, cell) => bot.entity.position.floored().equals(cell);
 async function takeStand(bot, task, goal, save, option, { navigate } = {}) {
   const { site, kind } = option;
   const face = kind === 'hole' || kind === 'window' ? site.stand.offset(0.5, 1.2, 0.5) : kind === 'spawner' ? site.spawner.offset(0.5, 0.5, 0.5) : site.back ? site.cell.minus(site.back).offset(0.5, 1.2, 0.5) : null;
+  // A walk that ends short says where and why: the stance failed forty
+  // times in seven seconds by mid-235-p-nether-3's wall, each said to Jev
+  // as "it failed" and no more (note 533).
   const goTo = async cell => {
     if (at(bot, cell)) return true;
-    if (!navigate) return false;
-    try { await navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: Math.max(4000, (site.steps || site.walkMs / 250 || 1) * 750), stallMs: 1500 }); }
-    catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-    return at(bot, cell);
+    let why = navigate ? null : 'no way to walk';
+    if (navigate) {
+      try { await navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: Math.max(4000, (site.steps || site.walkMs / 250 || 1) * 750), stallMs: 1500 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; why = err.message; }
+    }
+    if (at(bot, cell)) return true;
+    const off = round(cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
+    throw Object.assign(new Error(`the walk to its cell at (${cell.x}, ${cell.y}, ${cell.z}) ended ${off} blocks short${why ? `: ${why}` : ''}`), { name: 'StanceFailed' });
   };
   if (kind === 'window') {
     goal.step = { action: 'dig_in_and_fight', window: { ...site.stand } }; save?.();

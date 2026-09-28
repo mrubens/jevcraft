@@ -53,7 +53,8 @@ function stepToward(here, target) {
 // carried running out). Up to `cells` cells.
 function surveyCrossing(bot, target, { cells = 32, blocks = null } = {}) {
   const carried = blocks ?? blocksCarried(bot);
-  const start = bot.entity.position.floored();
+  // From the block the bot rests on, where the span begins (stepOntoFooting).
+  const start = require('./terrain').restingCell(bot) || bot.entity.position.floored();
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
   const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
   let here = start, digMs = 0;
@@ -146,7 +147,13 @@ async function span(bot, task, target, maxBlocks, maxSteps) {
     // Standing squarely on the support block first: a placement from the
     // edge misses the face.
     const support = bot.blockAt(here.offset(0, -1, 0));
-    if (!solid(support)) throw new Error('Nothing solid underfoot to bridge from');
+    if (!solid(support)) {
+      // Crouched over an edge, resting on the block beside: onto it first,
+      // as the survey counted from it (note 533).
+      const rest = require('./terrain').restingCell(bot);
+      if (!rest || rest.equals(here) || !await creepTo(bot, task, rest, 1500)) throw new Error('Nothing solid underfoot to bridge from');
+      continue;
+    }
     await clear(bot, task, next); await clear(bot, task, next.offset(0, 1, 0));
     if (!solid(bot.blockAt(next.offset(0, -1, 0)))) {
       if (placed >= maxBlocks) return placed;
@@ -166,4 +173,25 @@ async function span(bot, task, target, maxBlocks, maxSteps) {
   return placed;
 }
 
-module.exports = { bridgeTo, underFire, surveyCrossing, stepToward, blocksCarried, MATERIALS };
+// Crouched over an edge with the block under the middle open, a step back
+// onto the block the body rests on, crouched all the way: every way on is
+// measured from a cell with a floor. mid-235-p-nether-3 stood so for twenty
+// seconds while the pathfinder pressed no key, and then every way to its
+// fortress failed at once, fifteen questions in three seconds (note 533).
+// True when it stepped.
+async function stepOntoFooting(bot, task) {
+  const here = bot.entity?.position?.floored?.();
+  if (!here || typeof bot.blockAt !== 'function' || typeof bot.setControlState !== 'function' || solid(bot.blockAt(here.offset(0, -1, 0)))) return false;
+  const rest = require('./terrain').restingCell(bot);
+  if (!rest || rest.equals(here)) return false;
+  const crouched = !!bot.getControlState?.('sneak');
+  bot.setControlState('sneak', true);
+  try { return await creepTo(bot, task, rest, 1500); }
+  finally {
+    bot.setControlState('forward', false);
+    for (let n = 0; n < 10; n++) { const v = bot.entity?.velocity; if (!v || Math.hypot(v.x, v.z) < 0.01) break; await sleep(50); }
+    if (!crouched) bot.setControlState('sneak', false);
+  }
+}
+
+module.exports = { stepOntoFooting, bridgeTo, underFire, surveyCrossing, stepToward, blocksCarried, MATERIALS };

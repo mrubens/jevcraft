@@ -269,11 +269,11 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind; said with the one fight's estimate and the bot's fitness: health against the fourteen the code once required, hunger and whether health comes back, food carried, fire, and the kit |
+| `hunt_\d+` (pattern) | root | fight this mob | observed, reachable, isolated from others of its kind; said with the fight's estimate (with the others that reach the bot there fighting too, a shooter in sight within its reach or anything else within sixteen, and the one alone beside it; a blaze spawner near said) and the bot's fitness: health against the fourteen the code once required, hunger and whether health comes back, food carried, fire, and the kit |
 | `dig_in_and_fight` | root | dig a hole into the brick or netherrack and take the blazes from inside it | a blaze hunt with a blaze in sight within twenty-four, a sword or axe carried, and rock for the hole beside the bot or a wall within five blocks; said as the encounter stance of that name, with the push where the bot stands; held until a rod is in hand, the blazes are quiet twenty seconds or two minutes pass, then the rods picked up |
 | `fight_at_spawner` | root | take the blazes at their spawner's cage, under a ceiling | a blaze hunt with a blaze in sight, a spawner within twenty-four and a cell within three of it under a ceiling, no drop or lava within a push, within twenty-four blocks of walking; held as the hole is |
 | `back_to_wall` | root | take the blazes from footing with a wall at its back | a blaze hunt with a blaze in sight and such footing within eight blocks of walking; held as the hole is |
-| `defer` | root | leave them for now | always; said with the fitness, and what the hunt does meanwhile when the bot is short of it (food, cover, health) |
+| `defer` | root | leave them for now | always; said with the fitness, the shooters that still reach the bot where it stands (leaving is not out of their fire), and what the hunt does meanwhile when the bot is short of it (food, cover, health) |
 
 ### `combat_kit`
 

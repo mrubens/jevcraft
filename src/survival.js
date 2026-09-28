@@ -1835,7 +1835,7 @@ class Survival {
         run: async () => {
           this.report(goal, save, { action: key, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
           try { return await require('./blaze-stand').takeStand(bot, task, goal, save, o, { navigate: this.actions.navigate }); }
-          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled', 'StanceFailed'].includes(err.name)) throw err; this.state.stanceWhy = err.message; return false; }
         } };
     }
     // Out of the shooters' line, as a player under arrows steps behind a
@@ -2012,7 +2012,16 @@ class Survival {
     // retreats chosen with three or more mobs about, 15 had a meal within
     // five seconds.
     const meal = mealHelps(bot);
-    const eatCost = stanceCost({ mobs, setup: EAT_SECONDS, seconds: EAT_SECONDS });
+    // Eaten where the bot stands, the shooters that shoot meanwhile are those
+    // with a line to it here, by the same check the stands are priced with
+    // (bunker.js seenFrom). mid-235-p-nether-3 stood at 0.5 health, hunger
+    // 16 and mutton carried, twenty seconds by a wall no blaze had a line
+    // to; the wall was priced at 0 and the meal at 7.2 from blazes counted
+    // as in sight a moment before, and it never ate (note 533).
+    const seenIds = new Set(seenHere.map(e => e.id));
+    const eatMobs = shooting.length ? mobs.map(m => m.shoots && m.id != null && !seenIds.has(m.id) ? Object.defineProperty({ ...m, visible: false }, 'id', { value: m.id }) : m) : mobs;
+    const eatCost = stanceCost({ mobs: eatMobs, setup: EAT_SECONDS, seconds: EAT_SECONDS });
+    const eatSight = shooting.length && seenIds.size < shooting.length ? ` Of the ${shooting.length} shooter${shooting.length === 1 ? '' : 's'} about, ${seenIds.size ? `${seenIds.size} ha${seenIds.size === 1 ? 's' : 've'}` : 'none has'} a line to the bot where it stands, and one without shoots while it eats only if it comes round to a line.` : '';
     // What the bot meets them with after it, beside what the fight here
     // costs: its figure is the meal's second and a half only, where every
     // other stance is priced over fifteen, and mid-229-r's replay took it at
@@ -2023,7 +2032,7 @@ class Survival {
     // Held to what it was said to cost: mid-205-a chose to eat told about
     // 1.6 seconds, and ate on for four more with two zombies hitting and a
     // creeper walking up to it (2026-09-26).
-    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + EAT_AFTER + eatLeaves,
+    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatLeaves,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
         // Marked before the meal and cleared when it is eaten: a meal cut
