@@ -126,7 +126,7 @@ const DIGGABLE_ABOVE = /^(netherrack|stone|deepslate|cobblestone|cobbled_deepsla
 // `canDig` says which blocks overhead may be dug: a climb out of the mine
 // passes its own test, the one its column was looked over by.
 const diggableAbove = block => DIGGABLE_ABOVE.test(block.name) && block.diggable;
-async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = true, canDig = diggableAbove } = {}) {
+async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = true, canDig = diggableAbove, blocks = SCAFFOLD } = {}) {
   const { move } = require('./motion');
   let placed = 0;
   while (bot.entity.position.y < targetY - 0.5 && placed < maxBlocks) {
@@ -151,7 +151,7 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
       await dig(bot, task, head, { requireDrops: false });
       continue;
     }
-    const block = bot.inventory.items().find(i => SCAFFOLD.includes(i.name));
+    const block = bot.inventory.items().find(i => blocks.includes(i.name));
     if (!block) break;
     await bot.equip(block, 'hand');
     await bot.look(bot.entity.yaw, -Math.PI / 2, true);

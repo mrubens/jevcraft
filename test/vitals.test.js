@@ -346,6 +346,69 @@ test('out of fire, the run goes to no cell beside a fall that kills, and a shall
   assert.equal(`${shallow.at(-1)}`, '(4, 81, 0)', 'the nearest clear cell, a shallow drop beside it');
 });
 
+// mid-243-ad-nether-1's span as the region file has it (note 575): a
+// one-wide basalt span at y 33 from x 31 east over the lava sea (its top at
+// y 31), the bot's own oak planks at its west end, the bot at (31, 34, 15)
+// in a fire lit on the planks, magma cubes about.
+function spanInFire({ items = [], health = 7.5 } = {}) {
+  const fire = new Set(['31,34,15', '30,34,15', '30,34,14', '31,34,16']);
+  const name = p => {
+    if (p.y <= 31) return 'lava';
+    if (p.y === 33 && p.z === 15 && p.x >= 31 && p.x <= 45) return 'basalt';
+    if (p.y === 33 && p.z === 15 && p.x === 30) return 'oak_planks';
+    return fire.has(`${p.x},${p.y},${p.z}`) ? 'fire' : 'air';
+  };
+  const cube = (id, x, z) => ({ id, name: 'magma_cube', type: 'hostile', position: new Vec3(x, 34, z), height: 1.04, width: 1.04, isValid: true });
+  return { health, food: 20, oxygenLevel: 20, game: { dimension: 'the_nether' }, _inFireAt: Date.now(),
+    entity: { position: new Vec3(31.75, 34, 15.5), metadata: [1], onGround: true, eyeHeight: 1.62, yaw: 0, pitch: 0 },
+    entities: { 1: cube(1, 33.5, 15.5), 2: cube(2, 29.5, 17.5), 3: cube(3, 32.5, 12.5), 4: cube(4, 34.8, 16) },
+    inventory: { items: () => items, slots: {} }, heldItem: null,
+    blockAt: p => { const q = p.floored ? p.floored() : p; const n = name(q); return { name: n, position: q, boundingBox: /basalt|planks/.test(n) ? 'block' : 'empty' }; },
+    setControlState() {}, getControlState() { return false; }, clearControlStates() {}, lookAt: async () => {}, look: async () => {} };
+}
+
+test('in fire on a one-wide span over the lava sea, the way out is walked crouched along the span, not refused (mid-243-ad-nether-1, note 575)', async () => {
+  // Every cell of the span is beside the drop into the lava: note 548's rule refused them all, and the bot stood in the fire from 7.5 to none.
+  const vitals = require('../src/vitals');
+  const bot = spanInFire({ items: [{ name: 'gravel', count: 16 }] });
+  assert.equal(vitals.inFire(bot), true);
+  const route = vitals.fireRoute(bot);
+  assert(route && route.length, 'a way out');
+  assert(route.every(c => c.y === 34 && c.z === 15 && c.x > 31), `along the span: ${route.join(' ')}`);
+  const ways = vitals.fireWays(bot, new Task('t'));
+  assert.deepEqual(Object.keys(ways), ['crouch_out_of_fire', 'rise_on_block'], 'no run clear of the edge exists; the crouch first, the block to stand on beside it');
+  assert.match(ways.crouch_out_of_fire.description, /crouched, \d+ steps to a cell two blocks from any flame, \d+ of them beside a drop into lava 2 down: crouched, a body does not walk off an edge/);
+  assert.match(ways.rise_on_block.description, /block of gravel \(16 carried\) in the fire's cell underfoot/);
+  // The crouch is walked on the keys, sneaking, every step of it.
+  const motion = require('../src/motion'), move = motion.move, moves = [];
+  // The server's in-fire hurts stop once the body is out of the flames.
+  motion.move = async (b, task, opts) => { moves.push(opts); b.entity.position = new Vec3(opts.look.x, 34, opts.look.z); b._inFireAt = 0; return true; };
+  try { assert.equal(await ways.crouch_out_of_fire.run(), true); }
+  finally { motion.move = move; }
+  assert.equal(moves.length, route.length);
+  assert(moves.every(m => m.sneak === true && !m.keys.includes('sprint')), 'crouched, never at a sprint beside the drop');
+  // With no block to stand on, the crouch is still there.
+  assert.deepEqual(Object.keys(vitals.fireWays(spanInFire(), new Task('t'))), ['crouch_out_of_fire']);
+});
+
+test('in fire with a mob about, the vitals step walks out of the fire rather than stop for the threat (mid-242-ac-nether-1-fortress-3, mid-243-ad-nether-1, note 575)', async () => {
+  // The work's turn hands the vitals its task with the threat check on; it threw "Threat nearby" before the fire was looked at,
+  // twenty-one times a second, while mid-242-ac stood in fire at a fortress from 9.2 to 5.4 with blazes six blocks off.
+  const vitals = require('../src/vitals');
+  const { NeedsSafety } = require('../src/danger');
+  const bot = spanInFire();
+  const task = new Task('work');
+  task.interruptCheck = () => { throw new NeedsSafety({ entity: { name: 'magma_cube' }, distance: 3 }); };
+  const motion = require('../src/motion'), move = motion.move, moves = [];
+  motion.move = async (b, t, opts) => { t.check(); moves.push(opts); b.entity.position = new Vec3(opts.look.x, 34, opts.look.z); b._inFireAt = 0; return true; };
+  const acted = [];
+  try { await assert.rejects(vitals.maintainVitals(bot, task, step => acted.push(step)), /Threat nearby/, 'the threat still stops what comes after'); }
+  finally { motion.move = move; }
+  assert.equal(acted[0]?.action, 'out_of_fire', 'the fire answered first');
+  assert(moves.length >= 1, 'and walked');
+  assert.equal(vitals.inFire(bot), false, 'out of the flames');
+});
+
 test('alight with no flames about and no water, the fire reflex stands aside; in flames, or with water at hand, it answers (mid-235-q-nether-3, note 548)', () => {
   // mid-235-q-nether-3, mid-208-k and mid-235-q-nether-2-fortress-1 each stood five to seven seconds on the reflex,
   // alight in the Nether with nothing to put it out, a blaze shooting on: 20 to 9, 15.3 to 5.9, 9 to 5.

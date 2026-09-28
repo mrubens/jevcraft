@@ -427,9 +427,15 @@ function inFire(bot) {
   return onFire(bot) && fireNear(bot, feet, 1);
 }
 // A way round the flames first; ringed by them, a way through (a player
-// runs through a block of fire rather than stand in one).
-function fireRoute(bot) { return fireRouteThrough(bot, false) || fireRouteThrough(bot, true); }
-function fireRouteThrough(bot, throughFire) {
+// runs through a block of fire rather than stand in one). Then the same
+// along cells beside a fall that kills, walked crouched (outOfFire): on a
+// one-wide span over the lava sea every cell out is beside the drop, and
+// refusing them all left mid-243-ad-nether-1 standing in the fire at the
+// span's end from 7.5 to none, its far cells clear of any flame (note 575).
+function fireRoute(bot) {
+  return fireRouteThrough(bot, false) || fireRouteThrough(bot, true) || fireRouteThrough(bot, false, { edges: true }) || fireRouteThrough(bot, true, { edges: true });
+}
+function fireRouteThrough(bot, throughFire, { edges = false } = {}) {
   const { fallBeside } = require('./movement');
   const start = bot.entity.position.floored();
   const clear = b => b && b.boundingBox === 'empty' && (throughFire || !FIRE.has(b.name)) && b.name !== 'lava';
@@ -447,35 +453,82 @@ function fireRouteThrough(bot, throughFire) {
       // A step up needs the head room over the cell left.
       if (dy === 1 && !clear(bot.blockAt(p.offset(0, 2, 0)))) continue;
       // No cell beside a fall that kills (note 545's rule, movement.js
-      // fallBeside): the run is at a sprint and carries on past the cell
-      // it stops on. mid-208-k-nether-2 ran out of a fire at 19.5 health
-      // onto a cell by an edge and over it, forty-seven into lava (note 548).
-      if (!water(next) && fallBeside(bot, next)) continue;
+      // fallBeside) on the run at a sprint: it carries on past the cell it
+      // stops on. mid-208-k-nether-2 ran out of a fire at 19.5 health onto
+      // a cell by an edge and over it, forty-seven into lava (note 548).
+      // Crouched (edges), a body does not walk off an edge; a step down
+      // is one a crouched body will not take, so none beside a fall.
+      const fall = !water(next) && fallBeside(bot, next);
+      if (fall && (!edges || dy === -1)) continue;
       seen.add(`${next}`);
       queue.push({ p: next, path: [...path, next] });
     }
   }
   return null;
 }
-async function outOfFire(bot, task, onAction = () => {}) {
-  const route = fireRoute(bot);
+// Each step of a route out of fire, and how it is walked: at a sprint, or
+// crouched (the game's walk at three tenths, about 1.3 blocks a second)
+// where the cell left or the cell stepped to is beside a fall that kills.
+const SNEAK = 4.317 * 0.3;
+function fireSteps(bot, route) {
+  const { fallBeside } = require('./movement');
+  const edge = p => bot.blockAt(p)?.name !== 'water' && !!fallBeside(bot, p);
+  let from = bot.entity.position.floored();
+  return route.map(cell => { const crouched = edge(from) || edge(cell); from = cell; return { cell, crouched }; });
+}
+function fireRouteSeconds(bot, route) {
+  return fireSteps(bot, route).reduce((s, step) => s + 1 / (step.crouched ? SNEAK : SPRINT), 0);
+}
+async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot)) {
   onAction({ action: 'out_of_fire', steps: route?.length ?? null, health: bot.health });
   if (!route) return false;
   // Walked cell by cell on the keys: the path search will not start from
   // a cell of fire or cross one, and handed the route it returned at once
-  // (the arena: burned in place three times out of three).
+  // (the arena: burned in place three times out of three). A mob in a
+  // cell is no wall: a body pushes past a magma cube or a blaze as a
+  // player's does, so the keys stay held until the cell is reached.
   bot.pathfinder?.setGoal?.(null);
   const { move } = require('./motion');
-  for (const [i, cell] of route.entries()) {
+  for (const [i, { cell, crouched }] of fireSteps(bot, route).entries()) {
     const target = cell.offset(0.5, 0, 0.5);
     // At a sprint the cells on the way are passed through, not stood on:
     // held to a third of a block, each one overshot and was turned back to.
-    const near = i === route.length - 1 ? 0.45 : 0.8;
+    // Crouched beside the fall, each is stood on.
+    const near = i === route.length - 1 || crouched ? 0.45 : 0.8;
     const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < near && Math.abs(here.y - cell.y) < 0.6; };
     const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
-    await move(bot, task, { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire',
-      look: target.offset(0, 1.6, 0), maxMs: 1500, tick: 50, until: there });
+    const look = target.offset(0, 1.6, 0);
+    await move(bot, task, crouched
+      ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there }
+      : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there });
   }
+  return !inFire(bot);
+}
+// Up out of the flames on a block put where they are, as a player does
+// with no cell to run to: the block put in the fire's cell puts that
+// flame out, and the body stands a block over it. Any full block that
+// holds on the floor it is put on.
+const RISE_BLOCKS = new Set(['netherrack', 'cobblestone', 'cobbled_deepslate', 'dirt', 'nether_bricks', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'soul_soil', 'soul_sand', 'gravel', 'sand', 'red_sand', 'end_stone', 'deepslate']);
+function riseOutOfFire(bot) {
+  const feet = bot.entity.position.floored();
+  const block = bot.inventory?.items?.().find(i => RISE_BLOCKS.has(i.name));
+  if (!block || bot.blockAt(feet.offset(0, -1, 0))?.boundingBox !== 'block') return null;
+  const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !FIRE.has(b.name) && !/lava|water/.test(b.name); };
+  const top = feet.offset(0, 1, 0);
+  if (!open(top) || !open(top.offset(0, 1, 0))) return null;
+  // Flames beside the body standing there can spread to it; those beside
+  // the block under it, a level down, do not touch it.
+  const around = dy => [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].filter(([dx, dz]) => dy.some(y => FIRE.has(bot.blockAt(top.offset(dx, y, dz))?.name))).length;
+  return { block, top, flamesBeside: around([0, 1]), flamesBelow: around([-1]), fall: require('./movement').fallBeside(bot, top) };
+}
+async function riseOnBlock(bot, task, onAction = () => {}) {
+  const rise = riseOutOfFire(bot);
+  onAction({ action: 'out_of_fire', way: 'rise_on_block', health: bot.health });
+  if (!rise) return false;
+  bot.pathfinder?.setGoal?.(null);
+  const { pillarUp } = require('./pillar-recovery');
+  try { await pillarUp(bot, task, rise.top.y, { maxBlocks: 1, threats: false, canDig: () => false, blocks: [...RISE_BLOCKS] }); }
+  catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
   return !inFire(bot);
 }
 
@@ -676,6 +729,9 @@ async function until(task, predicate, timeout, message) {
 const round = n => Math.round(n * 10) / 10;
 // A sprint, about 5.6 blocks a second.
 const SPRINT = 5.6;
+// A block put underfoot on a jump: half the survival step's pillar seconds
+// (survival.js PILLAR_SECONDS, two blocks).
+const PILLAR_RISE_SECONDS = 0.75;
 function fireWays(bot, task, onAction = () => {}) {
   const ways = {};
   const standing = inFire(bot), nether = /nether/.test(String(bot.game?.dimension || ''));
@@ -683,9 +739,29 @@ function fireWays(bot, task, onAction = () => {}) {
   const eat = () => ({ description: `Eat the enchanted golden apple (${apple.count} carried): about ${EAT_MEAL_SECONDS} seconds eating first, then fire resistance for five minutes (burning no longer hurts), sixteen extra health as absorption and strong regeneration.`,
     run: async () => { onAction({ action: 'eat', item: apple.name, health: bot.health, burning: true }); return require('./survival').eatApple(bot, task, apple); } });
   if (standing) {
+    // Every way out there is (note 575): the run clear of any edge; the
+    // crouched walk along cells beside a fall that kills, where it is the
+    // only way or the quicker; a block put in the fire's cell to stand on.
+    const to = route => bot.blockAt(route.at(-1))?.name === 'water' ? 'water' : 'a cell two blocks from any flame';
+    const steps = route => `${route.length} step${route.length === 1 ? '' : 's'}`;
     const clear = fireRouteThrough(bot, false), route = clear || fireRouteThrough(bot, true);
-    if (route) ways.out_of_fire = { description: `Run out of the fire, ${route.length} step${route.length === 1 ? '' : 's'} to ${bot.blockAt(route.at(-1))?.name === 'water' ? 'water' : 'a cell two blocks from any flame'}${clear ? '' : ', through a flame on the way'}: about ${round(Math.max(0.3, route.length / SPRINT))} seconds at a sprint, then burning on up to eight seconds unless it ends in water.`,
-      run: () => outOfFire(bot, task, onAction) };
+    if (route) ways.out_of_fire = { description: `Run out of the fire, ${steps(route)} to ${to(route)}${clear ? '' : ', through a flame on the way'}: about ${round(Math.max(0.3, route.length / SPRINT))} seconds at a sprint, then burning on up to eight seconds unless it ends in water.`,
+      run: () => outOfFire(bot, task, onAction, route) };
+    const edgeClear = fireRouteThrough(bot, false, { edges: true }), edgeRoute = edgeClear || fireRouteThrough(bot, true, { edges: true });
+    const edgeSteps = edgeRoute ? fireSteps(bot, edgeRoute) : [];
+    const edgeSeconds = edgeRoute ? fireRouteSeconds(bot, edgeRoute) : Infinity;
+    if (edgeSteps.some(s => s.crouched) && (!route || edgeSeconds < route.length / SPRINT)) {
+      const { fallBeside } = require('./movement');
+      const falls = [bot.entity.position.floored(), ...edgeRoute].map(c => fallBeside(bot, c)).filter(Boolean);
+      const worst = falls.find(f => f.into === 'lava') || falls[0];
+      const drop = worst.into === 'lava' ? `a drop into lava${worst.fall ? ` ${worst.fall} down` : ''}` : worst.into === 'deep' ? `a drop of more than ${worst.fall}` : `a drop of ${worst.fall} onto ground that costs half the health or more`;
+      const crouched = edgeSteps.filter(s => s.crouched).length;
+      ways.crouch_out_of_fire = { description: `Walk out of the fire crouched, ${steps(edgeRoute)} to ${to(edgeRoute)}${edgeClear ? '' : ', through a flame on the way'}, ${crouched} of them beside ${drop}: crouched, a body does not walk off an edge (a hit or a push still throws it), at about ${round(SNEAK)} blocks a second; about ${round(edgeSeconds)} seconds, then burning on up to eight seconds unless it ends in water.`,
+        run: () => outOfFire(bot, task, onAction, edgeRoute) };
+    }
+    const rise = riseOutOfFire(bot);
+    if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the fire's cell underfoot, which puts that flame out, and stand on it a block up: about ${round(PILLAR_RISE_SECONDS)} seconds; ${rise.flamesBeside ? `${rise.flamesBeside} flame${rise.flamesBeside === 1 ? '' : 's'} still beside the cell it rises to, so the body may stand beside fire there` : 'no flame beside the cell it rises to'}${rise.flamesBelow ? ` (${rise.flamesBelow} beside the block under it, a level down, which do not touch a body standing on it)` : ''}${rise.fall ? `, and ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}; then burning on up to eight seconds.`,
+      run: () => riseOnBlock(bot, task, onAction) };
     if (apple) ways.eat_golden_apple = eat();
     return ways;
   }
@@ -755,8 +831,22 @@ function airWays(bot, task, onAction = () => {}) {
   return ways;
 }
 
+// The task the body's own dangers are answered under: only a cancellation
+// stops them. The work's turn hands the vitals its task with the threat
+// check on (work.js), and it threw "Threat nearby" at the first check,
+// before the fire was looked at, twenty-one times a second: mid-243-ad-
+// nether-1 stood in fire from 7.5 to none with magma cubes three blocks
+// off, and mid-242-ac-nether-1-fortress-3 from 9.2 to 5.4 with blazes six
+// off, its way out found and never walked (note 575). The threat is what
+// the stance answers; the body's danger is answered first.
+function bodyTask(task) {
+  return { get cancelled() { return task.cancelled; }, get label() { return task.label; }, interruptCheck: undefined,
+    check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
+}
+
 async function maintainVitals(bot, task, onAction = () => {}, { client = null, goal = null, save = () => {} } = {}) {
-  task.check();
+  const own = bodyTask(task);
+  own.check();
   const asked = { client, goal, save };
   // A submerged head with the air bar full is a reason to swim up only while
   // swimming up works. Under a stone roof it never could: the replay run and
@@ -771,7 +861,7 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   // spare pickaxe each broke off the dig, four tries a time, while mid-79-c
   // suffocated under gravel from nineteen health (2026-09-26).
   const body = require('./body');
-  if (headInBlock(bot)) await body.answer(bot, task, 'head_in_block', headWays(bot, task, onAction), { ...asked, facts: { block: suffocatingBlock(bot)?.name } });
+  if (headInBlock(bot)) await body.answer(bot, own, 'head_in_block', headWays(bot, own, onAction), { ...asked, facts: { block: suffocatingBlock(bot)?.name } });
   // And on while the column is still coming down: between one gravel dug
   // and the next landing the head's cell is air for a moment, the dig
   // stopped there, and the next block fell on a bot doing something else.
@@ -793,7 +883,7 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   const eyeBlocked = () => { const b = bot.blockAt(eyeCell()); return !!b && b.boundingBox === 'block' && FALLS.test(b.name); };
   const digging = headInBlock(bot);
   for (let tries = 0, waited = 0; tries < 24 && waited < 20; ) {
-    if (task.cancelled) throw new (require('./skills').Cancelled)(task.label);
+    if (own.cancelled) throw new (require('./skills').Cancelled)(own.label);
     if (headInBlock(bot) || (digging && eyeBlocked())) {
       tries++;
       const block = suffocatingBlock(bot) || bot.blockAt(eyeCell()), eye = block.position;
@@ -805,28 +895,30 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     } else if (digging && falling()) { waited++; await sleep(100); }
     else break;
   }
-  task.check();
+  own.check();
   // In powder snow, or told by the server it is freezing.
-  if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) { await outOfPowderSnow(bot, task, onAction); task.check(); }
+  if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) { await outOfPowderSnow(bot, own, onAction); own.check(); }
   // The fire and the burning: the way is Jev's (body_way). Standing in fire
   // with no way out found, the old run, which says so.
   if (inFire(bot)) {
-    const ways = fireWays(bot, task, onAction);
-    if (Object.keys(ways).length) await body.answer(bot, task, 'fire', ways, { ...asked, facts: { inFire: true } });
-    else await outOfFire(bot, task, onAction);
-    task.check();
+    const ways = fireWays(bot, own, onAction);
+    if (Object.keys(ways).length) await body.answer(bot, own, 'fire', ways, { ...asked, facts: { inFire: true } });
+    else await outOfFire(bot, own, onAction);
+    own.check();
   }
   if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot) && !body.held(bot, 'fire')) {
-    await body.answer(bot, task, 'fire', fireWays(bot, task, onAction), { ...asked, facts: { inFire: false } }); task.check();
+    await body.answer(bot, own, 'fire', fireWays(bot, own, onAction), { ...asked, facts: { inFire: false } }); own.check();
   }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     // The way up is Jev's (body_way); with none found, the old swim, which
     // throws that no way up was found.
-    const ways = airWays(bot, task, onAction);
-    const surface = () => Object.keys(ways).length ? body.answer(bot, task, 'air', ways, { ...asked, facts: { air: bot.oxygenLevel } }) : surfaceForAir(bot, task, onAction);
+    const ways = airWays(bot, own, onAction);
+    const surface = () => Object.keys(ways).length ? body.answer(bot, own, 'air', ways, { ...asked, facts: { air: bot.oxygenLevel } }) : surfaceForAir(bot, own, onAction);
     try { await surface(); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
   }
+  // The meal is the work's, stopped by what stops the work.
+  task.check();
   // Natural regeneration needs at least 18 hunger points. A sheltered injured
   // player at 17 must not wait all night with carried food and no healing.
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return false;
