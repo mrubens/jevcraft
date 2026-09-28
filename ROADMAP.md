@@ -1,6 +1,6 @@
 # Roadmap
 
-The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). The items are in order of priority, without dates. Where things stand is in the [README](README.md#where-it-stands) and the [trial notes](docs/trial-notes.md).
+The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). The items are in order of priority, without dates. Where things stand is in the [README](README.md#status) and the [trial notes](docs/trial-notes.md).
 
 ## Done
 

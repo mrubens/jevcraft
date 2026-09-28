@@ -10,9 +10,9 @@ One hard rule: Jev never hurts a chicken or a pig. They are my daughters' favori
 
 Starting from a fresh world with an empty inventory, 15 of the 40 worlds we started on 2026-09-28 reached the Nether (the fastest in 7 minutes, the median 28). None has beaten the game. Getting six blaze rods is the current wall. Every run and every fix is logged in [docs/trial-notes.md](docs/trial-notes.md), which this README cites as "note N".
 
-**[Watch a run](#the-experiment-in-two-clips)** | **[Try it](#run-it-yourself)** | **[How a decision works](#how-a-decision-works)** | **[What we learned](#what-we-tried-and-learned)** | **[How coding agents improve it](#how-coding-agents-improve-it)**
+[Clips](#two-clips) | [Status](#status) | [Lessons](#what-we-learned) | [Development process](#improving-the-bot-with-coding-agents) | [How decisions work](#how-decisions-work) | [Setup](#running-it)
 
-## The experiment in two clips
+## Two clips
 
 ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif)
 
@@ -22,7 +22,7 @@ A win: a blaze hunt in a Nether fortress. Code offered Jev five things to do abo
 
 A loss: Jev chose to `fight` (p=0.22) a ghast, and a fireball knocked it off its footing into lava. Nothing in the options priced a push over the edge. That death led to note 612, which added a way to step back from the edge. Most improvements start this way: a death shows a missing option or a wrong price, and the fix goes into the menu. See [More clips](docs/media/) for a wither skeleton kill and the trip into the Nether.
 
-## Where it stands
+## Status
 
 - Early game: four trials have passed the first-days audit (three in-game days with no deaths, and iron tools and armor, a shield, a bed and a home). The goal asks for two passes in a row, and that has not happened yet ([GOAL.md](GOAL.md)).
 - The Nether: 15 of 40 fresh worlds on 2026-09-28 got there, in a median of 28 minutes (7 to 143). Most of the other 25 died or were still going when this was counted.
@@ -32,17 +32,17 @@ A loss: Jev chose to `fight` (p=0.22) a ghast, and a fireball knocked it off its
 
 The next problem is surviving the blaze spawner. The [roadmap](ROADMAP.md) has the order of work, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how a concrete failure becomes a test and a general fix.
 
-## What we tried and learned
+## What we learned
 
 ### Loops
 
 Deaths are easy to spot. Trials that stay busy without progressing are not: pacing a bridge for 70 minutes, or sitting in a sealed pocket for half an hour. Each feature used to keep its own list of what had failed, and none saw the others; one question was answered the same way 4,423 times. We replaced them with one shared record of what has been tried and what came of it, the *ledger* ([src/tried.js](src/tried.js), note 571). An option that came to nothing twice rests for five minutes. When every option rests, the parent question is asked instead and told what failed. Waiting and holding a stance are recorded the same way, so a wait that changed nothing counts as a failure (notes 599, 611).
 
-### Judging trials
+### Judging trials by deaths
 
 Judging by deaths alone missed some of the worst trials, which never died. The progress audit and trail maps now flag trials that aren't getting anywhere.
 
-### Fix facts, not rules
+### Wrong facts caused most bad choices
 
 When Jev chooses badly, the cause is almost always a wrong price, a false fact or a missing option, and a new threshold does not fix it. In note 614, Jev kept choosing cover with a blaze four blocks away. The charge was offered only when the bot had a shield, which it didn't; other options' text assumed the shield it didn't have; and no option said what it gained toward the rods. Fixing those changed the answers.
 
@@ -54,15 +54,15 @@ At first, a low-confidence pick was handed to hand-written rules. In practice th
 
 Lava escapes, fire escapes, creeper dodges and shield use used to run before Jev was asked. Several deaths started with a reflex (note 548). They are now questions, such as `body_way` for lava, fire and suffocation, with code only as the fallback (note 549).
 
-### Who gets the turn
+### Turn priority
 
 Survival, eating and work each used to take control by their own rules. Now each states a claim and Jev picks one (`turn_priority`, [src/arbiter.js](src/arbiter.js)). The question can hang, so the arbiter falls back if the bot is hurt while waiting or five seconds pass.
 
-### Time budgets
+### Time limits per goal
 
 Each step of the game, such as "obtain blaze rods", gets ten minutes without progress. Then Jev is asked whether to keep going, change plan, or set it aside for a while.
 
-### Price the fight in front of the bot
+### Fight prices
 
 Quoting an arena average against three distant blazes to a bot facing four at a spawner made charging in look cheap (note 602). Prices now come from the fight at hand.
 
@@ -70,11 +70,11 @@ Quoting an arena average against three distant blazes to a bot facing four at a 
 
 We built boxing in, lighting the spawner, a corner ambush and retreating to heal, and measured them in an arena (below). At a live spawner none beat walking in and fighting. The safe ones produce no rods. They are still offered, with their measured numbers (note 606).
 
-### A second model
+### A second opinion from an LLM
 
 A generative LLM reviewing recovery decisions agreed with Jev, took 14 seconds per decision, and cost about a hundred times more. We removed it.
 
-## How coding agents improve it
+## Improving the bot with coding agents
 
 The agents change the bot's code, prices and options. Jev itself is not retrained.
 
@@ -85,7 +85,7 @@ The agents change the bot's code, prices and options. Jev itself is not retraine
 5. Bots pick up new code with a quiet restart: each quits once no mob is within 16 blocks, or after five minutes, and its supervisor restarts it.
 6. Every three hours, a Fable subagent reads the trial notes, the logs and the open problems and gives design advice, without changing code. We act on the advice that holds up. Two of its reviews changed the design: one recommended the single ledger in place of the separate lists (note 571), and one found that held stances were not recorded in the ledger, which explained a whole class of loops (note 599).
 
-### The arena
+### Arena
 
 [scripts/arena.js](scripts/arena.js) stages fights on a separate server (a blaze spawner, wither skeletons, hoglins) and runs the real survival code against them. The results are quoted to Jev in the option descriptions. Four blazes at a live spawner, with iron armor, a sword and a shield (note 606):
 
@@ -114,7 +114,7 @@ Damage above 20 means the bot healed during the run. A blaze drops a rod about h
 
 More operational notes are in [scripts/README.md](scripts/README.md).
 
-## How a decision works
+## How decisions work
 
 Code decides what is possible. Jev decides what to do.
 
@@ -124,7 +124,7 @@ Code decides what is possible. Jev decides what to do.
 - If only one option is possible, Jev is not asked.
 - Each question has a code fallback, used only if the service is down or too slow.
 
-### One decision, end to end
+### One decision
 
 Take a fight. A *stance* is the answer to the fight question `encounter_stance`: what to do about the mobs here for the next few seconds.
 
@@ -138,7 +138,7 @@ Take a fight. A *stance* is the answer to the fight question `encounter_stance`:
 
 On 2026-09-28 the trials made about 130 of these decisions per bot-hour (22,800 in about 178 bot-hours).
 
-### What Jev sees
+### The state and options
 
 The `state` holds only what a player would weigh for this decision, worked out by code: health, armor and weapon, the threats with their distance and whether they can be reached, and a fight estimate. A few context fields appear on every play question:
 
@@ -221,7 +221,7 @@ define({
 
 </details>
 
-### What stays in code
+### What code still decides
 
 Jev only chooses among options, so some things are not questions:
 
@@ -234,7 +234,7 @@ Jev only chooses among options, so some things are not questions:
 
 Jev is only as good as the options and prices it is given. It cannot invent an option, and it does not redo arithmetic that the description got wrong.
 
-## Run it yourself
+## Running it
 
 You need Node.js 22 or newer, a [TypeSafe](https://typesafe.ai/) API key, and macOS or Linux. The trial scripts download Java and the Minecraft server for you.
 
@@ -245,7 +245,7 @@ npm ci
 cp .env.example .env    # then set TYPESAFE_API_KEY in .env
 ```
 
-### Play alongside Jev
+### Playing with Jev
 
 Point the bot at a Minecraft Java 26.1 server you run. In `.env`, set `MC_HOST` and `MC_PORT` (defaults: localhost, 25565). Leave `MC_AUTH=offline` for an offline-mode server, or use `MC_AUTH=microsoft` with a separate account for the bot. Then:
 
@@ -253,9 +253,9 @@ Point the bot at a Minecraft Java 26.1 server you run. In `.env`, set `MC_HOST` 
 npm start
 ```
 
-Join the same server and talk to it in chat, for example `Jev come here` or `Jev your dream is to beat the game`. See [Using Jev as a chat companion](#using-jev-as-a-chat-companion).
+Join the same server and talk to it in chat, for example `Jev come here` or `Jev your dream is to beat the game`. See [Chat companion](#chat-companion).
 
-### Run a trial
+### Running a trial
 
 A trial gives Jev a fresh world on its own server and judges the result, the way we test it.
 
@@ -287,9 +287,9 @@ The first-days trial lasts an hour of real time, three in-game days. To watch, r
 
 More in [docs/](docs/README.md). [How Jev thinks](docs/how-jev-thinks.md) walks through a chat request end to end.
 
-## Using Jev as a chat companion
+## Chat companion
 
-The same bot takes requests in game chat. Setup is under [Play alongside Jev](#play-alongside-jev). Start messages with "Jev":
+The same bot takes requests in game chat. Setup is under [Playing with Jev](#playing-with-jev). Start messages with "Jev":
 
 | Request | What it does |
 | --- | --- |
@@ -312,7 +312,7 @@ A dream is a standing goal that Jev works toward whenever nobody has asked it fo
 
 A chat request always comes first; the dream picks up again when the request is done. `Jev set your dream aside` pauses it, `Jev chase your dream` resumes it, and `Jev what is your dream` reports progress. Progress is read from the world (what is carried, worn and built), never from a counter, so a dream survives restarts.
 
-### Building, and Creative mode
+### Building and Creative mode
 
 In Survival, Jev builds from templates (cottage, mansion, tower) that it configures, or picks from about 30 ready-made designs, and gathers the materials first.
 
