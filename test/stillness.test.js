@@ -812,3 +812,18 @@ test('a dig refused for the drop it would open is the stall question\'s failure,
   assert.match(goal.staircaseStalled?.why || '', /refusing to open a drop/, 'the rest met is the stall on the goal');
   assert.equal(rest().until, until, 'and the rest is not renewed');
 });
+
+// Note 624: mid-243-bd pillared 74 blocks up its own shaft with no pickaxe, a
+// block in six to ten seconds. Never three blocks from every cell stood in
+// the last three minutes, every cell of the shaft one its own dig had marked,
+// so each 45 seconds was "nothing done" and the stillness question was asked
+// in the middle of the climb (fourteen times, nine of them "none of these").
+test('a climb up a shaft at a block in eight seconds is getting somewhere once the step names the sky over it as its target (mid-243-bd)', () => {
+  const climb = (step, seconds) => {
+    const bot = botAt(0.5, 22, 0.5), goal = { step };
+    return looks(bot, goal, seconds, { at: Date.now(), move: i => { bot.entity.position = new Vec3(0.5, 22 + Math.floor(i / 8), 0.5); } });
+  };
+  const from = { x: 0, y: 22, z: 0 }, top = 96;
+  assert(climb({ action: 'ascend_to_surface', method: 'straight_up', from, top }, 120).idle >= STALL_MS, 'without a target the climb is a stall, as recorded');
+  assert(climb({ action: 'ascend_to_surface', method: 'straight_up', from, top, target: { x: 0, y: top, z: 0 } }, 120).idle < 10000, 'each block nearer the sky is progress');
+});

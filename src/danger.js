@@ -584,6 +584,14 @@ function stanceReach(entity) {
 // stretches, every bridge's edge refused with no mob about, while the four
 // knock-offs of the same hour were a push each (note 541). Kept half a
 // second: the pathfinder asks for every cell it weighs.
+// A walker with no way to the bot (walk-reach.js) pushes nothing: a blow or
+// a blast has to land, and it has no ground to come to it on. mid-243-bc
+// stood at the end of a one-wide ridge in the lava sea, a hoglin 7.7 blocks
+// off on a wart block of its own across four cells of lava: it was counted
+// a pusher for sixteen minutes, so the crossing's edge was refused, the work
+// was preempted four times a second, and turn_priority was asked every ten
+// seconds and answered "survival" each time (note 624). immediateThreat
+// left it be already (cannotGetToTheBot); the push did not.
 const PUSH_REACH = 8;
 function pushersAbout(bot) {
   const now = Date.now(), kept = bot?._pushers;
@@ -591,8 +599,9 @@ function pushersAbout(bot) {
   let list = [];
   try {
     const { RANGE } = require('./combat-estimate');
-    list = threats(bot, 64).filter(t => shooter(t.entity) ? t.visible && t.distance <= Math.max(16, RANGE[t.entity.name] || 0)
-      : t.distance <= (t.visible ? PUSH_REACH : 4));
+    const about = threats(bot, 64);
+    list = about.filter(t => shooter(t.entity) ? t.visible && t.distance <= Math.max(16, RANGE[t.entity.name] || 0)
+      : t.distance <= (t.visible ? PUSH_REACH : 4) && !cannotGetToTheBot(bot, t, about));
     if (!list.length) {
       const shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0];
       if (shot) list = [{ entity: shot, distance: shot.position.distanceTo(bot.entity.position), visible: true, projectile: true }];

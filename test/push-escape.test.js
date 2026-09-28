@@ -162,3 +162,38 @@ test('on the netherrack span the floor the fireball broke is said as the fall un
   assert.match(ways.crouch_out_of_fire.description, /of its way lies? beside a drop of more than \d+|of its way lie beside a drop/);
   assert.match(ways.crouch_out_of_fire.description, /while the ghast 3\d blocks off fires one fireball every 3 seconds while it has a line, so (about \d+ in 100 that a fireball lands|a fireball can all but surely land) on the way, and one that lands there is the push over the drop/);
 });
+
+// Note 624: mid-243-bc (25583), 2026-09-28 18:07 to 18:30, stood at the end
+// of a one-wide netherrack ridge at (-77.5, 33, 365.1) over the lava sea, the
+// crossing south laid over four cells of lava, a hoglin 7.7 blocks off at
+// (-83.5, 33, 360.4) on a wart block of its own in the lava. It was counted
+// a pusher: the arbiter preempted the work four times a second, gave the
+// turn to survival every ten seconds, and the crossing's edge was refused.
+const HOGLIN_RIDGE = require('./fixtures/ridge-hoglin-mid-243-bc.json');
+function hoglinRidgeBot(hoglinAt) {
+  return groundBot(HOGLIN_RIDGE, { at: new Vec3(-77.5, 33, 365.12), health: 20, food: 17, dimension: 'the_nether', worn: WORN, held: 'iron_sword',
+    items: [['iron_sword', 1], ['gravel', 15], ['white_wool', 3], ['oak_log', 7], ['cooked_beef', 8]],
+    mobs: [{ id: 20834, name: 'hoglin', at: hoglinAt, height: 1.4, width: 1.4 }] });
+}
+
+test('a hoglin across the lava with no ground to come to the bot on pushes nothing: the ridge end is not "something that can push, a deadly drop beside" (mid-243-bc)', () => {
+  const across = hoglinRidgeBot(new Vec3(-83.54, 33, 360.43));
+  const { pushOverDrop, deadlyDropBeside } = require('../src/danger');
+  assert.ok(deadlyDropBeside(across), 'the ridge end has lava beside it');
+  assert.equal(threats(across, 64)[0]?.entity.name, 'hoglin', 'it is in sight, a threat by distance');
+  assert.equal(pushersAbout(across).length, 0, 'no way to the bot: no push');
+  assert.equal(pushOverDrop(across), null);
+});
+
+test('a hoglin on the ridge itself, walking to the bot, is a pusher beside the same drop (mid-243-bc)', () => {
+  const onRidge = hoglinRidgeBot(new Vec3(-77.5, 33, 358.5));
+  const { pushOverDrop } = require('../src/danger');
+  assert.equal(pushersAbout(onRidge).length, 1);
+  assert.ok(pushOverDrop(onRidge), 'it can knock the bot into the lava');
+});
+
+test('a hoglin across the lava that has just hit the bot is a pusher again: the search is wrong about it (mid-243-bc)', () => {
+  const across = hoglinRidgeBot(new Vec3(-83.54, 33, 360.43));
+  across._hurtById = { 20834: Date.now() - 500 };
+  assert.equal(pushersAbout(across).length, 1);
+});

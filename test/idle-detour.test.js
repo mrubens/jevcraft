@@ -104,6 +104,32 @@ test('a loop pass that spins with no survival action says so and goes on: the sp
   assert(logged.some(l => /^\[loop\] spinning: 21 passes in a second at .* survival=none/.test(l)), logged.join('\n'));
 });
 
+// Note 624: mid-243-bc had no pickaxe and stood by nether quartz in the wall
+// of the lava sea; the stall offered "Dig the nether quartz ore", dig() said
+// "Missing harvest tool", and the way rested five minutes for nothing.
+test('the stall offers ore to dig only where a tool carried can harvest it (mid-243-bc, note 624)', async () => {
+  const { breakStillness } = require('../src/work');
+  const ORE = new Vec3(-79, 34, 370);
+  const quartz = registry.blocksByName.nether_quartz_ore;
+  const offered = async items => {
+    const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 17, isAlive: true, chat() {}, emit() {},
+      entity: { id: 1, position: new Vec3(-77.5, 33, 365.1), onGround: true }, time: { timeOfDay: 0 }, entities: {},
+      inventory: { items: () => items, slots: [] }, findBlocks: ({ matching }) => (matching.includes(quartz.id) ? [ORE] : []), clearControlStates() {}, setControlState() {},
+      blockAt: p => p.equals(ORE) ? { position: p, name: 'nether_quartz_ore', boundingBox: 'block', harvestTools: { [registry.itemsByName.iron_pickaxe.id]: true, [registry.itemsByName.stone_pickaxe.id]: true, [registry.itemsByName.wooden_pickaxe.id]: true } }
+        : { position: p, name: p.y < 33 ? 'netherrack' : 'air', boundingBox: p.y < 33 ? 'block' : 'empty' },
+      pathfinder: { movements: { blocksCantBreak: new Set() }, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) } };
+    const goal = { version: 1, kind: 'survive', request: 'Stay alive', survival: {} };
+    const task = new Task('stall'), lines = [];
+    // With one way offered it is taken without asking: the log's line says what was on offer.
+    const client = { model: 'jev', systemOne: async () => { task.cancel(); throw new Error('cancelled'); } };
+    const log = console.log; console.log = (...a) => lines.push(a.join(' '));
+    try { await breakStillness(bot, task, goal, () => {}, { client, reason: 'step:rung:obtain_blaze_rods' }); } catch (_) { /* the way taken has no ore to dig in this mock */ } finally { console.log = log; }
+    return (lines.find(l => l.startsWith('[still]'))?.match(/detours: (.*)$/)?.[1] || '').split(', ');
+  };
+  assert(!(await offered([{ name: 'iron_sword', count: 1, type: registry.itemsByName.iron_sword.id }])).includes('mine_nearby'), 'no pickaxe: the quartz is not on offer');
+  assert((await offered([{ name: 'stone_pickaxe', count: 1, type: registry.itemsByName.stone_pickaxe.id }])).includes('mine_nearby'), 'a stone pickaxe harvests it');
+});
+
 test('the idle loop is paced: an escalation thrown and caught every pass does not go round with no pause (25586, note 609)', async () => {
   const { runIdle } = require('../src/work');
   const { bot } = recorded({ kind: 'survive' });

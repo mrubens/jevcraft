@@ -489,8 +489,16 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
 // call. A column that would not rise at all is not offered again here.
 async function climbStraightUp(bot, task, goal, save, state, column, start, { dig, pillar = pillarUp }) {
   const feet = bot.entity.position.floored(), before = bot.entity.position.y;
-  goal.step = { action: 'ascend_to_surface', method: 'straight_up', from: { ...feet }, top: column.top };
-  goal.survivalAction = { action: 'return_to_surface', method: 'straight_up', from: { ...start }, top: column.top, at: new Date().toISOString() };
+  // The open sky over the column is the step's target, so the stall watch
+  // counts each block risen as nearer it (stillness.js look): a pillar up a
+  // shaft climbs a block in six or ten seconds, never three blocks from
+  // every cell stood in the last three minutes, and the cells were the
+  // bot's own dig down, so every 45 seconds it was 'nothing done' and the
+  // stillness question was asked in the middle of the climb: mid-243-bd,
+  // 74 blocks up with no pickaxe, fourteen times (note 624).
+  const sky = { x: feet.x, y: column.top, z: feet.z };
+  goal.step = { action: 'ascend_to_surface', method: 'straight_up', from: { ...feet }, top: column.top, target: sky };
+  goal.survivalAction = { action: 'return_to_surface', method: 'straight_up', from: { ...start }, top: column.top, target: sky, at: new Date().toISOString() };
   save();
   await pillar(bot, task, Math.min(column.top, feet.y + 8), { dig, maxBlocks: 8, threats: false, canDig: climbable });
   delete state.still;

@@ -5323,8 +5323,13 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   }
   // Ore only where nothing flows beside it: in the Nether the quartz is in
   // the walls of the lava sea.
+  // And only ore the bot carries a tool to harvest: dig() refuses it
+  // otherwise ("Missing harvest tool"), the way offered comes to nothing and
+  // rests five minutes. mid-243-bc, with no pickaxe, was offered the quartz
+  // in the wall it stood by at every stall (note 624).
+  const harvestable = p => { const b = bot.blockAt(p); return !b?.harvestTools || bot.inventory.items().some(i => b.harvestTools[i.type]); };
   const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name }))
-    .filter(o => o.name && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')))[0];
+    .filter(o => o.name && harvestable(o.p) && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')))[0];
   // Where the ore is and what is beside it, and what a walk meets (the
   // decision audit, 2026-09-25).
   const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]];

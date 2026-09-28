@@ -544,6 +544,10 @@ test('without Jev the quicker way is taken: straight up, a few blocks a call, on
   assert.deepEqual(calls.map(c => c.targetY), [48, 56, 64]);
   assert.equal(goal.surfaceReturn, undefined);
   assert.equal(goal.step.method, 'straight_up');
+  // The open sky over the column is the step's target, for the stall watch's
+  // nearer-the-target progress (note 624).
+  assert.deepEqual(goal.step.target, { x: goal.step.from.x, y: 64, z: goal.step.from.z });
+  assert.deepEqual(goal.survivalAction.target, goal.step.target);
   const asked = goal.decisions.filter(d => d.id === 'climb_out');
   assert.equal(asked.length, 1, 'asked when the climb began, not at every call');
   assert.deepEqual(Object.keys(asked[0].options).sort(), ['staircase', 'straight_up']);
