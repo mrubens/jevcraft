@@ -13,6 +13,10 @@
 #   sh scripts/trials/checkpoint.sh auto &     # every server running a midgame world
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 EVERY=${CHECKPOINT_S:-30}; KEEP=${CHECKPOINT_KEEP:-10}
+# A death keeps the last DEATH_SNAPS (3) of its ring, a minute and a half
+# before it, and a death is kept a day: a death's whole ring times every
+# death of a day filled the disk (53 GB of 190 deaths, 2026-09-28).
+DEATH_SNAPS=${DEATH_SNAPS:-3}
 BASE="$ROOT/.trial-checkpoints"
 deaths() { grep -cE ' Jev (was|died|fell|drowned|blew|burned|hit the|tried|walked into|suffocated|experienced|went|froze|starved|withered|discovered)' "$1/logs/latest.log" 2>/dev/null; }
 ports() {
@@ -42,7 +46,8 @@ while :; do
     [ "$NOW" -lt "$SEEN" ] && SEEN=0
     if [ "$NOW" -gt "$SEEN" ] && [ -d "$RING" ]; then
       KEPT="$BASE/deaths/$WORLD-$(date -u +%H%M%S)"
-      mkdir -p "$KEPT" && cp -R "$RING"/* "$KEPT"/ && echo "$(date -u +%H:%M:%S) death on $WORLD: kept $(ls "$KEPT" | wc -l | tr -d ' ') snapshots in $KEPT"
+      mkdir -p "$KEPT" && for S in $(ls -1d "$RING"/* | sort | tail -n "$DEATH_SNAPS"); do cp -R "$S" "$KEPT"/; done && echo "$(date -u +%H:%M:%S) death on $WORLD: kept $(ls "$KEPT" | wc -l | tr -d ' ') snapshots in $KEPT"
+      find "$BASE/deaths" -maxdepth 1 -mindepth 1 -type d -mtime +0 -exec rm -rf {} +
     fi
     mkdir -p "$BASE/$WORLD"; echo "$NOW" > "$SEEN_FILE"
     echo "save-all flush" > "$SERVER/console.in"
