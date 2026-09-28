@@ -226,6 +226,4 @@ Gameplay tests, trials and the arena need a separate, disposable server. See [CO
 
 ## Restrictions
 
-Jev never hurts a chicken or a pig. They are the favorite animals of the author's daughters. Every swing and every arrow is checked against [src/protected-animals.js](src/protected-animals.js), so the bot gets food, feathers and leather from other animals and never aims past a chicken or pig to reach a mob behind one. This is a hard rule, not a question for Jev.
-
-Jev is not an operator on the trial servers and gets no kits or console help; everything it has, it gathered.
+Jev never hurts a chicken or a pig (they are the favorite animals of the author's daughters).
