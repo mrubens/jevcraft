@@ -245,7 +245,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
-  const turnBefore = takeTurn(bot, 'decision', `asking Jev: ${id}`);
+  const turnBefore = takeTurn(bot, 'decision', `asking Jev: ${id}`), mark = bot?._turn;
   // When the question went out, beside `at`, when its answer came back.
   const askedAt = new Date().toISOString();
   let decision;
@@ -282,7 +282,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     // a close second (0.32 against the pillar's 0.37) every time (note 462).
     else if (!decision.stale && offerNoneGood && (decision.judgments?.[0]?.probabilities?.[NONE_GOOD_KEY] || 0) >= 0.25) recordMissing(id, decision, listed, { bot, goal, state }, { near: true, took: decision.path });
   }
-  } finally { giveBack(bot, turnBefore); }
+  // Given back only while the mark is still this question's: a question set
+  // aside by its caller (arbiter.js answerOrCut) ends after the layer given
+  // the turn has marked it, and must not put "asking Jev" back over it.
+  } finally { if (!bot || bot._turn === mark) giveBack(bot, turnBefore); }
   decision.id = id;
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;

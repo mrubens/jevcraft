@@ -243,20 +243,57 @@ async function arbitrate(bot, claims, ctx = {}) {
     const state = stateOf(bot, ctx);
     const held = state.holder || null;
     const tree = Object.fromEntries(live.map(c => [c.layer, optionOf(c, held, now)]));
-    const decision = await decide('turn_priority', { client: ctx.client, bot, task: ctx.task, goal: ctx.goal, save: ctx.save, tree,
+    let setAside = false;
+    const askedAt = Date.now();
+    const asking = decide('turn_priority', { client: ctx.client, bot, task: ctx.task, goal: ctx.goal, save: ctx.save, tree,
+      interrupt: () => { if (setAside) throw new Error('turn_priority set aside'); },
       state: { health: bot?.health, food: bot?.food, claims: live.map(c => c.layer), why,
         mobs: mobsSaid(ctx.mobs || (() => { try { return probe.mobs(bot, 16); } catch (_) { return []; } })()),
         ...(held ? { hasTheTurn: { layer: held.layer, action: held.action, seconds: Math.round((now - held.since) / 1000) } } : {}) } });
+    let out;
+    try { out = await answerOrCut(bot, asking, { task: ctx.task, askedAt, ms: ctx.askMs ?? ASK_MS }); }
+    catch (err) { setAside = true; throw err; }
+    if (out.cut) setAside = true;
+    const decision = out.decision;
     if (decision?.stale) return { winner: null, by: 'stale', ask: true, why };
-    const winner = live.find(c => c.layer === decision?.path?.[0]) || rulesPick(live);
-    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
-    Object.assign(result, { winner, by: 'jev', ruling: state.ruling });
+    const winner = (!out.cut && live.find(c => c.layer === decision?.path?.[0])) || rulesPick(live);
+    // Cut short, the rules' pick holds only until Jev can be asked again.
+    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + (out.cut ? IDLE_MS : RULING_MS), ...seen };
+    if (out.cut) console.log(`[arbiter] turn_priority cut short (${out.cut}): gave ${winner.layer} ${winner.action} by the rules`);
+    Object.assign(result, { winner, by: out.cut ? 'rules' : 'jev', ...(out.cut ? { cut: out.cut } : {}), ruling: state.ruling });
     delete result.pending;
   }
   if (!ctx.dry && ctx.run !== false && result.winner?.run) result.acted = !!(await result.winner.run(ctx.task));
   if (result.acted !== undefined) idled(stateOf(bot, ctx), result.winner, result.acted, ctx.now ?? Date.now());
   return result;
 }
+// The question out, watched from here as well as from inside decide: the
+// turn is nobody's while it is out. mid-243-q-nether-3 asked turn_priority
+// with an enderman two blocks off and never had its answer: for six seconds
+// the frames said "asking Jev", the enderman took it from twenty to seven,
+// the hurt watchdog's stop and a pending preemption were both left standing,
+// no layer acted, and it was knocked into lava (note 539). Here the question
+// ends when the task's check throws (a preemption, the watchdogs, a cancel:
+// thrown, as an abort would be); when the bot is hurt after it was asked,
+// or no answer has come in ASK_MS, the rules' pick takes the turn (the
+// question's own fallback, survival's claim before the work's), so a mob
+// that hits gets survival's step and its stance question. The question left
+// behind is told to stop at its next look.
+const ASK_MS = 5000;
+const ASK_LOOK_MS = 50;
+function answerOrCut(bot, asking, { task, askedAt = Date.now(), ms = ASK_MS, every = ASK_LOOK_MS } = {}) {
+  return new Promise((resolve, reject) => {
+    let done = false, timer = null;
+    const end = (fn, value) => { if (done) return; done = true; clearInterval(timer); fn(value); };
+    Promise.resolve(asking).then(decision => end(resolve, { decision }), err => end(reject, err));
+    timer = setInterval(() => {
+      try { task?.check?.(); } catch (err) { end(reject, err); return; }
+      if ((bot?._recentHurtAt || 0) > askedAt) end(resolve, { cut: 'the bot was hurt while Jev was being asked' });
+      else if (Date.now() - askedAt >= ms) end(resolve, { cut: `no answer in ${ms / 1000} seconds` });
+    }, every);
+  });
+}
+
 // A held ruling whose winner did nothing is marked from the first such
 // turn, and the mark goes when it acts.
 function idled(state, winner, acted, now = Date.now()) {
@@ -279,7 +316,15 @@ function rule(bot, claims, ctx = {}) {
   // Ruling for real, the arbiter has picked up what the watch stopped the
   // holder for: the reflex is among these claims and wins (it or one above
   // it), or it has gone; a newcomer is among the mobs this ruling reads.
-  if (!ctx.dry && bot?._preempt) { console.log(`[arbiter] picked up ${bot._preempt.by}`); delete bot._preempt; }
+  // A newcomer picked up is known from here: the holder's list takes it, or
+  // the same mob coming on from four blocks to three to two preempted three
+  // times, each stop cutting the question that was out about it
+  // (mid-243-q-nether-3, note 539).
+  if (!ctx.dry && bot?._preempt) {
+    console.log(`[arbiter] picked up ${bot._preempt.by}`);
+    if (bot._preempt.id !== undefined && state.holder?.ids && !state.holder.ids.includes(bot._preempt.id)) state.holder.ids.push(bot._preempt.id);
+    delete bot._preempt;
+  }
   const gone = missing(state, live);
   if (reflexes.length) { delete state.ruling; return { winner: reflexes[0], by: 'reflex', ask: false }; }
   // The ruling's claims absent one pass still count for it (ABSENT_PASSES).
@@ -446,7 +491,7 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     let mobs = [];
     try { mobs = look.mobs(bot, STANCE_NEWCOMER) || []; } catch (_) { /* no world */ }
     const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || t.distance <= 4) && !holder.ids.includes(t.entity.id));
-    if (fresh) p = { by: 'newcomer', layer: null, action: null, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
+    if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };
   }
   if (!p) return null;
@@ -475,4 +520,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { ABSENT_PASSES, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };

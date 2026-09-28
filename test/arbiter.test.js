@@ -490,3 +490,45 @@ test('a mob held by a stance chosen against it is said with the stance, which go
   assert.deepEqual(held.facts.stance, { choice: 'pillar', secondsAgo: 1 });
   assert.match(arbiter.claimSays(held), /^Answer the zombie 8\.2 blocks off \(out of sight\): the pillar chosen against it 1 second ago goes on \(asked again when it fails/);
 });
+
+// mid-243-q-nether-3 (note 539): turn_priority asked with an enderman two
+// blocks off never came back; six seconds of "asking Jev", hit from twenty
+// to seven, no layer acting, knocked into lava.
+const never = () => new Promise(() => {});
+const within = (p, ms = 2000) => Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(`still waiting after ${ms} ms`)), ms).unref())]);
+
+test('a turn_priority question that does not come back is cut when the bot is hurt: survival takes the turn by the rules', async () => {
+  const bot = fakeBot();
+  const ran = [];
+  const claims = [claim('work', 'routine', { run: async () => { ran.push('work'); return true; } }),
+    claim('survival', 'pressing', { action: 'escape_threat', run: async () => { ran.push('survival'); return true; } })];
+  setTimeout(() => { bot._recentHurtAt = Date.now(); }, 60).unref();
+  const out = await within(arbiter.take(bot, claims, { state: bot._arbiter = {}, decide: never, mobs: [] }));
+  assert.equal(out.layer, 'survival'); assert.equal(out.by, 'rules'); assert.match(out.cut, /hurt/);
+  assert.deepEqual(ran, ['survival']);
+});
+
+test('a turn_priority question ends when the task check throws, even if the question itself never settles', async () => {
+  const bot = fakeBot();
+  let stop = false;
+  const task = { check() { if (stop) { const e = new Error('Preempted by newcomer'); e.name = 'NeedsSafety'; throw e; } } };
+  setTimeout(() => { stop = true; }, 60).unref();
+  await assert.rejects(within(arbiter.take(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter = {}, decide: never, task, mobs: [] })), { name: 'NeedsSafety' });
+});
+
+test('a turn_priority question with no answer in its time is given by the rules, and asked again soon', async () => {
+  const bot = fakeBot();
+  const out = await within(arbiter.take(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter = {}, decide: never, askMs: 100, mobs: [] }));
+  assert.equal(out.layer, 'survival'); assert.match(out.cut, /no answer/);
+  assert(bot._arbiter.ruling.until - bot._arbiter.ruling.at <= arbiter.IDLE_MS);
+});
+
+test('a newcomer picked up is known to the holder: the same mob coming closer does not preempt again', () => {
+  const { bot } = stoppable();
+  bot._arbiter = { holder: { layer: 'work', action: 'find_fortress', since: 0, ids: [] } };
+  const p = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 4, 4414)] }), log: () => {} });
+  assert.equal(p.by, 'newcomer');
+  arbiter.rule(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter, mobs: [] });
+  assert.equal(bot._preempt, undefined);
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 2, 4414)] }), log: () => {} }), null);
+});
