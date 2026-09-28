@@ -4663,6 +4663,31 @@ test('in a corridor with a skeleton down its length, the side opening out of its
   assert.equal(seenFrom(bot, [skeleton], new Vec3(0, 64, 0)).length, 1, 'where it stands, in its line');
 });
 
+test('a hiding spot whose walk ended where it began is said with why and passed over from here, the next spot offered (mid-244-ad, note 570)', async () => {
+  // mid-244-ad chose out_of_sight forty-one times in eleven seconds under a crossbow piglin, 6.4 health to 1.2, a walk of
+  // six blocks to the same spot each time, and moved 1.4 blocks: the walk's failure was swallowed, "it failed" with no why.
+  const corridor = p => (p.y === 64 || p.y === 65) && ((p.z === 0 && p.x >= -6 && p.x <= 20) || (p.x === -3 && (p.z === 1 || p.z === 2)));
+  const bot = rockWorld(corridor, ['iron_sword', 'cobblestone']);
+  const skeleton = skeletonAt(15.5, 0.5);
+  const walks = [];
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async (b, t, goal) => { walks.push(new Vec3(goal.x, goal.y, goal.z)); throw new Error('No path to the goal!'); } }, { state: { shelters: [] } });
+  let options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
+  assert.equal(await options.out_of_sight.run(), false);
+  assert.deepEqual(walks[0], new Vec3(-3, 64, 1));
+  assert.equal(survival.state.stanceWhy, 'the walk to the spot at (-3, 64, 1) ended 3.2 blocks short of it, where it began: No path to the goal!');
+  options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
+  assert.match(options.out_of_sight.description, /^Walk 5 blocks to a spot/, 'the next spot, not the one just failed');
+  assert.match(options.out_of_sight.description, /Not the spot tried just now: the walk to the spot at \(-3, 64, 1\) ended 3\.2 blocks short of it, where it began: No path to the goal!, 1 seconds ago\.$/);
+  await options.out_of_sight.run();
+  assert.deepEqual(walks[1], new Vec3(-3, 64, 2));
+  options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
+  assert.equal(options.out_of_sight, undefined, 'no spot left to walk to from here');
+  // Half a minute on, the spots are tried afresh.
+  for (const f of survival.state.coverFailed) f.at -= 31000;
+  options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
+  assert.match(options.out_of_sight?.description || '', /^Walk 4 blocks to a spot/);
+});
+
 test('in a wall of stone with a skeleton in the open, an L dug in out of its line is offered, its seconds from the tool carried', () => {
   const open = p => p.y >= 64 && p.x < 1;
   const make = pick => {

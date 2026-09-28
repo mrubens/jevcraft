@@ -308,6 +308,42 @@ test('the same answer to the same facts, come back at once with nothing measurab
   assert.match(seen.at(-1).answersThatCameToNothing[0], /^portal method: cast frame was chosen 2 times/);
 });
 
+test('answers that come back at once with nothing coming of them are said and held whatever the facts, one answer or two in turn (note 570)', async () => {
+  // mid-242-ac-nether-2-fortress-1: fortress_approach 351 times in ten minutes, other_way 345, each back within half a
+  // second, the place asked about and its distance changing between, so the same facts were never met twice. And
+  // portal_way (note 568): around_right and around_left in turn, each back within 0.3 of a second having moved nothing.
+  const { decide } = require('../src/decisions');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(-167.5, 107, 60.1) }, game: { dimension: 'the_nether' }, inventory: { items: () => [] } };
+  const goal = { kind: 'win', step: { action: 'find_fortress' } };
+  const seen = [], picks = ['around_right', 'around_left', 'around_right', 'around_left'];
+  const client = { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  const tree = n => ({ around_right: { description: `Round by the right, ${n} blocks.` }, around_left: { description: `Round by the left, ${n + 3} blocks.` } });
+  const ask = n => decide('portal_way', { client, bot, goal, tree: tree(n), state: { target: `(${-187 + n * 20}, 74, ${162 - n * 13})`, facing: n % 2 ? 'east' : 'north' } });
+  await ask(1);
+  assert.equal(seen[0].lastAnswersCameToNothing, undefined);
+  goal.lastFailure = { why: 'No path to the goal!', at: Date.now() };
+  await ask(2);
+  assert.equal(seen[1].sameAnswerAgain, undefined, 'the facts changed');
+  assert.match(seen[1].lastAnswersCameToNothing, /^the last answer, around right, came back within a second and nothing measurable came of it \(no new ground, nothing gained, no block dug or placed\), whatever the facts said between; the last ended: No path to the goal!$/);
+  await ask(3);
+  assert.match(seen[2].lastAnswersCameToNothing, /^the last 2 answers to this question in a row \(around right 1 time, around left 1 time, in the last 1 second\) each came back within a second/);
+  await assert.rejects(ask(4), err => err.name === 'Stalled' && /portal way: the last 3 answers to this question in a row \(around right 2 times, around left 1 time/.test(err.message));
+  assert.equal(seen.length, 3, 'not asked a fourth time');
+  // The stance against mobs about is said, never held: mid-244-ad's out_of_sight, forty-one times in eleven seconds
+  // under a crossbow piglin, health falling between each, the bot moving 1.4 blocks.
+  const stance = h => decide('encounter_stance', { client: { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'out_of_sight', confidence: 0.6 } } }; } },
+    bot, goal, tree: { out_of_sight: { description: 'Walk 6 blocks to a spot out of its line.' }, fight: { description: 'Fight here.' } }, state: { health: h, threats: [{ name: 'piglin', distance: 7, held: 'crossbow' }] } });
+  delete bot._stalls.stall; goal.lastFailure = null;
+  for (const h of [6.4, 5.1, 3.1, 1.2]) await stance(h);
+  assert.match(seen.at(-1).lastAnswersCameToNothing, /^the last 3 answers to this question in a row \(out of sight 3 times, in the last 1 second\) each came back within a second and nothing measurable came of any of them/);
+  // Something coming of an answer starts afresh.
+  delete bot._stalls.stall;
+  picks.push('around_left', 'around_left');
+  await ask(5); bot.entity.position = new Vec3(-160.5, 107, 60.1); await ask(6);
+  assert.equal(seen.at(-1).lastAnswersCameToNothing, undefined, 'moved seven blocks: something came of it');
+});
+
 test('an answer that got somewhere, or new facts, starts afresh; a wait chosen is said, never held', async () => {
   const { decide } = require('../src/decisions');
   const { Vec3 } = require('vec3');

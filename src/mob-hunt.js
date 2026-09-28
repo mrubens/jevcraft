@@ -1193,12 +1193,59 @@ function blazeSpotSays({ spot, off }, here, now = Date.now()) {
   return `${spot.seen || 1} time${(spot.seen || 1) === 1 ? '' : 's'} at (${spot.x}, ${spot.y}, ${spot.z})${sight}, ${off} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, last ${mins ? `${mins} minute${mins === 1 ? '' : 's'} ago` : 'just now'}` +
     `${spot.tries ? `; the hunt walked back toward it ${spot.tries} time${spot.tries === 1 ? '' : 's'}${spot.why ? `, the last ending: ${spot.why}` : ''}` : ''}`;
 }
+// The blazes the bot knows of now, in sight or heard through the walls,
+// nearest first. A sighting is kept only within thirty-two blocks (the
+// hunt's own look), so mid-242-ac-nether-2-fortress-1, with two blazes
+// thirty-four blocks off, was sent after a sighting 109 blocks off from
+// forty-seven minutes before (note 570).
+const BLAZES_ABOUT = 96;
+function blazesAbout(bot) {
+  const here = bot.entity?.position;
+  if (!here) return [];
+  let lineClear = null; try { ({ lineClear } = require('./danger')); } catch (_) { /* no world */ }
+  const eye = here.offset(0, 1.62, 0);
+  return Object.values(bot.entities || {}).filter(e => e?.name === 'blaze' && e.isValid !== false && e.position && e.position.distanceTo(here) <= BLAZES_ABOUT)
+    .map(e => {
+      let visible = false;
+      try { visible = !!lineClear && typeof bot.blockAt === 'function' && [1.6, 0.9, 0.15].some(dy => lineClear(bot, eye, e.position.offset(0, dy, 0))); } catch (_) { visible = false; }
+      return { entity: e, off: Math.round(e.position.distanceTo(here)), dy: Math.round(e.position.y - here.y), visible };
+    })
+    .sort((a, b) => a.off - b.off);
+}
+function blazesAboutSays(about) {
+  if (!about.length) return null;
+  const n = about[0], p = n.entity.position, inSight = about.filter(b => b.visible).length;
+  return `${about.length} blaze${about.length === 1 ? '' : 's'} about now (${inSight ? `${inSight} in sight` : 'none in sight'}${inSight < about.length ? `, ${about.length - inSight} heard through the walls` : ''}), the nearest ${n.off} blocks off${Math.abs(n.dy) >= 2 ? ` and ${Math.abs(n.dy)} ${n.dy > 0 ? 'up' : 'down'}` : ''} at (${Math.floor(p.x)}, ${Math.floor(p.y)}, ${Math.floor(p.z)})`;
+}
 function blazesSeenFacts(bot, goal) {
-  const spots = blazeSpots(bot, goal);
-  if (!spots.length) return null;
+  const spots = blazeSpots(bot, goal), about = blazesAboutSays(blazesAbout(bot));
+  if (!spots.length) return about;
   const total = spots.reduce((n, s) => n + (s.spot.seen || 1), 0);
-  return `blazes seen ${total} time${total === 1 ? '' : 's'} in ${spots.length} place${spots.length === 1 ? '' : 's'}; the busiest ${blazeSpotSays(spots[0], bot.entity.position)}` +
+  return `${about ? `${about}; ` : ''}blazes seen ${total} time${total === 1 ? '' : 's'} in ${spots.length} place${spots.length === 1 ? '' : 's'}; the busiest ${blazeSpotSays(spots[0], bot.entity.position)}` +
     (spots.length > 1 ? `; next ${blazeSpotSays(spots[1], bot.entity.position)}` : '');
+}
+
+// A way Jev left (fortress_approach's other_way): the place is set aside for
+// ten minutes, as the option says, not offered again from the search until
+// then, and said with the ways that are. It was said and not done:
+// mid-242-ac-nether-2-fortress-1 left the way to where blazes were seen 345
+// times in ten minutes, and the next tick offered the same place as the
+// only way and asked the way to it again (note 570).
+const WAY_LEFT_MS = 10 * 60000;
+const WAY_LEFT_NEAR = 8;
+function waysLeft(state, now = Date.now()) { return (state.waysLeft || []).filter(w => w.until > now); }
+function wayLeft(state, p, now = Date.now()) {
+  return waysLeft(state, now).find(w => Math.hypot(w.x - p.x, w.y - p.y, w.z - p.z) <= WAY_LEFT_NEAR) || null;
+}
+function leaveWay(state, place, what, why, from, now = Date.now()) {
+  state.waysLeft = [...waysLeft(state, now).filter(w => Math.hypot(w.x - place.x, w.y - place.y, w.z - place.z) > WAY_LEFT_NEAR),
+    { x: place.x, y: place.y, z: place.z, what, why, at: now, until: now + WAY_LEFT_MS, from: { x: Math.round(from.x), y: Math.round(from.y), z: Math.round(from.z) } }].slice(-12);
+}
+function waysLeftSays(state, here, now = Date.now()) {
+  const list = waysLeft(state, now);
+  if (!list.length) return null;
+  const mins = ms => { const m = Math.max(1, Math.round(ms / 60000)); return `${m} minute${m === 1 ? '' : 's'}`; };
+  return list.map(w => `${w.what} at (${w.x}, ${w.y}, ${w.z}), ${Math.round(Math.hypot(w.x - here.x, w.y - here.y, w.z - here.z))} blocks off: Jev left the way there ${mins(now - w.at)} ago, set aside for ${mins(w.until - now)} more${w.why ? ` (${w.why})` : ''}`);
 }
 
 // The next leg is Jev's (fortress_leg): each heading surveyed at the
@@ -1283,7 +1330,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   }
   // Where blazes were seen, farther than the hunt's own look: the way back
   // to the busiest of them, walked on foot first and otherwise asked.
-  const spots = blazeSpots(bot, goal).filter(s => s.off > 12);
+  // A place Jev left is not offered until its ten minutes are up (said
+  // in waysLeft). The blazes about now are a way of their own.
+  const spots = blazeSpots(bot, goal).filter(s => s.off > 12 && !wayLeft(state, s.spot));
+  const about = blazesAbout(bot).filter(b => b.off > 12 && !wayLeft(state, b.entity.position.floored()));
+  if (about.length && !(spots[0] && spots[0].spot.at > Date.now() - 60000 && Math.hypot(spots[0].spot.x - about[0].entity.position.x, spots[0].spot.y - about[0].entity.position.y, spots[0].spot.z - about[0].entity.position.z) <= 16)) {
+    const b = about[0], p = b.entity.position.floored(), ended = state.goToEnded?.blazes_about;
+    options.go_to_blazes_about = { description: `Go to the blazes about now: ${blazesAboutSays(about)}. The hunt takes each one as it comes into view within its reach. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at blazes about ended: ${ended.why}.` : ''}`,
+      run: () => { state.goTo = { x: p.x, y: p.y, z: p.z, kind: 'blazes_about', since: Date.now() }; save(); return 'goto'; } };
+  }
   if (spots.length) {
     const best = spots[0], s = best.spot, ended = state.goToEnded?.blazes;
     options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
@@ -1304,7 +1359,8 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   }
   // Every way from here rests or is gone: nothing to ask. The step says so
   // and the stall's own question takes it from there.
-  if (!Object.keys(options).length) throw new Error(`Every leg from here ended at once and rests: ${resting.join('; ')}`);
+  const left = waysLeftSays(state, here);
+  if (!Object.keys(options).length) throw new Error(`Every leg from here ended at once and rests: ${resting.join('; ')}${left ? `; and the ways Jev left: ${left.join('; ')}` : ''}`);
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
   const facts = { ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
@@ -1312,6 +1368,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, state.legMode)];
       return `${seeking ? 'a staircase toward the fortress heights ' : state.legMode === 'floor' ? 'down to the floor and along it ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
     ...(resting.length ? { legsResting: resting } : {}),
+    ...(left ? { waysLeft: left } : {}),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(fortress ? { fortressInView: fortress.facts } : {}) };
   // Without Jev: the open air each heading's carried blocks reach.
@@ -1568,7 +1625,12 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   const approach = state[kind];
   approach.found = found;
   goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), legs: state.legs }; save();
-  const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
+  const approaches = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
+  const { options } = approaches;
+  // The blazes lead: they are what the search is for, and the ones about
+  // now may be nearer than the place asked about (note 570).
+  const blazesSeen = blazesSeenFacts(bot, goal);
+  const facts = { ...(blazesSeen ? { blazesSeen } : {}), ...approaches.facts };
   if (stretch) {
     const what = stretch.what || 'a stretch of the fortress\'s floors';
     facts.stretch = `${what}, ${Math.round(flatTo(nearest, bot.entity.position))} blocks off; the walk there on foot failed: ${stretch.why}`;
@@ -1605,7 +1667,11 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   // What failed is kept with the fortress: going back to it says so.
   if (pick === 'keep_searching') { delete approach.choice; delete approach.until; save(); return 'Jev chose to leave the fortress and search on'; }
-  if (pick === 'other_way') { delete approach.choice; delete approach.until; save(); return 'Jev chose to leave this way for now'; }
+  if (pick === 'other_way') {
+    delete approach.choice; delete approach.until;
+    if (stretch) leaveWay(state, found, stretch.what || 'the place chosen', `the walk there on foot failed: ${stretch.why}`, bot.entity.position);
+    save(); return 'Jev chose to leave this way for now';
+  }
   // Closer counts; a shuffle along the shelf does not.
   if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return null; }
   approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
@@ -1795,7 +1861,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
     // between the nearest two floors went through the walls: mid-235-q-
     // nether-1-fortress-3's was "4 of lava, 2 of wall or rock", where the way
     // was six blocks laid into the lava of the corridor beside (note 564).
-    unwalkedParts(bot, map, planned).slice(0, 3).forEach((part, i) => {
+    unwalkedParts(bot, map, planned).filter(part => !wayLeft(state, { x: part.g.at[0], y: part.g.at[1] + 1, z: part.g.at[2] })).slice(0, 3).forEach((part, i) => {
       const { g, groups } = part, across = { way: part.way, round: part.round, says: acrossSays(part.way, part.round) };
       const gap = across.way ? null : fm.gapTo(bot, planned, g, map);
       const floors = groups.reduce((n, p) => n + p.cells, 0), open = groups.reduce((n, p) => n + p.open, 0);
@@ -1848,8 +1914,23 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
 // way there is Jev's (fortress_approach, the walk's failure said), leaving
 // that way among the ways. How it ended is said with the next offer.
 const GO_TO_NEAR = 8;
-const GO_TO_SAYS = { blazes: 'where blazes were seen', unwalked: 'unwalked floors of the fortress, seen across a gap' };
+const GO_TO_SAYS = { blazes: 'where blazes were seen', blazes_about: 'the blazes about now', unwalked: 'unwalked floors of the fortress, seen across a gap' };
+// A way chosen runs until it ends, and how it ended is kept and said with
+// the next offer, a stall raised from inside it among the ends: the stall
+// left state.goTo standing, and the next tick walked the same way again
+// unasked (note 570).
 async function goToStep(bot, task, goal, save, actions, state) {
+  const g = state.goTo;
+  try { await goToWay(bot, task, goal, save, actions, state); }
+  catch (err) {
+    if (err?.name === 'Stalled' && state.goTo === g) {
+      (state.goToEnded ||= {})[g.key ? `${g.kind}:${g.key}` : g.kind] = { why: String(err.message || err).replace(/^Stalled: /, ''), at: Date.now() };
+      delete state.goTo; save();
+    }
+    throw err;
+  }
+}
+async function goToWay(bot, task, goal, save, actions, state) {
   const g = state.goTo, target = new Vec3(g.x, g.y, g.z), stopWhen = () => goldInPassing(bot, goal);
   goal.step = { action: 'find_fortress', goingTo: { x: g.x, y: g.y, z: g.z, kind: g.kind }, legs: state.legs || 0 }; save();
   // Floors across a gap are reached when stood on; blazes when near.

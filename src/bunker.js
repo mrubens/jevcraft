@@ -244,13 +244,14 @@ const inSight = (bot, shooters, cell, opts) => shooters.some(e => seenFrom(bot, 
 // before anything else. A walk passes no cell beside a mob that bites.
 const standable = (bot, c) => { const f = bot.blockAt(c), h = bot.blockAt(c.offset(0, 1, 0)), u = bot.blockAt(c.offset(0, -1, 0));
   return passable(f) && passable(h) && !/lava|water|fire/.test(`${f?.name} ${h?.name}`) && solid(u) && !/magma|campfire/.test(u.name || ''); };
-function coverWithin(bot, shooters, { steps = 8, avoid = [] } = {}) {
+// `skip`: cells not to end on (a walk to them just failed), still walked through.
+function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false } = {}) {
   const feet = bot.entity.position.floored();
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const seen = new Set([`${feet}`]);
   let ring = [feet];
   for (let n = 0; n <= steps && ring.length; n++) {
-    const hidden = ring.filter(c => !inSight(bot, shooters, c));
+    const hidden = ring.filter(c => !skip(c) && !inSight(bot, shooters, c));
     if (hidden.length) return { cell: hidden.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0], steps: n };
     const next = [];
     for (const c of ring) for (const s of SIDES) for (const dy of [0, 1, -1]) {

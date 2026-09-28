@@ -896,6 +896,61 @@ test('on a fortress floor it had left, with blazes seen there forty times and ev
   assert.equal(goal.mobHunt.sightings[0].tries, 1);
 });
 
+test('a way Jev left is set aside as said: not offered again, said with the ways that are, and the blazes about now lead and are a way of their own (mid-242-ac-nether-2-fortress-1, note 570)', async () => {
+  // mid-242-ac-nether-2-fortress-1 answered fortress_approach 351 times in ten minutes, other_way 345 of them: each
+  // "set aside for ten minutes" set nothing aside, and the next tick offered the same place (109 blocks off, seen
+  // forty-seven minutes before) as the only way and asked the way to it again; two blazes thirty-four blocks off went unsaid.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = acFloor();
+  const now = Date.now();
+  const goal = { mobHunt: { entity: 'blaze', item: 'blaze_rod', sightings: [{ x: -108, y: 77, z: 155, dimension: 'the_nether', at: now - 47 * 60000, seen: 13, inSight: 0 }] },
+    fortressSearch: { axis: 1, legs: 70, since: now - 48 * 60000,
+      shunned: [{ x: -121, z: 105, radius: 16, until: now + 2 * 60000, at: now - 8 * 60000, why: 'Jev chose to leave it and search on', from: { x: -123, y: 72, z: 106 }, left: ['walk route', 'tunnel'] }] } };
+  const client = jevStub(['go_to_blazes', 'other_way', 'leg_north']);
+  const actions = { client, navigate: async () => { throw new Error('No route from here'); },
+    tunnel: async () => { throw new Error('The staircase toward it is set aside (no safe step toward it (water or lava behind the rock: 1 of the steps nearer))'); } };
+  const step = () => findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  await step(); await step();
+  assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+  assert.equal(Object.keys(client.asked[1].state)[0], 'blazesSeen', 'the blazes lead the way asked too');
+  assert.deepEqual(goal.decisions.at(-1).path, ['other_way']);
+  const left = goal.fortressSearch.waysLeft;
+  assert.equal(left.length, 1);
+  assert.deepEqual([left[0].x, left[0].y, left[0].z, left[0].what], [-108, 77, 155, 'where blazes were seen']);
+  // Two blazes thirty-odd blocks off, over the open floor.
+  bot.entities = { 31: { id: 31, name: 'blaze', type: 'hostile', position: new Vec3(-122.5, 80, 140.5), height: 1.8, width: 0.6, isValid: true },
+    32: { id: 32, name: 'blaze', type: 'hostile', position: new Vec3(-120.5, 81, 141.5), height: 1.8, width: 0.6, isValid: true } };
+  await step();
+  assert.equal(client.asked.length, 3);
+  const { options, state } = client.asked[2];
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  assert.equal(options.go_to_blazes, undefined, 'the place left is not offered again within its ten minutes');
+  assert.match(state.waysLeft[0], /^where blazes were seen at \(-108, 77, 155\), \d+ blocks off: Jev left the way there 1 minute ago, set aside for 10 minutes more \(the walk there on foot failed: No route from here\)/);
+  assert.equal(Object.keys(state)[0], 'blazesSeen');
+  assert.match(state.blazesSeen, /^2 blazes about now \(2 in sight\), the nearest 35 blocks off and 8 up at \(-123, 80, 140\); blazes seen 13 times/);
+  assert.match(options.go_to_blazes_about, /^Go to the blazes about now: 2 blazes about now/);
+});
+
+test('a way chosen that a stall ends is ended with its why, not walked again unasked (note 570)', async () => {
+  // The hold on fortress_approach (decisions/repeats.js) raised a stall out of the way to the blazes; state.goTo stood,
+  // and the next tick walked the same way and asked it again.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const repeats = require('../src/decisions/repeats');
+  const { bot } = acFloor();
+  const goal = { mobHunt: { entity: 'blaze', item: 'blaze_rod', sightings: [] },
+    fortressSearch: { axis: 1, legs: 70, goTo: { x: -108, y: 77, z: 155, kind: 'blazes', since: Date.now() } } };
+  // Three answers back at once before this one, whatever they were.
+  const now = Date.now();
+  bot._answers = { fortress_approach: { streak: [{ choice: 'other_way', gap: 300, at: now - 900 }, { choice: 'other_way', gap: 300, at: now - 600 }],
+    last: { choice: 'other_way', at: now - 300, mark: repeats.mark(bot), judged: false, goal } } };
+  const client = jevStub(['other_way']);
+  const actions = { client, navigate: async () => { throw new Error('No route from here'); }, tunnel: async () => { throw new Error('The staircase is set aside'); } };
+  await assert.rejects(findFortressStep(bot, new Task('hunt'), goal, () => {}, actions), err => err.name === 'Stalled');
+  assert.equal(client.asked.length, 0, 'held, not asked');
+  assert.equal(goal.fortressSearch.goTo, undefined, 'the way is ended');
+  assert.match(goal.fortressSearch.goToEnded.blazes.why, /^fortress approach: the last 3 answers to this question in a row \(other way 3 times/);
+});
+
 // Lines of sight through a test world: the first cell along the line with a
 // full block's box stops it (the game's raycast, cube by cube).
 function sightLines(bot) {

@@ -135,14 +135,14 @@ const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, w
 const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
 const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
 const HEALING = 'healing is the bot\'s health and hunger, whether health comes back, the food carried by kind (the last resort with what it may cost), the nearest food known, the time to daylight, and what standing still costs.';
-const AGAIN = 'sameAnswerAgain says what this question was answered last with these same facts, and that nothing came of it; answersThatCameToNothing, the answers held as failed in the last two minutes, and why. The same answer again seldom ends differently.';
+const AGAIN = 'sameAnswerAgain says what this question was answered last with these same facts, and that nothing came of it; lastAnswersCameToNothing, the last answers to it in a row that each came back within seconds with nothing coming of them, whatever the facts said between; answersThatCameToNothing, the answers held as failed in the last two minutes, and why. The same answer again seldom ends differently.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.answersThatCameToNothing ? ` ${AGAIN}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '');
   return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
@@ -253,7 +253,12 @@ function sayOnce(bot, id, path, now = Date.now()) {
 // the questions that are the routing and the stall path themselves
 // (turn_priority, stillness_detour) are said, never held: holding them
 // would raise a stall from inside the answer to one.
-const NEVER_HELD = new Set(['turn_priority', 'stillness_detour']);
+// Nor the stance against mobs about (encounter_stance): held, it raises a
+// stall with the mobs still there and no stance taken. Its answers that
+// came to nothing are said (note 570: mid-244-ad's out_of_sight forty-one
+// times in eleven seconds, under a crossbow piglin, each walk ending where
+// it began), and the stance's own failures say why (failedHereJustNow).
+const NEVER_HELD = new Set(['turn_priority', 'stillness_detour', 'encounter_stance']);
 function waitingByChoice(goal, id, now = Date.now()) {
   if (NEVER_HELD.has(id)) return true;
   const { HOLDS, EMERGENCIES } = require('../stillness');
@@ -334,16 +339,22 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   const tracked = !!bot && !!goal && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area);
   const print = tracked ? repeats.fingerprint(state, tree) : null;
   if (tracked) {
-    const again = repeats.before(bot, goal, id, print, { waiting: waitingByChoice(goal, id) });
-    if (again?.hold) {
-      const why = `${id.replaceAll('_', ' ')}: ${again.says}`;
-      repeats.held(bot, id, again.says);
+    const waiting = waitingByChoice(goal, id);
+    const again = repeats.before(bot, goal, id, print, { waiting });
+    // And whatever the facts: the last answers in a row that each came
+    // back at once with nothing coming of them (note 570).
+    const quick = repeats.quickBefore(bot, goal, id, { waiting });
+    const holding = again?.hold ? again : quick?.hold ? quick : null;
+    if (holding) {
+      const why = `${id.replaceAll('_', ' ')}: ${holding.says}`;
+      repeats.held(bot, id, holding.says);
       console.log(`[repeat] ${why}`);
       const { raiseFor, Stalled } = require('../stillness');
       throw new Stalled(raiseFor(bot, goal, why));
     }
     const lately = repeats.heldSays(bot);
-    if (again || lately) state = { ...state, ...(again ? { sameAnswerAgain: again.says } : {}), ...(lately ? { answersThatCameToNothing: lately } : {}) };
+    const quickly = !again && quick ? quick.says : null;
+    if (again || quickly || lately) state = { ...state, ...(again ? { sameAnswerAgain: again.says } : {}), ...(quickly ? { lastAnswersCameToNothing: quickly } : {}), ...(lately ? { answersThatCameToNothing: lately } : {}) };
   }
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
   // each question offers; test/decisions.test.js turns it back on).
@@ -405,7 +416,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (bot?._asking === trace) delete bot._asking;
   }
   decision.id = id;
-  if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'));
+  if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');

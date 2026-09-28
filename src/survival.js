@@ -235,6 +235,12 @@ const SHOT_WORDS = { witch: 'potion', ghast: 'fireball', blaze: 'fireball', bree
 const shotWord = name => SHOT_WORDS[name] || 'arrow';
 // The stances that hide the bot from shooters rather than meet them.
 const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
+// A hiding spot whose walk just failed is passed over this long, while the
+// bot stands within four blocks of where that walk began (note 570).
+const COVER_FAILED_MS = 30000;
+function coverFailedSays(list) {
+  return `Not the spot${list.length === 1 ? '' : 's'} tried just now: ${list.map(f => `${f.why}, ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago`).join('; ')}.`;
+}
 // What can throw the bot over an edge with a shot: a shooter in sight
 // within its reach, and one that flies (a ghast, a blaze) within its reach
 // out of sight too: it drifts to a new line at any moment, and fires about
@@ -2488,7 +2494,18 @@ class Survival {
     // Where the bot hid, kept with the stance: it is asked again when a
     // shooter has a line there (stanceStep).
     const hideAt = cell => { const st = this.state.stance; if (st) st.hidden = { cell: `${cell}`, seenBy: require('./bunker').seenFrom(bot, shooting, cell).map(e => e.id) }; };
-    const cover = shooting.length && !inWater(bot) && (seenHere.length || heldHidden) ? require('./bunker').coverWithin(bot, shooting, { steps: 8, avoid: biting }) : null;
+    // A spot the walk just failed to reach is not a spot to hide in: its
+    // walk ended where it began, and the next question offered the same
+    // spot. mid-244-ad chose out_of_sight forty-one times in eleven seconds
+    // from 6.4 health to 1.2 under a crossbow piglin's bolts, a walk of six
+    // blocks, and moved 1.4, each failure said with no why (note 570). A
+    // failed spot is passed over while the bot stands within four blocks
+    // of where the walk began, for COVER_FAILED_MS; the failure, with its
+    // why, is said in the state and with the next spot offered.
+    const coverFailed = (this.state.coverFailed || []).filter(f => Date.now() - f.at < COVER_FAILED_MS && Math.hypot(f.from.x - feet.x, f.from.y - feet.y, f.from.z - feet.z) <= 4);
+    this.state.coverFailed = coverFailed;
+    const cover = shooting.length && !inWater(bot) && (seenHere.length || heldHidden)
+      ? require('./bunker').coverWithin(bot, shooting, { steps: 8, avoid: biting, skip: c => coverFailed.some(f => f.cell === `${c}`) }) : null;
     if (cover) {
       const secs = Math.round(cover.steps / 4.3 * 10) / 10;
       const atOnce = Math.max(1, openCells(bot, cover.cell));
@@ -2500,7 +2517,8 @@ class Survival {
         description: (cover.steps
           ? `Walk ${plural(cover.steps, 'block')} to a spot ${off} blocks off that no line from ${shooterNames(shooting)} reaches (rock stands between), about ${secs} seconds in their fire on the way, and stay there.`
           : `Stay where the bot stands: no line from ${shooterNames(shooting)} reaches it here (rock stands between).`) + biters + regainSays(regain) +
-          costSays(hiddenCost, bot.health, mobs, { doing: cover.steps ? 'walking there' : null, done: 'Out of their line' }) + hitsLeft,
+          costSays(hiddenCost, bot.health, mobs, { doing: cover.steps ? 'walking there' : null, done: 'Out of their line' }) + hitsLeft +
+          (coverFailed.length ? ` ${coverFailedSays(coverFailed)}` : ''),
         run: async () => {
           if (!cover.steps) {
             this.report(goal, save, { action: 'out_of_sight_hold', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
@@ -2511,11 +2529,18 @@ class Survival {
             return true;
           }
           this.report(goal, save, { action: 'out_of_sight', to: { x: cover.cell.x, y: cover.cell.y, z: cover.cell.z }, blocks: cover.steps, threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+          const from = bot.entity.position.clone();
+          let walkWhy = null;
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000), stallMs: 1200 }); }
-          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; walkWhy = err.message; }
           const there = bot.entity.position.floored().equals(cover.cell);
-          if (there) hideAt(cover.cell);
-          return there;
+          if (there) { hideAt(cover.cell); return true; }
+          // Not there: why, said, and the spot passed over from here.
+          const moved = Math.round(bot.entity.position.distanceTo(from) * 10) / 10, short = Math.round(cover.cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
+          const why = `the walk to the spot at (${cover.cell.x}, ${cover.cell.y}, ${cover.cell.z}) ended ${short} blocks short of it, ${moved < 1 ? 'where it began' : `${moved} blocks from where it began`}${walkWhy ? `: ${walkWhy}` : ''}`;
+          this.state.coverFailed = [...coverFailed, { cell: `${cover.cell}`, at: Date.now(), why, from: { x: feet.x, y: feet.y, z: feet.z } }].slice(-6);
+          this.state.stanceWhy = why;
+          return false;
         } };
     }
     // The L dug in: two in and one to the side, its end out of every
