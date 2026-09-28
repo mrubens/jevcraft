@@ -34,7 +34,11 @@ const selected = names.length ? names.map(name => {
   const found = drill(name);
   if (!found) throw new Error(`Unknown drill ${name}; known: ${DRILLS.map(d => d.name).join(', ')}`);
   return found;
-}) : DRILLS;
+}) : DRILLS.slice();
+// ARENA_LOADOUT: every selected drill with another kit (trial: what the
+// fortress trials carried, note 606), so a tactic is measured with the kit
+// it will be used with.
+if (process.env.ARENA_LOADOUT) for (let i = 0; i < selected.length; i++) selected[i] = { ...selected[i], loadout: process.env.ARENA_LOADOUT };
 
 const id = Date.now().toString(36);
 // A stable name so a watching player's `/spectate` survives every restart.
@@ -237,7 +241,7 @@ async function runDrill(d, attempt) {
   // five runs that each killed their blaze scored "cleared 1/5".
   const cleared = (run.kills >= spawned || !alive(d.entity).length) && !run.died;
   const killer = run.deaths ? deathCause() : null;
-  const result = { drill: d.name, attempt, spawned, cleared, clearedMs: cleared ? Date.now() - started : null, killer, nudged: !!run.nudged,
+  const result = { drill: d.name, attempt, spawned, cleared, clearedMs: cleared ? Date.now() - started : null, elapsedMs: Date.now() - started, killer, nudged: !!run.nudged,
     deaths: run.deaths, damageTaken: Math.round(run.damageTaken * 10) / 10, minHealth: Math.round(run.minHealth * 10) / 10,
     kills: run.kills, drops: d.item ? countOf(bot, d.item) - before : 0, strikes: run.strikes,
     bunkerError: goal.mobHunt?.lastBunkerError || null, diedOnTheirOwn: run.diedOnTheirOwn || 0,

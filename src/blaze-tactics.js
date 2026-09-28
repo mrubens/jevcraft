@@ -1,0 +1,725 @@
+'use strict';
+// Four more ways a player takes rods at a blaze spawner with a sword, a
+// shield and no fire resistance (note 606), beside blaze-stand.js's holes,
+// walls and close-in. The fortress cohort of 2026-09-28 died to blazes a
+// dozen times; note 602's close-in, priced honestly, still lost the drill of
+// four blazes by a live spawner two times in five. Each tactic here is a
+// stance the hunt (hunt_target) and the encounter (encounter_stance) offer
+// with the game's rules it rests on and what the arena measured of it
+// (blaze-stand.js MEASURED); Jev chooses.
+//
+// The rules, read from the 26.1.2 server jar:
+// - Blaze.BlazeAttackGoal: with its target in sight and more than two
+//   blocks off a blaze hovers where it is and throws its volleys (it sets no
+//   place to go); within two it swings once a second and flies at the
+//   target; out of sight it flies toward the target for five ticks and no
+//   more, and it gives the target up after three seconds unseen
+//   (NearestAttackableTargetGoal's sixty ticks), wandering after that. A
+//   blaze does not come round a corner or to a window on its own: only one
+//   already within two blocks that sees the bot comes at it.
+// - A new target is taken only in sight (NearestAttackableTargetGoal, mustSee).
+// - BaseSpawner: while a player is within sixteen, every ten to forty
+//   seconds up to four tries at a cell within four blocks across (x and z
+//   each (r - r) * 4 + 0.5, so the middle far more often than the edge) and
+//   one below to one above the cage, until six blazes are within the
+//   spawner's box. A try fails where the blaze does not fit or, for a blaze,
+//   where its walk value is under nothing (Monster.getWalkTargetValue, the
+//   light test of LevelReader.getPathfindingCostFromLightLevels with the
+//   Nether's ambient 0.1): light 12 or more fails it, 11 or less spawns. A
+//   round in which every try fails is tried again the next tick, so the
+//   cells left dark are where the blazes come, at the same pace: lighting
+//   most of them does not slow it; lighting every one stops it.
+const { Vec3 } = require('vec3');
+const { goals } = require('mineflayer-pathfinder');
+const ce = require('./combat-estimate');
+const bunker = require('./bunker');
+
+const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
+const solid = b => b?.boundingBox === 'block';
+const clear = b => !b || b.boundingBox === 'empty';
+const liquid = b => /lava|water/.test(b?.name || '');
+const round = n => Math.round(n * 10) / 10;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+const debug = (...a) => { if (process.env.BLAZE_DEBUG) console.log('[tactic]', ...a); };
+const BLOCKS = /^(cobblestone|cobbled_deepslate|netherrack|stone|dirt|blackstone|basalt|andesite|diorite|granite|tuff|deepslate|nether_bricks|end_stone|sandstone|stone_bricks|mossy_cobblestone|polished_blackstone|polished_basalt|gravel|sand|red_sand)$/;
+// A block that falls (FallingBlock): a wall of it stands on what is under
+// it, and a roof of it over air comes down on the bot. mid-242-ba-fortress-2
+// died at 25594 carrying one cobblestone and sixteen gravel.
+const FALLS = /^(gravel|sand|red_sand)$/;
+const blocksCarried = (bot, { standing = false } = {}) => bot.inventory.items().filter(i => BLOCKS.test(i.name) && !(standing && FALLS.test(i.name))).reduce((n, i) => n + i.count, 0);
+// The block for `cell`: one that falls only where solid ground is under it.
+const blockItem = (bot, cell = null) => {
+  const held = !cell || solid(bot.blockAt(cell.offset(0, -1, 0)));
+  return bot.inventory.items().filter(i => BLOCKS.test(i.name) && (held || !FALLS.test(i.name))).sort((a, b) => FALLS.test(a.name) - FALLS.test(b.name) || b.count - a.count)[0] || null;
+};
+const blazesAbout = (bot, r = ce.RANGE?.blaze || 48) => {
+  try { return require('./danger').threats(bot, r).filter(t => t.entity.name === 'blaze'); } catch (_) { return []; }
+};
+
+// A line from a blaze's eye to the bot's body, cell by cell, stopped by a
+// solid block or by one of `walls` (cells not yet built counted as built).
+function lineThrough(bot, from, to, walls) {
+  const d = to.minus(from), length = d.norm();
+  if (length < 1e-6) return true;
+  const u = d.scaled(1 / length);
+  const c = [Math.floor(from.x), Math.floor(from.y), Math.floor(from.z)], end = to.floored();
+  const step = ['x', 'y', 'z'].map(k => Math.sign(u[k]));
+  const next = ['x', 'y', 'z'].map((k, i) => step[i] ? ((step[i] > 0 ? c[i] + 1 : c[i]) - from[k]) / u[k] : Infinity);
+  const delta = ['x', 'y', 'z'].map((k, i) => step[i] ? Math.abs(1 / u[k]) : Infinity);
+  for (let n = 0; n < 256; n++) {
+    if (c[0] === end.x && c[1] === end.y && c[2] === end.z) return true;
+    const key = `(${c[0]}, ${c[1]}, ${c[2]})`;
+    if (walls.has(key) || solid(bot.blockAt(new Vec3(c[0], c[1], c[2])))) return false;
+    const i = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
+    if (next[i] > length) return true;
+    c[i] += step[i]; next[i] += delta[i];
+  }
+  return true;
+}
+const BODY = [1.6, 0.9, 0.15];
+const eyeOf = e => e.position.offset(0, (e.height || 1.8) * 0.85, 0);
+// The blazes with a line to a cell, `walls` counted as built.
+const seeing = (bot, blazes, cell, walls = new Set()) => blazes.filter(e => e.position && BODY.some(dy => lineThrough(bot, eyeOf(e), cell.offset(0.5, dy, 0.5), walls)));
+
+// The cells a walk reaches within `steps`, nearest first; `ok` picks.
+function walkCells(bot, { steps = 16, avoid = [] } = {}) {
+  const feet = bot.entity.position.floored();
+  const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
+  const out = [{ cell: feet, steps: 0 }], seen = new Set([`${feet}`]);
+  let ring = [feet];
+  for (let n = 1; n <= steps && ring.length; n++) {
+    const next = [];
+    for (const c of ring) for (const s of SIDES) for (const dy of [0, 1, -1]) {
+      const to = c.plus(s).offset(0, dy, 0), key = `${to}`;
+      if (seen.has(key)) continue;
+      if (dy === 1 && solid(bot.blockAt(c.offset(0, 2, 0)))) continue;
+      if (dy === -1 && solid(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
+      if (!bunker.standable(bot, to) || near(to)) continue;
+      seen.add(key); next.push(to); out.push({ cell: to, steps: n });
+    }
+    ring = next;
+  }
+  return out;
+}
+
+// A biter come to arm's length that was not there when the run began (a
+// wither skeleton by the blazes): the run ends, said why, and the stance is
+// asked again with it at hand. mid-208-k-fortress-5's close-in held on
+// while one struck it from 15.3 to 5.7, and was asked again only then
+// (2026-09-28 13:56:57, note 606).
+const ARM = 3;
+function bitersAtArm(bot) {
+  let near = [];
+  try { near = require('./danger').threats(bot, ARM + 1); } catch (_) { return []; }
+  const { shooter } = require('./combat');
+  return near.filter(t => t.distance <= ARM && t.entity.name !== 'blaze' && !shooter(t.entity));
+}
+function biterWatch(bot) {
+  const known = new Set(bitersAtArm(bot).map(t => t.entity.id));
+  return () => {
+    const come = bitersAtArm(bot).find(t => !known.has(t.entity.id));
+    return come ? `a ${String(come.entity.name).replaceAll('_', ' ')} came to arm's length, ${round(come.distance)} blocks off` : null;
+  };
+}
+
+// ---- The box with a window --------------------------------------------
+// Walled round at feet and head and roofed, one block open at head height
+// toward the spawner: the rod farm players build by hand. Only a blaze in
+// line with the window sees the bot, and every shot from it comes from in
+// front, where the shield faces; no fire lands in the box, and a push meets
+// a wall. Within four of the cage the spawner puts its blazes beside it,
+// and one that comes within two and sees in flies at the window into the
+// sword; the rest hover where they are (the jar's attack goal above).
+const BOX_NEAR = [2, 4.5];
+function boxPlan(bot, cell, toward) {
+  const centre = cell.offset(0.5, 0, 0.5);
+  const d = toward ? toward.minus(centre) : new Vec3(1, 0, 0);
+  const side = SIDES.slice().sort((a, b) => (b.x * d.x + b.z * d.z) - (a.x * d.x + a.z * d.z))[0];
+  const window = cell.plus(side).offset(0, 1, 0);
+  // The side toward the blazes first, then the rest, feet before head, and
+  // the roof last (it hangs on the head row).
+  const order = SIDES.slice().sort((a, b) => (b.x * d.x + b.z * d.z) - (a.x * d.x + a.z * d.z));
+  const cells = [];
+  for (const s of order) cells.push(cell.plus(s));
+  for (const s of order) { const h = cell.plus(s).offset(0, 1, 0); if (!h.equals(window)) cells.push(h); }
+  // The roof touches none of the head row (they meet it edge to edge), so a
+  // block goes first on the wall at the back, and the roof against that:
+  // the drill's first boxes were left without a roof, "no adjacent solid
+  // anchor" (2026-09-28).
+  const roof = cell.offset(0, 2, 0);
+  const holder = solid(bot.blockAt(roof)) ? null : cell.minus(side).offset(0, 2, 0);
+  if (holder) cells.push(holder);
+  cells.push(roof);
+  return { cell, side, window, walls: cells, holder };
+}
+function boxFits(bot, plan) {
+  if (!bunker.standable(bot, plan.cell)) return null;
+  const floor = bot.blockAt(plan.cell.offset(0, -1, 0));
+  if (!solid(floor) || /magma|netherrack/.test(floor.name) && false) return null;
+  const place = [];
+  for (const c of plan.walls) {
+    const b = bot.blockAt(c);
+    if (!b) return null;
+    if (solid(b)) continue;
+    if (liquid(b) || /fire/.test(b.name) && false) return null;
+    // A feet-row cell needs ground under it to be placed on (the bot's own
+    // floor is only an edge away from it).
+    if (c.y === plan.cell.y && !solid(bot.blockAt(c.offset(0, -1, 0)))) return null;
+    place.push(c);
+  }
+  // Lava beside the box's cells is lava a block away from the bot through
+  // any gap: not here.
+  for (const c of [plan.cell, plan.cell.offset(0, 1, 0)]) for (const s of SIDES) if (liquid(bot.blockAt(c.plus(s)))) return null;
+  const win = bot.blockAt(plan.window);
+  const dig = solid(win) ? plan.window : null;
+  if (dig && (win.diggable === false || /bedrock|obsidian|spawner/.test(win.name))) return null;
+  return { ...plan, place, dig, blocks: place.length };
+}
+function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [] } = {}) {
+  const carried = blocksCarried(bot);
+  const centre = cage ? cage.offset(0.5, 0.5, 0.5) : null;
+  let best = null;
+  for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
+    if (centre) {
+      const off = Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z);
+      if (off < BOX_NEAR[0] || off > BOX_NEAR[1] || Math.abs(cell.y - cage.y) > 1) continue;
+    } else if (n > BOX_WALK) continue;
+    const fit = boxFits(bot, boxPlan(bot, cell, centre || from));
+    if (!fit || fit.blocks > carried) continue;
+    // Over air (the roof), only a block that does not fall.
+    if (fit.place.filter(c => !solid(bot.blockAt(c.offset(0, -1, 0))) && !fit.place.some(q => q.equals(c.offset(0, -1, 0)))).length > blocksCarried(bot, { standing: true })) continue;
+    const score = n + fit.blocks * 0.5 + (fit.dig ? 2 : 0);
+    if (!best || score < best.score) best = { ...fit, steps: n, score, cage, off: centre ? round(Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z)) : null };
+  }
+  return best;
+}
+// How far the box where the bot stands may be walked to: the nearest ground
+// a box fits on (a span over a drop takes none).
+const BOX_WALK = 8;
+const inBox = (bot, site) => bot.entity.position.floored().equals(site.cell);
+const centred = (bot, cell) => inBox(bot, { cell }) && Math.hypot(bot.entity.position.x - cell.x - 0.5, bot.entity.position.z - cell.z - 0.5) < 0.2;
+// Crouched to the middle of the cell: the body clear of every side cell, so
+// a block can go into each (the game puts none where the body is).
+function centre(bot, task, cell) {
+  const c = cell.offset(0.5, 0, 0.5);
+  return require('./motion').move(bot, task, { label: 'box_centre', keys: ['forward'], sneak: true, why: 'to the middle of the box\'s cell, clear of the cells to be walled', look: c.offset(0, 1.6, 0), maxMs: 1500, tick: 30,
+    until: () => Math.hypot(bot.entity.position.x - c.x, bot.entity.position.z - c.z) < 0.15 });
+}
+// How long the building goes on before the box is given up as not walled.
+const BUILD_SECONDS = 12;
+const boxWhole = (bot, site) => site.walls.every(c => solid(bot.blockAt(c)));
+
+// A torch-free, block-by-block build from inside, the shield up for each
+// volley as it comes (blaze-stand shieldVolley) and the flames at the feet
+// put out first.
+async function buildBox(bot, task, goal, save, site, { navigate } = {}) {
+  const stand = require('./blaze-stand');
+  const { place } = require('./work');
+  if (!inBox(bot, site)) {
+    if (!navigate) throw Object.assign(new Error('no way to walk to the box\'s cell'), { name: 'StanceFailed' });
+    const c = site.cell;
+    for (let tries = 0; tries < 6 && !inBox(bot, site); tries++) {
+      task.check(); bot._threatResponseAt = Date.now();
+      if (await stand.putOutFlames(bot, task)) continue;
+      if (await stand.shieldVolley(bot, task, { toward: c.offset(0.5, 0, 0.5) })) continue;
+      stand.claimBlazes?.(bot);
+      try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true, sprint: true, stopWhen: () => stand.volleyComing(bot) }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; debug('box walk', err.message); }
+    }
+    if (!inBox(bot, site)) throw Object.assign(new Error(`the walk to the box's cell at (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+  }
+  goal.step = { action: 'box_in', cell: { ...site.cell }, window: { ...site.window } }; save?.();
+  bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
+  // Passes over the cells still open, in order: a blaze in a cell holds its
+  // block out (the game puts none where a body is), so it is struck if in
+  // reach and the cell is tried again next pass; the roof hangs on the head
+  // row and waits for it.
+  const { occupant } = require('./work');
+  const deadline = Date.now() + BUILD_SECONDS * 1000;
+  while (Date.now() < deadline) {
+    const open = site.walls.filter(c => !solid(bot.blockAt(c)));
+    if (!open.length) break;
+    let placed = 0;
+    for (const c of open) {
+      task.check(); bot._threatResponseAt = Date.now();
+      if (solid(bot.blockAt(c))) continue;
+      // A fireball's push moves the bot off the box's cell, and a block for
+      // the cell it was pushed into is refused: back to the middle first.
+      if (!centred(bot, site.cell)) { await centre(bot, task, site.cell); if (!inBox(bot, site)) break; }
+      if (await stand.putOutFlames(bot, task)) { /* then this cell */ }
+      if (await strikeInReach(bot, task)) { /* then this cell */ }
+      await stand.shieldVolley(bot, task);
+      if (occupant(bot, c)) continue;
+      if (!SIDES.concat([new Vec3(0, -1, 0), new Vec3(0, 1, 0)]).some(s => solid(bot.blockAt(c.plus(s))))) continue;
+      const item = blockItem(bot, c);
+      if (!item) throw Object.assign(new Error(`out of blocks with ${plural(open.length, 'cell')} of the box open`), { name: 'StanceFailed' });
+      require('./combat').lowerShield(bot);
+      try { await place(bot, task, c, item.name, { stay: true }); placed++; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; debug('box place', `${c}`, err.message, process.env.BLAZE_DEBUG === 'stack' ? err.stack : ''); }
+    }
+    if (!placed) { await stand.shieldVolley(bot, task); if (!await strikeInReach(bot, task)) await sleep(150); }
+  }
+  if (site.dig && solid(bot.blockAt(site.window))) await bunker.digCell(bot, task, site.window);
+  const open = site.walls.filter(w => !solid(bot.blockAt(w)));
+  if (open.length) throw Object.assign(new Error(`the box has ${plural(open.length, 'cell')} it could not wall (${open.map(p => `(${p.x}, ${p.y}, ${p.z})`).join(', ')})`), { name: 'StanceFailed' });
+  return true;
+}
+
+// A blaze within the sword's reach, struck; true while one is.
+async function strikeInReach(bot, task) {
+  const { canStrike, strike, lowerShield } = require('./combat');
+  const live = e => e && bot.entities[e.id] === e && e.isValid !== false;
+  const hurt = bot._struck && Date.now() - bot._struck.at < 4000 ? bot.entities[bot._struck.id] : null;
+  const reach = Object.values(bot.entities).filter(e => ['blaze', 'wither_skeleton', 'magma_cube', 'zombified_piglin', 'piglin_brute'].includes(e.name) && live(e) && canStrike(bot, e))
+    .sort((a, b) => (b === hurt) - (a === hurt) || a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+  const target = reach[0];
+  if (!target) return false;
+  const wait = (ce.SWING_MS?.sword || 625) - (Date.now() - (bot._defenseAttackAt || 0));
+  if (wait > 0) { await sleep(Math.min(wait, 120)); return true; }
+  lowerShield(bot);
+  await bot.lookAt(target.position.offset(0, (target.height || 1.8) * 0.5, 0), true);
+  task.check();
+  if (live(target) && canStrike(bot, target)) {
+    await strike(bot, task, target);
+    bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+    bot._struck = { id: target.id, at: bot._defenseAttackAt };
+  }
+  return true;
+}
+
+// Rods on the ground outside, fetched between volleys through the sill
+// (the block under the window), which goes back after.
+async function fetchRods(bot, task, site, { navigate, item = 'blaze_rod', near = 7 } = {}) {
+  const stand = require('./blaze-stand');
+  const { countOf } = require('./skills');
+  const rods = () => Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(site.cell.offset(0.5, 0, 0.5)) < near);
+  if (!navigate || !rods().length || stand.volleyComing(bot)) return false;
+  if (blazesAbout(bot, 4).length) return false;
+  const sill = site.window.offset(0, -1, 0);
+  if (solid(bot.blockAt(sill))) await bunker.digCell(bot, task, sill);
+  const deadline = Date.now() + 8000;
+  try {
+    while (Date.now() < deadline && rods().length) {
+      task.check(); bot._threatResponseAt = Date.now();
+      if (stand.volleyComing(bot)) { await stand.shieldVolley(bot, task); continue; }
+      const drop = rods().sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+      const before = countOf(bot, item), d = drop.position.floored();
+      try { await navigate(bot, task, new goals.GoalNear(d.x, d.y, d.z, 0.5), { timeoutMs: 3000, stallMs: 1200, onFoot: true, stopWhen: () => countOf(bot, item) > before || bot.entities[drop.id] !== drop || stand.volleyComing(bot) }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
+      await sleep(150);
+    }
+  } finally {
+    const c = site.cell;
+    if (!inBox(bot, site)) { try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true }); } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; } }
+    const blockName = blockItem(bot, sill)?.name;
+    if (inBox(bot, site) && blockName && !solid(bot.blockAt(sill))) {
+      try { await require('./work').place(bot, task, sill, blockName, { stay: true }); } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    }
+  }
+  return true;
+}
+
+// Holding the box: the flames put out, what is in reach struck, the shield
+// up facing each volley and otherwise facing the window, the rods fetched
+// once none is within four. Ends after `seconds`, with `want` rods, six
+// health gone, or twenty seconds with no blaze seeing in or within eight.
+const QUIET_SECONDS = 20;
+async function holdBox(bot, task, goal, save, site, { navigate, seconds = 45, item = 'blaze_rod', want = Infinity, stats = {} } = {}) {
+  const stand = require('./blaze-stand');
+  const { countOf } = require('./skills');
+  const { raiseShield, defenseWeapon } = require('./combat');
+  const { STANCE_HEALTH } = require('./danger');
+  stand.volleyWatch(bot);
+  const started = Date.now(), startHealth = bot.health ?? 20;
+  let quietFrom = Date.now(), kills = 0;
+  const onDeath = e => { if (e?.name === 'blaze' && Date.now() - (bot._struck?.at || 0) < 6000) kills++; };
+  bot.on('entityDead', onDeath);
+  Object.assign(stats, { seconds: 0, swings: 0, kills: 0, mostInSight: 0, ended: 'time' });
+  const face = site.window.offset(0.5, 0.5, 0.5);
+  const biter = biterWatch(bot);
+  try {
+    const sword = defenseWeapon(bot);
+    if (sword && bot.heldItem?.name !== sword.name) await bot.equip(sword, 'hand');
+    while (Date.now() - started < seconds * 1000) {
+      task.check(); bot._threatResponseAt = Date.now();
+      if (countOf(bot, item) >= want) { stats.ended = 'rod'; break; }
+      if (startHealth - (bot.health ?? 20) >= STANCE_HEALTH) { stats.ended = 'hurt'; break; }
+      const came = biter(); if (came) { stats.ended = came; break; }
+      const about = blazesAbout(bot, 24).map(t => t.entity);
+      const inLine = seeing(bot, about, site.cell);
+      stats.mostInSight = Math.max(stats.mostInSight, inLine.length);
+      if (inLine.length || about.some(e => e.position.distanceTo(bot.entity.position) <= 8)) quietFrom = Date.now();
+      else if (Date.now() - quietFrom > QUIET_SECONDS * 1000) { stats.ended = 'quiet'; break; }
+      goal.step = { action: 'hold_box', inLine: inLine.length, about: about.length, kills, health: bot.health, held: Math.round((Date.now() - started) / 1000) }; save?.();
+      if (!inBox(bot, site)) { debug('hold: back in'); await require('./bunker').stepTo(bot, task, site.cell); continue; }
+      if (await stand.putOutFlames(bot, task)) { debug('hold: flames'); continue; }
+      if (await strikeInReach(bot, task)) { stats.swings++; continue; }
+      if (await stand.shieldVolley(bot, task)) continue;
+      if (await fetchRods(bot, task, site, { navigate, item })) { debug('hold: rods'); continue; }
+      // A wall knocked out (a fireball does not break blocks, but the bot's
+      // own swing at the window can): put back.
+      const gap = site.walls.find(w => !solid(bot.blockAt(w)) && !w.equals(site.window.offset(0, -1, 0)));
+      if (gap && blockItem(bot, gap)) { try { await require('./work').place(bot, task, gap, blockItem(bot, gap).name, { stay: true }); } catch (_) { task.check(); } continue; }
+      await bot.lookAt(face, true);
+      raiseShield(bot);
+      await sleep(150);
+    }
+  } catch (err) { debug('hold: stopped', err.name, err.message); throw err; }
+  finally {
+    debug('hold: ended', stats.ended, Math.round((Date.now() - started) / 1000), 's');
+    bot.removeListener('entityDead', onDeath);
+    // Left in the box, the shield stays up facing the window: the next
+    // question takes seconds (up to eighteen in the arena, 2026-09-28), and
+    // with it lowered the volleys through the window landed whole meanwhile,
+    // 11.5 to none in one run.
+    if (inBox(bot, site) && boxWhole(bot, site)) { await bot.lookAt(face, true).catch(() => {}); raiseShield(bot); }
+    else require('./combat').lowerShield(bot);
+    stats.seconds = Math.round((Date.now() - started) / 1000); stats.kills = kills;
+  }
+  return { kills, ended: stats.ended };
+}
+
+// ---- Lighting the spawner ---------------------------------------------
+// The spawner's tries (BaseSpawner, above): x and z each the cage's plus
+// (r - r) * 4 + 0.5, floored, so an offset k is tried about this often
+// (the triangle's mass on [k - 0.5, k + 0.5) / 4), y the cage's -1, 0 or +1.
+const SPAWN_RANGE = 4;
+const tryWeight = k => {
+  const mass = (a, b) => { const f = t => (t < 0 ? (t + 1) ** 2 / 2 : 1 - (1 - t) ** 2 / 2); return f(Math.min(1, Math.max(-1, b))) - f(Math.min(1, Math.max(-1, a))); };
+  return mass((k - 0.5) / SPAWN_RANGE, (k + 0.5) / SPAWN_RANGE);
+};
+const LIT = 12; // light 12 or more stops a blaze (Nether ambient 0.1)
+// Where a blaze fits: its 0.6 by 1.8 box in the cell and the one over it,
+// neither solid nor liquid.
+const fits = (bot, c) => { const a = bot.blockAt(c), b = bot.blockAt(c.offset(0, 1, 0)); return !!a && !!b && !solid(a) && !solid(b) && !liquid(a) && !liquid(b); };
+function spawnCells(bot, cage) {
+  const out = [];
+  for (let dx = -SPAWN_RANGE; dx <= SPAWN_RANGE; dx++) for (let dz = -SPAWN_RANGE; dz <= SPAWN_RANGE; dz++) for (const dy of [-1, 0, 1]) {
+    const c = cage.offset(dx, dy, dz);
+    if (fits(bot, c)) out.push({ cell: c, weight: tryWeight(dx) * tryWeight(dz) / 3 });
+  }
+  return out;
+}
+// Block light by spreading, as the game does: a level less for each step
+// through a cell that lets light through (not a full solid block), and the
+// cage (it lets light through at one more). `extra` are torches planned.
+function lightField(bot, sources, { box }) {
+  const light = new Map();
+  const inBoxRange = p => p.x >= box[0].x && p.x <= box[1].x && p.y >= box[0].y && p.y <= box[1].y && p.z >= box[0].z && p.z <= box[1].z;
+  const queue = [];
+  for (const s of sources) { const k = `${s.position}`; if ((light.get(k) || 0) < s.emission) { light.set(k, s.emission); queue.push([s.position, s.emission]); } }
+  while (queue.length) {
+    const [p, l] = queue.shift();
+    if (light.get(`${p}`) > l) continue;
+    for (const d of [...SIDES, new Vec3(0, 1, 0), new Vec3(0, -1, 0)]) {
+      const q = p.plus(d);
+      if (!inBoxRange(q)) continue;
+      const b = bot.blockAt(q);
+      if (!b) continue;
+      const cost = b.name === 'spawner' ? 2 : solid(b) ? Infinity : 1;
+      const n = l - cost;
+      if (n <= 0 || (light.get(`${q}`) || 0) >= n) continue;
+      light.set(`${q}`, n); queue.push([q, n]);
+    }
+  }
+  return light;
+}
+// Where a torch can go: an open cell with a floor under it, or a solid side
+// for a wall torch (the cage's sides and top included).
+function torchSpots(bot, cage) {
+  const out = [];
+  for (let dx = -SPAWN_RANGE - 1; dx <= SPAWN_RANGE + 1; dx++) for (let dz = -SPAWN_RANGE - 1; dz <= SPAWN_RANGE + 1; dz++) for (const dy of [-2, -1, 0, 1, 2]) {
+    const c = cage.offset(dx, dy, dz), b = bot.blockAt(c);
+    if (!b || solid(b) || liquid(b) || /torch|fire/.test(b.name)) continue;
+    const under = bot.blockAt(c.offset(0, -1, 0));
+    const floor = solid(under) && !/spawner|magma/.test(under.name) || under?.name === 'spawner';
+    const wall = SIDES.find(s => solid(bot.blockAt(c.plus(s))));
+    if (floor || wall) out.push({ cell: c, against: floor ? new Vec3(0, -1, 0) : wall });
+  }
+  return out;
+}
+function lightPlan(bot, cage, { max = 40 } = {}) {
+  if (!cage) return null;
+  const box = [cage.offset(-SPAWN_RANGE - 14, -14, -SPAWN_RANGE - 14), cage.offset(SPAWN_RANGE + 14, 14, SPAWN_RANGE + 14)];
+  const { lightSources } = require('./torches');
+  const existing = lightSources(bot, cage, 16);
+  const cells = spawnCells(bot, cage);
+  const total = cells.reduce((n, c) => n + c.weight, 0);
+  const field = lightField(bot, existing, { box });
+  const dark = () => cells.filter(c => (field.get(`${c.cell}`) || 0) < LIT);
+  let left = dark();
+  const already = cells.length - left.length;
+  const spots = torchSpots(bot, cage);
+  const torches = [];
+  // What each spot's torch lights, spread the game's way (walls stop it);
+  // light from several sources is the most of them, not a sum, so the
+  // torch lighting the most dark cells is taken again and again.
+  const index = new Map(cells.map(c => [`${c.cell}`, c]));
+  const lights = spots.map(s => {
+    const add = lightField(bot, [{ position: s.cell, emission: 14 }], { box: [s.cell.offset(-3, -3, -3), s.cell.offset(3, 3, 3)] });
+    return { spot: s, lit: [...add].filter(([k, v]) => v >= LIT && index.has(k)).map(([k]) => k) };
+  });
+  const darkKeys = new Set(left.map(c => `${c.cell}`));
+  while (darkKeys.size && torches.length < max) {
+    let best = null, gain = 0;
+    for (const l of lights) { const n = l.lit.filter(k => darkKeys.has(k)).length; if (n > gain) { gain = n; best = l; } }
+    if (!best) break;
+    torches.push({ ...best.spot, lights: gain });
+    for (const k of best.lit) darkKeys.delete(k);
+    lights.splice(lights.indexOf(best), 1);
+  }
+  left = left.filter(c => darkKeys.has(`${c.cell}`));
+  const darkWeight = left.reduce((n, c) => n + c.weight, 0);
+  return { cage, cells: cells.length, alreadyLit: already, torches, dark: left.map(c => c.cell), darkShare: total ? round(100 * darkWeight / total) / 100 : 0, total };
+}
+const torchesCarried = bot => bot.inventory.items().filter(i => i.name === 'torch').reduce((n, i) => n + i.count, 0);
+const makeable = bot => {
+  const coal = bot.inventory.items().filter(i => /^(coal|charcoal)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const sticks = bot.inventory.items().filter(i => i.name === 'stick').reduce((n, i) => n + i.count, 0);
+  return Math.min(coal, sticks) * 4;
+};
+async function makeTorches(bot, task, want) {
+  const id = bot.registry?.itemsByName?.torch?.id;
+  if (id === undefined || typeof bot.recipesFor !== 'function') return 0;
+  let made = 0;
+  while (torchesCarried(bot) < want) {
+    task.check();
+    const recipe = bot.recipesFor(id, null, 1, null)?.[0];
+    if (!recipe) break;
+    const times = Math.max(1, Math.min(Math.ceil((want - torchesCarried(bot)) / 4), makeable(bot) / 4));
+    try { await bot.craft(recipe, times, null); made += times * 4; } catch (err) { task.check(); debug('torch craft', err.message); break; }
+  }
+  return made;
+}
+async function placeTorch(bot, task, spot) {
+  const item = bot.inventory.items().find(i => i.name === 'torch');
+  if (!item) return false;
+  const ref = bot.blockAt(spot.cell.plus(spot.against));
+  if (!solid(ref)) return false;
+  await bot.equip(item, 'hand');
+  for (let n = 0; n < 10 && bot.heldItem?.name !== 'torch'; n++) await sleep(50);
+  if (bot.heldItem?.name !== 'torch') return false;
+  task.check();
+  const face = spot.against.scaled(-1);
+  await bot.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+  try { await bot.placeBlock(ref, face); } catch (err) { task.check(); debug('torch', `${spot.cell}`, err.message); }
+  const deadline = Date.now() + 1200;
+  while (Date.now() < deadline && !/torch/.test(bot.blockAt(spot.cell)?.name || '')) { task.check(); await sleep(50); }
+  return /torch/.test(bot.blockAt(spot.cell)?.name || '');
+}
+const REACH = 4.3;
+// Torches in the plan's order, each from a cell within reach of it: the
+// shield up for each volley, the flames put out, what is in reach struck.
+async function lightSpawner(bot, task, goal, save, cage, { navigate, seconds = 60 } = {}) {
+  const stand = require('./blaze-stand');
+  const started = Date.now();
+  let plan = lightPlan(bot, cage);
+  if (!plan) return { placed: 0, dark: null };
+  await makeTorches(bot, task, Math.min(plan.torches.length, 64));
+  let placed = 0, failed = new Set();
+  goal.step = { action: 'light_spawner', spawner: { ...cage }, torches: plan.torches.length }; save?.();
+  const biter = biterWatch(bot);
+  let ended = null;
+  while (Date.now() - started < seconds * 1000) {
+    task.check(); bot._threatResponseAt = Date.now();
+    if ((ended = biter())) break;
+    plan = lightPlan(bot, cage);
+    const todo = plan.torches.filter(t => !failed.has(`${t.cell}`));
+    if (!plan.dark.length && !todo.length) break;
+    if (!todo.length || !torchesCarried(bot)) break;
+    if (await stand.putOutFlames(bot, task)) continue;
+    if (await strikeInReach(bot, task)) continue;
+    if (await stand.shieldVolley(bot, task)) continue;
+    const eye = () => bot.entity.position.offset(0, 1.62, 0);
+    const next = todo.sort((a, b) => a.cell.offset(0.5, 0.5, 0.5).distanceTo(eye()) - b.cell.offset(0.5, 0.5, 0.5).distanceTo(eye()))[0];
+    if (next.cell.offset(0.5, 0.5, 0.5).distanceTo(eye()) > REACH) {
+      if (!navigate) break;
+      stand.claimBlazes?.(bot);
+      try { await navigate(bot, task, new goals.GoalNear(next.cell.x, next.cell.y, next.cell.z, 2), { timeoutMs: 3000, stallMs: 1200, onFoot: true, sprint: true, stopWhen: () => stand.volleyComing(bot) || next.cell.offset(0.5, 0.5, 0.5).distanceTo(eye()) <= REACH - 0.5 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      if (next.cell.offset(0.5, 0.5, 0.5).distanceTo(eye()) > REACH) { failed.add(`${next.cell}`); }
+      continue;
+    }
+    require('./combat').lowerShield(bot);
+    if (await placeTorch(bot, task, next)) placed++; else failed.add(`${next.cell}`);
+  }
+  plan = lightPlan(bot, cage);
+  return { placed, dark: plan.cells - plan.alreadyLit, darkShare: plan.darkShare, cells: plan.cells, ended };
+}
+
+// ---- The corner ---------------------------------------------------------
+// A cell no blaze sees, beside one some blaze does: round the corner of the
+// rock. A blaze that loses the bot flies toward it for a quarter second and
+// then hovers; it comes round only by wandering once it has given the bot
+// up. Held facing the corner, striking what comes within reach.
+function cornerSite(bot, blazes, { steps = 10, avoid = [] } = {}) {
+  const { knockLands } = require('./blaze-stand');
+  let best = null;
+  for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
+    if (seeing(bot, blazes, cell).length) continue;
+    if (!knockLands(bot, cell)) continue;
+    const edge = SIDES.map(s => cell.plus(s)).find(c => bunker.standable(bot, c) && seeing(bot, blazes, c).length);
+    if (!edge) continue;
+    const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
+    const score = n + Math.max(0, near - 6) * 0.5;
+    if (!best || score < best.score) best = { cell, edge, steps: n, score, nearest: round(near) };
+  }
+  return best || builtCorner(bot, blazes);
+}
+// No rock to go round within reach: a corner made where the bot stands, a
+// wall two high and three wide a step toward the blazes' middle, the cell
+// beside the bot at its end the edge they would come round.
+function builtCorner(bot, blazes) {
+  const { knockLands } = require('./blaze-stand');
+  const cell = bot.entity.position.floored();
+  if (!bunker.standable(bot, cell) || !knockLands(bot, cell) || !blazes.length) return null;
+  const mid = blazes.reduce((s, e) => s.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / blazes.length);
+  const d = mid.minus(cell.offset(0.5, 0, 0.5));
+  const side = SIDES.slice().sort((a, b) => (b.x * d.x + b.z * d.z) - (a.x * d.x + a.z * d.z))[0];
+  const across = SIDES.filter(s => s.x * side.x + s.z * side.z === 0);
+  const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
+  // Two wide, toward one side: the bot's line covered and the cell on the
+  // other side of it left in their sight, the edge they would come round.
+  for (const [cover, open] of [[across[0], across[1]], [across[1], across[0]]]) {
+    const wall = [];
+    let fits = true;
+    for (const c of [cell.plus(side), cell.plus(side).plus(cover)]) for (const dy of [0, 1]) {
+      const w = c.offset(0, dy, 0), b = bot.blockAt(w);
+      if (!b || liquid(b)) { fits = false; continue; }
+      if (!solid(b)) { if (dy === 0 && !solid(bot.blockAt(w.offset(0, -1, 0)))) fits = false; wall.push(w); }
+    }
+    if (!fits || wall.length > blocksCarried(bot)) continue;
+    const walls = new Set(wall.map(c => `${c}`));
+    if (seeing(bot, blazes, cell, walls).length) continue;
+    const edge = cell.plus(open);
+    if (!bunker.standable(bot, edge) || !seeing(bot, blazes, edge, walls).length) continue;
+    return { cell, edge, steps: 0, score: 0, nearest: round(near), build: wall };
+  }
+  return null;
+}
+async function holdCorner(bot, task, goal, save, site, { navigate, seconds = 30, item = 'blaze_rod', want = Infinity, stats = {} } = {}) {
+  const stand = require('./blaze-stand');
+  const { countOf } = require('./skills');
+  const { raiseShield } = require('./combat');
+  const { STANCE_HEALTH } = require('./danger');
+  stand.volleyWatch(bot);
+  const c = site.cell;
+  if (!bot.entity.position.floored().equals(c)) {
+    stand.claimBlazes?.(bot);
+    try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true, sprint: true }); }
+    catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    if (!bot.entity.position.floored().equals(c)) throw Object.assign(new Error(`the walk to the corner at (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+  }
+  // A corner built where there is none: the wall first, the shield up for
+  // each volley between blocks.
+  for (const w of site.build || []) {
+    task.check(); bot._threatResponseAt = Date.now();
+    if (solid(bot.blockAt(w))) continue;
+    await stand.putOutFlames(bot, task);
+    await stand.shieldVolley(bot, task);
+    const item = blockItem(bot, w);
+    if (!item || require('./work').occupant(bot, w)) continue;
+    require('./combat').lowerShield(bot);
+    try { await require('./work').place(bot, task, w, item.name, { stay: true }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; debug('corner place', `${w}`, err.message); }
+  }
+  const started = Date.now(), startHealth = bot.health ?? 20;
+  let kills = 0;
+  const onDeath = e => { if (e?.name === 'blaze' && Date.now() - (bot._struck?.at || 0) < 6000) kills++; };
+  bot.on('entityDead', onDeath);
+  Object.assign(stats, { seconds: 0, swings: 0, kills: 0, came: 0, ended: 'time' });
+  goal.step = { action: 'corner_ambush', cell: { ...c } }; save?.();
+  const biter = biterWatch(bot);
+  try {
+    while (Date.now() - started < seconds * 1000) {
+      task.check(); bot._threatResponseAt = Date.now();
+      if (countOf(bot, item) >= want) { stats.ended = 'rod'; break; }
+      if (startHealth - (bot.health ?? 20) >= STANCE_HEALTH) { stats.ended = 'hurt'; break; }
+      const came = biter(); if (came) { stats.ended = came; break; }
+      if (await stand.putOutFlames(bot, task)) continue;
+      if (await strikeInReach(bot, task)) { stats.swings++; continue; }
+      if (await stand.shieldVolley(bot, task)) continue;
+      if (!bot.entity.position.floored().equals(c)) { await bunker.stepTo(bot, task, c); continue; }
+      await bot.lookAt(site.edge.offset(0.5, 1.5, 0.5), true);
+      raiseShield(bot);
+      await sleep(150);
+    }
+  } finally { bot.removeListener('entityDead', onDeath); require('./combat').lowerShield(bot); stats.seconds = Math.round((Date.now() - started) / 1000); stats.kills = kills; }
+  return { kills, ended: stats.ended };
+}
+
+// ---- Away to heal -------------------------------------------------------
+// Out of every blaze's line, far enough that none within two comes at it,
+// then eat and wait for the health: hunger 18 or more heals a point every
+// four seconds, and with saturation at full hunger one every half second
+// (FoodData). The blazes stay, and a spawner makes more meanwhile.
+function healSite(bot, blazes, { steps = 14, avoid = [] } = {}) {
+  let best = null;
+  for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
+    if (seeing(bot, blazes, cell).length) continue;
+    const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
+    if (near < 4) continue;
+    const score = n - Math.min(near, 12) * 0.4;
+    if (!best || score < best.score) best = { cell, steps: n, score, nearest: round(near) };
+  }
+  return best || walledHeal(bot, blazes);
+}
+// No rock to go behind within reach: walled in where the bot stands, the
+// box with its window shut, and the side toward them opened again once the
+// health is back.
+function walledHeal(bot, blazes) {
+  const cell = bot.entity.position.floored();
+  const mid = blazes.reduce((s, e) => s.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / blazes.length);
+  const fit = boxFits(bot, boxPlan(bot, cell, mid));
+  if (!fit) return null;
+  const build = [...fit.walls.slice(0, -1), fit.window, fit.walls.at(-1)].filter(c => !solid(bot.blockAt(c)));
+  if (build.length > blocksCarried(bot)) return null;
+  const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
+  return { cell, steps: 0, score: 0, nearest: round(near), build, open: [fit.window.offset(0, -1, 0), fit.window] };
+}
+async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 60, stats = {} } = {}) {
+  const stand = require('./blaze-stand');
+  const { chooseFood } = require('./vitals');
+  const c = site.cell;
+  stand.volleyWatch(bot);
+  const started = Date.now();
+  Object.assign(stats, { seconds: 0, ate: 0, from: bot.health, to: bot.health, ended: 'time' });
+  goal.step = { action: 'leave_and_heal', cell: { ...c } }; save?.();
+  for (let tries = 0; tries < 5 && !bot.entity.position.floored().equals(c); tries++) {
+    task.check(); bot._threatResponseAt = Date.now();
+    if (await stand.putOutFlames(bot, task)) continue;
+    if (await stand.shieldVolley(bot, task)) continue;
+    try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 5000, stallMs: 1500, onFoot: true, sprint: true, stopWhen: () => stand.volleyComing(bot) }); }
+    catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  if (!bot.entity.position.floored().equals(c)) throw Object.assign(new Error(`the walk out of their sight to (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+  if (site.build?.length) await buildBox(bot, task, goal, save, { cell: c, walls: site.build, window: site.open[1] }, { navigate });
+  try {
+    const biter = biterWatch(bot);
+    while (Date.now() - started < seconds * 1000 && (bot.health ?? 20) < 20) {
+      task.check(); bot._threatResponseAt = Date.now();
+      const came = biter(); if (came) { stats.ended = came; break; }
+      if (await stand.putOutFlames(bot, task)) continue;
+      if (await strikeInReach(bot, task)) continue;
+      if (await stand.shieldVolley(bot, task)) continue;
+      const food = (bot.food ?? 20) < 20 ? chooseFood(bot) : null;
+      if (food) {
+        require('./combat').lowerShield(bot);
+        await bot.equip(food, 'hand');
+        const before = bot.food;
+        try { await bot.consume(); stats.ate++; } catch (err) { task.check(); debug('heal eat', err.message); }
+        if (bot.food <= before) await sleep(300);
+        continue;
+      }
+      if ((bot.food ?? 20) < 18) { stats.ended = 'no food'; break; }
+      await sleep(250);
+    }
+    if ((bot.health ?? 20) >= 20) stats.ended = 'healed';
+    // Walled in: the side toward them opened again, the way back out.
+    if (site.open && (bot.health ?? 20) >= 20) for (const o of site.open) if (solid(bot.blockAt(o))) await bunker.digCell(bot, task, o);
+  } finally { stats.seconds = Math.round((Date.now() - started) / 1000); stats.to = bot.health; }
+  return stats;
+}
+
+module.exports = { biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE };

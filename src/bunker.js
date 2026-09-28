@@ -469,7 +469,8 @@ async function digBunker(bot, task, goal, save, { from = null, navigate = null, 
 // question after read the stale hold as a wait the bot had chosen, so none
 // of them was ever held as coming to nothing, and the work's option said
 // "go on with the work: hold bunker".
-const STAND_STEPS = new Set(['dig_bunker', 'hold_bunker', 'collect_rods', 'dig_in_and_fight']);
+// And the tactics of note 606 (blaze-tactics.js).
+const STAND_STEPS = new Set(['dig_bunker', 'hold_bunker', 'collect_rods', 'dig_in_and_fight', 'box_in', 'hold_box', 'light_spawner', 'corner_ambush', 'leave_and_heal']);
 async function keepingStep(goal, save, run) {
   const before = goal.step;
   try { return await run(); }

@@ -5437,7 +5437,16 @@ class Survival {
     const fm = mobs.find(m => m.id === e.id) || mobs.find(m => m.name === e.name && !m.apart);
     // The one faced blocks into the shield: nothing, and no wither. The rest
     // as the fight meets them, the first of them closed on.
-    const others = mobs.map(m => (m === fm ? { ...m, apart: true } : m));
+    // The shield faces the one faced: a shooter more than sixty degrees off
+    // that way lands as if it were down, and its fire with it.
+    // mid-242-ba-nether-2 stood in this stance facing a wither skeleton four
+    // off while blazes five to nine off on its other side set it alight,
+    // 7.1 to none (2026-09-28 14:09:52, note 606).
+    const { SHIELD_COVER } = require('./blaze-stand');
+    const bearing = p => Math.atan2(p.z - bot.entity.position.z, p.x - bot.entity.position.x) * 180 / Math.PI;
+    const off = p => { const d = Math.abs(((bearing(p) - bearing(e.position)) % 360 + 540) % 360 - 180); return d; };
+    const flanking = mobs.filter(m => m.shoots && bot.entities?.[m.id]?.position && off(bot.entities[m.id].position) > SHIELD_COVER);
+    const others = mobs.map(m => (m === fm ? { ...m, apart: true } : flanking.includes(m) ? { ...m, unshielded: true } : m));
     const rest = others.filter(m => !m.apart && !m.far && m.name !== 'creeper');
     const price = stanceCost({ mobs: others, ...(rest.length ? { fight: { lead: true } } : {}), shield: true, health: bot.health });
     const weapon = defenseWeapon(bot);
@@ -5447,7 +5456,9 @@ class Survival {
     const kill = swings ? ` To kill: about ${swings} swing${swings === 1 ? '' : 's'} that land, one after each of its blows or as it comes in, about ${Math.max(1, Math.round(swings * every))} seconds once it is at reach.` : '';
     const wither = fm?.withers ? ' A wither skeleton\'s wither comes only with a blow that hurts: a blow the shield takes gives none.' : '';
     const crowd = rest.filter(m => !m.shoots).length;
-    const flank = crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '';
+    const kinds = [...new Set(flanking.map(m => m.name.replaceAll('_', ' ')))];
+    const sideFire = flanking.length ? ` The shield faces the ${name}: ${flanking.length === 1 ? `the ${kinds[0]}` : `${flanking.length} ${kinds.length === 1 ? `${kinds[0]}s` : 'shooters'}`} here ${flanking.length === 1 ? 'is' : 'are'} more than ${SHIELD_COVER} degrees off that way, so ${flanking.length === 1 ? 'its shots land' : 'their shots land'} as if it were down${kinds.includes('blaze') ? ', each fireball with five seconds alight' : ''}, counted below.` : '';
+    const flank = sideFire + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
       description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}` + costSays(price, bot.health, others),

@@ -512,7 +512,7 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
       // reckoned for the one fought (note 535).
       const from = Math.max(t, m.shoots ? inRange(m) : 0);
       if (m.shoots) {
-        pieces.push(...shotPieces(m, shield, from, end));
+        pieces.push(...shotPieces(m, shield && !m.unshielded, from, end));
         if (m.poisons && m.visible && end > from && !poisoning.has(m)) poisoning.set(m, from);
         return;
       }
@@ -817,6 +817,9 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   // next blow falls is not known, so its blows are its steady rate.
   const hurts = (m, from, to, shielded, anchor = from) => {
     if (!(to > from)) return;
+    // A shooter off the side the shield faces (`unshielded`: a stance that
+    // faces one mob) lands as if it were down (note 606).
+    if (m.unshielded) shielded = false;
     if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to));
     else {
       const every = m.jab ? 1 : MOBS[m.name]?.blowEvery || 1, hit = bites(m);

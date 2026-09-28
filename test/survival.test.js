@@ -855,7 +855,9 @@ test('Jev picks the stance once and it holds; unsure, its pick still stands', as
   bot.inventory.items = () => [{ name: 'iron_sword' }, { name: 'bow', count: 1, durabilityUsed: 0 }, { name: 'arrow', count: 8 }, { name: 'cobblestone', count: 20 }];
   assert(await controller.step(task, goal, () => {}));
   assert.equal(goal.decisions.at(-1).id, 'encounter_stance');
-  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['charge_shooter', 'fight', 'keep_working', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
+  // A blaze among them and twenty blocks carried: the box and the corner
+  // too (note 606).
+  assert.deepEqual(Object.keys(calls[0].questions.branch_0.criteria).sort(), ['box_here', 'charge_shooter', 'corner_ambush', 'fight', 'keep_working', 'pillar', 'retreat', 'seal', 'shoot_17', 'shoot_7']);
   assert.deepEqual(calls[0].state.threats, [{ name: 'skeleton', distance: 10, shoots: true, visible: true }, { name: 'blaze', distance: 11.7, shoots: true, visible: true }]);
   assert.deepEqual(events, ['navigate'], 'the retreat ran');
   bot.entity.position = new Vec3(.5, 64, .5);

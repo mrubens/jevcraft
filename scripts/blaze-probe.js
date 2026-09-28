@@ -41,6 +41,13 @@ bot.once('spawn', async () => {
     run(`fill ${X - 1} ${Y} ${Z - 1} ${X} ${Y + 2} ${Z + 1} minecraft:netherrack`);
     run(`fill ${X} ${Y} ${Z} ${X} ${Y + 1} ${Z} minecraft:air`);
   }
+  // PROBE_BOX=1: the probe walled in at feet and head and roofed, one block
+  // open at head height toward the blazes (the box of note 606).
+  if (process.env.PROBE_BOX) {
+    run(`fill ${X - 1} ${Y} ${Z - 1} ${X + 1} ${Y + 2} ${Z + 1} minecraft:cobblestone`);
+    run(`fill ${X} ${Y} ${Z} ${X} ${Y + 1} ${Z} minecraft:air`);
+    run(`setblock ${X + 1} ${Y + 1} ${Z} minecraft:air`);
+  }
   say(`effect clear ${NAME}`); say(`effect give ${NAME} minecraft:instant_health 1 20 true`);
   await sleep(2500);
   volleyWatch(bot);

@@ -113,7 +113,19 @@ const CAVE_KIT = Object.freeze({
   offhand: 'shield',
   items: [['iron_sword', 1], ['stone_axe', 1], ['netherrack', 53], ['dirt', 6], ['mutton', 8]],
 });
-const kitOf = d => (d.loadout === 'fortress' ? FORTRESS_KIT : d.loadout === 'cave' ? CAVE_KIT : KIT);
+// What the fortress trials of 2026-09-28 carried to the blazes when they
+// died there (mid-242-ba-fortress-2 on 25594 at 12:59: an iron helmet and
+// chestplate, a shield, an iron sword, a stone pickaxe, coal by the
+// hundred, a stick; blocks it had run down to one): the kit the tactics of
+// note 606 were measured with, blocks enough to build with and coal and
+// sticks for torches.
+const TRIAL_KIT = Object.freeze({
+  armor: { head: 'iron_helmet', chest: 'iron_chestplate' },
+  offhand: 'shield',
+  items: [['iron_sword', 1], ['stone_pickaxe', 1], ['cobblestone', 24], ['coal', 16], ['stick', 8], ['cooked_beef', 6]],
+});
+const KITS = { fortress: () => FORTRESS_KIT, cave: () => CAVE_KIT, trial: () => TRIAL_KIT };
+const kitOf = d => (KITS[d.loadout]?.() || KIT);
 
 // The fortress loadout: the iron set with golden boots for the piglin
 // truce, a diamond sword, a shield, blocks to wall with and food to heal on.
@@ -387,6 +399,9 @@ function summarise(d, runs) {
   for (const r of runs) for (const c of r.chose || []) if (c) chose[c] = (chose[c] || 0) + 1;
   return { drill: d.name, mode: d.mode, runs: runs.length, deaths, cleared, drops, damage, seconds,
     strikes: median(runs.map(r => r.strikes)), shieldRaises: median(runs.map(r => r.shieldRaises)),
+    // Every run's length, won, lost or run out (note 606): the time a tactic
+    // takes, where the cleared median counts only the runs that cleared.
+    kills: runs.reduce((n, r) => n + (r.kills || 0), 0), elapsed: median(runs.filter(r => Number.isFinite(r.elapsedMs)).map(r => Math.round(r.elapsedMs / 100) / 10)),
     actions, chose, verdict: failures.length ? 'FAIL' : 'PASS', failures };
 }
 
@@ -403,4 +418,4 @@ function table(rows) {
   return [line(header), `|${widths.map(w => '-'.repeat(w + 2)).join('|')}|`, ...body.map(line)].join('\n');
 }
 
-module.exports = { ARENAS, DRILLS, KIT, FORTRESS_KIT, CAVE_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, healthCommand, spawnCommands, median, summarise, table };
+module.exports = { ARENAS, DRILLS, KIT, FORTRESS_KIT, CAVE_KIT, TRIAL_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, healthCommand, spawnCommands, median, summarise, table };

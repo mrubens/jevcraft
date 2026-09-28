@@ -273,3 +273,25 @@ test('a meal with a wither skeleton at the bot within it is priced with its blow
   assert.match(options.eat.description, /About [\d.]+ damage from the mobs here while it eats, from 6\.4 health \(more than the bot has\)/);
   assert.match(options.eat.description, /The wither skeleton 6 blocks off, at its own speed, is at arm's length about 1\.3 seconds into the meal, the hand busy and the shield down: its blow, about 4\.5 after armour, and the wither after it, about 5 more over ten seconds that armour does not stop, lands before the meal is eaten\. It deals with none of them/);
 });
+
+// mid-242-ba-nether-2 (25590, 14:09:52): shield_guard chosen at 11.1 facing
+// a wither skeleton four off, blazes five to nine off on the other side;
+// they set it alight from 7.1 to none while the shield faced the skeleton
+// (note 606).
+test('the shield guard faces the biter: a blaze off its side is priced as if the shield were down, its fire with it, and said so', () => {
+  const { threats } = require('../src/danger');
+  const blazeOn = (id, x, z) => ({ id, name: 'blaze', type: 'hostile', position: AT.offset(x, 1, z), height: 1.8, width: 0.6, isValid: true, metadata: { 16: 0 } });
+  const behind = cavernBot({ health: 11.1, skeletonAt: AT.offset(0, 0, -4), extra: [blazeOn(2, 0, 5), blazeOn(3, 1, 7)] });
+  behind.bot.blockAt = flat; behind.bot.world = { raycast: () => null };
+  const ahead = cavernBot({ health: 11.1, skeletonAt: AT.offset(0, 0, -4), extra: [blazeOn(2, 0.5, -5), blazeOn(3, 1, -7)] });
+  ahead.bot.blockAt = flat; ahead.bot.world = { raycast: () => null };
+  const guardOf = ({ bot }) => {
+    const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, threats(bot, 24), false).shield_guard;
+  };
+  const back = guardOf(behind), front = guardOf(ahead);
+  assert.ok(back && front);
+  assert.match(back.description, /The shield faces the wither skeleton: 2 blazes here are more than 60 degrees off that way, so their shots land as if it were down, each fireball with five seconds alight, counted below\./);
+  assert.doesNotMatch(front.description, /more than 60 degrees off/);
+  assert.ok(back.expects.damage > front.expects.damage + 1, `${front.expects.damage} with the blazes in front, ${back.expects.damage} behind`);
+});
