@@ -3939,7 +3939,8 @@ test('the run from an enderman says it teleports after the bot', () => {
   const bot = crowdBot({ health: 12 });
   const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
   const options = survival.stanceOptions(new Task('t'), {}, () => {}, [crowdMob(1, 'enderman', 3)], false);
-  assert.match(options.retreat.description, /An enderman after the bot teleports to it: a run from one ends with it beside the bot again/);
+  // And outruns the bot's sprint (note 578).
+  assert.match(options.retreat.description, /An enderman after the bot runs at about 8\.7 blocks a second, faster than the bot sprints \(5\.6\), and teleports toward it once it is more than sixteen blocks off: a run from one ends with it beside the bot again/);
 });
 
 test('held on a span with a shot on its way and no walls or ground to be had, the shield comes up', async () => {

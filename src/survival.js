@@ -12,7 +12,7 @@ const { maintainVitals, chooseFood, lastResortFood, sideEffectSays, checkAir } =
 const { foodSupply, lastResortSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { kitReady } = require('./mob-policy');
-const { fightEstimate, stanceCost, RANGE, blocksPerSecond, followRange, bodyHeight } = require('./combat-estimate');
+const { fightEstimate, stanceCost, RANGE, blocksPerSecond, followRange, bodyHeight, PLAYER_SPRINT } = require('./combat-estimate');
 const { walkersApart, apartSays } = require('./walk-reach');
 const { darkCells, groundCells, placeTorches, lightSources, blockLight } = require('./torches');
 // Dark enough where the bot stands for monsters to spawn: a fact for the
@@ -2267,7 +2267,11 @@ class Survival {
       const walls = !openSides.length ? ' No side of the span at the feet is open over the drop.'
         : pushers.length ? (carried >= wallBlocks ? ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} walled first: ${wallBlocks} block${wallBlocks === 1 ? '' : 's'}, about ${Math.round(wallBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSays}; a push stops at a wall, and the walls stay up while the bot holds here.` : ` Too few blocks carried (${carried}${planks ? `, counting the ${planks.available} planks the logs make` : ''}) to wall the ${openSides.length} open side${openSides.length === 1 ? '' : 's'} (${wallBlocks}): with something pushing it steps off the span to firm ground within eight instead, if there is any.`)
         : ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} left open while nothing pushes.`;
-      options.hold_on_span = { description: `Hold still and crouched on the span: nothing is turned to or walked from, what comes to arm's length is struck crouched, and a shot on its way meets the shield, crouched (a player crouched does not walk off an edge, but a hit or a shot's push still throws it).${walls}${spanCreeper ? ` A creeper ${Math.round(spanCreeper.distance)} blocks off: off the span away from it first, walls do not stop a blast.` : ''}${pushSays}${edge}`,
+      // Priced as the rail is (note 578): the walls first under what is at
+      // reach, then what comes struck where it stands, the shooters shooting.
+      const holdSetup = spanWalled ? wallBlocks * BLOCK_SECONDS + (planks && stock < wallBlocks ? 1 : 0) : 0;
+      const holdCost = stanceCost({ mobs, setup: holdSetup, fight: { only: m => !m.shoots }, reaches: m => m.shoots, shield: shielded });
+      options.hold_on_span = { expects: { damage: holdCost.damage, seconds: holdCost.seconds, oneHit }, description: `Hold still and crouched on the span: nothing is turned to or walked from, what comes to arm's length is struck crouched, and a shot on its way meets the shield, crouched (a player crouched does not walk off an edge, but a hit or a shot's push still throws it).${walls}${spanCreeper ? ` A creeper ${Math.round(spanCreeper.distance)} blocks off: off the span away from it first, walls do not stop a blast.` : ''}${pushSays}${edge}` + costSays(holdCost, bot.health, mobs, { doing: holdSetup ? 'walling' : null, done: 'Held' }),
         run: () => this.holdOnSpan(task, goal, save) };
     }
     // Where there is no ground to go to, the edge walled at the feet, then
@@ -2298,13 +2302,16 @@ class Survival {
       // and no figure beside the fight's 116.5 against a piglin brute 6.9
       // blocks off, was chosen at 0.66, and the brute was at it in a
       // second and struck twice, 12.2 each (note 576).
+      // mid-242-ac-nether-3 was offered it with an enderman at arm's length
+      // told only "hitting freely meanwhile", took it twice, and was hit from
+      // 11.9 to none with no wall up; the planks' second counts too (note 578).
       const railSetup = railBlocks * BLOCK_SECONDS + (railMade ? 1 : 0);
       const railCost = noStep ? stanceCost({ mobs, setup: railSetup, shield: shielded })
         : stanceCost({ mobs, setup: railSetup, fight: { lead: true, atOnce: opening ? Infinity : open + inCell.length }, shield: shielded, health: bot.health });
       options.rail_and_fight = { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit },
         description: noStep
           ? `${railing}, then hold here behind it: a push from a shot that lands, or a step back, stops at the wall; nothing is at reach to swing at, and the shooters still shoot where the bot stands.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Behind the wall' })
-          : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Walled' }) + hitsLeft,
+          : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: railMade ? 'making the planks and walling' : 'walling', done: 'Walled' }) + hitsLeft,
         run: async () => {
           if (!await this.railSpan(task, goal, save, { blast: danger.some(t => t.entity.name === 'ghast') })) return false;
           return noStep ? true : options.fight.run();
@@ -2849,7 +2856,10 @@ class Survival {
     // one three times, told only that a way was found, and was hit on
     // arrival each time, 16 health to none (2026-09-27).
     const endermen = danger.some(t => t.entity.name === 'enderman');
-    const endermanSays = endermen ? ' An enderman after the bot teleports to it: a run from one ends with it beside the bot again.' : '';
+    // It runs at about 8.7 blocks a second angry, past the bot's sprint,
+    // and teleports toward one more than sixteen off (combat-estimate MOBS
+    // and CHASE, note 578).
+    const endermanSays = endermen ? ` An enderman after the bot runs at about ${Math.round(blocksPerSecond('enderman') * 10) / 10} blocks a second, faster than the bot sprints (${Math.round(PLAYER_SPRINT * 10) / 10}), and teleports toward it once it is more than sixteen blocks off: a run from one ends with it beside the bot again.` : '';
     options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + riderSays + endermanSays + footing + chase + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // With no way passing every mob, the way past the reach of what bites,

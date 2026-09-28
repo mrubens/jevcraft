@@ -112,7 +112,17 @@ const MOBS = {
   skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 16, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, poisons: 5, note: 'each arrow that lands poisons the bot for five seconds: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
   pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, poisons: 45, note: 'harming potions go through armour; its first at a bot not yet poisoned is poison, forty-five seconds of one health every 1.25 seconds that armour does not stop, only while health is above 1; slowness keeps the bot from getting away' },
   creeper: { hit: 24, health: 20, note: 'the hit is its blast two blocks off, once; fought, it goes off where the bot stands when its fuse ends (creeperFought)' },
-  enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
+  // An enderman, from the 26.1.2 jar (EnderMan): struck by a blade it does
+  // not teleport (only a hurt from no living thing does, nine in ten), an
+  // arrow or a potion makes it teleport and does nothing to it; angry, it
+  // goes 0.15 faster (SPEED_MODIFIER_ATTACKING, CHASE below), and teleports
+  // toward a player more than sixteen blocks off. `struck`: the hits a
+  // second it lands while it is the one being struck, where the rest land a
+  // third (STRUCK): in the bot's three enderman fights with three or more
+  // swings (25589 and 25598 on 2026-09-27 and 28, mid-242-ac-nether-3) it
+  // landed 14 hits in 20.4 seconds, about 0.7 a second; a swing's knockback
+  // is walked back at its speed before its next blow is due.
+  enderman: { hit: 7, health: 40, struck: 0.7, note: 'while it is the one being struck it still lands about 0.7 of its hits a second (most mobs a swing knocks back land a third); a sword\'s blow does not make it teleport, an arrow does (and does nothing to it); a shield raised toward it takes its blow; it is 2.9 tall and cannot come into a space under three blocks high, so a two-high pocket or hole keeps it out; angry, it runs at about 8.7 blocks a second, faster than the bot sprints, and teleports toward a player more than sixteen blocks off' }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
   zombified_piglin: { hit: 8, health: 20, armor: 2 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
   hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
   wither_skeleton: { hit: 8, health: 20, withers: WITHER.perSecond, note: 'each hit withers the bot for ten seconds, renewed by the next: about one health every two seconds that armour does not stop, and it can take the last' }, blaze: { hit: 5, health: 20, shoots: true, burns: 1, note: 'sets alight: each fireball that lands burns for five seconds more, about one a second through armour, and there is no water in the Nether to put it out' },
@@ -393,7 +403,10 @@ const groundSpeed = s => s * s * 0.98 * 20 / (1 - 0.6 * 0.91);
 // would be 12 to 15 blocks behind at their end and it was 8.6 to 9.2 (note
 // 550); mid-242-ac-nether-1-fortress-1 ran from one three times, told it
 // would be about 10 behind, and it was at the bot again each time (note 559).
-const CHASE = { wither_skeleton: 1.2 };
+// An angry enderman goes 0.15 faster than its 0.3 (EnderMan.setTarget adds
+// SPEED_MODIFIER_ATTACKING): about 8.7 blocks a second. mid-242-ac-nether-3's
+// came 2.2 blocks in a quarter second, 8.8 (note 578).
+const CHASE = { wither_skeleton: 1.2, enderman: 1.5 };
 const blocksPerSecond = name => groundSpeed((MOB_SPEED[name] ?? 0.25) * (CHASE[name] ?? 1));
 const followRange = name => FOLLOW_RANGE[name] ?? 16;
 // The bot's own run, the same way: the input 0.98 at the sprint's speed.
@@ -472,7 +485,7 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
       let perSecond;
       if (m.jab) perSecond = m.jab;
       else if (++biters > atOnce) return;
-      else perSecond = (j === 0 && !m.inCell ? STRUCK : 1) * m.hitsBot;
+      else perSecond = (j === 0 && !m.inCell ? MOBS[m.name]?.struck ?? STRUCK : 1) * m.hitsBot;
       // Closed on first: its hits as they came while the bot got to it.
       const closing = j === 0 && led > 0 && !m.jab && !m.inCell ? Math.min(led, end - from) : 0;
       if (closing > 0) pieces.push({ from, to: from + closing, perSecond: PACE.leadBites * m.hitsBot, hit: m.hitsBot });
