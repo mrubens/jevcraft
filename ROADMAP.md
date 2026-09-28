@@ -1,10 +1,10 @@
 # Roadmap
 
-The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). These are priorities, not dates. Where things stand is in the [README](README.md#where-it-stands) and the [trial notes](docs/trial-notes.md).
+The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). The items are in order of priority, without dates. Where things stand is in the [README](README.md#where-it-stands) and the [trial notes](docs/trial-notes.md).
 
 ## Done
 
-- The first three in-game days: iron tools and armor, a shield, a bed and a home, with no deaths (`scripts/first-days.js`).
+- The first three in-game days, passed by four trials so far (`scripts/first-days.js`). Two passes in a row is still open.
 - Reaching the Nether from a fresh world (15 of 40 on 2026-09-28, median 28 minutes) and finding a fortress.
 - Most reflexes and hand-written rules handed to Jev as questions ([rule audit](docs/rule-audit.md)).
 
@@ -29,7 +29,7 @@ The milestone is two fortress runs in a row that reach six rods and twelve pearl
 
 ## Companion
 
-The chat companion shares the same code and gets better along the way. Open items: longer multi-item requests without repeated work, keeping a request through a death or disconnect, oriented blocks (stairs, slabs, doors) in builds, and farming, breeding and trading as ways to get items.
+The chat companion runs on the same code, so the game work improves it too. Open items: longer multi-item requests without repeated work, keeping a request through a death or disconnect, oriented blocks (stairs, slabs, doors) in builds, and farming, breeding and trading as ways to get items.
 
 ## Tooling
 

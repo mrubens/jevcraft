@@ -16,25 +16,23 @@ Starting from a fresh world with an empty inventory, 15 of the 40 worlds we star
 
 ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif)
 
-**A win.** A blaze hunt in a Nether fortress. Code offered Jev five things to do about the blazes and it picked `close_in` (p=0.42, in 0.15 seconds) over `dig_in_and_fight` (0.21), leaving them (0.14) and two others. It walked in, killed one blaze and picked up its rod. Each of those options said what it would cost the bot in health and seconds, and what it would gain toward the six rods.
+A win: a blaze hunt in a Nether fortress. Code offered Jev five things to do about the blazes and it picked `close_in` (p=0.42, in 0.15 seconds) over `dig_in_and_fight` (0.21), leaving them (0.14) and two others. It walked in, killed one blaze and picked up its rod. Each of those options said what it would cost the bot in health and seconds, and what it would gain toward the six rods.
 
 ![A ghast's fireball knocks Jev into lava](docs/media/ghast-death.gif)
 
-**A loss.** Jev chose to `fight` (p=0.22) a ghast, and a fireball knocked it off its footing into lava. Nothing in the options priced a push over the edge. That death led to note 612, which added a way to step back from the edge. This is how most of the improvements happen: a death shows a missing option or a wrong price, and the fix goes into the menu. See [More clips](docs/media/) for a wither skeleton kill and the trip into the Nether.
+A loss: Jev chose to `fight` (p=0.22) a ghast, and a fireball knocked it off its footing into lava. Nothing in the options priced a push over the edge. That death led to note 612, which added a way to step back from the edge. Most improvements start this way: a death shows a missing option or a wrong price, and the fix goes into the menu. See [More clips](docs/media/) for a wither skeleton kill and the trip into the Nether.
 
 ## Where it stands
 
-- **Early game:** the first three in-game days (iron tools and armor, a shield, a bed, a home) with no deaths have passed in repeated trials ([GOAL.md](GOAL.md)).
-- **The Nether:** 15 of 40 fresh worlds on 2026-09-28 got there, in a median of 28 minutes (7 to 143). Most of the other 25 died or were still going when this was counted.
-- **Blaze rods:** a handful of trials have taken one or two. None has taken the six needed. What kills the bot now is blazes at a spawner, fireballs that push it into lava, and running out of health in the Nether with little food.
-- **Cost and speed (measured on the same day):** 22,800 decisions over about 178 bot-hours, a median answer of 186 ms (90th percentile 292 ms), about 3,100 input tokens a decision. At TypeSafe's published price of $0.042 per million input tokens (output is free), that is about 1.7 cents per bot-hour.
-- **The dragon:** only fought from staged worlds.
+- Early game: four trials have passed the first-days audit (three in-game days with no deaths, and iron tools and armor, a shield, a bed and a home). The goal asks for two passes in a row, and that has not happened yet ([GOAL.md](GOAL.md)).
+- The Nether: 15 of 40 fresh worlds on 2026-09-28 got there, in a median of 28 minutes (7 to 143). Most of the other 25 died or were still going when this was counted.
+- Blaze rods: a few trials have taken one or two. None has taken the six needed. The bot now dies to blazes at a spawner, to fireballs that push it into lava, and from running out of health in the Nether with little food.
+- Cost and speed, measured the same day: 22,800 decisions over about 178 bot-hours, a median answer of 186 ms (90th percentile 292 ms), about 3,100 input tokens a decision. At TypeSafe's published price of $0.042 per million input tokens (output is free), that is about 1.7 cents per bot-hour.
+- The dragon: only fought from staged worlds.
 
-**Help Jev survive the blaze spawner.** The [roadmap](ROADMAP.md) has what comes next, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how a concrete failure becomes a test and a general fix.
+The next problem is surviving the blaze spawner. The [roadmap](ROADMAP.md) has the order of work, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how a concrete failure becomes a test and a general fix.
 
 ## What we tried and learned
-
-The surprising ones first.
 
 ### Loops
 
@@ -46,7 +44,7 @@ Judging by deaths alone missed some of the worst trials, which never died. The p
 
 ### Fix facts, not rules
 
-When Jev chooses badly, the fix is almost always a wrong price, a false fact or a missing option, not a new threshold. In note 614, Jev kept choosing cover with a blaze four blocks away. The charge was offered only when the bot had a shield, which it didn't; other options' text assumed the shield it didn't have; and no option said what it gained toward the rods. Fixing those changed the answers.
+When Jev chooses badly, the cause is almost always a wrong price, a false fact or a missing option, and a new threshold does not fix it. In note 614, Jev kept choosing cover with a blaze four blocks away. The charge was offered only when the bot had a shield, which it didn't; other options' text assumed the shield it didn't have; and no option said what it gained toward the rods. Fixing those changed the answers.
 
 ### Confidence gates
 
@@ -82,7 +80,7 @@ The agents change the bot's code, prices and options. Jev itself is not retraine
 
 1. Run 7 to 20 trials in parallel, one Minecraft server each. Most start from saved stages (entering the Nether, reaching a fortress) so the hard parts get many attempts per hour. Stage saves come from [checkpoint.sh](scripts/trials/checkpoint.sh), which snapshots every trial every 30 seconds.
 2. A watcher reports each death or loop. The [progress audit](scripts/trials/progress-audit.js) and trail maps catch trials that are stuck without failing.
-3. A Claude subagent triages each failure in its own git worktree. It starts from the [death timeline](scripts/death-timeline.js), which shows the last seconds frame by frame with every decision, and the [flight record](src/recorder/index.js), one frame per second plus one per decision. It fixes the cause in general, adds tests that fail without the fix, checks the recorded question against live Jev before and after, and writes a trial note. Most of notes 500 to 624 were written this way.
+3. A Claude subagent triages each failure in its own git worktree. It starts from the [death timeline](scripts/death-timeline.js), which shows the last seconds frame by frame with every decision, and the [flight record](src/recorder/index.js), one frame per second plus one per decision. It fixes the cause in general, adds tests that fail without the fix, checks the recorded question against live Jev before and after, and writes a trial note. Most of notes 500 to 625 were written this way.
 4. Fixes are merged in a separate worktree after `npm test`, a `JEV_ARBITER=shadow` check and the [replay suite](scripts/replay-suite.js): recorded questions from past failures, each with acceptable and forbidden answers, asked live five times. The suite runs in seconds with no Minecraft server.
 5. Bots pick up new code with a quiet restart: each quits once no mob is within 16 blocks, or after five minutes, and its supervisor restarts it.
 6. Every three hours, a Fable subagent reads the trial notes, the logs and the open problems and gives design advice, without changing code. We act on the advice that holds up. Two of its reviews changed the design: one recommended the single ledger in place of the separate lists (note 571), and one found that held stances were not recorded in the ledger, which explained a whole class of loops (note 599).
@@ -142,12 +140,12 @@ On 2026-09-28 the trials made about 130 of these decisions per bot-hour (22,800 
 
 ### What Jev sees
 
-The `state` is not a dump of the game. It holds what a player would weigh for this decision, worked out by code: health, armor and weapon, the threats with their distance and whether they can be reached, and a fight estimate. A few context fields appear on every play question:
+The `state` holds only what a player would weigh for this decision, worked out by code: health, armor and weapon, the threats with their distance and whether they can be reached, and a fight estimate. A few context fields appear on every play question:
 
 - `riskNow`: how bad things are right now (hostiles in range, shots incoming, what fighting all of them would cost).
 - `healing`: whether health comes back here, what food is carried, where the nearest food is.
 - `deathWouldCost`: what would drop, the walk back from respawn, and the real minutes to make it all again.
-- `runClock`: minutes played, what the bot is working on, and where the time has gone. This lets Jev see it has spent too long on something.
+- `runClock`: minutes played, what the bot is working on, and where the time has gone, so Jev can see it has spent too long on something.
 - `recentPositions`: where the bot has been, every 15 seconds, so it can see it is going in circles.
 - `previousStance`: the last answer to this question, how long ago, and why it is being asked again.
 
@@ -234,7 +232,7 @@ Jev only chooses among options, so some things are not questions:
 
 [docs/rule-audit.md](docs/rule-audit.md) lists what code still decides and why.
 
-Jev is only as good as the options and prices it is given. It cannot invent an option, and it does not redo arithmetic that the description got wrong. When it chooses badly, the cause has almost always been a missing option or a false fact.
+Jev is only as good as the options and prices it is given. It cannot invent an option, and it does not redo arithmetic that the description got wrong.
 
 ## Run it yourself
 
@@ -289,8 +287,6 @@ The first-days trial lasts an hour of real time, three in-game days. To watch, r
 
 More in [docs/](docs/README.md). [How Jev thinks](docs/how-jev-thinks.md) walks through a chat request end to end.
 
----
-
 ## Using Jev as a chat companion
 
 The same bot takes requests in game chat. Setup is under [Play alongside Jev](#play-alongside-jev). Start messages with "Jev":
@@ -320,7 +316,7 @@ A chat request always comes first; the dream picks up again when the request is 
 
 In Survival, Jev builds from templates (cottage, mansion, tower) that it configures, or picks from about 30 ready-made designs, and gathers the materials first.
 
-In Creative mode the bot has every block, so building is limited only by the design. Here you can connect a generative LLM as the designer: set `OPENROUTER_API_KEY` and `BUILD_DESIGNER=openrouter` (or `auto`), and choose the model with `OPENROUTER_BUILD_MODEL` (default `anthropic/claude-opus-5.5`). The LLM draws a schematic from the request and a survey of the terrain. Code checks that it is valid (up to 25 × 16 × 25 blocks, at most 16 materials), and Jev judges whether it matches the request before any block is placed. Jev never builds over a structure it did not place. Without a key, or with `BUILD_DESIGNER=jev`, it uses the templates.
+In Creative mode the bot has every block. There you can connect a generative LLM as the designer: set `OPENROUTER_API_KEY` and `BUILD_DESIGNER=openrouter` (or `auto`), and choose the model with `OPENROUTER_BUILD_MODEL` (default `anthropic/claude-opus-5.5`). The LLM draws a schematic from the request and a survey of the terrain. Code checks that it is valid (up to 25 × 16 × 25 blocks, at most 16 materials), and Jev judges whether it matches the request before any block is placed. Jev never builds over a structure it did not place. Without a key, or with `BUILD_DESIGNER=jev`, it uses the templates.
 
 ## Development
 
@@ -333,4 +329,4 @@ Gameplay tests, trials and the arena need a separate, disposable server. See [CO
 
 ## Restrictions
 
-Jev never hurts a chicken or a pig (they are the favorite animals of the author's daughters).
+Jev never hurts a chicken or a pig. They are my daughters' favorite animals.
