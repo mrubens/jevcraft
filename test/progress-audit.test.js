@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('fs'), os = require('os'), path = require('path');
-const { readFlight, readBotLog, measure } = require('../scripts/trials/progress-audit');
+const { readFlight, readBotLog, firstCarried, measure, reviewLines } = require('../scripts/trials/progress-audit');
 
 // A fortress trial busy but going nowhere, as mid-242-aa-nether-1-fortress-1
 // was (2026-09-27): back and forth over the same few columns it already
@@ -80,4 +80,74 @@ test('a trial covering new ground and reaching a milestone is not flagged', () =
   assert.equal(m.ground.newShare, 1);
   assert.deepEqual(m.flags, []);
   assert.match(m.verdict, /^moving: .*100% new ground, last milestone 5 min ago/);
+});
+
+// The design review's measures (note 573) on a small Nether window: a
+// question answered eight times, each back in half a second with nothing
+// gained; a hold in the bot log and the question asked again after it; a
+// quarter of the clock on persist; a walk east over new ground toward a
+// fortress and a blaze; a fortress first seen 35 min after the Nether and
+// the first rod 50 min after it.
+test('the review measures: quick answers, re-asks after a hold, stall share, Nether ground, firsts, the rung\'s target', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'progress-'));
+  const from = t0, to = t0 + 15 * min, lines = [];
+  const snap = (x, extra = {}) => ({ position: { x, y: 70, z: 0 }, dimension: 'the_nether', inventory: { netherrack: 10, ...(extra.inv || {}) }, ...extra.more });
+  // Walking east a block every 9 s: 100 blocks, 26 columns new.
+  for (let s = 0; s <= 900; s += 9) lines.push({ kind: 'observation', snapshot: { ...snap(s / 9), mobs: s === 0 ? [{ id: 7, name: 'blaze', at: { x: 300, y: 70, z: 0 } }] : [] }, at: iso(from + s * 1000) });
+  // The first rod, carried from minute 10.
+  lines.push({ kind: 'action', snapshot: snap(60, { inv: { blaze_rod: 0 } }), at: iso(from + 9 * min) });
+  lines.push({ kind: 'action', snapshot: snap(67, { inv: { blaze_rod: 1 } }), at: iso(from + 10 * min) });
+  // fortress_approach eight times at x 20, half a second apart, nothing gained.
+  for (let i = 0; i < 8; i++) {
+    const at = from + 3 * min + i * 500;
+    lines.push({ kind: 'decision', snapshot: { ...snap(20), decision: { id: 'fortress_approach', at: iso(at), askedAt: iso(at - 150), path: ['other_way'], judgments: [{}] } }, at: iso(at) });
+  }
+  // fortress_leg twice a second apart, but a walk of five blocks between: not quick.
+  for (const [i, x] of [[0, 30], [1, 35]]) {
+    const at = from + 5 * min + i * 1000;
+    lines.push({ kind: 'decision', snapshot: { ...snap(x), decision: { id: 'fortress_leg', at: iso(at), askedAt: iso(at - 100), path: ['leg_east'], judgments: [{}] } }, at: iso(at) });
+  }
+  // The run clock: 3 of 12 min on persist.
+  const recent = [];
+  for (let s = 0; s < 12 * 60; s += 15) recent.push([from + (s + 15) * 1000, s < 3 * 60 ? 'obtain_blaze_rods: persist' : 'obtain_blaze_rods: find_fortress', 15000]);
+  lines.push({ kind: 'action', snapshot: { ...snap(99), goal: { gameProgress: { phase: 'obtain_blaze_rods', clock: { recent } } } }, at: iso(from + 14 * min) });
+  lines.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  fs.writeFileSync(path.join(dir, `${id}-2026-09-27T20-00-00-000Z.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+  // The bot log: an answer, the hold, the same answer said again, and the question asked again after it.
+  const log = path.join(dir, 'bot.log');
+  const said = at => `{"status":"running","decision":{"at":"${iso(at)}","askedAt":"${iso(at - 100)}","id":"fortress_approach","kind":"fortress","path":["other_way"]}}`;
+  fs.writeFileSync(log, [said(from + 3 * min), '[repeat] fortress approach: other way was chosen 2 times in the last 1 second with these same facts, and nothing measurable came of any of them',
+    said(from + 3 * min), said(from + 3 * min + 400), said(from + 3 * min + 400), ''].join('\n'));
+
+  const { frames, history } = readFlight({ identity: id, from, to, historyFrom: from - 60 * min, dir });
+  const firstRodAt = firstCarried({ identity: id, item: 'blaze_rod', from: from - 60 * min, dir });
+  assert.equal(firstRodAt, from + 10 * min);
+  const known = { gameProgress: { milestones: { nether_entered: { at: from - 40 * min } } },
+    landmarks: [{ kind: 'nether_fortress', x: 200, y: 60, z: 0, dimension: 'nether', firstAt: from - 5 * min }] };
+  const m = measure({ frames, history, from, to, trial: { startedAt: iso(from - 60 * min) }, botLog: readBotLog(log, from), minutes: 15, historyMinutes: 60, known, firstRodAt });
+  const r = m.review;
+  // 1. Seven of eight answers came back at once to nothing; the walked one did not.
+  assert.deepEqual(r.quickNothing, [{ id: 'fortress_approach', quick: 7, answers: 8, per15: 7, answer: 'other_way' }]);
+  // 2. One hold, one asking after it (the answer said again is not one).
+  assert.deepEqual(r.reask, { holds: { fortress_approach: 1 }, reasked: { fortress_approach: 1 }, total: 1 });
+  // 3. A quarter of the clock on persist.
+  assert.equal(r.stall.share, 0.25);
+  assert.deepEqual(r.stall.by, { persist: 3 });
+  // 4. New Nether ground, a 15 min of Nether time.
+  assert.equal(r.nether.newCells, 26);
+  assert.ok(r.nether.per15 >= 20);
+  // 5. The fortress 35 min after the Nether, the first rod 50.
+  assert.deepEqual(r.firsts.fortress, { minutes: 35, from: 'landmark first seen' });
+  assert.deepEqual(r.firsts.rod, { minutes: 50, from: 'flight record' });
+  // 6. The fortress and the blaze, closer at the end than the start.
+  assert.deepEqual(r.rung.targets.map(t => [t.name, t.start, t.end, t.improving]), [['the fortress', 200, 100, true], ['blazes', 300, 200, true]]);
+  // Each flagged against its target, the target said.
+  const flagged = Object.fromEntries(m.flags.map(f => [f.id, f]));
+  for (const f of ['quickNothing', 'reaskAfterHold', 'stallShare', 'fortressSighting']) assert.ok(flagged[f], `${f} in ${Object.keys(flagged)}`);
+  for (const f of ['netherGround', 'firstRod', 'rungTarget']) assert.ok(!flagged[f], `${f} not flagged`);
+  for (const f of ['quickNothing', 'reaskAfterHold', 'stallShare', 'fortressSighting']) assert.match(flagged[f].threshold, /^target: /);
+  assert.match(flagged.quickNothing.text, /fortress_approach 7 of 8 \(7\/15min, other_way\)/);
+  const lines2 = reviewLines(m);
+  assert.deepEqual(lines2.map(l => [l.id, l.met]), [['quickNothing', false], ['reaskAfterHold', false], ['stallShare', false], ['netherGround', true],
+    ['fortressSighting', false], ['firstRod', true], ['rungTarget', true], ['rungTarget', true]]);
 });

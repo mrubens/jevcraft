@@ -13,8 +13,9 @@
 //   - the path over the window, colored by what the run clock says it was on
 //     (a work step or a survival stance), with a dot a minute, start and end,
 //     deaths, and the mobs it knew of at their last positions;
-//   - a header: world, port, window, milestone, minutes by step, and the
-//     audit's flags for the trial, each with what raised it.
+//   - a header: world, port, window, milestone, minutes by step, the design
+//     review's measures against their targets (note 573), and the audit's
+//     flags for the trial, each with what raised it.
 //   node scripts/trials/trail-map.js [auto | port ...] [--minutes 15] [--history 60] [--out dir]
 // auto (the default) finds the running midgame servers as watch.sh does.
 // JEV_ROOT reads another checkout's servers and records (from a worktree).
@@ -364,7 +365,11 @@ function render({ port, world, m, frames, from, to, minutes }) {
   header.push([`ground: ${g.newCells}/${g.cells} columns new; walked ${g.walked}, net ${g.net ?? '-'}, farthest ${g.farthest}; dug ~${g.dug}, laid ~${g.laid}; blazes in sight ${m.blazesInSight}`, [210, 210, 210]]);
   if (m.fortress) header.push([`fortress: ${m.fortress.passes} passes, ${m.fortress.minutesThere} min there, blazes near ${m.fortress.blazesSeenNear}${m.fortress.lastPass ? `, last pass ${m.fortress.lastPass.reached}/${m.fortress.lastPass.stretches} stretches` : ''}`, [210, 210, 210]]);
   if (m.questions.top.length) header.push([`asked: ${m.questions.top.slice(0, 3).map(q => `${q.id} ${q.count}x (${q.same}x ${q.answer})`).join(', ')}; none good ${m.questions.noneGood}/${m.questions.byJev}`, [210, 210, 210]]);
-  for (const f of m.flags) header.push([`FLAG ${f.id}: ${f.text}`, [255, 110, 90]]);
+  // The design review's measures, each against its target (note 573):
+  // green met, red over, grey not measurable; they are not flagged twice.
+  const lines = audit.reviewLines(m), reviewIds = new Set(lines.map(l => l.id));
+  for (const l of lines) header.push([`${l.met === true ? 'ok' : l.met === false ? 'OVER' : '-'} ${l.text}`, l.met === true ? [120, 230, 120] : l.met === false ? [255, 110, 90] : [160, 160, 160]]);
+  for (const f of m.flags) if (!reviewIds.has(f.id)) header.push([`FLAG ${f.id}: ${f.text}`, [255, 110, 90]]);
   if (!m.flags.length) header.push([`no flags: ${m.verdict}`, [120, 230, 120]]);
   if (otherDims.length) header.push([`also in ${otherDims.join(', ')} this window (not drawn)`, [255, 200, 90]]);
 
