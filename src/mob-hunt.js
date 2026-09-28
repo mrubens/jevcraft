@@ -957,8 +957,8 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     const from = bot.entity.position.clone();
     let stoppedForGold = false;
     const stopWhen = () => (stoppedForGold = goldInPassing(bot, goal));
-    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, stopWhen }); }
-    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, stopWhen }); delete spot.why; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; spot.why = String(err.message || err).slice(0, 160); }
     // A walk cut short for gold is not a try at the spot.
     if (stoppedForGold) { spot.tries--; delete spot.triedAt; save(); return; }
     if (bot.entity.position.distanceTo(from) < 2 && actions.tunnel) {
@@ -982,12 +982,17 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
 
 // Sightings of the hunted mob, clustered within sixteen blocks, newest
 // first; a cluster seen many times is a spawner.
+// Whether each was in sight (a line from the eyes through open air) or only
+// heard through the walls is kept, and said where the sightings are
+// (blazeSpotSays).
 function rememberSighting(state, bot, entity) {
   const p = entity.position, dimension = bot.game?.dimension;
   state.sightings ||= [];
+  let visible = false;
+  try { const eye = bot.entity.position.offset(0, 1.62, 0), { lineClear } = require('./danger'); visible = [1.6, 0.9, 0.15].some(dy => lineClear(bot, eye, p.offset(0, dy, 0))); } catch (_) { visible = false; }
   const near = state.sightings.find(s => s.dimension === dimension && Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z) < 16);
-  if (near) { Object.assign(near, { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), at: Date.now(), seen: (near.seen || 1) + 1 }); }
-  else state.sightings.unshift({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), dimension, at: Date.now(), seen: 1 });
+  if (near) { Object.assign(near, { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), at: Date.now(), seen: (near.seen || 1) + 1, inSight: (near.inSight || 0) + (visible ? 1 : 0) }); }
+  else state.sightings.unshift({ x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), dimension, at: Date.now(), seen: 1, inSight: visible ? 1 : 0 });
   state.sightings = state.sightings.slice(0, 12);
 }
 // The freshest sighting in this dimension worth walking back to: not one
@@ -1085,6 +1090,64 @@ function restockSays(bot, kinds, want) {
     `Within ${RESTOCK_REACH} blocks, of what a span is laid with: ${all}. ${blocksCarried(bot)} carried now. The leg is chosen again after.`;
 }
 
+// A leg that ended at once, no ground made from where it began, rests
+// from that spot: offered again it ends the same way. mid-242-ac-nether-1
+// stood on its fortress's floor by a wall in the lava and was asked the leg
+// every three seconds for fifteen minutes, east and north ninety times over,
+// each ending at the first cell (a thousand tries from there) and the stall's
+// loose ends asking again (note 557). Rested headings are said, not offered;
+// from eight blocks off, or after five minutes, they are offered again.
+const LEG_REST_MS = 5 * 60000, LEG_REST_WITHIN = 8;
+function legResting(state, key, here, now = Date.now()) {
+  const r = state.legRests?.[key];
+  return r && r.until > now && Math.hypot(r.from.x - here.x, r.from.z - here.z) < LEG_REST_WITHIN && Math.abs((r.from.y ?? here.y) - here.y) < 4 ? r : null;
+}
+function restLeg(state, why, here, made = 0, now = Date.now()) {
+  const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
+  const key = legKey(i, state.legMode === 'descend');
+  (state.legRests ||= {})[key] = { from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, until: now + LEG_REST_MS, at: now, made, why: why || 'no way on' };
+  return key;
+}
+function restSays(key, r, now = Date.now()) {
+  const [seek, name] = key.startsWith('seek_') ? [true, key.slice(5)] : [false, key];
+  const mins = Math.max(1, Math.round((r.until - now) / 60000));
+  return `${seek ? `the staircase toward the fortress heights heading ${name}` : `leg ${name}`}: ended ${Math.round((now - r.at) / 60000)} minutes ago ${r.made ? `${r.made} block${r.made === 1 ? '' : 's'} from where it began` : 'where it began'}, no way on (${r.why}); not offered from here for ${mins} more minute${mins === 1 ? '' : 's'}`;
+}
+// The pickaxe carried, as the ways that dig need it said: a staircase, a
+// tunnel and a crossing through rock dig nothing without one. mid-242-ac-
+// nether-1's staircase rested "no tool for nether bricks", said only
+// inside a failure (note 557).
+function pickaxeSays(bot) {
+  const picks = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  if (!picks.length) return 'none carried: rock and nether bricks cannot be dug, so a staircase, a tunnel or a crossing through rock digs nothing';
+  const left = i => { const max = bot.registry?.itemsByName?.[i.name]?.maxDurability; return max ? max - (i.durabilityUsed || 0) : null; };
+  return picks.map(i => `${i.name.replaceAll('_', ' ')}${left(i) === null ? '' : `, ${left(i)} uses left`}`).join('; ');
+}
+// Where blazes were seen (the hunt's sightings, rememberSighting), as the
+// search says them and offers the way back: a spawner keeps its room full.
+// mid-242-ac-nether-1 stood on its fortress's floor with blazes seen near
+// it forty times and was asked only for legs (note 557): the hunt walks back
+// to a sighting four times (rememberedSpot) and then only the search runs.
+function blazeSpots(bot, goal) {
+  const here = bot.entity.position, dim = bot.game?.dimension;
+  return (goal.mobHunt?.sightings || []).filter(s => s.dimension === dim && Math.hypot(s.x - here.x, s.y - here.y, s.z - here.z) < 400)
+    .map(s => ({ spot: s, off: Math.round(Math.hypot(s.x - here.x, s.y - here.y, s.z - here.z)) }))
+    .sort((a, b) => (b.spot.seen || 1) - (a.spot.seen || 1) || a.off - b.off);
+}
+function blazeSpotSays({ spot, off }, here, now = Date.now()) {
+  const dy = Math.round(spot.y - here.y), mins = Math.round((now - (spot.at || now)) / 60000);
+  const sight = Number.isInteger(spot.inSight) ? ` (${spot.inSight} of them in sight, the rest heard through the walls)` : '';
+  return `${spot.seen || 1} time${(spot.seen || 1) === 1 ? '' : 's'} at (${spot.x}, ${spot.y}, ${spot.z})${sight}, ${off} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, last ${mins ? `${mins} minute${mins === 1 ? '' : 's'} ago` : 'just now'}` +
+    `${spot.tries ? `; the hunt walked back toward it ${spot.tries} time${spot.tries === 1 ? '' : 's'}${spot.why ? `, the last ending: ${spot.why}` : ''}` : ''}`;
+}
+function blazesSeenFacts(bot, goal) {
+  const spots = blazeSpots(bot, goal);
+  if (!spots.length) return null;
+  const total = spots.reduce((n, s) => n + (s.spot.seen || 1), 0);
+  return `blazes seen ${total} time${total === 1 ? '' : 's'} in ${spots.length} place${spots.length === 1 ? '' : 's'}; the busiest ${blazeSpotSays(spots[0], bot.entity.position)}` +
+    (spots.length > 1 ? `; next ${blazeSpotSays(spots[1], bot.entity.position)}` : '');
+}
+
 // The next leg is Jev's (fortress_leg): each heading surveyed at the
 // height the bot stands (nether-travel.js surveyLeg), and, off the
 // fortress heights, a staircase down or up toward them. mid-205-m's
@@ -1114,7 +1177,10 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const rests = mode => HEADINGS.map((h, i) => restingSays(goal, fortressLegTarget({ heading: i, legMode: mode }, here), here));
   const levelRests = rests('level');
   const options = {};
+  const resting = [];
   HEADINGS.forEach((h, i) => {
+    const rest = legResting(state, HEADING_NAMES[i], here);
+    if (rest) { resting.push(restSays(HEADING_NAMES[i], rest)); return; }
     options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) +
       (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, HEADING_NAMES[i], here) +
       (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : ''),
@@ -1130,7 +1196,9 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const open = seekRests.some(r => !r) ? HEADINGS.map((h, i) => i).filter(i => !seekRests[i]) : HEADINGS.map((h, i) => i);
     const most = surveys.every(s => !s) && open.includes(current) ? current : open.map(i => [surveys[i]?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
     const passed = HEADINGS.map((h, i) => i).filter(i => seekRests[i] && i !== most).map(i => ` Not heading ${HEADING_NAMES[i]}: ${seekRests[i]}.`).join('');
-    options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} ${fortress ? 'only what open air shows is seen, the fortress in view among it' : 'none is seen through the rock'}. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.` +
+    const seekRest = legResting(state, legKey(most, true), here);
+    if (seekRest) resting.push(restSays(legKey(most, true), seekRest));
+    else options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} ${fortress ? 'only what open air shows is seen, the fortress in view among it' : 'none is seen through the rock'}. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.` +
       (seekRests[most] ? ` ${capital(seekRests[most])}: taken now, it digs nothing until then.` : '') + passed + legHistorySays(state, legKey(most, true), here, 'staircase'),
       run: () => { state.heading = most; state.legMode = 'descend'; return true; } };
   }
@@ -1140,7 +1208,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     // Where the fortress's bricks go from here, said with each heading: its
     // corridors run on past the last brick seen (fortressRuns).
     const runs = fortressRuns(fortress.bricks || [], here);
-    HEADINGS.forEach((h, i) => { if (runs[i] >= 8) options[`leg_${HEADING_NAMES[i]}`].description += ` The fortress's bricks in view run ${runs[i]} blocks this way from here; what lies past them is unseen.`; });
+    HEADINGS.forEach((h, i) => { if (runs[i] >= 8 && options[`leg_${HEADING_NAMES[i]}`]) options[`leg_${HEADING_NAMES[i]}`].description += ` The fortress's bricks in view run ${runs[i]} blocks this way from here; what lies past them is unseen.`; });
+  }
+  // Where blazes were seen, farther than the hunt's own look: the way back
+  // to the busiest of them, walked on foot first and otherwise asked.
+  const spots = blazeSpots(bot, goal).filter(s => s.off > 12);
+  if (spots.length) {
+    const best = spots[0], s = best.spot, ended = state.goToEnded?.blazes;
+    options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
+      run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', since: Date.now() }; save(); return 'goto'; } };
   }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
   if (short && actions.acquireStep) {
@@ -1157,12 +1233,17 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     options.return_for_blocks = { description: `Go back through the portal to the Overworld${portal ? `, the nearest known ${Math.round(Math.hypot(portal.x - here.x, portal.z - here.z))} blocks off at ${portal.x}, ${portal.y}, ${portal.z}` : ', none known in the Nether: the way is found from what is loaded'}, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.`,
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
+  // Every way from here rests or is gone: nothing to ask. The step says so
+  // and the stall's own question takes it from there.
+  if (!Object.keys(options).length) throw new Error(`Every leg from here ended at once and rests: ${resting.join('; ')}`);
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
-  const facts = { height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
+  const blazesSeen = blazesSeenFacts(bot, goal);
+  const facts = { ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
     lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, seeking)];
       return `${seeking ? 'a staircase toward the fortress heights ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
-    blocksCarried: blocksCarried(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
+    ...(resting.length ? { legsResting: resting } : {}),
+    blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(fortress ? { fortressInView: fortress.facts } : {}) };
   // Without Jev: the open air each heading's carried blocks reach.
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
@@ -1192,7 +1273,7 @@ async function restockStep(bot, task, goal, save, actions, state) {
 function beginLeg(state, here) {
   const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
   state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError;
-  delete state.legBest;
+  delete state.legBest; delete state.lastCrossStop;
 }
 // A direction the sweep cannot make ground in for several ticks is given
 // up for the next one round the compass: a leg toward an open cavern had
@@ -1409,7 +1490,18 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   approach.found = found;
   goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), legs: state.legs }; save();
   const { options, facts } = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
-  if (stretch) facts.stretch = `on the fortress's floors, a stretch of them the patrol set out for, ${Math.round(flatTo(nearest, bot.entity.position))} blocks off; the walk there failed: ${stretch.why}`;
+  if (stretch) {
+    const what = stretch.what || 'a stretch of the fortress\'s floors';
+    facts.stretch = `${what}, ${Math.round(flatTo(nearest, bot.entity.position))} blocks off; the walk there on foot failed: ${stretch.why}`;
+    // On its floors, leaving a way is not leaving the fortress: mid-242-ac-
+    // nether-1 chose keep_searching for one stretch it had no way to, and
+    // its whole fortress, the bot standing on it with blazes seen there
+    // forty times, was set aside for ten minutes of legs that ended at once
+    // (note 557). The way is left; the fortress's other ways are asked.
+    delete options.keep_searching;
+    options.other_way = { description: `Leave this way for now: ${what} is set aside for ten minutes, not the fortress, and the fortress's other ways are asked again (its unwalked floors, where blazes were seen, a spawner seen, walking its corridors again, or a leg away).`,
+      run: async () => { stretch.leave?.(); return null; } };
+  }
   let pick = approach.choice && approach.until > Date.now() && options[approach.choice] ? approach.choice : null;
   if (!pick) {
     const tree = Object.fromEntries(Object.entries(options).map(([key, o]) => [key, { description: o.description, run: o.run }]));
@@ -1426,6 +1518,7 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   // What failed is kept with the fortress: going back to it says so.
   if (pick === 'keep_searching') { delete approach.choice; delete approach.until; save(); return 'Jev chose to leave the fortress and search on'; }
+  if (pick === 'other_way') { delete approach.choice; delete approach.until; save(); return 'Jev chose to leave this way for now'; }
   // Closer counts; a shuffle along the shelf does not.
   if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return null; }
   approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
@@ -1437,7 +1530,9 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
 // corridors and bridges a player walks. Walls, footings and roofs are not.
 function fortressFloors(bot, bricks) {
   if (typeof bot.blockAt !== 'function') return bricks;
-  const clear = q => { const b = bot.blockAt(q); return !b || b.boundingBox === 'empty'; };
+  // Lava on a floor is no floor: mid-242-aa-fortress-1's patrol set out for
+  // bricks under a lava fall down a stair onto its corridor (note 557).
+  const clear = q => { const b = bot.blockAt(q); return !b || (b.boundingBox === 'empty' && !/lava|water/.test(b.name || '')); };
   return bricks.filter(b => clear(b.offset(0, 1, 0)) && clear(b.offset(0, 2, 0)));
 }
 // In the fortress: standing at the height of one of its floors, within six
@@ -1519,7 +1614,11 @@ function fortressInView(bot, goal, save, state, bricks, { stay }) {
   // back from the same spot was undone at once, six times (note 528).
   const shun = (state.shunned || []).find(sh => sh.why && Math.hypot(sh.x - nearest.x, sh.z - nearest.z) <= (sh.radius || 16));
   const mins = ms => { const m = Math.max(0, Math.round(ms / 60000)); return `${m} minute${m === 1 ? '' : 's'}`; };
-  const sameSpot = !!shun?.from && Math.hypot(shun.from.x - here.x, shun.from.y - here.y, shun.from.z - here.z) <= 4;
+  // Standing on its floors, going back from where Jev left it over its ways
+  // in is walking them from here, not those ways asked again: offered
+  // (note 557). One found to hold nothing to walk to still is not.
+  const onFloors = onFortressFloor(here, fortressFloors(bot, bricks));
+  const sameSpot = !(onFloors && shun?.left) && !!shun?.from && Math.hypot(shun.from.x - here.x, shun.from.y - here.y, shun.from.z - here.z) <= 4;
   const why = state.leaving && Math.hypot(state.leaving.x - nearest.x, state.leaving.z - nearest.z) <= LEAVE_RADIUS
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
     : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${!sameSpot ? '' : shun.left ? `, from where the bot stands, over the ways into it from here (${shun.left.length ? shun.left.join(', ') : 'none but leaving'}): going back from here is asking those same ways again` : '; the bot stands where that was found, and from here the same look finds the same'}`
@@ -1530,13 +1629,43 @@ function fortressInView(bot, goal, save, state, bricks, { stay }) {
   // again, and each answer undid the other (note 541). Said as a fact
   // with the legs, not offered (chooseLeg).
   return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why }, ...(sameSpot ? { offer: false } : {}),
-    description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${passSays} Taken, it is no longer set aside, and the way to its bricks is asked (fortress_approach), or its stretches walked when the bot is among them.`,
+    description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${passSays} Taken, it is no longer set aside, and ${onFloors ? 'its floors are walked from where the bot stands' : 'the way to its bricks is asked (fortress_approach), or its floors walked when the bot is among them'}.`,
     run: () => {
       delete state.leaving;
       state.shunned = (state.shunned || []).filter(sh => !bricks.some(b => Math.hypot(sh.x - b.x, sh.z - b.z) <= (sh.radius || 16)));
       delete state.target; delete state.rememberedTarget; save();
       return 'fortress';
     } };
+}
+
+// A place Jev chose to go to from the search (go_to_blazes): walked on
+// foot first, digging and laying nothing; where the walk finds no way, the
+// way there is Jev's (fortress_approach, the walk's failure said), leaving
+// that way among the ways. How it ended is said with the next offer.
+const GO_TO_NEAR = 8;
+const GO_TO_SAYS = { blazes: 'where blazes were seen' };
+async function goToStep(bot, task, goal, save, actions, state) {
+  const g = state.goTo, target = new Vec3(g.x, g.y, g.z), stopWhen = () => goldInPassing(bot, goal);
+  goal.step = { action: 'find_fortress', goingTo: { x: g.x, y: g.y, z: g.z, kind: g.kind }, legs: state.legs || 0 }; save();
+  const close = () => target.distanceTo(bot.entity.position) <= GO_TO_NEAR;
+  let why = null;
+  if (!close() && actions.navigate) {
+    try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, 4), { timeoutMs: 60000, stallMs: 8000, stopWhen, onFoot: true }); }
+    catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+  }
+  if (!close()) {
+    let left = false;
+    const ended = await approachFortress(bot, task, goal, save, actions, state, target.floored(), [],
+      { stretch: { why: why || 'the walk came no nearer', what: GO_TO_SAYS[g.kind] || 'the place chosen', leave: () => { left = true; } } });
+    if (ended) why = left ? 'Jev chose to leave that way for now' : ended;
+  }
+  const reached = close();
+  (state.goToEnded ||= {})[g.kind] = { why: reached ? 'reached it' : why || 'came no nearer', at: Date.now() };
+  if (g.kind === 'blazes') {
+    const spot = (goal.mobHunt?.sightings || []).find(s => s.x === g.x && s.y === g.y && s.z === g.z);
+    if (spot && !reached) { spot.tries = (spot.tries || 0) + 1; spot.why = why || 'came no nearer'; }
+  }
+  delete state.goTo; save();
 }
 
 async function findFortressStep(bot, task, goal, save, actions) {
@@ -1566,6 +1695,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       return;
     }
   }
+  if (state.goTo) { await goToStep(bot, task, goal, save, actions, state); return; }
   const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
   // Bricks near a face that would not be approached are ignored for ten
   // minutes: the fortress was straight below a shelf with a cave between,
@@ -1773,6 +1903,18 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // was NaN, never four, and a leg that never once made ground never turned.
   state.legFails = (state.legFails || 0) + 1;
   legEnded(state, state.lastLegError || state.lastCrossStop, seeking);
+  // Every way on failed within a few blocks of where the leg began: the leg
+  // ends here and its heading rests from this spot (legResting), its
+  // failure said with the next ask, not tried again tick after tick.
+  // mid-242-ac-nether-1's legs each made a block or two to the lava's edge
+  // and came back to it at the next ask (note 557).
+  const along = state.legFrom ? Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z) : Infinity;
+  if (along < LEG_REST_WITHIN) {
+    restLeg(state, state.lastLegError || state.lastCrossStop, here, Math.round(along));
+    delete state.target; state.legFails = 0; save();
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.('No way on in this direction from here. Choosing another.'); }
+    return;
+  }
   // Short of blocks, the ways to more are Jev's beside the legs (chooseLeg:
   // restock_blocks, return_for_blocks), asked when the sweep turns.
   if (state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {

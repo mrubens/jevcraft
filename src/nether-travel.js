@@ -97,23 +97,37 @@ const passable = b => !b || b.boundingBox === 'empty';
 // were told a leg south was "94 of open air, about 34 seconds" and chose it
 // some thirty times; every one ended at the ledge (note 480).
 const LAY_CELL_SECONDS = 1 / SNEAK_SPEED + BLOCK_SECONDS;
+// The cells a leg's first stretch is said by, run by run.
+const FIRST_CELLS = 16;
+const FIRST_SAYS = { rock: 'rock to dig', floor: 'open air with a floor', gap: 'open air with no floor under it', lava: 'open air over lava a block down' };
+function firstSays(survey) {
+  if (!survey?.first?.length && !survey?.stoppedBy) return '';
+  const runs = (survey.first || []).map(r => `${r.n} of ${FIRST_SAYS[r.kind]}`);
+  const stop = Number.isInteger(survey.stoppedAt) && survey.stoppedAt < FIRST_CELLS ? `, then ${survey.stoppedBy}` : '';
+  if (!runs.length) return ` The first cell: ${survey.stoppedBy}.`;
+  return ` The first ${Math.min(FIRST_CELLS, survey.cells)} cell${Math.min(FIRST_CELLS, survey.cells) === 1 ? '' : 's'}, in order: ${runs.join(', ')}${stop}.`;
+}
 function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}) {
   if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
   const [dx, dz] = heading;
   const carried = blocks ?? blocksCarried(bot);
-  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null };
+  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null, first: [] };
   let here = from || bot.entity.position.floored(), seconds = 0;
+  // The first cells as runs of what they are (rock, floor, no floor):
+  // what the leg meets before anything else, said with it (legSays).
+  const note = kind => { if (out.cells >= FIRST_CELLS) return; const last = out.first.at(-1); if (last?.kind === kind) last.n++; else out.first.push({ kind, n: 1 }); };
   for (let n = 0; n < cells; n++) {
     const next = here.offset(dx, 0, dz);
     const body = [next, next.offset(0, 1, 0)].map(p => bot.blockAt(p));
     if (body.some(b => !b)) { out.stoppedBy = 'unloaded ground'; out.stoppedAt = out.cells; break; }
     if (body.some(b => /lava|fire/.test(b.name || ''))) { out.stoppedBy = 'lava in the way'; out.stoppedAt = out.cells; break; }
-    if (body.some(b => !passable(b))) { out.rock++; seconds += ROCK_CELL_SECONDS; }
+    if (body.some(b => !passable(b))) { note('rock'); out.rock++; seconds += ROCK_CELL_SECONDS; }
     else {
       out.open++;
       const floor = bot.blockAt(next.offset(0, -1, 0));
-      if (floor && floor.boundingBox === 'block') seconds += 1 / WALK_SPEED;
+      if (floor && floor.boundingBox === 'block') { note('floor'); seconds += 1 / WALK_SPEED; }
       else {
+        note(floor && /lava/.test(floor.name || '') ? 'lava' : 'gap');
         // The first cell needing a block past those carried: the leg ends there.
         if (out.lay >= carried && out.runsOut === null) { out.runsOut = out.cells; out.reachSeconds = Math.round(seconds); }
         out.lay++; seconds += LAY_CELL_SECONDS;
@@ -141,7 +155,7 @@ function legSays(survey, { direction, length, y }) {
   const lay = survey.lay || 0, carried = survey.carried ?? 0, short = Number.isInteger(survey.runsOut);
   const blocks = !lay ? '' : ` ${lay} of the open cells have no floor: it needs ${lay} block${lay === 1 ? '' : 's'} laid, crouched, about ${Math.round(LAY_CELL_SECONDS * 10) / 10} seconds a cell, ${carried} carried: ` +
     (short ? `the blocks run out at cell ${survey.runsOut}, about ${survey.reachSeconds} seconds in, where the leg stops with none to lay.` : `${carried - lay} left after.`);
-  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}`;
+  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${firstSays(survey)}`;
 }
 
 // Whether food is why the bot is going back: hungry, with nothing to eat

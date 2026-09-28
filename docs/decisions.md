@@ -968,7 +968,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?**
 
-- When: On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also on its floors, when the patrol's walk to the next stretch of them failed (state.stretch says so): the way is then to that stretch, asked afresh for each, the failed walk among what failed.
+- When: On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also where a walk on foot to a place Jev chose failed (state.stretch says which: a stretch of the fortress's floors, or where blazes were seen): the way is then to that place, asked afresh for each, the failed walk among what failed, and leaving it (other_way) leaves that way, not the fortress.
 - Decision tree, choice; stakes high; ledger kind `fortress`
 - Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -981,7 +981,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `cross_level` | root | go straight at it at the height the bot stands, digging rock and laying a one-wide span | the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view |
 | `pillar_up` | root | pillar straight up to the height of its floor overhead | its nearest floor is two or more blocks up and within twelve across, a column near the bot has no lava or water in or beside it, and blocks to lay are carried; said with the height, the blocks against those carried, how far across the floor is from the top, and the fall a push would be |
 | `tunnel` | root | dig a staircase through the rock toward it | a staircase is at hand |
-| `keep_searching` | root | leave this fortress for ten minutes and go on searching | always |
+| `keep_searching` | root | leave this fortress for ten minutes and go on searching | on the way into a fortress (not a way on its floors) |
+| `other_way` | root | leave this way for now: the place is set aside, not the fortress, and the fortress's other ways are asked again | a way on the fortress's floors or to a place chosen from the search (where blazes were seen): state.stretch says which and why the walk failed |
 
 ### `fortress_leg`
 
@@ -1002,6 +1003,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `wait_at_spawner` | root | wait by the spawner in view for three minutes, the hunt taking each blaze it makes | a pass over every stretch of the fortress in view has ended and a spawner is within twenty-four blocks; said with where it is, how it makes blazes, and how the last wait there ended |
 | `back_to_fortress` | root | go back into the fortress in view that was left or set aside | two dozen or more fortress bricks are in view but left behind or set aside, except where the bot stands on the spot it was set aside from as nothing to walk to (from there the same look sets it aside again at once) or where Jev chose to leave it over its ways in (from there going back asks the same ways again); said in the state instead; said with when and why, how far the nearest is, and the blazes seen near it |
 | `return_for_blocks` | root | go back through the portal to the Overworld for stone | a leg runs out of the blocks carried and the way back through the portal is at hand; said with the nearest portal known |
+| `go_to_blazes` | root | go to where blazes were seen, on foot first, the way there asked where the walk finds none | the hunt has seen blazes in this dimension more than twelve blocks from the bot; said with the busiest place, how many times and how lately, how many were in sight and how many heard through walls, the hunt's own walks back and how they ended, and how the last try from the search ended |
 
 ## travel
 

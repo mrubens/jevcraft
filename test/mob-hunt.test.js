@@ -396,14 +396,17 @@ test('the fortress sweep runs in ninety-six-block legs along x at a safe height,
   const tunnels = [];
   const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5) }, findBlocks: () => [] };
   const goal = {};
-  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target, resource) => tunnels.push([target.x, target.z, resource]) });
+  // The staircase makes ground: four blocks along the leg each step.
+  const dig = async (b, t, g, s, target, resource) => { tunnels.push([target.x, target.z, resource]); bot.entity.position = bot.entity.position.offset(4 * Math.sign(target.x - bot.entity.position.x), 0, 0); };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: dig });
   assert.equal(goal.fortressSearch.legs, 1); assert(Math.abs(tunnels[0][0]) >= FORTRESS_LEG - 1, 'a full leg along x'); assert.equal(tunnels[0][2], 'fortress');
   // Three bricks are the bot's own building blocks, not a fortress: the sweep goes on.
   bot.findBlocks = () => [new Vec3(3, 64, 1), new Vec3(3, 65, 1), new Vec3(4, 64, 1)];
-  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target, resource) => tunnels.push([target.x, target.z, resource]) });
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: dig });
   assert.equal(goal.fortressSearch.found, undefined, 'a handful of bricks is not a fortress');
   assert.equal(goal.fortressSearch.legs, 1, 'and the leg in hand is kept');
   tunnels.length = 1;
+  bot.entity.position = new Vec3(0.5, 64, 0.5);
   bot.findBlocks = () => [new Vec3(30, 64, 12), ...Array.from({ length: 30 }, (_, i) => new Vec3(40 + i, 64, 12))];
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { tunnel: async (b, t, g, s, target) => tunnels.push([target.x, target.z, 'bricks']) });
   assert.deepEqual(tunnels[1], [30, 12, 'bricks']); assert.deepEqual(goal.fortressSearch.found, { x: 30, y: 64, z: 12 });
@@ -645,8 +648,11 @@ test('the next leg of the fortress search is Jev\'s: each heading surveyed for o
   const goal2 = {};
   const steps = [];
   await findFortressStep(bot, new Task('hunt'), goal2, () => {}, { client: again, navigate: async () => steps.push('walk'), tunnel: async (b, t, g, s, target) => steps.push(['tunnel', target.y]) });
-  assert.equal(goal2.fortressSearch.legMode, 'descend'); assert.equal(goal2.fortressSearch.target.y, FORTRESS_Y);
+  assert.equal(goal2.fortressSearch.legMode, 'descend');
   assert.deepEqual(steps, [['tunnel', FORTRESS_Y]], 'the staircase toward the fortress heights, no walk and no level crossing');
+  // It made no ground from where it began: that staircase rests from here, said with the next ask (note 557).
+  assert.equal(goal2.fortressSearch.target, undefined);
+  assert(Object.keys(goal2.fortressSearch.legRests).some(k => k.startsWith('seek_')), 'the staircase rests from here');
   // Without Jev, the heading with the most open air; the compass's own at a tie.
   const children = { leg_east: {}, leg_south: {}, leg_west: {}, leg_north: {}, seek_fortress_height: {} };
   assert.equal(legFallback(children, [], { current: 'leg_east', open: { leg_east: 0, leg_south: 40, leg_west: 0, leg_north: 0 } }), 'leg_south');
@@ -671,8 +677,11 @@ test('a fortress leg over a void is priced by the blocks carried, its failure ke
   const actions = { navigate: async () => {}, tunnel: async () => { throw new Error('No safe way toward (1, 65, 97): open air'); },
     acquireStep: async (b, t, item, count) => mined.push([item, count]), returnOverworld: async () => {} };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
-  assert.notEqual(goal.fortressSearch.heading, 1, 'the sweep turned off south');
-  // Back from the edge, the next leg is asked.
+  // No ground made from where it began: the leg south rests from here (note 557).
+  assert(goal.fortressSearch.legRests.south, 'the leg south rests from here');
+  assert.equal(goal.fortressSearch.target, undefined, 'the leg is ended, the next asked');
+  // Five minutes on, back from the edge, the next leg is asked with south among the ways again.
+  goal.fortressSearch.legRests.south.until = Date.now() - 1;
   bot.entity.position = new Vec3(0.5, 65, -0.5);
   const client = jevStub(['restock_blocks']);
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client });
@@ -892,11 +901,71 @@ test('on the fortress\'s floor, a stretch twelve blocks off across a gap of two 
   assert.match(options.cross_level, /laying 2 blocks over open air and lava \(2 of them over lava\)/);
   assert.match(options.cross_level, /64 blocks carried, 62 left after/);
   assert.match(options.walk_route, /Tried on this approach once and ended no nearer: No route from here to \(13, 65, 0\)/);
-  assert.match(state.stretch, /^on the fortress's floors, a stretch of them the patrol set out for, 13 blocks off; the walk there failed: No route/);
+  assert.match(state.stretch, /^a stretch of the fortress's floors, 13 blocks off; the walk there on foot failed: No route/);
+  assert(options.other_way && !options.keep_searching, 'leaving the way, not the fortress, is among the ways (note 557)');
   assert.equal(tunnels.length, 0, 'the staircase is one of the ways, not run unasked');
   assert.equal(laid.size, 2, 'a block in each cell of the gap');
   assert.equal(bot.entity.position.x, 12.5, 'across it, on the far floor');
   assert.deepEqual(goal.fortressSearch.visited.map(v => v.reached), [true], 'the stretch is reached');
+});
+
+// mid-242-ac-nether-1 at (-122.5, 72, 106.5): on a fortress floor walled by lava at the feet's height, the fortress set
+// aside by Jev from this spot eight minutes before, blazes seen near it forty times, no pickaxe carried (note 557).
+function acFloor() {
+  const deck = p => p.y === 71 && p.x >= -124 && p.x <= -121 && p.z >= 105 && p.z <= 108;
+  const ring = p => p.y >= 72 && p.y <= 73 && ((p.x === -125 || p.x === -120) && p.z >= 104 && p.z <= 109 || (p.z === 104 || p.z === 109) && p.x >= -125 && p.x <= -120);
+  const rock = p => p.y <= 31 ? 'lava' : deck(p) || (p.y === 70 && p.x >= -124 && p.x <= -121 && p.z >= 105 && p.z <= 108) ? 'nether_bricks' : ring(p) ? 'lava' : null;
+  const world = netherWorld(new Vec3(-122.5, 72, 106.5), rock, [{ name: 'netherrack', count: 84, type: 1 }]);
+  const bricks = [];
+  for (let x = -124; x <= -121; x++) for (let z = 105; z <= 108; z++) bricks.push(new Vec3(x, 71, z), new Vec3(x, 70, z));
+  world.bot.findBlocks = ({ matching }) => matching === registry.blocksByName.spawner.id ? [] : bricks;
+  return world;
+}
+
+test('on a fortress floor it had left, with blazes seen there forty times and every leg ending at once, the blazes lead the question, a failed leg rests, and leaving a way to them leaves the way, not the fortress (mid-242-ac-nether-1, note 557)', async () => {
+  // mid-242-ac-nether-1 was asked the leg every three seconds for fifteen minutes, east and north ninety times, each
+  // ending at the first cell, the fortress it stood on set aside and blazes seen near it forty times only a field.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = acFloor();
+  const now = Date.now();
+  const goal = { mobHunt: { entity: 'blaze', item: 'blaze_rod', sightings: [{ x: -108, y: 77, z: 155, dimension: 'the_nether', at: now - 60000, seen: 40, inSight: 6 }] },
+    fortressSearch: { axis: 1, legs: 70, since: now - 48 * 60000,
+      shunned: [{ x: -121, z: 105, radius: 16, until: now + 2 * 60000, at: now - 8 * 60000, why: 'Jev chose to leave it and search on', from: { x: -123, y: 72, z: 106 }, left: ['walk route', 'tunnel'] }] } };
+  const walks = [];
+  const client = jevStub(['leg_east', 'go_to_blazes', 'other_way']);
+  const actions = { client, navigate: async (b, t, g, opts = {}) => { walks.push(opts); throw new Error('No route from here'); },
+    tunnel: async () => { throw new Error('The staircase toward it is set aside (no safe step toward it (water or lava behind the rock: 1 of the steps nearer))'); } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 1);
+  let { options, state } = client.asked[0];
+  assert.equal(Object.keys(state)[0], 'blazesSeen', 'the blazes lead the question');
+  assert.match(state.blazesSeen, /^blazes seen 40 times in 1 place; the busiest 40 times at \(-108, 77, 155\) \(6 of them in sight, the rest heard through the walls\), 51 blocks off and 5 up, last 1 minute ago/);
+  assert.match(state.pickaxe, /^none carried: rock and nether bricks cannot be dug/);
+  assert.match(options.go_to_blazes, /^Go to where blazes were seen 40 times at \(-108, 77, 155\)/);
+  assert.match(options.back_to_fortress, /Jev chose to leave it and search on.*its floors are walked from where the bot stands\.$/, 'standing on its floors, going back is offered');
+  assert.match(options.leg_east, /Lava in the way stops it at cell 2\. The first 2 cells, in order: 2 of open air with a floor, then lava in the way\./);
+  // Jev took leg east: it ends at the first cell, no ground made, and rests from here rather than being tried tick after tick.
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  const search = goal.fortressSearch;
+  assert(search.legRests.east, 'the leg east rests from here');
+  assert.equal(search.target, undefined, 'the leg is ended');
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 2, 'asked again once, not every tick');
+  ({ options, state } = client.asked[1]);
+  assert.equal(options.leg_east, undefined, 'not offered again from here');
+  assert.match(state.legsResting[0], /^leg east: ended 0 minutes ago 2 blocks from where it began, no way on \(.*water or lava behind the rock.*\); not offered from here for 5 more minutes/);
+  // Jev took the blazes: the walk is on foot, and where it finds no way the way there is asked, leaving it among the ways.
+  const before = walks.length;
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(walks[before].onFoot, true, 'the walk to the blazes digs and lays nothing');
+  assert.equal(client.asked.length, 3); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+  ({ options, state } = client.asked[2]);
+  assert.match(state.stretch, /^where blazes were seen, \d+ blocks off; the walk there on foot failed: No route from here/);
+  assert(options.other_way && !options.keep_searching, 'leaving the way, not the fortress');
+  assert.equal(search.shunned.length, 1, 'the fortress is not set aside again');
+  assert.equal(search.goTo, undefined);
+  assert.equal(search.goToEnded.blazes.why, 'Jev chose to leave that way for now');
+  assert.equal(goal.mobHunt.sightings[0].tries, 1);
 });
 
 test('after six empty patrols the sweep leaves along the fortress, and the section left behind does not pull it back', async () => {
@@ -1208,6 +1277,8 @@ test('a sweep with every leg failing and too few blocks to cross is offered the 
   const actions = { navigate: async () => {}, tunnel: async () => {}, acquireStep: async () => assert.fail('nothing to mine within reach'), returnOverworld: async () => { back++; } };
   await findFortressStep(bot, new Task('fortress'), goal, () => {}, actions);
   assert.equal(back, 0, 'not the code\'s to choose');
+  // The leg east made no ground and rests from here; five minutes on it is offered again.
+  goal.fortressSearch.legRests.east.until = Date.now() - 1;
   const client = jevStub(['return_for_blocks']);
   await findFortressStep(bot, new Task('fortress'), goal, () => {}, { ...actions, client });
   const { options } = client.asked[0];
@@ -1358,6 +1429,8 @@ test('a resting staircase is not offered fresh as seek_fortress_height', async (
   await findFortressStep(bot, new Task('hunt'), goal2, () => {}, { navigate: async () => {}, tunnel: stalled });
   assert.match(goal2.fortressSearch.legHistory.seek_south.ended, /stalled: refusing to open a drop/);
   assert.equal(goal2.fortressSearch.legHistory.south, undefined, 'not filed under the level leg');
+  assert(goal2.fortressSearch.legRests.seek_south && !goal2.fortressSearch.legRests.south, 'the staircase rests, filed as its own');
+  goal2.fortressSearch.legRests.seek_south.until = Date.now() - 1;
   const third = jevStub(['leg_east']);
   await chooseLeg(bot, new Task('hunt'), goal2, () => {}, { client: third, navigate: async () => {}, tunnel: async () => {} }, goal2.fortressSearch);
   options = third.asked[0].options;

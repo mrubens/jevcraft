@@ -25,15 +25,15 @@ define({
 // chosen: mid-242-c walking the lava sea's shore toward one (note 264),
 // mid-215-e on a span with a hoglin behind it (note 273). The order the
 // code kept is the fallback, each way failed on this approach passed over.
-const APPROACH_ORDER = ['walk_route', 'descend', 'cross_level', 'pillar_up', 'tunnel', 'keep_searching'];
+const APPROACH_ORDER = ['walk_route', 'descend', 'cross_level', 'pillar_up', 'tunnel', 'other_way', 'keep_searching'];
 const approachFallback = (children, path, context = {}) => {
   const failed = new Set(context.failed || []);
-  return APPROACH_ORDER.find(k => children[k] && !failed.has(k)) || (children.keep_searching ? 'keep_searching' : Object.keys(children)[0]);
+  return APPROACH_ORDER.find(k => children[k] && !failed.has(k)) || (children.keep_searching ? 'keep_searching' : children.other_way ? 'other_way' : Object.keys(children)[0]);
 };
 define({
   id: 'fortress_approach', area: 'endgame', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   question: 'A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?',
-  trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also on its floors, when the patrol\'s walk to the next stretch of them failed (state.stretch says so): the way is then to that stretch, asked afresh for each, the failed walk among what failed.',
+  trigger: 'On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also where a walk on foot to a place Jev chose failed (state.stretch says which: a stretch of the fortress\'s floors, or where blazes were seen): the way is then to that place, asked afresh for each, the failed walk among what failed, and leaving it (other_way) leaves that way, not the fortress.',
   source: 'src/mob-hunt.js (fortressApproaches, approachFortress), src/bridging.js (surveyCrossing), src/nether-travel.js (crossingSays)',
   options: [
     { key: 'walk_route', label: 'walk the pathfinder\'s route to it, level with the bot first, then at the bricks\' height', when: 'a pathfinder is at hand; said with its surveyed route (cells, blocks it would place and dig, how many beside lava, how much nearer it ends) and that it walks upright', level: 'root' },
@@ -41,7 +41,8 @@ define({
     { key: 'cross_level', label: 'go straight at it at the height the bot stands, digging rock and laying a one-wide span', when: 'the cells ahead at this height let it come a block or more nearer (surveyCrossing); said with the cells, the blocks to lay against those carried, how many over lava, how much nearer it ends, what stops it, about how long, and the mobs in view', level: 'root' },
     { key: 'pillar_up', label: 'pillar straight up to the height of its floor overhead', when: 'its nearest floor is two or more blocks up and within twelve across, a column near the bot has no lava or water in or beside it, and blocks to lay are carried; said with the height, the blocks against those carried, how far across the floor is from the top, and the fall a push would be', level: 'root' },
     { key: 'tunnel', label: 'dig a staircase through the rock toward it', when: 'a staircase is at hand', level: 'root' },
-    { key: 'keep_searching', label: 'leave this fortress for ten minutes and go on searching', when: 'always', level: 'root' },
+    { key: 'keep_searching', label: 'leave this fortress for ten minutes and go on searching', when: 'on the way into a fortress (not a way on its floors)', level: 'root' },
+    { key: 'other_way', label: 'leave this way for now: the place is set aside, not the fortress, and the fortress\'s other ways are asked again', when: 'a way on the fortress\'s floors or to a place chosen from the search (where blazes were seen): state.stretch says which and why the walk failed', level: 'root' },
   ],
   instructions: {
     task: 'A Nether fortress is in view on the search for blazes. Choose the way to it, or leave it for now and keep searching.',
@@ -63,6 +64,7 @@ define({
 const legFallback = (children, path, context = {}) => {
   if (children.back_to_fortress) return 'back_to_fortress';
   if (children.stay_in_fortress && (context.passes || 0) < 6) return 'stay_in_fortress';
+  if (children.go_to_blazes) return 'go_to_blazes';
   const open = context.open || {};
   const keys = Object.keys(children).filter(k => k.startsWith('leg_'));
   const surveyed = keys.filter(k => Number.isFinite(open[k]));
@@ -83,10 +85,11 @@ define({
     { key: 'wait_at_spawner', label: 'wait by the spawner in view for three minutes, the hunt taking each blaze it makes', when: 'a pass over every stretch of the fortress in view has ended and a spawner is within twenty-four blocks; said with where it is, how it makes blazes, and how the last wait there ended', level: 'root' },
     { key: 'back_to_fortress', label: 'go back into the fortress in view that was left or set aside', when: 'two dozen or more fortress bricks are in view but left behind or set aside, except where the bot stands on the spot it was set aside from as nothing to walk to (from there the same look sets it aside again at once) or where Jev chose to leave it over its ways in (from there going back asks the same ways again); said in the state instead; said with when and why, how far the nearest is, and the blazes seen near it', level: 'root' },
     { key: 'return_for_blocks', label: 'go back through the portal to the Overworld for stone', when: 'a leg runs out of the blocks carried and the way back through the portal is at hand; said with the nearest portal known', level: 'root' },
+    { key: 'go_to_blazes', label: 'go to where blazes were seen, on foot first, the way there asked where the walk finds none', when: 'the hunt has seen blazes in this dimension more than twelve blocks from the bot; said with the busiest place, how many times and how lately, how many were in sight and how many heard through walls, the hunt\'s own walks back and how they ended, and how the last try from the search ended', level: 'root' },
   ],
   instructions: {
     task: 'The bot is searching the Nether for a fortress, in legs of ninety-six blocks. Choose the next leg.',
-    guidance: 'Fortresses stand mostly between y 48 and 75 over the lava sea at y 31, and their bricks are seen within 128 blocks through open air only: a leg through rock sees nothing however far it goes, at about six seconds a cell. Open air over a deep drop is a cavern or the sea\'s edge, where the view is long. The mobs in view and the blocks carried are in the state; a leg over open air with no floor needs a block laid a cell, and stops where the blocks carried run out.',
+    guidance: 'The search is for blazes: blazesSeen, when there, is where the hunt has seen them, and they come back to where a spawner is. Fortresses stand mostly between y 48 and 75 over the lava sea at y 31, and their bricks are seen within 128 blocks through open air only: a leg through rock sees nothing however far it goes, at about six seconds a cell. Open air over a deep drop is a cavern or the sea\'s edge, where the view is long. The mobs in view, the blocks carried and the pickaxe are in the state; a leg over open air with no floor needs a block laid a cell, and stops where the blocks carried run out; rock is dug only with a pickaxe. Each leg says its first cells in order: what it meets before anything else. legsResting are legs that ended at once from here, no ground made, and why; they are not offered from here for a few minutes.',
   },
   fallback: legFallback,
 });

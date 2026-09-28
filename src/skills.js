@@ -289,7 +289,10 @@ function goalGuardPlugin(bot) {
   bot.pathfinder.setGoal = (goal, dynamic) => setGoal.call(bot.pathfinder, wholeGoal(goal), dynamic);
 }
 
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava } = {}) {
+// `onFoot`: the walk digs nothing and lays nothing (no tower, no bridge):
+// along a fortress's corridors, not through its walls (mob-hunt.js, note
+// 557). What it cannot walk to is said as no route.
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, onFoot = false } = {}) {
   task.check();
   // Where the bot is going, kept for the shore rule (shore.js): out of the
   // water on the side it was heading for, not back where it went in.
@@ -305,6 +308,8 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // (movement.js besideLavaRefused, note 516); none otherwise.
   const optOut = besideLava && movements, lavaOptOut = optOut ? movements.besideLava : undefined;
   if (optOut) movements.besideLava = besideLava;
+  const foot = onFoot && movements ? { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks } : null;
+  if (foot) Object.assign(movements, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
   const deadline = Date.now() + timeoutMs;
   try {
     for (let attempt = 0; ; attempt++) {
@@ -321,6 +326,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   } finally {
     if (sprinting) movements.allowSprinting = walked;
     if (optOut) movements.besideLava = lavaOptOut;
+    if (foot) Object.assign(movements, foot);
   }
 }
 
