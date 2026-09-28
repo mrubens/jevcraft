@@ -1025,7 +1025,7 @@ test('on the fortress\'s floor, floors seen across a gap of two are Jev\'s to cr
   const actions = { client, dig: async () => {}, navigate: walker(bot, walks, refused), tunnel: async (...a) => tunnels.push(a) };
   for (let i = 0; i < 20 && !client.asked.length; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   let { options } = client.asked[0];
-  assert.match(options.unwalked_1, /^Go to the fortress's unwalked floors seen 3 blocks off, at \(12, 65, -?\d\): 87 floors seen there, .*no floor seen joins them to where the bot stands: the nearest crossing is 3 blocks from a floor it can walk to \(9, 65, -?\d\), between them 2 of open air with no floor\./);
+  assert.match(options.unwalked_1, /^Go to the fortress's unwalked floors seen 3 blocks off, at \(12, 65, -?\d\): 87 floors seen there, .*no floor seen joins them to where the bot stands: the way across along the ground is 3 cells from \(9, 65, -?\d\) to \(12, 65, -?\d\): 2 of open air with no floor, to span, 1 of floor, about \d+ seconds\./);
   // Chosen: the walk is on foot; it finds no way, and the way there is asked, the span among the ways.
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 2); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
@@ -1038,6 +1038,120 @@ test('on the fortress\'s floor, floors seen across a gap of two are Jev\'s to cr
   assert.equal(tunnels.length, 0, 'the staircase is one of the ways, not run unasked');
   assert.equal(laid.size, 2, 'a block in each cell of the gap');
   assert(bot.entity.position.x >= 11, `across it, at the far floor: ${bot.entity.position}`);
+});
+
+// A step with the crouch held: to the cell the look was aimed at, at the look's height (a step up onto a laid block).
+function stepsUp(bot) {
+  const set = bot.setControlState;
+  let look = null;
+  const lookAt = bot.lookAt;
+  bot.lookAt = async p => { look = p; return lookAt(p); };
+  bot.setControlState = (name, on) => {
+    set(name, on);
+    if (name === 'forward' && on && look) bot.entity.position = new Vec3(Math.floor(look.x) + 0.5, Math.round(look.y - 1.6), Math.floor(look.z) + 0.5);
+  };
+}
+
+test('on a fortress floor cut off by lava lying on its corridor, the way across is said along the ground and covering the lava crosses it (mid-235-q-nether-1-fortress-3, note 564)', async () => {
+  // mid-235-q-nether-1-fortress-3 paced a small room for minutes, its corridor on east flooded with lava one deep; the
+  // floors past it were offered as "4 of lava, 2 of wall or rock" on a straight line through the wall, and no way across
+  // lava lying on a floor existed: the span refuses "lava in the way".
+  const { findFortressStep } = require('../src/mob-hunt');
+  const lava = p => p.y === 65 && p.x >= 12 && p.x <= 17 && p.z >= -1 && p.z <= 1;
+  const { bot, laid } = corridor({ extra: p => lava(p) ? 'lava' : undefined });
+  stepsUp(bot);
+  const goal = { fortressSearch: { axis: 1, legs: 15 } };
+  const walks = [], tunnels = [];
+  const refused = g => g.x >= 12 ? 'No path to the goal!' : null;
+  const client = jevStub(['unwalked_1', 'cover_lava']);
+  const actions = { client, dig: async () => {}, navigate: walker(bot, walks, refused), tunnel: async (...a) => tunnels.push(a) };
+  for (let i = 0; i < 20 && !client.asked.length; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  let { options } = client.asked[0];
+  assert(walks.every(w => w.onFoot && w.x <= 11), `walked on foot to the lava's edge only: ${JSON.stringify(walks)}`);
+  assert.match(options.unwalked_1, /no floor seen joins them to where the bot stands: the way across along the ground is \d+ cells from \(11, 65, -?\d\) to \(18, 65, -?\d\): 6 of lava lying on the floor, to cover \(a block each, walked a block up\), 1 of floor, about \d+ seconds; round the lava instead, \d+ cells from .* \d+ of open air with no floor, to span, .*about \d+ seconds\./);
+  // Chosen: the walk on foot finds no way, and the ways across are asked, covering the lava among them.
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 2); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+  ({ options } = client.asked[1]);
+  assert.match(options.cover_lava, /^Cover the lava lying on the floor on the way to unwalked floors of the fortress, seen across a gap: 7 cells from \(11, 65, -?\d\) to \(18, 65, -?\d\): 6 of lava lying on the floor/);
+  assert.match(options.cover_lava, /6 blocks laid of the 64 carried, 58 left after\. About \d+ seconds\./);
+  assert.match(options.cover_lava, /The lava is flowing, with no source seen among the \d+ lava cells followed from it/);
+  assert.match(options.cover_lava, /\d+ of its cells are beside lava: a misstep or a push there puts the bot in it, about 8 health a second while in it and burning up to 15 seconds after/);
+  assert.equal(options.scoop_lava, undefined, 'no bucket carried, and no source on the way');
+  assert.equal(options.dig_through, undefined, 'walls of nether brick: nothing to dig round');
+  assert.match(options.span_round, /^Go round the lava to unwalked floors of the fortress, seen across a gap along the ground, laying a one-wide span where there is no floor: \d+ cells from/);
+  assert(options.other_way);
+  // Covered and walked: a block into each cell of the lava, a block up, and down onto the floor past it.
+  assert.equal(laid.size, 6, `a block laid into each cell of lava: ${[...laid]}`);
+  assert([...laid].every(k => /^\((1[2-7]), 65, -?\d\)$/.test(k)), [...laid].join(' '));
+  assert.equal(tunnels.length, 0);
+  assert(bot.entity.position.x >= 18 && bot.entity.position.y === 65, `across it, on the floor past the lava: ${bot.entity.position}`);
+});
+
+test('the way across along the ground digs round the lava through natural rock, scoops sources with a bucket carried, and digs through a mouth filled with netherrack (note 564)', () => {
+  const fm = require('../src/fortress-map');
+  const { crossingFor, crossingOptions } = require('../src/mob-hunt');
+  // The corridor with lava on its floor at x 12 to 17, its south wall netherrack from x 9 to 20 and z 2 to 4 (the rock
+  // round it), the lava at x 12 and 13 sources.
+  const rockBeside = p => p.x >= 9 && p.x <= 20 && p.z >= 2 && p.z <= 4 && p.y >= 64 && p.y <= 67 ? 'netherrack' : undefined;
+  const lava = p => p.y === 65 && p.x >= 12 && p.x <= 17 && p.z >= -1 && p.z <= 1;
+  const { bot } = corridor({ extra: p => lava(p) ? 'lava' : rockBeside(p) });
+  const at = bot.blockAt;
+  // Netherrack by hand: two seconds a block.
+  bot.blockAt = p => { const b = at(p); if (b.name === 'lava') b.metadata = p.x <= 13 ? 0 : 3; b.digTime = () => 2000; return b; };
+  // The map as walked to the lava's edge: the floors either side of it seen, those this side walked.
+  const map = { cells: {}, failed: {}, spawners: [], chests: [] };
+  for (let x = 0; x <= 40; x++) for (let z = -1; z <= 1; z++) if (x < 12 || x > 17) map.cells[`${x},64,${z}`] = [x < 12 ? 1 : 0, 0, 0];
+  bot.entity.position = new Vec3(11.5, 65, 0.5);
+  const planned = fm.plan(bot, map);
+  assert.equal(planned.groups.length, 1);
+  const across = crossingFor(bot, map, planned, planned.groups[0].key);
+  assert.equal(across.way.cover, 6);
+  assert.equal(across.way.lavaSources, 2, 'two of the cells on the way are sources');
+  assert(across.round && across.round.digs >= 4 && !across.round.cover, `round the lava through the rock: ${JSON.stringify(across.round)}`);
+  assert(across.round.cells.every(c => !lava(new Vec3(c.x, c.y, c.z)) && !lava(new Vec3(c.x, c.y - 1, c.z))), 'no cell of the way round in or on the lava');
+  assert.match(across.says, /; round the lava instead, \d+ cells from \(\d+, 65, -?\d\) to \(\d+, 65, -?\d\): \d+ of rock filling the way, to dig \(\d+ blocks, about [\d.]+ seconds\)/);
+  // With a bucket carried, scooping is a way; digging round is one; each priced.
+  bot.inventory.items = () => [{ name: 'netherrack', count: 64, type: 1 }, { name: 'bucket', count: 1, type: 2 }];
+  let options = crossingOptions(bot, new Task('hunt'), 'floors seen', across, {});
+  assert.deepEqual(Object.keys(options).sort(), ['cover_lava', 'dig_through', 'scoop_lava']);
+  assert.match(options.scoop_lava.description, /^Scoop the lava on the way to floors seen with the 1 empty bucket carried: 2 of its 6 cells on the way are sources, and a bucket takes a source each \(flowing lava cannot be scooped/);
+  assert.match(options.dig_through.description, /^Dig through the rock filling the way to floors seen, round the lava: .* No pickaxe carried: the rock is dug by hand, and netherrack dug by hand drops nothing\. Rock is dug only where no lava or water lies behind it\./);
+  // A corridor's mouth filled with netherrack, the floor seen past it: dug through, no lava.
+  const plug = p => p.x >= 12 && p.x <= 13 && p.y >= 65 && p.y <= 67 && p.z >= -1 && p.z <= 1 ? 'netherrack' : undefined;
+  const { bot: b2 } = corridor({ extra: plug });
+  b2.entity.position = new Vec3(11.5, 65, 0.5);
+  const map2 = { cells: {}, failed: {}, spawners: [], chests: [] };
+  for (let x = 0; x <= 40; x++) for (let z = -1; z <= 1; z++) if (x < 12 || x > 13) map2.cells[`${x},64,${z}`] = [x < 12 ? 1 : 0, 0, 0];
+  const planned2 = fm.plan(b2, map2);
+  const across2 = crossingFor(b2, map2, planned2, planned2.groups[0].key);
+  assert.equal(across2.way.digCells, 2); assert.equal(across2.way.digs, 4);
+  options = crossingOptions(b2, new Task('hunt'), 'floors seen', across2, {});
+  assert.deepEqual(Object.keys(options), ['dig_through']);
+  // Two parts past the same lava (the floor past it broken at x 25) are one way across, offered as one.
+  const { unwalkedParts } = require('../src/mob-hunt');
+  const { bot: b3 } = corridor({ extra: p => lava(p) ? 'lava' : p.y === 64 && p.x === 25 && Math.abs(p.z) <= 1 ? null : undefined });
+  b3.entity.position = new Vec3(11.5, 65, 0.5);
+  const map3 = { cells: {}, failed: {}, spawners: [], chests: [] };
+  for (let x = 0; x <= 40; x++) for (let z = -1; z <= 1; z++) if ((x < 12 || x > 17) && x !== 25) map3.cells[`${x},64,${z}`] = [x < 12 ? 1 : 0, 0, 0];
+  const planned3 = fm.plan(b3, map3);
+  assert.equal(planned3.groups.length, 2);
+  const parts = unwalkedParts(b3, map3, planned3);
+  assert.equal(parts.length, 1, 'one way across the lava to both');
+  assert.deepEqual(parts[0].groups.map(g => g.cells), [21, 45]);
+  assert.match(options.dig_through.description, /^Dig through the rock filling the way to floors seen: 3 cells from \(11, 65, -?\d\) to \(14, 65, -?\d\): 2 of rock filling the way, to dig \(4 blocks, about 1\.6 seconds\), 1 of floor\./);
+});
+
+test('walking a small room again is said as pacing it: how far the floors joined to here run (mid-235-q-nether-1-fortress-3, note 564)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = corridor({ length: 16 });
+  const goal = { fortressSearch: { axis: 1, legs: 15 } };
+  const walks = [];
+  const client = jevStub(['leg_north']);
+  const actions = { client, navigate: walker(bot, walks), tunnel: async () => {} };
+  for (let i = 0; i < 20 && !client.asked.length; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  const { options } = client.asked[0];
+  assert.match(options.stay_in_fortress, /; the 51 floors joined to here lie within 17 by 3 blocks, and walking them again is walking back and forth in that, and no spawner has been seen;/);
 });
 
 test('after six empty patrols the sweep leaves along the fortress, and the section left behind does not pull it back', async () => {

@@ -110,6 +110,14 @@ function visit(bot, map, now) {
     const c = map.cells[keyOf(Math.floor(here.x) + dx, Math.floor(here.y + 0.01) + dy, Math.floor(here.z) + dz)];
     if (c) c[0] = t;
   }
+  // Ground the bot stands on is a floor of the map, whatever it is: its
+  // own blocks laid over lava or a gap join the floors either side, as the
+  // way it walked. Unjoined, the far side stayed unwalked floors across a
+  // gap it had crossed, offered again and crossed back (note 564).
+  const under = new Vec3(Math.floor(here.x), Math.floor(here.y + 0.01) - (here.y % 1 > 0.01 ? 0 : 1), Math.floor(here.z));
+  const k = keyOf(under.x, under.y, under.z);
+  const b = bot.blockAt(under);
+  if (!map.cells[k] && solid(b) && bot.entity.onGround !== false) map.cells[k] = FLOORS.includes(b.name) ? [t, ALL, b.name === 'nether_brick_stairs' ? 1 : 0] : [t, 0, 0];
 }
 // A spawner, nether wart and chests, each only as seen through open air.
 function features(bot, map, eye, now) {
@@ -225,12 +233,146 @@ function gapTo(bot, planned, group, map) {
   return best && { across: Math.round(best.d), from: best.a, to: best.b, dy: best.b[1] - best.a[1], says: gapSays(bot, best.a, best.b) };
 }
 
+// The way across to floors not joined to here, along the ground as a
+// player goes, not a straight line through the walls: floor walked, a
+// corridor's floor under lava covered (a block laid into the lava at the
+// feet takes its place, and the way goes on a block up, on the laid
+// blocks), rock filling the way dug (natural rock only, with no lava or
+// water behind it; the fortress's own bricks are walls), and open air with
+// no floor spanned. Cheapest by the seconds each cell takes. mid-242-aa-
+// fortress-2's corridor was cut off from both spawners by a lava fall onto
+// its floor, and every way across said "lava in the way" (note 564).
+// `lava: false` finds the way round the lava, if there is one.
+const STEP_S = 0.3, LAY_S = 1.4;
+// `groups`: a list of floor lists, one way found to each (one search).
+function crossing(bot, planned, targets, options = {}) { return crossings(bot, planned, [targets], options)[0]; }
+function crossings(bot, planned, groups, { lava = true, span = true, reach = 32, maxNodes = 12000, maxSeconds = 120 } = {}) {
+  if (!planned?.dist || !groups?.length || typeof bot.blockAt !== 'function') return groups.map(() => null);
+  const { NATURAL } = require('./bridging');
+  const at = (x, y, z) => bot.blockAt(new Vec3(x, y, z));
+  const isLava = b => /lava/.test(b?.name || '');
+  const clear = b => !!b && b.boundingBox === 'empty' && !liquid(b) && !/fire/.test(b.name);
+  const rock = (b, p) => !!b && b.boundingBox === 'block' && b.diggable !== false && NATURAL.test(b.name) && require('./tunneling').safeExcavation(bot, p);
+  const digS = b => {
+    if (typeof b.digTime !== 'function') return 2;
+    let tool = null; try { tool = require('./skills').cheapestTool(bot, b); } catch (_) { /* no inventory */ }
+    return b.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000;
+  };
+  // A cell stood in at feet height `s`: what it takes to stand there.
+  const cell = (x, s, z) => {
+    const under = at(x, s - 1, z), feet = at(x, s, z), head = at(x, s + 1, z);
+    if (!under || !feet || !head) return null;
+    let kind = 'walk', cost = STEP_S, dig = 0, digSeconds = 0;
+    if (isLava(under)) {
+      // Lava lying on a floor, one deep: covered, it is walked on.
+      if (!lava || !solid(at(x, s - 2, z)) || isLava(at(x, s - 2, z))) return null;
+      kind = 'cover'; cost += LAY_S;
+    } else if (!solid(under)) {
+      if (!span || liquid(under)) return null;
+      kind = 'span'; cost += LAY_S;
+    }
+    for (const [b, p] of [[feet, new Vec3(x, s, z)], [head, new Vec3(x, s + 1, z)]]) {
+      if (clear(b)) continue;
+      if (!rock(b, p)) return null;
+      dig++; const t = digS(b); digSeconds += t; cost += t;
+    }
+    if (dig && kind === 'walk') kind = 'dig';
+    return { kind, cost, dig, digSeconds };
+  };
+  const key = (x, s, z) => `${x},${s},${z}`, memo = new Map();
+  const goal = new Map();
+  groups.forEach((targets, i) => { for (const [x, y, z] of targets || []) { const k = key(x, y + 1, z); if (!goal.has(k)) goal.set(k, []); goal.get(k).push(i); } });
+  const best = new Map(), prev = new Map(), info = new Map();
+  const heap = [];
+  const push = (k, c) => { heap.push([c, k]); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+  const origin = parse([...planned.dist.keys()][0]);
+  for (const k of planned.dist.keys()) { const [x, y, z] = parse(k); const kk = key(x, y + 1, z); best.set(kk, 0); info.set(kk, { kind: 'walk', dig: 0, digSeconds: 0, joined: true }); push(kk, 0); }
+  const found = groups.map(() => null);
+  let left = groups.filter(g => g?.length).length, n = 0;
+  while (heap.length && n++ < maxNodes) {
+    const [c, k] = pop();
+    if (c > best.get(k)) continue;
+    if (goal.has(k)) {
+      for (const i of goal.get(k)) if (!found[i]) { found[i] = k; left--; }
+      if (!left) break;
+    }
+    if (c > maxSeconds) break;
+    const [x, s, z] = parse(k);
+    for (const [dx, dz] of DIRS) for (const ds of [0, 1, -1]) {
+      const nx = x + dx, ns = s + ds, nz = z + dz;
+      if (Math.abs(nx - origin[0]) > reach * 2 || Math.abs(nz - origin[2]) > reach * 2) continue;
+      // A step up wants the head's room over where it is taken from; a span
+      // is laid level.
+      if (ds === 1 && !clear(at(x, s + 2, z))) continue;
+      if (ds === -1 && !clear(at(nx, s + 1, nz))) continue;
+      const nk = key(nx, ns, nz);
+      const cl = info.get(nk)?.joined ? { kind: 'walk', cost: STEP_S, dig: 0, digSeconds: 0 } : memo.has(nk) ? memo.get(nk) : memo.set(nk, cell(nx, ns, nz)).get(nk);
+      if (!cl || (cl.kind === 'span' && ds !== 0)) continue;
+      const nc = c + cl.cost;
+      if (best.has(nk) && best.get(nk) <= nc) continue;
+      best.set(nk, nc); prev.set(nk, k); info.set(nk, cl); push(nk, nc);
+    }
+  }
+  return found.map(k => k && wayOf(k));
+  function wayOf(found) {
+    const path = [];
+    for (let k = found; k; k = prev.get(k)) { const i = info.get(k); path.unshift({ at: parse(k), kind: i.kind, dig: i.dig, digSeconds: i.digSeconds, joined: !!i.joined }); if (i.joined) break; }
+    const [first, ...rest] = path;
+    const count = kind => rest.filter(p => p.kind === kind).length;
+    const lavaCells = rest.filter(p => p.kind === 'cover').map(p => new Vec3(p.at[0], p.at[1] - 1, p.at[2]));
+    // Lava beside the way, at the feet or under them: what a misstep or a
+    // push puts the bot in.
+    const besideLava = rest.filter(p => DIRS.some(([dx, dz]) => [0, -1].some(dy => isLava(at(p.at[0] + dx, p.at[1] + dy, p.at[2] + dz))))).length;
+    const sources = lavaCells.filter(p => lavaLevel(at(p.x, p.y, p.z)) === 0);
+    return { from: first.at, to: path.at(-1).at, cells: rest.map(p => ({ x: p.at[0], y: p.at[1], z: p.at[2], kind: p.kind })), steps: rest.length,
+      cover: count('cover'), span: count('span'), digCells: rest.filter(p => p.dig).length, digs: rest.reduce((a, p) => a + p.dig, 0),
+      digSeconds: Math.round(rest.reduce((a, p) => a + p.digSeconds, 0) * 10) / 10, seconds: Math.round(best.get(found)), besideLava,
+      lavaSources: sources.length, lavaCells: lavaCells.map(p => [p.x, p.y, p.z]), feed: lavaCells.length ? lavaFeed(bot, lavaCells) : null };
+  }
+}
+// A lava block's level: 0 a source, 1 to 7 flowing, 8 and up falling.
+function lavaLevel(b) {
+  if (!/lava/.test(b?.name || '')) return null;
+  const props = typeof b.getProperties === 'function' ? b.getProperties() : null;
+  const level = props?.level ?? b.metadata;
+  return Number.isFinite(Number(level)) ? Number(level) : null;
+}
+// Where lava lying on a floor comes from: the lava touching it followed
+// sideways and up, within sixteen blocks; the highest cell reached,
+// whether a source was among them, and whether any of it falls from above.
+function lavaFeed(bot, cells) {
+  const seen = new Set(cells.map(p => `${p}`)), queue = cells.slice();
+  let top = cells[0], source = null, falls = false;
+  for (let i = 0; i < queue.length && i < 400; i++) {
+    const p = queue[i];
+    for (const d of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]) {
+      const q = p.offset(...d), k = `${q}`;
+      if (seen.has(k) || Math.abs(q.x - cells[0].x) > 16 || Math.abs(q.z - cells[0].z) > 16 || q.y - cells[0].y > 16) continue;
+      const b = bot.blockAt(q);
+      if (!/lava/.test(b?.name || '')) continue;
+      seen.add(k); queue.push(q);
+      const level = lavaLevel(b);
+      if (level === 0 && !source) source = q;
+      if (d[1] === 1 || level >= 8) falls = true;
+      if (q.y > top.y) top = q;
+    }
+  }
+  return { cells: seen.size, top: [top.x, top.y, top.z], source: source && [source.x, source.y, source.z], falls };
+}
+// A crossing as said to Jev: what lies on it, cell by cell kinds counted.
+function crossingSays(c) {
+  const parts = [c.cover && `${c.cover} of lava lying on the floor, to cover (a block each, walked a block up)`, c.digCells && `${c.digCells} of rock filling the way, to dig (${c.digs} block${c.digs === 1 ? '' : 's'}, about ${c.digSeconds} seconds)`,
+    c.span && `${c.span} of open air with no floor, to span`, `${c.steps - c.cover - c.digCells - c.span} of floor`].filter(Boolean);
+  return `${c.steps} cells from (${c.from[0]}, ${c.from[1]}, ${c.from[2]}) to (${c.to[0]}, ${c.to[1]}, ${c.to[2]}): ${parts.join(', ')}`;
+}
+
 // The map as said to Jev: how much is walked, the ways on left, the rooms
 // seen.
 function mapSays(bot, map, planned, { now = Date.now() } = {}) {
   const here = bot.entity.position;
   const out = { floorsSeen: planned.seen, floorsWalked: planned.walked,
-    joinedOnFoot: planned.from ? `${planned.joined} of the floors seen are joined to where the bot stands` : 'the bot stands on no floor it has seen' };
+    joinedOnFoot: planned.from ? `${planned.joined} of the ${planned.seen} floors seen are joined to where the bot stands${planned.seen > planned.joined ? `; the other ${planned.seen - planned.joined} lie apart from it${planned.groups.length ? `, in ${planned.groups.length} part${planned.groups.length === 1 ? '' : 's'} with floors unwalked` : ''}` : ''}` : 'the bot stands on no floor it has seen' };
   out.waysOnFoot = planned.frontiers.length ? `${planned.frontiers.length} seen floor${planned.frontiers.length === 1 ? '' : 's'} running on into unseen space that the bot can walk to, the nearest ${planned.frontiers[0].steps} steps along the floors` : 'none: every floor joined to here that runs on into unseen space has been walked, or its walk failed';
   const off = s => `${Math.round(Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z))} blocks off`;
   if (map.spawners.length) out.spawnersSeen = map.spawners.map(s => { const st = stepsTo(map, planned, s); return `(${s.x}, ${s.y}, ${s.z}), ${off(s)}, ${st === null ? 'no floor seen joins it to here' : `about ${st} steps along the floors`}`; });
@@ -243,4 +385,4 @@ function mapSays(bot, map, planned, { now = Date.now() } = {}) {
   return out;
 }
 
-module.exports = { look, plan, mapSays, mapOf, gapTo, stepsTo, standing, reach, floorAt, keyOf, parse, FLOORS, FAILED_MS };
+module.exports = { look, plan, mapSays, mapOf, gapTo, crossing, crossings, crossingSays, lavaLevel, stepsTo, standing, reach, floorAt, keyOf, parse, FLOORS, FAILED_MS };

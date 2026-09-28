@@ -1578,6 +1578,14 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     // forty times, was set aside for ten minutes of legs that ended at once
     // (note 557). The way is left; the fortress's other ways are asked.
     delete options.keep_searching;
+    // The ways across along the ground to floors seen unwalked (note 564).
+    if (stretch.across) {
+      for (const [key, option] of Object.entries(crossingOptions(bot, task, what, stretch.across, actions))) {
+        const tries = approach.failed.filter(f => f.choice === key);
+        if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
+        options[key] = option;
+      }
+    }
     options.other_way = { description: `Leave this way for now: ${what} is set aside for ten minutes, not the fortress, and the fortress's other ways are asked again (its unwalked floors, where blazes were seen, a spawner seen, walking its corridors again, or a leg away).`,
       run: async () => { stretch.leave?.(); return null; } };
   }
@@ -1644,6 +1652,102 @@ function fortressRuns(bricks, here) {
   return HEADINGS.map(([dx, dz]) => Math.max(0, ...bricks.map(b => Math.round((b.x + 0.5 - here.x) * dx + (b.z + 0.5 - here.z) * dz))));
 }
 
+// The way across to a group of floors seen unwalked (fortress-map.js
+// crossing): along the ground, and round the lava where the way has lava
+// on it and there is a way round.
+function crossingFor(bot, map, planned, keys) {
+  const fm = require('./fortress-map');
+  const members = [...new Set([keys].flat().flatMap(k => [...fm.reach(map, k).keys()]))].map(fm.parse);
+  const way = fm.crossing(bot, planned, members);
+  const round = way?.cover ? fm.crossing(bot, planned, members, { lava: false }) : null;
+  return { way, round, members, says: acrossSays(way, round) };
+}
+function acrossSays(way, round) {
+  const fm = require('./fortress-map');
+  return way ? `${fm.crossingSays(way)}, about ${way.seconds} seconds${round ? `; round the lava instead, ${fm.crossingSays(round)}, about ${round.seconds} seconds` : way.cover ? '; no way round the lava found along the ground' : ''}` : null;
+}
+// The floors seen unwalked, as parts to cross to: each part's way across
+// along the ground found in one search, and the parts one way reaches
+// through the same lava, rock or gap offered as one, the nearest part
+// named. mid-235-q-nether-1-fortress-3's nearest two parts lay across the
+// same lava in its corridor, offered apart, and the choice to cross was
+// split between them (note 564).
+const UNWALKED_PARTS = 8;
+function unwalkedParts(bot, map, planned) {
+  const fm = require('./fortress-map');
+  const groups = planned.groups.slice(0, UNWALKED_PARTS);
+  const members = groups.map(g => [...fm.reach(map, g.key).keys()].map(fm.parse));
+  const ways = fm.crossings(bot, planned, members);
+  const rounds = ways.some(w => w?.cover) ? fm.crossings(bot, planned, members.map((m, i) => ways[i]?.cover ? m : null), { lava: false }) : [];
+  // The same obstacle: the first cell that is not floor, of one kind,
+  // within a corridor's width of the other's.
+  const parts = [];
+  groups.forEach((g, i) => {
+    const way = ways[i], first = way?.cells.find(c => c.kind !== 'walk');
+    const same = first && parts.find(p => p.first && p.first.kind === first.kind && Math.abs(p.first.x - first.x) + Math.abs(p.first.y - first.y) + Math.abs(p.first.z - first.z) <= 3);
+    if (same) same.groups.push(g);
+    else parts.push({ g, way, round: rounds[i] || null, first, groups: [g] });
+  });
+  return parts;
+}
+// How far the floors joined to here run: a room walked again is paced.
+function joinedExtentSays(planned) {
+  const cells = [...(planned.dist?.keys() || [])].map(k => k.split(',').map(Number));
+  if (!cells.length) return 'no floor joined to here';
+  const w = Math.max(...cells.map(c => c[0])) - Math.min(...cells.map(c => c[0])) + 1, l = Math.max(...cells.map(c => c[2])) - Math.min(...cells.map(c => c[2])) + 1;
+  return `the ${cells.length} floors joined to here lie within ${Math.max(w, l)} by ${Math.min(w, l)} blocks, and walking them again is walking back and forth in that`;
+}
+// The ways across along the ground, for fortress_approach on the way to
+// floors seen unwalked: covering the lava lying on the floor, scooping its
+// sources with the buckets carried, and digging through (or round the lava
+// through) the rock filling the way. Each priced by its cells, blocks and
+// seconds, and what standing beside lava risks.
+function crossingOptions(bot, task, what, across, actions) {
+  const options = {}, { way, round } = across;
+  if (!way) return options;
+  const { crossAlong } = require('./bridging');
+  const fm = require('./fortress-map');
+  const carried = blocksCarried(bot);
+  const run = (c, scoop = false) => async () => {
+    const done = await crossAlong(bot, task, c, { navigate: actions.navigate, scoop });
+    return done ? null : 'came no nearer';
+  };
+  const blocksSays = c => {
+    const need = c.cover + c.span;
+    if (!need) return '';
+    return ` ${need} block${need === 1 ? '' : 's'} laid of the ${carried} carried${need > carried ? `: they run out ${carried} in, and the crossing stops there` : `, ${carried - need} left after`}.`;
+  };
+  const toolSays = c => {
+    if (!c.digs) return '';
+    const pick = (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name));
+    return pick ? '' : ' No pickaxe carried: the rock is dug by hand, and netherrack dug by hand drops nothing.';
+  };
+  const { RATE, BURNS_AFTER } = require('./body');
+  const fireproof = !!require('./body').lasts(bot, 'lava').fireResistance;
+  const burn = c => c.besideLava ? ` ${c.besideLava} of its cells are beside lava: a misstep or a push there puts the bot in it, about ${RATE.lava} health a second while in it and burning up to ${BURNS_AFTER.lava} seconds after at a health a second${fireproof ? ' (fire resistance is on the body: none of that while it lasts)' : ''}; the crossing is walked crouched, and a cell with lava on it when reached is not walked into.` : '';
+  if (way.cover) {
+    const feed = way.feed || {};
+    const feedSays = feed.source ? `has a source at (${feed.source.join(', ')})` : `is flowing, with no source seen among the ${feed.cells || way.cover} lava cells followed from it${feed.falls ? `: it runs down from above, up to (${feed.top.join(', ')}), and keeps coming` : ''}`;
+    options.cover_lava = { description: `Cover the lava lying on the floor on the way to ${what}: ${fm.crossingSays(way)}. A block laid into lava takes its place, and flowing lava whose way is covered stops there: ${way.cover === 1 ? 'its one cell on the way is' : `the ${way.cover} cells of it on the way are each`} covered with a block laid on the floor under it and walked on a block up.${blocksSays(way)} About ${way.seconds} seconds.${toolSays(way)} The lava ${feedSays}; lava still running beside the laid blocks can run onto one where it has room.${burn(way)}`,
+      run: run(way) };
+    const buckets = (bot.inventory?.items?.() || []).filter(i => i.name === 'bucket').reduce((n, i) => n + i.count, 0);
+    if (buckets && way.lavaSources) {
+      options.scoop_lava = { description: `Scoop the lava on the way to ${what} with the ${buckets} empty bucket${buckets === 1 ? '' : 's'} carried: ${way.lavaSources} of its ${way.cover} cells on the way are sources, and a bucket takes a source each (flowing lava cannot be scooped; a flow whose source is taken drains in a few seconds); a cell still lava when reached is covered with a block instead. ${fm.crossingSays(way)}, about ${way.seconds} seconds at most.${burn(way)}`,
+        run: run(way, true) };
+    }
+  }
+  const dig = way.cover ? round : way;
+  if (dig?.digs) {
+    options.dig_through = { description: `Dig through the rock filling the way to ${what}${way.cover ? ', round the lava' : ''}: ${fm.crossingSays(dig)}.${blocksSays(dig)} About ${dig.seconds} seconds, ${dig.digSeconds} of them digging.${toolSays(dig)} Rock is dug only where no lava or water lies behind it.${burn(dig)}`,
+      run: run(dig) };
+  } else if (way.cover && round?.span) {
+    // Round the lava over open air: a span laid along the ground's edge.
+    options.span_round = { description: `Go round the lava to ${what} along the ground, laying a one-wide span where there is no floor: ${fm.crossingSays(round)}.${blocksSays(round)} About ${round.seconds} seconds, crouched; on the span no mob is swung at or turned to.${burn(round)}`,
+      run: run(round) };
+  }
+  return options;
+}
+
 // The fortress in view, as fortress_leg offers it (chooseLeg). `stay`: the
 // bot is on its floors and has walked all it can reach of what it has seen
 // (fortress-map.js, `map` and `planned`); what is left is Jev's with what the
@@ -1685,19 +1789,26 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
         run: () => { state.spawnerWait = { x: spawner.x, y: spawner.y, z: spawner.z, until: Date.now() + SPAWNER_WAIT_MS }; delete state.spawnerWaitEnded; save(); return 'wait'; } };
     }
     // Floors seen that no floor seen joins to here, nearest first: the way
-    // across is Jev's, each gap said (a span over air, lava on the floor, a
-    // wall between).
-    planned.groups.slice(0, 3).forEach((g, i) => {
-      const gap = fm.gapTo(bot, planned, g, map);
+    // across is Jev's, each said as it lies along the ground (lava lying on
+    // the floor to cover, rock filling the way to dig, open air to span),
+    // and round the lava where there is a way round. The straight line
+    // between the nearest two floors went through the walls: mid-235-q-
+    // nether-1-fortress-3's was "4 of lava, 2 of wall or rock", where the way
+    // was six blocks laid into the lava of the corridor beside (note 564).
+    unwalkedParts(bot, map, planned).slice(0, 3).forEach((part, i) => {
+      const { g, groups } = part, across = { way: part.way, round: part.round, says: acrossSays(part.way, part.round) };
+      const gap = across.way ? null : fm.gapTo(bot, planned, g, map);
+      const floors = groups.reduce((n, p) => n + p.cells, 0), open = groups.reduce((n, p) => n + p.open, 0);
+      const more = groups.length > 1 ? ` (with ${groups.length - 1} more part${groups.length === 2 ? '' : 's'} the same way reaches, ${floors} floors in all, ${open} of them running on into unseen space)` : '';
       const ended = state.goToEnded?.[`unwalked:${g.key}`];
       const dy = g.dy ? ` and ${Math.abs(g.dy)} ${g.dy > 0 ? 'up' : 'down'}` : '';
-      others[`unwalked_${i + 1}`] = { description: `Go to the fortress's unwalked floors seen ${g.off} blocks off${dy}, at (${g.at[0]}, ${g.at[1] + 1}, ${g.at[2]}): ${g.cells} floor${g.cells === 1 ? '' : 's'} seen there, ${g.open} of them running on into unseen space; no floor seen joins them to where the bot stands` +
-        `${gap ? `: the nearest crossing is ${gap.across} blocks from a floor it can walk to (${gap.from[0]}, ${gap.from[1] + 1}, ${gap.from[2]}), between them ${gap.says}${gap.dy ? `, ${Math.abs(gap.dy)} ${gap.dy > 0 ? 'up' : 'down'}` : ''}` : ''}. ` +
-        `The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase through the rock, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
-        run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, since: Date.now() }; save(); return 'goto'; } };
+      others[`unwalked_${i + 1}`] = { description: `Go to the fortress's unwalked floors seen ${g.off} blocks off${dy}, at (${g.at[0]}, ${g.at[1] + 1}, ${g.at[2]}): ${g.cells} floor${g.cells === 1 ? '' : 's'} seen there, ${g.open} of them running on into unseen space${more}; no floor seen joins them to where the bot stands` +
+        `${across.way ? `: the way across along the ground is ${across.says}` : gap ? `: no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to (${gap.from[0]}, ${gap.from[1] + 1}, ${gap.from[2]}), between them ${gap.says}${gap.dy ? `, ${Math.abs(gap.dy)} ${gap.dy > 0 ? 'up' : 'down'}` : ''}` : ''}. ` +
+        `The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: covering the lava, digging through the rock, a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
+        run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, keys: groups.map(p => p.key), since: Date.now() }; save(); return 'goto'; } };
     });
     const patrol = planned.patrol.length ? { key: 'stay_in_fortress',
-      description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.`,
+      description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.`,
       run: () => { state.patrolUntil = Date.now() + PATROL_MS; save(); return 'stay'; } } : null;
     return { key: 'stay_in_fortress', ...(patrol ? {} : { offer: false }), passes, bricks, facts, others,
       description: patrol?.description || '', run: patrol?.run || (() => 'stay') };
@@ -1751,8 +1862,15 @@ async function goToStep(bot, task, goal, save, actions, state) {
   }
   if (!close()) {
     let left = false;
+    // Floors seen unwalked: the ways across them along the ground are
+    // among the ways asked (note 564).
+    let across = null;
+    if (g.kind === 'unwalked' && g.key && state.map?.cells?.[g.key]) {
+      const fm = require('./fortress-map');
+      across = crossingFor(bot, state.map, fm.plan(bot, state.map), (g.keys || [g.key]).filter(k => state.map.cells[k]));
+    }
     const ended = await approachFortress(bot, task, goal, save, actions, state, target.floored(), [],
-      { stretch: { why: why || 'the walk came no nearer', what: GO_TO_SAYS[g.kind] || 'the place chosen', leave: () => { left = true; } } });
+      { stretch: { why: why || 'the walk came no nearer', what: GO_TO_SAYS[g.kind] || 'the place chosen', leave: () => { left = true; }, across } });
     if (ended) why = left ? 'Jev chose to leave that way for now' : ended;
   }
   const reached = close();
@@ -2031,4 +2149,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: state.targetCount, health: bot.health } };
 }
 
-module.exports = { claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };
+module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };

@@ -17,9 +17,9 @@ const material = bot => MATERIALS.map(n => bot.inventory.items().find(i => i.nam
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
 // one-block span. The sneak itself is held by bridgeTo for the whole span.
-async function creepTo(bot, task, cell, ms = 2500) {
+async function creepTo(bot, task, cell, ms = 2500, keys = ['forward']) {
   const centre = cell.offset(0.5, 0, 0.5);
-  return move(bot, task, { label: 'bridge_step', keys: ['forward'], sneak: true, look: centre.offset(0, 1.6, 0), maxMs: ms, tick: 40,
+  return move(bot, task, { label: 'bridge_step', keys, sneak: true, look: centre.offset(0, 1.6, 0), maxMs: ms, tick: 40,
     until: () => { const p = bot.entity.position; return Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + 0.6 && p.y > cell.y - 0.6; } });
 }
 
@@ -173,6 +173,79 @@ async function span(bot, task, target, maxBlocks, maxSteps) {
   return placed;
 }
 
+// A way across along the ground, as fortress-map.js crossing found it,
+// walked cell by cell, crouched: lava lying on the floor covered (a block
+// laid into it from the floor under it takes its place, and the way goes on
+// a block up), or its source scooped with an empty bucket when `scoop`;
+// rock filling the way dug (clear: natural rock with nothing flowing behind
+// it); open air with no floor spanned from the block stood on. Every cell
+// is read again as it is reached: lava that has run onto the way since the
+// look is not walked into. mid-242-aa-fortress-2's corridor was cut off
+// from its spawners by a lava fall onto its floor, every way across "lava
+// in the way" (note 564). Returns what it laid, dug and scooped.
+async function crossAlong(bot, task, crossing, { navigate = null, scoop = false } = {}) {
+  const { goals } = require('mineflayer-pathfinder');
+  const [fx, fs, fz] = crossing.from;
+  const start = new Vec3(fx, fs, fz);
+  if (bot.entity.position.floored().distanceTo(start) >= 1 && navigate) {
+    await navigate(bot, task, new goals.GoalBlock(fx, fs, fz), { timeoutMs: 30000, stallMs: 6000, onFoot: true });
+  }
+  if (bot.entity.position.floored().distanceTo(start) >= 1.5) throw new Error(`Not at the start of the crossing at (${fx}, ${fs}, ${fz})`);
+  const done = { laid: 0, dug: 0, scooped: 0 };
+  const spanning = { target: { x: crossing.to[0], y: crossing.to[1], z: crossing.to[2] }, since: Date.now() };
+  bot._spanning = spanning;
+  bot.setControlState('sneak', true);
+  const lay = async (ref, face, what) => {
+    const item = material(bot);
+    if (!item) throw new Error(`No blocks left to lay ${what}`);
+    await bot.equip(item, 'hand'); task.check();
+    await bot.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+    await bot.placeBlock(ref, face);
+    if (!solid(bot.blockAt(ref.position.plus(face)))) throw new Error(`The block laid ${what} did not land`);
+    done.laid++;
+  };
+  try {
+    for (const q of crossing.cells) {
+      task.check();
+      const fire = underFire(bot);
+      if (fire) throw new Error(`Not crossing with a ${fire.entity.name} ${Math.round(fire.distance)} blocks off able to see me`);
+      const here = bot.entity.position.floored(), cell = new Vec3(q.x, q.y, q.z), bed = cell.offset(0, -1, 0);
+      const step = cell.minus(here);
+      if (Math.abs(step.x) + Math.abs(step.z) !== 1 || Math.abs(step.y) > 1) throw new Error(`Off the crossing at ${here}, the next cell ${cell}`);
+      // Lava lying where the feet go down: scooped where it is a source and
+      // a bucket is carried, else covered by a block laid on the floor under it.
+      const under = bot.blockAt(bed);
+      if (/lava/.test(under?.name || '')) {
+        const level = require('./fortress-map').lavaLevel(under);
+        if (scoop && level === 0 && bot.inventory.items().some(i => i.name === 'bucket')) {
+          await require('./water').fillBucket(bot, task, bed, { fluid: 'lava' }); done.scooped++;
+        }
+        if (/lava/.test(bot.blockAt(bed)?.name || '')) {
+          const floor = bot.blockAt(bed.offset(0, -1, 0));
+          if (!solid(floor)) throw new Error(`No floor under the lava at ${bed}`);
+          await lay(floor, new Vec3(0, 1, 0), `into the lava at ${bed}`);
+        }
+      }
+      await clear(bot, task, cell); await clear(bot, task, cell.offset(0, 1, 0));
+      if (!solid(bot.blockAt(bed))) {
+        // Open air with no floor: laid level from the block stood on.
+        const support = bot.blockAt(here.offset(0, -1, 0));
+        if (step.y !== 0 || !solid(support)) throw new Error(`Nothing to lay the next block from at ${here}`);
+        await lay(support, new Vec3(step.x, 0, step.z), `over the open air at ${bed}`);
+      }
+      if (step.y > 0 && !passable(bot.blockAt(here.offset(0, 2, 0)))) throw new Error(`No room to step up from ${here}`);
+      if (!await creepTo(bot, task, cell, 2500, step.y > 0 ? ['forward', 'jump'] : ['forward'])) throw new Error(`Could not step onto ${cell}`);
+      if (bot.entity.position.y < cell.y - 0.6) throw new Error('Fell off the crossing');
+    }
+  } finally {
+    bot.setControlState('forward', false); bot.setControlState('jump', false);
+    for (let n = 0; n < 10; n++) { const v = bot.entity?.velocity; if (!v || Math.hypot(v.x, v.z) < 0.01) break; await sleep(50); }
+    bot.setControlState('sneak', false);
+    if (bot._spanning === spanning) bot._spanning = null;
+  }
+  return done;
+}
+
 // Crouched over an edge with the block under the middle open, a step back
 // onto the block the body rests on, crouched all the way: every way on is
 // measured from a cell with a floor. mid-235-p-nether-3 stood so for twenty
@@ -295,4 +368,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: blocksCarried(bot) - start, why: blocksCarried(bot) >= want ? null : why };
 }
 
-module.exports = { stepOntoFooting, bridgeTo, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS };
+module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, NATURAL };
