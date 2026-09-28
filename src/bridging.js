@@ -194,4 +194,105 @@ async function stepOntoFooting(bot, task) {
   }
 }
 
-module.exports = { stepOntoFooting, bridgeTo, underFire, surveyCrossing, stepToward, blocksCarried, MATERIALS };
+// The blocks a span is laid with that can be dug from ground walked to from
+// here, and those within `reach` that cannot. mid-244-ad-nether-2 stood at
+// the end of its own span over the lava sea, 61 carried and every leg
+// needing more than 90, and chose to mine "64 netherrack, the nearest 10
+// blocks off": the nearest was across the drop, nothing reachable on foot
+// was counted apart, each mine step walked back along the span, dug
+// nothing, and the next offer counted the span's own cobblestone, "the
+// nearest 1 blocks off" (note 561). Walked from the cell the bot stands in
+// (a step up, level or down, no digging, placing or jumping a gap), a block
+// counts where some cell of that walk has it within reach of the eye and it
+// has an open face, no lava beside it, and something under it for its drop
+// to land on; a floor with open air under it (a span, the bot's own among
+// them) is not counted: dug, the way back is a hole.
+const DROP_OF = { stone: 'cobblestone' };
+function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false } = {}) {
+  const out = { sources: [], reachable: {}, unreachable: {}, walkCells: 0 };
+  if (typeof bot.findBlocks !== 'function' || typeof bot.blockAt !== 'function' || !bot.entity?.position) return out;
+  const { restingCell } = require('./terrain'), { miningReach } = require('./mining-access');
+  const at = p => bot.blockAt(p), open = b => !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name || '');
+  const standing = c => open(at(c)) && open(at(c.offset(0, 1, 0))) && solid(at(c.offset(0, -1, 0))) && !/magma|lava/.test(at(c.offset(0, -1, 0))?.name || '');
+  const here = bot.entity.position, start = restingCell(bot) || here.floored();
+  const cells = new Map();
+  if (standing(start)) cells.set(`${start}`, { c: start, walk: 0 });
+  for (const queue = [...cells.values()]; queue.length;) {
+    const { c, walk: w } = queue.shift();
+    if (w >= walk) continue;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [0, 1, -1]) {
+      const n = c.offset(dx, dy, dz), key = `${n}`;
+      if (cells.has(key) || Math.hypot(n.x - start.x, n.z - start.z) > reach || !standing(n)) continue;
+      if (dy === 1 && !open(at(c.offset(0, 2, 0)))) continue;
+      if (dy === -1 && !open(at(c.offset(dx, 1, dz)))) continue;
+      const cell = { c: n, walk: w + 1 };
+      cells.set(key, cell); queue.push(cell);
+    }
+  }
+  out.walkCells = cells.size;
+  const ids = MATERIALS.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
+  const faces = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  // Keyed by number from where the walk began: a string key for each of
+  // the few hundred cells in reach of each of the thousands of blocks was
+  // a second of the event loop.
+  const num = p => ((p.x - start.x + 128) * 1024 + (p.y - start.y + 512)) * 256 + (p.z - start.z + 128);
+  const candidates = new Map();
+  for (const p of bot.findBlocks({ matching: ids, maxDistance: reach, count: 4096 }) || []) {
+    const b = at(p);
+    if (!b || !MATERIALS.includes(b.name) || skip(p)) continue;
+    const floorOverAir = standing(p.offset(0, 1, 0)) && !solid(at(p.offset(0, -1, 0)));
+    const diggable = !floorOverAir && !faces.some(f => /lava/.test(at(p.offset(...f))?.name || '')) && faces.some(f => open(at(p.offset(...f)))) &&
+      (solid(at(p.offset(0, -1, 0))) || solid(at(p.offset(0, -2, 0))));
+    if (diggable) candidates.set(num(p), { p, b, from: null });
+    else out.unreachable[b.name] = (out.unreachable[b.name] || 0) + 1;
+  }
+  // The cells in the order walked, so the first to reach a block is the
+  // nearest walk to it.
+  for (const cell of cells.values()) {
+    for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -3; dy <= 5; dy++) {
+      const k = candidates.get(num(cell.c.offset(dx, dy, dz)));
+      if (!k || k.from || k.p.equals(cell.c.offset(0, -1, 0))) continue;
+      if (miningReach(bot, cell.c.offset(0.5, 0, 0.5), k.p)) k.from = cell;
+    }
+  }
+  for (const { p, b, from } of candidates.values()) {
+    const tally = from ? out.reachable : out.unreachable;
+    tally[b.name] = (tally[b.name] || 0) + 1;
+    if (from) out.sources.push({ p, name: b.name, drops: DROP_OF[b.name] || b.name, from: from.c, walk: from.walk, block: b });
+  }
+  out.sources.sort((a, b) => a.walk - b.walk || a.p.distanceTo(here) - b.p.distanceTo(here));
+  return out;
+}
+// The blocks gathered in one go, near where the bot stands: the nearest it
+// can dig from ground it walks to, one after another until `want` are
+// carried, none is left within reach, three in a row gain nothing, or the
+// deadline passes. `mineAt` digs a block from where the bot stands and
+// picks up its drop (work.js mine). Returns what it gained and why it
+// stopped; a block that gained nothing is not tried again this round.
+async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = null, reach = 16, walk = 32, skip = () => false, onBlock = () => {} }) {
+  const { goals } = require('mineflayer-pathfinder');
+  const start = blocksCarried(bot), tried = new Set();
+  let misses = 0, why = null;
+  while (blocksCarried(bot) < want) {
+    task.check();
+    if (deadline && Date.now() > deadline) { why = 'the time it was said to take ran out twice over'; break; }
+    const { sources } = spanBlockSources(bot, { reach, walk, skip: p => tried.has(`${p}`) || skip(p) });
+    const s = sources[0];
+    if (!s) { why = 'nothing more of what a span is laid with can be dug from ground walked to from here'; break; }
+    tried.add(`${s.p}`); onBlock(s);
+    const before = blocksCarried(bot);
+    try {
+      const feet = bot.entity.position.floored();
+      if (!feet.equals(s.from)) await navigate(bot, task, new goals.GoalBlock(s.from.x, s.from.y, s.from.z), { timeoutMs: 15000, stallMs: 4000 });
+      await mineAt(s);
+    } catch (err) {
+      task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err;
+      why = err.message;
+    }
+    if (blocksCarried(bot) > before) { misses = 0; why = null; continue; }
+    if (++misses >= 3) { why = `three blocks in a row gave nothing${why ? ` (the last: ${why})` : ''}`; break; }
+  }
+  return { gained: blocksCarried(bot) - start, why: blocksCarried(bot) >= want ? null : why };
+}
+
+module.exports = { stepOntoFooting, bridgeTo, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS };

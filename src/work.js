@@ -2392,6 +2392,9 @@ async function executeAcquisition(bot, task, step, goal, save) {
   else if (step.action === 'fill_bucket') await collectWater(bot, task, goal, save, { navigate, explore });
   else if (step.action === 'make_obsidian') await makeObsidian(bot, task, step, goal, save, { navigate, dig, approachDryMining, collectNearbyDrops, resourceTunnelStep, acquireStep });
   else if (step.action === 'hunt_mob') await prepareMobHunt(bot, task, step, goal, save, { acquireStep, explore, enterNether: netherStep, navigate, dig, returnOverworld: returnFromNether,
+    // One block dug from where the bot stands and its drop picked up: the
+    // fortress search's restock chooses which (bridging.js gatherSpanBlocks).
+    mineAt: (b, t, g, sv, p, block, drops) => mine(b, t, { action: 'mine', block, sources: [block], drops, count: 1 }, g, sv, p),
     // The fortress sweep keeps no worksite: the rejoin walked the bot back
     // to the ledge it had just left, every other tick.
     // 'approach' is a shaft dug at a mob rather than past one, so the

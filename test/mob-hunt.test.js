@@ -667,7 +667,8 @@ test('a fortress leg over a void is priced by the blocks carried, its failure ke
   // A basalt ledge to z 1, a sixty-block void to z 61 over the lava sea, basalt again from z 62; a basalt wall north from z -4.
   const rock = p => p.y <= 31 ? 'lava' : (p.x === 5 && p.y === 63 && p.z === -3) ? 'netherrack'
     : (p.z <= 1 && p.y <= 64) || (p.z <= -4) || (p.z >= 62 && p.y <= 64) ? 'basalt' : null;
-  const { bot } = netherWorld(new Vec3(0.5, 65, 1.5), rock, []);
+  const carried = [];
+  const { bot, dug } = netherWorld(new Vec3(0.5, 65, 1.5), rock, carried);
   const near = [new Vec3(5, 63, -3)];
   for (let x = -3; x <= 3; x++) for (let z = -3; z <= 1; z++) for (let y = 60; y <= 64; y++) near.push(new Vec3(x, y, z));
   bot.findBlocks = ({ maxDistance }) => near.filter(p => p.distanceTo(bot.entity.position) <= maxDistance);
@@ -675,7 +676,7 @@ test('a fortress leg over a void is priced by the blocks carried, its failure ke
   const goal = { fortressSearch: { axis: 1, legs: 3, heading: 1, lastHeading: 1, legMode: 'level', target: { x: 1, y: 65, z: 97 }, legFrom: { x: 0, z: 1 }, legSince: Date.now() - 30000, legFails: 3 } };
   const mined = [];
   const actions = { navigate: async () => {}, tunnel: async () => { throw new Error('No safe way toward (1, 65, 97): open air'); },
-    acquireStep: async (b, t, item, count) => mined.push([item, count]), returnOverworld: async () => {} };
+    mineAt: async (b, t, g, sv, p, name, drops) => { mined.push(name); dug.add(`${p}`); carried.push({ name: drops, count: 1 }); }, returnOverworld: async () => {} };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   // No ground made from where it began: the leg south rests from here (note 557).
   assert(goal.fortressSearch.legRests.south, 'the leg south rests from here');
@@ -692,13 +693,64 @@ test('a fortress leg over a void is priced by the blocks carried, its failure ke
   assert.doesNotMatch(options.leg_east, /blocks laid/);
   assert.match(options.leg_south, /The last leg this way, begun 2 blocks from here, ended no nearer: No safe way toward \(1, 65, 97\): open air/);
   for (const k of ['leg_east', 'leg_west', 'leg_north']) assert.doesNotMatch(options[k], /ended no nearer/, `${k} was not tried`);
-  assert.match(options.restock_blocks, /^Mine 64 basalt to lay spans with, the nearest 1 blocks off/);
-  assert.match(options.restock_blocks, /175 basalt, 1 netherrack/);
+  const [, want, can] = options.restock_blocks.match(/^Dig (\d+) blocks to lay spans with here, one after another, from the (\d+) that can be dug from ground walked to from here \(\d+ basalt\)/);
+  assert.equal(Number(want), Math.min(60, Number(can)), 'what the longest leg short of blocks needs, as far as can be had here');
+  assert.match(options.restock_blocks, /The longest leg short of blocks needs 60 laid and 0 are carried: 60 short/);
+  assert.match(options.restock_blocks, /not to be dug from ground walked to from here [^:]*: [\d,]+ basalt, 1 netherrack/, 'the netherrack walled in by basalt');
   assert.match(options.return_for_blocks, /back through the portal to the Overworld/);
   assert.equal(state.blocksCarried, 0);
   // Jev chose the restock: basalt is mined, the leg waits for it.
-  assert.deepEqual(mined, [['basalt', 64]]);
+  assert.equal(mined.length, Number(want)); assert(mined.every(n => n === 'basalt'));
   assert.equal(goal.fortressSearch.target, undefined, 'no leg begun short of blocks');
+});
+
+test('a restock at the end of a span over the lava sea digs only what it can reach on foot, in one go, and never the span', async () => {
+  // mid-244-ad-nether-2 (note 561): at the end of its cobblestone span, 61 carried and every leg needing 90 and more, it chose
+  // "Mine 64 netherrack, the nearest 10 blocks off": across the drop. Each mine step walked back along the span and dug nothing,
+  // the leg walked it back to the span's end between them, and the next offer was the span itself, "36 cobblestone, 1 blocks off".
+  const { findFortressStep } = require('../src/mob-hunt');
+  const span = p => p.x === 0 && p.y === 72 && p.z >= -20 && p.z <= 0;
+  const outcrop = p => p.x >= 1 && p.x <= 3 && p.z >= -15 && p.z <= -11 && p.y >= 40 && p.y <= 74;
+  const island = p => p.x >= 9 && p.x <= 12 && p.z >= -24 && p.z <= -18 && p.y >= 60 && p.y <= 72;
+  const rock = p => p.y <= 31 ? 'lava' : span(p) ? 'cobblestone' : outcrop(p) || island(p) || (p.z >= 1 && p.y <= 72) ? 'netherrack' : null;
+  const carried = [{ name: 'cobblestone', count: 61 }];
+  const { bot, dug } = netherWorld(new Vec3(0.5, 73, -19.5), rock, carried);
+  const world = [];
+  for (let x = -20; x <= 20; x++) for (let y = 50; y <= 80; y++) for (let z = -40; z <= 5; z++) { const p = new Vec3(x, y, z); if (rock(p) && rock(p) !== 'lava') world.push(p); }
+  bot.findBlocks = ({ matching, maxDistance }) => { const ids = [].concat(matching);
+    return world.filter(p => !dug.has(`${p}`) && p.distanceTo(bot.entity.position) <= maxDistance && ids.includes(registry.blocksByName[rock(p)].id)); };
+  const walks = [], digs = [];
+  const actions = { tunnel: async () => {}, returnOverworld: async () => {},
+    navigate: async (b, t, g) => { walks.push(g); if (Number.isFinite(g.y)) bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+    mineAt: async (b, t, g, sv, p, name, drops) => {
+      assert(bot.entity.position.offset(0, 1.62, 0).distanceTo(p.offset(0.5, 0.5, 0.5)) <= 4.5, `${p} dug from where the bot stands`);
+      digs.push(p); dug.add(`${p}`); carried.push({ name: drops, count: 1 });
+    } };
+  const goal = { fortressSearch: { axis: 1, legs: 1, heading: 3, lastHeading: 3, legMode: 'level', target: { x: 1, y: 76, z: -22 }, legFrom: { x: 0, z: 74 }, legSince: Date.now() - 600000 } };
+  const client = jevStub(['restock_blocks']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client });
+  const { options } = client.asked[0];
+  const said = options.restock_blocks;
+  const [, want, can, need] = said.match(/^Dig (\d+) blocks to lay spans with here, one after another, from the (\d+) that can be dug from ground walked to from here \(\d+ netherrack\).* (\d+) short/);
+  assert.equal(Number(want), Math.min(Number(need), Number(can)));
+  assert.match(said, /The longest leg short of blocks needs \d+ laid and 61 are carried/);
+  assert.match(said, /not to be dug from ground walked to from here [^:]*: [\d,]+ netherrack, 17 cobblestone\./, 'the island across the drop, and the span itself');
+  assert.match(said, /the nearest \d+ blocks off, dug from a walk of \d+ blocks? from here, about \d+ seconds in all/);
+  // Chosen: gathered in one go, from the outcrop beside the span, the span and the island untouched.
+  assert.equal(digs.length, Number(want));
+  assert(digs.every(outcrop), `only the outcrop: ${digs.filter(p => !outcrop(p)).join(' ')}`);
+  assert(!walks.some(g => g.constructor.name === 'GoalNearXZ'), 'no walk back toward the leg\'s end between blocks');
+  assert.equal(goal.fortressSearch.restock, undefined);
+  assert.equal(goal.fortressSearch.lastRestock.gained, Number(want));
+  // A restock held (a threat broke it off) goes on where it stands, however far from the leg's end: it was looked at only
+  // within eight blocks of it, and the leg walked the bot back to the span's end between digs.
+  bot.entity.position = new Vec3(0.5, 73, -9.5); walks.length = 0; digs.length = 0;
+  const have = carried.reduce((n, i) => n + i.count, 0);
+  goal.fortressSearch.restock = { want: have + 3, since: Date.now(), said: 30, from: { x: 0, y: 73, z: -20 } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: jevStub([]) });
+  assert.equal(digs.length, 3, 'the restock went on');
+  assert(!walks.some(g => g.constructor.name === 'GoalNearXZ'), 'the leg did not take the tick');
+  assert.equal(goal.fortressSearch.lastRestock.gained, 3);
 });
 
 test('a leg walk that goes some way and comes back out is not ground made on the leg', async () => {
