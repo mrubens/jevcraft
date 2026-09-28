@@ -4,6 +4,15 @@ jevcraft is a harness that lets a decision model play Minecraft Survival. The mo
 
 The goal is the whole game from a fresh world with an empty inventory: Overworld, Nether, blaze rods, Eyes of Ender, the stronghold and the dragon ([GOAL.md](GOAL.md)). Getting there has meant running many trials in parallel and triaging every death and every loop. Most of this README is what that work taught us. It covers how Jev was given real agency and how each decision is put to it, then the loop we built to improve the harness. Jev can also be used as an in-game chat companion; that material is [further down](#using-jev-as-a-chat-companion).
 
+| | |
+|---|---|
+| ![Jev swings a ghast's fireball back at it](docs/media/fireball-returned.gif) | ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif) |
+| A ghast fires and Jev returns the fireball (return_fireball, p=0.31). | Jev closes in on a blaze and takes his first rod (close_in, p=0.42). |
+| ![Jev steps through his portal into the Nether](docs/media/nether-entered.gif) | ![A ghast's fireball knocks Jev into lava](docs/media/ghast-death.gif) |
+| A fresh world: Jev steps through his portal into the Nether 7 minutes in. | A ghast's fireball pushes Jev off his footing into lava (fight, p=0.22). |
+
+All four are rendered from the trials' own recordings with ReplayMod, in third person. The name is the option Jev picked and p its probability.
+
 - [Where it stands](#where-it-stands)
 - [Who decides what](#who-decides-what)
 - [Giving Jev agency](#giving-jev-agency)
@@ -156,7 +165,7 @@ The progress audit ([scripts/trials/progress-audit.js](scripts/trials/progress-a
 
 Each flag states its threshold. `--cohort <time>` sums the measures over every trial before and after a deploy. That is how we check whether a fix worked. Note 611 used it to trace a deploy after which re-asks following a hold jumped from about 7 an hour to about 103.
 
-For death replays, trial servers run Fabric with ServerReplay, which records the bot from join to leave. [scripts/trials/death-camera.js](scripts/trials/death-camera.js) writes a third-person camera path around each death into the replay, so ReplayMod can render real footage of what happened.
+For death replays, trial servers run Fabric with ServerReplay, which records the bot from join to leave. [scripts/trials/death-camera.js](scripts/trials/death-camera.js) writes a third-person camera path around each death into the replay, so ReplayMod can render real footage of what happened. [scripts/trials/highlights.js](scripts/trials/highlights.js) does the same for a day's notable moments: blaze kills and rods, fights won, fireballs sent back, a fresh world's first Nether and fortress, and deaths by kind. Each one comes with Jev's call and its probability, for captions.
 
 Supporting scripts:
 
