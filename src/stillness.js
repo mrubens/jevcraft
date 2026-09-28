@@ -60,7 +60,7 @@ const HOLDS = new Set(['hold_bunker', 'hold_defensive_position', 'fight', 'defen
   'hold_on_span']);
 // Emergencies end when the danger does; a rule that set aside the way out
 // of lava would be the death of the bot.
-const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'off_span', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off', 'creeper_hold',
+const EMERGENCIES = new Set(['leave_lava', 'leave_lava_edge', 'out_of_fire', 'off_hot_floor', 'off_span', 'escape_threat', 'eat', 'dig_out_of_block', 'creeper_back_off', 'creeper_hold',
   'creeper_close_in', 'fight_in_pocket', 'shoot', 'charge', 'off_the_edge', 'surface', 'swim_up']);
 // An emergency is excused while it is getting results, not by its name.
 // Where its result can be read, it is: a fight is a swing landed in the

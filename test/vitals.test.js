@@ -766,3 +766,111 @@ test('a hoglin is hostile to the meal: none at arm\'s length, and one walking up
   bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 10.5, y: 64, z: 0.5 }]]]);
   assert.equal(claim(bot), null, 'one that is at the bot within the meal\'s seconds is close');
 });
+
+// mid-242-aa-nether-3's ground at 04:14:17 as the death snapshot's region
+// file has it (note 579): x -28 to -15 across, z 40 to 53 down, by layer.
+// The bot's cobblestone walk at y 33 along z 47 over a lava lake (its top
+// at y 31), magma blocks at (-23, 33, 47) and (-22, 33, 47), open cave air
+// down to the lava at (-22, 33, 46) and (-21, 33, 46). The bot hung at
+// (-21.58, 34, 46.74), its middle over the hole and its box's edge on the
+// magma, where the crouched walk at a netherrack it had dug left it.
+const MAGMA_EDGE = {
+  36: ['........ccc...', '..............', '..............', '..............', '..............', '........ccc...', '........ccc...', '........ccc...', '..............', '..............', '..............', '..............', '..............', '..............'],
+  35: ['........c.c...', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............'],
+  34: ['........c.c...', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '..............', '....m.........', '....mm........', '....mm........'],
+  33: ['........nnn...', '........nnn...', '.........c....', '.........c....', '.........c....', '........ccc...', '........ccc...', 'cccccmmcccc...', '....mmm..c....', '....sss..c....', '....sss..c....', '....ms...c....', '....mm...c....', '....mm...c....'],
+  32: ['........nnnnnn', '........nnnnnn', '..........nnn.', '............n.', '............n.', '....nn........', '..............', '....nnn.......', '....nnn.......', '....sss.......', '....ss........', '...sms........', '...smm........', '...snn........'],
+  31: ['llllllllgnnnnn', 'lllllllllnnnnn', 'llllglllllnnnn', 'llllnlllllllnn', 'llllllllllllll', 'llllnnllllllll', 'llllnnllllllll', 'llllnnnlllllll', 'llllnnnlllllll', 'llllssslllllll', 'lllsssllllllll', 'lllsnsllllllll', 'lllsnnllllllll', 'lllsnnllllllll'],
+};
+function magmaEdge({ position = new Vec3(-21.575835, 34, 46.739675), sneak = false, items = [], health = 19.3 } = {}) {
+  const names = { '.': 'air', c: 'cobblestone', m: 'magma_block', n: 'netherrack', s: 'soul_sand', l: 'lava', g: 'gravel' };
+  const name = p => {
+    if (p.y < 31) return 'lava';
+    const c = MAGMA_EDGE[p.y]?.[p.z - 40]?.[p.x + 28];
+    return c ? names[c] : p.y > 36 ? 'air' : 'netherrack';
+  };
+  const controls = { sneak };
+  return { health, food: 20, oxygenLevel: 20, game: { dimension: 'the_nether' },
+    entity: { position, metadata: [0], onGround: true, eyeHeight: 1.62, yaw: 0, pitch: 0, height: 1.8, width: 0.6 }, entities: {},
+    inventory: { items: () => items, slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } } }, heldItem: null,
+    blockAt: p => { const q = p.floored ? p.floored() : p; const n = name(q); return { name: n, position: q, boundingBox: /air|lava/.test(n) ? 'empty' : 'block' }; },
+    setControlState(k, v) { controls[k] = v; }, getControlState(k) { return !!controls[k]; }, clearControlStates() {}, lookAt: async () => {}, look: async () => {} };
+}
+
+test('on a magma block\'s edge over a hole into the lava, the hot floor is seen though the cell under the middle is open (mid-242-aa-nether-3, note 579)', () => {
+  const vitals = require('../src/vitals');
+  const bot = magmaEdge();
+  assert.equal(bot.blockAt(bot.entity.position.floored().offset(0, -1, 0)).name, 'air', 'under the middle: the hole');
+  const hot = vitals.onHotFloor(bot);
+  assert(hot, 'the body rests on the magma');
+  assert.equal(hot.block.name, 'magma_block');
+  assert.equal(`${hot.cell}`, '(-22, 34, 47)');
+  // Crouched on it, the game does not hurt the body: no danger.
+  assert.equal(vitals.onHotFloor(magmaEdge({ sneak: true })), null);
+  // Off it, on the cobblestone the stand cell was chosen on, none.
+  assert.equal(vitals.onHotFloor(magmaEdge({ position: new Vec3(-20.5, 34, 47.5) })), null);
+  // The arbiter sees it as the body's own danger, whatever holds the turn.
+  const arbiter = require('../src/arbiter');
+  assert(arbiter.observeReflexes(bot, []).some(r => r.key === 'hot_floor' && r.layer === 'vitals'));
+  assert(require('../src/stillness').EMERGENCIES.has('off_hot_floor'));
+  // A lit campfire hurts crouched or not; an unlit one does not.
+  const { hotFloor } = require('../src/terrain');
+  assert.equal(hotFloor({ name: 'campfire', getProperties: () => ({ lit: true }) }), true);
+  assert.equal(hotFloor({ name: 'soul_campfire', getProperties: () => ({ lit: false }) }), false);
+});
+
+test('on the hot floor, Jev is offered the step off crouched and the crouch in place, said with the rate through the armour worn (mid-242-aa-nether-3, note 579)', async () => {
+  const vitals = require('../src/vitals');
+  const bot = magmaEdge();
+  const ways = vitals.hotFloorWays(bot, new Task('t'));
+  // Hanging over the hole, the block to stand on is not offered: it would go in the open cell under the middle.
+  assert.deepEqual(Object.keys(ways), ['step_off_hot_floor', 'crouch_on_hot_floor']);
+  assert.match(ways.step_off_hot_floor.description, /Step off the magma block crouched, 1 step to \(-21, 34, 47\) on cobblestone: crouched, a magma block does not hurt and a body does not walk off an edge \(a drop into lava beside the way\)/);
+  assert.match(ways.crouch_on_hot_floor.description, /does not hurt a crouched body on a magma block/);
+  const body = require('../src/body');
+  const says = body.conditionSays(bot, 'hot_floor', { floor: 'magma_block', hurt: 1, crouchSafe: true });
+  // An iron helmet and chestplate: the 0.7 a time the trial took, twice a second.
+  assert.match(says, /Standing on a magma block at 19.3 health: it hurts every half second, about 1.4 health a second through the armour worn, about 13.8 seconds to death/);
+  // The step off is walked crouched, onto the cobblestone.
+  const motion = require('../src/motion'), move = motion.move, moves = [];
+  motion.move = async (b, task, opts) => { moves.push(opts); b.entity.position = new Vec3(opts.look.x, 34, opts.look.z); return true; };
+  try { assert.equal(await ways.step_off_hot_floor.run(), true); }
+  finally { motion.move = move; }
+  assert.equal(moves.length, 1);
+  assert(moves.every(m => m.sneak === true && !m.keys.includes('sprint')));
+  assert.equal(vitals.onHotFloor(bot), null);
+  // The crouch: held, and no danger while it is.
+  const still = magmaEdge();
+  assert.equal(await vitals.hotFloorWays(still, new Task('t')).crouch_on_hot_floor.run(), true);
+  assert.equal(still.getControlState('sneak'), true);
+  assert.equal(vitals.onHotFloor(still), null);
+  // Standing square on the magma with blocks carried, the block to stand on is offered too.
+  const square = magmaEdge({ position: new Vec3(-21.5, 34, 47.5), items: [{ name: 'gravel', count: 16 }] });
+  assert.deepEqual(Object.keys(vitals.hotFloorWays(square, new Task('t'))), ['step_off_hot_floor', 'crouch_on_hot_floor', 'rise_on_block']);
+});
+
+test('standing still on the hot floor with the threat check throwing, the vitals step answers the floor first (mid-242-aa-nether-3, note 579)', async () => {
+  // The rest before a fight and the meal stood on the magma from 20 to none; the hurt watchdog's "something unseen" stopped each and nothing looked at the floor.
+  const vitals = require('../src/vitals');
+  const { NeedsSafety } = require('../src/danger');
+  const bot = magmaEdge();
+  const task = new Task('work');
+  task.interruptCheck = () => { throw new NeedsSafety({ entity: { name: 'something unseen' }, distance: 0 }); };
+  const motion = require('../src/motion'), move = motion.move;
+  motion.move = async (b, t, opts) => { t.check(); b.entity.position = new Vec3(opts.look.x, 34, opts.look.z); return true; };
+  const acted = [];
+  try { await assert.rejects(vitals.maintainVitals(bot, task, step => acted.push(step)), /Threat nearby/); }
+  finally { motion.move = move; }
+  assert.equal(acted[0]?.action, 'off_hot_floor', 'the floor answered first');
+  assert.equal(vitals.onHotFloor(bot), null, 'off the magma');
+});
+
+test('the straight walk at a drop is not taken onto a hot floor (mid-242-aa-nether-3, note 579)', () => {
+  // From the stand cell on the cobblestone toward the netherrack dug at (-24, 32, 46): the line crosses the magma.
+  const { hotOnTheWay } = require('../src/drop-collection');
+  const bot = magmaEdge({ position: new Vec3(-20.5, 34, 47.5) });
+  const hot = hotOnTheWay(bot, new Vec3(-23.5, 32.2, 46.5));
+  assert.equal(hot?.name, 'magma_block');
+  // Along the cobblestone east, none.
+  assert.equal(hotOnTheWay(bot, new Vec3(-18.5, 34, 47.5)), null);
+});

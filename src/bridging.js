@@ -286,7 +286,8 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false } = {
   if (typeof bot.findBlocks !== 'function' || typeof bot.blockAt !== 'function' || !bot.entity?.position) return out;
   const { restingCell } = require('./terrain'), { miningReach } = require('./mining-access');
   const at = p => bot.blockAt(p), open = b => !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name || '');
-  const standing = c => open(at(c)) && open(at(c.offset(0, 1, 0))) && solid(at(c.offset(0, -1, 0))) && !/magma|lava/.test(at(c.offset(0, -1, 0))?.name || '');
+  const { hotFloor } = require('./terrain');
+  const standing = c => open(at(c)) && open(at(c.offset(0, 1, 0))) && solid(at(c.offset(0, -1, 0))) && !/lava/.test(at(c.offset(0, -1, 0))?.name || '') && !hotFloor(at(c.offset(0, -1, 0)));
   const here = bot.entity.position, start = restingCell(bot) || here.floored();
   const cells = new Map();
   if (standing(start)) cells.set(`${start}`, { c: start, walk: 0 });

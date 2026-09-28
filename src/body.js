@@ -19,8 +19,10 @@
 // be hurt once each half second: 8 a second, before armour and fire
 // protection. Standing in fire, 1 a half second; burning, 1 a second, which
 // armour does not stop. A head in a block, 1 a half second; drowning, 2 a
-// second once the air is gone (vitals.js drowningSeconds).
-const RATE = { lava: 8, in_fire: 2, burning: 1, head_in_block: 2, drowning: 2 };
+// second once the air is gone (vitals.js drowningSeconds). A hot floor (a
+// magma block, a lit campfire) 1 a half second, a soul campfire 2 (the
+// terrain's HOT_FLOOR, its hurt a time), through armour (note 579).
+const RATE = { lava: 8, in_fire: 2, burning: 1, head_in_block: 2, drowning: 2, hot_floor: 2 };
 // What burning lasts after the source is left: fifteen seconds after lava,
 // eight after fire.
 const BURNS_AFTER = { lava: 15, fire: 8 };
@@ -41,13 +43,23 @@ function fireResistant(bot) {
 }
 
 // How long the body lasts at the rate it is losing health now.
-function lasts(bot, key, { air = bot.oxygenLevel ?? 20, inFire = false } = {}) {
+function lasts(bot, key, facts = {}) {
+  const { air = bot.oxygenLevel ?? 20, inFire = false } = facts;
   const hp = bot.health ?? 20;
   if (key === 'air') {
     const breath = require('./vitals').breathSeconds(bot, air);
     return { breathSeconds: round(breath), thenLosesPerSecond: RATE.drowning, secondsToDeath: round(breath + Math.max(0, hp / RATE.drowning)) };
   }
-  if ((key === 'lava' || key === 'fire') && fireResistant(bot)) return { losesPerSecond: 0, fireResistance: true, secondsToDeath: null };
+  if ((key === 'lava' || key === 'fire' || key === 'hot_floor') && fireResistant(bot)) return { losesPerSecond: 0, fireResistance: true, secondsToDeath: null };
+  // The hot floor's hurt is cut by the armour worn, as lava's is: the
+  // magma took 0.7 a time off mid-242-aa-nether-3 in an iron helmet and
+  // chestplate (note 579).
+  if (key === 'hot_floor') {
+    const hurt = hurtHalfSecond(facts);
+    const worn = throughArmour(bot, hurt);
+    const rate = worn ?? 2 * hurt;
+    return { losesPerSecond: round(rate), ...(worn != null ? { throughArmourWorn: true } : { beforeArmour: true }), secondsToDeath: round(hp / rate) };
+  }
   const rate = key === 'lava' ? RATE.lava : key === 'fire' ? (inFire ? RATE.in_fire : RATE.burning) : RATE.head_in_block;
   // Alight out of the fire, the fire left on the body (combat-estimate
   // burnLeft, note 548): it ends before the health does, or not.
@@ -66,24 +78,31 @@ function lasts(bot, key, { air = bot.oxygenLevel ?? 20, inFire = false } = {}) {
   }
   return { losesPerSecond: rate, ...(key === 'lava' || (key === 'fire' && inFire) ? { beforeArmour: true } : {}), secondsToDeath: round(hp / rate) };
 }
-function lavaThroughArmour(bot) {
+function lavaThroughArmour(bot) { return throughArmour(bot, 4); }
+// A second of a hurt that comes each half second, through the armour worn.
+function throughArmour(bot, hurt) {
   const names = [5, 6, 7, 8].map(slot => bot?.inventory?.slots?.[slot]?.name).filter(Boolean);
   if (!names.length) return null;
   const ce = require('./combat-estimate');
-  return 2 * ce.afterArmour(4, ce.armourOf(names));
+  return 2 * ce.afterArmour(hurt, ce.armourOf(names));
 }
+const hurtHalfSecond = facts => Number.isFinite(facts.hurt) ? facts.hurt : 1;
 
 // The condition in words, for the question's state.
 function conditionSays(bot, key, facts = {}) {
   const l = lasts(bot, key, facts);
   const hp = round(bot.health ?? 20);
-  if (l.fireResistance) return `${key === 'lava' ? 'In lava' : facts.inFire ? 'Standing in fire' : 'Alight'} at ${hp} health, with fire resistance on the body: it does not hurt while that lasts.`;
+  if (l.fireResistance) return `${key === 'lava' ? 'In lava' : key === 'hot_floor' ? `On a ${String(facts.floor || 'hot floor').replaceAll('_', ' ')}` : facts.inFire ? 'Standing in fire' : 'Alight'} at ${hp} health, with fire resistance on the body: it does not hurt while that lasts.`;
   switch (key) {
     case 'lava': return `In lava at ${hp} health: it takes about ${l.losesPerSecond} health a second ${l.throughArmourWorn ? 'through the armour worn (fire protection not counted)' : 'before armour'}, about ${l.secondsToDeath} seconds to death at that rate; once out, the body burns on up to ${BURNS_AFTER.lava} seconds at a health a second unless put out in water.`;
     case 'fire': return facts.inFire
       ? `Standing in fire at ${hp} health: about ${l.losesPerSecond} health a second before armour, about ${l.secondsToDeath} seconds to death at that rate, and it burns on up to ${BURNS_AFTER.fire} seconds after the fire is left.`
       : `Alight at ${hp} health, out of the fire: about ${l.fireLeftSeconds} second${l.fireLeftSeconds === 1 ? '' : 's'} of fire left (from the hurt that lit it: ${BURNS_AFTER.lava} after lava, ${BURNS_AFTER.fire} after fire, 5 after a fireball), a health a second that armour does not stop, about ${l.healthItTakes} health${l.burnsToDeath ? ', all the health the bot has' : ''}; water puts it out at once, and the Nether has no water.`;
     case 'head_in_block': return `The head is in ${facts.block ? `a block of ${String(facts.block).replaceAll('_', ' ')}` : 'a block'} at ${hp} health: suffocating, about ${l.losesPerSecond} health a second, about ${l.secondsToDeath} seconds to death at that rate.`;
+    case 'hot_floor': {
+      const floor = String(facts.floor || 'hot floor').replaceAll('_', ' ');
+      return `Standing on a ${floor} at ${hp} health: it hurts every half second, about ${l.losesPerSecond} health a second ${l.throughArmourWorn ? 'through the armour worn' : 'before armour'}, about ${l.secondsToDeath} seconds to death at that rate; ${facts.crouchSafe ? 'the game does not hurt a crouched body on a magma block, and' : 'crouching does not stop it;'} off it onto any other floor it stops.`;
+    }
     case 'air': return `The head is under water with ${facts.air ?? bot.oxygenLevel} of 20 air at ${hp} health: about ${l.breathSeconds} seconds of breath, then drowning at ${l.thenLosesPerSecond} health a second, about ${l.secondsToDeath} seconds to death if nothing changes.`;
     default: return `${key} at ${hp} health.`;
   }

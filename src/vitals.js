@@ -440,7 +440,7 @@ function fireRouteThrough(bot, throughFire, { edges = false } = {}) {
   const start = bot.entity.position.floored();
   const clear = b => b && b.boundingBox === 'empty' && (throughFire || !FIRE.has(b.name)) && b.name !== 'lava';
   const water = p => bot.blockAt(p)?.name === 'water';
-  const floor = p => { const b = bot.blockAt(p.offset(0, -1, 0)); return b && (b.boundingBox === 'block' || b.name === 'water') && !['lava', 'magma_block'].includes(b.name); };
+  const floor = p => { const b = bot.blockAt(p.offset(0, -1, 0)); return b && (b.boundingBox === 'block' || b.name === 'water') && b.name !== 'lava' && !require('./terrain').hotFloor(b); };
   const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
   const queue = [{ p: start, path: [] }], seen = new Set([`${start}`]);
   for (let i = 0; i < queue.length && i < 4096; i++) {
@@ -521,15 +521,91 @@ function riseOutOfFire(bot) {
   const around = dy => [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].filter(([dx, dz]) => dy.some(y => FIRE.has(bot.blockAt(top.offset(dx, y, dz))?.name))).length;
   return { block, top, flamesBeside: around([0, 1]), flamesBelow: around([-1]), fall: require('./movement').fallBeside(bot, top) };
 }
-async function riseOnBlock(bot, task, onAction = () => {}) {
+async function riseOnBlock(bot, task, onAction = () => {}, { action = 'out_of_fire', done = () => !inFire(bot) } = {}) {
   const rise = riseOutOfFire(bot);
-  onAction({ action: 'out_of_fire', way: 'rise_on_block', health: bot.health });
+  onAction({ action, way: 'rise_on_block', health: bot.health });
   if (!rise) return false;
   bot.pathfinder?.setGoal?.(null);
   const { pillarUp } = require('./pillar-recovery');
   try { await pillarUp(bot, task, rise.top.y, { maxBlocks: 1, threats: false, canDig: () => false, blocks: [...RISE_BLOCKS] }); }
   catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-  return !inFire(bot);
+  return done();
+}
+
+// The hot floor (note 579): a magma block, or a lit campfire, under the
+// body. mid-242-aa-nether-3's crouched walk at a drop ended with its box's
+// edge on a magma block beside a hole into the lava, the keys let go, and
+// it stood there from 20 to none in seventeen seconds, the work, the rest
+// before a fight and a meal each standing still on it; nothing looked at the
+// floor it stood on, only at the floor of cells it chose to walk to.
+// Crouched on a magma block the body is not hurt (the game's rule), and a
+// campfire hurts crouched or not.
+const sneaking = bot => !!(bot.getControlState ? bot.getControlState('sneak') : bot.controlState?.sneak);
+function onHotFloor(bot) {
+  if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return null;
+  const hot = require('./terrain').hotUnderfoot(bot);
+  return hot && !(hot.crouchSafe && sneaking(bot)) ? hot : null;
+}
+// The nearest cell off it, walked crouched: crouched, the magma passed over
+// does not hurt and the body does not walk off an edge (so no step down).
+// Other magma may be crossed on the way; a campfire is not.
+function hotFloorRoute(bot, hot = onHotFloor(bot), radius = 8) {
+  if (!hot) return null;
+  const { hotFloor } = require('./terrain');
+  const open = b => !!b && b.boundingBox === 'empty' && !FIRE.has(b.name) && !/lava|water|powder_snow/.test(b.name);
+  const under = p => bot.blockAt(p.offset(0, -1, 0));
+  const cool = p => !hotFloor(under(p));
+  const standable = p => open(bot.blockAt(p)) && open(bot.blockAt(p.offset(0, 1, 0))) && under(p)?.boundingBox === 'block' &&
+    (cool(p) || under(p).name === 'magma_block');
+  const start = hot.cell, dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  const queue = [{ p: start, path: [] }], seen = new Set([`${start}`]);
+  for (let i = 0; i < queue.length && i < 2048; i++) {
+    const { p, path } = queue[i];
+    if (path.length && cool(p)) return path;
+    for (const [dx, dz] of dirs) for (const dy of [0, 1]) {
+      const next = p.offset(dx, dy, dz);
+      if (seen.has(`${next}`) || Math.hypot(next.x - start.x, next.z - start.z) > radius || !standable(next)) continue;
+      if (dy === 1 && !open(bot.blockAt(p.offset(0, 2, 0)))) continue;
+      seen.add(`${next}`);
+      queue.push({ p: next, path: [...path, next] });
+    }
+  }
+  return null;
+}
+async function offHotFloor(bot, task, onAction = () => {}, route = hotFloorRoute(bot)) {
+  onAction({ action: 'off_hot_floor', steps: route?.length ?? null, health: bot.health });
+  if (!route) return false;
+  bot.pathfinder?.setGoal?.(null);
+  const { move } = require('./motion');
+  for (const cell of route) {
+    const target = cell.offset(0.5, 0, 0.5);
+    // Stood on each, near its middle: the game hurts by the nearest block
+    // under the box, so the cell's own floor is the one that counts there.
+    const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < 0.3 && Math.abs(here.y - cell.y) < 0.6; };
+    const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
+    await move(bot, task, { label: 'off_hot_floor', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look: target.offset(0, 1.6, 0), maxMs: 2000, tick: 50, until: there });
+  }
+  return !onHotFloor(bot);
+}
+// Crouched where it stands: held while the body stays on the magma and no
+// held-key walk is running, let go once it is off (whatever walked it off).
+// A walk that stands it up on the magma again meets the question again.
+function crouchOnHotFloor(bot, onAction = () => {}) {
+  onAction({ action: 'off_hot_floor', way: 'crouch_on_hot_floor', health: bot.health });
+  bot.setControlState?.('sneak', true);
+  if (typeof bot.on === 'function' && !bot._hotFloorCrouch) {
+    const release = () => {
+      if (bot._controller) return;
+      const still = require('./terrain').hotUnderfoot(bot);
+      if (still?.crouchSafe && sneaking(bot)) return;
+      bot.removeListener?.('physicsTick', release);
+      if (bot._hotFloorCrouch === release) delete bot._hotFloorCrouch;
+      if (!still?.crouchSafe && sneaking(bot)) bot.setControlState?.('sneak', false);
+    };
+    bot._hotFloorCrouch = release;
+    bot.on('physicsTick', release);
+  }
+  return true;
 }
 
 // Water within eight blocks a burning body can run into (douse).
@@ -785,6 +861,36 @@ function fireWays(bot, task, onAction = () => {}) {
   const first = pours ? 'douse_bucket' : !bucket && pond ? 'to_water' : 'burn_out';
   return { [first]: ways[first], ...ways };
 }
+// The ways off a hot floor (note 579), each said with where it goes and
+// its seconds: the step off to the nearest floor that does not hurt, walked
+// crouched; on a magma block, the crouch where it stands (the game does not
+// hurt a crouched body on one); a block put in the cell over it to stand
+// on; the golden apple, whose fire resistance stops the hot floor's hurt.
+// The first is the fallback's: the step off where there is one.
+function hotFloorWays(bot, task, onAction = () => {}, hot = onHotFloor(bot)) {
+  const ways = {};
+  if (!hot) return ways;
+  const floor = hot.block.name.replaceAll('_', ' ');
+  const { fallBeside } = require('./movement');
+  const route = hotFloorRoute(bot, hot);
+  if (route) {
+    const end = route.at(-1), onto = bot.blockAt(end.offset(0, -1, 0))?.name?.replaceAll('_', ' ') || 'a block';
+    const crossed = route.slice(0, -1).filter(c => bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block').length;
+    const edges = [hot.cell, ...route].map(c => fallBeside(bot, c)).filter(Boolean);
+    const worst = edges.find(f => f.into === 'lava') || edges[0];
+    ways.step_off_hot_floor = { description: `Step off the ${floor} crouched, ${route.length} step${route.length === 1 ? '' : 's'} to (${end.x}, ${end.y}, ${end.z}) on ${onto}${crossed ? `, over ${crossed} more magma on the way` : ''}: crouched, a magma block does not hurt and a body does not walk off an edge${worst ? ` (${worst.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside the way)` : ''}; about ${round(Math.max(0.3, route.length / SNEAK))} seconds at about ${round(SNEAK)} blocks a second.`,
+      run: () => offHotFloor(bot, task, onAction, route) };
+  }
+  if (hot.crouchSafe) ways.crouch_on_hot_floor = { description: `Crouch where it stands and stay crouched: the game does not hurt a crouched body on a magma block, so it stops at once, and the bot can rest, eat or wait here crouched. The crouch is let go once the body is off the magma; a walk that stands it up on the magma again is asked about again. Crouched, a body moves at about ${round(SNEAK)} blocks a second.`,
+    run: async () => crouchOnHotFloor(bot, onAction) };
+  const rise = hot.crouchSafe && bot.entity.position.floored().equals(hot.cell) ? riseOutOfFire(bot) : null;
+  if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the cell over the ${floor}, and stand on it a block up, off the magma: about ${round(PILLAR_RISE_SECONDS)} seconds${rise.fall ? `, with ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}.`,
+    run: () => riseOnBlock(bot, task, onAction, { action: 'off_hot_floor', done: () => !onHotFloor(bot) }) };
+  const apple = bot.inventory?.items?.().find(i => i.name === 'enchanted_golden_apple');
+  if (apple) ways.eat_golden_apple = { description: `Eat the enchanted golden apple (${apple.count} carried) standing here: about ${EAT_MEAL_SECONDS} seconds eating first, hurt meanwhile, then fire resistance for five minutes, which stops the hot floor's hurt, sixteen extra health as absorption and strong regeneration.`,
+    run: async () => { onAction({ action: 'eat', item: apple.name, health: bot.health, hotFloor: true }); return require('./survival').eatApple(bot, task, apple); } };
+  return ways;
+}
 // The way out from under a block, as the old rule stepped: aside into an
 // open cell with a floor and nothing that falls over it, then the dig of
 // what is still there (maintainVitals below).
@@ -909,6 +1015,14 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot) && !body.held(bot, 'fire')) {
     await body.answer(bot, own, 'fire', fireWays(bot, own, onAction), { ...asked, facts: { inFire: false } }); own.check();
   }
+  // The hot floor, the same: whatever the step is (a walk, a dig, a rest
+  // before a fight, a meal), the floor the body stands on is looked at here.
+  const hot = onHotFloor(bot);
+  if (hot) {
+    const ways = hotFloorWays(bot, own, onAction, hot);
+    if (Object.keys(ways).length) await body.answer(bot, own, 'hot_floor', ways, { ...asked, facts: { floor: hot.block.name, hurt: hot.hurt, crouchSafe: hot.crouchSafe } });
+    own.check();
+  }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     // The way up is Jev's (body_way); with none found, the old swim, which
     // throws that no way up was found.
@@ -992,6 +1106,6 @@ function claim(bot) {
 
 // The actions this layer reports, wherever it is run from (survival.js
 // stepOnce runs it too): the turn they took was the vitals'.
-const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'out_of_powder_snow', 'surface']);
+const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, ACTIONS, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { claim, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

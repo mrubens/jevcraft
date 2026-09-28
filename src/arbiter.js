@@ -60,6 +60,10 @@ const REFLEXES = [
   { key: 'lava', layer: 'survival', action: 'leave_lava' },
   { key: 'fire', layer: 'vitals', action: 'out_of_fire' },
   { key: 'head_in_block', layer: 'vitals', action: 'dig_out_of_block' },
+  // A hot floor under a body standing still: mid-242-aa-nether-3 stood on
+  // a magma block from 20 to none through the work, a rest and a meal
+  // (note 579). The way off is body_way's, asked in the vitals step.
+  { key: 'hot_floor', layer: 'vitals', action: 'off_hot_floor' },
   { key: 'air', layer: 'vitals', action: 'swim_up' },
   { key: 'creeper', layer: 'survival', action: 'creeper_back_off' },
   { key: 'arm', layer: 'survival', action: 'escape_threat' },
@@ -70,7 +74,7 @@ const REFLEX_RANK = Object.fromEntries(REFLEXES.map((r, i) => [r.key, i]));
 // is a second and a half, but who acts next is Jev's, the claim said with
 // its facts beside the others (the user, 2026-09-27: "go to Jev on the
 // routing too"). Only the body's own physics (lava, fire, the head in a
-// block, air) is taken by rule.
+// block, a hot floor, air) is taken by rule.
 const ALERTS = new Set(['creeper', 'arm']);
 // Without Jev (the question's fallback, and the shadow's pick): the more
 // urgent claim, and among equals the layer that keeps the bot alive first.
@@ -84,6 +88,7 @@ const probe = {
   // Nether with no flames about, it has none, and the claims decide (note 548).
   burning: bot => require('./vitals').fireToAnswer(bot),
   headInBlock: bot => require('./vitals').headInBlock(bot),
+  hotFloor: bot => require('./vitals').onHotFloor(bot),
   // Burning out of the fire that Jev chose to leave to burn out (body_way):
   // held, not a reflex, until it could have ended or health falls four more.
   burnLeft: bot => !require('./vitals').inFire(bot) && !!require('./body').held(bot, 'fire'),
@@ -99,6 +104,8 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   if (look.inLava(bot)) add('lava', { inLava: true, health: bot.health });
   if (look.burning(bot) && !look.burnLeft?.(bot)) add('fire', { burning: true, health: bot.health });
   if (look.headInBlock(bot)) add('head_in_block', { headInBlock: true, health: bot.health });
+  const hot = look.hotFloor?.(bot);
+  if (hot) add('hot_floor', { hotFloor: hot.block?.name || true, health: bot.health });
   const air = bot.oxygenLevel ?? 20;
   if (air <= AIR + (was.has('air') ? HYSTERESIS : 0)) add('air', { air });
   const mobs = look.mobs(bot, CREEPER_REACH + HYSTERESIS + 1) || [];

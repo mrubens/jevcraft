@@ -661,7 +661,7 @@ function safeDropBelow(bot, p) {
   // Lava beside the cell dropped into runs into it with the bot standing
   // there: the drop was checked below and never beside.
   const beside = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => /^(lava|fire|soul_fire)$/.test(bot.blockAt(p.offset(x, 0, z))?.name || ''));
-  return under?.boundingBox === 'block' && !['lava', 'magma_block', 'cactus', 'fire'].includes(under.name) &&
+  return under?.boundingBox === 'block' && !['lava', 'cactus', 'fire'].includes(under.name) && !require('./terrain').hotFloor(under) &&
     !['sand', 'gravel'].includes(under.name) && !beside;
 }
 

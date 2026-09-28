@@ -63,6 +63,30 @@ function restingCell(bot, p = bot.entity?.position) {
   return cells.sort((a, b) => Math.hypot(a.x + 0.5 - p.x, a.z + 0.5 - p.z) - Math.hypot(b.x + 0.5 - p.x, b.z + 0.5 - p.z))[0] || null;
 }
 
+// A floor that hurts a body standing on it, the game's rules: a magma block
+// hurts one a half second (the hot floor) unless the body is crouched; a lit
+// campfire one a half second, a lit soul campfire two, crouched or not. The
+// game hurts by the block the body rests on, the nearest of those under its
+// box (restingCell), not the one under its middle: mid-242-aa-nether-3 hung
+// crouched over a hole into the lava with its box's edge on a magma block,
+// the cell under its middle open, and stood up there (note 579).
+const HOT_FLOOR = { magma_block: 1, campfire: 1, soul_campfire: 2 };
+function hotFloor(block) {
+  if (!block || !(block.name in HOT_FLOOR)) return false;
+  if (block.name === 'magma_block') return true;
+  const lit = block.getProperties?.().lit;
+  return lit === undefined || lit === true || lit === 'true';
+}
+// The hot floor under the body now: { block, cell (the cell stood in), hurt
+// (a time, before armour), crouchSafe } or null.
+function hotUnderfoot(bot, p = bot.entity?.position) {
+  const cell = restingCell(bot, p);
+  if (!cell) return null;
+  const block = bot.blockAt(cell.offset(0, -1, 0));
+  if (!hotFloor(block)) return null;
+  return { block, cell, hurt: HOT_FLOOR[block.name], crouchSafe: block.name === 'magma_block' };
+}
+
 // Beside a drop: a neighbouring cell the body could be pushed into with no
 // floor for three blocks under it, or lava under it. See survival.js flee.
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -281,4 +305,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

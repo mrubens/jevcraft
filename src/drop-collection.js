@@ -42,6 +42,26 @@ function pickupPositions(bot, drop) {
   return positions.sort((a, b) => a.distanceTo(drop.position) - b.distanceTo(drop.position));
 }
 
+// A hot floor the straight walk at a drop would bring the body to rest on:
+// the walk is crouched, which a magma block does not hurt, but it ends
+// where the keys are let go. mid-242-aa-nether-3 walked so at a netherrack
+// it had dug, onto a magma block at the edge of a hole into the lava, was
+// held there by the crouch, and stood up on it (note 579). Read along the
+// line as the game reads the floor (the nearest block under the box), up
+// to where the floor ends: a crouched body stops at an edge.
+function hotOnTheWay(bot, to, from = bot.entity.position) {
+  const { restingCell, hotFloor } = require('./terrain');
+  const steps = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.z - from.z) / 0.25));
+  for (let i = 0; i <= steps; i++) {
+    const p = new Vec3(from.x + (to.x - from.x) * i / steps, from.y, from.z + (to.z - from.z) * i / steps);
+    const cell = restingCell(bot, p);
+    if (!cell) return null;
+    const floor = bot.blockAt(cell.offset(0, -1, 0));
+    if (hotFloor(floor)) return { name: floor.name, x: floor.position?.x ?? cell.x, y: cell.y - 1, z: floor.position?.z ?? cell.z };
+  }
+  return null;
+}
+
 class PickupGoal extends goals.GoalBlock {
   constructor(point) { super(point.x, point.y, point.z); this.standingY = point.y; }
   // The graph uses integer cells; smoothing uses the surface height. Accept
@@ -130,6 +150,8 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
     if (!gained() && typeof bot.setControlState === 'function') {
       for (const drop of nearbyDrops(bot, item, origin, radius).filter(d => d.position.distanceTo(bot.entity.position) <= 3.5).slice(0, 3)) {
         task.check(); checkAir(bot);
+        const hot = hotOnTheWay(bot, drop.position);
+        if (hot) { console.log(`[drops] the straight walk at the ${item.replaceAll('_', ' ')} would stand on the ${hot.name.replaceAll('_', ' ')} at (${hot.x}, ${hot.y}, ${hot.z}); not walked`); continue; }
         // Crouched: a drop lying past an edge (a rod off a fortress roof) is
         // not worth the fall the walk straight at it would be. A sneaking
         // player cannot walk off an edge, so the walk is slower and longer.
@@ -155,4 +177,4 @@ async function collectNearbyDrops(bot, task, item, { before = countOf(bot, item)
   }
 }
 
-module.exports = { collectNearbyDrops, pickupPositions };
+module.exports = { collectNearbyDrops, pickupPositions, hotOnTheWay };

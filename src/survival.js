@@ -701,7 +701,7 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
   const dry = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !(water ? /lava|fire/ : /lava|fire|water/).test(b.name); };
   for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (let dy = -1; dy <= 5; dy++) {
     const c = feet.offset(dx, dy, dz);
-    if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || bot.blockAt(c.offset(0, -1, 0))?.name === 'magma_block' || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
+    if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block' || require('./terrain').hotFloor(bot.blockAt(c.offset(0, -1, 0))) || !dry(c) || !dry(c.offset(0, 1, 0))) continue;
     // Out of lava, never the cell the feet are in: the body leaned from it
     // into the lava beside, it was "the nearest dry cell", and mid-92-m
     // burned from sixteen health standing in it (2026-09-26). Cells with

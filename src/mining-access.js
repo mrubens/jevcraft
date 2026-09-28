@@ -3,7 +3,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { surveyRoute } = require('./skills');
 const { safeFromHostiles } = require('./danger');
-const { dryPassable: clear, dryLeaf, dryBodySpace, supportCell, damagingTerrain } = require('./terrain');
+const { dryPassable: clear, dryLeaf, dryBodySpace, supportCell, damagingTerrain, hotFloor } = require('./terrain');
 
 const wet = new Set(['water', 'lava', 'bubble_column', 'seagrass', 'tall_seagrass', 'kelp', 'kelp_plant']);
 const solid = block => block?.boundingBox === 'block' && !['magma_block', 'cactus'].includes(block.name);
@@ -23,7 +23,7 @@ function miningReach(bot, point, blockPosition) {
   // Underfoot is reachable only as a one-block drop onto something solid.
   if (feet.x === blockPosition.x && feet.z === blockPosition.z && blockPosition.y < point.y) {
     const under = bot.blockAt(blockPosition.offset(0, -1, 0));
-    return blockPosition.y === feet.y - 1 && under?.boundingBox === 'block' && !['lava', 'magma_block', 'sand', 'gravel'].includes(under.name);
+    return blockPosition.y === feet.y - 1 && under?.boundingBox === 'block' && !['lava', 'sand', 'gravel'].includes(under.name) && !hotFloor(under);
   }
   const eye = point.offset(0, 1.62, 0), aim = blockPosition.offset(0.5, 0.5, 0.5), direction = aim.minus(eye);
   if (direction.norm() > 4.5) return false;

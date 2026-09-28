@@ -221,13 +221,13 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `body_way`
 
-**The body is in danger of its own (in lava, alight or in fire, the head in a block, out of breath under water): which way out, now?**
+**The body is in danger of its own (in lava, alight or in fire, on a hot floor, the head in a block, out of breath under water): which way out, now?**
 
-- When: The moment a step meets the condition (the survival step for lava and burning, the vitals step for fire, a head in a block and the breath), with two or more ways out (one is taken without asking); asked again each time the step meets it, unless burning was chosen to be left to burn out, which holds until it could have burned out or health falls four more.
+- When: The moment a step meets the condition (the survival step for lava and burning, the vitals step for fire, a hot floor (a magma block not crouched, a lit campfire) under the body wherever it stands, a head in a block and the breath), with two or more ways out (one is taken without asking); asked again each time the step meets it, unless burning was chosen to be left to burn out, which holds until it could have burned out or health falls four more.
 - Decision tree, choice; stakes high; ledger kind `survival`
 - Bar: none: Jev's pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the code's old order answers only when Jev cannot be reached or has not answered in a second
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
-- Options built in: src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, headWays, airWays)
+- Options built in: src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, hotFloorWays, headWays, airWays)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
@@ -239,10 +239,12 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `swim_up` | root | swim straight up in the lava | in lava with no way out found and no dry footing known |
 | `out_of_fire` | root | run out of the fire to a cell two blocks from any flame, or into water | standing in fire with such a cell within twelve blocks by a way with no cell beside a fall that kills; said with the steps and seconds and whether the way runs through a flame |
 | `crouch_out_of_fire` | root | walk out of the fire crouched along cells beside a fall, to a cell two blocks from any flame | standing in fire where the way out runs beside a fall that kills (a span over the lava sea) and no way clear of the fall is found or it is slower; said with the steps, how many are beside the drop and what it falls into, and the seconds at a crouch |
-| `rise_on_block` | root | jump and put a block in the fire's cell underfoot, and stand on it a block up | standing in fire on a floor, a full block carried that holds on it, and the two cells over the feet open and not alight; said with the block, the seconds and the flames or fall beside the cell it rises to |
+| `rise_on_block` | root | jump and put a block in the cell underfoot (the fire's, or the one over a magma block), and stand on it a block up | standing in fire on a floor, or on a magma block with the middle of the body over it, a full block carried that holds on it, and the two cells over the feet open and not alight; said with the block, the seconds and the flames or fall beside the cell it rises to |
+| `step_off_hot_floor` | root | step off the hot floor crouched to the nearest floor that does not hurt | on a magma block not crouched, or a lit campfire, with such a floor within eight blocks by a way walked crouched (over other magma, no step down); said with the steps, the floor it ends on, a drop beside the way and the seconds |
+| `crouch_on_hot_floor` | root | crouch where it stands: a magma block does not hurt a crouched body | on a magma block not crouched; the crouch is let go once the body is off the magma, and a walk that stands it up on the magma again is asked about again |
 | `douse_bucket` | root | pour the carried water bucket at the feet and take the water back | alight out of the fire, a water bucket carried, not in the Nether, standing on a block in air |
 | `burn_out` | root | leave the burning to end by itself and go on | alight out of the fire; held until the burning could have ended or health falls four more |
-| `eat_golden_apple` | root | eat the enchanted golden apple: fire resistance for five minutes | in lava or alight with an enchanted golden apple carried; said with the 1.6 seconds of eating first |
+| `eat_golden_apple` | root | eat the enchanted golden apple: fire resistance for five minutes | in lava, alight or on a hot floor with an enchanted golden apple carried; said with the 1.6 seconds of eating first |
 | `step_aside` | root | step out from under the block into the open cell beside the feet | the head in a block and an open cell beside with a floor and nothing that falls over it |
 | `dig_out` | root | dig the block the head is in, and what falls after it | the head in a block; said with the block and the seconds with the best tool carried |
 | `swim_to_air` | root | swim the shortest way to air, digging what is in the way | under water with a way to air found within the breath and the drowning after it; said with its seconds and digs |
@@ -252,7 +254,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Which layer has the bot's turn now: survival, the meal and breath, the hunt, or the work?**
 
-- When: When two or more layers claim the turn and none of them is the body's own danger (lava, fire, a head in a block, the breath: that layer's step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
+- When: When two or more layers claim the turn and none of them is the body's own danger (lava, fire, a hot floor, a head in a block, the breath: that layer's step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
 - Decision tree, choice; stakes high; ledger kind `survival`
 - Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
