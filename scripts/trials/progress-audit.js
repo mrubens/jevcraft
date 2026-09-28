@@ -9,8 +9,11 @@
 // what ground it covered, what it kept asking, and a plain verdict with the
 // flags it raised, each flag said with its threshold; and, for every trial,
 // the design review's measures against their targets (note 573).
-//   node scripts/trials/progress-audit.js [auto | port ...] [--minutes 15] [--history 60] [--json]
-// auto (the default) finds the running midgame servers as watch.sh does.
+//   node scripts/trials/progress-audit.js [auto | port ...] [--minutes 15] [--history 60] [--since <iso>] [--json]
+//   node scripts/trials/progress-audit.js --cohort <iso> [--since <iso>] [--json]
+// auto (the default) finds the running midgame servers as watch.sh does;
+// --since keeps the trials begun after it. --cohort sums the measures over
+// every trial's whole record, before and after a deploy (note 598).
 // JEV_ROOT reads another checkout's servers and records (from a worktree).
 const fs = require('fs');
 const path = require('path');
@@ -42,6 +45,10 @@ function thresholds(minutes, history) {
     fortressSighting: { minutes: 30, says: 'target: a fortress sighted within 30 min of entering the Nether (ours, from the pace told to Jev: rods and pearls within two hours of it)' },
     firstRod: { minutes: 60, says: 'target: the first blaze rod within 60 min of entering the Nether (ours, from the same pace)' },
     rungTarget: { closer: 8, says: 'target: the rung\'s target (the portal, the fortress, blazes, endermen, or the step\'s own) 8+ blocks closer at the window\'s end than at its start, or reached' },
+    // Note 598's measures.
+    waitShare: { share: 0.20, says: 'target: under 20% of the clocked minutes waiting: hold_bunker, in a shelter or sealed pocket (pocket_next stay, wait in shelter), a pillar top hold, back_to_wall, the wait for day (sealed), and the three minutes of a stay_in_fortress walk' },
+    stanceRate: { perMinute: 1, stretchMinutes: 1, health: 1, mob: 2, says: 'target: under 1 encounter_stance or turn_priority asking a minute over the stretches of a minute or more in which health stayed within 1, and the nearest mob\'s distance within 2 blocks, of what they were at the stretch\'s start' },
+    noneGoodStreak: { says: 'no target: the longest run of none_good answers in a row to one question' },
   };
 }
 
@@ -53,7 +60,9 @@ const frameAt = line => { const i = line.lastIndexOf('"at":"'); return i < 0 ? N
 // their terrain are what makes a file megabytes). Only the files that can
 // hold either are read: a file's frames run from its name's time to the next
 // file's.
-function readFlight({ identity, from, to, historyFrom, dir = FLIGHT }) {
+// `slim` (a function of a parsed frame) keeps only what a caller needs, for
+// a read over hours (the cohort's).
+function readFlight({ identity, from, to, historyFrom, dir = FLIGHT, slim = null }) {
   let names = [];
   try { names = fs.readdirSync(dir); } catch (_) { return { frames: [], history: [] }; }
   const files = names.filter(f => f.startsWith(identity + '-') && f.endsWith('.jsonl'))
@@ -82,7 +91,8 @@ function readFlight({ identity, from, to, historyFrom, dir = FLIGHT }) {
         try { const s = JSON.parse(line).snapshot; if (s?.position) history.push({ t, position: s.position, dimension: s.dimension }); } catch (_) {}
         continue;
       }
-      try { frames.push({ ...JSON.parse(line), t }); } catch (_) {}
+      let f; try { f = { ...JSON.parse(line), t }; } catch (_) { continue; }
+      frames.push(slim ? slim(f) : f);
     }
   });
   frames.sort((a, b) => a.t - b.t);
@@ -93,8 +103,78 @@ function readFlight({ identity, from, to, historyFrom, dir = FLIGHT }) {
 // or a decision's "at") place it. Read back from its end until a line wholly
 // before the window, then count the lines that say the bot is stuck or
 // unhappy with what it was offered.
-function readBotLog(file, from, { chunk = 2 << 20, cap = 48 << 20 } = {}) {
+const STAMPS = /"(?:at|askedAt)":"(\d{4}-\d\d-\d\dT[\d:.]+Z)"/g;
+const stampsOf = l => l.includes('At":"') || l.includes('"at":"') ? [...l.matchAll(STAMPS)].map(m => Date.parse(m[1])) : [];
+// What the bot log's lines count, a line at a time, in order. A hold
+// ([repeat], decisions/index.js) is placed at the newest stamp before it; a
+// question asked again after it (a decision line of that id answered later,
+// within the two minutes the hold is said) is a re-ask the hold did not stop.
+function botLogCounter(from) {
   const out = { read: false, missingOption: {}, stall: 0, still: 0, bug: 0, repeat: {}, reaskAfterHold: {} };
+  let lastStamp = null;
+  const holds = [], asked = new Set();
+  const line = (l, stamps = stampsOf(l)) => {
+    const m = l.match(/^\[missing option\] ([a-z_]+):/);
+    if (m) out.missingOption[m[1]] = (out.missingOption[m[1]] || 0) + 1;
+    else if (l.startsWith('[stall]')) out.stall++;
+    else if (l.startsWith('[still]')) out.still++;
+    else if (l.startsWith('[bug]')) out.bug++;
+    else if (l.startsWith('[repeat] ')) {
+      const id = (l.match(/^\[repeat\] ([^:]+):/)?.[1] || '?').trim().replaceAll(' ', '_');
+      out.repeat[id] = (out.repeat[id] || 0) + 1;
+      holds.push({ id, at: lastStamp ?? from });
+    } else if (l.startsWith('{')) {
+      const d = l.match(/"decision":\{"at":"([^"]+)"(?:,"askedAt":"[^"]+")?,"id":"([a-z_0-9]+)"/);
+      if (d) {
+        const at = Date.parse(d[1]), key = `${d[2]}@${d[1]}`;
+        if (!asked.has(key)) {
+          asked.add(key);
+          // Holds too old to be said any more are dropped (a log of hours).
+          while (holds.length && at - holds[0].at > HOLD_SAID_MS && holds.length > 64) holds.shift();
+          if (holds.some(h => h.id === d[2] && at > h.at && at - h.at <= HOLD_SAID_MS)) out.reaskAfterHold[d[2]] = (out.reaskAfterHold[d[2]] || 0) + 1;
+        }
+      }
+    }
+    for (const t of stamps) if (!(lastStamp >= t)) lastStamp = t;
+  };
+  return { out, line, lastStamp: () => lastStamp };
+}
+const copyCounts = o => JSON.parse(JSON.stringify(o));
+const minusCounts = (a, b) => {
+  const out = {};
+  for (const [k, v] of Object.entries(a)) out[k] = typeof v === 'number' ? v - (b[k] || 0) : v && typeof v === 'object' ? minusCounts(v, b[k] || {}) : v;
+  return out;
+};
+
+// A whole bot log read forward in chunks (one can be half a gigabyte, more
+// than a string holds), its counts split at `split`: a line is on the side
+// of its own newest stamp, or of the newest before it.
+function scanBotLog(file, { from = 0, split = Infinity, chunk = 8 << 20 } = {}) {
+  const c = botLogCounter(from);
+  let fd; try { fd = fs.openSync(file, 'r'); } catch (_) { return { before: c.out, after: null }; }
+  let before = null, rest = '';
+  const buf = Buffer.alloc(chunk);
+  const each = l => {
+    const stamps = stampsOf(l);
+    if (!before && Math.max(c.lastStamp() ?? -Infinity, ...stamps) >= split) before = copyCounts(c.out);
+    c.line(l, stamps);
+  };
+  try {
+    for (let n; (n = fs.readSync(fd, buf, 0, chunk, null)) > 0;) {
+      const lines = (rest + buf.toString('utf8', 0, n)).split('\n');
+      rest = lines.pop();
+      for (const l of lines) each(l);
+    }
+    if (rest) each(rest);
+  } finally { fs.closeSync(fd); }
+  c.out.read = true;
+  if (!before) return { before: c.out, after: split === Infinity ? null : { ...botLogCounter(from).out, read: true } };
+  before.read = true;
+  return { before, after: { ...minusCounts(c.out, before), read: true } };
+}
+
+function readBotLog(file, from, { chunk = 2 << 20, cap = 48 << 20 } = {}) {
+  const c = botLogCounter(from), out = c.out;
   let fd; try { fd = fs.openSync(file, 'r'); } catch (_) { return out; }
   try {
     const size = fs.fstatSync(fd).size;
@@ -109,35 +189,9 @@ function readBotLog(file, from, { chunk = 2 << 20, cap = 48 << 20 } = {}) {
     // Keep only the lines after the last one stamped before the window.
     const lines = text.split('\n');
     let begin = 0;
-    lines.forEach((l, i) => { const ts = [...l.matchAll(/"(?:at|askedAt)":"(\d{4}-\d\d-\d\dT[\d:.]+Z)"/g)].map(m => Date.parse(m[1])); if (ts.length && Math.max(...ts) < from) begin = i + 1; });
-    // A hold ([repeat], decisions/index.js) is placed at the newest stamp
-    // before it; a question asked again after it (a decision line of that
-    // id answered later, within the two minutes the hold is said) is a
-    // re-ask the hold did not stop.
-    let lastStamp = null;
-    const holds = [], asked = new Set();
-    for (const l of lines.slice(begin)) {
-      const m = l.match(/^\[missing option\] ([a-z_]+):/);
-      if (m) out.missingOption[m[1]] = (out.missingOption[m[1]] || 0) + 1;
-      else if (l.startsWith('[stall]')) out.stall++;
-      else if (l.startsWith('[still]')) out.still++;
-      else if (l.startsWith('[bug]')) out.bug++;
-      else if (l.startsWith('[repeat] ')) {
-        const id = (l.match(/^\[repeat\] ([^:]+):/)?.[1] || '?').trim().replaceAll(' ', '_');
-        out.repeat[id] = (out.repeat[id] || 0) + 1;
-        holds.push({ id, at: lastStamp ?? from });
-      } else if (l.startsWith('{')) {
-        const d = l.match(/"decision":\{"at":"([^"]+)"(?:,"askedAt":"[^"]+")?,"id":"([a-z_0-9]+)"/);
-        if (d) {
-          const at = Date.parse(d[1]), key = `${d[2]}@${d[1]}`;
-          if (!asked.has(key)) {
-            asked.add(key);
-            if (holds.some(h => h.id === d[2] && at > h.at && at - h.at <= HOLD_SAID_MS)) out.reaskAfterHold[d[2]] = (out.reaskAfterHold[d[2]] || 0) + 1;
-          }
-        }
-      }
-      for (const s of l.matchAll(/"(?:at|askedAt)":"(\d{4}-\d\d-\d\dT[\d:.]+Z)"/g)) { const t = Date.parse(s[1]); if (!(lastStamp >= t)) lastStamp = t; }
-    }
+    const stamps = lines.map(stampsOf);
+    stamps.forEach((ts, i) => { if (ts.length && Math.max(...ts) < from) begin = i + 1; });
+    for (let i = begin; i < lines.length; i++) c.line(lines[i], stamps[i]);
     out.read = true; out.coversWindow = reachedStart;
   } finally { fs.closeSync(fd); }
   return out;
@@ -177,7 +231,7 @@ const human = s => String(s).replaceAll('_', ' ');
 const round = (x, d = 0) => Math.round(x * 10 ** d) / 10 ** d;
 
 // Everything the verdict is made of, from the parsed frames.
-function measure({ frames, history, from, to, trial = {}, botLog = null, minutes, historyMinutes, known = null, firstRodAt = null }) {
+function measure({ frames, history, from, to, trial = {}, botLog = null, minutes, historyMinutes, known = null, firstRodAt = null, clock = null }) {
   const T = thresholds(minutes, historyMinutes);
   const positioned = frames.filter(f => f.snapshot?.position);
   const last = positioned.at(-1)?.snapshot || {};
@@ -200,19 +254,9 @@ function measure({ frames, history, from, to, trial = {}, botLog = null, minutes
   const latest = Object.entries(milestones).sort((a, b) => b[1] - a[1])[0] || null;
   const sinceMilestone = latest ? (to - latest[1]) / 60000 : Number.isFinite(started) ? (to - started) / 60000 : null;
 
-  // Time by step or rung: the run clock's own last half hour, cut to the
-  // window; the observations' step when there is no clock.
-  const doing = {};
-  const recent = progress?.clock?.recent;
-  if (Array.isArray(recent) && recent.length) {
-    for (const [t, what, dt] of recent) if (t >= from && t <= to) doing[what] = (doing[what] || 0) + dt;
-  } else {
-    const obs = positioned.filter(f => f.kind === 'observation');
-    for (let i = 0; i + 1 < obs.length; i++) {
-      const s = obs[i].snapshot, what = s.step?.action || s.goal?.step?.action || 'no step';
-      doing[what] = (doing[what] || 0) + Math.min(obs[i + 1].t - obs[i].t, 5000);
-    }
-  }
+  // Time by step or rung: the run clock's entries, cut to the window.
+  const entries = timeline({ frames, from, to, clock });
+  const doing = doingOf(entries);
   const clocked = Object.values(doing).reduce((a, b) => a + b, 0) / 60000;
   const byDoing = Object.entries(doing).sort((a, b) => b[1] - a[1]).map(([k, ms]) => [k, round(ms / 60000, 1)]);
   const top = byDoing[0] || null;
@@ -285,7 +329,7 @@ function measure({ frames, history, from, to, trial = {}, botLog = null, minutes
     questions: { asked: seen.size, byJev: answered, noneGood, noneGoodShare: answered ? round(noneGood / answered, 2) : null, top: repeats.slice(0, 5) },
     botLog, deaths: deaths.length,
   };
-  m.review = review({ minutes, frames, positioned, history, from, to, trial, known, firstRodAt, doing, clocked, progress, botLog, last });
+  m.review = review({ minutes, frames, positioned, history, from, to, trial, known, firstRodAt, doing, clocked, progress, botLog, last, entries });
   m.flags = flag(m, T, minutes);
   m.verdict = verdictOf(m, minutes);
   return m;
@@ -299,23 +343,143 @@ const sameCarried = (a, b) => { for (const k of new Set([...Object.keys(a), ...O
 const atOrBefore = (list, t) => { let lo = 0, hi = list.length - 1, i = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (list[mid].t <= t) { i = mid; lo = mid + 1; } else hi = mid - 1; } return i; };
 const REACH = { 'the portal': 4, 'the fortress': 24, blazes: 12, endermen: 12 };
 
-function review({ minutes, frames, positioned, history, from, to, trial, known, firstRodAt, doing, clocked, progress, botLog, last }) {
-  // A 15 min of the minutes asked for, not of the trial's so far: one
-  // quick answer in a trial a minute old is not fifteen a 15 min.
-  const T = thresholds(0, 0), per15 = n => round(n * 15 / minutes, 1);
+// The run clock's entries ([end, what, ms]) in [from, to]: every clock
+// the frames carry (each keeps its last half hour), joined, or `clock`
+// when a reader has joined them already; with no clock, the observations'
+// survival action while it is current, else their step.
+function clockOf(frames, into = new Map()) {
+  for (const f of frames) for (const e of f.snapshot?.goal?.gameProgress?.clock?.recent || []) if (Array.isArray(e)) into.set(`${e[0]}|${e[1]}`, e);
+  return into;
+}
+function timeline({ frames, from, to, clock = null }) {
+  const all = clock || [...clockOf(frames).values()];
+  const entries = all.filter(([t]) => t >= from && t <= to).sort((a, b) => a[0] - b[0]);
+  if (entries.length) return entries;
+  const obs = frames.filter(f => f.kind === 'observation' && f.snapshot?.position && f.t >= from && f.t <= to);
+  for (let i = 0; i + 1 < obs.length; i++) {
+    const s = obs[i].snapshot, sa = s.survivalAction || s.goal?.survivalAction;
+    const current = sa?.action && (!sa.at || obs[i].t - Date.parse(sa.at) < 8000) ? sa.action : null;
+    entries.push([obs[i + 1].t, current || s.step?.action || s.goal?.step?.action || 'no step', Math.min(obs[i + 1].t - obs[i].t, 5000)]);
+  }
+  return entries;
+}
+function doingOf(entries) {
+  const doing = {};
+  for (const [, what, dt] of entries) doing[what] = (doing[what] || 0) + dt;
+  return doing;
+}
 
-  // 1. Answers that came back at once with nothing gained: each answer's
-  // action ends when its question is asked again.
+// Every decision once, by its id and time, in order.
+function decisionsOf(frames) {
   const decs = [], seen = new Set();
   for (const f of frames) {
     const d = f.kind === 'decision' && f.snapshot?.decision;
-    if (!d?.id || d.stale || d.only) continue;
+    if (!d?.id || d.stale) continue;
     const at = Date.parse(d.at) || f.t, key = `${d.id}@${at}`;
     if (seen.has(key)) continue; seen.add(key);
-    decs.push({ id: d.id, at, askedAt: Date.parse(d.askedAt) || at, answer: (d.path || []).join('/') || '?' });
+    decs.push({ id: d.id, at, askedAt: Date.parse(d.askedAt) || at, answer: (d.path || []).join('/') || '?', only: !!d.only, byJev: !!d.judgments?.length, noneGood: !!d.noneGood });
   }
-  decs.sort((a, b) => a.at - b.at);
-  const carried = frames.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+  return decs.sort((a, b) => a.at - b.at);
+}
+
+// Minutes spent waiting (note 598): the survival waits by the clock's name
+// for them, hold_bunker by its step, and a stay_in_fortress walk (a
+// fortress_leg answer) for its three minutes or until the legs are asked
+// again, the find_fortress minutes inside it.
+const WAITS = /^(wait_in_shelter|pillar_hold|back_to_wall|wait_for_day|wait_for_day_sealed)$|(?:^|: )(hold_bunker)$/;
+const PATROL_MS = 3 * 60000; // mob-hunt.js PATROL_MS
+function waitsOf({ entries, decs }) {
+  const legs = decs.filter(d => d.id === 'fortress_leg'), patrols = [];
+  legs.forEach((d, i) => { if (d.answer.split('/')[0] === 'stay_in_fortress') patrols.push([d.at, Math.min(d.at + PATROL_MS, legs[i + 1]?.at ?? Infinity)]); });
+  const by = {};
+  let clocked = 0;
+  for (const [t, what, dt] of entries) {
+    clocked += dt;
+    const w = what.match(WAITS);
+    if (w) { const k = w[1] || w[2]; by[k] = (by[k] || 0) + dt; continue; }
+    if (!patrols.length || !/(?:^|: )find_fortress$/.test(what)) continue;
+    let ms = 0;
+    for (const [a, b] of patrols) ms += Math.max(0, Math.min(t, b) - Math.max(t - dt, a));
+    if (ms) by.stay_in_fortress = (by.stay_in_fortress || 0) + Math.min(ms, dt);
+  }
+  const ms = Object.values(by).reduce((a, b) => a + b, 0);
+  return { ms, clockedMs: clocked, minutes: round(ms / 60000, 1), clocked: round(clocked / 60000, 1), share: clocked >= 60000 ? round(ms / clocked, 2) : null,
+    by: Object.fromEntries(Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, round(v / 60000, 1)])) };
+}
+
+// Stance askings while nothing changed (note 598): the frames cut into
+// stretches, a new one each time health moves more than 1 or the nearest
+// mob's distance more than 2 blocks from the stretch's start (or a mob comes
+// or goes, or the dimension changes); encounter_stance and turn_priority
+// askings counted in the stretches of a minute or more. Health is in every
+// frame, the mobs only in the full ones (an event's), so the nearest mob is
+// what the last full frame said.
+const STANCE = new Set(['encounter_stance', 'turn_priority']);
+function stanceOf({ frames, decs }) {
+  const T = thresholds(0, 0).stanceRate;
+  const stretches = [];
+  let cur = null;
+  const nearOf = s => {
+    let near = null;
+    for (const m of s.mobs) {
+      const d = Number.isFinite(m.d) ? m.d : m.at && s.position ? dist3(m.at, s.position) : null;
+      if (d !== null && (near === null || d < near)) near = d;
+    }
+    return near;
+  };
+  for (const f of frames) {
+    const s = f.snapshot;
+    if (!s) continue;
+    const dim = s.dimension ? dimOf(s.dimension) : null, health = typeof s.health === 'number' ? s.health : null;
+    const near = Array.isArray(s.mobs) ? nearOf(s) : undefined;
+    if (cur) {
+      const changed = (dim && cur.dim && dim !== cur.dim) || (health !== null && cur.health !== null && Math.abs(health - cur.health) > T.health)
+        || (near !== undefined && cur.near !== undefined && ((near === null) !== (cur.near === null) || Math.abs(near - cur.near) > T.mob));
+      if (!changed) {
+        cur.end = f.t;
+        if (cur.health === null) cur.health = health;
+        if (cur.near === undefined) cur.near = near;
+        if (!cur.dim) cur.dim = dim;
+        continue;
+      }
+      cur.end = f.t;
+    }
+    stretches.push(cur = { start: f.t, end: f.t, dim, health, near });
+  }
+  const asks = decs.filter(d => STANCE.has(d.id));
+  let i = 0, stillAsks = 0, stillMs = 0, worst = null;
+  for (const s of stretches) {
+    let n = 0;
+    while (i < asks.length && asks[i].at < s.start) i++;
+    for (let j = i; j < asks.length && asks[j].at < s.end; j++) n++;
+    const ms = s.end - s.start;
+    if (ms < T.stretchMinutes * 60000) continue;
+    stillAsks += n; stillMs += ms;
+    const rate = n / (ms / 60000);
+    if (n && (!worst || rate > worst.perMinute)) worst = { asks: n, minutes: round(ms / 60000, 1), perMinute: round(rate, 2), at: new Date(s.start).toISOString() };
+  }
+  return { asks: asks.length, stillAsks, stillMs, stillMinutes: round(stillMs / 60000, 1), perMinute: stillMs >= 60000 ? round(stillAsks / (stillMs / 60000), 2) : null, worst };
+}
+
+// The longest run of none_good answers in a row to one question, each
+// question's answers in their own order (note 598).
+function noneGoodStreakOf(decs) {
+  const run = {};
+  let best = null;
+  for (const d of decs) {
+    if (d.only) continue;
+    if (!d.noneGood) { delete run[d.id]; continue; }
+    const r = run[d.id] ||= { id: d.id, run: 0, from: d.at };
+    r.run++; r.to = d.at;
+    if (!best || r.run > best.run) best = { ...r };
+  }
+  return best && { id: best.id, run: best.run, from: new Date(best.from).toISOString(), to: new Date(best.to).toISOString() };
+}
+
+// Answers that came back at once with nothing gained: each answer's
+// action ends when its question is asked again.
+function quickOf({ decs, positioned, carried }) {
+  const T = thresholds(0, 0);
   const byQuestion = {};
   const lastOf = {};
   for (const d of decs) {
@@ -331,16 +495,33 @@ function review({ minutes, frames, positioned, history, from, to, trial, known, 
     if (gained) continue;
     q.quick++; q.answersQuick[a.answer] = (q.answersQuick[a.answer] || 0) + 1;
   }
-  const quickNothing = Object.values(byQuestion).filter(q => q.quick).map(q => ({ id: q.id, quick: q.quick, answers: q.answers, per15: per15(q.quick),
+  return Object.values(byQuestion);
+}
+
+// Minutes on the stall's own steps, from the run clock.
+const STALL = /(^|: )(persist|detour|shake_loose)$/;
+function stallOf(doing) {
+  const by = {};
+  for (const [k, ms] of Object.entries(doing)) { const s = k.match(STALL)?.[2]; if (s) by[s] = (by[s] || 0) + ms; }
+  return { ms: Object.values(by).reduce((a, b) => a + b, 0), by };
+}
+
+function review({ minutes, frames, positioned, history, from, to, trial, known, firstRodAt, doing, clocked, progress, botLog, last, entries = [] }) {
+  // A 15 min of the minutes asked for, not of the trial's so far: one
+  // quick answer in a trial a minute old is not fifteen a 15 min.
+  const T = thresholds(0, 0), per15 = n => round(n * 15 / minutes, 1);
+
+  // 1. Answers that came back at once with nothing gained.
+  const decsAll = decisionsOf(frames), decs = decsAll.filter(d => !d.only);
+  const carried = frames.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+  const quickNothing = quickOf({ decs, positioned, carried }).filter(q => q.quick).map(q => ({ id: q.id, quick: q.quick, answers: q.answers, per15: per15(q.quick),
     answer: Object.entries(q.answersQuick).sort((a, b) => b[1] - a[1])[0][0] })).sort((a, b) => b.quick - a.quick);
 
   // 2. Asked again after a hold, from the bot log.
   const reask = botLog?.read ? { holds: { ...botLog.repeat }, reasked: { ...botLog.reaskAfterHold }, total: Object.values(botLog.reaskAfterHold).reduce((a, b) => a + b, 0) } : null;
 
   // 3. Minutes on the stall's own steps, from the run clock.
-  const STALL = /(^|: )(persist|detour|shake_loose)$/;
-  const stallBy = {};
-  for (const [k, ms] of Object.entries(doing)) { const s = k.match(STALL)?.[2]; if (s) stallBy[s] = (stallBy[s] || 0) + ms; }
+  const stallBy = stallOf(doing).by;
   const detourBy = {};
   for (let i = 0; i + 1 < positioned.length; i++) {
     const s = positioned[i].snapshot, step = s.step || s.goal?.step;
@@ -416,7 +597,12 @@ function review({ minutes, frames, positioned, history, from, to, trial, known, 
     return { name, start, best, end, reached: end <= reach, improving: end <= reach || closer >= T.rungTarget.closer, met: end <= reach || closer >= T.rungTarget.closer };
   }) };
 
-  return { quickNothing, reask, stall, nether, firsts, rung };
+  // 7-9. Waiting, stance askings while nothing changed, none-good runs (note 598).
+  const waits = waitsOf({ entries, decs: decsAll });
+  const { stillMs, ...stance } = stanceOf({ frames, decs: decsAll });
+  const noneGoodStreak = noneGoodStreakOf(decsAll);
+
+  return { quickNothing, reask, stall, nether, firsts, rung, waits: (({ ms, clockedMs, ...w }) => w)(waits), stance, noneGoodStreak };
 }
 
 // The review's measures said a line each, each against its target.
@@ -439,6 +625,11 @@ function reviewLines(m) {
   const g = r.rung;
   if (!g.targets.length) out.push({ id: 'rungTarget', met: null, text: `rung ${g.phase ? human(g.phase) : '?'}${g.step ? ` (${human(g.step)})` : ''}: no place to measure` });
   for (const t of g.targets) out.push({ id: 'rungTarget', met: t.met, text: `rung ${g.phase ? human(g.phase) : '?'}${g.phases.length > 1 ? ` (also ${g.phases.filter(p => p !== g.phase).map(human).join(', ')})` : ''}, ${t.name}: ${t.known === false ? 'none known' : t.says || `${t.start} at the start, ${t.end} at the end, best ${t.best} — ${t.reached ? 'reached' : t.improving ? 'improving' : 'not improving'}`}` });
+  const w = r.waits;
+  if (w) out.push({ id: 'waitShare', met: w.share === null ? null : w.share < T.waitShare.share, text: `waiting (under 20%): ${w.share === null ? 'no clock' : `${Math.round(w.share * 100)}%, ${w.minutes} of ${w.clocked} min`}${Object.keys(w.by).length ? ` (${Object.entries(w.by).map(([k, v]) => `${human(k)} ${v}`).join(', ')})` : ''}` });
+  const st = r.stance;
+  if (st) out.push({ id: 'stanceRate', met: st.perMinute === null ? null : st.perMinute < T.stanceRate.perMinute, text: `stance askings while nothing changed (under 1 a min): ${st.perMinute === null ? `no still stretch of a minute (${st.asks} asked)` : `${st.perMinute}/min, ${st.stillAsks} in ${st.stillMinutes} min unchanged (${st.asks} asked in all)${st.worst ? `; worst ${st.worst.asks} in ${st.worst.minutes} min from ${st.worst.at.slice(11, 16)}Z` : ''}`}` });
+  if (r.waits) out.push({ id: 'noneGoodStreak', met: null, noTarget: true, text: `longest none-good run (no target): ${r.noneGoodStreak ? `${r.noneGoodStreak.run} in a row to ${r.noneGoodStreak.id}, ${r.noneGoodStreak.from.slice(11, 19)} to ${r.noneGoodStreak.to.slice(11, 19)}Z` : 'none'}` });
   return out;
 }
 
@@ -541,10 +732,10 @@ function table(rows, minutes, historyMinutes) {
   }
   if (!flagged.length) out.push('No trial flagged.', '');
   // The design review's measures, every trial, each against its target.
-  out.push('Against the review\'s targets (ok / OVER / - not measurable):');
+  out.push('Against the review\'s targets (ok / OVER / - not measurable / . no target):');
   for (const r of rows) {
     out.push(`${r.port} ${r.world}`);
-    for (const l of reviewLines(r)) out.push(`  ${l.met === true ? 'ok  ' : l.met === false ? 'OVER' : '-   '} ${l.text}`);
+    for (const l of reviewLines(r)) out.push(`  ${l.met === true ? 'ok  ' : l.met === false ? 'OVER' : l.noTarget ? '.   ' : '-   '} ${l.text}`);
   }
   out.push('');
   out.push('Flags, and what raises them:');
@@ -552,16 +743,280 @@ function table(rows, minutes, historyMinutes) {
   return out.join('\n');
 }
 
+// ---- Before and after a deploy, across every trial (note 598) ----
+//   --cohort <iso> [--since <iso>]
+// Every trial record (artifacts/midgame), each from its start to its
+// verdict's end (else the next trial on its port, else now), its time cut
+// at the deploy: the flight record's and bot log's measures summed on each
+// side, deaths from the servers' own logs, and the minutes to the Nether,
+// to a fortress sighted and to the first rod by the side the trial began on
+// (a trial running across the deploy began before it).
+
+// The death messages, as scripts/trials/death-index.js finds them (it is a
+// script with side effects, so not required).
+const DEATH = / Jev ((was|died|fell|drowned|blew|burned|hit the|tried|walked into|suffocated|experienced|went|froze|starved|withered|discovered)[^\n]*)/;
+const causeOf = text => text.replace(/ (whilst|while) .*$/, '').replace(/ using \[.*$/, '').trim();
+
+// The deaths in one server log, each with its world (the last "Preparing
+// level" before it) and its clock time (local, as the server writes it).
+// The day is the archive's name, carried on past midnight, or latest.log's
+// last change counted back; a trial's span settles it (resolveDeaths).
+function deathsInLog(text, name, mtimeMs) {
+  const lines = text.split('\n'), out = [];
+  const clock = l => { const m = l.match(/^\[(\d\d):(\d\d):(\d\d)\]/); return m ? (+m[1] * 60 + +m[2]) * 60 + +m[3] : null; };
+  let day;
+  const named = name.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (named) day = new Date(+named[1], +named[2] - 1, +named[3]);
+  else {
+    const m = new Date(mtimeMs);
+    let rolls = 0, prev = null;
+    for (const l of lines) { const s = clock(l); if (s === null) continue; if (prev !== null && s < prev - 60) rolls++; prev = s; }
+    day = new Date(m.getFullYear(), m.getMonth(), m.getDate() - rolls);
+  }
+  let world = null, prev = null;
+  for (const l of lines) {
+    const level = l.match(/Preparing level "([^"]+)"/);
+    if (level) world = level[1];
+    const s = clock(l);
+    if (s === null) continue;
+    if (prev !== null && s < prev - 60) day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1);
+    prev = s;
+    const d = l.match(DEATH);
+    if (d) out.push({ world, cause: causeOf(d[1]), t: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, s).getTime() });
+  }
+  return out;
+}
+function serverDeaths(root = ROOT) {
+  const out = [];
+  let servers = [];
+  try { servers = fs.readdirSync(root).filter(d => /^\.clean-run(-\d+)?$/.test(d)); } catch (_) {}
+  for (const dir of servers) {
+    const logs = path.join(root, dir, 'logs');
+    let names = [];
+    try { names = fs.readdirSync(logs).sort(); } catch (_) { continue; }
+    for (const f of names) {
+      if (!(f.endsWith('.log.gz') || f === 'latest.log')) continue;
+      const file = path.join(logs, f);
+      try {
+        const text = f.endsWith('.gz') ? require('zlib').gunzipSync(fs.readFileSync(file)).toString() : fs.readFileSync(file, 'utf8');
+        for (const d of deathsInLog(text, f, fs.statSync(file).mtimeMs)) out.push({ ...d, server: dir });
+      } catch (_) {}
+    }
+  }
+  return out;
+}
+// Each death to its trial: the world's trial whose span holds it, the day
+// moved by one either way where the log's day was wrong.
+function resolveDeaths(deaths, trials) {
+  const byWorld = new Map(trials.map(t => [t.world, t]));
+  const out = [];
+  for (const d of deaths) {
+    const tr = byWorld.get(d.world);
+    if (!tr) continue;
+    const t = [0, -1, 1].map(k => d.t + k * 86400000).find(t => t >= tr.start - 60000 && t <= tr.end + 5 * 60000);
+    if (t !== undefined) out.push({ ...d, t });
+  }
+  return out;
+}
+
+// Every trial record, with its span. A verdict marked done ends it; one not
+// done says the minutes as of its last update, which is not the trial's
+// end (a trial left running, or stopped without a verdict): the last write
+// to its port's flight files before the next trial there ends it, else the
+// verdict's minutes, else the next trial or now.
+function trialRecords({ since = null, now = Date.now(), dir = path.join(ROOT, 'artifacts', 'midgame'), flight = FLIGHT } = {}) {
+  let flightNames = [];
+  try { flightNames = fs.readdirSync(flight); } catch (_) {}
+  let names = [];
+  try { names = fs.readdirSync(dir).filter(f => f.endsWith('.json')); } catch (_) {}
+  const all = [];
+  for (const f of names) {
+    let r; try { r = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { continue; }
+    const start = Date.parse(r.startedAt);
+    if (!Number.isFinite(start)) continue;
+    all.push({ ...r, world: r.world || f.slice(0, -5), start });
+  }
+  all.sort((a, b) => a.start - b.start);
+  for (const [i, t] of all.entries()) {
+    const next = all.slice(i + 1).find(n => n.port === t.port)?.start ?? Infinity;
+    const v = t.verdict, said = Number.isFinite(v?.minutes) ? (Date.parse(v.from) || t.start) + v.minutes * 60000 : null;
+    let ended = v?.done && said !== null ? said : null;
+    if (ended === null && t.port) {
+      const identity = `127_0_0_1-${t.port}-Jev`;
+      for (const f of flightNames) {
+        if (!f.startsWith(identity + '-') || !f.endsWith('.jsonl')) continue;
+        const s = midgameStart(f.slice(identity.length + 1));
+        if (!(s >= t.start - 60000 && s < next)) continue;
+        try { const m = fs.statSync(path.join(flight, f)).mtimeMs; if (!(ended >= m)) ended = m; } catch (_) {}
+      }
+    }
+    if (ended === null) ended = said ?? Infinity;
+    t.end = Math.max(t.start, Math.min(ended, next, now));
+  }
+  return all.filter(t => !(since !== null && t.start <= since));
+}
+
+// What a read over hours keeps of a frame.
+function slimFrame(clock) {
+  return f => {
+    clockOf([f], clock);
+    const s = f.snapshot || {}, d = s.decision;
+    return { kind: f.kind, t: f.t, snapshot: { position: s.position, dimension: s.dimension, health: s.health, inventory: s.inventory, survivalAction: s.survivalAction, step: s.step && { action: s.step.action },
+      ...(Array.isArray(s.mobs) ? { mobs: s.mobs.map(m => ({ d: m.d, at: m.at })) } : {}),
+      ...(d ? { decision: { id: d.id, at: d.at, askedAt: d.askedAt, path: d.path, stale: d.stale, only: d.only, noneGood: d.noneGood, judgments: d.judgments?.length ? [1] : [] } } : {}) } };
+  };
+}
+
+// One trial's measures on each side of `at`.
+function trialSides(tr, at, { dir = FLIGHT, logs = path.join(ROOT, 'artifacts') } = {}) {
+  const clock = new Map();
+  const { frames } = tr.port ? readFlight({ identity: `127_0_0_1-${tr.port}-Jev`, from: tr.start, to: tr.end, historyFrom: tr.start, dir, slim: slimFrame(clock) }) : { frames: [] };
+  const entries = [...clock.values()];
+  const split = tr.start >= at ? -Infinity : tr.end <= at ? Infinity : at;
+  const log = scanBotLog(path.join(logs, `midgame-${tr.world}.log`), { from: tr.start, split });
+  const sides = {};
+  for (const [side, a, b] of [['before', tr.start, Math.min(tr.end, at)], ['after', Math.max(tr.start, at), tr.end]]) {
+    if (b <= a) continue;
+    const fr = frames.filter(f => f.t >= a && f.t < b);
+    const en = timeline({ frames: fr, from: a, to: b === tr.end ? b : b - 1, clock: entries });
+    const decsAll = decisionsOf(fr), decs = decsAll.filter(d => !d.only);
+    const positioned = fr.filter(f => f.snapshot?.position), carried = fr.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+    const quickBy = {};
+    for (const q of quickOf({ decs, positioned, carried })) if (q.quick) quickBy[q.id] = q.quick;
+    const waits = waitsOf({ entries: en, decs: decsAll }), stall = stallOf(doingOf(en)), stance = stanceOf({ frames: fr, decs: decsAll });
+    const bl = log[side];
+    sides[side] = { hours: (b - a) / 3600000, frames: fr.length, clockedMs: waits.clockedMs, waitMs: waits.ms,
+      waitBy: Object.fromEntries(Object.entries(waits.by).map(([k, v]) => [k, v * 60000])), stallMs: stall.ms, quickBy,
+      byJev: decsAll.filter(d => d.byJev).length, noneGood: decsAll.filter(d => d.noneGood).length, streak: noneGoodStreakOf(decsAll),
+      stanceAsks: stance.asks, stillAsks: stance.stillAsks, stillMs: stance.stillMs,
+      log: bl?.read ? { holds: Object.values(bl.repeat).reduce((x, y) => x + y, 0), reasked: Object.values(bl.reaskAfterHold).reduce((x, y) => x + y, 0), reaskedBy: bl.reaskAfterHold } : null };
+  }
+  // The first rod carried, not one the trial began with (a checkpoint's).
+  let rodAt = null;
+  if (tr.verdict?.most?.blazeRods > 0) { const f = frames.find(f => +f.snapshot?.inventory?.blaze_rod > 0); if (f && f.t - tr.start >= 120000) rodAt = f.t; }
+  return { sides, rodAt };
+}
+
+const median = xs => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+function firstsOf(trials) {
+  const said = (xs, eligible, ran) => ({ eligible, reached: xs.length, median: xs.length ? round(median(xs)) : null, min: xs.length ? round(Math.min(...xs)) : null, max: xs.length ? round(Math.max(...xs)) : null, notReachedMedianMinutes: ran.length ? round(median(ran)) : null });
+  const minutesRun = t => (t.end - t.start) / 60000;
+  const staged = (t, stage) => String(t.source || '').includes(`/stages/${stage}`);
+  const at = t => t.verdict?.reachedAtMinute || {};
+  const n = trials.filter(t => !String(t.source || '').includes('/stages/'));
+  const inNether = trials.filter(t => Number.isFinite(at(t).nether));
+  const f = inNether.filter(t => !staged(t, 'fortress'));
+  const atFortress = trials.filter(t => staged(t, 'fortress'));
+  return {
+    nether: said(n.filter(t => Number.isFinite(at(t).nether)).map(t => at(t).nether), n.length, n.filter(t => !Number.isFinite(at(t).nether)).map(minutesRun)),
+    fortress: said(f.filter(t => Number.isFinite(at(t).fortress)).map(t => at(t).fortress - at(t).nether), f.length, f.filter(t => !Number.isFinite(at(t).fortress)).map(t => minutesRun(t) - at(t).nether)),
+    rod: said(f.filter(t => t.rodAt).map(t => (t.rodAt - t.start) / 60000 - at(t).nether), f.length, f.filter(t => !t.rodAt).map(t => minutesRun(t) - at(t).nether)),
+    // A trial begun at a fortress checkpoint counts from its start.
+    rodFromFortress: said(atFortress.filter(t => t.rodAt).map(t => (t.rodAt - t.start) / 60000), atFortress.length, atFortress.filter(t => !t.rodAt).map(minutesRun)),
+  };
+}
+
+function cohort({ at, since = null, now = Date.now(), progress = null, root = ROOT, dir = FLIGHT }) {
+  const trials = trialRecords({ since, now, dir: path.join(root, 'artifacts', 'midgame'), flight: dir });
+  const deaths = resolveDeaths(serverDeaths(root), trials);
+  const blank = () => ({ trials: 0, hours: 0, clockedMs: 0, waitMs: 0, waitBy: {}, stallMs: 0, quickBy: {}, byJev: 0, noneGood: 0, streak: null, stanceAsks: 0, stillAsks: 0, stillMs: 0, logTrials: 0, holds: 0, reasked: 0, reaskedBy: {}, flightTrials: 0 });
+  const acc = { before: blank(), after: blank() };
+  const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
+  trials.forEach((tr, i) => {
+    const { sides, rodAt } = trialSides(tr, at, { dir, logs: path.join(root, 'artifacts') });
+    tr.rodAt = rodAt;
+    for (const [side, s] of Object.entries(sides)) {
+      const a = acc[side];
+      a.trials++; a.hours += s.hours;
+      if (s.frames) a.flightTrials++;
+      for (const k of ['clockedMs', 'waitMs', 'stallMs', 'byJev', 'noneGood', 'stanceAsks', 'stillAsks', 'stillMs']) a[k] += s[k];
+      for (const [k, v] of Object.entries(s.waitBy)) add(a.waitBy, k, v);
+      for (const [k, v] of Object.entries(s.quickBy)) add(a.quickBy, k, v);
+      if (s.streak && (!a.streak || s.streak.run > a.streak.run)) a.streak = { ...s.streak, world: tr.world };
+      if (s.log) { a.logTrials++; a.holds += s.log.holds; a.reasked += s.log.reasked; for (const [k, v] of Object.entries(s.log.reaskedBy)) add(a.reaskedBy, k, v); }
+    }
+    if (progress) progress(i + 1, trials.length, tr.world);
+  });
+  const T = thresholds(0, 0);
+  const sideOut = side => {
+    const a = acc[side], clockedMin = a.clockedMs / 60000;
+    const ds = deaths.filter(d => side === 'before' ? d.t < at : d.t >= at);
+    const byCause = {};
+    for (const d of ds) byCause[d.cause] = (byCause[d.cause] || 0) + 1;
+    const quickTotal = Object.values(a.quickBy).reduce((x, y) => x + y, 0);
+    const worstQuick = Object.entries(a.quickBy).sort((x, y) => y[1] - x[1])[0];
+    const perHour = n => a.hours ? round(n / a.hours, 3) : null;
+    return {
+      trials: a.trials, withFlight: a.flightTrials, withBotLog: a.logTrials, hours: round(a.hours, 1), clockedHours: round(clockedMin / 60, 1),
+      reaskAfterHold: { total: a.reasked, holds: a.holds, perHour: perHour(a.reasked), by: a.reaskedBy, met: a.logTrials ? a.reasked <= T.reaskAfterHold.max : null },
+      quickNothing: { total: quickTotal, per15: clockedMin ? round(quickTotal * 15 / clockedMin, 1) : null,
+        worst: worstQuick ? { id: worstQuick[0], count: worstQuick[1], per15: clockedMin ? round(worstQuick[1] * 15 / clockedMin, 2) : null } : null,
+        met: clockedMin ? !(worstQuick && worstQuick[1] * 15 / clockedMin >= T.quickNothing.per15) : null },
+      stallShare: { share: clockedMin >= 1 ? round(a.stallMs / a.clockedMs, 3) : null, minutes: round(a.stallMs / 60000), met: clockedMin >= 1 ? a.stallMs / a.clockedMs < T.stallShare.share : null },
+      waitShare: { share: clockedMin >= 1 ? round(a.waitMs / a.clockedMs, 3) : null, minutes: round(a.waitMs / 60000), by: Object.fromEntries(Object.entries(a.waitBy).sort((x, y) => y[1] - x[1]).map(([k, v]) => [k, round(v / 60000)])),
+        met: clockedMin >= 1 ? a.waitMs / a.clockedMs < T.waitShare.share : null },
+      stanceRate: { perMinute: a.stillMs >= 60000 ? round(a.stillAsks / (a.stillMs / 60000), 2) : null, stillAsks: a.stillAsks, stillMinutes: round(a.stillMs / 60000), asks: a.stanceAsks,
+        met: a.stillMs >= 60000 ? a.stillAsks / (a.stillMs / 60000) < T.stanceRate.perMinute : null },
+      noneGood: { count: a.noneGood, byJev: a.byJev, share: a.byJev ? round(a.noneGood / a.byJev, 3) : null, longestRun: a.streak },
+      deaths: { total: ds.length, perHour: perHour(ds.length), byCause: Object.fromEntries(Object.entries(byCause).sort((x, y) => y[1] - x[1]).map(([k, n]) => [k, { n, perHour: perHour(n) }])) },
+      firsts: firstsOf(trials.filter(t => side === 'before' ? t.start < at : t.start >= at)),
+    };
+  };
+  return { at: new Date(at).toISOString(), since: since === null ? null : new Date(since).toISOString(), trials: trials.length, deathsFound: deaths.length, before: sideOut('before'), after: sideOut('after') };
+}
+
+function cohortTable(c) {
+  const pct = x => x === null ? '-' : `${round(x * 100, 1)}%`;
+  const mark = m => m === true ? 'ok  ' : m === false ? 'OVER' : '-   ';
+  const cell = (s, f) => s ? f(s) : '-';
+  const rows = [];
+  const row = (name, f, target = '', met = null) => rows.push([name, cell(c.before, f), met ? mark(met(c.before)) : '', cell(c.after, f), met ? mark(met(c.after)) : '', target]);
+  row('trials (flight, bot log)', s => `${s.trials} (${s.withFlight}, ${s.withBotLog})`);
+  row('trial hours (clocked)', s => `${s.hours} (${s.clockedHours})`);
+  row('reaskAfterHold', s => `${s.reaskAfterHold.total} (${s.reaskAfterHold.perHour ?? '-'}/h), ${s.reaskAfterHold.holds} holds`, '0', s => s.reaskAfterHold.met);
+  row('quickNothing', s => `${s.quickNothing.total}, ${s.quickNothing.per15 ?? '-'}/15min${s.quickNothing.worst ? `; most ${s.quickNothing.worst.id} ${s.quickNothing.worst.per15}/15min` : ''}`, 'under 5 a 15 min per question', s => s.quickNothing.met);
+  row('stallShare', s => `${pct(s.stallShare.share)} (${s.stallShare.minutes} min)`, 'under 10%', s => s.stallShare.met);
+  row('waitShare', s => `${pct(s.waitShare.share)} (${s.waitShare.minutes} min)`, 'under 20%', s => s.waitShare.met);
+  row('stance askings, unchanged', s => `${s.stanceRate.perMinute ?? '-'}/min (${s.stanceRate.stillAsks} in ${s.stanceRate.stillMinutes} min; ${s.stanceRate.asks} asked)`, 'under 1 a min', s => s.stanceRate.met);
+  row('noneGood share', s => `${pct(s.noneGood.share)} (${s.noneGood.count} of ${s.noneGood.byJev})`);
+  row('longest none-good run', s => s.noneGood.longestRun ? `${s.noneGood.longestRun.run} ${s.noneGood.longestRun.id} (${s.noneGood.longestRun.world})` : 'none', 'no target');
+  row('deaths per hour', s => `${s.deaths.perHour ?? '-'} (${s.deaths.total})`);
+  const causes = [...new Set([...Object.keys(c.before?.deaths.byCause || {}), ...Object.keys(c.after?.deaths.byCause || {})])];
+  causes.sort((x, y) => ((c.before?.deaths.byCause[y]?.n || 0) + (c.after?.deaths.byCause[y]?.n || 0)) - ((c.before?.deaths.byCause[x]?.n || 0) + (c.after?.deaths.byCause[x]?.n || 0)));
+  for (const k of causes) row(`  ${k}`.slice(0, 48), s => s.deaths.byCause[k] ? `${s.deaths.byCause[k].perHour} (${s.deaths.byCause[k].n})` : '0');
+  const first = f => f.eligible ? `${f.reached} of ${f.eligible}${f.reached ? `, median ${f.median} (${f.min}-${f.max})` : ''}${f.notReachedMedianMinutes !== null && f.reached < f.eligible ? `; the rest ran ${f.notReachedMedianMinutes} median` : ''}` : 'no trial';
+  row('min to the Nether (from start)', s => first(s.firsts.nether), 'trials begun outside the checkpoints');
+  row('min Nether to fortress seen', s => first(s.firsts.fortress), '30 (ours); not begun at a fortress checkpoint');
+  row('min Nether to first rod', s => first(s.firsts.rod), '60 (ours)');
+  row('min fortress checkpoint to first rod', s => first(s.firsts.rodFromFortress), 'trials begun at a fortress checkpoint');
+  const head = ['measure', 'before', '', 'after', '', 'target'];
+  const width = head.map((h, i) => Math.max(h.length, ...rows.map(r => r[i].length)));
+  const line = r => r.map((x, i) => x.padEnd(width[i])).join('  ').trimEnd();
+  return [`Before and after ${c.at}${c.since ? `, trials begun after ${c.since}` : ', every trial'}: ${c.trials} trials, ${c.deathsFound} deaths in the server logs matched to them.`,
+    'A trial running across the deploy counts on both sides by time; the minutes-to measures go by the side the trial began on.', '',
+    line(head), ...rows.map(line)].join('\n');
+}
+
 function main() {
   const argv = process.argv.slice(2);
   const opt = (name, dflt) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? Number(argv[i + 1]) : dflt; };
+  const time = name => { const i = argv.indexOf(`--${name}`); if (i < 0) return null; const t = Date.parse(argv[i + 1]); if (!Number.isFinite(t)) throw new Error(`--${name} needs a time, as 2026-09-28T06:45Z`); return t; };
   const minutes = opt('minutes', 15), historyMinutes = opt('history', 60), json = argv.includes('--json');
+  const since = time('since'), at = time('cohort');
+  if (at !== null) {
+    const c = cohort({ at, since, progress: (i, n, w) => process.stderr.write(`\r${i}/${n} ${w}`.padEnd(60)) });
+    process.stderr.write('\n');
+    console.log(json ? JSON.stringify(c, null, 2) : cohortTable(c));
+    return;
+  }
   const named = argv.filter((a, i) => /^\d+$/.test(a) && !/^--/.test(argv[i - 1] || ''));
-  const trials = named.length ? named.map(p => ({ port: Number(p), world: worldOn(Number(p)) })).filter(t => t.world) : runningPorts();
+  let trials = named.length ? named.map(p => ({ port: Number(p), world: worldOn(Number(p)) })).filter(t => t.world) : runningPorts();
+  if (since !== null) trials = trials.filter(t => { try { return Date.parse(JSON.parse(fs.readFileSync(path.join(ROOT, 'artifacts', 'midgame', `${t.world}.json`), 'utf8')).startedAt) > since; } catch (_) { return false; } });
   const rows = trials.map(t => auditTrial(t, { minutes, historyMinutes }));
   if (json) console.log(JSON.stringify(rows.map(({ byDoing, ...r }) => ({ ...r, byDoing, targets: reviewLines(r) })), null, 2));
   else console.log(table(rows, minutes, historyMinutes));
 }
 
 if (require.main === module) main();
-module.exports = { readFlight, readBotLog, firstCarried, measure, reviewLines, thresholds, table, trialWindow, runningPorts, worldOn, ROOT };
+module.exports = { readFlight, readBotLog, scanBotLog, firstCarried, measure, reviewLines, thresholds, table, trialWindow, runningPorts, worldOn, ROOT,
+  waitsOf, stanceOf, noneGoodStreakOf, decisionsOf, timeline, deathsInLog, resolveDeaths, trialRecords, trialSides, cohort, cohortTable };

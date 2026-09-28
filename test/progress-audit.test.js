@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test'), assert = require('node:assert/strict');
 const fs = require('fs'), os = require('os'), path = require('path');
-const { readFlight, readBotLog, firstCarried, measure, reviewLines } = require('../scripts/trials/progress-audit');
+const { readFlight, readBotLog, scanBotLog, firstCarried, measure, reviewLines, stanceOf, deathsInLog, resolveDeaths, cohort, cohortTable } = require('../scripts/trials/progress-audit');
 
 // A fortress trial busy but going nowhere, as mid-242-aa-nether-1-fortress-1
 // was (2026-09-27): back and forth over the same few columns it already
@@ -149,5 +149,155 @@ test('the review measures: quick answers, re-asks after a hold, stall share, Net
   assert.match(flagged.quickNothing.text, /fortress_approach 7 of 8 \(7\/15min, other_way\)/);
   const lines2 = reviewLines(m);
   assert.deepEqual(lines2.map(l => [l.id, l.met]), [['quickNothing', false], ['reaskAfterHold', false], ['stallShare', false], ['netherGround', true],
-    ['fortressSighting', false], ['firstRod', true], ['rungTarget', true], ['rungTarget', true]]);
+    ['fortressSighting', false], ['firstRod', true], ['rungTarget', true], ['rungTarget', true], ['waitShare', true], ['stanceRate', true], ['noneGoodStreak', null]]);
+});
+
+// Note 598's measures on a twenty-minute Nether window: waiting (a bunker
+// held, a shelter, a pillar top, a stay_in_fortress walk cut short by the
+// legs asked again), the stance asked every twenty seconds while nothing
+// changed, and a question answered none_good seven times running with
+// other questions between.
+const fileTime = t => iso(t).replace(/:/g, '-').replace('.', '-');
+function waitingWindow({ from, dir, identity = id }) {
+  const lines = [];
+  const pos = { x: 0, y: 70, z: 0 };
+  const zombie = s => ({ name: 'zombie', id: 9, d: s < 6 * 60 ? 5 : 10, at: { x: s < 6 * 60 ? 5 : 10, y: 70, z: 0 } });
+  // Health every 5 s: 20, and 19.5 for a minute (within 1: nothing changed).
+  for (let s = 0; s < 20 * 60; s += 5) lines.push({ kind: 'observation', snapshot: { position: pos, dimension: 'the_nether', health: s >= 180 && s < 240 ? 19.5 : 20 }, at: iso(from + s * 1000) });
+  // The mobs in a full frame every 30 s: the zombie 5 blocks off, then 10 from minute 6.
+  for (let s = 0; s < 20 * 60; s += 30) lines.push({ kind: 'action', snapshot: { position: pos, dimension: 'the_nether', health: 20, mobs: [zombie(s)] }, at: iso(from + s * 1000 + 1) });
+  const decide = (s, qid, answer, extra = {}) => lines.push({ kind: 'decision', snapshot: { position: pos, dimension: 'the_nether', health: 20, mobs: [zombie(s)],
+    decision: { id: qid, at: iso(from + s * 1000 + 2), path: [answer], judgments: [{}], ...extra } }, at: iso(from + s * 1000 + 2) });
+  // encounter_stance every 20 s for the first six minutes (18), twice after.
+  for (let s = 10; s < 6 * 60; s += 20) decide(s, 'encounter_stance', 'fight');
+  decide(8 * 60, 'turn_priority', 'work'); decide(15 * 60, 'encounter_stance', 'fight');
+  // unstuck_move none_good seven times running, others between; then a good one, then two.
+  for (let i = 0; i < 7; i++) { decide(61 + i * 40, 'unstuck_move', 'none_good', { noneGood: true }); decide(71 + i * 40, 'fortress_approach', 'other_way'); }
+  decide(400, 'unstuck_move', 'dig_up');
+  decide(420, 'unstuck_move', 'none_good', { noneGood: true }); decide(440, 'unstuck_move', 'none_good', { noneGood: true });
+  // The legs: stay_in_fortress at minute 10, the legs asked again at minute 12.
+  decide(600, 'fortress_leg', 'stay_in_fortress'); decide(720, 'fortress_leg', 'leg_east');
+  // The run clock, 15 s entries: 4 min hold_bunker, 2 wait in shelter, 1 on a pillar top, the rest find_fortress.
+  const recent = [];
+  for (let s = 15; s <= 20 * 60; s += 15) recent.push([from + s * 1000, s <= 240 ? 'obtain_blaze_rods: hold_bunker' : s <= 360 ? 'wait_in_shelter' : s <= 420 ? 'pillar_hold' : 'obtain_blaze_rods: find_fortress', 15000]);
+  // Carried in two frames, each with what came before it.
+  lines.push({ kind: 'action', snapshot: { position: pos, dimension: 'the_nether', health: 20, goal: { gameProgress: { phase: 'obtain_blaze_rods', clock: { recent: recent.filter(e => e[0] <= from + 10 * min) } } } }, at: iso(from + 10 * min + 3) });
+  lines.push({ kind: 'action', snapshot: { position: pos, dimension: 'the_nether', health: 20, goal: { gameProgress: { phase: 'obtain_blaze_rods', clock: { recent: recent.filter(e => e[0] > from + 5 * min) } } } }, at: iso(from + 20 * min - 1) });
+  lines.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  fs.writeFileSync(path.join(dir, `${identity}-${fileTime(from)}.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+}
+
+test('note 598: waiting share, stance askings while nothing changed, the longest none-good run', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'progress-'));
+  const from = t0, to = t0 + 20 * min;
+  waitingWindow({ from, dir });
+  const { frames, history } = readFlight({ identity: id, from, to, historyFrom: from, dir });
+  const m = measure({ frames, history, from, to, trial: { startedAt: iso(from) }, minutes: 20, historyMinutes: 60 });
+  const r = m.review;
+  // Both clock frames joined: all twenty minutes clocked.
+  assert.equal(m.clockedMinutes, 20);
+  // 4 + 2 + 1, and the two minutes of the walk before the legs were asked again: 9 of 20.
+  assert.deepEqual(r.waits, { minutes: 9, clocked: 20, share: 0.45, by: { hold_bunker: 4, wait_in_shelter: 2, stay_in_fortress: 2, pillar_hold: 1 } });
+  // Nothing changed for six minutes (health 19.5 is within 1), 18 askings; then the zombie
+  // five blocks farther, fourteen minutes, 2 askings: 20 in 20 min.
+  assert.equal(r.stance.asks, 20);
+  assert.equal(r.stance.stillAsks, 20);
+  assert.equal(r.stance.perMinute, 1);
+  assert.deepEqual([r.stance.worst.asks, r.stance.worst.perMinute], [18, 3]);
+  // Seven in a row to unstuck_move, the other questions between not breaking it.
+  assert.equal(r.noneGoodStreak.id, 'unstuck_move');
+  assert.equal(r.noneGoodStreak.run, 7);
+  const flagged = Object.fromEntries(m.flags.map(f => [f.id, f]));
+  assert.ok(flagged.waitShare && flagged.stanceRate, Object.keys(flagged).join(','));
+  assert.match(flagged.waitShare.text, /45%, 9 of 20 min \(hold bunker 4, wait in shelter 2, stay in fortress 2, pillar hold 1\)/);
+  assert.match(flagged.stanceRate.threshold, /^target: under 1/);
+  assert.ok(!flagged.noneGoodStreak);
+  assert.match(reviewLines(m).find(l => l.id === 'noneGoodStreak').text, /7 in a row to unstuck_move/);
+});
+
+test('note 598: a change in the nearest mob or in health starts a new stretch; short stretches are not counted', () => {
+  const obs = t => ({ t, kind: 'observation', snapshot: { position: { x: 0, y: 70, z: 0 }, dimension: 'overworld', health: 20 } });
+  const frames = [];
+  // The skeleton a block and a half closer every 20 s, over two blocks every 40 s: stretches of 40 s, none counted.
+  for (let s = 0; s < 300; s += 20) frames.push({ ...obs(t0 + s * 1000), kind: 'action', snapshot: { ...obs(0).snapshot, mobs: [{ d: 30 - s / 20 * 1.5 }] } });
+  const s = stanceOf({ frames, decs: frames.map(f => ({ id: 'encounter_stance', at: f.t + 1 })) });
+  assert.equal(s.asks, 15);
+  assert.equal(s.stillAsks, 0);
+  assert.equal(s.perMinute, null);
+  // Health down 3 halfway through an otherwise still two minutes: two stretches of a minute, each counted.
+  const still = [];
+  for (let s = 0; s <= 120; s += 5) still.push({ ...obs(t0 + s * 1000), snapshot: { ...obs(0).snapshot, health: s < 60 ? 20 : 17 } });
+  const s2 = stanceOf({ frames: still, decs: [10, 20, 70].map(x => ({ id: 'turn_priority', at: t0 + x * 1000 })) });
+  assert.equal(s2.stillAsks, 3);
+  assert.equal(s2.stillMinutes, 2);
+  assert.equal(s2.worst.asks, 2);
+});
+
+test('note 598: deaths from the server log, the day carried past midnight and settled by the trial', () => {
+  const text = ['[23:50:00] [Server thread/INFO]: Preparing level "mid-1"', '[23:59:30] [Server thread/INFO]: Jev was slain by Piglin using [Golden Sword]',
+    '[00:10:00] [Server thread/INFO]: Jev tried to swim in lava', '[00:20:00] [Server thread/INFO]: Preparing level "mid-2"', '[00:30:00] [Server thread/INFO]: Jev was shot by Skeleton'].join('\n');
+  const deaths = deathsInLog(text, '2026-09-27-3.log.gz', 0);
+  assert.deepEqual(deaths.map(d => [d.world, d.cause, d.t]), [
+    ['mid-1', 'was slain by Piglin', new Date(2026, 8, 27, 23, 59, 30).getTime()],
+    ['mid-1', 'tried to swim in lava', new Date(2026, 8, 28, 0, 10, 0).getTime()],
+    ['mid-2', 'was shot by Skeleton', new Date(2026, 8, 28, 0, 30, 0).getTime()]]);
+  // latest.log: the day counted back from its last change.
+  const latest = deathsInLog(text, 'latest.log', new Date(2026, 8, 28, 1, 0, 0).getTime());
+  assert.equal(latest[0].t, new Date(2026, 8, 27, 23, 59, 30).getTime());
+  // A day wrong by one is moved into its trial's span; a world with no trial is dropped.
+  const trials = [{ world: 'mid-1', start: new Date(2026, 8, 26, 23, 0).getTime(), end: new Date(2026, 8, 27, 1, 0).getTime() }];
+  assert.deepEqual(resolveDeaths(deaths, trials).map(d => d.t), [new Date(2026, 8, 26, 23, 59, 30).getTime(), new Date(2026, 8, 27, 0, 10).getTime()]);
+});
+
+test('note 598: a bot log scanned whole, its holds and re-asks split at the deploy', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'progress-'));
+  const log = path.join(dir, 'bot.log'), at = t0 + 10 * min;
+  const said = t => `{"status":"running","decision":{"at":"${iso(t)}","askedAt":"${iso(t - 100)}","id":"fortress_approach","kind":"fortress","path":["other_way"]}}`;
+  const hold = '[repeat] fortress approach: other way was chosen 2 times in the last 1 second with these same facts, and nothing measurable came of any of them';
+  fs.writeFileSync(log, [said(t0 + min), hold, said(t0 + min + 500), said(t0 + min + 900), '[stall] one', said(at + min), hold, said(at + min + 500), ''].join('\n'));
+  const { before, after } = scanBotLog(log, { from: t0, split: at, chunk: 64 });
+  assert.deepEqual([before.repeat, before.reaskAfterHold, before.stall], [{ fortress_approach: 1 }, { fortress_approach: 2 }, 1]);
+  assert.deepEqual([after.repeat, after.reaskAfterHold, after.stall], [{ fortress_approach: 1 }, { fortress_approach: 1 }, 0]);
+  // The tail reader counts the same from the deploy on.
+  assert.deepEqual(readBotLog(log, at).reaskAfterHold, { fortress_approach: 1 });
+});
+
+test('note 598: the cohort, before and after a deploy, across the trial records', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cohort-'));
+  const flight = path.join(root, 'flight');
+  fs.mkdirSync(flight);
+  fs.mkdirSync(path.join(root, 'artifacts', 'midgame'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.clean-run', 'logs'), { recursive: true });
+  // Two trials on one port: the waiting window above, 20 min, then one after the deploy, moving, 10 min.
+  const a = t0, b = t0 + 30 * min, at = t0 + 25 * min;
+  waitingWindow({ from: a, dir: flight, identity: '127_0_0_1-25581-Jev' });
+  const lines = [];
+  for (let s = 0; s < 600; s += 5) lines.push({ kind: 'observation', snapshot: { position: { x: s, y: 64, z: 0 }, dimension: 'overworld', health: 20, step: { action: 'mine' } }, at: iso(b + s * 1000) });
+  fs.writeFileSync(path.join(flight, `127_0_0_1-25581-Jev-${fileTime(b)}.jsonl`), lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+  const record = (world, start, minutes, reached) => fs.writeFileSync(path.join(root, 'artifacts', 'midgame', `${world}.json`), JSON.stringify({ world, port: 25581, source: '.trial-sources/first-days-1', startedAt: iso(start),
+    verdict: { from: iso(start), minutes, done: true, reachedAtMinute: reached, most: { blazeRods: 0 } } }));
+  record('mid-1', a, 20, { nether: 5, fortress: 12 });
+  record('mid-2', b, 10, {});
+  // A death in each, the server's clock local.
+  const hms = t => { const d = new Date(t); return [d.getHours(), d.getMinutes(), d.getSeconds()].map(x => String(x).padStart(2, '0')).join(':'); };
+  const logFile = path.join(root, '.clean-run', 'logs', 'latest.log');
+  fs.writeFileSync(logFile, [`[${hms(a)}] [Server thread/INFO]: Preparing level "mid-1"`, `[${hms(a + 15 * min)}] [Server thread/INFO]: Jev was slain by Piglin`,
+    `[${hms(b)}] [Server thread/INFO]: Preparing level "mid-2"`, `[${hms(b + 5 * min)}] [Server thread/INFO]: Jev tried to swim in lava`, ''].join('\n'));
+  fs.utimesSync(logFile, new Date(b + 6 * min), new Date(b + 6 * min));
+  const c = cohort({ at, root, dir: flight, now: b + 60 * min });
+  assert.equal(c.trials, 2);
+  assert.deepEqual([c.before.trials, c.after.trials], [1, 1]);
+  assert.equal(c.before.waitShare.share, 0.45);
+  assert.equal(c.before.waitShare.met, false);
+  assert.equal(c.after.waitShare.share, 0);
+  assert.equal(c.before.stanceRate.perMinute, 1);
+  assert.equal(c.before.noneGood.longestRun.run, 7);
+  assert.deepEqual(c.before.deaths.byCause, { 'was slain by Piglin': { n: 1, perHour: 3 } });
+  assert.deepEqual(c.after.deaths.byCause, { 'tried to swim in lava': { n: 1, perHour: 6 } });
+  assert.deepEqual(c.before.firsts.nether, { eligible: 1, reached: 1, median: 5, min: 5, max: 5, notReachedMedianMinutes: null });
+  assert.equal(c.before.firsts.fortress.median, 7);
+  assert.deepEqual(c.after.firsts.nether, { eligible: 1, reached: 0, median: null, min: null, max: null, notReachedMedianMinutes: 10 });
+  // Trials begun after a time only.
+  assert.equal(cohort({ at, since: a + min, root, dir: flight, now: b + 60 * min }).trials, 1);
+  assert.match(cohortTable(c), /waitShare\s+45% \(9 min\)\s+OVER\s+0% \(0 min\)\s+ok/);
 });
