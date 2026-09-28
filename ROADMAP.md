@@ -1,48 +1,40 @@
 # Roadmap
 
-The aim is a useful Minecraft companion: describe an outcome, and Jev works toward it, handles ordinary setbacks, and stays understandable while you play together. Eventually, that includes beating Minecraft from a fresh Survival start.
+The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). These are priorities, not dates. Where things stand is in the [README](README.md#status-2026-09-28) and the [trial notes](docs/trial-notes.md).
 
-These are development priorities, not release dates. Existing capabilities and setup instructions are in the [README](README.md).
+## Done
 
-## Now: the first three days, played by Jev
+- The first three in-game days: iron tools and armor, a shield, a bed and a home, with no deaths (`scripts/first-days.js`).
+- Reaching the Nether from a fresh world, usually in 7 to 30 minutes, and finding a fortress.
+- Most reflexes and hand-written rules handed to Jev as questions ([rule audit](docs/rule-audit.md)).
 
-- **Pass the first-days audit on two fresh worlds in a row.** No deaths, no step retried in a loop, never standing still outside a shelter, and iron tools, iron armour, a shield, a bed and a home within three in-game days (`scripts/first-days.js`). The best trials reach everything but the armour; [trial notes](docs/trial-notes.md) record each run.
-- **Hand the remaining judgments to Jev.** The [rule audit](docs/rule-audit.md) lists the choices code still makes (when a hunt is worth starting, what a trip away from home needs, whether to go back for dropped items). Each becomes options with the facts, and a code default only for when Jev cannot be reached.
-- **Give Jev better facts.** Most bad choices in the trials were a missing fact, not a missing rule: that the furnace cooks on its own, that dawn had come, what a fight would cost this bot. Keep measuring (the arena, the trials) and put the measurements in the questions.
+## Now: blaze rods
 
-## Alongside: a more reliable companion
+Six rods from a fortress without dying. A few trials have taken one or two. What kills the bot:
 
-- **Finish combined tasks efficiently.** Shared material planning, inventory reservations, furnace recovery, and verified delivery across long requests, with the chest as a fallback when a handoff is difficult.
-- **Keep moving in natural terrain.** Swimming, shore exits, uneven footing, cave access, and getting off scaffolding; a failed approach is tried a different way before it is repeated.
-- **Recover without losing the request.** Tool replacement, food, death recovery, and resuming after a disconnect, with blockers specific enough for a player to help with.
-- **Make interruptions predictable.** Stop stays responsive during travel, model calls, crafting and construction, and the useful parts of a paused task are kept.
-- **Keep chat brief and useful.** Meaningful changes and plain-language problems in chat; the detail in the decision log and flight recording.
+- Blazes at a live spawner. The arena shows walking in and fighting is the only tactic that gets rods; the work is in pricing it honestly and knowing when to leave and heal.
+- Ghast and blaze fireballs pushing the bot off a ledge into lava.
+- Low health that doesn't come back in the Nether, where food is scarce.
 
-Success looks like an ordinary play session in which Jev completes multi-item requests, survives routine interruptions, and resumes without repeating work or requiring a restart.
+Alongside: trials that stay busy without progressing (pacing, sitting in a shelter, flipping between two plans). The progress audit and trail maps flag these.
 
-## Next: better building and exploration
+The milestone is two fortress runs in a row that reach six rods and twelve pearls with no deaths and no loops.
 
-- **Make custom builds dependable.** Improve material estimates, inventory-sized construction batches, reachable placement order, and cleanup across a wider range of advisor-generated structures.
-- **Prepare more useful sites.** Extend natural-ground leveling and supported foundations while protecting existing builds. Account for the cost of earthworks when choosing a location.
-- **Expand the building vocabulary.** Add block-state-aware placement for stairs, slabs, doors, and other oriented blocks, with checks that entrances and usable spaces work as intended.
-- **Travel farther with purpose.** Improve persistent resource and biome search, route memory, and return trips. Extend boats beyond short, fully observed crossings.
-- **Learn more acquisition methods.** Add farming, breeding, trading, and enchanting so catalog requests can use more of Minecraft’s progression paths.
+## Next: the End
 
-Success looks like Jev finding supplies beyond the immediate area, returning reliably, and building varied, usable structures from descriptions with ordinary Survival materials.
+- Ender pearls: endermen in warped forests, or bartering with piglins.
+- Eyes of Ender, following their flight to a stronghold, and finding the portal room.
+- The dragon: crystals, the fight, food, falls and the exit portal. So far it has only been fought from staged worlds.
+- One continuous run from a fresh world, checked independently: Normal difficulty, no item grants, teleports, Creative mode or manual help.
 
-## Longer term: complete the Survival journey
+## Companion
 
-- **Reach the Nether from a fresh start.** Gather supplies, maintain tools, build or use a portal, and establish a survivable route home.
-- **Obtain End supplies naturally.** Find suitable mobs, acquire blaze rods and pearls, and craft Eyes of Ender through ordinary gameplay.
-- **Reach and activate a stronghold portal.** Follow observed Eye trajectories, navigate to the portal room, and prepare for the End.
-- **Defeat the dragon and return alive.** Handle crystals, combat, food, falls, and the exit portal as one continuous objective.
-- **Verify the whole run independently.** Complete a fresh natural Normal-difficulty run from empty inventory, without item grants, teleports, Creative mode, privileged locating, or manual gameplay assistance. Individual mechanics tests do not satisfy this milestone.
+The chat companion shares the same code and gets better along the way. Open items: longer multi-item requests without repeated work, keeping a request through a death or disconnect, oriented blocks (stairs, slabs, doors) in builds, and farming, breeding and trading as ways to get items.
 
-## Throughout: tooling and upkeep
+## Tooling
 
-- **Easier setup:** clearer configuration, connection diagnostics, and contributor instructions.
-- **Repeatable validation:** automated checks and reproducible isolated gameplay fixtures, with failures that are easy to inspect.
-- **Better observability:** clearer material plans, progress, blockers, and model usage in the logs; recordings that make regressions easier to reproduce.
-- **Version maintenance:** keep Minecraft recipes, protocol compatibility, and supported-version documentation aligned.
+- Faster, more reliable trial infrastructure on one machine.
+- More replay cases from real failures, so changes to what Jev is told are checked before they ship.
+- Better camera paths for rendered replays (the camera sometimes clips into blocks).
 
-Contributions are especially useful when they turn a concrete gameplay failure into a small, reproducible test and an improvement to a general capability.
+Contributions are most useful when they turn a concrete failure into a small test and a general fix; see [CONTRIBUTING.md](CONTRIBUTING.md).
