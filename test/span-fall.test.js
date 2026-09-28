@@ -71,8 +71,10 @@ test('on a span over the lava sea with a ghast out of sight within its reach, ev
   assert.doesNotMatch(options.hold_on_span.description, /Open here to the ghast/, 'walled, it is not open');
   assert.ok(options.rail_and_fight, Object.keys(options).join(','));
   assert.doesNotMatch(options.rail_and_fight.description, /Open here to the ghast/);
-  assert.match(options.rail_and_fight.description, /Walled, a fireball that lands here costs its 3\.4 damage and a push into the wall, not the fall into the lava\./);
-  assert.match(options.hold_on_span.description, /Walled, a fireball that lands here costs its 3\.4 damage/);
+  // The span is netherrack, which the fireball can break under the feet: walled, the push stops and the floor
+  // does not (mid-242-ba-fortress-4, note 610).
+  assert.match(options.rail_and_fight.description, /Walled, a fireball that lands here pushes the bot into the wall, not over the drop beside it\. The floor under the feet is netherrack \(blast resistance 0\.4\)/);
+  assert.match(options.hold_on_span.description, /Walled, a fireball that lands here pushes the bot into the wall, not over the drop beside it\. The floor under the feet is netherrack/);
   assert.match(options.keep_working.description, /The work does not stop in time: the hit that would stop it is the one that throws the bot over\./);
   assert.match(options.fight.description, /Open here to the ghast/);
 });

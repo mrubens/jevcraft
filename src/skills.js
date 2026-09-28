@@ -338,7 +338,7 @@ function goalGuardPlugin(bot) {
 // `onFoot`: the walk digs nothing and lays nothing (no tower, no bridge):
 // along a fortress's corridors, not through its walls (mob-hunt.js, note
 // 557). What it cannot walk to is said as no route.
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, onFoot = false } = {}) {
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false } = {}) {
   task.check();
   // Where the bot is going, kept for the shore rule (shore.js): out of the
   // water on the side it was heading for, not back where it went in.
@@ -354,6 +354,10 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // (movement.js besideLavaRefused, note 516); none otherwise.
   const optOut = besideLava && movements, lavaOptOut = optOut ? movements.besideLava : undefined;
   if (optOut) movements.besideLava = besideLava;
+  // The cells beside a deadly edge an escape was offered along (movement.js
+  // besideLavaRefused, note 610).
+  const edgeOptOut = edgeTaken && movements, edgeWas = edgeOptOut ? movements.edgeTaken : undefined;
+  if (edgeOptOut) movements.edgeTaken = edgeTaken;
   const foot = onFoot && movements ? { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks } : null;
   if (foot) Object.assign(movements, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
   // Off a top the walk cannot step down from, the way down first: asked of
@@ -384,6 +388,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   } finally {
     if (sprinting) movements.allowSprinting = walked;
     if (optOut) movements.besideLava = lavaOptOut;
+    if (edgeOptOut) movements.edgeTaken = edgeWas;
     if (foot) Object.assign(movements, foot);
     if (stillUp) Object.assign(movements, stillUp);
     if (hadGoalY) movements.walkGoalY = walkGoalY;

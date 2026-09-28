@@ -249,10 +249,14 @@ function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false 
   const feet = bot.entity.position.floored();
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const seen = new Set([`${feet}`]);
+  // Each cell's way from the feet, for the walk's cells (note 610: the
+  // cells of the way beside a drop, priced by a push).
+  const from = new Map();
+  const pathOf = c => { const way = []; for (let k = `${c}`; from.has(k); k = `${from.get(k).prev}`) way.unshift(from.get(k).cell); return way; };
   let ring = [feet];
   for (let n = 0; n <= steps && ring.length; n++) {
     const hidden = ring.filter(c => !skip(c) && !inSight(bot, shooters, c));
-    if (hidden.length) return { cell: hidden.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0], steps: n };
+    if (hidden.length) { const cell = hidden.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0]; return { cell, steps: n, path: pathOf(cell) }; }
     const next = [];
     for (const c of ring) for (const s of SIDES) for (const dy of [0, 1, -1]) {
       const to = c.plus(s).offset(0, dy, 0), key = `${to}`;
@@ -261,7 +265,31 @@ function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false 
       if (dy === 1 && !passable(bot.blockAt(c.offset(0, 2, 0)))) continue;
       if (dy === -1 && !passable(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
       if (!standable(bot, to) || near(to)) continue;
-      seen.add(key); next.push(to);
+      seen.add(key); next.push(to); from.set(key, { cell: to, prev: c });
+    }
+    ring = next;
+  }
+  return null;
+}
+
+// The cells of a walk from the feet to `target` by coverWithin's steps
+// (a level step, one up with head room, one down), fewest steps first, or
+// null within `steps`: the way an escape's walk is counted by (note 610).
+function wayTo(bot, target, { steps = 24 } = {}) {
+  const feet = bot.entity.position.floored(), goal = `${target}`;
+  if (`${feet}` === goal) return [];
+  const from = new Map([[`${feet}`, null]]);
+  let ring = [feet];
+  for (let n = 0; n < steps && ring.length; n++) {
+    const next = [];
+    for (const c of ring) for (const s of SIDES) for (const dy of [0, 1, -1]) {
+      const to = c.plus(s).offset(0, dy, 0), key = `${to}`;
+      if (from.has(key)) continue;
+      if (dy === 1 && !passable(bot.blockAt(c.offset(0, 2, 0)))) continue;
+      if (dy === -1 && !passable(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
+      if (!standable(bot, to)) continue;
+      from.set(key, c); next.push(to);
+      if (key === goal) { const way = [to]; for (let p = c; p && `${p}` !== `${feet}`; p = from.get(`${p}`)) way.unshift(p); return way; }
     }
     ring = next;
   }
@@ -609,4 +637,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell)) ? cell : false;
 }
 
-module.exports = { keepingStep, STAND_STEPS, HOLD_MS, QUIET_MS, inBunker, liquidBehind, sideRefused, blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };
+module.exports = { keepingStep, STAND_STEPS, HOLD_MS, QUIET_MS, inBunker, liquidBehind, sideRefused, blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, wayTo, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };

@@ -53,7 +53,13 @@ function bodyCell(bot, x, z, feet, head) {
 function dropCell(bot, x, z, below, { deep = false } = {}) {
   if (deep) {
     const fall = require('./terrain').fallFrom(require('./terrain').atOf(bot), { x, y: below, z });
-    return fall.into === 'lava' ? { name: 'lava', x, y: fall.landing ? fall.landing.y - 1 : below - fall.n, z, fall: fall.n } : null;
+    if (fall.into === 'lava') return { name: 'lava', x, y: fall.landing ? fall.landing.y - 1 : below - fall.n, z, fall: fall.n };
+    // And a fall onto ground that costs half the health or more (note
+    // 545's measure): mid-243-af-nether-3-fortress-4's run out of a fire
+    // went on past its cells, upright, off a ledge thirty blocks over the
+    // cavern floor, with nothing hitting it (note 610).
+    const hurts = fall.into === 'ground' ? Math.max(0, fall.n - 3) : fall.into === 'unknown' && fall.n >= 16 ? Infinity : 0;
+    return hurts >= (bot.health ?? 20) / 2 ? { name: 'deadly_fall', x, y: fall.landing ? fall.landing.y - 1 : below - fall.n, z, fall: fall.n } : null;
   }
   for (let y = below; y >= below - 4; y--) {
     const b = at(bot, x, y, z);

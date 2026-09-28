@@ -315,6 +315,13 @@ class SurvivalMovements extends Movements {
     if (AROUND.some(([dx, dz]) => [1, 0, -1].some(dy => /lava/.test(this.getBlock(next, dx, dy, dz)?.name || '')))) return 'lava';
     const drop = this.deadlyDropBeside(next);
     if (!drop || !require('./danger').pushersAbout(this.bot).length) return null;
+    // An escape offered along the edge, its cells beside the drop said and
+    // priced by the push (survival.js routeEdge), walks the cells it was
+    // offered with (edgeTaken): the bot stands beside the drop already, and
+    // refused, mid-243-ah-fortress-5's way out of a ghast's line was
+    // offered and refused four times on its ridge over the lava sea while
+    // the ghast fired (note 610). Lava beside the feet stays refused.
+    if (this.edgeTaken?.(next)) return null;
     return drop.into === 'lava' ? 'lava' : 'edge';
   }
 
@@ -513,7 +520,7 @@ function configureMovements(bot) {
   // step applies and never restores on an error path otherwise cripples
   // every later path search with someone else's restrictions.
   bot._movementDefaults = { canDig: true, allow1by1towers: true, allowParkour: true, allowSprinting: false, maxDropDown: 3,
-    scafoldingBlocks: [...movement.scafoldingBlocks], allowedPosition: undefined, besideLava: undefined };
+    scafoldingBlocks: [...movement.scafoldingBlocks], allowedPosition: undefined, besideLava: undefined, edgeTaken: undefined };
   // Pathfinder otherwise treats water as a safe landing at ANY depth,
   // even when a cliff has ledges between the bot and that water.
   movement.infiniteLiquidDropdownDistance = false;

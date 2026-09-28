@@ -519,6 +519,28 @@ async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot))
   bot.pathfinder?.setGoal?.(null);
   const { move } = require('./motion');
   const from = bot.entity.position.floored();
+  // Kept off every cell beside or over a fall that kills, as the route is
+  // (fireRouteThrough): mid-243-af-nether-3-fortress-4 ran out of a fire at
+  // a sprint down a slope, five cells none of them by an edge, went on past
+  // them upright and off a ledge thirty blocks over the cavern floor, 14.8
+  // to none with nothing hitting it; the keys stayed held until each cell
+  // was reached, wherever the body had gone (note 610). The route's cells
+  // and any the body passes that is by no such fall are kept to; come to
+  // one that is, the keys are let go and the way is asked again from there.
+  const { fallBeside } = require('./movement');
+  const terrain = require('./terrain');
+  const safe = new Set([from, ...route].map(c => `${c.x},${c.z}`));
+  const guard = () => {
+    const p = bot.entity?.position;
+    if (!p) return;
+    const c = new Vec3(Math.floor(p.x), Math.floor(p.y + 0.01), Math.floor(p.z)), key = `${c.x},${c.z}`;
+    if (safe.has(key)) return;
+    const under = terrain.fallFrom(terrain.atOf(bot), { x: c.x, y: c.y - 1, z: c.z });
+    const over = under.into === 'lava' || (under.into === 'ground' && Math.max(0, under.n - 3) >= (bot.health ?? 20) / 2);
+    if (!over && !fallBeside(bot, c)) { safe.add(key); return; }
+    bot.clearControlStates?.();
+    throw new Error(`Left the cells of the run out of fire at (${c.x}, ${c.y}, ${c.z}), by a fall that kills; stopped`);
+  };
   for (const [i, { cell, crouched }] of fireSteps(bot, route).entries()) {
     const target = cell.offset(0.5, 0, 0.5);
     // At a sprint the cells on the way are passed through, not stood on:
@@ -528,9 +550,15 @@ async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot))
     const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < near && Math.abs(here.y - cell.y) < 0.6; };
     const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
     const look = target.offset(0, 1.6, 0);
-    await move(bot, task, crouched
-      ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there }
-      : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there });
+    try {
+      await move(bot, task, crouched
+        ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there, guard }
+        : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there, guard });
+    } catch (err) {
+      if (!/^Left the cells of/.test(err.message || '')) throw err;
+      console.log(`[vitals] ${err.message}`);
+      break;
+    }
   }
   leftFire(bot, from);
   return !inFire(bot);
@@ -903,7 +931,11 @@ function fireWays(bot, task, onAction = () => {}) {
       const worst = falls.find(f => f.into === 'lava') || falls[0];
       const drop = worst.into === 'lava' ? `a drop into lava${worst.fall ? ` ${worst.fall} down` : ''}` : worst.into === 'deep' ? `a drop of more than ${worst.fall}` : `a drop of ${worst.fall} onto ground that costs half the health or more`;
       const crouched = edgeSteps.filter(s => s.crouched).length;
-      ways.crouch_out_of_fire = { description: `Walk out of the fire crouched, ${steps(edgeRoute)} to ${to(edgeRoute)}${edgeClear ? '' : ', through a flame on the way'}, ${crouched} of them beside ${drop}: crouched, a body does not walk off an edge (a hit or a push still throws it), at about ${round(SNEAK)} blocks a second; about ${round(edgeSeconds)} seconds, then burning on up to eight seconds unless it ends in water.`,
+      // With something about that can push the bot, the push on the way is
+      // priced by its rate of fire, as every escape's way is (survival.js
+      // routeEdge, note 610).
+      const pushed = require('./survival').routeEdge(bot, edgeRoute);
+      ways.crouch_out_of_fire = { description: `Walk out of the fire crouched, ${steps(edgeRoute)} to ${to(edgeRoute)}${edgeClear ? '' : ', through a flame on the way'}, ${crouched} of them beside ${drop}: crouched, a body does not walk off an edge (a hit or a push still throws it), at about ${round(SNEAK)} blocks a second; about ${round(edgeSeconds)} seconds, then burning on up to eight seconds unless it ends in water.${pushed?.beside ? pushed.says : ''}`,
         run: () => outOfFire(bot, task, onAction, edgeRoute) };
     }
     const rise = riseOutOfFire(bot);

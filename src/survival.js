@@ -428,18 +428,55 @@ function shotPushers(bot, range = 64) {
 // The fall into lava is priced by the lava from where the body comes up
 // (terrain.js lavaFate). Null where there is no drop that costs half the
 // health or more, or nothing that can shoot the bot over it.
+// The floor under the feet where a ghast's fireball can break it: a block
+// of blast resistance under about 4 (ghast.js HOLDS_AT), with a fall under
+// it into lava or of half the health or more. mid-242-ac-nether-3-fortress-4
+// (13:15:44) and mid-242-ba-fortress-4 (14:25:55) each stood on netherrack
+// over the lava sea when a fireball landed and broke the block under the
+// feet; the second was walled on the side the push went, every stance
+// said "a push into the wall, not the fall", and the wall held while the
+// body went down through the floor into the lava (note 610). Null with no
+// ghast that can push the bot, or a floor that holds.
+function blastFloor(bot, feet, pushers, health = bot.health ?? 20) {
+  if (!pushers.some(t => t.entity.name === 'ghast')) return null;
+  const under = bot.blockAt(feet.offset(0, -1, 0));
+  if (!under || under.boundingBox !== 'block') return null;
+  const resistance = bot.registry?.blocksByName?.[under.name]?.resistance;
+  if (resistance == null || resistance >= require('./ghast').HOLDS_AT) return null;
+  let into = 'deep', fall = 48;
+  for (let dy = 2; dy <= 49; dy++) {
+    const b = bot.blockAt(feet.offset(0, -dy, 0));
+    // Not loaded: a fall of at least as far as read.
+    if (!b) { fall = dy - 1; break; }
+    if (b.name === 'lava') { into = 'lava'; fall = dy - 1; break; }
+    if (/water/.test(b.name || '')) return null;
+    if (b.boundingBox === 'block') { into = 'ground'; fall = dy - 1; break; }
+  }
+  const damage = into === 'lava' ? Infinity : Math.max(0, fall - 3);
+  if (into !== 'lava' && damage < health / 2) return null;
+  return { name: under.name, resistance, into, fall, damage };
+}
 function shotOverEdge(bot, feet, health = bot.health ?? 20) {
   const pushers = shotPushers(bot);
   if (!pushers.length) return null;
   const terrain = require('./terrain');
   const drop = terrain.dropNear(bot, feet, 3);
-  if (!drop || (drop.into !== 'lava' && drop.damage < health / 2)) return null;
+  const floor = blastFloor(bot, feet, pushers, health);
+  const dropKills = !!drop && (drop.into === 'lava' || drop.damage >= health / 2);
+  if (!dropKills && !floor) return null;
   const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
   const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
   const p = pushers[0], name = p.entity.name, said = name.replaceAll('_', ' '), word = shotWord(name);
   const m = MOBS[name];
   const hit = m ? Math.round((m.ignoresArmour ? m.hit : afterArmour(m.hit, worn)) * 10) / 10 : null;
   const after = Math.max(0, health - (hit || 0));
+  const floorFate = floor?.into === 'lava' ? terrain.lavaFate(bot, { into: 'lava', cell: feet, fallBlocks: floor.fall }, after) : null;
+  const floorSays = floor ? ` The floor under the feet is ${floor.name.replaceAll('_', ' ')} (blast resistance ${floor.resistance}), a block a ghast's fireball can break (under about 4): one that lands at the feet can open it, and a wall at the side does not hold the body up: it goes down through it ${floorFate ? terrain.lavaFateSays(floorFate, floor.fall, after) : floor.into === 'lava' ? `into lava ${floor.fall} blocks down` : `a fall of ${floor.into === 'deep' ? 'more than ' : ''}${floor.fall} blocks, about ${floor.into === 'deep' ? 'more than ' : ''}${floor.damage} health${floor.damage >= after ? `, more than the ${Math.round(after * 10) / 10} left after the ${word}` : ''}`}.` : '';
+  const floorDeadly = !!floor && (floor.into === 'lava' ? (floorFate ? floorFate.deadly : true) : floor.damage >= after);
+  const pusherSaid = { name, distance: Math.round(p.distance * 10) / 10, visible: !!p.visible };
+  // Only the floor: no drop beside it a push goes over (walled all round).
+  if (!dropKills) return { says: ` Open under the feet to the ${said} ${Math.round(p.distance)} blocks off (${p.visible ? 'in sight' : 'out of sight now; it flies'}).${floorSays}`, walled: floorSays, deadly: floorDeadly, pusher: pusherSaid,
+    drop: { blocksAway: 0, fallBlocks: floor.fall, into: floor.into, damage: floor.damage } };
   const fate = drop.into === 'lava' ? terrain.lavaFate(bot, drop, after) : null;
   const deadly = drop.into === 'lava' ? (fate ? fate.deadly : true) : drop.damage >= after;
   const where = drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot';
@@ -456,16 +493,23 @@ function shotOverEdge(bot, feet, health = bot.health ?? 20) {
   // against a ghast to the south-east; every stance was still said to be
   // the fall into the lava, Jev answered that none was good, and the next
   // fireball pushed the bot a tenth of a block, into its wall (note 582).
-  if (pushers.every(q => walledToward(bot, feet, q.entity.position))) {
+  if (!floor && pushers.every(q => walledToward(bot, feet, q.entity.position))) {
     const lee = leeFirst(feet, AROUND_CARDINAL.map(([dx, dz]) => feet.offset(dx, 0, dz)), p.entity.position).lee, where = lee.map(c => compass(c.x - feet.x, c.z - feet.z)).join(' and ');
     return { walledNow: true, pusher: { name, distance: Math.round(p.distance * 10) / 10, visible: !!p.visible }, drop,
       says: ` Walled here toward the push: a ${word} from the ${said} ${Math.round(p.distance)} blocks off (${p.visible ? 'in sight' : 'out of sight now; it flies'}) pushes the bot away from it, ${where}, and on ${lee.length === 1 ? 'that side' : 'those sides'} a block stands at the feet or ground with no drop beside it, so one that lands costs its ${hit ?? 'own'} damage and a push into the wall, not the fall. The drop ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot'} lies on the other sides.`,
       leaving: ` Off this cell the walls are behind it: walked out from here, a ${word} that lands is the push over the drop ${where} of it again.` };
   }
-  const says = ` Open here to the ${said} ${Math.round(p.distance)} blocks off (${seen})${more}: one ${word} that lands pushes the bot off its feet, and the drop ${where} is ${fall}. So a ${word} that lands here is priced by that fall, not by its ${hit ?? 'own'} damage: ${deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}. A wall at the open sides stops the push; a block in the line stops the ${word} only while the line stays there.`;
+  // Walled toward the push, but on a floor the blast breaks: the wall
+  // holds and the floor goes (note 610).
+  if (floor && pushers.every(q => walledToward(bot, feet, q.entity.position))) {
+    const lee = leeFirst(feet, AROUND_CARDINAL.map(([dx, dz]) => feet.offset(dx, 0, dz)), p.entity.position).lee, toward = lee.map(c => compass(c.x - feet.x, c.z - feet.z)).join(' and ');
+    return { says: ` Walled here toward the push: a ${word} from the ${said} ${Math.round(p.distance)} blocks off (${p.visible ? 'in sight' : 'out of sight now; it flies'}) pushes the bot away from it, ${toward}, into a block or onto ground with no drop beside it.${floorSays}`,
+      walled: floorSays, deadly: floorDeadly, pusher: pusherSaid, drop };
+  }
+  const says = ` Open here to the ${said} ${Math.round(p.distance)} blocks off (${seen})${more}: one ${word} that lands pushes the bot off its feet, and the drop ${where} is ${fall}. So a ${word} that lands here is priced by that fall, not by its ${hit ?? 'own'} damage: ${deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}. A wall at the open sides stops the push; a block in the line stops the ${word} only while the line stays there.${floorSays}`;
   // The walled stances, priced the same way: with the wall up, the shot
   // costs what it costs.
-  const walled = ` Walled, a ${word} that lands here costs its ${hit ?? 'own'} damage and a push into the wall, not the fall${drop.into === 'lava' ? ' into the lava' : ''}.`;
+  const walled = floor ? ` Walled, a ${word} that lands here pushes the bot into the wall, not over the drop beside it.${floorSays}` : ` Walled, a ${word} that lands here costs its ${hit ?? 'own'} damage and a push into the wall, not the fall${drop.into === 'lava' ? ' into the lava' : ''}.`;
   return { says, walled, deadly, pusher: { name, distance: Math.round(p.distance * 10) / 10, visible: !!p.visible }, drop };
 }
 // A spear holder's knock over the drop beside the bot, said on every stance
@@ -505,6 +549,72 @@ function walledToward(bot, feet, from) {
   if (!lee.length) return false;
   return lee.every(c => bot.blockAt(c)?.boundingBox === 'block' || (!dropAt(bot, c) && !besideDrop(bot, c)));
 }
+// The cells a wall at the feet goes in: each side open over the drop, and,
+// against a blast's push, each side it goes toward that is floored but has
+// the drop within a throw beyond it. A fireball's push carries the body past
+// the cell beside it: mid-243-ah-fortress-5, on a one-wide diagonal ridge
+// of basalt at y 52 over the lava sea, every side at its feet floored
+// (basalt west and north, its own planks east and south), was thrown 2.9
+// blocks west and 1.9 north, over the basalt west of it and off the
+// ridge, twenty blocks into the lava; the rail was not offered, no side
+// being open over the drop, and every stance said the push was its death
+// (note 610). The sides a push goes toward first (leeFirst); `onward` is the
+// side a span being laid goes on, left open for it.
+//
+// A blast's push (a ghast's fireball, a breeze's wind charge) throws the
+// body two to four blocks, seen: 2.9 and 1.9 (mid-243-ah-fortress-5), 4.2
+// along a span (mid-243-ag-nether-2); a blow's or an arrow's knock, about
+// a block, stops on a floored cell beside the feet.
+const FAR_PUSHERS = new Set(['ghast', 'breeze']);
+function wallCells(bot, feet, { pusher = null, onward = null } = {}) {
+  const { dropAt } = require('./terrain');
+  const sides = AROUND_CARDINAL.filter(([dx, dz]) => !(onward && onward.x === dx && onward.z === dz)).map(([dx, dz]) => feet.offset(dx, 0, dz));
+  const open = sides.filter(c => dropAt(bot, c));
+  const blast = shotPushers(bot).find(t => FAR_PUSHERS.has(t.entity.name))?.entity?.position;
+  // Floored, but with the drop within the throw beyond it on that side:
+  // along a span that goes on the body lands on the span.
+  const carriesOff = c => { const d = c.minus(feet); for (let k = 1; k <= 3; k++) { const at = c.plus(d.scaled(k)); if (bot.blockAt(at)?.boundingBox === 'block') return false; if (dropAt(bot, at)) return true; } return false; };
+  const lee = blast ? leeFirst(feet, sides, blast).lee.filter(c => !open.some(o => o.equals(c)) && bot.blockAt(c)?.boundingBox !== 'block' && carriesOff(c)) : [];
+  return leeFirst(feet, [...open, ...lee], pusher || blast).sides;
+}
+// Gravel and sand hold where a floor is under them, and fall where none is:
+// a wall of them goes on a floor, one already there or laid first of a
+// block that holds over air. mid-243-ah-fortress-5 and mid-243-ag-nether-2
+// carried fourteen and sixteen gravel, told "too few blocks carried" or
+// offered no wall, and a fireball threw each into the lava (note 610).
+const WALL_FALLING = new Set(['gravel', 'sand', 'red_sand']);
+// What a wall at `cells` takes and what is carried for it: `floors` the
+// cells with nothing under them, laid first of a block that holds (a
+// building material); the walls on them of either. `enough` when both are
+// carried; `falling` the gravel or sand the walls take, the holding blocks
+// kept for the floors and used first for walls past them.
+function wallStock(bot, cells, { extra = 0 } = {}) {
+  const floors = cells.filter(c => bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block').length;
+  const items = bot.inventory.items();
+  const holding = items.filter(i => shelter.buildingMaterials.has(i.name)).reduce((n, i) => n + i.count, 0) + extra;
+  const loose = items.filter(i => WALL_FALLING.has(i.name)).reduce((n, i) => n + i.count, 0);
+  const need = floors + cells.length;
+  const falling = Math.max(0, need - holding);
+  return { need, floors, holding, loose, falling, enough: holding >= floors && holding + loose >= need, looseName: items.find(i => WALL_FALLING.has(i.name))?.name || null };
+}
+// The cells the rail walls with what is carried (the planks the logs make
+// counted): every side wallCells gives, or, short of blocks for all of
+// them, the sides a push from a shooter goes toward alone. mid-243-ag-
+// nether-2 stood on its one-wide span over the lava sea with one plank and
+// sixteen gravel, told "too few blocks carried (1) to wall the 2 open
+// sides (4)"; the plank under a wall of gravel on the south side, where
+// the ghast's push went, was the wall it needed, and a fireball threw it
+// off that side into the lava (note 610). { cells, all, leeOnly }.
+function wallPlan(bot, feet, { onward = null } = {}) {
+  const all = wallCells(bot, feet, { pusher: pusherAt(bot), onward });
+  const planks = shelter.plankCraft?.(bot) || null;
+  const fits = cells => wallStock(bot, cells, { extra: planks?.available || 0 }).enough;
+  if (!all.length || fits(all)) return { cells: all, all, leeOnly: false };
+  const shot = shotPushers(bot)[0]?.entity?.position;
+  const lee = shot ? leeFirst(feet, all, shot).lee : [];
+  if (lee.length && lee.length < all.length && fits(lee)) return { cells: lee, all, leeOnly: true };
+  return { cells: all, all, leeOnly: false };
+}
 // A stance that builds its wall or its cover stands open while it builds:
 // the walls stop the push only once they stand, and a shot that lands
 // before then is the fall. mid-243-ad-nether-3 chose rail_and_fight on its
@@ -534,6 +644,42 @@ function openWhileBuildingSays(over, seconds, what) {
       : `a shot about every ${ce.MOBS[p.name]?.every || 2} seconds`;
   const chance = Math.round(shotChanceIn(p, seconds) * 100);
   return ` Until ${what} stands, about ${Math.round(seconds * 10) / 10} seconds, the bot is open over the drop: the ${said} ${Math.round(p.distance)} blocks off fires ${rate}, so ${chance >= 100 ? `a ${word} can all but surely land first` : `about ${chance} in 100 that a ${word} lands first`}, and one that lands before then is the push over the drop: ${over.deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}, whatever the damage figure says.`;
+}
+// An escape's way counted against a push, as a stance standing still is
+// (shotOverEdge): the cells of the walk beside a fall that kills (the fire
+// run's measure, movement.js fallBeside), the seconds along them (crouched
+// in the Nether, as the walk goes there beside a deadly edge, about 1.3
+// blocks a second), and the chance that a shot from what can push the bot
+// lands meanwhile, by its rate of fire (shotChanceIn). mid-243-ah-
+// fortress-5's out_of_sight was offered four times along its ridge over
+// the lava sea as "walk 5 blocks ... about 1.2 seconds in their fire",
+// nothing said of the drop beside the way, and the walk was refused each
+// time where it began: "the way passes along a drop that would kill"; the
+// ghast's fireball threw it off where it stood (note 610). `cells` are the
+// way's cells from the first step to its end; null with nothing that can
+// push the bot, { beside: 0 } where no cell of the way is by such a fall.
+const CROUCH_SPEED = 4.317 * 0.3;
+function routeEdge(bot, cells, { health = bot.health ?? 20 } = {}) {
+  const pushers = shotPushers(bot);
+  if (!pushers.length || !cells?.length) return null;
+  const { fallBeside } = require('./movement');
+  const falls = cells.map(c => fallBeside(bot, c, health));
+  const beside = falls.filter(Boolean);
+  if (!beside.length) return { beside: 0, cells, says: ` None of the ${cells.length} cell${cells.length === 1 ? '' : 's'} of its way lies beside a drop a push could put the bot over.` };
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  const seconds = Math.round(beside.length / (nether ? CROUCH_SPEED : 4.3) * 10) / 10;
+  const p = pushers[0], pusher = { name: p.entity.name, distance: p.distance, visible: !!p.visible }, word = shotWord(pusher.name), said = pusher.name.replaceAll('_', ' ');
+  // Measured to its end (dropNear reads down to 48): the walk's own
+  // measure stops at a fall that already kills.
+  const deep = cells.map(c => require('./terrain').dropNear(bot, c, 1)).filter(d => d && (d.into === 'lava' || d.damage >= health / 2));
+  const worst = deep.find(d => d.into === 'lava') ? { into: 'lava', fall: deep.find(d => d.into === 'lava').fallBlocks } : beside.find(f => f.into === 'lava') || beside[0];
+  const drop = worst.into === 'lava' ? `a drop into lava${worst.fall ? ` ${worst.fall} down` : ''}` : worst.into === 'deep' ? `a drop of more than ${worst.fall}` : `a drop of ${worst.fall} onto ground that costs half the health or more`;
+  const ce = require('./combat-estimate');
+  const rate = pusher.name === 'ghast' ? `one ${word} every ${require('./ghast').GHAST.every} seconds while it has a line`
+    : pusher.name === 'blaze' ? `a volley of three about every ${Math.round(ce.FIREBALL.volleySeconds)} seconds` : `a shot about every ${ce.MOBS[pusher.name]?.every || 2} seconds`;
+  const chance = Math.round(shotChanceIn(pusher, seconds) * 100);
+  return { beside: beside.length, cells, seconds, chance, drop: worst,
+    says: ` ${beside.length} of the ${cells.length} cell${cells.length === 1 ? '' : 's'} of its way lie${beside.length === 1 ? 's' : ''} beside ${drop}, walked ${nether ? 'crouched (a step does not go over the edge; a push still throws the body)' : 'upright'}: about ${seconds} seconds beside it, while the ${said} ${Math.round(pusher.distance)} blocks off fires ${rate}, so ${chance >= 100 ? `a ${word} can all but surely land on the way` : `about ${chance} in 100 that a ${word} lands on the way`}, and one that lands there is the push over the drop.` };
 }
 // The open sides a push goes toward first: a push goes away from what
 // pushes (a shot's blast from where it lands, on the shooter's side of the
@@ -2669,14 +2815,19 @@ class Survival {
       }
       // Priced as the rail is: the step's seconds with what gets to the bot
       // hitting, then the fight there, begun once it is there (note 576).
-      const stepSeconds = Math.max(1, Math.round(far / 4.3));
+      // Its way beside a drop a push can put the bot over, said and priced,
+      // and walked along those cells as offered (note 610).
+      const footWay = require('./bunker').wayTo(bot, groundBy);
+      const footEdge = footWay?.length ? routeEdge(bot, footWay) : null;
+      const footEdgeCells = new Set((footEdge?.beside ? footWay : []).map(c => `${c.x},${c.y},${c.z}`));
+      const stepSeconds = Math.max(1, Math.round(far / 4.3 + (footEdge?.beside ? footEdge.seconds - footEdge.beside / 4.3 : 0)));
       const footCost = stanceCost({ mobs, setup: stepSeconds, ...(coming.length ? { fight: { lead: true } } : {}), shield: shielded, health: bot.health });
-      options.fight_from_footing = { expects: { damage: footCost.damage, seconds: footCost.seconds, oneHit }, description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${stepSeconds} second${far > 4.3 ? 's' : ''}${coming.length ? ', the mobs hitting freely meanwhile' : ''}), then fight there: a knock there lands on ground, where here it goes over the edge.${thereSays}${creeperCount ? creeperFoughtText({ there: true }) : ''}${edge}` + (coming.length ? costSays(footCost, bot.health, mobs, { doing: 'stepping there', done: 'There' }) : ''),
+      options.fight_from_footing = { expects: { damage: footCost.damage, seconds: footCost.seconds, oneHit }, description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${stepSeconds} second${far > 4.3 ? 's' : ''}${coming.length ? ', the mobs hitting freely meanwhile' : ''}), then fight there: a knock there lands on ground, where here it goes over the edge.${footEdge?.says || ''}${thereSays}${creeperCount ? creeperFoughtText({ there: true }) : ''}${edge}` + (coming.length ? costSays(footCost, bot.health, mobs, { doing: 'stepping there', done: 'There' }) : ''),
         run: async () => {
           this.report(goal, save, { action: 'fight_from_footing', to: { ...groundBy } });
           const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
           if (movements) movements.allow1by1towers = false;
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(groundBy.x, groundBy.y, groundBy.z), { timeoutMs: Math.max(4000, far / 4.3 * 2000), stallMs: 1200 }); }
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(groundBy.x, groundBy.y, groundBy.z), { timeoutMs: Math.max(4000, stepSeconds * 2000), stallMs: 1200, ...(footEdgeCells.size ? { edgeTaken: n => footEdgeCells.has(`${n.x},${n.y},${n.z}`) } : {}) }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { if (movements) movements.allow1by1towers = towers; }
           const at = bot.entity.position.floored();
@@ -2689,13 +2840,15 @@ class Survival {
     // with the open sides, the blocks for them and what can push.
     let spanWalled = false, holdWindow = 0;
     if (require('./terrain').onSpan(bot)) {
-      const { dropAt } = require('./terrain');
-      const openSides = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
-      const wallBlocks = openSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
+      // The sides open over the drop and those a push goes toward with the
+      // drop beside them, gravel or sand for a wall on a floor (note 610).
+      const openSides = wallCells(bot, feet, { pusher: pusherAt(bot) });
+      const spanStock = wallStock(bot, openSides), wallBlocks = spanStock.need;
       // The planks the logs carried make count, said as made first (note
       // 563): mid-243-ad was told three blocks with five oak logs carried.
-      const stock = shelter.materialStock(bot), planks = shelter.plankCraft?.(bot) || null;
-      const carried = stock + (planks?.available || 0);
+      const stock = spanStock.holding, planks = shelter.plankCraft?.(bot) || null;
+      const carried = stock + spanStock.loose + (planks?.available || 0);
+      const canWall = wallStock(bot, openSides, { extra: planks?.available || 0 }).enough;
       const madeSays = planks && stock < wallBlocks ? `, the ${planks.item.replaceAll('_', ' ')} for them made first from the logs carried (${planks.available}), about a second more` : '';
       const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
       // A shooter that flies counts out of sight too, within its reach: it
@@ -2703,9 +2856,9 @@ class Survival {
       const pushers = [...coming.filter(t => (t.distance <= 6 && !shooter(t.entity))), ...shotPushers(bot)];
       const spanCreeper = coming.find(t => t.entity.name === 'creeper' && t.distance <= LIGHTS_AT + APPROACH * 3);
       const pushSays = pushers.length ? ` What can push the bot here: ${pushers.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off${t.visible === false ? ' (out of sight, and it flies)' : ''}`).join(', ')}.` : ' Nothing about is within six blocks to hit it, nor a shooter in sight within its reach.';
-      spanWalled = !!openSides.length && !!pushers.length && carried >= wallBlocks;
+      spanWalled = !!openSides.length && !!pushers.length && canWall;
       const walls = !openSides.length ? ' No side of the span at the feet is open over the drop.'
-        : pushers.length ? (carried >= wallBlocks ? ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} walled first: ${wallBlocks} block${wallBlocks === 1 ? '' : 's'}, about ${Math.round(wallBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSays}; a push stops at a wall, and the walls stay up while the bot holds here.` : ` Too few blocks carried (${carried}${planks ? `, counting the ${planks.available} planks the logs make` : ''}) to wall the ${openSides.length} open side${openSides.length === 1 ? '' : 's'} (${wallBlocks}): with something pushing it steps off the span to firm ground within eight instead, if there is any.`)
+        : pushers.length ? (canWall ? ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} walled first: ${wallBlocks} block${wallBlocks === 1 ? '' : 's'}, about ${Math.round(wallBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSays}; a push stops at a wall, and the walls stay up while the bot holds here.` : ` Too few blocks carried (${carried}${planks ? `, counting the ${planks.available} planks the logs make` : ''}) to wall the ${openSides.length} open side${openSides.length === 1 ? '' : 's'} (${wallBlocks}${spanStock.floors ? `, ${spanStock.floors} of them floors under a wall, which gravel or sand does not make` : ''}): with something pushing it steps off the span to firm ground within eight instead, if there is any.`)
         : ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} left open while nothing pushes.`;
       // Priced as the rail is (note 578): the walls first under what is at
       // reach, then what comes struck where it stands, the shooters shooting.
@@ -2729,16 +2882,32 @@ class Survival {
     // only while something could be fought; from 9.4 health it had cover
     // (in the wrong line) and a walk to ground eighteen blocks off, and a
     // fireball put it over (note 541). The rail is walled and held.
-    const railSides = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2)
-      ? [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => require('./terrain').dropAt(bot, c)) : [];
-    const railBlocks = railSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
+    // The sides open over the drop, and those a push goes toward with a
+    // drop beside them (wallCells, note 610); gravel or sand for a wall on
+    // a floor (wallStock).
+    const railPlan = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) ? wallPlan(bot, feet) : null;
+    const railSides = railPlan?.cells || [];
+    const railStock = wallStock(bot, railSides);
+    const railBlocks = railStock.need;
     let railWindow = 0;
     // Planks made from the logs carried count, made first (note 563).
-    const railStack = bot.inventory.items().some(i => shelter.buildingMaterials.has(i.name) && i.count >= railBlocks);
+    // Blocks that hold first, then planks the logs make, then gravel or
+    // sand for walls on a floor (note 610).
+    const railStack = railSides.length > 0 && railStock.holding >= railStock.need;
     const railPlanks = !railStack && railSides.length ? shelter.plankCraft?.(bot) : null;
-    const railMade = railPlanks && railPlanks.available + countOf(bot, railPlanks.item) >= railBlocks ? railPlanks : null;
-    if (railSides.length && (railStack || railMade)) {
-      const railing = `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds${railMade ? `, the ${railMade.item.replaceAll('_', ' ')} for it made first from the logs carried, about a second more` : ''}, anything at reach hitting freely meanwhile)`;
+    const railMade = railPlanks && (railStock.holding + railPlanks.available >= railStock.need || (!railStock.enough && wallStock(bot, railSides, { extra: railPlanks.available }).enough)) ? railPlanks : null;
+    const railFalling = railStack ? 0 : Math.max(0, railStock.need - railStock.holding - (railMade?.available || 0));
+    const railLoose = !railStack && !railMade && railStock.enough;
+    if (railSides.length && (railStack || railMade || railLoose)) {
+      const overDrop = railSides.filter(c => require('./terrain').dropAt(bot, c)), floored = railSides.filter(c => !overDrop.includes(c));
+      const sidesSaid = cs => cs.map(c => compass(c.x - feet.x, c.z - feet.z)).join(' and ');
+      const which = floored.length
+        ? `Wall ${railSides.length === 1 ? 'the side' : `the ${railSides.length} sides`} at the feet a push goes toward or open over the drop: ${overDrop.length ? `${sidesSaid(overDrop)} open over it, ` : ''}${sidesSaid(floored)} floored but with the drop beside ${floored.length === 1 ? 'it' : 'them'}, where a push carries the body past the cell beside it`
+        : `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop`;
+      const looseSays = railFalling > 0 && railStock.looseName ? `, ${railFalling} of them ${railStock.looseName.replaceAll('_', ' ')}, which holds on the floor under it` : '';
+      const leftOpen = railPlan.leeOnly ? railPlan.all.filter(c => !railSides.includes(c)) : [];
+      const leeOnlySays = leftOpen.length ? `; the blocks carried wall only the side${railSides.length === 1 ? '' : 's'} a push from the ${shotPushers(bot)[0].entity.name.replaceAll('_', ' ')} goes toward, and ${sidesSaid(leftOpen)} stay${leftOpen.length === 1 ? 's' : ''} open (a push from it does not go that way; a hit from a mob beside the bot can)` : '';
+      const railing = `${which}${leeOnlySays} (${railBlocks} block${railBlocks === 1 ? '' : 's'}${looseSays}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds${railMade ? `, the ${railMade.item.replaceAll('_', ' ')} for it made first from the logs carried, about a second more` : ''}, anything at reach hitting freely meanwhile)`;
       // Priced as every stance is, the fight after the walls too: the
       // walling's seconds with everything that gets to the bot hitting
       // freely, then the fight here begun once the blocks are down (as the
@@ -2757,8 +2926,8 @@ class Survival {
         : stanceCost({ mobs, setup: railSetup, fight: { lead: true, atOnce: opening ? Infinity : open + inCell.length }, shield: shielded, health: bot.health });
       options.rail_and_fight = { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit },
         description: noStep
-          ? `${railing}, then hold here behind it: a push from a shot that lands, or a step back, stops at the wall; nothing is at reach to swing at, and the shooters still shoot where the bot stands.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Behind the wall' })
-          : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: railMade ? 'making the planks and walling' : 'walling', done: 'Walled' }) + hitsLeft,
+          ? `${railing}, then hold here behind it: ${leftOpen.length ? 'a push from its shot that lands stops at the wall' : 'a push from a shot that lands, or a step back, stops at the wall'}; nothing is at reach to swing at, and the shooters still shoot where the bot stands.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Behind the wall' })
+          : `${railing}, then fight here: ${leftOpen.length ? `a push from its shot stops at the wall; a knock toward ${sidesSaid(leftOpen)} still goes over` : 'a knock toward the drop stops at the wall'}.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: railMade ? 'making the planks and walling' : 'walling', done: 'Walled' }) + hitsLeft,
         run: async () => {
           if (!await this.railSpan(task, goal, save, { blast: danger.some(t => t.entity.name === 'ghast') })) return false;
           return noStep ? true : options.fight.run();
@@ -3129,7 +3298,12 @@ class Survival {
     const cover = shooting.length && !inWater(bot) && (seenHere.length || heldHidden)
       ? require('./bunker').coverWithin(bot, shooting, { steps: 8, avoid: biting, skip: c => coverFailed.some(f => f.cell === `${c}`) }) : null;
     if (cover) {
-      const secs = Math.round(cover.steps / 4.3 * 10) / 10;
+      // Its way beside a drop a push can put the bot over, said and priced,
+      // and walked along those cells as offered, crouched there in the
+      // Nether (note 610).
+      const coverEdge = cover.steps ? routeEdge(bot, cover.path) : null;
+      const coverEdgeCells = new Set((coverEdge?.beside ? cover.path : []).map(c => `${c.x},${c.y},${c.z}`));
+      const secs = Math.round(((cover.steps - (coverEdge?.beside || 0)) / 4.3 + (coverEdge?.seconds || 0)) * 10) / 10;
       const atOnce = Math.max(1, openCells(bot, cover.cell));
       const regain = regainAt(cover.cell, { setup: secs });
       const hiddenCost = stanceCost({ mobs, setup: secs, fight: { atOnce, only: m => !m.shoots }, reaches: reachesAgain(regain), shield: shielded });
@@ -3139,7 +3313,7 @@ class Survival {
         description: (cover.steps
           ? `Walk ${plural(cover.steps, 'block')} to a spot ${off} blocks off that no line from ${shooterNames(shooting)} reaches (rock stands between), about ${secs} seconds in their fire on the way, and stay there.`
           : `Stay where the bot stands: no line from ${shooterNames(shooting)} reaches it here (rock stands between).`) + biters + regainSays(regain) +
-          costSays(hiddenCost, bot.health, mobs, { doing: cover.steps ? 'walking there' : null, done: 'Out of their line' }) + hitsLeft +
+          (coverEdge?.says || '') + costSays(hiddenCost, bot.health, mobs, { doing: cover.steps ? 'walking there' : null, done: 'Out of their line' }) + hitsLeft +
           (coverFailed.length ? ` ${coverFailedSays(coverFailed)}` : ''),
         run: async () => {
           if (!cover.steps) {
@@ -3153,7 +3327,7 @@ class Survival {
           this.report(goal, save, { action: 'out_of_sight', to: { x: cover.cell.x, y: cover.cell.y, z: cover.cell.z }, blocks: cover.steps, threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
           const from = bot.entity.position.clone();
           let walkWhy = null;
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000), stallMs: 1200 }); }
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000, (coverEdge?.seconds || 0) * 3000), stallMs: 1200, ...(coverEdgeCells.size ? { edgeTaken: n => coverEdgeCells.has(`${n.x},${n.y},${n.z}`) } : {}) }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; walkWhy = err.message; }
           const there = bot.entity.position.floored().equals(cover.cell);
           if (there) { hideAt(cover.cell); return true; }
@@ -3833,10 +4007,20 @@ class Survival {
     // place took two fireballs from a ghast that had drifted to a new line,
     // and was asked again only when the bot was off the spot (note 551).
     const shotThrough = HIDING_STANCES.has(held?.choice) ? (held.shooters || []).find(k => (bot._hurtBy?.[k] || 0) > held.at) : null;
+    // A shot from a shooter it was chosen against that landed, the bot
+    // still open over a drop a push puts it over: every stance priced that
+    // shot as the fall, and the bot came through it somewhere else. Held on
+    // its estimate, mid-243-ag-nether-2's fight on its one-wide span over
+    // the lava sea took a ghast's fireball at 14:18:15 that threw it four
+    // blocks along the span to its south lip, was not asked again, and the
+    // next, three seconds later, threw it into the lava (note 610).
+    const shotLanded = !!held && (held.shooters || []).some(k => (bot._hurtBy?.[k] || 0) > held.at);
+    const pushedOpen = shotLanded && (() => { const over = shotOverEdge(bot, feet); return !!over && !over.walledNow; })();
     // The physical triggers, whatever the stance's clock: six health, a
     // newcomer within six, a hit while leaving them be, a shooter's line
-    // where it hid, the bot off its spot, a creeper's line, a shot through.
-    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough;
+    // where it hid, the bot off its spot, a creeper's line, a shot through,
+    // a push come through open over the drop.
+    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough && !pushedOpen;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -4027,6 +4211,7 @@ class Survival {
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + ownCells.size }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
           ...(blockAgain ? { askedAgainFor: blockAgain } : shotThrough ? { askedAgainFor: `the ${shotThrough.replaceAll('_', ' ')} it was chosen against hit the bot ${Math.round((Date.now() - bot._hurtBy[shotThrough]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen` }
+            : pushedOpen ? { askedAgainFor: (() => { const k = (held.shooters || []).find(n => (bot._hurtBy?.[n] || 0) > held.at); const p = held.start?.pos; return `the ${k.replaceAll('_', ' ')} it was chosen against landed a shot ${Math.round((Date.now() - bot._hurtBy[k]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen${p ? `, and the bot is ${Math.round(Math.hypot(bot.entity.position.x - p.x, bot.entity.position.z - p.z) * 10) / 10} blocks from where it chose` : ''}; it is still open over the drop a push puts it over`; })() }
             : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
@@ -4579,41 +4764,55 @@ class Survival {
   async railSpan(task, goal, save, { ahead = null, blast = false } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
-    const { dropAt } = require('./terrain');
     const feet = bot.entity.position.floored();
     // The side a span being laid goes on is left open for it.
     const onward = ahead && require('./bridging').stepToward(feet, ahead);
     // The sides a push goes toward first (leeFirst): they were walled in a
     // fixed order, east, west, south, north, and mid-243-ad-nether-3's ghast
     // to the south-east pushed it north-west (note 582).
-    const open = leeFirst(feet, [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => !(onward && onward.x === dx && onward.z === dz))
-      .map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c)), pusherAt(bot)).sides;
-    const need = open.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
-    const stack = () => (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, need)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= need)?.name;
-    let material = open.length ? stack() : null;
-    // Short of a stack for it, planks from the logs carried (note 563):
-    // mid-243-ad held on its span under a ghast with three planks and five
-    // oak logs, and no wall went up.
-    if (open.length && !material && typeof this.actions.acquireStep === 'function') {
+    // And the sides a push goes toward with the drop beside them, floored
+    // or not (wallCells, note 610).
+    const open = wallPlan(bot, feet, { onward }).cells;
+    const need = wallStock(bot, open).need;
+    // A block that holds over air for each floor and for walls while one
+    // is carried (against a ghast, one its blast does not break first); a
+    // wall on a floor of gravel or sand past those (note 610).
+    const holding = () => (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, 1)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count > 0)?.name || null;
+    const loose = () => bot.inventory.items().find(i => WALL_FALLING.has(i.name) && i.count > 0)?.name || null;
+    const stock = wallStock(bot, open);
+    let enough = open.length > 0 && stock.enough;
+    // Short of blocks that hold for it, planks from the logs carried (note
+    // 563): mid-243-ad held on its span under a ghast with three planks and
+    // five oak logs, and no wall went up. Before gravel or sand, where the
+    // planks make up the whole of it.
+    if (open.length && stock.holding < need && typeof this.actions.acquireStep === 'function') {
       const planks = shelter.plankCraft?.(bot);
-      if (planks && planks.available + countOf(bot, planks.item) >= need) {
+      if (planks && (stock.holding + planks.available >= need || (!enough && wallStock(bot, open, { extra: planks.available }).enough))) {
         try { await this.actions.acquireStep(bot, task, planks.item, Math.min(countOf(bot, planks.item) + planks.available, countOf(bot, planks.item) + Math.ceil(need / 4) * 4), goal, save); }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-        material = stack();
+        enough = wallStock(bot, open).enough;
       }
     }
-    if (!open.length || !material) return false;
+    if (!open.length || !enough) return false;
     this.report(goal, save, { action: 'rail_span', sides: open.length, health: bot.health });
     let placed = 0;
+    // The floors still to lay, each a holding block, kept from the walls.
+    let floorsLeft = open.filter(c => bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block').length;
     for (const c of open) {
       for (const p of [c.offset(0, -1, 0), c]) {
         if (bot.blockAt(p)?.boundingBox === 'block') continue;
         task.check();
+        const floor = !p.equals(c);
+        const held = holding(), spare = held ? countOf(bot, held) : 0;
+        const material = floor ? held : (held && spare > floorsLeft ? held : loose() || held);
+        if (!material) break;
+        // Gravel or sand where no floor stands under it falls (note 610).
+        if (!floor && WALL_FALLING.has(material) && bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block') break;
         // Counted only when the block stands: mid-243-l "walled" its span
         // eleven times in four seconds under a ghast, no wall ever standing,
         // and each report ended the turn before the step off or the shield;
         // a fireball threw it into the lava (2026-09-27).
-        try { await this.actions.place(bot, task, p, material); if (bot.blockAt(p)?.boundingBox === 'block') placed++; }
+        try { await this.actions.place(bot, task, p, material); if (bot.blockAt(p)?.boundingBox === 'block') { placed++; if (floor) floorsLeft--; } }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
       }
     }
@@ -7870,4 +8069,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { routeEdge, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
