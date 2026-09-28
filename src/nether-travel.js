@@ -366,7 +366,7 @@ function lineColumns(from, target, cells) {
 // With the mobs within eight of the ground walked.
 function walkFloor(bot, from, columns, { blocks = null } = {}) {
   const carried = blocks ?? blocksCarried(bot), deepest = deepestDrop(bot);
-  const out = { cells: 0, floor: 0, lava: 0, gap: 0, rise: 0, climb: 0, drops: 0, damage: 0, rock: 0, lay: 0, soul: 0, magma: 0, carried, runsOut: null, seconds: 0, stoppedBy: null, stoppedAt: null, mobs: {}, lowest: from.y, highest: from.y, first: [] };
+  const out = { cells: 0, floor: 0, lava: 0, gap: 0, rise: 0, climb: 0, drops: 0, damage: 0, rock: 0, lay: 0, soul: 0, magma: 0, carried, runsOut: null, seconds: 0, stoppedBy: null, stoppedAt: null, mobs: {}, mobsPrice: '', lowest: from.y, highest: from.y, first: [] };
   const walked = [];
   const note = kind => { if (out.cells >= FIRST_CELLS) return; const last = out.first.at(-1); if (last?.kind === kind) last.n++; else out.first.push({ kind, n: 1 }); };
   let h = from.y;
@@ -411,10 +411,12 @@ function walkFloor(bot, from, columns, { blocks = null } = {}) {
   out.end = walked.at(-1) || from;
   // The mobs by the ground walked: within eight across and eight up or down
   // of a cell of it.
+  const near = [];
   for (const e of Object.values(bot.entities || {})) {
     if (!NETHER_MOBS.test(e?.name || '') || e.isValid === false || !e.position) continue;
-    if (walked.some(p => Math.hypot(e.position.x - p.x - 0.5, e.position.z - p.z - 0.5) <= 8 && Math.abs(e.position.y - p.y) <= 8)) out.mobs[e.name] = (out.mobs[e.name] || 0) + 1;
+    if (walked.some(p => Math.hypot(e.position.x - p.x - 0.5, e.position.z - p.z - 0.5) <= 8 && Math.abs(e.position.y - p.y) <= 8)) { out.mobs[e.name] = (out.mobs[e.name] || 0) + 1; near.push(e); }
   }
+  out.mobsPrice = mobsPriceSays(bot, near);
   return out;
 }
 
@@ -427,6 +429,24 @@ function wayDownSays(down) {
   if (w.drops.length) parts.push(`dropping ${w.drops.join(', ')} (${w.damage ? `about ${w.damage} damage` : 'no damage'})`);
   if (w.dug) parts.push(`digging ${plural(w.dug, 'block')} of rock for the steps down`);
   return `The way down to the floor ${down.depth} blocks below (y ${down.y}, seen under ${down.columns} of the 64 columns round the bot) is ${parts.join(', ')}: about ${w.seconds} seconds, found on the ground and rock about the bot, walked upright by the pathfinder.`;
+}
+// What the mobs listed by a way cost if they all came at the bot on it, at the
+// health it has, and whether health comes back after. mid-208-k-nether-3-
+// fortress-6 (25587) chose the way down to the floor at 10 health told only
+// "By the floor that way: 2 hoglins" (its state said that fighting all the
+// mobs about was 43 damage), was struck by both at the foot of it, 10 to 5.9,
+// and then 1.9, and died (note 626).
+function mobsPriceSays(bot, mobs) {
+  if (!mobs?.length) return '';
+  try {
+    const { fightEstimate } = require('./combat-estimate'), { defenseWeapon, shooter } = require('./combat');
+    const armour = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+    const fight = fightEstimate({ threats: mobs.slice(0, 8).map(e => ({ name: e.name, distance: 2, shoots: !!shooter(e), visible: true })), armour,
+      weapon: defenseWeapon(bot)?.name || null, health: bot.health ?? 20, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
+    const r = n => Math.round(n * 10) / 10, health = r(bot.health ?? 20);
+    const heals = (bot.food ?? 20) < 18 && !(bot.inventory?.items?.() || []).some(i => { try { return require('./vitals').safeFood?.(bot, i); } catch (_) { return false; } });
+    return ` If ${mobs.length === 1 ? 'it' : 'they all'} came at the bot on that way, fighting ${mobs.length === 1 ? 'it' : 'them'} is about ${r(fight.damageTaken)} damage from ${health} health${fight.healthAfter <= 0 ? ' (more than the bot has)' : ''}${heals ? `; nothing carried is food and hunger ${bot.food} is under eighteen, so none of that health comes back` : ''}.`;
+  } catch (_) { return ''; }
 }
 function floorWalkSays(f, { along }) {
   const parts = [];
@@ -441,7 +461,7 @@ function floorWalkSays(f, { along }) {
   const firstRuns = f.first.map(r => `${r.n} of ${FLOOR_FIRST[r.kind]}`).join(', ');
   return `On the floor, of the ${f.cells} cells ${along}: ${parts.join(', ') || 'none open'}, ${f.lowest === f.highest ? `all at y ${f.lowest}` : `from y ${f.lowest} to ${f.highest}`}; about ${f.seconds} seconds.${lay}` +
     `${f.stoppedBy ? ` ${capital(f.stoppedBy)} stops it at cell ${f.stoppedAt}.` : ''}${firstRuns ? ` The first cells, in order: ${firstRuns}.` : ''}` +
-    ` ${mobs.length ? `By the floor that way: ${mobs.join(', ')}.` : 'No mobs are known by the floor that way.'}`;
+    ` ${mobs.length ? `By the floor that way: ${mobs.join(', ')}.${f.mobsPrice || ''}` : 'No mobs are known by the floor that way.'}`;
 }
 const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 // The height back up: to the height the bot stands, or to what it is going to.
@@ -534,6 +554,25 @@ function keepOnSays(bot, goal, now = Date.now()) {
   return ` Jev chose ${m ? `${m} minute${m === 1 ? '' : 's'} ago` : 'under a minute ago'}${at ? `, at ${at} health,` : ''} to go on in the Nether without this trip for twenty minutes; health is ${Math.round((bot.health ?? 20) * 10) / 10} now.`;
 }
 
+// The trip back for food Jev chose and that is what has stopped here: what the
+// options that end it or take it up again do to it. mid-243-ag (25589) chose
+// go_back at 3.5 health with the portal 277 blocks off, the crossing stalled
+// at a drop, and the stall's answers were gather dirt, gather cobblestone and
+// keep_on: none good came first each time (0.33, 0.39, 0.41), the best listed
+// was taken, and that was keep_on, which dropped the trip. Its words said
+// "go on without the Overworld for twenty minutes" and nothing of the trip
+// they ended (note 626).
+function standingTripSays(bot, goal, option, now = Date.now()) {
+  const held = goal?.leaveNether;
+  if (!held || held.reason !== 'food' || held.pick !== 'go_back' || !(now - held.at < 30 * 60000)) return '';
+  const m = Math.round((now - held.at) / 60000), ago = m ? `${m} minute${m === 1 ? '' : 's'} ago` : 'under a minute ago';
+  let far = null; try { far = require('./game-progress').portalDistance(bot, goal); } catch (_) { far = null; }
+  const off = Number.isFinite(far) ? `, ${far} blocks from the portal` : '';
+  return option === 'keep_on'
+    ? ` It ends the trip back for food that Jev chose ${ago} and that has stopped here${off}: the walk home is given up, not stalled.`
+    : ` The trip back for food that Jev chose ${ago} is the walk that has stopped here${off}; this tries the walk again from here, at ${Math.round((bot.health ?? 20) * 10) / 10} health.`;
+}
+
 // The trip back for food chosen: held as leave_nether's go_back is (game-
 // progress.js netherLeaveHeld), so the walk back goes on across passes, and
 // the keep-on it replaces is ended.
@@ -605,20 +644,30 @@ function hoglinFight(bot, distance = 8) {
     says: `One hoglin with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}: about ${one.seconds} seconds and ${one.damageTaken} damage, ${verdict}; ${blows}.` };
 }
 
+// The hunts of a hoglin for its meat that Jev chose (survival.js foodHunt),
+// from the flight records of 2026-09-28 (node scripts/nether-trips.js --hunts,
+// note 626): none brought meat in 66. The bot walks to where a hoglin was seen
+// and finds none within thirty-two blocks (gone), or fights it and is told to
+// stop at six health lost (lost).
+const HOGLIN_HUNTS = { day: '2026-09-28', started: 66, meat: 0, gone: 61, lost: 5 };
+
 // The hoglin as food: what it drops and what one costs to kill, from the
 // game's numbers (combat-estimate.js), and whether health comes back.
 function hoglinSays(bot, known) {
   const nearest = known.inView[0];
   const fight = hoglinFight(bot, nearest ? nearest.position.distanceTo(bot.entity.position) : 8);
-  const walk = !nearest && known.seen[0] ? ` The walk there is about ${Math.round(known.seen[0].distance / 4.3)} seconds, at ${fight.health} health, and the hoglin may have moved on.` : '';
+  const far = known.seen[0]?.distance, { NETHER_TRIPS } = require('./game-progress');
+  const walk = !nearest && known.seen[0] ? ` The walk there is about ${Math.round(far / 4.3)} seconds at a walk${far >= NETHER_TRIPS.over ? ` and if nothing stops it (the Nether's walks made ${NETHER_TRIPS.slow} to ${NETHER_TRIPS.fast} blocks a minute over ${NETHER_TRIPS.day}, stops counted: about ${Math.max(1, Math.round(far / NETHER_TRIPS.fast))} to ${Math.max(1, Math.round(far / NETHER_TRIPS.slow))} minutes)` : ''}, at ${fight.health} health, and the hoglin may have moved on.` : '';
   const where = nearest ? `${known.inView.length} in view within thirty-two blocks, the nearest ${Math.round(nearest.position.distanceTo(bot.entity.position))} blocks off`
     : `none in view; ${known.seen[0].says}`;
   const others = require('./danger').threats(bot, 32).filter(t => t.entity.name !== 'hoglin');
   const crowd = others.length ? ` Also within thirty-two blocks: ${[...new Set(others.map(t => t.entity.name.replaceAll('_', ' ')))].slice(0, 5).join(', ')}.` : '';
   const ends = fight.health <= 6 ? `Two minutes, or six health lost, ends the hunt; at ${fight.health} health that six is more than the bot has.` : 'Two minutes, and six health lost ends it.';
+  const h = HOGLIN_HUNTS;
+  const record = ` How the hunts of a hoglin for its meat went over ${h.day}'s trials in the Nether: ${h.started} begun, ${h.meat} brought meat; ${h.gone} ended at the place a hoglin was seen with none within thirty-two blocks (they move on), ${h.lost} in a fight that took six health.`;
   return `Hunt a hoglin for its meat (${where}): each drops two to four raw porkchops, safe to eat raw at three hunger each, eight cooked. ` +
     `A hoglin has forty health and hits for three to eight before armour, throwing the bot about three blocks, off an edge if there is one beside it. ` +
-    `${fight.says}${walk} ${ends}${(bot.food ?? 20) < 18 ? ` Health does not come back meanwhile: hunger ${bot.food}.` : ''}${crowd}`;
+    `${fight.says}${walk} ${ends}${record}${(bot.food ?? 20) < 18 ? ` Health does not come back meanwhile: hunger ${bot.food}.` : ''}${crowd}`;
 }
 
 // The Overworld side of a portal built here: the game puts it at the
@@ -688,7 +737,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   // chosen and at what health.
   if (food && actions.returnOverworld) {
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { there = ''; }
-    answers.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${keepOnSays(bot, goal)}`,
+    answers.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${keepOnSays(bot, goal)}${standingTripSays(bot, goal, 'return_for_food')}`,
       run: async () => {
         chooseReturnForFood(goal);
         goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
@@ -700,7 +749,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
     const points = foodSupply(bot);
     const meals = bot.inventory.items().filter(i => require('./vitals').safeFood(bot, i)).map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ');
     const starve = { peaceful: 'no hunger at all', easy: 'starving takes health down to ten and no further', normal: 'starving takes health down to one and no further', hard: 'starving kills' }[String(bot.game?.difficulty || 'normal')] || '';
-    answers.keep_on = { description: `Stay in the Nether and go on without the Overworld for twenty minutes: ${points ? `eat what is carried (${meals}, ${points} food points)` : 'nothing edible is carried'}, and go on with the work. Hunger ${bot.food}: health comes back only at eighteen or more${starve ? `, and ${starve}` : ''}. With nothing to eat below eighteen, no fight is started: the blazes wait.`,
+    answers.keep_on = { description: `Stay in the Nether and go on without the Overworld for twenty minutes: ${points ? `eat what is carried (${meals}, ${points} food points)` : 'nothing edible is carried'}, and go on with the work. Hunger ${bot.food}: health comes back only at eighteen or more${starve ? `, and ${starve}` : ''}. With nothing to eat below eighteen, no fight is started: the blazes wait.${standingTripSays(bot, goal, 'keep_on')}`,
       run: async () => {
         setAside(goal, 'nether_return', 'food', keepOnWhy(bot), 20 * 60000);
         delete goal.stockFood; save();
@@ -709,4 +758,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { walkFloorToward, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };

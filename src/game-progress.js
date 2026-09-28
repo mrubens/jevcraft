@@ -375,6 +375,34 @@ function cameThrough(goal, here) {
     .map(p => ({ x: Math.floor(p.x / 8), y: Math.round(here.y), z: Math.floor(p.z / 8), from: p, estimated: true })).sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0] || null;
 }
 
+// How the walks back to a portal in the Nether went over the trials of
+// 2026-09-28 (scripts/nether-trips.js, note 626): 181 trips of over sixty
+// blocks and a minute, from a bot that had chosen to go back, made 17 blocks a
+// minute in all and 23 when they moved at all, the stops for mobs, edges and
+// drops counted: the walk at 4.3 blocks a second the option used to be priced
+// at was about ten times too short. 22 of them came out in the Overworld, 18
+// ended in a death and the rest were given up, set aside or stalled; of the 33
+// begun under eight health 4 got through and 6 died.
+const NETHER_TRIPS = { day: '2026-09-28', trips: 181, over: 60, slow: 17, fast: 30, arrived: 22, died: 18, lowTrips: 33, lowArrived: 4, lowDied: 6 };
+// The measured pace against the walk: said only where the walk is long enough
+// for it to count and the bot is in the Nether.
+function netherPaceSays(bot, d) {
+  if (dimension(bot) !== 'nether' || !(d >= NETHER_TRIPS.over)) return { seconds: d / 4.3, says: '' };
+  const { slow, fast } = NETHER_TRIPS, r = n => Math.max(1, Math.round(n));
+  const low = (bot.health ?? 20) < 8;
+  return { seconds: d / ((slow + fast) / 2) * 60, says: ` In the Nether the bot's walks back to a portal made ${slow} to ${fast} blocks a minute over ${NETHER_TRIPS.day}'s trials, the stops for mobs, edges and drops counted: about ${r(d / fast)} to ${r(d / slow)} minutes, not seconds. Of ${NETHER_TRIPS.trips} such walks of over ${NETHER_TRIPS.over} blocks ${NETHER_TRIPS.arrived} came out in the Overworld, ${NETHER_TRIPS.died} ended in a death and the rest were given up, set aside or stalled${low ? `; of the ${NETHER_TRIPS.lowTrips} begun under eight health ${NETHER_TRIPS.lowArrived} came out and ${NETHER_TRIPS.lowDied} died` : ''}.` };
+}
+
+// How far the portal the trip back would use is: the nearest remembered here,
+// or where the game put the one the bot came through.
+function portalDistance(bot, goal = {}) {
+  const where = dimension(bot), here = bot.entity?.position;
+  if (!here) return null;
+  const known = (goal.portals || []).filter(p => p.dimension === where);
+  const at = known.sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0] || (where === 'nether' ? cameThrough(goal, here) : null);
+  return at ? Math.round(Math.hypot(at.x - here.x, at.z - here.z)) : null;
+}
+
 // The trip through a portal, said from the portals remembered here.
 function portalTrip(bot, goal = {}) {
   const where = dimension(bot), here = bot.entity?.position;
@@ -386,12 +414,14 @@ function portalTrip(bot, goal = {}) {
   const came = where === 'nether' && !known.length ? cameThrough(goal, here) : null;
   if (came) {
     const d = Math.round(Math.hypot(came.x - here.x, came.z - here.z));
-    return `No portal here has been seen since the crossing, but the one the bot came through from the Overworld portal at (${came.from.x}, ${came.from.z}) comes out near (${came.x}, ${came.z}) here, ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk once the way is found, and back through it after.${arrivalSays(bot, d / 4.3)}${wayBackSays(bot, { x: came.x, y: here.y, z: came.z })}`;
+    const pace = netherPaceSays(bot, d);
+    return `No portal here has been seen since the crossing, but the one the bot came through from the Overworld portal at (${came.from.x}, ${came.from.z}) comes out near (${came.x}, ${came.z}) here, ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk once the way is found and nothing stops it, and back through it after.${pace.says}${arrivalSays(bot, pace.seconds)}${wayBackSays(bot, { x: came.x, y: here.y, z: came.z })}`;
   }
   if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is looked for first.`;
   const nearest = known.slice().sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
   const d = Math.round(Math.hypot(nearest.x - here.x, nearest.z - here.z));
-  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk, and back through one after.${where === 'overworld' ? '' : arrivalSays(bot, d / 4.3)}${where === 'nether' ? wayBackSays(bot, nearest) : ''}`;
+  const pace = netherPaceSays(bot, d);
+  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk${where === 'nether' && pace.says ? ' if nothing stops it' : ''}, and back through one after.${pace.says}${where === 'overworld' ? '' : arrivalSays(bot, pace.seconds)}${where === 'nether' ? wayBackSays(bot, nearest) : ''}`;
 }
 
 // What the walk back to a Nether portal crosses, and what it can cost at
@@ -855,4 +885,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

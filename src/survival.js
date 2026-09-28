@@ -2579,7 +2579,16 @@ class Survival {
     // three blocks off is the edge, and the ground moved to is three blocks
     // from any drop (the day audit's two Nether falls, one into lava).
     const close = threats(bot).filter(t => t.distance <= 8);
-    const heavy = heavyHitters(threats(bot), 10).length > 0;
+    // Up on the bot's own pillar, a heavy hitter counts only if its blow
+    // reaches the top (a mob's melee reaches as high as it stands and no
+    // higher: 1.4 for a hoglin, so not two up from the ground it walks).
+    // Every heavy hitter counted, the step back off the edge took mid-243-ag
+    // down from its finished two-up pillar at 3.5 health into the hoglin the
+    // stance had priced at no damage, and it was struck dead two seconds
+    // later (note 626).
+    const topBody = onPillarTop(bot, this.state.pillar, 1);
+    const reachesTop = t => { const y = t.entity.position?.y, at = bot.entity?.position?.y; return !Number.isFinite(y) || !Number.isFinite(at) || y + bodyHeight(t.entity.name) > at + 0.01; };
+    const heavy = heavyHitters(threats(bot), 10).filter(t => !topBody || reachesTop(t)).length > 0;
     const feet = feetCell(bot);
     // A deep drop two blocks off is the edge too, with a mob close: an
     // arrow's knockback and a step of the fight carried mid-100-d two blocks
@@ -2600,7 +2609,8 @@ class Survival {
     // Up on its own pillar the drop round it is the point of it, the
     // walkers' reach kept off: mid-205-e chose the pillar at 0.97 among
     // five zombies, and each time it was up this stepped it back off the
-    // edge into them (2026-09-26). A hoglin's toss still counts.
+    // edge into them (2026-09-26). A heavy hitter's toss still counts where
+    // its blow reaches the top (above).
     const pillar = this.state.pillar;
     const onPillar = !heavy && onPillarTop(bot, pillar, 1);
     // Not while swimming: the edge is under the water's surface, and the

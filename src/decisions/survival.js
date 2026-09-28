@@ -16,8 +16,8 @@ const FOOD_OPTIONS = [
   { key: 'village_food', label: 'take ripe crops and hay from a remembered village', when: 'a village with crops or hay is remembered within reach', level: 'obtain_food' },
   { pattern: 'seen_food_\\d+', label: 'walk back to animals seen earlier', when: 'a herd of cows, sheep or rabbits seen in the last half hour, now out of view, 32 to 192 blocks off (the nearest three)', level: 'obtain_food', dynamic: true },
   { key: 'search_food', label: 'walk to another dry area to look for animals', when: 'always', level: 'obtain_food' },
-  { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld; said with the trip (its walk, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds (keep_on, twenty minutes), when and at what health that was chosen (note 607)', level: 'obtain_food' },
-  { key: 'hoglin_food', label: 'hunt a hoglin for porkchops', when: 'in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate and the mobs about are said', level: 'obtain_food' },
+  { key: 'return_for_food', label: 'go back through the portal for food', when: 'off the Overworld; said with the trip (its walk, the pace of the Nether walks measured, from sixty blocks, lava on the line, the hour it comes out at), the food known on the Overworld side and, while the choice to go on without it holds (keep_on, twenty minutes), when and at what health that was chosen (note 607)', level: 'obtain_food' },
+  { key: 'hoglin_food', label: 'hunt a hoglin for porkchops', when: 'in the Nether, a hoglin in view or seen within 192 blocks; its drops, a one-hoglin fight estimate, the day\'s hunts of a hoglin for its meat (66 begun, none brought meat) and the mobs about are said', level: 'obtain_food' },
 ];
 
 define({
