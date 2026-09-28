@@ -3580,7 +3580,10 @@ class Survival {
       if (decision.fallback) return false;
       choice = decision.path.at(-1);
     }
-    if (!holding || held.choice !== choice) this.state.stance = { choice, kinds, ids: [...new Set([...danger, ...(this.lastHidden || [])].map(t => t.entity.id))], shooters: [...new Set(danger.filter(t => shooter(t.entity)).map(t => t.entity.name))], at: Date.now(), health: bot.health, ...(options[choice]?.expects ? { expects: options[choice].expects } : {}) };
+    // The mobs it was chosen against as they were, for a pocket it makes to
+    // say what it was sealed against (pocket-wait.js, note 584).
+    if (!holding || held.choice !== choice) this.state.stance = { choice, kinds, ids: [...new Set([...danger, ...(this.lastHidden || [])].map(t => t.entity.id))],
+      mobs: danger.slice(0, 4).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: !!t.visible })), shooters: [...new Set(danger.filter(t => shooter(t.entity)).map(t => t.entity.name))], at: Date.now(), health: bot.health, ...(options[choice]?.expects ? { expects: options[choice].expects } : {}) };
     // The reflexes see the stance too (the hurt watchdog, the shield, the
     // meal): they give way to it while it holds.
     const stance = bot._stance = this.state.stance;
@@ -5907,8 +5910,12 @@ class Survival {
     const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && (t.visible || canStrike(bot, t.entity)) && !nightHunted(bot, t.entity));
     if (atArm.length && !claimed(bot, atArm[0].entity)) { await this.flee(task, goal, save); onStep(goal); return true; }
     const refuge = this.currentShelter();
-    if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) {
+    const sealedIn = refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge);
+    // The wait's own record goes with the pocket (pocket-wait.js, note 584).
+    if (!sealedIn) require('./pocket-wait').leftPocket(this.state);
+    if (sealedIn) {
       delete this.state.trappedSince;
+      require('./pocket-wait').watchPocket(this.state, refuge, threats(bot, 24));
       // A mob behind twenty blocks of rock is not a reason to stay sealed in
       // past dawn: underground there is always one somewhere. Wait for the
       // ones that can see in, or are at the wall.
@@ -6110,15 +6117,20 @@ class Survival {
       // By day, the daylight a stay spends: mid-231-r stayed three days
       // through in its pocket, the stay said as "nothing is watching it"
       // and never that the day was going by (note 538).
+      // How the wait has gone (pocket-wait.js, note 584): the minutes in
+      // this pocket, what it was sealed against and where that is now, how
+      // the mobs outside have moved while it waited, no daylight where none
+      // comes, and the rung's time without a new best.
+      const waitSays = require('./pocket-wait').pocketWaitSays(bot, this.state, goal, { outside: threats(bot, 16).slice(0, 8), near: threats(bot, 64), night });
       const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
       options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) +
         // Blazes are not waited out (note 585): mid-242-ab-nether-3 stayed
         // five minutes at full health in a pocket beside its fortress's
         // corridor, the three blazes outside told only by distance.
-        (blazesOut.length ? ` Staying does not send the blaze${blazesOut.length === 1 ? '' : 's'} away: blazes keep about the fortress they spawn in, and no daylight comes in the Nether to end them.${this.state.watchedSince ? ` Watched in this pocket for ${Math.max(1, Math.round((Date.now() - this.state.watchedSince) / 60000))} minute${Math.round((Date.now() - this.state.watchedSince) / 60000) > 1 ? 's' : ''} so far.` : ''}` : '') + farSays + lidSays + wardenSays(bot) + placeSays,
+        (blazesOut.length ? ` Staying does not send the blaze${blazesOut.length === 1 ? '' : 's'} away: blazes keep about the fortress they spawn in, and no daylight comes in the Nether to end them.${this.state.watchedSince ? ` Watched in this pocket for ${Math.max(1, Math.round((Date.now() - this.state.watchedSince) / 60000))} minute${Math.round((Date.now() - this.state.watchedSince) / 60000) > 1 ? 's' : ''} so far.` : ''}` : '') + farSays + lidSays + wardenSays(bot) + placeSays + (waitSays?.stay || ''),
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
-          : 'Waiting for daylight inside the verified shelter'); return true; } };
+          : night ? 'Waiting for daylight inside the verified shelter' : 'Waiting in the sealed pocket'); return true; } };
       // What going out among them costs, as the stances say it: mid-92-k
       // left a pocket at twenty health past skeletons it was told only the
       // distances of, and was shot down in twenty seconds (2026-09-26).
@@ -6129,7 +6141,9 @@ class Survival {
       // skeletons told "2.5 damage", the creepers left out of the sum, and
       // was shot down among them in half a minute (2026-09-26).
       const creeperCount = outsideAll.filter(t => t.entity.name === 'creeper').length;
-      const outSays = outCost ? ` Out among them, fighting them all is estimated at about ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}${creeperCount ? `, the ${creeperCount === 1 ? 'creeper' : `${creeperCount} creepers`} not counted in it: each that reaches the bot goes off for about ${outCost.creeper?.match(/about ([\d.]+)/)?.[1] || 18} health` : ''}.` : '';
+      // Every one of them held off out of sight through the wait: the fight
+      // is what it costs should they all come, not what leaving is.
+      const outSays = outCost ? `${waitSays?.heldOff ? ' Should they all come at the bot at once, fighting them is estimated at about' : ' Out among them, fighting them all is estimated at about'} ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}${creeperCount ? `, the ${creeperCount === 1 ? 'creeper' : `${creeperCount} creepers`} not counted in it: each that reaches the bot goes off for about ${outCost.creeper?.match(/about ([\d.]+)/)?.[1] || 18} health` : ''}.` : '';
       const ce = require('./combat-estimate');
       const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
       const hitsOf = name => Math.max(1, Math.ceil(hp / Math.max(0.5, ce.afterArmour(ce.MOBS[name].hit, worn))));
@@ -6206,7 +6220,7 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
           return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
         } };
-      options.leave = { description: `Open the pocket and go back to ${waiting || 'work'}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays,
+      options.leave = { description: `Open the pocket and go back to ${waiting || 'work'}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
@@ -6286,6 +6300,7 @@ class Survival {
             ...(night ? { underground: below, minutesToDawn: minutesToDawn(bot) } : {}), ...(mineOff ? { nightMineOff: mineOff } : {}), ...(Object.keys(notNow).length ? { notNow } : {}),
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
+            ...(waitSays ? { pocketSoFar: waitSays.facts } : {}),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity), ...(onLid.some(o => o.entity === t.entity) ? { onLid: true, inReach: false, canReachBot: false } : {}) })) } });
@@ -6753,7 +6768,10 @@ function claim(bot, goal = {}, survival = null) {
   const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && t.visible && !nightHunted(bot, t.entity));
   if (atArm.length && !claimed(bot, atArm[0].entity)) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(mob), ...pocket });
   const refuge = survival?.currentShelter?.();
-  if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot) });
+  // With how long it has been in the pocket and what it was sealed against
+  // (pocket-wait.js, note 584).
+  if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
+    ...(require('./pocket-wait').pocketWaitSays(bot, state, goal, { near: threats(bot, 64), night: shelterNeeded(bot) })?.claim || {}) });
   const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
   // The wait for daylight Jev chose, sealed, while it is being sealed.
   if (state.sealedWait?.until > now && (bot.food ?? 20) < 18) return make('wait_for_day_sealed', 'routine', { minutesToDawn: minutesToDawn(bot), healing: false });

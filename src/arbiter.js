@@ -273,7 +273,8 @@ function claimSays(c) {
     case 'out_of_fire': return 'Put out the fire on the bot.';
     case 'dig_out_of_block': return 'Dig the head out of the block it is in.';
     case 'swim_up': return `Swim up: air ${f.air} of 20.`;
-    case 'pocket_next': return `In a sealed pocket: whether to stay, leave or do something else there is asked next.${hp}${heals}`;
+    // With its minutes so far and what it was sealed against (note 584).
+    case 'pocket_next': return `In a sealed pocket${f.inPocketMinutes !== undefined ? `, ${f.inPocketMinutes} minutes so far` : ''}${f.sealedAgainst ? `, sealed against ${f.sealedAgainst}` : ''}: whether to stay, leave or do something else there is asked next.${hp}${heals}`;
     case 'secure_shelter': return `Shelter for the night: the way (a room, a pocket here, a shaft, the bed) is asked next.${hp}${heals}`;
     // Said with the last resort carried and, when health does not come back,
     // the sealed wait for daylight among the ways asked next (note 515).
