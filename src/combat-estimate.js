@@ -677,7 +677,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // took about 2.9 seconds from the first swing and four in all, near it.
     const every = swingEvery(weapon);
     const seconds = fought ? (fought.fuseLeft != null ? (fought.diesFirst ? fought.killSeconds : fought.fuseLeft) : (fought.diesFirst ? fought.killSeconds : FUSE) + Math.max(0, (t.distance || 0) - LIGHTS_AT) / WALK) : shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill * every * (spear ? 2 : 1);
-    return Object.defineProperty({ name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}), ...(t.inCell ? { inCell: true } : {}),
+    return Object.defineProperty({ name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}), ...(t.quiet ? { quiet: t.quiet } : {}), ...(t.inCell ? { inCell: true } : {}),
       ...(!fought && !shoots ? { secondsASwing: round(every * (spear ? 2 : 1), 2) } : {}), ...(m.armor && !t.split ? { armor: m.armor, eachSwing: round(dealt) } : {}),
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
@@ -700,6 +700,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   if (burningFor > 0) mobs.forEach(m => Object.defineProperty(m, 'burningFor', { value: burningFor }));
   // One with no way to the bot (walk-reach.js) is not fought, and does not
   // hit (mid-205-v, note 525).
+  // One that has held off for minutes (held-off.js, note 599) is fought
+  // here all the same: the fight goes at it, and a mob gone at fights back.
   const order = mobs.filter(m => !m.apart).sort((a, b) => a.distance - b.distance);
   // The cells round the bot bound how many can come at it, but not the
   // ones already there: in a tunnel or a shaft the open cells counted none,
@@ -816,8 +818,10 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   // A far one not there before the setup is done is not counted at all.
   const fought = m => !!fight && !m.apart && !(m.far && !(arrives(m) < setup)) && m.name !== 'creeper' && (!fight.only || fight.only(m));
   for (const m of mobs) {
-    // No way to the bot: it neither arrives nor goes off beside it.
-    if (m.apart) continue;
+    // No way to the bot: it neither arrives nor goes off beside it. Held
+    // off for minutes (held-off.js, note 599): priced at what it has done,
+    // nothing, on every stance that does not go at it.
+    if (m.apart || (m.quiet && !fought(m))) continue;
     // A biter out of sight past the eight a biter is counted from (`far`,
     // survival.js farBiters) counts where it can be at the bot before the
     // building or digging is done: that long the bot stands open to it,

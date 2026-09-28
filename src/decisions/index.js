@@ -249,12 +249,12 @@ function oneWay(tree) {
 }
 // Said when it changes, and at most once a minute while it does not.
 const ONE_SAID_MS = 60000;
-function sayOnce(bot, id, path, now = Date.now()) {
+function sayOnce(bot, id, path, now = Date.now(), why = null) {
   const said = (bot ? (bot._oneWaySaid ||= {}) : {});
-  const key = path.join('/');
+  const key = `${path.join('/')}${why ? '|spent' : ''}`;
   if (said[id]?.key === key && now - said[id].at < ONE_SAID_MS) return;
   said[id] = { key, at: now };
-  console.log(`[one way] ${id}: ${path.join(' / ').replaceAll('_', ' ')}, the only way offered`);
+  console.log(why ? `[spent] ${id}: ${path.join(' / ').replaceAll('_', ' ')}, ${why}` : `[one way] ${id}: ${path.join(' / ').replaceAll('_', ' ')}, the only way offered`);
 }
 // A wait chosen is not a loop: a shelter held for the night, a pillar held
 // up top, a stance holding (stillness.js HOLDS) come back to the same
@@ -285,7 +285,13 @@ function waitingByChoice(goal, id, now = Date.now()) {
 // none of them ever came to nothing, none rested, and a step failing every
 // two seconds was answered "differently" for minutes with nothing above it
 // asked (mid-242-ae-nether-3-fortress-1's pearls, note 583).
-const ledgerWaits = (goal, id) => id !== 'stillness_detour' && waitingByChoice(goal, id);
+const ledgerWaits = (goal, id, path = null) => id !== 'stillness_detour' && (waitingByChoice(goal, id) || WAIT_ANSWERS.has(String(path?.at?.(-1) || '')));
+// Answers that are waits by what they are, whatever holds the turn when
+// they are chosen (note 599): a hunt's stand held for blazes to come, the
+// fortress walked again or a spawner waited by, a wait for day or for
+// health. Each is judged when it ends by what changed while it lasted
+// (tried.js), and one that changed nothing came to nothing.
+const WAIT_ANSWERS = new Set(['stay', 'back_to_wall', 'dig_in_and_fight', 'dig_in_at_spawner', 'fight_at_spawner', 'stay_in_fortress', 'wait_at_spawner', 'wait_for_day_sealed', 'rest_to_heal', 'pillar', 'seal', 'dig_down', 'hold_on_span', 'take_cover', 'out_of_sight', 'nook']);
 // The options offered, for the ledger (tried.js spent).
 const offeredOf = (tree, target = null) => Object.entries(tree || {}).filter(([, n]) => !n?.children).map(([key, n]) => ({ key, target: n?.target || target || null }));
 // Not in the ledger: the routing between the layers, asked every turn.
@@ -348,12 +354,12 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (read.resting.length) resting = read.resting;
     below = tried.escalationsFor(goal, id);
   }
-  const takeOne = one => {
-    sayOnce(bot, id, one.path);
+  const takeOne = (one, why = null) => {
+    sayOnce(bot, id, one.path, Date.now(), why);
     const decision = { ...one, id, only: true };
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
-    if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id), offered: offeredOf(original, target) });
+    if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, one.path), offered: offeredOf(original, target) });
     return decision;
   };
   const one = oneWay(tree);
@@ -410,6 +416,19 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // The facts as they were offered, without the ledger's words on them: a
   // try said on an option is not new facts (repeats.js).
   const print = tracked ? repeats.fingerprint(state, plainOf(tree, original)) : null;
+  // Spent here: "none of these is good" said sure twice running to this
+  // same situation from about here (note 599). Not asked again while it
+  // stands: the best of the options by that answer's weights is taken, as
+  // it was each time, and the question above has been told (below).
+  const sit = tracked ? repeats.situation(state, plainOf(tree, original)) : null;
+  const spentHere = tracked ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
+  if (spentHere) {
+    const keys = Object.keys(tree).filter(k => k !== NONE_GOOD_KEY);
+    const best = keys.slice().sort((a, b) => (spentHere.weights[b] || 0) - (spentHere.weights[a] || 0))[0];
+    const node = tree[best];
+    const rest = node?.children ? walk(node.children, typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : firstOption) : { path: [], action: node };
+    return { ...takeOne({ path: [best, ...rest.path], action: rest.action }, `spent here: none of its options was good, ${spentHere.times} times running with these same facts; the best listed taken`), spent: true };
+  }
   if (tracked) {
     const waiting = waitingByChoice(goal, id);
     const again = repeats.before(bot, goal, id, print, { waiting });
@@ -503,7 +522,25 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
-  if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id), offered: offeredOf(original, target) });
+  // "None of these is good", sure, twice running to the same situation:
+  // the question is spent here, and escalates as a resting way does (note
+  // 599). The best listed is still carried out meanwhile, so the stall is
+  // raised, not thrown: the question above is asked with whatFailedBelow
+  // on its next asking (the rung's at the loop's next pass).
+  if (tracked && !decision.stale && decision.path && decision.judgments?.length) {
+    const ng = repeats.noneGoodAfter(bot, id, sit, decision.judgments[0]?.probabilities || {}, { here: bot.entity?.position, took: decision.noneGood ? decision.path : [] });
+    if (ng?.spent) {
+      decision.spent = true;
+      console.log(`[none good] ${id}: ${ng.says}`);
+      if (ledgered && spec.parent) {
+        const { to, says, passed } = tried.escalate(goal, { from: id, to: spec.parent, why: ng.says, parentOf, here: bot.entity?.position });
+        tried.markBlocked(tried.latestOf(goal, spec.parent), says);
+        if (to && to !== spec.parent) tried.markBlocked(tried.latestOf(goal, to), says);
+        try { require('../stillness').raiseFor(bot, goal, says, Date.now(), { escalated: { from: id, to, says, passed } }); } catch (_) { /* the ledger has it */ }
+      }
+    }
+  }
+  if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, decision.path), offered: offeredOf(original, target) });
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');

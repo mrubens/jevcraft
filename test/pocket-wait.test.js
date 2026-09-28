@@ -57,8 +57,13 @@ test('a pocket in the Nether says how the wait has gone: its minutes, the ghast 
   assert.match(stay, /Health is full: staying heals nothing\./);
   assert.match(stay, /The obtain blaze rods has had no new best for 50 minutes \(the last: nearer the blazes \(20 blocks\)\)\./);
   assert.match(leave, /The pocket was sealed when dig down was chosen against a ghast in sight 25 blocks off; that ghast is not about now\./);
-  assert.match(leave, /Should they all come at the bot at once, fighting them is estimated at about/);
-  assert.doesNotMatch(leave, /Out among them, fighting them all/);
+  // Held off five minutes, never nearer, never in sight, no hit: priced at
+  // what it has done on the leave and the stay alike (note 599), not as
+  // should they all come on the way out only.
+  const heldOffSays = /Held off: the piglin 13 blocks off \(5 minutes, out of sight; about 8 a hit should it come\)\. It has been about that long without coming nearer, coming into sight or hurting the bot, so it is priced at what it has done, nothing, on every option here that does not go at it, the hold and the ways off alike; a fight that goes at it is priced as that fight\./;
+  assert.match(leave, heldOffSays);
+  assert.match(stay, heldOffSays);
+  assert.doesNotMatch(leave, /Should they all come|Out among them, fighting them all/);
   assert.equal(state.pocketSoFar.minutes, 5);
   assert.match(state.pocketSoFar.sealedAgainst, /ghast in sight 25 blocks off \(dig down\); that ghast is not about now/);
   // The turn's own question says it too.

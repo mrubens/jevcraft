@@ -46,6 +46,18 @@ const REST_MS = 5 * 60000;
 const KEEP = 160;
 const RUNG_MS = 10 * 60000;
 
+// A wait is an entry with an outcome too (note 599): a wait chosen (a
+// pocket's stay, a pillar's top, a bunker, the back to a wall, the wait for
+// day, a stance held to its estimate) is judged, when it ends, by what
+// changed in its world while it lasted: the health, the food, the bot's
+// place, the nearest mob within SCENE_RADIUS (come, gone, or nearer or
+// farther by SCENE_NEARER), the mobs in sight, a swing. A wait of
+// WAIT_JUDGED_MS or more whose world did not change came to nothing: it is
+// blocked, and rests and escalates as a way does. The ledger had recorded
+// every wait as `waited`, never come to nothing, so a pocket stayed in for
+// thirty-three minutes (note 589) and a pillar held for twelve (note 590)
+// were each a fresh answer every time they were asked.
+const SCENE_RADIUS = 16, SCENE_NEARER = 4, WAIT_JUDGED_MS = 10000;
 const P = v => v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? { x: Math.round(v.x * 10) / 10, y: Math.round(v.y * 10) / 10, z: Math.round(v.z * 10) / 10 } : null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
@@ -63,6 +75,34 @@ function prune(t, now) {
 }
 function workOf(goal, now) { try { return require('./stillness').actionOf(goal, now).key; } catch (_) { return null; } }
 
+// The world a wait is judged by, now: `mobs` (danger.js threats' shape) may
+// be given; else read within SCENE_RADIUS.
+function sceneOf(bot, { now = Date.now(), mobs = null } = {}) {
+  let list = mobs;
+  if (!list) { try { list = require('./danger').threats(bot, SCENE_RADIUS) || []; } catch (_) { list = []; } }
+  list = list.filter(t => t?.entity && t.distance <= SCENE_RADIUS).sort((a, b) => a.distance - b.distance);
+  const n = list[0];
+  return { at: now, health: Number.isFinite(bot?.health) ? Math.round(bot.health * 10) / 10 : null, food: Number.isFinite(bot?.food) ? bot.food : null, pos: P(bot?.entity?.position),
+    nearest: n ? { id: n.entity.id ?? null, name: n.entity.name, distance: Math.round(n.distance * 10) / 10, visible: !!n.visible } : null,
+    inSight: list.filter(t => t.visible).length, swingAt: bot?._defenseAttackAt || 0 };
+}
+// What changed between two scenes, in words; empty when nothing did.
+function sceneChanges(a, b) {
+  if (!a || !b) return [];
+  const out = [];
+  if (Number.isFinite(a.health) && Number.isFinite(b.health) && Math.abs(b.health - a.health) >= 1) out.push(`health ${a.health} to ${b.health}`);
+  if (Number.isFinite(a.food) && Number.isFinite(b.food) && Math.abs(b.food - a.food) >= 1) out.push(`hunger ${a.food} to ${b.food}`);
+  if (a.pos && b.pos && dist(a.pos, b.pos) >= 2) out.push(`moved ${Math.round(dist(a.pos, b.pos))} blocks`);
+  const m = a.nearest, n = b.nearest;
+  if (m && !n) out.push(`nothing within ${SCENE_RADIUS} blocks now (the ${label(m.name)} was ${Math.round(m.distance)} off)`);
+  else if (!m && n) out.push(`a ${label(n.name)} come within ${Math.round(n.distance)} blocks`);
+  else if (m && n && Math.abs(n.distance - m.distance) >= SCENE_NEARER) out.push(`the nearest mob ${n.distance < m.distance ? 'nearer' : 'farther'}, ${Math.round(m.distance)} to ${Math.round(n.distance)} blocks off`);
+  if (a.inSight !== b.inSight) out.push(`${a.inSight} in sight to ${b.inSight}`);
+  if (b.swingAt > a.at) out.push('a swing made');
+  return out;
+}
+const sceneSays = s => `health ${s.health ?? '?'}${s.nearest ? `, the ${label(s.nearest.name)} ${Math.round(s.nearest.distance)} blocks off${s.nearest.visible ? ' in sight' : ' out of sight'}` : `, nothing within ${SCENE_RADIUS} blocks`}, no swing`;
+
 // An answer given: pending until something is seen to come of it or not.
 // offered: the options the question offered ({ key, target }), kept so a
 // question above can tell whether this one has ways left (spent).
@@ -70,7 +110,7 @@ function begin(bot, goal, { q, method, target = null, waiting = false, offered =
   if (!bot || !goal || !q || !method) return null;
   const t = ledger(goal); prune(t, now);
   const here = P(bot.entity?.position);
-  const entry = { q, method, ...(P(target) ? { target: P(target) } : {}), place: here, at: now, work: workOf(goal, now), outcome: 'pending', mark: mark(bot), ...(waiting ? { waiting: true } : {}),
+  const entry = { q, method, ...(P(target) ? { target: P(target) } : {}), place: here, at: now, work: workOf(goal, now), outcome: 'pending', mark: mark(bot), ...(waiting ? { waiting: true, scene: sceneOf(bot, { now }) } : {}),
     ...(offered?.length ? { offered: offered.map(o => ({ key: o.key, ...(P(o.target) ? { target: P(o.target) } : {}) })) } : {}) };
   t.entries.push(entry);
   return entry;
@@ -103,12 +143,18 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
     : carried;
   if (onlyIf === 'decided' && !came && !error) return false;
   if (came) { e.outcome = 'progressed'; e.gained = came; }
-  else if (e.waiting) e.outcome = 'waited';
+  else if (e.waiting && !error) {
+    // Judged by what changed in its world while it lasted (note 599).
+    const changes = e.scene ? sceneChanges(e.scene, sceneOf(bot, { now })) : ['not watched'];
+    if (changes.length || now - e.at < WAIT_JUDGED_MS) { e.outcome = 'waited'; if (changes.length && e.scene) e.gained = changes.join(', '); }
+    else { e.outcome = 'blocked'; e.wait = true; e.heldMs = now - e.at; e.why = `held ${ago(now - e.at)} and nothing changed: ${sceneSays(e.scene)} throughout`; }
+    delete e.scene;
+  }
   // Cut short by the survival layer (air, a threat) or a cancellation, with
   // nothing come of it: not a try that came to nothing (note 583).
   else if (e.cut && !error) { e.outcome = 'cut'; e.why = e.cut; }
   else { e.outcome = 'blocked'; const why = error || whyItEnded(bot, goal, e.at); if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200); }
-  e.settledAt = now; delete e.mark;
+  e.settledAt = now; delete e.mark; delete e.scene;
   return true;
 }
 // Settled: the pending answers to one question (it is being asked again),
@@ -154,6 +200,12 @@ function restsUntil(list, now = Date.now()) {
 function triedSays(list, { here, now = Date.now(), toward = false } = {}) {
   const blocked = blockedOf(list);
   if (!blocked.length) return null;
+  // Waits that came to nothing are said as waits: how often, how long in
+  // all, and what stayed the same.
+  if (blocked.every(e => e.wait)) {
+    const first = Math.min(...blocked.map(e => e.at)), all = blocked.reduce((n, e) => n + (e.heldMs || 0), 0);
+    return `Held from about here ${blocked.length === 1 ? 'once' : `${blocked.length} times`} in the last ${ago(now - first)}, ${ago(all)} in all, and nothing changed in any of them: ${String(blocked.at(-1).why || '').replace(/^held [^:]*: /, '').replace(/\.$/, '')}.`;
+  }
   const first = Math.min(...blocked.map(e => e.at));
   const why = blocked.map(e => e.why).filter(Boolean).at(-1);
   return `Tried ${blocked.length === 1 ? 'once' : `${blocked.length} times`} ${toward ? 'toward the same place from about here' : 'from here'} in the last ${ago(now - first)}, and it came to nothing${why ? `: ${why.replace(/\.$/, '')}` : ' (no new ground, nothing gained, no block dug or placed)'}.`;
@@ -164,26 +216,44 @@ function triedSays(list, { here, now = Date.now(), toward = false } = {}) {
 // said in the state. Questions whose answers are never left out (a stance,
 // the body's way out of fire or lava) only say theirs (note 521).
 // -> { tree, resting: [says], allResting: bool, said: n }
+// A wait that came to nothing is read back on every question, a stance's
+// too (note 599): its own options say a stance's failures, not its waits.
+// A resting wait is left out only while two or more other ways stay on
+// offer (note 596's rule: with fewer, leaving it out would be the code's
+// choice taken unasked); else it stays on offer with its rest said. A
+// say-only question is never escalated from here.
+const addSays = (node, said) => ({ ...node, description: typeof node.description === 'string' ? `${node.description} ${said}` : { ...(node.description || {}), triedFromHere: said } });
 function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.now() } = {}) {
   const here = P(bot?.entity?.position);
-  // A stance, the body's way out, the shield: recorded, and their own
-  // options say their failures already (note 521: failedHereJustNow).
-  if (sayOnly || !goal?.tried?.entries?.length || !here) return { tree, resting: [], allResting: false };
+  if (!goal?.tried?.entries?.length || !here) return { tree, resting: [], allResting: false };
   const out = {}, resting = [];
   for (const [key, node] of Object.entries(tree)) {
     if (node?.children) { out[key] = node; continue; }
     const t = P(node?.target) || P(target);
-    const list = about(goal, { q, method: key, target: t, here, now });
+    // A stance, the body's way out, the shield: only their waits are read
+    // (note 521: failedHereJustNow says their failures).
+    const list = about(goal, { q, method: key, target: t, here, now }).filter(e => !sayOnly || e.wait);
     const said = triedSays(list, { here, now, toward: !!t });
-    const until = !sayOnly && restsUntil(list, now);
-    if (until) { resting.push({ key, until, says: `${label(key)}: ${said} It rests ${ago(until - now)} more from here.` }); out[key] = node; continue; }
-    out[key] = said ? { ...node, description: typeof node.description === 'string' ? `${node.description} ${said}` : { ...(node.description || {}), triedFromHere: said } } : node;
+    const until = restsUntil(list, now);
+    if (until) { resting.push({ key, until, wait: blockedOf(list).every(e => e.wait), said, says: `${label(key)}: ${said} It rests ${ago(until - now)} more from here.` }); out[key] = node; continue; }
+    out[key] = said ? addSays(node, said) : node;
   }
-  const open = Object.keys(out).filter(k => !resting.some(r => r.key === k));
   if (!resting.length) return { tree: out, resting: [], allResting: false };
-  if (!open.length) return { tree: out, resting: resting.map(r => r.says), allResting: true };
-  for (const r of resting) delete out[r.key];
-  return { tree: out, resting: resting.map(r => r.says), allResting: false };
+  const ways = resting.filter(r => !r.wait), waits = resting.filter(r => r.wait);
+  const open = Object.keys(out).filter(k => !resting.some(r => r.key === k));
+  if (!sayOnly && !open.length && !waits.length) return { tree: out, resting: resting.map(r => r.says), allResting: true };
+  const left = [];
+  if (!sayOnly && open.length) for (const r of ways) { delete out[r.key]; left.push(r); }
+  // Waits: left out while two or more other ways, none of them resting,
+  // stay on offer.
+  const others = () => Object.keys(out).filter(k => k !== 'none_good' && !resting.some(r => r.key === k)).length;
+  for (const r of waits) {
+    if (others() >= 2) { delete out[r.key]; left.push(r); continue; }
+    out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here, kept on offer: fewer than two other ways are open.`);
+  }
+  for (const r of resting) if (!left.includes(r) && !waits.includes(r) && out[r.key]) out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here.`);
+  if (!sayOnly && !left.length && !Object.keys(out).some(k => !resting.some(r => r.key === k))) return { tree: out, resting: resting.map(r => r.says), allResting: true };
+  return { tree: out, resting: left.map(r => r.says), allResting: false };
 }
 
 // A repeat hold (decisions/index.js): the answers held rest from here for
@@ -335,6 +405,7 @@ function resumed(goal, { savedAt, now = Date.now() } = {}) {
   for (const e of t.entries || []) move(e, ['at', 'settledAt', 'until']);
   for (const e of t.escalations || []) move(e, ['at', 'consumed']);
   if (t.rung) move(t.rung, ['since', 'lastAt', 'bestAt']);
+  if (t.rung?.due) move(t.rung.due, ['at']);
   return gap;
 }
 // Whether any blocked way for this work rests by place alone (a step off
@@ -348,9 +419,15 @@ function placeBound(goal, { work = null, now = Date.now() } = {}) {
 // The rung's own measures: more of what it is for, a milestone, a new best
 // distance to what it is going to (the fortress, the blazes, the portal,
 // the step's own target), or new country (a new farthest from where the
-// rung began, by sixteen). Ten working minutes without a new best, the
-// rung's question is asked (answerStall, rung_progress): keep at it with
-// the ways left, change the plan, or set the rung aside, with the ledger.
+// rung began, by sixteen). Ten minutes without a new best, the rung's
+// question is asked (answerStall, rung_progress): keep at it with the ways
+// left, change the plan, or set the rung aside, with the ledger.
+// The minutes are the wall clock's, whoever holds the turn (note 599): a
+// wait was not counted, so a bot sealed in a pocket for thirty-three
+// minutes (note 589), on a pillar for twelve (note 590) or at a stance for
+// twenty (note 596) was never asked after its rung. `waiting` is now only
+// a wait that something is bringing to an end (stillness.js waitEnds:
+// sleep, a batch cooking, health coming back, daylight coming).
 const RUNG_ITEMS = { obtain_blaze_rods: ['blaze_rod'], obtain_ender_pearls: ['ender_pearl', 'ender_eye'], craft_eyes: ['ender_eye'], reach_nether: ['obsidian', 'flint_and_steel'] };
 const RUNG_KINDS = new Set(['win', 'nether', 'obtain', 'craft']);
 function rungOf(goal) {
@@ -412,15 +489,25 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   }
   const far = b.origin ? dist(b.origin, here) : 0;
   if (far > b.best.far + 16) { b.best.far = far; news.push(`new country, ${Math.round(far)} blocks from where the rung began`); }
-  if (news.length) { b.idleMs = 0; b.bestAt = now; b.lastBest = news.join(', '); goal.struggles = 0; return null; }
-  if (waiting) return null;
+  if (news.length) { b.idleMs = 0; b.bestAt = now; b.lastBest = news.join(', '); goal.struggles = 0; delete b.due; return null; }
+  // A hold at its cap hands off here (holds.js): due at once.
+  const due = b.due && b.due.at >= b.bestAt ? b.due : null;
+  if (!due && waiting) return null;
   b.idleMs += dt;
-  if (b.idleMs < RUNG_MS) return null;
-  b.idleMs = 0; b.asked++;
+  if (!due && b.idleMs < RUNG_MS) return null;
+  b.idleMs = 0; b.asked++; delete b.due;
   const minutes = Math.round((now - b.bestAt) / 60000);
   const bestSays = `${minutes} minutes on the ${rungSays(rung)} without a new best: ${items.length ? `${have} ${items.map(label).join(' or ')} carried, none more` : 'nothing more of it'}${target ? `; ${target.what} ${Math.round(dist(target.at, here))} blocks off, the nearest yet ${Math.round(b.best.target[tkey])}` : ''}; the farthest from where it began ${Math.round(b.best.far)} blocks${b.lastBest ? `; the last new best was ${b.lastBest}` : ''}`;
-  return { rung, says: bestSays };
+  return { rung, says: due ? `${bestSays}; ${due.says}` : bestSays };
+}
+// The rung's question due at the next look, whatever its clock (a hold at
+// its cap, holds.js): said with why.
+function rungDue(goal, says, now = Date.now()) {
+  const b = goal?.tried?.rung;
+  if (!b || b.rung !== rungOf(goal)) return false;
+  b.due = { says: String(says).slice(0, 300), at: now };
+  return true;
 }
 
-module.exports = { begin, record, settle, cut, spent, owed, workedOn, resumed, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungOf, rungSays,
-  NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS };
+module.exports = { begin, record, settle, cut, spent, owed, workedOn, resumed, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
+  sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };

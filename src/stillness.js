@@ -82,6 +82,25 @@ const COMPANY = new Set(['follow', 'come']);
 // the step that failed.
 const RETRY_STEPS = new Set(['persist', 'shake_loose', 'retreat_from_tunnel']);
 
+// A wait something is bringing to an end, for the rung's budget (tried.js
+// watchRung, note 599): asleep, with the player, a batch of the step's own
+// cooking, health coming back, and in the Overworld at night the daylight
+// coming. Every other wait (a pocket, a pillar, a stand, a fight) is
+// minutes on the rung like any others: a bot sealed in, holding or fighting
+// ten minutes without a new best is asked after its rung.
+function waitEnds(bot, goal, now = Date.now()) {
+  if (bot?.isSleeping) return 'asleep';
+  if (COMPANY.has(goal?.kind)) return 'with the player';
+  const batch = goal?.smelting;
+  if (batch?.startedAt && now < batch.startedAt + (batch.count || 1) * 10000 + 20000) return 'a batch cooking';
+  const recent = goal?.survivalAction;
+  const current = recent && now - Date.parse(recent.at || 0) < 8000 ? recent.action : null;
+  const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
+  if ((['recover_before_combat', 'recover_before_nether'].includes(action) || current === 'rest_to_heal') && (bot?.health ?? 20) < 20 && (bot?.food ?? 20) >= 18) return 'health coming back';
+  const t = bot?.time?.timeOfDay;
+  if (['wait_in_shelter', 'wait_for_bedtime', 'sleep'].includes(current) && /overworld/.test(String(bot?.game?.dimension || '')) && Number.isFinite(t) && t >= 12542 && t < 23460) return 'daylight coming';
+  return null;
+}
 function permittedWait(bot, goal, now = Date.now()) {
   if (bot.isSleeping) return 'asleep';
   if (COMPANY.has(goal?.kind)) return 'with the player';
@@ -470,5 +489,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
+module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, waitEnds, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
   Stalled, checkStall, preempted, takeStall, refused, recordStill };

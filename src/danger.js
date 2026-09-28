@@ -502,9 +502,12 @@ function checkThreats(bot) {
 // Only while it is being carried out (run within the last two seconds): the
 // work that comes back once the mobs are gone has its watchdog back.
 const STANCE_HOLD_MS = 15000, STANCE_HEALTH = 6, STANCE_NEWCOMER = 6;
+// A stance held on past its estimate with nothing new (holds.js, note 599)
+// holds to its hold's time.
+const stanceEnds = s => s.hold?.extended ? s.hold.until : s.at + STANCE_HOLD_MS;
 function stanceHeld(bot, now = Date.now()) {
   const s = bot?._stance;
-  return s && now - s.at < STANCE_HOLD_MS && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
+  return s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
 }
 // The mobs the stance holds against: those it was chosen against (its ids)
 // still within the twenty-four a stance counts, nearest first, for as long
@@ -517,7 +520,7 @@ function stanceHeld(bot, now = Date.now()) {
 function stanceMobs(bot, now = Date.now()) {
   const s = bot?._stance;
   if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
-  if (now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
+  if (s.hold?.extended ? now >= s.hold.until : now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
   if ((bot.health ?? 0) <= s.health - STANCE_HEALTH) return [];
   return threats(bot, 64).filter(t => s.ids.includes(t.entity.id) && t.distance <= stanceReach(t.entity) && !combatTarget(bot, t.entity)).map(t => ({ ...t, stance: s.choice }));
 }

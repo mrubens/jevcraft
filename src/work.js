@@ -5855,11 +5855,11 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       goal.failures = 0; goal.stalls = 0; save(); onStep(goal);
       if (!escalatedToStep(stall)) continue;
     }
-    // Progress against the goal (tried.js watchRung): ten working minutes
-    // on the rung without a new best raises the rung's question.
-    const rungDue = require('./tried').watchRung(bot, goal, { waiting: require('./stillness').permittedWait(bot, goal) });
-    // Asked of the work, whatever the survival layer was doing at the time.
-    if (rungDue) { const k = require('./stillness').actionOf(goal).key; require('./stillness').raiseFor(bot, goal, rungDue.says, Date.now(), { rung: rungDue, layer: 'work', key: /^survival:/.test(k) ? `step:rung:${rungDue.rung}` : k }); continue; }
+    // Progress against the goal (tried.js watchRung): ten minutes on the
+    // rung without a new best raises the rung's question, kept by the
+    // arbiter on the wall clock whoever holds the turn (note 599), and asked
+    // of the work whatever the survival layer was doing at the time.
+    if (require('./arbiter').rungWatch(bot, goal)) continue;
     // A signal the watchdogs hold for the survival layer: its turn now. A
     // preemption is the arbiter's to pick up, below.
     const held = loopCheck(task);

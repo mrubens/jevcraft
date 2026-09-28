@@ -651,6 +651,23 @@ function watch(bot, opts = {}) {
   state.watchTimer.unref?.();
   return state.watchTimer;
 }
+// The rung's budget, kept by the arbiter on the wall clock whoever holds
+// the turn (tried.js watchRung, note 599). It had run from the work's own
+// pass with every wait left out, so survival holding the turn (a sealed
+// pocket, a pillar's top, a stance asked every fifteen seconds) was minutes
+// that never counted, and nothing above the survival layer asked after the
+// rung. Due, the rung's question is raised for the work (answerStall), and
+// the loop's next pass asks it before the turn is given.
+function rungWatch(bot, goal, now = Date.now()) {
+  const stillness = require('./stillness');
+  const due = require('./tried').watchRung(bot, goal, { now, waiting: stillness.waitEnds(bot, goal, now) });
+  if (!due) return null;
+  const holder = bot?._arbiter?.holder;
+  const k = stillness.actionOf(goal, now).key;
+  const says = holder && holder.layer !== 'work' ? `${due.says}; meanwhile the ${holder.layer} layer has had the turn (${String(holder.action || '').replaceAll('_', ' ')}) for ${Math.round((now - holder.since) / 60000)} minutes` : due.says;
+  stillness.raiseFor(bot, goal, says, now, { rung: { ...due, says }, layer: 'work', key: /^survival:/.test(k) ? `step:rung:${due.rung}` : k });
+  return due;
+}
 function unwatch(bot) {
   const state = bot?._arbiter;
   if (state?.watchTimer) { clearInterval(state.watchTimer); delete state.watchTimer; }
@@ -658,4 +675,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };

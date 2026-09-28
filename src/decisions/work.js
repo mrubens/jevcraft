@@ -236,7 +236,7 @@ define({
 define({
   id: 'rung_progress', area: 'strategy', parent: null, kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Ten minutes on this rung with no new best, or every way below it spent from here: keep at it with the ways left, change the plan, or set the rung aside?',
-  trigger: 'The rung\'s budget (src/tried.js watchRung): ten working minutes, waits not counted, without more of the rung\'s item, a milestone, a new best distance to its target or sixteen blocks of new country; or an escalation from a question below whose every way rests from here, or whose same answer was held (src/decisions/index.js escalateFrom).',
+  trigger: 'The rung\'s budget (src/tried.js watchRung, kept by src/arbiter.js rungWatch whoever holds the turn): ten minutes on the clock, sealed in, held on a pillar or fighting included (only sleep, a batch cooking, health coming back and the Overworld night in a shelter are not counted), without more of the rung\'s item, a milestone, a new best distance to its target or sixteen blocks of new country; at once when a stance held on with nothing new reaches its five-minute cap (src/holds.js); or an escalation from a question below whose every way rests from here, whose same answer was held (src/decisions/index.js escalateFrom), or that was answered none good, sure, twice running to the same situation.',
   source: 'src/work.js (answerStall with the rung\'s stall), src/tried.js (the budget and the ledger)',
   options: [
     { key: 'keep_at_it', label: 'keep at the rung with the ways not yet tried here', when: 'always: the ledger\'s tries are said with it, and the budget starts again', level: 'root' },

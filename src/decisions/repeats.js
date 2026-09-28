@@ -173,4 +173,49 @@ function heldSays(bot, now = Date.now()) {
   return list.length ? list.map(h => `${h.id.replaceAll('_', ' ')}: ${h.says}`) : null;
 }
 
-module.exports = { fingerprint, mark, cameOf, whyItEnded, before, quickBefore, after, held, heldSays, says, quickSays, AT_ONCE_MS, HOLD_AFTER, QUICK_HOLD, GROUND };
+// "None of these is good", said sure twice running to the same situation,
+// is the question spent there (note 599). mid-244-ad-nether-2 answered
+// encounter_stance none good 1,392 times in a row (0.4 and more), a crossbow
+// piglin and a sword piglin thirteen blocks off, every asking the same
+// situation but for the list of its own failures just now; the best listed
+// was taken each time and the question asked again a quarter second later.
+// The situation: the facts less the record of the answers themselves (the
+// failures just now, what was left out, the stance before, the ledger's
+// words on each option), which change with every asking and say nothing new
+// of the world.
+const HISTORY = new Set(['failedHereJustNow', 'notOfferedNow', 'previousStance', 'walkFailedJustNow', 'recentPositions', 'riskNow', 'deathWouldCost', 'waysResting', 'whatFailedBelow', 'recentDeaths', 'healing', 'runClock',
+  'sameAnswerAgain', 'lastAnswersCameToNothing', 'answersThatCameToNothing']);
+function situation(state, tree) {
+  const facts = state && typeof state === 'object' ? Object.fromEntries(Object.entries(state).filter(([k]) => !HISTORY.has(k))) : state;
+  const strip = d => typeof d === 'string' ? d.replace(/\d[\d,]*(\.\d+)?/g, '#').replace(/ (Tried|It ended|Held from about here) [^.]*\./g, '') : d;
+  const plain = children => Object.fromEntries(Object.entries(children || {}).filter(([k]) => k !== 'none_good').map(([k, n]) => [k, { description: strip(n?.description), ...(n?.children ? { children: plain(n.children) } : {}) }]));
+  return fingerprint(facts, plain(tree));
+}
+const NONE_GOOD_SURE = 0.4, NONE_GOOD_RUN = 2, SPENT_MS = 5 * 60000, SPENT_NEAR = 4;
+// After a none good answer: its run to this situation from about here, and
+// whether this answer spends the question. -> { spent, run, says } or null
+function noneGoodAfter(bot, id, print, weights, { now = Date.now(), here = null, took = [] } = {}) {
+  if (!bot) return null;
+  const memo = bot._noneGood ||= {};
+  const p = weights?.none_good || 0;
+  const top = Object.entries(weights || {}).sort((a, b) => b[1] - a[1])[0]?.[0];
+  const sure = top === 'none_good' && p >= NONE_GOOD_SURE;
+  const was = memo[id];
+  if (!sure) { delete memo[id]; return null; }
+  const near = !was?.place || !here || Math.hypot(was.place.x - here.x, was.place.y - here.y, was.place.z - here.z) <= SPENT_NEAR;
+  const run = was && was.print === print && near && !was.spent ? { ...was, times: was.times + 1, ps: [...was.ps, p], at: now } : { print, times: 1, ps: [p], first: now, at: now, place: here ? { x: here.x, y: here.y, z: here.z } : null };
+  memo[id] = run;
+  if (run.times < NONE_GOOD_RUN) return { spent: false, run };
+  run.spent = { until: now + SPENT_MS, weights: { ...weights }, took };
+  const says = `none of its options was good, ${run.times} times running with the same facts from here (none good at ${run.ps.map(x => Math.round(x * 100) / 100).join(' and ')}); the best listed, ${took.join(' / ').replaceAll('_', ' ') || 'the likeliest'}, was taken meanwhile, and it is not asked again with these facts from here for ${Math.round(SPENT_MS / 60000)} minutes`;
+  return { spent: true, run, says };
+}
+// Before asking: spent with this situation from about here. -> { weights, says } or null
+function noneGoodSpent(bot, id, print, { now = Date.now(), here = null } = {}) {
+  const run = bot?._noneGood?.[id];
+  if (!run?.spent || now > run.spent.until || run.print !== print) return null;
+  if (run.place && here && Math.hypot(run.place.x - here.x, run.place.y - here.y, run.place.z - here.z) > SPENT_NEAR) return null;
+  return { weights: run.spent.weights, since: run.at, times: run.times };
+}
+
+module.exports = { fingerprint, situation, noneGoodAfter, noneGoodSpent, NONE_GOOD_SURE, NONE_GOOD_RUN, SPENT_MS, mark, cameOf, whyItEnded, before, quickBefore, after, held, heldSays, says, quickSays, AT_ONCE_MS, HOLD_AFTER, QUICK_HOLD, GROUND };

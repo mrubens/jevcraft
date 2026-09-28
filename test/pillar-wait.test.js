@@ -45,15 +45,21 @@ test('up on its pillar over a hoglin that neither comes nor goes, the pillar say
   const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 60, z: 0, at: t0 - 3000 },
     stance: { choice: 'pillar', kinds: 'hoglin', ids: [5], mobs: [{ name: 'hoglin', distance: 4.3, visible: true }], at: t0 - 3000, health: 7.9, expects: { damage: 0, seconds: 15 } } }, client: { systemOne: async () => ({}) } });
   let n = 0, last;
-  // As recorded: pillar three times and the fight the fourth, while the
-  // fight is offered. Held its fifteen seconds with nothing struck and
-  // nothing changed since, it is not offered again (note 596): it is said
-  // in the state instead.
+  // The pillar, then the fight once, while the fight is offered. Held its
+  // fifteen seconds with nothing struck and nothing changed since, it is not
+  // offered again (note 596): it is said in the state instead. The pillar
+  // with nothing new is held on without a question (holds.js, note 599): it
+  // is asked at its cap, five minutes, not every fifteen seconds.
   let fightLast;
+  const askedAt = [];
   for (let s = 0; s <= 11 * 60; s += 15) {
-    last = await stanceAt(survival, t0 + s * 1000, [threat()], t => (++n % 4 === 0 && t.fight ? 'fight' : 'pillar'));
+    const r = await stanceAt(survival, t0 + s * 1000, [threat()], t => (++n === 2 && t.fight ? 'fight' : 'pillar'));
+    if (!r.tree) continue;
+    last = r; askedAt.push(s);
     if (last.tree?.fight) fightLast = last.tree.fight.description;
   }
+  assert.deepEqual(askedAt, [15, 315, 330, 630], 'asked at the recorded stance\'s end, at each hold\'s five-minute cap and after the fight, not forty-five times');
+  assert.match(last.state.previousStance.askedAgainFor, /^held 5 minutes and nothing it was chosen on changed$/);
   const pillar = last.tree.pillar.description;
   assert.match(pillar, /^.*Hold on the pillar's top, two up, and fight from there/);
   assert.doesNotMatch(pillar, /Go two blocks straight up/);
@@ -64,7 +70,7 @@ test('up on its pillar over a hoglin that neither comes nor goes, the pillar say
   assert.equal(last.tree.fight, undefined, 'the fight that struck nothing, nothing changed since, is not offered as if it might');
   assert.match(last.state.notOfferedNow.find(f => f.choice === 'fight').why, /^ended here without acting, the last \d+ seconds ago: held 15 seconds: nothing was struck, not a step was taken and no block was placed or dug; nothing has changed here since/);
   assert.match(fightLast, /^The hoglin 4 blocks off .*Fight here/, 'offered until it was chosen and struck nothing');
-  assert.equal(last.state.pillarSoFar.minutes, 11);
+  assert.equal(last.state.pillarSoFar.minutes, 10.5);
   assert.equal(last.state.pillarSoFar.swings, 0);
   assert.equal(last.state.pillarSoFar.fightChosenUpHere, 1);
   // The turn's own question says it too.
@@ -79,14 +85,19 @@ test('a hold that struck and was hit says so, a mob come nearer is said so, and 
   const t0 = 1_800_000_000_000;
   const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 60, z: 0, at: t0 - 1000 } }, client: { systemOne: async () => ({}) } });
   let tree;
+  const askedAt = [];
   for (let s = 0; s <= 120; s += 15) {
     hoglin.position = new Vec3(8.5 - 5 * s / 120, 60, 0.5);
     if (s === 60) { bot.health = 17; bot._struck = { id: 5, at: t0 + s * 1000 }; }
     if (s === 75) bot._struck = { id: 5, at: t0 + s * 1000 };
-    tree = (await stanceAt(survival, t0 + s * 1000, [threat()], () => 'pillar')).tree || tree;
+    const r = await stanceAt(survival, t0 + s * 1000, [threat()], () => 'pillar');
+    if (r.tree) { tree = r.tree; askedAt.push(s); }
   }
-  assert.match(tree.pillar.description, /Up on this pillar 2 minutes so far\. In that time: 3 health lost up here, 2 swings at what came within reach, nothing killed\./);
-  assert.match(tree.pillar.description, /the zombie 4 blocks off, about for 2 minutes of the hold, come from 8 to 4 blocks off, in sight/);
+  // Held on while nothing changed (holds.js, note 599); asked again when the
+  // zombie's blow cost more than the pillar was priced at.
+  assert.deepEqual(askedAt, [0, 60]);
+  assert.match(tree.pillar.description, /Up on this pillar 1 minute so far\. In that time: 3 health lost up here, 1 swing at what came within reach, nothing killed\./);
+  assert.match(tree.pillar.description, /the zombie 6 blocks off, about for 1 minute of the hold, come from 8 to 6 blocks off, in sight/);
   assert.doesNotMatch(tree.pillar.description, /has not come nearer|None of them has come nearer/);
 });
 
@@ -103,13 +114,17 @@ test('off the top the hold is kept with what it came to, and the next pillar fro
   assert.equal(foot.state.pillarSoFar, undefined);
   assert.equal(survival.state.pillarHolds.length, 1);
   assert.equal(survival.state.pillarHolds[0].ended, 'off the top');
-  // Up again on a new pillar two blocks off, a minute later.
+  // Asked at the foot: the bot is off the spot the pillar was held on.
+  assert.match(foot.state.previousStance.askedAgainFor, /^the bot is off the spot it was holding \(moved 2\.2 blocks\)$/);
+  // Up again on a new pillar two blocks off, a minute later, the fight at the
+  // foot over.
+  delete survival.state.stance; delete bot._stance;
   survival.state.pillar = { x: -1, y: 60, z: 0, at: t0 + 300000 };
   bot.entity.position = new Vec3(-0.5, 62, 0.5);
   const solid = bot.blockAt;
   bot.blockAt = p => { const f = p.floored(); return f.x === -1 && f.z === 0 && f.y < 62 && f.y >= 60 ? { position: f, name: 'netherrack', boundingBox: 'block' } : solid(p); };
   let again;
-  for (let s = 300; s <= 390; s += 15) again = await stanceAt(survival, t0 + s * 1000, [threat()], () => 'pillar');
+  for (let s = 300; s <= 390; s += 15) { const r = await stanceAt(survival, t0 + s * 1000, [threat()], () => 'pillar'); again = r.tree ? r : again; }
   assert.match(again.tree.pillar.description, /Held a pillar from about here once before in the last 5 minutes, 4 minutes in all: nothing struck, nothing killed, no health lost; the last ended: off the top\./);
 });
 
@@ -123,4 +138,22 @@ test('on its own pillar the way down is offered off its middle and under a cap w
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat()], false);
   assert(options.come_down, Object.keys(options).join(','));
   assert.match(options.come_down.description, /^.*Come down the pillar the way it went up: the block under the feet is dug out and the bot drops onto the next, about a second each, 2 blocks down to the ground it went up from/);
+});
+
+test('held on with nothing new, the pillar is asked again the moment what it was chosen on changes: the hoglin gone out of sight, then come in to the foot (note 599)', async () => {
+  const { bot, hoglin, threat } = pillarBot();
+  const t0 = 1_800_000_000_000;
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [], pillar: { x: 0, y: 60, z: 0, at: t0 - 1000 } }, client: { systemOne: async () => ({}) } });
+  const asked = [];
+  let seen = true;
+  const look = () => ({ ...threat(), visible: seen });
+  for (let s = 0; s <= 150; s += 5) {
+    if (s === 100) seen = false;
+    if (s === 130) { seen = true; hoglin.position = new Vec3(0.5, 60, 1.5); }
+    const r = await stanceAt(survival, t0 + s * 1000, [look()], () => 'pillar');
+    if (r.tree) asked.push({ s, why: r.state.previousStance?.askedAgainFor });
+  }
+  assert.deepEqual(asked.map(a => a.s), [0, 100, 130]);
+  assert.match(asked[1].why, /^the hoglin it was chosen against went out of sight, 4 blocks off$/);
+  assert.match(asked[2].why, /^the hoglin it was chosen against came into sight, 2 blocks off$/);
 });
