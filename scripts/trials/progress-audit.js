@@ -276,7 +276,10 @@ function worldOn(port) {
   try { return fs.readFileSync(path.join(ROOT, port === 25581 ? '.clean-run' : `.clean-run-${port}`, 'server.properties'), 'utf8').match(/^level-name=(.*)$/m)[1]; } catch (_) { return null; }
 }
 
-function auditTrial({ port, world }, { minutes, historyMinutes, now = Date.now() }) {
+// A trial's window: its record, the frames of the last minutes and the
+// positions of the history before them, and its bot log's tail. The trail
+// map (trail-map.js) draws from the same window the audit judges.
+function trialWindow({ port, world }, { minutes, historyMinutes, now = Date.now() }) {
   let trial = {};
   try { trial = JSON.parse(fs.readFileSync(path.join(ROOT, 'artifacts', 'midgame', `${world}.json`), 'utf8')); } catch (_) {}
   const started = Date.parse(trial.startedAt);
@@ -284,9 +287,14 @@ function auditTrial({ port, world }, { minutes, historyMinutes, now = Date.now()
   const historyFrom = Math.max(from - historyMinutes * 60000, Number.isFinite(started) ? started : 0);
   const { frames, history } = readFlight({ identity: `127_0_0_1-${port}-Jev`, from, to, historyFrom });
   const botLog = readBotLog(path.join(ROOT, 'artifacts', `midgame-${world}.log`), from);
+  return { trial, from, to, frames, history, botLog };
+}
+
+function auditTrial({ port, world }, { minutes, historyMinutes, now = Date.now() }) {
+  const w = trialWindow({ port, world }, { minutes, historyMinutes, now });
   // The minutes asked for, not the trial's so far: a trial five minutes old
   // has not spent "80% of the window" on anything.
-  return { port, world, ...measure({ frames, history, from, to, trial, botLog, minutes, historyMinutes }) };
+  return { port, world, ...measure({ ...w, minutes, historyMinutes }) };
 }
 
 function table(rows, minutes, historyMinutes) {
@@ -331,4 +339,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { readFlight, readBotLog, measure, thresholds, table };
+module.exports = { readFlight, readBotLog, measure, thresholds, table, trialWindow, runningPorts, worldOn, ROOT };
