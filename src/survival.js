@@ -1644,6 +1644,40 @@ function creeperLitFor(bot, entity) {
   const at = watchFuses(bot).get(entity.id);
   return at ? (Date.now() - at) / 1000 : require('./combat-estimate').FUSE / 2;
 }
+// How long a run's route search may stand the bot still with creepers
+// about (creeper-run.js creepersFor): until the nearest coming on would be
+// within three blocks at its walk, a quarter second short; one lit, or
+// within three now, a moment (two or three searches). Without one, no end
+// but the candidates' (note 604).
+function searchBudget(bot, creepers) {
+  if (!creepers?.length) return Infinity;
+  const { LIGHTS_AT, blocksPerSecond } = require('./combat-estimate');
+  const each = creepers.map(c => Number.isFinite(c.litFor) || c.distance < LIGHTS_AT ? 0.3 : Math.max(0.3, (c.distance - LIGHTS_AT) / blocksPerSecond('creeper') - 0.25));
+  return Math.round(Math.min(...each) * 1000);
+}
+// Where a creeper's fuse stands when a meal eaten where the bot stands is
+// done: lit by then, the seconds of it left and the blast there if the bot
+// stays; gone off during it, that (note 604).
+function creeperAfterMeal(bot, creepers) {
+  if (!creepers?.length) return '';
+  const { creeperOnWay } = require('./creeper-run');
+  const { FUSE, FUSE_KEPT, afterArmour, armourOf, blocksPerSecond } = require('./combat-estimate');
+  const here = bot.entity.position.clone(), way = [{ at: here, t: 0 }, { at: here, t: EAT_SECONDS }];
+  const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
+  const r1 = n => Math.round(n * 10) / 10;
+  for (const c of creepers) {
+    const w = creeperOnWay(bot, c.entity, way, { litFor: c.litFor, until: EAT_SECONDS + FUSE });
+    if (w.lights == null || w.lights > EAT_SECONDS) continue;
+    const name = `the creeper ${Math.round(c.distance)} blocks off`;
+    const coming = w.lights > 0 ? `, coming on at about ${r1(blocksPerSecond('creeper'))} blocks a second, is within three about ${w.lights} seconds in and lights there` : ' is lit or within three now';
+    if (w.goesOff && w.t <= EAT_SECONDS) return ` While it eats, ${name}${coming}, and goes off before the meal is done, about ${w.distance} blocks from the bot: about ${Math.round(afterArmour(w.blast, worn))} after the armour worn.`;
+    const left = r1(Math.max(0, (w.goesOff ? w.t : w.lights + FUSE) - EAT_SECONDS));
+    const hit = w.goesOff ? Math.round(afterArmour(w.blast, worn)) : 0;
+    const blast = w.goesOff ? ` with the bot still there it goes off ${w.distance} blocks from it, about ${hit} after the armour worn${hit >= (bot.health ?? 20) ? ', more than the bot has' : ''},` : ' it goes off';
+    return ` While it eats, ${name}${coming}: done eating, about ${left} seconds of its fuse are left, and${blast} unless the bot is more than ${FUSE_KEPT} blocks from it or out of its sight by then.`;
+  }
+  return '';
+}
 // A creeper's health as the server last sent it (undefined unread).
 function creeperHealth(bot, entity) {
   const key = bot.registry?.entitiesByName?.creeper?.metadataKeys?.indexOf('health');
@@ -3272,7 +3306,13 @@ class Survival {
     // Held to what it was said to cost: mid-205-a chose to eat told about
     // 1.6 seconds, and ate on for four more with two zombies hitting and a
     // creeper walking up to it (2026-09-26).
-    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatLeaves,
+    // A creeper coming on while the bot stands to eat: where its fuse is
+    // when the meal ends (creeper-run.js). mid-242-af-nether-2-fortress-2's
+    // meal was told "about 0 damage" with a creeper 7 blocks off walking in
+    // at 2.7 a second: within three and lit 1.5 seconds in, the meal done
+    // with the fuse all but burning where it stands (note 604).
+    const eatCreeper = meal ? creeperAfterMeal(bot, this.creepersOfRun(danger)) : '';
+    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatCreeper + eatLeaves,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
         // Marked before the meal and cleared when it is eaten: a meal cut
@@ -3379,7 +3419,7 @@ class Survival {
     if (apple && bot.health < 20) options.eat_golden_apple = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit },
       description: (apple.name === 'enchanted_golden_apple'
         ? `Eat the enchanted golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then sixteen extra health as absorption, strong regeneration for twenty seconds and resistance for five minutes. Worth more later in the game than any other food.`
-        : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`) + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }),
+        : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`) + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + creeperAfterMeal(bot, this.creepersOfRun(danger)),
       run: async () => {
         this.report(goal, save, { action: 'eat', item: apple.name, food: bot.food, health: bot.health, stance: true });
         return eatApple(bot, task, apple);
@@ -3393,6 +3433,8 @@ class Survival {
     const runShotCost = seconds => stanceCost({ mobs: mobs.filter(m => m.shoots), setup: seconds, seconds }).damage;
     const runShot = seconds => { const d = runShotCost(seconds); return d ? ` About ${d} damage from the shooters in range over those seconds, the shield down, from ${Math.round(bot.health * 10) / 10} health${d >= bot.health ? ' (more than the bot has)' : ''}.` : ''; };
     let footing = NO_ROUTE_YET, runExpects = null;
+    const { creeperRunSays, standingAgainstCreepers } = require('./creeper-run');
+    const runCreepers = this.creepersOfRun(danger), runWorn = require('./combat-estimate').armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
     const scout = this.state.retreatScout;
     const scouted = scout && scout.feet === `${feet}` && Date.now() - scout.at < 2000 ? scout : null;
     if (onPillar) footing = ` The bot stands ${onPillar} blocks up on a pillar of its own, and a route drops three blocks at most: from up here there is no way off it to run by.`;
@@ -3402,12 +3444,29 @@ class Survival {
       // question, a spider at arm's length; the new run's route searches
       // stood the bot still for 3.8 seconds of bites, seven health to one
       // (mid-239-b, note 532). Past its seconds it is asked again.
-      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10; runExpects = { damage: runShotCost(secs), seconds: Math.max(1, secs), oneHit }; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}`; }
+      // A creeper about: the way walked in time against its fuse, and the
+      // blast where it goes off counted in the price (creeper-run.js, note
+      // 604); the run told "passing none of them" came back past one, or
+      // dropped into its sight beside it.
+      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}${c.says}`; }
       else if (!scout.spots) footing = ` Nowhere to run to: no footing within ${scout.radius} blocks is four blocks further than here from every mob about, so a run from here fails at once.`;
       else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.`;
       // The rest are searched before a step is taken, up to 150 ms each
-      // (wayAway), not as it runs.
-      else footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, up to about ${Math.max(1, Math.round((scout.candidates - scout.tried) * 0.15))} seconds standing still.`;
+      // (wayAway), not as it runs; with a creeper coming on, only until it
+      // would be within three (searchBudget).
+      else {
+        const budget = searchBudget(bot, runCreepers), rest = Math.max(1, Math.round((scout.candidates - scout.tried) * 0.15));
+        const stands = Number.isFinite(budget) ? Math.max(0.3, Math.min(rest, budget / 1000)) : rest;
+        const c = creeperRunSays(standingAgainstCreepers(bot, runCreepers, stands), { worn: runWorn, health: bot.health, standing: true });
+        if (c.damage) runExpects = { damage: c.damage, seconds: stands, oneHit };
+        footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, ${Number.isFinite(budget) && budget / 1000 < rest ? `for at most about ${Math.round(stands * 10) / 10} seconds standing still, until the creeper would be within three blocks, and the run then fails and this is asked again unless one is found` : `up to about ${rest} seconds standing still`}.${c.says}`;
+      }
+    }
+    if (!scouted && !onPillar && runCreepers.length) {
+      const stands = Math.min(3.6, searchBudget(bot, runCreepers) / 1000);
+      const c = creeperRunSays(standingAgainstCreepers(bot, runCreepers, stands), { worn: runWorn, health: bot.health, standing: true });
+      if (c.damage) runExpects = { damage: c.damage, seconds: stands, oneHit };
+      footing += ` With a creeper coming on, the search stands still for at most about ${Math.round(stands * 10) / 10} seconds, until it would be within three blocks; with no way by then the run fails and this is asked again.${c.says}`;
     }
     const chase = chaseSays(bot, danger, { apartIds: apart.ids, destination: scouted?.destination, runSeconds: scouted?.destination ? scouted.blocks / SPRINT : null });
     // What they land on the way and after, priced (note 601).
@@ -3436,9 +3495,10 @@ class Survival {
     if (past) {
       const secs = Math.round(past.blocks / SPRINT * 10) / 10;
       const each = past.from.map(f => `${f.blocks} from the ${f.name.replaceAll('_', ' ')} (it follows a player to ${f.follows})`);
+      const c = creeperRunSays(past.creeper, { worn: runWorn, health: bot.health });
       const pastChase = chaseCost(bot, danger, { apartIds: apart.ids, destination: past.destination, runSeconds: secs });
-      options.leave_reach = { expects: { damage: Math.round((runShotCost(secs) + pastChase.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit },
-        description: `Run past the reach of what bites, taking the shooters' fire on the way: ${past.blocks} blocks to footing ${each.length > 1 ? `${each.slice(0, -1).join(', ')} and ${each.at(-1)}` : each[0]}, nearer the bot than any of them, by a route that passes none of those that bite (the shooters are not kept clear of), about ${secs} seconds at a run.${runShot(secs)}` +
+      options.leave_reach = { expects: { damage: Math.round((runShotCost(secs) + pastChase.damage + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit },
+        description: `Run past the reach of what bites, taking the shooters' fire on the way: ${past.blocks} blocks to footing ${each.length > 1 ? `${each.slice(0, -1).join(', ')} and ${each.at(-1)}` : each[0]}, nearer the bot than any of them, by a route that passes none of those that bite (the shooters are not kept clear of), about ${secs} seconds at a run.${runShot(secs)}${c.says}` +
           chaseSays(bot, danger, { apartIds: apart.ids, destination: past.destination, runSeconds: secs }) + pastChase.says + unseen,
         run: () => this.leaveReach(task, goal, save, danger) };
     }
@@ -4229,13 +4289,14 @@ class Survival {
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+    const creepers = this.creepersOfRun(danger), unsteer = this.steerFromCreepers(movements, creepers);
     try {
       const scout = this.state.retreatScout;
       const fresh = scout?.pastReach && Date.now() - scout.at < 2000 && scout.feet === `${bot.entity.position.floored()}`;
       let p = fresh ? pos(scout.pastReach.destination) : null;
       if (!p) {
         const found = this.reachFootings(danger);
-        const way = found?.candidates.length ? await this.wayAway(task, movements, { about: found.biters.map(t => t.entity), heavy: found.heavy }, found.candidates) : { p: null };
+        const way = found?.candidates.length ? await this.wayAway(task, movements, { about: found.biters.map(t => t.entity), heavy: found.heavy, creepers }, found.candidates, { budgetMs: searchBudget(bot, creepers) }) : { p: null };
         if (!way.p) { this.state.failWhy = 'no footing past the reach of those that bite has a route that passes none of them'; return false; }
         p = way.p;
       }
@@ -4243,7 +4304,7 @@ class Survival {
       this.report(goal, save, { action: 'leave_reach', destination: { x: p.x, y: p.y, z: p.z }, threats: danger.map(t => t.entity.name).slice(0, 4) });
       try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 10000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
       catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'escape', p, err, 60000); save(); return true; }
-    } finally { Object.assign(movements, previous); bot.clearControlStates(); }
+    } finally { Object.assign(movements, previous); unsteer(); bot.clearControlStates(); }
   }
 
   async runAway(task, goal, save, danger, { gain = 4, only = false } = {}) {
@@ -4251,6 +4312,7 @@ class Survival {
     const movements = bot.pathfinder.movements;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+    const creepers = this.creepersOfRun(danger), unsteer = this.steerFromCreepers(movements, creepers);
     try {
       const { about, footing, far, near, heavy, persistent } = this.escapeFootings(danger, { gain, only });
       // Beside lava, one knockback is the end: the dream run died that way at
@@ -4279,7 +4341,11 @@ class Survival {
       const noWay = n => n ? `none of the ${plural(n, 'spot')} further from every mob has a route that passes none of them` : 'no footing near is further from every mob';
       if (fresh && !scout.destination && scout.tried >= scout.candidates) { delete this.state.retreatScout; this.state.failWhy = noWay(scout.candidates); return false; }
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
-      const way = fresh && scout.destination ? { p: pos(scout.destination) } : await this.wayAway(task, movements, { about, heavy }, candidates);
+      // Standing still while it searches, the bot is not away from a
+      // creeper coming on: the search stops where the creeper would be
+      // within three (or, one lit, at once), and the run takes the least
+      // blast found by then or fails, asked again (note 604).
+      const way = fresh && scout.destination ? { p: pos(scout.destination) } : await this.wayAway(task, movements, { about, heavy, creepers }, candidates, { budgetMs: searchBudget(bot, creepers) });
       delete this.state.retreatScout;
       if (!way.p) { this.state.failWhy = noWay(candidates.length); return false; }
       const p = way.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
@@ -4291,16 +4357,20 @@ class Survival {
         // next stale route against the old mob positions.
         return true;
       }
-    } finally { Object.assign(movements, previous); bot.clearControlStates(); }
+    } finally { Object.assign(movements, previous); unsteer(); bot.clearControlStates(); }
   }
 
   // The first of the candidates with a route that passes no hostile (and, a
   // hoglin about, no edge), within `budgetMs` of route searches:
   // { p, route, tried } or { p: null, tried }.
-  async wayAway(task, movements, { about, heavy }, candidates, { budgetMs = Infinity } = {}) {
+  // With a creeper about (`creepers`, creeper-run.js creepersFor), each way
+  // is walked in time against its fuse (wayAgainstCreepers): the first on
+  // which none goes off is the way; with none such, the one whose blast is
+  // least, said with it (note 604).
+  async wayAway(task, movements, { about, heavy, creepers = [] }, candidates, { budgetMs = Infinity } = {}) {
     const bot = this.bot;
     const end = Date.now() + budgetMs;
-    let tried = 0;
+    let tried = 0, least = null;
     // The search is the bot standing still, up to two seconds and more: with
     // a biter at its reach, behind the shield facing it. mid-242-ah-fortress-
     // 1's retreat stood 2.7 seconds searching with a wither skeleton at arm's
@@ -4316,10 +4386,27 @@ class Survival {
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
         if (heavy && route.path.some(point => besideDrop(bot, pos(point).floored()))) continue;
-        return { p, route, tried };
+        const creeper = require('./creeper-run').wayAgainstCreepers(bot, route.path, creepers);
+        if (!creeper?.worst.goesOff) return { p, route, tried, ...(creeper ? { creeper } : {}) };
+        if (!least || creeper.worst.blast < least.creeper.worst.blast) least = { p, route, creeper };
       }
-      return { p: null, tried };
+      return least ? { ...least, tried } : { p: null, tried };
     } finally { if (guarded) lowerShield(bot); }
+  }
+
+  // The creepers a run is walked against, and the route search's steer away
+  // from them (creeper-run.js), set on the movements for the search and the
+  // run alike, so the way run is the way priced.
+  creepersOfRun(danger) {
+    const { creepersFor } = require('./creeper-run');
+    return creepersFor(this.bot, danger, e => creeperLitFor(this.bot, e));
+  }
+  steerFromCreepers(movements, creepers) {
+    const steer = require('./creeper-run').creeperSteer(creepers);
+    if (!steer || !movements) return () => {};
+    const had = Object.prototype.hasOwnProperty.call(movements, 'exclusionAreasStep'), previous = movements.exclusionAreasStep;
+    movements.exclusionAreasStep = [...(previous || []), steer];
+    return () => { if (had) movements.exclusionAreasStep = previous; else delete movements.exclusionAreasStep; };
   }
 
   // The run's way found before the stance is asked, a few route searches at
@@ -4334,25 +4421,27 @@ class Survival {
     const feet = `${bot.entity.position.floored()}`;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+    const creepers = this.creepersOfRun(danger), unsteer = this.steerFromCreepers(movements, creepers);
     try {
       const { about, far, near, heavy, radius } = this.escapeFootings(danger);
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
-      const way = candidates.length ? await this.wayAway(task, movements, { about, heavy }, candidates, { budgetMs }) : { p: null, tried: 0 };
+      const way = candidates.length ? await this.wayAway(task, movements, { about, heavy, creepers }, candidates, { budgetMs }) : { p: null, tried: 0 };
       const from = bot.entity.position;
       // With no way that passes every mob, a way past the reach of what
       // bites, the shooters' fire taken on it (reachFootings, note 576).
       let pastReach = null;
       if (!way.p) {
         const found = this.reachFootings(danger);
-        const reach = found?.candidates.length ? await this.wayAway(task, movements, { about: found.biters.map(t => t.entity), heavy: found.heavy }, found.candidates, { budgetMs }) : null;
+        const reach = found?.candidates.length ? await this.wayAway(task, movements, { about: found.biters.map(t => t.entity), heavy: found.heavy, creepers }, found.candidates, { budgetMs }) : null;
         if (reach?.p) pastReach = { destination: { x: reach.p.x, y: reach.p.y, z: reach.p.z }, blocks: Math.round(reach.route.path.length || reach.p.distanceTo(from)),
-          from: found.biters.map(t => ({ id: t.entity.id, name: t.entity.name, blocks: Math.round(t.entity.position.distanceTo(reach.p)), follows: followRange(t.entity.name) })) };
+          from: found.biters.map(t => ({ id: t.entity.id, name: t.entity.name, blocks: Math.round(t.entity.position.distanceTo(reach.p)), follows: followRange(t.entity.name) })),
+          ...(reach.creeper ? { creeper: reach.creeper } : {}) };
       }
       return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: way.tried, candidates: candidates.length, ...(pastReach ? { pastReach } : {}),
         ...(way.p ? { destination: { x: way.p.x, y: way.p.y, z: way.p.z }, blocks: Math.round(way.route.path.length || way.p.distanceTo(from)),
-          gain: Math.round(Math.min(...about.map(e => e.position.distanceTo(way.p))) - Math.min(...about.map(e => e.position.distanceTo(from)))) } : {}) };
+          gain: Math.round(Math.min(...about.map(e => e.position.distanceTo(way.p))) - Math.min(...about.map(e => e.position.distanceTo(from)))), ...(way.creeper ? { creeper: way.creeper } : {}) } : {}) };
     } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return null; }
-    finally { Object.assign(movements, previous); }
+    finally { Object.assign(movements, previous); unsteer(); }
   }
 
   async escape(task, goal, save, danger, armed) {
@@ -5470,7 +5559,7 @@ class Survival {
   }
 
   // A block in a creeper's line (creeper-sight.js): offered for the creeper
-  // within seven blocks whose fuse ends first (a lit one before one not lit,
+  // within ten blocks whose fuse ends first (a lit one before one not lit,
   // then the nearest), where a cell on the ray from its eyes to the bot's
   // takes a block from here and the blocks are carried; priced by the
   // seconds until the line is cut against the fuse (creeperBlocked), with
@@ -5478,18 +5567,25 @@ class Survival {
   // Held, with the line stopped, it is staying behind the block. mid-241-a
   // had a creeper coming on at 4.4 blocks, a wall at its back and 4.8
   // health: every stance offered cost more than that (note 534).
+  // A block already in its line (the ground's, or one the bot laid) is the
+  // same stance, staying behind it, and offered as such: mid-242-af-nether-
+  // 3-fortress-1 stood on its bridge three blocks over a creeper that did
+  // not see it through the bridge, was offered no way to stay out of its
+  // sight, and ran down into it. And a creeper coming on from past seven is
+  // one to block as well: mid-242-af-nether-2-fortress-2's was 7.1 blocks
+  // off, walking in, and no block was offered (note 604).
   creeperBlockOption(task, goal, save, { coming, mobs, shielded, oneHit, edge = '' }) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function' || inWater(bot)) return null;
     const { FUSE_KEPT, FUSE, LIGHTS_AT, creeperBlocked, armourOf } = require('./combat-estimate');
     const { blockPlan, whereSays, creeperWalk } = require('./creeper-sight');
-    const creepers = coming.filter(t => t.entity.name === 'creeper' && t.distance <= FUSE_KEPT && t.entity.position)
+    const creepers = coming.filter(t => t.entity.name === 'creeper' && t.distance <= FUSE_KEPT + 3 && t.entity.position)
       .map(t => ({ t, litFor: creeperLitFor(bot, t.entity) }))
       .sort((a, b) => (Number.isFinite(b.litFor) - Number.isFinite(a.litFor)) || a.t.distance - b.t.distance);
     if (!creepers.length) return null;
     const { t: c, litFor } = creepers[0];
     const plan = blockPlan(bot, c.entity);
-    const behind = !!plan.stoppedBy && this.state.stance?.choice === 'block_creeper';
+    const behind = !!plan.stoppedBy;
     const n = plan.cells.length;
     if (!behind && !(n && shelter.materialStock(bot) >= n)) return null;
     const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
@@ -7746,4 +7842,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

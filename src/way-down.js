@@ -447,6 +447,43 @@ async function stepOff(bot, task, plan) {
 }
 
 const RUN = { dig_down: digDown, ride_water: rideWater, step_off: stepOff };
+
+// Where a way leaves the feet: the cell the bot stands in at its end.
+function endOf(plan) {
+  if (plan.kind === 'dig_down' && plan.endsAt) return new Vec3(plan.endsAt.x, plan.endsAt.y, plan.endsAt.z);
+  if (plan.kind === 'ride_water' && plan.bottom) return new Vec3(plan.bottom.x, plan.bottom.y, plan.bottom.z);
+  if (plan.kind === 'step_off' && plan.from && DIRS[plan.dir]) return new Vec3(plan.from.x, plan.from.y, plan.from.z).plus(DIRS[plan.dir]).offset(0, -plan.fall, 0);
+  return null;
+}
+// A creeper near where a way ends, said on the way (note 604): mid-242-af-
+// nether-3-fortress-1 dug down its column at 12:08:05 to (-40, 14, -5), told
+// only that a walk goes on there, and came out 3 blocks from a creeper on the
+// floor below, which it could not see from the top; the run from it ended in
+// its blast. The question is asked with no mob at hand, so one below the top
+// was never said.
+function creepersAtEnd(bot, plan, { worn = null } = {}) {
+  const end = endOf(plan);
+  if (!end) return '';
+  const { LIGHTS_AT, FUSE, FUSE_KEPT, BLAST_CLEAR, blocksPerSecond, creeperBlast, afterArmour, armourOf } = require('./combat-estimate');
+  const { seesAt } = require('./creeper-run');
+  const feet = end.offset(0.5, 0, 0.5);
+  const near = Object.values(bot.entities || {}).filter(e => e?.name === 'creeper' && e.position && e.isValid !== false && e.position.distanceTo(feet) <= FUSE_KEPT + 3)
+    .sort((a, b) => a.position.distanceTo(feet) - b.position.distanceTo(feet));
+  if (!near.length) return '';
+  const w = worn || armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const r1 = n => Math.round(n * 10) / 10;
+  // Digging down, the column over where it ends is open by then.
+  const dug = plan.kind === 'dig_down' && plan.from ? new Set(Array.from({ length: Math.max(0, plan.from.y - end.y + 1) }, (_, i) => `${end.offset(0, i, 0)}`)) : null;
+  const e = near[0], d = r1(e.position.distanceTo(feet)), sees = seesAt(bot, e, e.position, feet, { dug });
+  const at = `(${Math.floor(e.position.x)}, ${Math.floor(e.position.y)}, ${Math.floor(e.position.z)})`;
+  const blast = Math.round(afterArmour(creeperBlast(Math.min(d, LIGHTS_AT)), w));
+  const more = near.length > 1 ? ` ${near.length - 1} more within ${FUSE_KEPT + 3} blocks of it.` : '';
+  const sight = sees ? 'in its sight there' : 'out of its sight there as the ground stands now (a block in the line from its eyes)';
+  const rule = `A creeper within ${LIGHTS_AT} blocks of the bot lights if it sees the bot and goes off ${FUSE} seconds later unless the bot is more than ${FUSE_KEPT} blocks from it or out of its sight by then; past ${LIGHTS_AT} it walks after the bot at about ${r1(blocksPerSecond('creeper'))} blocks a second; a blast ${BLAST_CLEAR} blocks off or more does nothing, three blocks off about ${blast} after the armour worn.`;
+  return d < LIGHTS_AT
+    ? ` It ends ${d} blocks from a creeper at ${at}, ${sight}.${more} ${rule}`
+    : ` It ends ${d} blocks from a creeper at ${at}, ${sight}: at its walk it is within three in about ${Math.max(0.1, r1((d - LIGHTS_AT) / blocksPerSecond('creeper')))} seconds.${more} ${rule}`;
+}
 const TRIED_MS = 10 * 60000;
 
 // Without Jev, the way that comes off the top safely, else the one that
@@ -484,7 +521,7 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   if (!Object.keys(ways).length) { console.log(`[way down] none from ${where(perch.feet)}: ${perchSays(perch)}`); return false; }
   const now = Date.now();
   const tried = (bot._wayDownTried || []).filter(t => now - t.at < TRIED_MS);
-  const tree = Object.fromEntries(Object.entries(ways).map(([k, w]) => [k, { description: w.description }]));
+  const tree = Object.fromEntries(Object.entries(ways).map(([k, w]) => [k, { description: w.description + creepersAtEnd(bot, w.plan) }]));
   const point = Number.isFinite(walkGoal?.x) && Number.isFinite(walkGoal?.z) ? walkGoal : walkGoal?.entity?.position;
   const state = { top: perchSays(perch), health: Math.round(health), food: bot.food,
     ...(point ? { walkingTo: `${where({ x: Math.round(point.x), y: Math.round(Number.isFinite(point.y) ? point.y : perch.feet.y), z: Math.round(point.z) })}, ${Math.round(Math.hypot(point.x - perch.feet.x, point.z - perch.feet.z))} blocks off` } : {}),
@@ -513,4 +550,4 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   } finally { bot.clearControlStates?.(); }
 }
 
-module.exports = { perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };
+module.exports = { endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };

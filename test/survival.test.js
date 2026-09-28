@@ -5489,9 +5489,12 @@ test('a block in a creeper\'s line is offered, priced by the seconds until the l
   assert.match(held.block_creeper?.description || '', /^Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
   assert.equal(await held.block_creeper.run(), true);
   assert.equal(placed.length, 2);
-  // Not held: a line already stopped is nothing to offer.
+  // Not held, a line already stopped is the same stance, staying behind that
+  // block: mid-242-af-nether-3-fortress-1 stood on its bridge out of a
+  // creeper's sight, was offered no way to stay there, and ran down into it
+  // (note 604).
   delete survival.state.stance;
-  assert.equal(survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false).block_creeper, undefined);
+  assert.match(survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false).block_creeper?.description || '', /^Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
 });
 
 test('a creeper lit with too little fuse left for the block is said as too late, with its blast; one on a ledge above is cut over the head', () => {
