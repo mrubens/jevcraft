@@ -247,6 +247,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `step_off_hot_floor` | root | step off the hot floor crouched to the nearest floor that does not hurt | on a magma block not crouched, or a lit campfire, with such a floor within eight blocks by a way walked crouched (over other magma, no step down); said with the steps, the floor it ends on, a drop beside the way and the seconds |
 | `crouch_on_hot_floor` | root | crouch where it stands: a magma block does not hurt a crouched body | on a magma block not crouched; the crouch is let go once the body is off the magma, and a walk that stands it up on the magma again is asked about again |
 | `douse_bucket` | root | pour the carried water bucket at the feet and take the water back | alight out of the fire, a water bucket carried, not in the Nether, an open cell on a block under the body's box (the middle first, then the box's edge; in the air, down to two below the feet); said with the burning it spares |
+| `extinguish_in_cauldron` | root | step into a cauldron of water near by, which puts the fire out (in the Nether too) | alight out of the fire, a water cauldron placed within six blocks with a cell beside it to go in from (a floor, room for a jump); said with the walk, the hop onto its rim and the drop in, the seconds, the fire and health it saves, the level it costs of three, a drop or lava beside the cell it goes in from, and whether that cell is in a shooter's line (note 634) |
+| `set_down_cauldron` | root | put the carried cauldron down beside the bot, fill it from the water bucket and step in | alight out of the fire, a cauldron and a water bucket carried, a side of the bot's own cell open with a floor under and room to jump; said with the seconds (measured), that the bucket is left empty, the fire and health it saves, a drop beside and the shooters' line (note 634) |
 | `burn_out` | root | leave the burning to end by itself and go on | alight out of the fire; said with the fire left, the health it takes and whether the bot dies of it and when; held until the burning could have ended, health falls four more (or half, when less), or another way comes |
 | `eat_golden_apple` | root | eat the enchanted golden apple: fire resistance for five minutes | in lava, alight or on a hot floor with an enchanted golden apple carried; said with the 1.6 seconds of eating first |
 | `step_aside` | root | step out from under the block into the open cell beside the feet | the head in a block and an open cell beside with a floor and nothing that falls over it |
@@ -414,7 +416,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?**
 
-- When: In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take or valuables carried that could be left; held until what is on offer changes or for ten working minutes.
+- When: In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); held until what is on offer changes or for ten working minutes.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -432,6 +434,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `top_up_pickaxe` | root | make a stone pickaxe first, as the spare | no stone pickaxe or better, or the best has under 24 uses |
 | `top_up_gold` | root | make golden boots first, a piece of gold worn so piglins leave the bot be | no piece of golden armour carried |
 | `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
+| `top_up_cauldron` | root | make a cauldron and fill a bucket with water first, to put a fire out in the Nether | no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short, and is never the fallback; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634) |
 | `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |
 

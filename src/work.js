@@ -5657,7 +5657,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   if (bot.game?.gameMode !== 'survival') return true;
   const items = kitItems(bot), valuables = valuablesAt(bot, goal);
   const short = items.filter(i => i.short);
-  if (!short.length && !valuables) { delete goal.preparingNether; return true; }
+  // The cauldron for the Nether's fire is on offer, not short: it makes the
+  // question worth asking when the bot could make the set now (note 634).
+  const cauldron = items.find(i => i.key === 'cauldron' && i.offer);
+  if (!short.length && !valuables && !cauldron) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -5678,6 +5681,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going} ${items.map(i => i.says).join(' ')}` },
   };
+  if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
   for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''}${i.key === 'food' ? foodTopUpSays(bot, goal, pending, i) : ''}${i.key === 'health' ? healWaitSays(bot, i) : ''} ${i.says}${soFar(i)}` };
   // Food at the known source nearest the frame, then back to it: the way
   // to food that keeps the portal work in reach. With no frame begun, the
@@ -5720,6 +5724,12 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   try {
     if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
+    else if (pick === 'top_up_cauldron') {
+      // The cauldron first, then the water for it; the next pass asks again with what is carried then.
+      goal.step = { action: 'cauldron_for_nether', cauldron: countOf(bot, 'cauldron'), waterBucket: countOf(bot, 'water_bucket') }; save();
+      if (!countOf(bot, 'cauldron')) await acquireStep(bot, task, 'cauldron', 1, goal, save);
+      else await acquireStep(bot, task, 'water_bucket', 1, goal, save);
+    }
     else if (pick === 'top_up_cook') {
       // The most of one raw food first; the next pass cooks the next.
       const first = cook.items.sort((a, b) => b.n - a.n)[0];

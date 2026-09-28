@@ -116,7 +116,30 @@ function kitItems(bot) {
   const logs = logsCarried(bot), table = countOf(bot, 'crafting_table') > 0;
   items.push({ key: 'wood', short: logs < EXPEDITION_LOGS || !table, carried: logs, wants: EXPEDITION_LOGS,
     says: `Wood: ${logs} logs and ${table ? 'a crafting table' : 'no crafting table'} carried; the code would take ${EXPEDITION_LOGS} logs and a table: sticks for the next tools and a table to make them at. The Nether's only trees are the crimson and warped fungi of its forests.` });
+  const set = cauldronSet(bot);
+  if (set) items.push({ key: 'cauldron', short: false, optional: true, offer: set.offer, carried: set.cauldrons, wants: 1, says: set.says });
   return items;
+}
+
+// A cauldron of water for the Nether (note 634): fire is 40% of the damage in
+// a blaze fight and nothing puts it out there (a poured bucket evaporates),
+// but a cauldron filled from a water bucket puts a burning body out that
+// steps into it, in the Nether as anywhere. Said whenever the set is carried
+// or could be made from what is carried; never a gate (not "short").
+function cauldronSet(bot) {
+  const iron = countOf(bot, 'iron_ingot'), cauldrons = countOf(bot, 'cauldron'), water = countOf(bot, 'water_bucket'), empty = countOf(bot, 'bucket');
+  const { CAULDRON_IRON } = require('./cauldron');
+  const makeable = !cauldrons && iron >= CAULDRON_IRON;
+  const bucket = water || empty;
+  const complete = cauldrons && water;
+  if (!complete && !(bucket && (cauldrons || makeable))) return null;
+  const parts = [`${cauldrons} cauldron${cauldrons === 1 ? '' : 's'}`, `${water} water bucket${water === 1 ? '' : 's'}`];
+  const how = 'A body that steps into a cauldron with water in it is put out at once (measured in the Nether: the fire out a tenth of a second after the feet are under the water), and the Nether is where nothing else does it, a poured bucket evaporating there; fire is about 40% of the damage in the blaze fights that killed the bot (note 631). It takes putting down and filling first (about half a second each, from a bucket of water, one cauldron of three levels, three fires), then a hop onto its rim and the middle of the body lined up over the bowl: about a second in all, the fire burning meanwhile, so it is worth most set down before a fight, away from the blazes, and it only helps where the bot is when it is alight. The bucket is emptied into it, so it is no longer a water bucket for a fall or a portal cast.';
+  if (complete) return { offer: false, cauldrons, says: `Cauldron: ${parts.join(' and ')} carried, one slot each. ${how}` };
+  const need = [];
+  if (!cauldrons) need.push(`a cauldron (${CAULDRON_IRON} iron ingots in a U at a crafting table, ${iron} carried, one slot)`);
+  if (!water) need.push(`a bucket of water (${empty} empty ${empty === 1 ? 'bucket' : 'buckets'} carried, filled at water in the Overworld, one slot)`);
+  return { offer: true, cauldrons, says: `Cauldron: ${parts.join(' and ')} carried; the set is ${need.join(' and ')} short of complete. ${how} Its cost is ${cauldrons ? '' : `${CAULDRON_IRON} iron ingots (the bot carries ${iron}; an iron pickaxe is three) and `}a slot or two.` };
 }
 
 // The valuables and where they could be left: the home's chest in reach (a
@@ -141,15 +164,17 @@ function valuablesAt(bot, goal) {
 // One line for the strategy question: what the crossing would be short of
 // now, so "Nether first" is weighed knowing what the kit asks.
 function kitSummary(bot, goal) {
-  let short, valuables;
-  try { short = kitItems(bot).filter(i => i.short); valuables = valuablesAt(bot, goal); } catch (_) { return ''; }
+  let short, valuables, all;
+  try { all = kitItems(bot); short = all.filter(i => i.short); valuables = valuablesAt(bot, goal); } catch (_) { return ''; }
   const parts = short.map(i => i.key === 'wood' ? `${i.carried} of ${i.wants} logs${countOf(bot, 'crafting_table') ? '' : ' and no crafting table'}`
     : i.key === 'pickaxe' ? `a pickaxe with ${i.carried} of ${i.wants} uses` : i.key === 'health' ? `${i.carried} of ${i.wants} health`
       : i.key === 'gold' ? 'a piece of gold to wear (piglins go for a player with none)'
       : `${i.carried} of ${i.wants} ${i.key === 'food' ? 'food points' : 'blocks'}`);
   if (valuables) parts.push(`valuables carried (${valuables.what})${valuables.how === 'stash' ? `, the home chest ${valuables.far} blocks away` : ''}`);
+  const cauldron = all.find(i => i.key === 'cauldron' && i.offer);
+  if (cauldron) parts.push('a cauldron and a water bucket to put a fire out in the Nether, which the bot could make now (an option, not a gap)');
   return parts.length ? ` At the portal the kit is said and topping any of it up is a choice, not a wait: short now of ${parts.join('; ')}.`
     : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
 }
 
-module.exports = { netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { cauldronSet, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

@@ -230,6 +230,11 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       // (2026-09-26).
       const casting = goal?.portalFrame?.cast || goal?.portalMethod?.kind === 'cast';
       if (stack.name === 'water_bucket') notes.push(`the water bucket: breaks a fall, puts out fire, turns lava to stone${casting ? `; and the water that turns each block of the portal frame being cast to obsidian: without it the frame cannot be cast, and another is a bucket (three iron) and a trip to water (${require('./water').waterKnown(bot).says})` : ''}`);
+      // A water cauldron is the one thing that puts a fire out in the Nether
+      // (note 634): the cauldron and the bucket that fills it are kept for
+      // that, said as what they are for.
+      if (stack.name === 'cauldron') notes.push(`for a fire on the body in the Nether: put down and filled from a water bucket (${counts.water_bucket ? `${counts.water_bucket} carried` : 'none carried: a bucket of water first'}), a body that steps into it is put out at once, in the Nether too; seven iron ingots to make another`);
+      if (stack.name === 'water_bucket' && counts.cauldron) notes.push('and the water for the cauldron carried: emptied into it, it fills it, in the Nether as anywhere (a poured bucket evaporates there)');
       if (stack.name === 'lava_bucket' && casting) notes.push('lava for the portal frame being cast in place, a bucket a block');
       if (stack.name === 'bucket' && casting) notes.push('a bucket for the lava of the portal frame being cast in place, a bucket a block');
       // The portal's lighter, said on the way to the dragon: mid-241-v

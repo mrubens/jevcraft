@@ -696,6 +696,9 @@ function fireToAnswer(bot) {
   // An enchanted golden apple carried is a way too, in any dimension: its
   // fire resistance ends what burning is left (body_way, note 549).
   if (onFire(bot) && bot.inventory?.items?.().some(i => i.name === 'enchanted_golden_apple')) return true;
+  // A cauldron of water, placed near or carried with a water bucket to fill
+  // it from, puts a burning body out in the Nether too (note 634).
+  try { if (onFire(bot) && (() => { const p = require('./cauldron').plans(bot); return !!(p.placed || p.carry); })()) return true; } catch (_) { /* no world to look at */ }
   if (!onFire(bot) || /nether/.test(String(bot.game?.dimension || ''))) return false;
   if (bot.inventory?.items?.().some(i => i.name === 'water_bucket')) return true;
   return !!(bot.blockAt && pondNear(bot));
@@ -949,6 +952,36 @@ function lineAtEnd(bot, at, cell) {
   return seen.length ? ` Its end is in the line of the ${[...new Set(seen.map(e => e.name.replaceAll('_', ' ')))].join(' and the ')}: its fire goes on there.` : ` Its end is out of the line of the ${names.join(' and the ')} from where ${names.length === 1 ? 'it is' : 'they are'} now.`;
 }
 
+// The cauldron's ways for a body alight (not standing in fire), each with
+// its seconds, what it saves and what is beside it. The measured times are
+// src/cauldron.js's (note 634).
+function cauldronWays(bot, task, onAction, burn, hp) {
+  const cauldron = require('./cauldron'), ways = {};
+  if (!onFire(bot)) return ways;
+  let plans;
+  try { plans = cauldron.plans(bot); } catch (_) { return ways; }
+  const shot = shootersAtBody(bot), { fallBeside } = require('./movement');
+  const saves = `it saves the ${Math.max(1, Math.round(burn.fireLeftSeconds))} second${Math.round(burn.fireLeftSeconds) === 1 ? '' : 's'} of fire left, about ${burn.burnsToDeath ? `all ${hp} health the bot has` : `${burn.healthItTakes} of the ${hp} health`}`;
+  const beside = from => {
+    const fall = fallBeside(bot, from);
+    return fall ? ` Beside the cell it goes in from there is ${fall.into === 'lava' ? `a drop into lava${fall.fall ? ` ${fall.fall} down` : ''}` : fall.into === 'deep' ? `a drop of more than ${fall.fall}` : `a drop of ${fall.fall} onto ground that costs half the health or more`}: the hop is a jump upright, not a crouch.` : '';
+  };
+  const body = 'a hop onto its rim (a block up, walls an eighth of a block thick round a bowl three quarters wide, so the body drops in only with its middle over the bowl\'s middle: it lines up first and steps along the rim a tick at a time), and the fire is out the moment the feet are under the water (measured in the Nether, about a tenth of a second)';
+  if (plans.placed) {
+    const { cell, from, level } = plans.placed;
+    const here = bot.entity.position, d = Math.round(Math.hypot(cell.x + 0.5 - here.x, cell.z + 0.5 - here.z) * 10) / 10;
+    const secs = Math.round((1.2 + d / 3.5) * 10) / 10;
+    ways.extinguish_in_cauldron = { description: `Step into the cauldron of water ${d} blocks off at (${cell.x}, ${cell.y}, ${cell.z}) (${level} of 3 levels of water): the walk to the cell beside it, then ${body}: about ${secs} seconds from now, burning meanwhile; ${saves}. It costs the cauldron one level of its ${level}, and the way out is a hop, half a second. The Nether's water does not evaporate in a cauldron.${beside(from)}${lineAtEnd(bot, shot, cell)}`,
+      run: () => cauldron.extinguishIn(bot, task, plans.placed, onAction) };
+  }
+  if (plans.carry) {
+    const { cell, from } = plans.carry;
+    ways.set_down_cauldron = { description: `Put the cauldron carried down beside the bot at (${cell.x}, ${cell.y}, ${cell.z}), fill it from the water bucket (${plans.buckets} carried: the bucket is left empty, and no water bucket is left for a fall or the portal cast), and step in: ${body}: about ${cauldron.seconds(cauldron.HOP_SECONDS)} seconds from now in all (measured: the fire out 0.8 to 1 second after the first step, the placing and filling a fraction of a second each), burning meanwhile; ${saves}. What it spends: the water bucket's water (the Nether has none to refill it from) and the cauldron's place in the pack, the cauldron staying where it is put (two levels of water left in it for another fire here, and a pickaxe takes it up again without water); the bucket is carried on empty. The Nether's water does not evaporate in a cauldron.${beside(from)}${lineAtEnd(bot, shot, cell)}`,
+      run: () => cauldron.setDownAndIn(bot, task, plans.carry, onAction) };
+  }
+  return ways;
+}
+
 function fireWays(bot, task, onAction = () => {}) {
   const ways = {};
   const standing = inFire(bot), nether = /nether/.test(String(bot.game?.dimension || ''));
@@ -1021,11 +1054,15 @@ function fireWays(bot, task, onAction = () => {}) {
     ways.to_water = { description: `Run into the water ${d} blocks off at (${pond.x}, ${pond.y}, ${pond.z}): about ${round(Math.max(0.3, d / SPRINT))} seconds at a sprint, burning meanwhile, and the fire is out.`,
       run: () => intoWater(bot, task, pond, onAction) };
   }
+  // A cauldron of water (src/cauldron.js, note 634): in the Nether too, where
+  // nothing else puts a fire out.
+  const cauldrons = cauldronWays(bot, task, onAction, burn, hp);
+  Object.assign(ways, cauldrons);
   const left = Math.max(1, Math.round(burn.fireLeftSeconds)), drop = round(require('./body').holdDrop(hp));
   const ends = burn.burnsToDeath
     ? `about ${left} second${left === 1 ? '' : 's'} of fire left at a health a second that armour does not stop is about ${left} health, and the bot has ${hp}: it dies of the burning in about ${burn.secondsToDeath} seconds, before the fire ends, unless something puts it out first`
     : `about ${left} second${left === 1 ? '' : 's'} of fire left, a health a second that armour does not stop, about ${burn.healthItTakes} health, leaving about ${round(hp - burn.healthItTakes)}`;
-  ways.burn_out = { description: `Leave it to burn out and go on: ${ends}${nether ? '; in the Nether nothing else puts it out' : ''}. ${drop < 1 ? 'Asked again at the next hurt of the burning' : `Asked again at about ${round(Math.max(0, (bot.health ?? 20) - require('./body').holdDrop(bot.health)))} health (${drop} more)`}, or when another way to put it out comes.`,
+  ways.burn_out = { description: `Leave it to burn out and go on: ${ends}${nether ? (Object.keys(cauldrons).length ? '; in the Nether only a cauldron\'s water puts it out' : '; in the Nether nothing else puts it out') : ''}. ${drop < 1 ? 'Asked again at the next hurt of the burning' : `Asked again at about ${round(Math.max(0, (bot.health ?? 20) - require('./body').holdDrop(bot.health)))} health (${drop} more)`}, or when another way to put it out comes.`,
     hold: 15, run: async () => false };
   if (apple) ways.eat_golden_apple = eat();
   // The old rule: the bucket poured where it can be, else (none carried)
