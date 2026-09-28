@@ -20,6 +20,10 @@ const plankMaterials = Object.keys(recipes).filter(name => name.endsWith('_plank
 // blast.
 const LAST_MATERIALS = new Set([...['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue',
   'brown', 'green', 'red', 'black'].map(c => `${c}_wool`), 'nether_wart_block', 'warped_wart_block']);
+// The woods of the Nether: full blocks that do not burn (the oak family does,
+// beside lava), laid in a span or a pillar when the rock is gone (note 635).
+const NETHER_WOOD = ['warped_planks', 'crimson_planks', 'warped_stem', 'crimson_stem', 'warped_hyphae', 'crimson_hyphae',
+  'stripped_warped_stem', 'stripped_crimson_stem', 'stripped_warped_hyphae', 'stripped_crimson_hyphae'];
 const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', ...plankMaterials, 'andesite', 'diorite', 'granite', 'stone',
   'netherrack', 'nether_bricks', 'blackstone', 'basalt', 'tuff', 'deepslate', 'end_stone', ...LAST_MATERIALS]);
 // The stack a block is put from: one of `need` or more, the wool and the
@@ -206,4 +210,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, solid, replaceable };
+module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable };

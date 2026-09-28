@@ -179,7 +179,9 @@ async function pillarUp(bot, task, targetY, { dig, maxBlocks = 40, threats = tru
       await dig(bot, task, head, { requireDrops: false });
       continue;
     }
-    const block = bot.inventory.items().find(i => blocks.includes(i.name));
+    // In the order the kinds are listed, not the pack's: rock before wood
+    // before the gravel that falls.
+    const block = blocks.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
     if (!block) break;
     await bot.equip(block, 'hand');
     await bot.look(bot.entity.yaw, -Math.PI / 2, true);
@@ -228,4 +230,4 @@ function pillarSite(bot, targetY, target, { radius = 5 } = {}) {
   return sites.sort((a, b) => far(a) - far(b))[0] || null;
 }
 
-module.exports = { pillarHeight, pillarDescent, descendPillar, pillarUp, pillarSite, climbStop, SCAFFOLD };
+module.exports = { pillarHeight, pillarDescent, descendPillar, pillarUp, pillarSite, climbStop, SCAFFOLD, DIGGABLE_ABOVE };

@@ -31,7 +31,9 @@ const solid = n => !!n && !open(n) && !isLava(n);
 // warped wart blocks carried, the one block offered to put was gravel. And
 // the wools (shelter.js LAST_MATERIALS, note 619), all before the gravel
 // and the sand, which fall.
-const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'nether_wart_block', 'warped_wart_block', ...require('./shelter').LAST_MATERIALS, 'gravel', 'sand'];
+// The nether woods after the wart blocks (note 635): a bot at the end of its
+// span with five warped stems and a gravel was offered the gravel only.
+const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'nether_wart_block', 'warped_wart_block', ...require('./shelter').NETHER_WOOD, ...require('./shelter').LAST_MATERIALS, 'gravel', 'sand'];
 const ORE = /_ore$/;
 // Stone and ore take a pickaxe; the rest comes away in the hand.
 function digSeconds(name, view, inWater) {
@@ -178,6 +180,71 @@ function ownSays(view, p) {
   return laid ? `, a block the bot laid itself${Number.isFinite(laid.at) ? ` at ${hhmm(laid.at)}Z` : ''}` : '';
 }
 
+// The blocks a pillar is built of, in the order they are put down: the rock
+// kinds a pillar has always been built of, then what a span is laid with, the
+// nether woods, the wool, and last what falls (put on a floor that holds it).
+const pillarBlocks = () => [...new Set([...require('./pillar-recovery').SCAFFOLD, ...PLACEABLE])];
+const listed = carried => Object.entries(carried).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k.replaceAll('_', ' ')}`).join(', ');
+
+// Straight up through the rock over the head, out into open space above it
+// (note 635): the way off a span in the lava sea, whose every step is a drop
+// into lava. mid-242-ae-nether-2-fortress-6 stood fifty minutes at the end of
+// its own span at y 40, its moves one block each (a pillar of gravel that
+// never went down, a step onto nothing), with air six blocks up, then
+// fourteen of netherrack, then a cave floor: a column the pillar routine
+// (pillar-recovery.js pillarUp, which digs what is over the head and lays a
+// block under the feet) climbs, each block dug funding the next to lay. Null
+// when there is nothing to climb (no rock over the head, or open air to the
+// limit); otherwise { move } or { blocked: why it is not offered }.
+function risePlan(view, feet, { reach = 48 } = {}) {
+  if (isWater(view.name(feet)) || !solid(view.name(feet.plus(DOWN)))) return null;
+  const headName = view.name(feet.plus(UP));
+  if (headName == null || !open(headName) || isWater(headName)) return null;
+  const { DIGGABLE_ABOVE } = require('./pillar-recovery');
+  const rock = [];
+  let top = null, blocked = null, firstRock = null;
+  for (let y = feet.y + 1; y <= feet.y + reach; y++) {
+    const c = new Vec3(feet.x, y, feet.z), n = view.name(c);
+    if (n == null) { blocked = 'the rest of the column is not loaded'; break; }
+    if (isLava(n) || isWater(n)) { blocked = `${n} in the column at y ${y}`; break; }
+    const wet = Object.values(DIRS).map(d => c.plus(d)).find(q => isLava(view.name(q)) || isWater(view.name(q)));
+    if (wet) { blocked = `${view.name(wet).replaceAll('_', ' ')} beside the column at (${wet.x}, ${wet.y}, ${wet.z})`; break; }
+    if (open(n)) {
+      const next = view.name(c.plus(UP));
+      if (rock.length && next != null && open(next) && !isWater(next) && !isLava(next)) { top = y; break; }
+      continue;
+    }
+    if (!DIGGABLE_ABOVE.test(n) || falls(n)) { blocked = `${n.replaceAll('_', ' ')} in the way at y ${y}${falls(n) ? ', and it would fall on the head' : ''}`; break; }
+    if (firstRock === null) firstRock = y;
+    rock.push({ y, name: n });
+  }
+  if (!rock.length && !blocked) return null;
+  if (top === null && !blocked) blocked = `no open space above the rock within ${reach} blocks`;
+  if (blocked) return { blocked: `rise straight up through the rock over the head: ${blocked}` };
+  const rise = top - feet.y;
+  // What is laid before the first dig comes from the pack: the pillar puts a
+  // block down under each rise, and clears the cell over the head first.
+  const before = Math.max(0, firstRock - feet.y - 2);
+  const blocks = pillarBlocks();
+  const carried = Object.fromEntries(blocks.filter(n => (view.carried?.[n] || 0) > 0).map(n => [n, view.carried[n]]));
+  const have = Object.values(carried).reduce((a, b) => a + b, 0);
+  const uses = view.pickaxe ? (Number.isFinite(view.pickaxeUses) ? view.pickaxeUses : Infinity) : 0;
+  const funds = new Set([...require('./pillar-recovery').SCAFFOLD, 'stone']);
+  let left = uses, seconds = rise, drops = 0;
+  for (const r of rock) {
+    const withTool = left > 0 && view.pickaxe;
+    if (withTool) { left--; if (funds.has(r.name)) drops++; }
+    seconds += withTool ? (digSeconds(r.name, view, false) ?? 1.2) : /netherrack|basalt|blackstone|_nylium|soul|dirt|gravel|sand/.test(r.name) ? 2 : 7.5;
+  }
+  const kinds = [...new Set(rock.map(r => r.name.replaceAll('_', ' ')))].slice(0, 3).join(', ');
+  const tool = view.pickaxe ? `the ${view.pickaxe.replaceAll('_', ' ')}${Number.isFinite(view.pickaxeUses) ? ` (${view.pickaxeUses} uses left${view.pickaxeUses < rock.length ? `, the last ${rock.length - view.pickaxeUses} by hand, which drop nothing` : ''})` : ''}` : 'bare hands (nothing dropped)';
+  if (have < before) return { blocked: `rise straight up through the rock over the head: ${before} blocks to lay before the rock, ${have} carried that can be laid` };
+  if (have + drops < rise) return { blocked: `rise straight up through the rock over the head: ${rise} blocks to lay in all, ${have} carried and ${drops} dropped by the rock dug on the way` };
+  const airCells = firstRock - feet.y - 1;
+  const does = `Rise straight up through the rock over the head: ${airCells} block${airCells === 1 ? '' : 's'} of open air, then ${rock.length} of ${kinds}, dug from below with ${tool}, then open space at y ${top} (${rise} up, at (${feet.x}, ${top}, ${feet.z})). A block goes under the feet at each of the ${rise} steps: the first ${before} from the pack (${listed(carried)}), the rest from the rock dug on the way (${drops} dropped). About ${Math.round(seconds)} seconds. The shaft is one block wide, with no lava or water in or beside it and nothing over the head that falls; it ends on the rock's top, not over the drop under this span.`;
+  return { move: { key: 'rise_through', does, kind: 'rise', top, rise, blocks, seconds: Math.round(seconds), effects: [] } };
+}
+
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
@@ -288,6 +355,9 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
   const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
   if (block && !inWater && headroom && solid(view.name(feet.plus(DOWN)))) moves.push({ key: 'pillar', does: `Jump and put a ${block.replaceAll('_', ' ')} under the feet: up a block where it stands.`, kind: 'pillar', block, to: feet.plus(UP), ...where(feet.plus(UP)) });
+  const rising = risePlan(view, feet);
+  if (rising?.move) moves.push(rising.move);
+  else if (rising?.blocked) notOffered.push(rising.blocked);
   // Down: dig the floor, when not over water or lava.
   const floor = feet.plus(DOWN), floorName = view.name(floor);
   if (!inWater && diggable(view, floor, floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
@@ -304,7 +374,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
-    : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, feet.z - from.z) >= 8
+    : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, (feet.y - from.y) || 0, feet.z - from.z) >= 8
       : dryFooting(view, feet) && atSurface(view, feet);
   // No dig that lets lava in beside the body: it runs into the bot's cells
   // in a second. mid-92-s, working up out of a night mine, dug the rock
@@ -408,7 +478,10 @@ function liveView(bot) {
   let lavaTouch = null;
   try { lavaTouch = terrain.lavaTouchSays(bot); } catch (_) { /* no body to price */ }
   const { laidAt } = require('./own-blocks');
-  return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p) ?? null, laid: p => laidAt(bot, p), carried, pickaxe: PICKS.find(n => carried[n]) || null,
+  const pickaxe = PICKS.find(n => carried[n]) || null;
+  const held = pickaxe && bot.inventory.items().find(i => i.name === pickaxe), most = pickaxe && bot.registry?.itemsByName?.[pickaxe]?.maxDurability;
+  const pickaxeUses = held && most ? Math.max(0, most - (held.durabilityUsed || 0)) : null;
+  return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p) ?? null, laid: p => laidAt(bot, p), carried, pickaxe, pickaxeUses,
     axe: Object.keys(carried).find(n => n.endsWith('_axe') && !n.endsWith('_pickaxe')) || null, health: bot.health ?? 20, lavaTouch,
     corrections: (() => { try { return bot.serverTruth?.says?.() || null; } catch (_) { return null; } })() };
 }
@@ -446,6 +519,7 @@ function aimFor(bot, { walksFailing = false } = {}) {
 }
 
 function moveReached(m, feet, after, { failure = null, changed = false } = {}) {
+  if (m.kind === 'rise') return !failure && after.y >= m.top;
   return !failure && (m.to ? after.x === m.to.x && after.z === m.to.z && (m.to.y <= feet.y || after.y >= m.to.y) : changed);
 }
 
@@ -501,8 +575,17 @@ async function perform(bot, task, m, { dig }) {
   if (m.kind === 'pillar') {
     // One block of the pillar routine: the look down first, the block placed
     // a tick after the feet clear the cell.
-    const placed = await require('./pillar-recovery').pillarUp(bot, task, feet.y + 1, { dig, maxBlocks: 1, threats: false });
+    // With the block the move names: pillarUp's own list is the rock kinds,
+    // and a pillar of the gravel offered failed 48 times on 25586 with "The
+    // block did not go under the feet" (note 635).
+    const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
+    const placed = await pillarUp(bot, task, feet.y + 1, { dig, maxBlocks: 1, threats: false, blocks: [m.block, ...SCAFFOLD] });
     if (!placed) throw new Error('The block did not go under the feet');
+    return;
+  }
+  if (m.kind === 'rise') {
+    const placed = await require('./pillar-recovery').pillarUp(bot, task, m.top, { dig, maxBlocks: m.rise + 4, blocks: m.blocks });
+    if (!placed) throw new Error('The pillar would not rise');
   }
 }
 
@@ -591,4 +674,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

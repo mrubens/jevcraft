@@ -50,7 +50,8 @@ function spanBot({ at = new Vec3(-66.5, 56, -62.5), health = 1.1, carried = CARR
 
 test('the span\'s blocks carried count the wart blocks: thirty-two, where the crossing said 0; the rock is laid before them, and wool is not laid', () => {
   const { blocksCarried, LAID } = require('../src/bridging');
-  assert.equal(blocksCarried(spanBot()), 32);
+  // The pack also holds five warped stems and two warped planks, counted since note 635: 32 + 5 + 2.
+  assert.equal(blocksCarried(spanBot()), 39);
   assert.equal(blocksCarried(spanBot({ carried: [['netherrack', 3], ['warped_wart_block', 5], ['white_wool', 9]] })), 8);
   assert(LAID.indexOf('netherrack') < LAID.indexOf('warped_wart_block'));
   assert(!LAID.some(n => /wool/.test(n)));

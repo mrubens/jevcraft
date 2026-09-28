@@ -25,7 +25,14 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // cavern floor and stopped at its end "out of blocks (0 carried)" with
 // thirty-two warped wart blocks in the pack, 98 blocks from the portal
 // (note 622). Wool is left out: it burns, and lava sets it alight.
-const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block'];
+// The nether woods too, last (note 635; shelter.js NETHER_WOOD): full blocks
+// that do not burn, and what a bot in the Nether has when the rock is gone.
+// mid-242-ae-nether-2-fortress-6 stood at the end of its span over the lava
+// sea with five warped stems, a warped plank and fourteen gravel, was told
+// "0 blocks carried" by every price of the way back, and crafted its stems
+// into planks for cover. The oak family burns beside lava and is left out.
+const { NETHER_WOOD } = require('./shelter');
+const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', ...NETHER_WOOD];
 const material = bot => LAID.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
@@ -419,4 +426,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NATURAL };
+module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

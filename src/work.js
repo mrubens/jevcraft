@@ -311,7 +311,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     }
   } };
   const walled = terrain ? (() => { try { const u = require('./unstuck'); return u.walledSays(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
-  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.${walled ? ` It is ${walled}.` : ''}`,
+  // A way straight up through rock overhead, when there is one (note 635):
+  // the stall's answer is a choice of local moves, and on a span over the lava
+  // sea none of the single blocks led anywhere.
+  const rising = terrain ? (() => { try { const u = require('./unstuck'); return u.risePlan(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
+  const risingSays = rising?.move ? ` One of its moves is a rise straight up through the rock over the head, ${rising.move.rise} blocks to open space at y ${rising.move.top}, about ${rising.move.seconds} seconds, with the blocks it lays taken from the pack and then the rock dug on the way.` : '';
+  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}.${walled ? ` It is ${walled}.` : ''}${risingSays}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the

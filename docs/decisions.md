@@ -167,9 +167,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `(step\|climb\|place\|bridge)_(north\|east\|south\|west)` (pattern) | root | walk, climb, place a block or bridge a gap in the floor that way | the cells that way allow it |
+| `(step\|climb\|place\|bridge\|take_floor)_(north\|east\|south\|west)` (pattern) | root | walk, climb, place a block, bridge a gap in the floor that way, or take up a block of the floor the bot laid itself there | the cells that way allow it |
 | `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
-| `dig_up\|dig_down\|swim_up\|pillar` (pattern) | root | dig over the head or underfoot, swim up, or pillar | what is over the head or underfoot allows it |
+| `dig_up\|dig_down\|swim_up\|pillar\|rise_through` (pattern) | root | dig over the head or underfoot, swim up, pillar, or rise straight up through the rock over the head | what is over the head or underfoot allows it; the rise says the air, the rock and the open space above it, the blocks it lays and where they come from (the pack, then the rock dug on the way), and how long it takes |
 | `ask_server` | root | ask the server what the blocks round the body are, and take its answer for the view | the server put the body back where it was several times within five minutes near here (a body it will not let move where the view says it can); said with how many times, and what an earlier asking found |
 
 ### `way_down`
