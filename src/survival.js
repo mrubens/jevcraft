@@ -511,7 +511,18 @@ function shotOverEdge(bot, feet, health = bot.health ?? 20) {
     return { says: ` Walled here toward the push: a ${word} from the ${said} ${Math.round(p.distance)} blocks off (${p.visible ? 'in sight' : 'out of sight now; it flies'}) pushes the bot away from it, ${toward}, into a block or onto ground with no drop beside it.${floorSays}`,
       walled: floorSays, deadly: floorDeadly, pusher: pusherSaid, drop };
   }
-  const says = ` Open here to the ${said} ${Math.round(p.distance)} blocks off (${seen})${more}: one ${word} that lands pushes the bot off its feet, and the drop ${where} is ${fall}. So a ${word} that lands here is priced by that fall, not by its ${hit ?? 'own'} damage: ${deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}. A wall at the open sides stops the push; a block in the line stops the ${word} only while the line stays there.${floorSays}`;
+  // The shots already due, said on every stance that stays open: the
+  // volley on its way is not the average rate (note 617).
+  let dueNow = '';
+  try {
+    const due = pushers.map(t => shotsDue(bot, t)).filter(k => k?.shots.length);
+    if (due.length) {
+      const lands = Math.round((1 - due.reduce((m, k) => m * (1 - k.each) ** k.shots.length, 1)) * 100);
+      const by = Math.max(...due.map(k => k.shots.at(-1).in));
+      dueNow = ` Due now: ${dueSays(due)}; at least one lands about ${lands} in 100 within ${by} seconds, and one that lands while the bot is still open here is that push.`;
+    }
+  } catch (_) { dueNow = ''; }
+  const says = ` Open here to the ${said} ${Math.round(p.distance)} blocks off (${seen})${more}: one ${word} that lands pushes the bot off its feet, and the drop ${where} is ${fall}. So a ${word} that lands here is priced by that fall, not by its ${hit ?? 'own'} damage: ${deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}. A wall at the open sides stops the push; a block in the line stops the ${word} only while the line stays there.${dueNow}${floorSays}`;
   // The walled stances, priced the same way: with the wall up, the shot
   // costs what it costs.
   const walled = floor ? ` Walled, a ${word} that lands here pushes the bot into the wall, not over the drop beside it.${floorSays}` : ` Walled, a ${word} that lands here costs its ${hit ?? 'own'} damage and a push into the wall, not the fall${drop.into === 'lava' ? ' into the lava' : ''}.`;
@@ -787,7 +798,7 @@ function footingStep(bot, footing, pusher, { health = bot.health ?? 20 } = {}) {
   // the ghast keeps its line one is fired each three seconds, so about the
   // seconds that takes in three.
   const early = passes ? Math.min(seconds, FIREBALL_MEETS / (across / flight)) : null;
-  const chance = passes ? Math.round(Math.min(1, early / require('./ghast').GHAST.every) * 100) : Math.round(shotChanceIn(p, seconds) * 100);
+  const chance = passes ? Math.round(Math.min(1, early / require('./ghast').GHAST.every) * 100) : Math.round(shotChanceNow(bot, seconds, [pusher]).chance * 100);
   return { seconds, beside, crouched: nether && beside > 0, chance, early: early == null ? null : Math.round(early * 10) / 10, pusher: p, across, flight, passes };
 }
 // Said on turn_priority, on the survival claim and the work's option, and
@@ -842,15 +853,129 @@ function shotChanceIn(pusher, seconds) {
   if (pusher.name === 'blaze') return Math.min(1, seconds / ce.FIREBALL.volleySeconds) * ce.volleyHit(pusher.distance);
   return Math.min(1, seconds / (ce.MOBS[pusher.name]?.every || 2));
 }
-function openWhileBuildingSays(over, seconds, what) {
+// What is known now of a shooter's next shots, beyond its average rate
+// (note 617): the fireballs already in the air at the bot, and a blaze's
+// volley once it glows. A blaze glows (its flags' bit 1, sent to the
+// client) for three seconds, fires three 0.3 seconds apart and rests five
+// (Blaze$BlazeAttackGoal: 60 ticks charging, 6 between shots, 100
+// resting): glowing, its three are on their way within 3.6 seconds; not
+// glowing, none of its comes sooner than the glow and the flight. mid-242-
+// ah-fortress-5 stood a block from an edge over the lava sea with two
+// blazes 14 and 15 off, the farther glowing: shield_policy was asked for a
+// shot on its way, and the stance a moment later priced the rail at "about
+// 8 in 100 that a fireball lands first" and the cover at 12, by the
+// average of a volley every nine seconds. Its volley was in the air as it
+// answered; the first fireball landed 0.9 seconds later, before a block
+// was down, and pushed the bot a block west, off the edge, 23 into the
+// lava. null for a shooter nothing more is known of (the rate stands).
+// { shots: [{ in, air }], each, after, glowing, glowKnown, flight }: each
+// shot's seconds until it reaches the bot, the chance each lands, and the
+// seconds after which shots not yet scheduled can come.
+function shotsDue(bot, t, now = Date.now()) {
+  const e = t?.entity, name = e?.name;
+  if (!e?.position || (name !== 'blaze' && name !== 'ghast')) return null;
+  const ghast = require('./ghast'), ce = require('./combat-estimate');
+  const distance = t.distance ?? e.position.distanceTo(bot.entity.position);
+  const flight = name === 'ghast' ? ghast.outSeconds(distance) : ghast.flightSeconds(distance);
+  const kind = name === 'blaze' ? 'small_fireball' : 'fireball';
+  // A shot in the air at the bot: between this shooter and the bot, within
+  // three blocks of the line from one to the other, and nearer that line
+  // than to any other shooter of its kind's. Read by where it is, not its
+  // velocity, which a fireball's often lacks (note 382).
+  const eye = bot.entity.position.offset(0, 1.5, 0);
+  const lineOff = (s, from) => {
+    const to = eye.minus(from), n = to.norm();
+    if (n < 1e-6) return null;
+    const off = s.position.minus(from), along = off.dot(to) / n;
+    if (along < -1 || along > n) return null;
+    return { along, perp: Math.sqrt(Math.max(0, off.dot(off) - along * along)), total: n };
+  };
+  const shooters = Object.values(bot.entities || {}).filter(o => o?.name === name && o.position && o.isValid !== false);
+  const shots = [];
+  for (const s of Object.values(bot.entities || {})) {
+    if (s?.name !== kind || !s.position || s.isValid === false) continue;
+    const mine = lineOff(s, e.position);
+    if (!mine || mine.perp > 3) continue;
+    // One going away from the bot (struck back at a ghast) is not coming.
+    const v = s.velocity;
+    if (v && Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z) >= 0.05 && eye.minus(s.position).dot(v) < 0) continue;
+    if (shooters.some(o => o !== e && (lineOff(s, o.position)?.perp ?? Infinity) < mine.perp)) continue;
+    const flown = ghast.flightSeconds(Math.max(0, mine.along));
+    shots.push({ in: Math.max(0.05, Math.round((flight - flown) * 10) / 10), air: true, flown });
+  }
+  // The next shot not scheduled here: for a ghast, three seconds after the
+  // last one fired; for a blaze, after this volley's rest and the next
+  // glow, or after the glow a blaze not glowing has still to begin.
+  let after = 0, glowing = false, glowKnown = false;
+  if (name === 'ghast' && shots.length) after = Math.max(0, ghast.GHAST.every - Math.min(...shots.map(s => s.flown)));
+  if (name === 'blaze' && e.metadata) {
+    const stand = require('./blaze-stand');
+    stand.volleyWatch(bot);
+    const { glow, shots: at, rest } = stand.VOLLEY;
+    if (stand.charged(e)) {
+      glowing = true;
+      const lit = e._glowAt ? (now - e._glowAt) / 1000 : null;
+      glowKnown = lit != null;
+      // Not yet fired: those of the three still ahead of the glow's clock,
+      // or, not seen since it began, all but those in the air, the first
+      // at once.
+      const ahead = lit != null ? at.map(s => s - lit).filter(s => s > 0) : Array.from({ length: Math.max(0, at.length - shots.length) }, (_, i) => i * (at[1] - at[0]));
+      for (const f of ahead) shots.push({ in: Math.round((f + flight) * 10) / 10, air: false });
+      after = (ahead.length ? Math.max(...ahead) : 0) + rest + glow;
+    } else after = (e._restAt ? Math.max(0, rest - (now - e._restAt) / 1000) : 0) + glow;
+  }
+  if (!shots.length && !(name === 'blaze' && e.metadata)) return null;
+  shots.sort((a, b) => a.in - b.in);
+  // A blaze's fireball lands by its aim's scatter at this distance; a
+  // ghast's goes where the bot was as it fired, and a body standing there
+  // is met.
+  const each = name === 'blaze' ? ce.fireballHit(distance) : 1;
+  return { name, distance, shots, each, after: after + flight, glowing, glowKnown, flight };
+}
+// The chance a shot from any of `pushers` lands within `seconds`: what is
+// known of each (shotsDue), and past it each one's average rate.
+function shotChanceNow(bot, seconds, pushers = shotPushers(bot)) {
+  if (!(seconds > 0)) return { chance: 0, due: [] };
+  let miss = 1;
+  const due = [];
+  for (const t of pushers) {
+    const p = { name: t.entity?.name, distance: t.distance, visible: !!t.visible };
+    let known = null;
+    try { known = shotsDue(bot, t); } catch (_) { known = null; }
+    if (!known) { miss *= 1 - shotChanceIn(p, seconds); continue; }
+    const within = known.shots.filter(s => s.in <= seconds).length;
+    miss *= (1 - known.each) ** within * (1 - shotChanceIn(p, Math.max(0, seconds - known.after)));
+    if (known.shots.length) due.push({ ...known, within, visible: p.visible });
+  }
+  return { chance: Math.min(1, 1 - miss), due };
+}
+// The shots due, in words: "the blaze 15 blocks off is glowing now: its
+// volley of three is due, at the bot in about 0.3, 0.6 and 0.9 seconds,
+// each landing about 24 in 100".
+function dueSays(due) {
+  return due.map(k => {
+    const said = k.name.replaceAll('_', ' '), word = shotWord(k.name), air = k.shots.filter(s => s.air).length;
+    const times = k.shots.slice(0, 3).map(s => s.in);
+    const when = times.length === 1 ? `${times[0]} seconds` : `${times.slice(0, -1).join(', ')} and ${times.at(-1)} seconds`;
+    const what = k.glowing
+      ? `is glowing now${k.glowKnown ? '' : ' (since when is not known, so its shots may come at once)'}, its volley of three due${air ? ` (${air} of it in the air already)` : ''}`
+      : `has ${air === 1 ? `a ${word}` : `${air} ${word}s`} in the air at the bot now, due`;
+    return `the ${said} ${Math.round(k.distance)} blocks off ${what} at the bot in about ${when}, each ${k.each >= 1 ? 'meeting a body that stands where it was aimed' : `landing about ${Math.round(k.each * 100)} in 100`}`;
+  }).join('; ');
+}
+function openWhileBuildingSays(bot, over, seconds, what) {
   if (!over || !(seconds > 0)) return '';
   const p = over.pusher, word = shotWord(p.name), said = p.name.replaceAll('_', ' ');
   const ce = require('./combat-estimate');
   const rate = p.name === 'ghast' ? `one ${word} every ${require('./ghast').GHAST.every} seconds while it has a line${p.visible ? ' (one may be on its way already)' : ', once it has a line again'}`
     : p.name === 'blaze' ? `a volley of three about every ${Math.round(ce.FIREBALL.volleySeconds)} seconds, at least one of it landing from ${Math.round(p.distance)} blocks about ${Math.round(ce.volleyHit(p.distance) * 100)} in 100`
       : `a shot about every ${ce.MOBS[p.name]?.every || 2} seconds`;
-  const chance = Math.round(shotChanceIn(p, seconds) * 100);
-  return ` Until ${what} stands, about ${Math.round(seconds * 10) / 10} seconds, the bot is open over the drop: the ${said} ${Math.round(p.distance)} blocks off fires ${rate}, so ${chance >= 100 ? `a ${word} can all but surely land first` : `about ${chance} in 100 that a ${word} lands first`}, and one that lands before then is the push over the drop: ${over.deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}, whatever the damage figure says.`;
+  const pushers = shotPushers(bot);
+  const now = pushers.length ? shotChanceNow(bot, seconds, pushers) : { chance: shotChanceIn(p, seconds), due: [] };
+  const chance = Math.round(now.chance * 100);
+  const more = pushers.length > 1 ? ` (the ${pushers.length - 1} more that can shoot it here counted with it)` : '';
+  const due = now.due.length ? `; ${dueSays(now.due)}` : '';
+  return ` Until ${what} stands, about ${Math.round(seconds * 10) / 10} seconds, the bot is open over the drop: the ${said} ${Math.round(p.distance)} blocks off fires ${rate}${due ? `${due}; so` : ', so'} ${chance >= 100 ? `a ${word} can all but surely land first` : `about ${chance} in 100 that a ${word} lands first`}${more}, and one that lands before then is the push over the drop: ${over.deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}, whatever the damage figure says.`;
 }
 // An escape's way counted against a push, as a stance standing still is
 // (shotOverEdge): the cells of the walk beside a fall that kills (the fire
@@ -884,9 +1009,10 @@ function routeEdge(bot, cells, { health = bot.health ?? 20 } = {}) {
   const ce = require('./combat-estimate');
   const rate = pusher.name === 'ghast' ? `one ${word} every ${require('./ghast').GHAST.every} seconds while it has a line`
     : pusher.name === 'blaze' ? `a volley of three about every ${Math.round(ce.FIREBALL.volleySeconds)} seconds` : `a shot about every ${ce.MOBS[pusher.name]?.every || 2} seconds`;
-  const chance = Math.round(shotChanceIn(pusher, seconds) * 100);
+  const now = shotChanceNow(bot, seconds, pushers), chance = Math.round(now.chance * 100);
+  const due = now.due.length ? `; ${dueSays(now.due)}` : '';
   return { beside: beside.length, cells, seconds, chance, drop: worst,
-    says: ` ${beside.length} of the ${cells.length} cell${cells.length === 1 ? '' : 's'} of its way lie${beside.length === 1 ? 's' : ''} beside ${drop}, walked ${nether ? 'crouched (a step does not go over the edge; a push still throws the body)' : 'upright'}: about ${seconds} seconds beside it, while the ${said} ${Math.round(pusher.distance)} blocks off fires ${rate}, so ${chance >= 100 ? `a ${word} can all but surely land on the way` : `about ${chance} in 100 that a ${word} lands on the way`}, and one that lands there is the push over the drop.` };
+    says: ` ${beside.length} of the ${cells.length} cell${cells.length === 1 ? '' : 's'} of its way lie${beside.length === 1 ? 's' : ''} beside ${drop}, walked ${nether ? 'crouched (a step does not go over the edge; a push still throws the body)' : 'upright'}: about ${seconds} seconds beside it, while the ${said} ${Math.round(pusher.distance)} blocks off fires ${rate}${due ? `${due}; so` : ', so'} ${chance >= 100 ? `a ${word} can all but surely land on the way` : `about ${chance} in 100 that a ${word} lands on the way`}, and one that lands there is the push over the drop.` };
 }
 // The open sides a push goes toward first: a push goes away from what
 // pushes (a shot's blast from where it lands, on the shooter's side of the
@@ -4189,10 +4315,10 @@ class Survival {
     if (edgeNow?.walledNow) for (const [k, o] of Object.entries(options)) o.description += edgeNow.says + (k === 'keep_working' ? edgeNow.leaving : '');
     if (over) for (const [k, o] of Object.entries(options)) {
       if (k === 'rail_and_fight' || (k === 'hold_on_span' && spanWalled)) {
-        o.description += openWhileBuildingSays(over, k === 'rail_and_fight' ? railWindow : holdWindow, 'the wall on the side a push goes') + over.walled;
+        o.description += openWhileBuildingSays(bot, over, k === 'rail_and_fight' ? railWindow : holdWindow, 'the wall on the side a push goes') + over.walled;
         continue;
       }
-      if (k === 'take_cover' && coverWindow) o.description += openWhileBuildingSays(over, coverWindow, `the first block in the ${shotWord(over.pusher.name)}'s line`);
+      if (k === 'take_cover' && coverWindow) o.description += openWhileBuildingSays(bot, over, coverWindow, `the first block in the ${shotWord(over.pusher.name)}'s line`);
       if (CLOSES_THE_DROP.has(k) || k === 'out_of_the_push') continue;
       o.description += over.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that throws the bot over.' : '');
       // Where the push cannot carry it over, said beside it (note 612).
@@ -8409,4 +8535,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
