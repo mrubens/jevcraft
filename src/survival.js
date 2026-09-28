@@ -4402,7 +4402,12 @@ class Survival {
         }
       }
     }
-    const failed = why => { setAside(this, 'shelter_method', method, why, 180000); if (this.state.nightPlan?.method === method) delete this.state.nightPlan.method; save(); return true; };
+    // A way that fails rests, and the question is asked again next pass
+    // (true). A way the caller gave (the emergency's saved site) is not the
+    // question's: its failure is nothing done, and the caller answers
+    // another way (false). Returned true, the emergency took the refusal
+    // for its answer every pass (mid-242-ag, note 593).
+    const failed = why => { setAside(this, 'shelter_method', method, why, 180000); if (this.state.nightPlan?.method === method) delete this.state.nightPlan.method; save(); return !given; };
     if (['seal_here', 'shaft_pocket', 'night_mine'].includes(method)) return (await this.shelterBy(task, goal, save, method)) || failed(`${method.replaceAll('_', ' ')} did not work here`);
     // The bed nook: slept in now at bedtime; before it, the pocket sealed
     // here, and the nook dug from inside it at bedtime (the pocket's step).
@@ -6499,7 +6504,11 @@ class Survival {
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
         ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
         : 'leave';
-      const key = `${watcher?.entity.name || ''}|${night}|${!!bedNear}|${Object.keys(options).sort().join(',')}`;
+      // For this pocket: an answer given in another is not this one's.
+      // mid-242-ag's leave, chosen in a shaft pocket forty seconds before,
+      // opened the pocket Jev had just chosen to seal against a skeleton,
+      // twice, the moment it closed, with no question (note 593).
+      const key = `${pos(refuge.origin)}|${watcher?.entity.name || ''}|${night}|${!!bedNear}|${Object.keys(options).sort().join(',')}`;
       const held = this.state.pocketPlan?.key === key && this.state.pocketPlan.until > Date.now() && options[this.state.pocketPlan.choice] ? this.state.pocketPlan.choice : null;
       // The nook Jev chose for tonight when the pocket was sealed (shelter
       // method bed_nook) is carried out at bedtime, not asked again.
@@ -6569,7 +6578,14 @@ class Survival {
       // skeleton at 1.5 to 2.1 blocks, no stance asked and no swing, 17.1 to
       // none (note 520). The pocket's state is said on the stance.
       const adjacent = biterAtArm(bot) || threats(bot).some(t => t.distance <= 3 && (t.visible || canStrike(bot, t.entity)));
-      if (!adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) {
+      // The saved site's seal is the rule's answer, and only without Jev:
+      // with Jev reachable the encounter is its question (note 549), a
+      // pocket where the bot stands among the stances. mid-242-ag stood
+      // beside a two-day-old pocket over a pool, the seal of it refused
+      // every pass as out of reach and counted as done, 508 times in
+      // thirty-three seconds, while a skeleton 4.5 blocks off shot it from
+      // twenty to none: no stance asked, no swing, no shield (note 593).
+      if (!encounterJudgments(this) && !adjacent && refuge && pos(refuge.origin).distanceTo(bot.entity.position) < 3 && shelter.materialStock(bot) >= shelter.missingShell(bot, refuge).length) {
         // A pass that closed nothing (a mob in a cell, the pocket resting)
         // is no answer either: the mob is, this tick.
         if (await this.refugeStep(task, goal, save, { method: 'saved_shelter' }) === false) await this.flee(task, goal, save);

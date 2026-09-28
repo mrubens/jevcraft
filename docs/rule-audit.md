@@ -68,6 +68,8 @@ choose. Line numbers are as of commit 27ef475.
   Jev explores for a village (0.61).
 - 68984f7: `night_mine_target` (the nearest of each ore, copper included
   with its use said, or a branch).
+- Note 593: a threat at hand beside a saved shelter is the stance question
+  with Jev reachable; sealing that shelter first is the fallback's rule only.
 
 The gates that remain are all on player-facing questions (intake, commands,
 builds, memory, dream): below the bar the bot asks the player, which is Jev's
