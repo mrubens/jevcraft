@@ -32,12 +32,31 @@ async function creepTo(bot, task, cell, ms = 2500, keys = ['forward']) {
 // digs (tunneling.js safeExcavation). The span dug through the wall of the
 // lava sea otherwise.
 const BURNS = /lava|fire/;
+// Nor a block laid or dug beside a floor that falls with it: gravel or sand
+// resting on the lava sea drops on the next block changed beside it, and the
+// body standing on it goes down with it (terrain.js floorDrops). The span's
+// first block, laid against the side of the gravel mid-243-af-nether-1
+// stood on at the sea's edge, dropped it and the body into the lava, 20
+// health to none (note 592). `from` is the floor the body is on when the
+// block changes; `changed` the block laid or dug.
+function floorDropsAt(bot, changed, from) {
+  const { floorDrops, floorDropDeadly, atOf } = require('./terrain');
+  const h = floorDrops(atOf(bot), from, changed);
+  return floorDropDeadly(h, bot.health ?? 20) ? h : null;
+}
+function guardFloor(bot, changed, what) {
+  const feet = require('./terrain').restingCell(bot) || bot.entity.position.floored();
+  const from = feet.offset(0, -1, 0);
+  const h = floorDropsAt(bot, changed, from);
+  if (h) throw new Error(`Not ${what} at ${changed}: ${require('./terrain').floorDropSays(h, from)}`);
+}
 async function clear(bot, task, p) {
   const block = bot.blockAt(p);
   if (block && BURNS.test(block.name)) throw new Error(`Lava in the way at ${p}`);
   if (passable(block)) return;
   if (!block.diggable || !NATURAL.test(block.name)) throw new Error(`The span is blocked by ${block.name}`);
   if (!require('./tunneling').safeExcavation(bot, p)) throw new Error(`Lava or water behind the ${block.name.replaceAll('_', ' ')} at ${p}`);
+  guardFloor(bot, p, 'dug');
   await equipBestTool(bot, block); task.check();
   await bot.dig(block, true);
 }
@@ -76,6 +95,8 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
       if (passable(b)) continue;
       if (!b.diggable || !NATURAL.test(b.name)) { why = `${b.name.replaceAll('_', ' ')} in the way`; break; }
       if (!require('./tunneling').safeExcavation(bot, p)) { why = `lava or water behind the ${b.name.replaceAll('_', ' ')}`; break; }
+      const drops = floorDropsAt(bot, p, here.offset(0, -1, 0));
+      if (drops) { why = floorSays(drops, here); break; }
       dig++;
       // With the tool the dig would take (skills.js cheapestTool).
       if (typeof b.digTime === 'function' && bot.inventory?.items) { const type = tool !== undefined ? tool : require('./skills').cheapestTool(bot, b)?.type ?? null; digMs += b.digTime(type, false, false, false, [], {}); }
@@ -83,6 +104,8 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
     const floor = bot.blockAt(next.offset(0, -1, 0));
     const lay = !solid(floor);
     if (!why && lay && out.bridge + 1 > carried) why = `out of blocks (${carried} carried)`;
+    const drops = !why && lay && floorDropsAt(bot, next.offset(0, -1, 0), here.offset(0, -1, 0));
+    if (drops) why = floorSays(drops, here);
     if (why) { out.stoppedBy = why; digMs = before; break; }
     out.cells++; out.dig += dig;
     if (lay) { out.bridge++; if (lavaBelow(bot, next.offset(0, -1, 0))) out.overLava++; }
@@ -92,6 +115,8 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
   out.gain = Math.round((out.from - flat(here)) * 10) / 10;
   return out;
 }
+// Where the crossing stops for a floor that falls (floorDropsAt).
+const floorSays = (h, here) => require('./terrain').floorDropSays(h, here.offset(0, -1, 0));
 // Lava is what lies under a laid block, below the open air: the lava sea.
 function lavaBelow(bot, p, deepest = 48) {
   for (let dy = 0; dy <= deepest; dy++) {
@@ -167,6 +192,7 @@ async function span(bot, task, target, maxBlocks, maxSteps) {
       if (!item) throw new Error('No blocks to bridge with');
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
+      guardFloor(bot, next.offset(0, -1, 0), 'laid');
       await bot.equip(item, 'hand'); task.check();
       await bot.lookAt(support.position.offset(0.5 + step.x * 0.5, 0.5, 0.5 + step.z * 0.5), true);
       await bot.placeBlock(support, step);
@@ -204,6 +230,7 @@ async function crossAlong(bot, task, crossing, { navigate = null, scoop = false 
   const lay = async (ref, face, what) => {
     const item = material(bot);
     if (!item) throw new Error(`No blocks left to lay ${what}`);
+    guardFloor(bot, ref.position.plus(face), `laid ${what}`);
     await bot.equip(item, 'hand'); task.check();
     await bot.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
     await bot.placeBlock(ref, face);

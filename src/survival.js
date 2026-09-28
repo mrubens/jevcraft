@@ -870,6 +870,62 @@ function lavaRoutes(bot, feet, radius = 6) {
   }
   return out;
 }
+// How high a body in lava gets, from prismarine-physics (what the bot's own
+// body moves by) on mid-243-af-nether-1's beach, the lava sea's top at y 31
+// (note 592). Holding jump alone it bobs with the feet about 0.6 under the
+// lava's top and over it: in lava jump adds 0.04 a tick and the lava halves
+// the motion, and out of it the body falls back. Pressed against a wall with
+// room over it, the push out of a liquid (0.3 up a tick) lifts it fast, 30.1
+// to 32.4 in about a second, and no higher than about half a block over the
+// lava's top: onto a floor level with the lava's top it comes out in 1.1
+// seconds, and onto the beach's gravel, a block higher, never, bouncing
+// between 31.2 and 32.6 for ten seconds. mid-243-af-nether-1 was steered at
+// that gravel, "2 above the feet", and burned from 17.9 to none in four
+// seconds against it. The top of the lava the body is in: the highest lava
+// cell of the unbroken run up from the feet, in the columns its box
+// touches; null in none.
+const LAVA_WALL_RISE = 3, LAVA_JUMP_RISE = 0.8;
+function lavaTop(bot, p = bot.entity.position) {
+  let top = null;
+  const head = Math.floor(p.y + 1.8);
+  for (let x = Math.floor(p.x - 0.3); x <= Math.floor(p.x + 0.3); x++) for (let z = Math.floor(p.z - 0.3); z <= Math.floor(p.z + 0.3); z++) {
+    let seen = null;
+    for (let y = Math.floor(p.y); y <= head + 8; y++) {
+      if (/^(flowing_)?lava$/.test(bot.blockAt(new Vec3(x, y, z))?.name || '')) seen = y;
+      else if (seen !== null || y >= head) break;
+    }
+    if (seen !== null && (top === null || seen > top)) top = seen;
+  }
+  return top;
+}
+// The highest cell out a swim reaches: one whose floor is no higher than the
+// lava's top, or a jump up from the feet where the lava is shallower.
+const swimReach = (feet, top) => top === null ? feet.y + 1 : Math.max(feet.y + 1, top + 1);
+// Where a block put into the lava lets the body stand at the lava's top:
+// the top lava cell of the body's own column or one beside it, with room
+// over it and a block beside it to put it against, the nearest first. The
+// body presses against that block holding jump (the push out of the lava
+// lifts it), and as the feet clear the cell the block goes in under them.
+function lavaFill(bot, top) {
+  if (top === null) return null;
+  const p = bot.entity.position, feet = p.floored();
+  const solid = c => { const b = bot.blockAt(c); return b?.boundingBox === 'block' && !/lava|water/.test(b.name) ? b : null; };
+  const room = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
+  const out = [];
+  for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const cell = new Vec3(feet.x + dx, top, feet.z + dz);
+    if (!/^(flowing_)?lava$/.test(bot.blockAt(cell)?.name || '') || !room(cell.offset(0, 1, 0)) || !room(cell.offset(0, 2, 0))) continue;
+    for (const [fx, fz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const ref = solid(cell.offset(fx, 0, fz));
+      if (!ref) continue;
+      // How far the body swims to press against it: to the side of the
+      // cell it lies on.
+      const wall = Math.max(0, Math.abs((cell.x + 0.5 + fx * 0.2) - p.x) + Math.abs((cell.z + 0.5 + fz * 0.2) - p.z) - 0.1);
+      out.push({ cell, ref, face: new Vec3(-fx, 0, -fz), wall });
+    }
+  }
+  return out.sort((a, b) => a.wall - b.wall)[0] || null;
+}
 // The cells walked to reach `to`, the first step first; null with no way.
 function routeOf(routes, to) {
   const k = c => `${c.x},${c.y},${c.z}`;
@@ -941,8 +997,10 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
   const edge = c => require('./terrain').besideDrop(bot, c) ? 4 : 0;
   // A jump rises one block: a cell two up is out of reach from lava one
   // deep. mid-230-d was steered at a ledge two above its feet, hopped in
-  // place five seconds and burned (2026-09-26).
-  const high = c => c.y > feet.y + 1 ? 8 : 0;
+  // place five seconds and burned (2026-09-26). Deeper in, the swim reaches
+  // what is level with the lava's top and no higher (lavaTop, note 592).
+  const reach = swimReach(feet, lavaTop(bot));
+  const high = c => c.y > reach ? 8 : 0;
   const cost = c => far(c) + (water ? lavaBy(c) : 0) + edge(c) + high(c);
   const best = cells.sort((a, b) => cost(a) - cost(b))[0] || null;
   // The way to it, for the walk and its seconds.
@@ -5924,7 +5982,7 @@ class Survival {
     const exit = lavaExit(bot, 6, { water: true });
     const wet = exit && isWater(exit) ? exit : null;
     const dry = exit && !wet ? exit : lavaExit(bot, 6, { dryOnly: true });
-    const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
+    const { SCAFFOLD } = require('./pillar-recovery');
     const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
     // Of this dimension; one kept before the dimension was recorded counts.
     const last = this.state.lastDry && (!this.state.lastDry.dimension || String(this.state.lastDry.dimension) === String(bot.game?.dimension || '')) ? pos(this.state.lastDry) : null;
@@ -5933,11 +5991,34 @@ class Survival {
     const routes = lavaRoutes(bot, feet, 8);
     const routed = c => routes.get(`${c.x},${c.y},${c.z}`);
     const far = c => round(routed(c) ? routed(c).blocks : c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
-    const seconds = c => Math.max(0.5, round(far(c) / LAVA_BLOCKS_A_SECOND));
+    // What a swim reaches: a cell whose floor is no higher than the lava's
+    // top (lavaTop, note 592).
+    const top = lavaTop(bot), reach = swimReach(feet, top);
+    const swims = c => c.y <= reach;
+    // Across at the lava's drag, and up as it goes, jump held: the longer.
+    const rise = c => Math.max(0, c.y - bot.entity.position.y);
+    const seconds = c => Math.max(0.5, round(Math.max(far(c) / LAVA_BLOCKS_A_SECOND, rise(c) / LAVA_JUMP_RISE)));
     const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || '')));
-    const where = c => `${far(c)} blocks off ${routed(c) ? 'by the way through' : 'in a straight line'} at (${c.x}, ${c.y}, ${c.z})${c.y - feetY >= 2 ? `, ${c.y - feetY} above the feet: a jump out of lava rises one, so a walk alone does not reach it` : c.y - feetY === 1 ? ', a block up (a jump)' : ''}` +
+    const height = c => !swims(c)
+      ? `, its floor ${top !== null ? `${c.y - top - 1} above the lava's top (y ${top + 1})` : `${c.y - feetY - 1} above the feet`}: a body in lava rises no higher than about half a block over the lava's top, even pressed against a wall, so a swim does not climb onto it`
+      : c.y - feetY >= 1 ? `, ${c.y - feetY} up, its floor no higher than the lava's top (swum up to)` : '';
+    const where = c => `${far(c)} blocks off ${routed(c) ? 'by the way through' : 'in a straight line'} at (${c.x}, ${c.y}, ${c.z})${height(c)}` +
       `${lavaBy(c) ? `, lava beside it (${lavaSpreads(bot)}, so it may be lava by the time the body gets there)` : ''}${besideDrop(bot, c) ? ', beside a drop' : ''}`;
-    const said = (c, lead) => `${lead} ${where(c)}: about ${seconds(c)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava (the game's lava drag).`;
+    // What the seconds in the lava cost this body: the lava's rate through
+    // the armor worn (body.js lasts), and the burning it sets after
+    // (terrain.js lavaTouch). The ways were said in seconds only, and Jev
+    // was left to set them against "about 4.3 seconds to death" itself
+    // (mid-243-af-nether-1, note 592).
+    const hp = round(bot.health ?? 20);
+    const costs = s => {
+      const rate = require('./body').lasts(bot, 'lava').losesPerSecond;
+      if (!rate) return 'fire resistance on the body: the lava does not hurt while it lasts';
+      const inIt = round(s * rate), touch = require('./terrain').lavaTouch(bot), after = touch.burn;
+      if (inIt >= hp) return `about ${inIt} health in the lava at ${rate} a second, more than the ${hp} the bot has: death before it is out`;
+      const all = round(inIt + after);
+      return `about ${inIt} health in the lava at ${rate} a second${after ? `, then up to ${after} burning after it (${touch.nether ? 'no water to put it out in the Nether' : 'no water carried to put it out'})` : ''}: about ${all} in all, ${all >= hp ? `more than the ${hp} health the bot has unless it heals on the way` : `of the ${hp} health the bot has`}`;
+    };
+    const said = (c, lead) => `${lead} ${where(c)}: about ${seconds(c)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava (the game's lava drag)${rise(c) >= 1 ? `, rising about ${LAVA_JUMP_RISE} a second as it goes` : ''}; ${costs(seconds(c))}.`;
     const report = (way, to) => this.report(goal, save, { action: 'leave_lava', way, to: to && { x: to.x, y: to.y, z: to.z }, health: bot.health });
     // The walk out, as the old rule walked it. Out of the lava and over the
     // cell chosen is out: the keys held after that carried mid-235-a on past
@@ -5972,32 +6053,84 @@ class Survival {
     };
     const ways = {};
     const toCell = (key, c, lead, why) => { ways[key] = { description: said(c, lead), run: async () => { report(key, c); return walk(c, why); } }; };
-    if (wet) toCell('to_water', wet, 'Into the water', 'in lava: into the water, which puts the fire out');
-    if (dry) toCell('to_dry_ground', dry, 'Onto the dry cell', 'in lava: the nearest dry cell, whatever the ground');
-    // Out of reach of a jump: up on blocks placed underfoot, where the lava
-    // is, as a player pillars out of a pit.
-    const high = exit && exit.y > feetY + 1 ? exit : dry && dry.y > feetY + 1 ? dry : null;
-    if (high && scaffold) {
-      const rise = high.y - feetY;
-      ways.pillar_out = { description: `Put blocks underfoot and rise ${rise} to the way out ${where(high)}: about ${round(rise * PILLAR_SECONDS / 2)} seconds of blocks, then the step onto it; ${scaffold} scaffold blocks carried.`,
+    // Only where a swim gets out: a cell over the lava's top is the block's
+    // (pillar_out below), not a swim that bobs against it (note 592).
+    if (wet && swims(wet)) toCell('to_water', wet, 'Into the water', 'in lava: into the water, which puts the fire out');
+    if (dry && swims(dry)) toCell('to_dry_ground', dry, 'Onto the dry cell', 'in lava: the nearest dry cell, whatever the ground');
+    // Out of reach of a swim: up on a block put into the lava under the
+    // feet, where the lava is, as a player gets out of the lava sea, and the
+    // way on from there is the next question's. The pillar it was could not
+    // start in lava (pillarUp stops with lava round the body and nothing
+    // under it), so the way offered as "rise 2 ... about 1.5 seconds of
+    // blocks" was the swim at the gravel, four seconds and death
+    // (mid-243-af-nether-1, note 592).
+    const high = exit && !swims(exit) ? exit : dry && !swims(dry) ? dry : null;
+    const fill = scaffold ? lavaFill(bot, top) : null;
+    if (fill) {
+      const stand = fill.cell.offset(0, 1, 0);
+      const s = Math.max(0.5, round(fill.wall / LAVA_BLOCKS_A_SECOND + Math.max(0, stand.y + 0.05 - bot.entity.position.y) / LAVA_WALL_RISE + 0.25));
+      // The dry ground a step from the block, level or a block up.
+      const room = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name); };
+      const floorOf = c => { const b = bot.blockAt(c.offset(0, -1, 0)); return b?.boundingBox === 'block' && !/lava/.test(b.name) && !require('./terrain').hotFloor(b); };
+      let onward = null;
+      for (const dy of [0, 1]) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const c = stand.offset(dx, dy, dz);
+        if (!onward && floorOf(c) && room(c) && room(c.offset(0, 1, 0)) && (!dy || room(stand.offset(0, 2, 0)))) onward = c;
+      }
+      const on = onward ? `standing on it at the lava's top the body is out of the lava, and ${onward.y > stand.y ? 'a step up' : 'a step'} from it is dry ground at (${onward.x}, ${onward.y}, ${onward.z})`
+        : `standing on it at the lava's top the body is out of the lava, with no dry ground a step from it${high ? ` (the nearest way out is ${where(high)})` : ''}`;
+      ways.pillar_out = { description: `Press against the ${fill.ref.name.replaceAll('_', ' ')} at (${fill.ref.position.x}, ${fill.ref.position.y}, ${fill.ref.position.z}) holding jump, which lifts the body to the lava's top (the push out of a liquid against a wall), and put a block into the lava under the feet at (${fill.cell.x}, ${fill.cell.y}, ${fill.cell.z}) as they clear it: about ${s} seconds in the lava, ${costs(s)}; ${on}; ${scaffold} scaffold blocks carried.`,
         run: async () => {
-          report('pillar_out', high);
+          report('pillar_out', stand);
           bot._leavingLava = true;
-          try { await pillarUp(bot, task, high.y, { dig: this.actions.dig, maxBlocks: rise, threats: false }); }
+          let placed = false;
+          try { placed = await this.blockIntoLava(task, fill); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { bot._leavingLava = false; }
-          return inLava(bot) ? walk(high, 'in lava: onto the ledge the pillar rose to') : true;
+          return placed && !inLava(bot) ? true : walk(high, 'in lava: the block did not go in; toward the way out');
         } };
     }
     const lastLava = last && [last, last.offset(0, 1, 0)].some(p => /lava/.test(bot.blockAt(p)?.name || ''));
-    if (last) ways.back_the_way_came = { description: `Back toward the last dry footing stood on, ${far(last)} blocks off ${routed(last) ? 'by the way through' : 'in a straight line, no way through seen'} at (${last.x}, ${last.y}, ${last.z}), swimming up as it goes: about ${seconds(last)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava${lastLava ? `; it is lava now itself (${lavaSpreads(bot)})` : lavaBy(last) ? `; lava beside it (${lavaSpreads(bot)})` : ''}${far(last) > 6 ? '; farther than any cell out seen from here' : ''}.`,
+    // The footing may be gone: the gravel mid-243-af-nether-1 stood on went
+    // into the lava with it, and "the last dry footing" was the open cell
+    // over where it had been (note 592).
+    const lastFloor = last && bot.blockAt(last.offset(0, -1, 0));
+    const floorGone = !!lastFloor && lastFloor.boundingBox !== 'block';
+    if (last) ways.back_the_way_came = { description: `Back toward the last dry footing stood on, ${far(last)} blocks off ${routed(last) ? 'by the way through' : 'in a straight line, no way through seen'} at (${last.x}, ${last.y}, ${last.z})${floorGone ? `; nothing is under it now (${/lava/.test(lastFloor.name) ? 'lava' : 'open air'} where it stood), so it is no footing` : height(last)}, swimming up as it goes: about ${seconds(last)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava${lastLava ? `; it is lava now itself (${lavaSpreads(bot)})` : lavaBy(last) ? `; lava beside it (${lavaSpreads(bot)})` : ''}${far(last) > 6 ? '; farther than any cell out seen from here' : ''}; ${costs(seconds(last))}.`,
       run: async () => { report('back_the_way_came', last); return walk(last, 'in lava with no dry cell in sight: up, and back the way the bot came'); } };
-    if (!Object.keys(ways).length) ways.swim_up = { description: 'Swim straight up in the lava: no cell out within six blocks and no dry footing known.', run: async () => { report('swim_up', null); return walk(null, 'in lava with nothing out in sight: up'); } };
+    if (!Object.keys(ways).length) ways.swim_up = { description: 'Swim straight up in the lava: no cell out a swim reaches within six blocks and no dry footing known.', run: async () => { report('swim_up', null); return walk(null, 'in lava with nothing out in sight: up'); } };
     const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
     if (apple) ways.eat_golden_apple = { description: `Eat the enchanted golden apple (${countOf(bot, apple.name)} carried): about ${EAT_SECONDS} seconds eating in the lava first, then fire resistance for five minutes (the lava and burning no longer hurt), sixteen extra health as absorption and strong regeneration; the way out still to take after.`,
       run: async () => { report('eat_golden_apple', null); return eatApple(bot, task, apple); } };
-    const first = exit ? (high === exit && scaffold ? 'pillar_out' : wet ? 'to_water' : 'to_dry_ground') : last ? 'back_the_way_came' : 'swim_up';
+    const first = ways.to_water ? 'to_water' : ways.to_dry_ground ? 'to_dry_ground' : ways.pillar_out ? 'pillar_out' : last ? 'back_the_way_came' : 'swim_up';
     return ways[first] ? { [first]: ways[first], ...ways } : ways;
+  }
+
+  // The block into the lava under the feet (lavaFill): pressed against the
+  // block beside the cell, jump held, the push out of the lava lifts the
+  // body; the moment the feet are over the cell's top the block goes in
+  // under them, and the body stands on it at the lava's top. Tried until it
+  // lands or four seconds pass. True when the block is there.
+  async blockIntoLava(task, fill) {
+    const bot = this.bot;
+    const { SCAFFOLD } = require('./pillar-recovery');
+    const item = bot.inventory.items().find(i => SCAFFOLD.includes(i.name));
+    if (!item) return false;
+    await bot.equip(item, 'hand'); task.check();
+    const landed = () => bot.blockAt(fill.cell)?.boundingBox === 'block';
+    const clear = () => bot.entity.position.y >= fill.cell.y + 1.02;
+    const place = bot._placeBlockWithOptions ? () => bot._placeBlockWithOptions(fill.ref, fill.face, { swingArm: 'right', forceLook: true }) : () => bot.placeBlock(fill.ref, fill.face);
+    const wall = fill.ref.position.offset(0.5, 0.5, 0.5);
+    const until = Date.now() + 4000;
+    while (!landed() && Date.now() < until) {
+      task.check();
+      await move(bot, task, { label: 'out_of_lava', keys: ['forward', 'jump'], sneak: false, why: 'in lava: pressed against the block beside, the push out of the lava lifts the body over the cell a block goes into', look: wall,
+        maxMs: Math.max(100, until - Date.now()), tick: 25, until: clear });
+      if (!clear()) break;
+      try { await place(); } catch (err) { task.check(); }
+    }
+    for (let i = 0; i < 20 && landed() && !bot.entity.onGround; i++) { task.check(); await sleep(25); }
+    return landed();
   }
 
   async stepOnce(task, goal, save, onStep) {
@@ -7086,4 +7219,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

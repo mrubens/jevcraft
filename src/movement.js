@@ -4,7 +4,7 @@ const { fixMiningMaterials, fixPathfinderResults } = require('./compatibility');
 const { hostileEntities, safeFromHostiles } = require('./danger');
 const { Vec3 } = require('vec3');
 const Move = require('mineflayer-pathfinder/lib/move');
-const { damagingTerrain, swimmingBlocks, swimmableWater, edgeHeld, standsInLava } = require('./terrain');
+const { damagingTerrain, swimmingBlocks, swimmableWater, edgeHeld, standsInLava, floorDrops, floorDropDeadly } = require('./terrain');
 const { isDoor, doorAt, doorAllowsDirection } = require('./doors');
 
 // Parkour, where a miss costs nothing: with it off, the only way across a
@@ -164,6 +164,9 @@ class SurvivalMovements extends Movements {
     // In every dimension, no move that leaves the ground beside a fall that
     // kills (note 545, overFall below).
     for (let i = kept.length - 1; i >= 0; i--) if (this.overFall(node, kept[i]) || this.climbOverFall(node, kept[i])) kept.splice(i, 1);
+    // Nor a block laid or dug beside a floor that falls with it (note 592,
+    // dropsFloor below).
+    for (let i = kept.length - 1; i >= 0; i--) if (this.dropsFloor(node, kept[i])) kept.splice(i, 1);
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
@@ -207,6 +210,34 @@ class SurvivalMovements extends Movements {
     }
     return null;
   }
+  // Note 592: gravel, sand and the other blocks that fall lie on the lava
+  // sea's beaches resting on the lava, and stay until a block beside the
+  // lowest of them is laid or dug (terrain.js floorDrops). A move that lays
+  // or digs such a block while the body stands on that floor, or before it
+  // steps onto it, drops the floor and the body: refused where that ends in
+  // lava or costs half the health. mid-243-af-nether-1's crossing laid a
+  // block against the gravel under its feet at the sea's edge and went in
+  // with it; the pathfinder lays its bridging blocks the same way. A block
+  // laid under the body on a jump (a tower) holds it wherever the floor
+  // goes.
+  dropsFloor(node, next) {
+    const changed = [];
+    for (const p of next.toPlace || []) {
+      if (p.useOne) continue;
+      const c = { x: p.x + p.dx, y: p.y + p.dy, z: p.z + p.dz };
+      if (c.x === node.x && c.y === node.y && c.z === node.z) continue;
+      changed.push(c);
+    }
+    for (const b of next.toBreak || []) changed.push({ x: b.x, y: b.y, z: b.z });
+    if (!changed.length) return null;
+    const at = p => { const b = this.getBlock(p, 0, 0, 0); return b.name === undefined ? null : { name: b.name, boundingBox: b.physical ? 'block' : 'empty' }; };
+    const health = this.bot?.health ?? 20;
+    for (const floor of [{ x: node.x, y: node.y - 1, z: node.z }, { x: next.x, y: next.y - 1, z: next.z }]) {
+      for (const c of changed) { const h = floorDrops(at, floor, c); if (floorDropDeadly(h, health)) return h; }
+    }
+    return null;
+  }
+
   // Note 565: no block laid to rise from a cell whose four sides all fall
   // more than three, on a walk whose goal is no higher. The fall rule above
   // refuses every drop and every block laid level off such a top, and what

@@ -127,6 +127,70 @@ function standsInLava(at, feet, { height = 1.8 } = {}) {
 }
 const inLavaAt = (bot, feet) => typeof bot?.blockAt === 'function' && standsInLava(p => bot.blockAt(new Vec3(p.x, p.y, p.z)), feet);
 
+// A floor that the next block changed beside it drops. Gravel, sand and the
+// other blocks the game lets fall (FallingBlock) are generated resting on
+// nothing, and stay so until a block beside them changes: each of the six
+// cells round a block that falls, laid or dug, schedules its check, and
+// with nothing that holds under it (air, fire, a liquid, a plant: isFree)
+// it falls, and the column of them over it after it. Walking on it drops
+// nothing; a block laid or dug beside the lowest of the column does.
+// mid-243-af-nether-1 stood on the lava sea's gravel beach at (-232, 33,
+// 56), the gravel under its feet resting on the sea, and the crossing laid
+// its first block against that gravel's side: the gravel went into the
+// lava, the body after it, 20 health to none (note 592). Standing on a
+// whole block, standsInLava counted it dry, as it was.
+const FALLS = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel|[a-z_]*concrete_powder|anvil|chipped_anvil|damaged_anvil|dragon_egg)$/;
+const holds = b => b.boundingBox === 'block' && !/lava|water/.test(b.name || '');
+// The column of falling blocks the floor at `floor` is the top of, when it
+// rests on nothing: { bottom, blocks, name, under, into, fall, damage } or
+// null. `into` is where the body stood on it goes when it falls: 'lava' (the
+// lava under the column, at any depth), 'water', 'ground' (a fall of `fall`
+// blocks onto what holds, the column landed under it) or 'unknown'. `at`
+// reads a block at {x, y, z}; unknown ground is no fact.
+function hangingFloor(at, floor, { deepest = 48 } = {}) {
+  const top = at(floor);
+  if (!top || !FALLS.test(top.name || '')) return null;
+  let bottom = { x: floor.x, y: floor.y, z: floor.z }, blocks = 1, under;
+  for (;;) {
+    under = at({ x: bottom.x, y: bottom.y - 1, z: bottom.z });
+    if (!under) return null;
+    if (FALLS.test(under.name || '')) { bottom = { x: bottom.x, y: bottom.y - 1, z: bottom.z }; if (++blocks > 64) return null; continue; }
+    if (holds(under)) return null;
+    break;
+  }
+  let into = 'unknown', fall = deepest;
+  for (let dy = 1; dy <= deepest; dy++) {
+    const c = at({ x: bottom.x, y: bottom.y - dy, z: bottom.z });
+    if (!c) break;
+    if (/lava/.test(c.name || '')) { into = 'lava'; fall = floor.y - (bottom.y - dy); break; }
+    if (/water/.test(c.name || '')) { into = 'water'; fall = floor.y - (bottom.y - dy); break; }
+    // The column comes down on what holds, and the body onto the column.
+    if (holds(c)) { into = 'ground'; fall = floor.y - (bottom.y - dy) - blocks; break; }
+  }
+  return { bottom, blocks, name: top.name, under: under.name, into, fall, damage: into === 'ground' ? Math.max(0, fall - 3) : 0 };
+}
+const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, -1]];
+// Whether laying or digging the block at `changed` drops the floor at
+// `floor`: the hanging column's lowest block has it beside it (above or on
+// a side; the cell under it is the empty one). -> hangingFloor's facts, or
+// null.
+function floorDrops(at, floor, changed) {
+  const h = hangingFloor(at, floor);
+  if (!h) return null;
+  const b = h.bottom;
+  return FACES.some(([dx, dy, dz]) => changed.x === b.x + dx && changed.y === b.y + dy && changed.z === b.z + dz) ? h : null;
+}
+// A drop that kills or maims: into lava, or a fall whose damage is half the
+// health or more (note 545's measure).
+const floorDropDeadly = (h, health = 20) => !!h && (h.into === 'lava' || h.into === 'unknown' || h.damage >= health / 2);
+function floorDropSays(h, floor) {
+  const what = String(h.name).replaceAll('_', ' ');
+  const on = /lava/.test(h.under) ? 'lava' : /water/.test(h.under) ? 'water' : /fire/.test(h.under) ? 'fire' : 'open air';
+  const goes = h.into === 'lava' ? 'into the lava' : h.into === 'ground' ? `${h.fall} blocks down${h.damage ? ` (${h.damage} damage)` : ''}` : h.into === 'water' ? 'into the water' : 'down';
+  return `the ${what} underfoot at (${floor.x}, ${floor.y}, ${floor.z}) rests on ${on}: a block laid or dug beside ${h.blocks > 1 ? `the lowest of its ${h.blocks}` : 'it'} drops it, and the body with it, ${goes}`;
+}
+const atOf = bot => p => bot.blockAt(new Vec3(p.x, p.y, p.z));
+
 // What one touch of lava costs this body now: the lava's hits through the
 // armour worn while it gets out (a second, two hits, at the least), then the
 // fifteen seconds of fire lava sets, a point a second that armour does not
@@ -370,4 +434,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
