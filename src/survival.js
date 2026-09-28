@@ -384,6 +384,32 @@ function shotOverEdge(bot, feet, health = bot.health ?? 20) {
   const walled = ` Walled, a ${word} that lands here costs its ${hit ?? 'own'} damage and a push into the wall, not the fall${drop.into === 'lava' ? ' into the lava' : ''}.`;
   return { says, walled, deadly, pusher: { name, distance: Math.round(p.distance * 10) / 10, visible: !!p.visible }, drop };
 }
+// A spear holder's knock over the drop beside the bot, said on every stance
+// that leaves it open, as a shooter's push is (shotOverEdge): it runs in
+// from up to ten blocks and strikes on the way in, and a hit that lands
+// knocks the bot back. mid-242-af-nether-1 was told the drop on the fight
+// alone; Jev answered none of these twice at a spear piglin by a
+// three-block edge into lava, the fight was taken, and the piglin's one hit
+// that landed (15.2 to 9.5) put the bot in the lava (note 586). Null where
+// no spear holder that can get to the bot is within its ten, or no drop
+// beside costs half the health or more.
+function spearOverEdge(bot, feet, coming, mobs = [], health = bot.health ?? 20) {
+  const { holdsSpear } = require('./danger');
+  const holders = coming.filter(t => holdsSpear(t.entity) && t.distance <= 10 && (t.visible || t.distance <= 5)).sort((a, b) => a.distance - b.distance);
+  if (!holders.length) return null;
+  const terrain = require('./terrain');
+  const drop = terrain.dropNear(bot, feet, 3);
+  if (!drop || (drop.into !== 'lava' && drop.damage < health / 2)) return null;
+  const p = holders[0], said = p.entity.name.replaceAll('_', ' ');
+  const hit = mobs.find(m => m.spear && m.name === p.entity.name)?.hitsBot;
+  const where = drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot';
+  const fall = drop.into === 'lava' ? `into lava ${drop.fallBlocks} blocks down` : `a fall of ${drop.fallBlocks} blocks, about ${drop.damage} health${drop.damage >= health ? `, more than the ${Math.round(health * 10) / 10} the bot has` : ''}`;
+  const more = holders.length > 1 ? ` (and ${holders.length - 1} more with spears)` : '';
+  return { drop, holder: { name: p.entity.name, distance: Math.round(p.distance * 10) / 10 },
+    says: ` Open here to the ${said} with a spear ${Math.round(p.distance)} blocks off${more}: it runs in from up to ten blocks and strikes on the way in, and a hit that lands knocks the bot back (seen: 0.7 of a block, and one hit over a three-block edge into lava), and the drop ${where} is ${fall}. So each of its hits that lands here is priced by that fall, not by its ${hit ?? 'own'} damage.`,
+    walled: ' Walled on the drop side, a spear\'s knock stops at the wall.',
+    shielded: ' A spear hit the shield takes knocks the bot nowhere; one landing while the shield is down for a swing knocks it back as ever, toward the drop if it comes from the other side.' };
+}
 // Whether a push away from `from` stops: each side a push goes toward
 // (leeFirst) holds a block at the feet, or is ground with no drop beside it.
 // Along a one-wide span the next cell is still beside the drop: open.
@@ -2396,7 +2422,7 @@ class Survival {
     // jabbed a block back each second out of its swing, and the last jab
     // put it over a fifteen-block drop three blocks behind it (note 497).
     const spearing = mobs.filter(m => m.jab);
-    const spearSays = spearing.length ? ` ${spearing.length === 1 ? `The ${spearing[0].name.replaceAll('_', ' ')} with a spear jabs` : `${spearing.length} of them have spears and jab`} from about ${spearing[0].reach} blocks, as far as a sword reaches and past an arm, about once a second for about ${Math.max(...spearing.map(m => m.jab))} each after armour, however often it is struck; each jab knocks the bot about ${spearing[0].knock === 1 ? 'a block' : `${spearing[0].knock} blocks`} back out of its swing, to be closed on again, so it takes about twice the swinging time.${edge && deepHere ? ` The drop ${deepHere.blocksAway ? `${deepHere.blocksAway} block${deepHere.blocksAway === 1 ? '' : 's'} off` : 'under the bot'} is ${Math.max(1, Math.ceil(deepHere.blocksAway / spearing[0].knock))} jab${Math.ceil(deepHere.blocksAway / spearing[0].knock) > 1 ? 's' : ''} away.` : ''}` : '';
+    const spearSays = spearing.length ? ` ${spearing.length === 1 ? `The ${spearing[0].name.replaceAll('_', ' ')} with a spear jabs` : `${spearing.length} of them have spears and jab`} from about ${spearing[0].reach} blocks, as far as a sword reaches and past an arm, about once a second for about ${Math.max(...spearing.map(m => m.jab))} each after armour, however often it is struck; each jab knocks the bot about ${spearing[0].knock === 1 ? 'a block' : `${spearing[0].knock} blocks`} back out of its swing, to be closed on again, so it takes about twice the swinging time. From the game's own rules: ${require('./combat-estimate').SPEAR_WAYS}.${edge && deepHere ? ` The drop ${deepHere.blocksAway ? `${deepHere.blocksAway} block${deepHere.blocksAway === 1 ? '' : 's'} off` : 'under the bot'} is ${Math.max(1, Math.ceil(deepHere.blocksAway / spearing[0].knock))} jab${Math.ceil(deepHere.blocksAway / spearing[0].knock) > 1 ? 's' : ''} away.` : ''}` : '';
     const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && firmGround(bot, 16, { margin: 3 });
     if (groundBy) {
       const far = Math.round(groundBy.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
@@ -2550,9 +2576,55 @@ class Survival {
         }
         this.report(goal, save, { action: 'fight', threats: [nearest.entity.name], health: bot.health, stance: true, stand: true });
         await bot.lookAt?.(nearest.entity.position.offset(0, 1, 0), true);
+        // Facing it with the shield up while it does not come into reach:
+        // mid-242-ac-nether-3-fortress-2 held so with the shield down, a
+        // spear piglin a block below at three blocks, and took three hits
+        // between swings, 17.8 to none (note 586). The swing lowers it.
+        if (shielded) raiseShield(bot);
         await sleep(250);
         return true;
       } };
+    // A spear holder met as a player meets one (note 586): facing it with
+    // the shield up, striking it as it comes within the sword's reach on its
+    // run in. It charges from up to ten blocks, strikes on the way in and
+    // backs off six or seven to come again (combat-estimate SPEAR_WAYS, the
+    // 26.1.2 jar); spear damage is not among what gets past a shield, and a
+    // hit the shield takes knocks the bot nowhere. Not offered before:
+    // mid-242-af-nether-1 answered none of these twice at a spear piglin by
+    // a three-block edge into lava and was knocked in by its one hit that
+    // landed; mid-242-ac-nether-3-fortress-2 took three hits standing and
+    // closing with its shield down, 17.8 to none.
+    const spearHolders = coming.filter(t => (t.visible || t.distance <= 5) && t.distance <= 16 && require('./danger').holdsSpear(t.entity));
+    const shieldCarried = shielded || bot.inventory.items().some(i => i.name === 'shield');
+    if (spearHolders.length && shieldCarried) {
+      const spearMobs = mobs.filter(m => m.spear && !m.far && !m.apart);
+      const facing = spearHolders[0];
+      const guardCost = stanceCost({ mobs, seconds: 15, fight: { only: m => !m.spear, lead: true }, reaches: m => !m.spear && !m.apart, health: bot.health });
+      const weaponName = defenseWeapon(bot)?.name;
+      const kills = spearMobs.map(m => `the ${m.name.replaceAll('_', ' ')} ${m.swingsToKill} swing${m.swingsToKill === 1 ? '' : 's'} that land${m.eachSwing ? ` (${m.eachSwing} a swing through its armor)` : ''}`).join(', ');
+      const others = mobs.filter(m => !m.spear && !m.apart && !m.far && m.name !== 'creeper').length;
+      const names = spearHolders.length === 1 ? `the ${facing.entity.name.replaceAll('_', ' ')} with a spear ${Math.round(facing.distance)} blocks off` : `the ${spearHolders.length} with spears, the nearest first (the ${facing.entity.name.replaceAll('_', ' ')} ${Math.round(facing.distance)} blocks off)`;
+      options.shield_the_charge = { expects: { damage: guardCost.damage, seconds: 15, oneHit },
+        description: `Face ${names} with the shield raised${shielded ? '' : ' (taken to the off hand first)'}, and strike ${spearHolders.length === 1 ? 'it' : 'each'} with the ${weaponName ? weaponName.replaceAll('_', ' ') : 'bare hands'} as it comes within the sword's reach on its run in; nothing is walked to or charged at. From the game's own rules: ${require('./combat-estimate').SPEAR_WAYS}, and a hit the shield takes knocks the bot nowhere. The shield comes down for each swing and is a quarter second going up again before it blocks: a hit landing then lands as ever, and one from the side or behind is not blocked.${kills ? ` To kill: ${kills}.` : ''} The blocks are the game's rules, not yet seen in the bot's own fights with spears; its hits while the shield is down are left out of the figure below.${others ? ' The other mobs here are struck as they come to reach, and their hits land as in the fight.' : ''}` + costSays(guardCost, bot.health, mobs),
+        run: async () => {
+          this.report(goal, save, { action: 'shield_the_charge', threats: spearHolders.map(t => t.entity.name), health: bot.health, stance: true });
+          if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
+          const { holdsSpear } = require('./danger');
+          for (const until = Date.now() + 15000; Date.now() < until;) {
+            task.check(); checkAir(bot);
+            const near = threats(bot, 16).filter(t => holdsSpear(t.entity) && (t.visible || t.distance <= 5)).sort((a, b) => a.distance - b.distance)[0];
+            if (!near) return true;
+            // A mob at the sword's reach is struck (the swing lowers the
+            // shield and raises it after); otherwise face the nearest spear
+            // with the shield up.
+            if (strikeTarget(bot)) { await defendNearby(bot, task, goal, save); continue; }
+            await bot.lookAt?.(near.entity.position.offset(0, (near.entity.height || 1.95) * 0.85, 0), true);
+            raiseShield(bot);
+            await sleep(100);
+          }
+          return true;
+        } };
+    }
     // Already up is the stance held, not a stance that failed: read as a
     // failure it was asked again every tick, a hundred and twenty times in
     // three hoglin drills.
@@ -3313,6 +3385,15 @@ class Survival {
       if (k === 'take_cover' && coverWindow) o.description += openWhileBuildingSays(over, coverWindow, `the first block in the ${shotWord(over.pusher.name)}'s line`);
       if (CLOSES_THE_DROP.has(k)) continue;
       o.description += over.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that throws the bot over.' : '');
+    }
+    // A spear holder's knock over the drop, on every stance but the fight
+    // (which says its jabs to the drop) and those that close the drop.
+    const speared = spearOverEdge(bot, feet, coming, mobs);
+    if (speared) for (const [k, o] of Object.entries(options)) {
+      // The step to footing says its own knock ("a knock there lands on
+      // ground"): it leaves the drop.
+      if (k === 'fight' || k === 'seal' || k === 'bunker' || k === 'fight_from_footing') continue;
+      o.description += k === 'rail_and_fight' ? speared.walled : k === 'shield_the_charge' ? speared.says + speared.shielded : speared.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that knocks the bot over.' : '');
     }
     // The hardest blow that can get to the bot, first on every stance
     // (blowsSay, note 576): each says after it whether that mob still
@@ -6763,10 +6844,18 @@ function claim(bot, goal = {}, survival = null) {
     ...(Object.keys(resting).length ? { setAside: resting } : {}) };
   const make = (action, urgency, more = {}) => ({ layer: 'survival', action, urgency: hurt && urgency === 'routine' ? 'pressing' : urgency, facts: { ...facts, ...more } });
   const mob = t => ({ name: t.entity.name, distance: round(t.distance), seen: !!t.visible });
-  // A mob at arm's length, as stepOnce's atArm (in sight: canStrike is not
-  // asked here).
-  const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && t.visible && !nightHunted(bot, t.entity));
-  if (atArm.length && !claimed(bot, atArm[0].entity)) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(mob), ...pocket });
+  // The drop beside the bot a push can put it over to its death, said on
+  // the claim wherever something about can push it (danger.js
+  // pushOverDrop): mid-242-ac-nether-3's turn_priority read neither the
+  // drop nor the piglin's crossbow, and its arrow put the bot nineteen
+  // blocks down (note 586).
+  const pushOver = require('./danger').pushOverDrop(bot);
+  const edgeFact = pushOver ? { edge: require('./terrain').dropNote(pushOver.drop, hp, bot).trim() } : {};
+  // A mob at its own reach, as stepOnce's atArm: arm's length, and a spear
+  // holder's longer reach (danger.js atItsReach, note 586). In sight, or
+  // within two.
+  const atArm = require('./danger').atReach(bot, threats(bot, 8));
+  if (atArm.length) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(t => ({ ...mob(t), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}) })), ...edgeFact, ...pocket });
   const refuge = survival?.currentShelter?.();
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
@@ -6805,7 +6894,15 @@ function claim(bot, goal = {}, survival = null) {
     // stance asked again with it (note 544).
     : threat?.following ? { comingAtTheBot: { after: threat.following, blocksASecond: round(threat.speed), atBotInSeconds: round(threat.atBotIn) } } : {};
   if (threat) return make('escape_threat', 'pressing', { ...(threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
-    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...holding, ...pocket });
+    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...holding, ...edgeFact, ...pocket });
+  // Something that can push the bot over a deadly drop beside it, though
+  // it is no threat by the counts above (a shooter in sight past the
+  // sixteen counted, a biter the hunt has not claimed at eight): a push is
+  // the fall's whole cost (note 586).
+  if (pushOver) {
+    const t = pushOver.pushers[0];
+    return make('escape_threat', 'pressing', { threat: t.projectile ? { name: t.entity.name, distance: round(t.distance), projectile: true } : shooter(t.entity) ? { ...mob(t), ...firing(t) } : mob(t), ...edgeFact, ...pocket });
+  }
   const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;

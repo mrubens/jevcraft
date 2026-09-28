@@ -5302,7 +5302,11 @@ async function holdForRest(bot, task, goal, save, { client, survival, onStep = (
       let worked = false;
       try { worked = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why } }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
-      if (!worked || Date.now() - started < 5000) await sleep(Math.max(0, Math.min(5000, until - Date.now())));
+      // Waited a quarter second at a time with the task's check between: a
+      // five-second sleep met a preemption only at its end, and the arbiter's
+      // watch stopping the hold for a crossbow piglin or a ghast by the drop
+      // came too late for the shot (note 586).
+      if (!worked || Date.now() - started < 5000) for (const end = Date.now() + Math.max(0, Math.min(5000, until - Date.now())); Date.now() < end;) { await sleep(Math.min(250, end - Date.now())); task.check(); }
     }
   } finally { if (goal.restHeld?.until === until && Date.now() >= until) { delete goal.restHeld; save(); } }
 }

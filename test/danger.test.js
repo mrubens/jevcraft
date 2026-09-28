@@ -92,8 +92,14 @@ test('a shooter a charge could not reach is still a threat: its bow reaches the 
   const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 },
     entities: { 7: skeleton }, _unreachable: { ids: [7, 8], until: Date.now() + 20000 } };
   assert.equal(immediateThreat(bot)?.entity.id, 7, 'the skeleton');
+  // A biter walk-reach does not judge (a cave spider climbs) is left be on the charge's word while it lands nothing.
+  bot.entities = { 9: { id: 9, name: 'cave_spider', type: 'hostile', position: new Vec3(0.5, 64, 6.5), height: 0.5, width: 0.7, isValid: true } };
+  bot._unreachable.ids.push(9);
+  assert.equal(immediateThreat(bot), undefined, 'a climber the charge could not reach is left be while it lands nothing');
+  // A walker is not: the charge failing says the bot has no way to it, and whether it has one to the bot is
+  // walk-reach's to judge (unknown ground here: it reaches). mid-242-ae's spear piglin (note 586).
   bot.entities = { 8: zombie };
-  assert.equal(immediateThreat(bot), undefined, 'a walker the charge could not reach is left be while it lands nothing');
+  assert.equal(immediateThreat(bot)?.entity.id, 8, 'a walker the charge could not reach is still judged by its own way to the bot');
 });
 
 test('an unseen biter within a hit and a jump is a threat where a knock is a fall, and not on firm ground (mid-227-r-nether-1-nether-1)', () => {
@@ -199,12 +205,19 @@ test('a walker left be as out of a charge\'s reach is a threat again once it wal
   // Marked out of reach at twelve blocks, the hoglin came on at four blocks a second, nothing claimed it, and it bit from two.
   const { immediateThreat } = require('../src/danger');
   const registry = require('minecraft-data')('26.1');
-  const hoglin = { id: 210, name: 'hoglin', type: 'animal', position: new Vec3(6.5, 64, 0.5), height: 1.4, width: 1.4, isValid: true };
+  // Since note 586 a walker (the hoglin) is judged by walk-reach, not the charge: shown with a climber the charge
+  // could not reach, which walk-reach does not judge.
+  const spider = { id: 210, name: 'cave_spider', type: 'hostile', position: new Vec3(6.5, 64, 0.5), height: 0.5, width: 0.7, isValid: true };
   const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, world: { raycast: () => null }, time: { timeOfDay: 6000 },
-    entities: { 210: hoglin }, _unreachable: { ids: [210], until: Date.now() + 20000 } };
+    entities: { 210: spider }, _unreachable: { ids: [210], until: Date.now() + 20000 } };
   assert.equal(immediateThreat(bot), undefined, 'standing off, it is left be while it lands nothing');
   bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 10.5, y: 64, z: 0.5 }]]]);
   assert.equal(immediateThreat(bot)?.entity.id, 210, 'four blocks nearer in a second: coming, so a threat');
+  // The hoglin itself, standing off: a threat, the charge's failure is not its way.
+  delete bot._mobTracks;
+  bot.entities = { 211: { id: 211, name: 'hoglin', type: 'animal', position: new Vec3(6.5, 64, 0.5), height: 1.4, width: 1.4, isValid: true } };
+  bot._unreachable.ids.push(211);
+  assert.equal(immediateThreat(bot)?.entity.id, 211);
 });
 
 test('a held stance keeps a ghast it was chosen against out to its sixty-four, a walker to twenty-four (mid-235-p-nether-4-fortress-2, note 551)', () => {

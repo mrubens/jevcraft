@@ -60,9 +60,17 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {
   const { bodyHeight } = require('./combat-estimate');
   const below = Math.max(BELOW, ...walkers.map(t => bodyHeight(t.entity.name) + BELOW - bodyHeight('zombie')));
   const lo = Math.ceil(here.y - below), reachX = Math.ceil(LIGHTS);
+  // A spear's blow reaches 2.25 past the mob's box sideways, not the eight
+  // tenths of an arm (danger.js atItsReach, the 26.1.2 jar): one here
+  // touches the bot from further off, and every walker is judged by the
+  // longest reach among them, as the tallest sets how far below (unsure is
+  // "it reaches"). mid-242-ae's spear piglin came up a two-block rise and
+  // speared the bot from 1.3 blocks across and 1.6 below (note 586).
+  const { holdsSpear, SPEAR_MOB_REACH } = require('./danger');
+  const sideways = walkers.some(t => holdsSpear(t.entity)) ? Math.max(SIDEWAYS, 0.6 + SPEAR_MOB_REACH) : SIDEWAYS;
   for (let dx = -reachX; dx <= reachX; dx++) for (let dz = -reachX; dz <= reachX; dz++) for (let y = feet.y - reachX; y <= feet.y + reachX; y++) {
     const c = new Vec3(feet.x + dx, y, feet.z + dz);
-    const touches = Math.abs(c.x + 0.5 - here.x) <= SIDEWAYS && Math.abs(c.z + 0.5 - here.z) <= SIDEWAYS && y >= lo && y <= here.y + ABOVE;
+    const touches = Math.abs(c.x + 0.5 - here.x) <= sideways && Math.abs(c.z + 0.5 - here.z) <= sideways && y >= lo && y <= here.y + ABOVE;
     const lights = Math.hypot(c.x + 0.5 - here.x, y - here.y, c.z + 0.5 - here.z) < LIGHTS;
     if ((touches || lights) && standable(c)) add(c);
   }
@@ -119,7 +127,9 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {
 function heldSays(t) {
   const held = t.entity?.heldItem?.name;
   if (!held || !/piglin/.test(t.entity.name)) return '';
-  return ` (holding ${held.replaceAll('_', ' ')}${held === 'crossbow' ? '' : ', no crossbow: it hits at arm\'s length only'})`;
+  // A spear is not an arm's length: it lands from about 2.8 blocks ahead
+  // and 4 on the diagonal (danger.js atItsReach, note 586).
+  return ` (holding ${held.replaceAll('_', ' ')}${held === 'crossbow' ? '' : /_spear$/.test(held) ? ', no crossbow: its spear lands from about 2.8 blocks straight ahead and 4 on the diagonal, and it runs in with it from up to ten blocks' : ', no crossbow: it hits at arm\'s length only'})`;
 }
 
 // Said with every stance while it holds.

@@ -557,6 +557,26 @@ const SPEAR_HIT = 13;
 // knocked the bot about a block back and the zombie followed to its reach:
 // it does not back off, the bot is put back (note 497).
 const SPEAR = { jab: 5, reach: 3, knock: 1 };
+// What a spear holder's hits were seen to be, by kind, where the zombies'
+// thirteen and five above are not it: a piglin's golden spear, seven hits
+// in three deaths (mid-242-ae, mid-242-ac-nether-3-fortress-2, mid-242-af-
+// nether-1), 5.7 to 6.7 each through eight armour points, eight before
+// it: the piglin's own blow, a golden spear adding nothing to it (26.1.2
+// Item.Properties.spear: the material's damage bonus, gold's none). Priced
+// at thirteen, every stance told Jev two blows would end the bot from
+// 17.8, where three did (note 586).
+const SPEAR_SEEN = { piglin: 8 };
+// How a spear holder fights, from the 26.1.2 jar (PiglinAi's fight:
+// SpearApproach to within ten blocks, SpearAttack, SpearRetreat): it runs
+// in with the spear raised from as far as ten blocks until within two,
+// landing its hit on the way in, then walks to a spot six or seven blocks
+// off and comes again. Its reach is 2.25 past its own body sideways and
+// none up or down (AttackRange 2 to 4.5, half in a mob's hand): about 2.8
+// blocks straight ahead and 4 on the diagonal. Spear damage is not among
+// what gets past a shield (damage_type tag bypasses_shield), and a spear
+// does not disable one (Weapon, no blocking cooldown): a shield raised
+// facing it, a quarter second before, takes the hit.
+const SPEAR_WAYS = 'it runs in with the spear raised from as far as ten blocks and strikes on the way in, from about 2.8 blocks straight ahead and 4 on the diagonal, then backs off six or seven blocks and comes again; a shield raised facing it a quarter second before takes the hit, which a spear does not get past';
 // The pace in words, said with the fight's figures: the swings each kind
 // takes, how often one that counts came in the bot's own fights, and the
 // closing first. mid-235-p-nether-4 was told "about 2.5 seconds" for a
@@ -608,7 +628,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // villager's, where three a hit was reckoned (2026-09-26): about
     // thirteen before armour.
     const spear = /_spear$/.test(t.held || '');
-    const m = spear ? { ...base, hit: Math.max(base.hit, SPEAR_HIT), note: `a spear: it jabs for about ${SPEAR.jab} before armour about once a second from about ${SPEAR.reach} blocks, each jab knocking the bot about a block back, and its charged thrust hits for about thirteen` } : base;
+    const seen = spear ? SPEAR_SEEN[t.name] : undefined;
+    const m = spear ? { ...base, hit: seen ?? Math.max(base.hit, SPEAR_HIT), note: seen ? `a spear: each hit seen was about ${seen} before armour, about once a second, from about ${SPEAR.reach} blocks, each knocking the bot back (seen: 0.7 of a block, and one over a three-block edge into lava); ${SPEAR_WAYS}` : `a spear: it jabs for about ${SPEAR.jab} before armour about once a second from about ${SPEAR.reach} blocks, each jab knocking the bot about a block back, and its charged thrust hits for about thirteen; ${SPEAR_WAYS}` } : base;
     const dealt = afterArmour(damage, { points: t.split ? 0 : m.armor || 0, toughness: 0 });
     const hitsToKill = Math.ceil(m.health / dealt);
     const shoots = !!(m.shoots || t.shoots);
@@ -633,7 +654,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       ...(!fought && !shoots ? { secondsASwing: round(every * (spear ? 2 : 1), 2) } : {}), ...(m.armor && !t.split ? { armor: m.armor, eachSwing: round(dealt) } : {}),
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
@@ -816,4 +837,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };

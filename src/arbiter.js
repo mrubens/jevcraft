@@ -96,7 +96,20 @@ const probe = {
   // What the threat check a layer's run is given (work.js liveTurn,
   // danger.js checkThreats) finds now.
   threatNow: bot => require('./danger').immediateThreat(bot),
+  // A biter at its own reach of the bot, and something that can push it
+  // with a deadly drop beside it (danger.js atReach, pushOverDrop): what the
+  // ruling and the holder's turn were given against (note 586).
+  atReach: bot => require('./danger').atReach(bot),
+  pushOver: bot => require('./danger').pushOverDrop(bot),
 };
+// Whether a mob is at its reach of the bot, or a push can put it over a
+// deadly drop, now: { reach, push }, false where a look fails.
+function pressing(bot, look = probe) {
+  let reach = false, push = false;
+  try { reach = !!(look.atReach?.(bot) || []).length; } catch (_) { reach = false; }
+  try { push = !!look.pushOver?.(bot); } catch (_) { push = false; }
+  return { reach, push };
+}
 
 // The reflexes that hold now, as { key, layer, action, facts }. `held` is
 // the set that held last time: one of them lasts to its line plus two.
@@ -161,9 +174,13 @@ const STOPPED_BY_THREAT = /Threat nearby|Preempted|hurt|NeedsSafety/i;
 
 // What the ruling was made against: the mobs within STANCE_NEWCOMER, the
 // health and the food band.
+// And whether a mob was at its reach, or a push over a deadly drop about
+// (pressing): a ruling for the work made without one is asked again when
+// one comes (note 586).
 function observe(bot, ctx) {
   const mobs = ctx.mobs || (() => { try { return probe.mobs(bot, STANCE_NEWCOMER); } catch (_) { return []; } })();
-  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER).map(t => t.entity?.id), health: bot?.health ?? 20, band: foodBand(bot?.food) };
+  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER).map(t => t.entity?.id), health: bot?.health ?? 20, band: foodBand(bot?.food),
+    ...(ctx.pressing || pressing(bot, ctx.look || probe)) };
 }
 
 // Why a held ruling no longer holds, or null while it does.
@@ -184,6 +201,13 @@ function broken(ruling, claims, seen, now, print = fingerprintOf(claims)) {
   if (ruling.idleSince && now - ruling.idleSince >= IDLE_MS) return `its winner did nothing for ${IDLE_MS / 1000} seconds`;
   if (print !== ruling.fingerprint) return 'the claims changed';
   if (seen.ids.some(id => !ruling.ids.includes(id))) return 'a newcomer within six blocks';
+  // The turn given to a layer other than survival's with no mob at its
+  // reach, or nothing to push the bot over the drop beside it: one coming is
+  // asked about, whoever holds the turn (note 586). mid-242-ae's work was
+  // given the turn after a meal with a spear piglin four blocks off, and it
+  // came to its reach and speared the bot to death with no one asked.
+  if (ruling.winner !== 'survival' && seen.reach && !ruling.reach) return 'a mob came within its reach of the bot';
+  if (ruling.winner !== 'survival' && seen.push && !ruling.push) return 'something that can push the bot is about, a deadly drop beside it';
   if (seen.health <= ruling.health - STANCE_HEALTH) return `health fell ${STANCE_HEALTH}`;
   if (seen.band !== ruling.band) return 'food crossed a band';
   return null;
@@ -251,7 +275,7 @@ function withSays(option, c, bot, state, mobs, now) {
 // ("recover_before_nether") over "escape_threat" at seven health with a
 // drowned five blocks off, the options named by their code (note 490).
 function claimSays(c) {
-  const f = c.facts || {}, mob = t => t ? `the ${String(t.name).replaceAll('_', ' ')} ${t.distance} blocks off${t.seen === false ? ' (out of sight)' : ''}` : 'the mobs about';
+  const f = c.facts || {}, mob = t => t ? `the ${String(t.name).replaceAll('_', ' ')}${/_spear$/.test(t.held || '') ? ' with a spear' : ''} ${t.distance} blocks off${t.seen === false ? ' (out of sight)' : ''}` : 'the mobs about';
   const hp = f.health !== undefined ? ` Health ${Math.round(f.health * 10) / 10}.` : '';
   const heals = f.healing === false ? ` It does not come back at hunger ${f.food}.` : f.healing ? ' It comes back meanwhile, at hunger eighteen or more.' : '';
   // A shooter's reach and what it has done, said: mid-235-p-fortress-1's
@@ -264,7 +288,7 @@ function claimSays(c) {
     // times (note 520).
     // A stance chosen and holding goes on (note 535): said so, not as a
     // question to come.
-    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.pocket ? ` ${f.pocket}` : ''} The work waits.${hp}${heals}`;
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.edge ? ` ${f.edge}` : ''}${f.pocket ? ` ${f.pocket}` : ''} The work waits.${hp}${heals}`;
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     // Said with the biters walking up while it eats, standing still (note 552).
@@ -476,11 +500,17 @@ async function take(bot, claims, ctx = {}) {
   const unclaimed = !live.some(c => c.layer === 'survival');
   if (r.by === 'absent') said(bot, `[arbiter] held for ${r.ruling.winner}: ${r.why}`, now);
   if (!r.winner) return { ...r, layer: null, acted: false, unclaimed };
+  // What the turn is given against: a mob at its reach, a push over a
+  // deadly drop. Where a ruling was made, what it was made against counts
+  // too (Jev was asked with it); the watch stops the holder for one it was
+  // given without (watchOnce, note 586).
+  const seenNow = ctx.pressing || pressing(bot, ctx.look || probe);
+  const knew = { reach: !!(seenNow.reach || r.ruling?.reach), push: !!(seenNow.push || r.ruling?.push) };
   const holding = (layer, action, extra = {}) => {
     const was = state.holder;
     let ids = [];
     try { ids = (ctx.mobs || probe.mobs(bot, STANCE_NEWCOMER) || []).map(t => t.entity?.id); } catch (_) { /* no world */ }
-    state.holder = { layer, action, since: was?.layer === layer ? was.since : now, ...(was?.layer === layer && was.idleSince ? { idleSince: was.idleSince } : {}), ids, ...extra };
+    state.holder = { layer, action, since: was?.layer === layer ? was.since : now, ...(was?.layer === layer && was.idleSince ? { idleSince: was.idleSince } : {}), ids, knew, ...extra };
     require('./turn').takeTurn(bot, layer, action);
   };
   const w = r.winner;
@@ -565,6 +595,23 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || t.distance <= 4) && !holder.ids.includes(t.entity.id));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };
+  }
+  // A mob come to its reach of the bot, or something that can push it with
+  // a deadly drop beside it, that the holder's turn was given without:
+  // whose turn it is now is asked (note 586). A layer's long run is not
+  // looked into between its passes: mid-242-ac-nether-3's work held one
+  // turn for 57 seconds by a nineteen-block drop while a crossbow piglin
+  // came on from 28 blocks to 6 and shot it over, and mid-242-ae's work,
+  // given the turn after a meal, was speared twice by a piglin come to its
+  // reach, neither asked. Not over survival's own step: it answers them.
+  if (!p && holder && holder.layer !== 'survival' && holder.knew) {
+    const got = pressing(bot, look);
+    const mob = got.reach ? (() => { try { return look.atReach(bot)[0]; } catch (_) { return null; } })() : null;
+    if (got.reach && !holder.knew.reach) p = { by: 'reach', layer: 'survival', action: 'escape_threat', ...(mob?.entity?.id !== undefined ? { id: mob.entity.id } : {}),
+      facts: mob ? { mob: mob.entity.name, distance: Math.round(mob.distance * 10) / 10, seen: !!mob.visible } : {}, why: `a ${mob?.entity?.name || 'mob'} came within its reach of the bot` };
+    else if (got.push && !holder.knew.push) p = { by: 'push', layer: 'survival', action: 'escape_threat', facts: {}, why: 'something that can push the bot is about, a deadly drop beside it' };
+    // Said once for the holder: its turn now counts it as given with it.
+    if (p) holder.knew = { reach: holder.knew.reach || got.reach, push: holder.knew.push || got.push };
   }
   if (!p) return null;
   const over = holder ? `${holder.layer}${holder.action ? ` ${holder.action}` : ''}` : 'nothing held';

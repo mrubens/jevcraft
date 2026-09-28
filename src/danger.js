@@ -333,7 +333,8 @@ function noWayIds(bot, list = null) {
 // it has hit the bot a moment ago (then the search is wrong about it: a
 // knock, a gap it fits). What it holds is its own: a crossbow piglin
 // shoots, and walk-reach judges no shooter.
-const cannotGetToTheBot = (bot, t, list) => !shooter(t.entity) && !(bot._hurtById?.[t.entity.id] > Date.now() - ATTRIBUTE_MS) && noWayIds(bot, list).has(t.entity.id);
+const WALKERS_JUDGED = { has: name => require('./walk-reach').WALKERS.has(name) };
+const cannotGetToTheBot = (bot, t, list) =>!shooter(t.entity) && !(bot._hurtById?.[t.entity.id] > Date.now() - ATTRIBUTE_MS) && noWayIds(bot, list).has(t.entity.id);
 
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
@@ -364,7 +365,14 @@ function immediateThreat(bot) {
     // find. mid-208-k-nether-1's hoglin, left be as out of reach at twelve
     // blocks, came on at four blocks a second while nothing claimed it and
     // bit from two, where a hoglin's wide body already reaches (note 552).
-    (unreachable.includes(t.entity.id) && !shooter(t.entity) && !(t.approach >= COMING) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
+    // Nor a walker: a charge that could not reach it says the bot has no way
+    // to the mob, not that the mob has none to the bot, and whether it has is
+    // walk-reach's to judge (cannotGetToTheBot, last below). mid-242-ae's
+    // spear piglin, two below and four blocks off, was set aside so when the
+    // fight's run at it went nowhere; after the meal survival claimed
+    // nothing, the work had the turn unasked, and the piglin came up and
+    // speared it from 7.7 to none (note 586). Nor one at its own reach now.
+    (unreachable.includes(t.entity.id) && !shooter(t.entity) && !WALKERS_JUDGED.has(t.entity.name) && !atItsReach(bot, t) && !(t.approach >= COMING) && t.distance > (t.entity.name === 'creeper' ? 5 : 2));
   // A creeper within four blocks is one whether it is in sight or not: it
   // comes round the corner already at its fuse's distance. mid-79-b stood
   // recovering for five seconds with one out of sight beside it, and the
@@ -550,4 +558,62 @@ function pushersAbout(bot) {
   return list;
 }
 
-module.exports = { noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+// Whether a biter can land a hit from where it stands now. A mob's blow
+// lands on what its own box, widened sideways by its reach and not at all
+// up or down, touches (26.1.2 Mob.isWithinMeleeAttackRange). Bare-handed or
+// with a sword that is about eight tenths of a block, arm's length, three
+// blocks counted centre to centre here as everywhere. A spear reaches 4.5
+// in a player's hand and half that in a mob's (AttackRange 2 to 4.5, mob
+// factor 0.5): 2.25 past its own box, so its box and the bot's overlap in
+// height and lie within about 2.85 of each other along each of x and z,
+// two and eight tenths straight ahead and four on the diagonal. And a spear
+// holder charges (SpearAttack): it runs in with the spear raised from as
+// far as ten blocks until within two, then backs off six or seven and
+// comes again, landing its hit on the way in. The hits seen: mid-242-ae's
+// spear piglin from 3.2 and 3.4 blocks (20 to 13.3, 13.3 to 7.5) and from
+// 2 up a two-block rise; mid-242-ac-nether-3-fortress-2's from 3.0 and 3.1,
+// a block below the bot's floor (note 586).
+const ARM = 3;
+const SPEAR_MOB_REACH = 2.25;
+const holdsSpear = entity => /_spear$/.test(entity?.heldItem?.name || '');
+function atItsReach(bot, t) {
+  const e = t?.entity, me = bot?.entity;
+  if (!e?.position || !me?.position || shooter(e) || e.name === 'creeper') return false;
+  if (!holdsSpear(e)) return t.distance <= ARM;
+  const p = me.position, q = e.position, span = (e.width || 0.6) / 2 + (me.width || 0.6) / 2 + SPEAR_MOB_REACH;
+  const overlap = q.y < p.y + (me.height || 1.8) && p.y < q.y + (e.height || 1.95);
+  return overlap && Math.abs(p.x - q.x) < span && Math.abs(p.z - q.z) < span;
+}
+// The biters at their reach of the bot now, in sight or within two (a
+// mob round a stair's edge at arm's length is not hidden from its own
+// blow), save the one the hunt has claimed and tonight's hunted kind: the
+// arbiter asks whose turn it is when one comes to it (note 586).
+function atReach(bot, list = null) {
+  return (list || threats(bot, 8)).filter(t => (t.visible || t.distance <= 2) && atItsReach(bot, t) && !claimed(bot, t.entity) && !nightHunted(bot, t.entity));
+}
+// A drop beside the bot a push can put it over to its death: into lava or
+// half its health and more (immediateThreat's edge, note 476).
+function deadlyDropBeside(bot) {
+  if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return null;
+  const drop = require('./terrain').dropNear(bot, bot.entity.position.floored(), 3);
+  return drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2) ? drop : null;
+}
+// Something that can push the bot (pushersAbout) with such a drop beside
+// it: { pushers, drop }, or null. mid-242-ac-nether-3 stood 57 seconds in
+// a rest's hold beside a nineteen-block drop at 10.6 health while a
+// crossbow piglin came on from 28 blocks; the work held the turn the whole
+// while, and the piglin's first arrow put it over (note 586).
+// Those Jev chose to leave be (keep_working) are not counted while that
+// holds, as immediateThreat leaves them; when it ends, a push is asked
+// about again. mid-242-af-nether-3 left a ghast 34 blocks off be at 05:36:53,
+// and the work's rest hold that followed kept the turn past the fifteen
+// seconds and on until the ghast's fireball put it in the lava at 05:37:30.
+function pushOverDrop(bot) {
+  const now = Date.now(), waved = !(bot?._recentHurtAt > now - 4000) && bot?._wavedOff?.until > now ? bot._wavedOff.ids : [];
+  const pushers = pushersAbout(bot).filter(t => !waved.includes(t.entity?.id));
+  if (!pushers.length) return null;
+  const drop = deadlyDropBeside(bot);
+  return drop ? { pushers, drop } : null;
+}
+
+module.exports = { atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

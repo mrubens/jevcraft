@@ -143,10 +143,13 @@ test('a mob seen close a moment ago stays a threat when it drops out of view for
 
 test('a charge that cannot get to the mob fails, and that mob is left be while it lands nothing', async () => {
   // Trial 66: "going for" a zombie in a mineshaft twenty times a second for 159 s, neither able to reach the other.
+  // Since note 586 a walker's own way to the bot is walk-reach's to judge, not the charge's: shown with a cave
+  // spider, which climbs and which walk-reach does not judge; the zombie on open ground stays a threat.
   const { Survival } = require('../src/survival');
   const { immediateThreat } = require('../src/danger');
   const { Vec3 } = require('vec3');
-  const zombie = { id: 5, name: 'zombie', position: new Vec3(5, 64, 0), height: 1.95, isValid: true };
+  const walker = { id: 6, name: 'zombie', position: new Vec3(5, 64, 0), height: 1.95, isValid: true };
+  const zombie = { id: 5, name: 'cave_spider', position: new Vec3(5, 64, 0), height: 0.5, isValid: true };
   const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 5: zombie }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
     world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
     pathfinder: { movements: {} }, inventory: { items: () => [], slots: [] }, on() {}, health: 20 };
@@ -158,14 +161,18 @@ test('a charge that cannot get to the mob fails, and that mob is left be while i
   assert.equal(immediateThreat(bot), undefined, 'out of reach both ways: left be');
   bot._recentHurtAt = Date.now();
   assert.equal(immediateThreat(bot)?.entity, zombie, 'until it lands a hit');
+  delete bot._recentHurtAt;
+  bot.entities = { 6: walker }; bot._unreachable.ids.push(6);
+  assert.equal(immediateThreat(bot)?.entity, walker, 'a walker with a way over open ground is one, whatever the charge found');
 });
 
 test('a fight held facing a mob that does not come is given up after eight seconds, and the mob is left be', async () => {
-  // Trial 73: three minutes facing a creeper that stayed six blocks off.
+  // Trial 73: three minutes facing a creeper that stayed six blocks off. A climber here (a cave spider): a walker's
+  // way to the bot is walk-reach's to judge since note 586.
   const { Survival } = require('../src/survival');
   const { immediateThreat } = require('../src/danger');
   const { Vec3 } = require('vec3');
-  const creeper = { id: 8, name: 'creeper', position: new Vec3(6, 67, 0), height: 1.7, isValid: true };
+  const creeper = { id: 8, name: 'cave_spider', position: new Vec3(6, 67, 0), height: 0.5, isValid: true };
   const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 8: creeper }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
     world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
     pathfinder: { movements: {} }, inventory: { items: () => [{ name: 'iron_sword', type: 1 }], slots: [] }, on() {}, health: 20, lookAt: async () => {} };
