@@ -39,7 +39,7 @@ function thresholds(minutes, history) {
     silent: { minutes: 3, says: 'no flight frame for 3+ min (bot down or stalled)' },
     // The design review's measures (note 573), each against its target.
     quickNothing: { seconds: 2, per15: 5, says: 'target: under 5 a 15 min, per question, of answers whose action ended (the same question asked again) in under 2 s with nothing gained (no move over 3 blocks, nothing carried changed, so no block dug or placed)' },
-    reaskAfterHold: { max: 0, says: 'target: 0 askings of a question within 2 min after it was held as coming to nothing ([repeat] in the bot log)' },
+    reaskAfterHold: { max: 0, says: 'target: 0 askings of a question within 2 min after it was held as coming to nothing ([repeat] in the bot log) that offered a held answer again from within 4 blocks of where it was held (every asking in those 2 min said beside it)' },
     stallShare: { share: 0.10, says: 'target: under 10% of the clocked minutes on persist, detour (the stall\'s detours, "differently" among them) or shake loose' },
     netherGround: { per15: 20, says: 'target: 20+ new 4×4 columns a 15 min while in the Nether (ours: the review set none)' },
     fortressSighting: { minutes: 30, says: 'target: a fortress sighted within 30 min of entering the Nether (ours, from the pace told to Jev: rods and pearls within two hours of it)' },
@@ -106,12 +106,27 @@ function readFlight({ identity, from, to, historyFrom, dir = FLIGHT, slim = null
 const STAMPS = /"(?:at|askedAt)":"(\d{4}-\d\d-\d\dT[\d:.]+Z)"/g;
 const stampsOf = l => l.includes('At":"') || l.includes('"at":"') ? [...l.matchAll(STAMPS)].map(m => Date.parse(m[1])) : [];
 // What the bot log's lines count, a line at a time, in order. A hold
-// ([repeat], decisions/index.js) is placed at the newest stamp before it; a
-// question asked again after it (a decision line of that id answered later,
-// within the two minutes the hold is said) is a re-ask the hold did not stop.
+// ([repeat], decisions/index.js) is placed at the newest stamp before it,
+// and at the bot's place in the status line before it. A re-ask the hold
+// did not stop is a decision line of that question answered after it,
+// within the two minutes the hold is said, that offered a held answer
+// again from within four blocks of where it was held (tried.js NEAR): the
+// hold is on the answer, from here, not on the question. An asking with
+// the held answers left out is the question asked with its other ways
+// (note 583), and one from new ground is asked afresh (note 560); each was
+// counted until note 611, and still is as askedAfterHold.
+const HOLD_NEAR = 4;
+const heldOf = says => {
+  const one = says.match(/^(.+?) was chosen \d+ times?\b/);
+  if (one) return [one[1]];
+  const run = says.match(/^the last \d+ answers to this question in a row \((.*?), in the last /);
+  return run ? run[1].split(', ').map(s => s.replace(/ \d+ times?$/, '')) : [];
+};
+const leavesSaid = (tree, pre = []) => Object.entries(tree || {}).flatMap(([k, n]) => n?.children ? leavesSaid(n.children, [...pre, k]) : [[...pre, k].join('/').replaceAll('_', ' ')]);
+const POSITION = /"position":\{"x":(-?[\d.e+-]+),"y":(-?[\d.e+-]+),"z":(-?[\d.e+-]+)/;
 function botLogCounter(from) {
-  const out = { read: false, missingOption: {}, stall: 0, still: 0, bug: 0, repeat: {}, reaskAfterHold: {} };
-  let lastStamp = null;
+  const out = { read: false, missingOption: {}, stall: 0, still: 0, bug: 0, repeat: {}, reaskAfterHold: {}, askedAfterHold: {} };
+  let lastStamp = null, lastPos = null;
   const holds = [], asked = new Set();
   const line = (l, stamps = stampsOf(l)) => {
     const m = l.match(/^\[missing option\] ([a-z_]+):/);
@@ -120,10 +135,14 @@ function botLogCounter(from) {
     else if (l.startsWith('[still]')) out.still++;
     else if (l.startsWith('[bug]')) out.bug++;
     else if (l.startsWith('[repeat] ')) {
-      const id = (l.match(/^\[repeat\] ([^:]+):/)?.[1] || '?').trim().replaceAll(' ', '_');
+      const said = l.match(/^\[repeat\] ([^:]+): (.*)$/);
+      const id = (said?.[1] || '?').trim().replaceAll(' ', '_');
       out.repeat[id] = (out.repeat[id] || 0) + 1;
-      holds.push({ id, at: lastStamp ?? from });
+      holds.push({ id, at: lastStamp ?? from, pos: lastPos, held: heldOf(said?.[2] || '') });
     } else if (l.startsWith('{')) {
+      const i = l.lastIndexOf('"position":{"x":');
+      const p = i >= 0 ? l.slice(i).match(POSITION) : null;
+      if (p) lastPos = { x: +p[1], y: +p[2], z: +p[3] };
       const d = l.match(/"decision":\{"at":"([^"]+)"(?:,"askedAt":"[^"]+")?,"id":"([a-z_0-9]+)"/);
       if (d) {
         const at = Date.parse(d[1]), key = `${d[2]}@${d[1]}`;
@@ -131,7 +150,14 @@ function botLogCounter(from) {
           asked.add(key);
           // Holds too old to be said any more are dropped (a log of hours).
           while (holds.length && at - holds[0].at > HOLD_SAID_MS && holds.length > 64) holds.shift();
-          if (holds.some(h => h.id === d[2] && at > h.at && at - h.at <= HOLD_SAID_MS)) out.reaskAfterHold[d[2]] = (out.reaskAfterHold[d[2]] || 0) + 1;
+          const after = holds.filter(h => h.id === d[2] && at > h.at && at - h.at <= HOLD_SAID_MS);
+          if (after.length) {
+            out.askedAfterHold[d[2]] = (out.askedAfterHold[d[2]] || 0) + 1;
+            let offered = null;
+            try { const o = JSON.parse(l).decision?.options; if (o) offered = new Set(leavesSaid(o)); } catch (_) { /* a line cut short: counted */ }
+            const near = h => !h.pos || !lastPos || Math.hypot(lastPos.x - h.pos.x, lastPos.y - h.pos.y, lastPos.z - h.pos.z) <= HOLD_NEAR;
+            if (after.some(h => near(h) && (!offered || !h.held.length || h.held.some(x => offered.has(x))))) out.reaskAfterHold[d[2]] = (out.reaskAfterHold[d[2]] || 0) + 1;
+          }
         }
       }
     }
@@ -518,7 +544,8 @@ function review({ minutes, frames, positioned, history, from, to, trial, known, 
     answer: Object.entries(q.answersQuick).sort((a, b) => b[1] - a[1])[0][0] })).sort((a, b) => b.quick - a.quick);
 
   // 2. Asked again after a hold, from the bot log.
-  const reask = botLog?.read ? { holds: { ...botLog.repeat }, reasked: { ...botLog.reaskAfterHold }, total: Object.values(botLog.reaskAfterHold).reduce((a, b) => a + b, 0) } : null;
+  const sum = o => Object.values(o || {}).reduce((a, b) => a + b, 0);
+  const reask = botLog?.read ? { holds: { ...botLog.repeat }, reasked: { ...botLog.reaskAfterHold }, total: sum(botLog.reaskAfterHold), asked: sum(botLog.askedAfterHold) } : null;
 
   // 3. Minutes on the stall's own steps, from the run clock.
   const stallBy = stallOf(doing).by;
@@ -612,7 +639,7 @@ function reviewLines(m) {
   const top = r.quickNothing[0];
   const quickMet = !r.quickNothing.some(q => q.per15 >= T.quickNothing.per15);
   out.push({ id: 'quickNothing', met: quickMet, text: `quick answers, nothing gained (under 5 a 15 min per question): ${r.quickNothing.length ? r.quickNothing.slice(0, 3).map(q => `${q.id} ${q.quick} of ${q.answers} (${q.per15}/15min, ${q.answer})`).join(', ') : 'none'}` });
-  if (r.reask) out.push({ id: 'reaskAfterHold', met: r.reask.total <= T.reaskAfterHold.max, text: `re-asked after a hold (target 0): ${r.reask.total}${Object.keys(r.reask.holds).length ? `; holds ${Object.entries(r.reask.holds).map(([k, v]) => `${k} ${v}`).join(', ')}` : '; no holds'}${r.reask.total ? `; re-asks ${Object.entries(r.reask.reasked).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}` });
+  if (r.reask) out.push({ id: 'reaskAfterHold', met: r.reask.total <= T.reaskAfterHold.max, text: `re-asked after a hold (target 0): ${r.reask.total}${Object.keys(r.reask.holds).length ? `; holds ${Object.entries(r.reask.holds).map(([k, v]) => `${k} ${v}`).join(', ')}` : '; no holds'}${r.reask.total ? `; re-asks ${Object.entries(r.reask.reasked).map(([k, v]) => `${k} ${v}`).join(', ')}` : ''}${r.reask.asked ? `; asked in all within 2 min of a hold ${r.reask.asked}` : ''}` });
   else out.push({ id: 'reaskAfterHold', met: null, text: 're-asked after a hold (target 0): no bot log' });
   const s = r.stall;
   out.push({ id: 'stallShare', met: s.share === null ? null : s.share < T.stallShare.share, text: `persist/detour/shake loose (under 10%): ${s.share === null ? 'no clock' : `${Math.round(s.share * 100)}%, ${s.minutes} of ${s.clocked} min`}${Object.keys(s.by).length ? ` (${Object.entries(s.by).map(([k, v]) => `${human(k)} ${v}`).join(', ')})` : ''}${Object.keys(s.detours).length ? `; detours ${Object.entries(s.detours).map(([k, v]) => `${human(k)} ${v}`).join(', ')}` : ''}` });
@@ -889,7 +916,7 @@ function trialSides(tr, at, { dir = FLIGHT, logs = path.join(ROOT, 'artifacts') 
       waitBy: Object.fromEntries(Object.entries(waits.by).map(([k, v]) => [k, v * 60000])), stallMs: stall.ms, quickBy,
       byJev: decsAll.filter(d => d.byJev).length, noneGood: decsAll.filter(d => d.noneGood).length, streak: noneGoodStreakOf(decsAll),
       stanceAsks: stance.asks, stillAsks: stance.stillAsks, stillMs: stance.stillMs,
-      log: bl?.read ? { holds: Object.values(bl.repeat).reduce((x, y) => x + y, 0), reasked: Object.values(bl.reaskAfterHold).reduce((x, y) => x + y, 0), reaskedBy: bl.reaskAfterHold } : null };
+      log: bl?.read ? { holds: Object.values(bl.repeat).reduce((x, y) => x + y, 0), reasked: Object.values(bl.reaskAfterHold).reduce((x, y) => x + y, 0), reaskedBy: bl.reaskAfterHold, asked: Object.values(bl.askedAfterHold || {}).reduce((x, y) => x + y, 0) } : null };
   }
   // The first rod carried, not one the trial began with (a checkpoint's).
   let rodAt = null;
@@ -919,7 +946,7 @@ function firstsOf(trials) {
 function cohort({ at, since = null, now = Date.now(), progress = null, root = ROOT, dir = FLIGHT }) {
   const trials = trialRecords({ since, now, dir: path.join(root, 'artifacts', 'midgame'), flight: dir });
   const deaths = resolveDeaths(serverDeaths(root), trials);
-  const blank = () => ({ trials: 0, hours: 0, clockedMs: 0, waitMs: 0, waitBy: {}, stallMs: 0, quickBy: {}, byJev: 0, noneGood: 0, streak: null, stanceAsks: 0, stillAsks: 0, stillMs: 0, logTrials: 0, holds: 0, reasked: 0, reaskedBy: {}, flightTrials: 0 });
+  const blank = () => ({ trials: 0, hours: 0, clockedMs: 0, waitMs: 0, waitBy: {}, stallMs: 0, quickBy: {}, byJev: 0, noneGood: 0, streak: null, stanceAsks: 0, stillAsks: 0, stillMs: 0, logTrials: 0, holds: 0, reasked: 0, reaskedBy: {}, askedAfter: 0, flightTrials: 0 });
   const acc = { before: blank(), after: blank() };
   const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
   trials.forEach((tr, i) => {
@@ -933,7 +960,7 @@ function cohort({ at, since = null, now = Date.now(), progress = null, root = RO
       for (const [k, v] of Object.entries(s.waitBy)) add(a.waitBy, k, v);
       for (const [k, v] of Object.entries(s.quickBy)) add(a.quickBy, k, v);
       if (s.streak && (!a.streak || s.streak.run > a.streak.run)) a.streak = { ...s.streak, world: tr.world };
-      if (s.log) { a.logTrials++; a.holds += s.log.holds; a.reasked += s.log.reasked; for (const [k, v] of Object.entries(s.log.reaskedBy)) add(a.reaskedBy, k, v); }
+      if (s.log) { a.logTrials++; a.holds += s.log.holds; a.reasked += s.log.reasked; a.askedAfter += s.log.asked || 0; for (const [k, v] of Object.entries(s.log.reaskedBy)) add(a.reaskedBy, k, v); }
     }
     if (progress) progress(i + 1, trials.length, tr.world);
   });
@@ -948,7 +975,7 @@ function cohort({ at, since = null, now = Date.now(), progress = null, root = RO
     const perHour = n => a.hours ? round(n / a.hours, 3) : null;
     return {
       trials: a.trials, withFlight: a.flightTrials, withBotLog: a.logTrials, hours: round(a.hours, 1), clockedHours: round(clockedMin / 60, 1),
-      reaskAfterHold: { total: a.reasked, holds: a.holds, perHour: perHour(a.reasked), by: a.reaskedBy, met: a.logTrials ? a.reasked <= T.reaskAfterHold.max : null },
+      reaskAfterHold: { total: a.reasked, holds: a.holds, perHour: perHour(a.reasked), by: a.reaskedBy, askedAfterHold: a.askedAfter, met: a.logTrials ? a.reasked <= T.reaskAfterHold.max : null },
       quickNothing: { total: quickTotal, per15: clockedMin ? round(quickTotal * 15 / clockedMin, 1) : null,
         worst: worstQuick ? { id: worstQuick[0], count: worstQuick[1], per15: clockedMin ? round(worstQuick[1] * 15 / clockedMin, 2) : null } : null,
         met: clockedMin ? !(worstQuick && worstQuick[1] * 15 / clockedMin >= T.quickNothing.per15) : null },
@@ -973,7 +1000,7 @@ function cohortTable(c) {
   const row = (name, f, target = '', met = null) => rows.push([name, cell(c.before, f), met ? mark(met(c.before)) : '', cell(c.after, f), met ? mark(met(c.after)) : '', target]);
   row('trials (flight, bot log)', s => `${s.trials} (${s.withFlight}, ${s.withBotLog})`);
   row('trial hours (clocked)', s => `${s.hours} (${s.clockedHours})`);
-  row('reaskAfterHold', s => `${s.reaskAfterHold.total} (${s.reaskAfterHold.perHour ?? '-'}/h), ${s.reaskAfterHold.holds} holds`, '0', s => s.reaskAfterHold.met);
+  row('reaskAfterHold', s => `${s.reaskAfterHold.total} (${s.reaskAfterHold.perHour ?? '-'}/h), ${s.reaskAfterHold.holds} holds, ${s.reaskAfterHold.askedAfterHold} asked in all`, '0', s => s.reaskAfterHold.met);
   row('quickNothing', s => `${s.quickNothing.total}, ${s.quickNothing.per15 ?? '-'}/15min${s.quickNothing.worst ? `; most ${s.quickNothing.worst.id} ${s.quickNothing.worst.per15}/15min` : ''}`, 'under 5 a 15 min per question', s => s.quickNothing.met);
   row('stallShare', s => `${pct(s.stallShare.share)} (${s.stallShare.minutes} min)`, 'under 10%', s => s.stallShare.met);
   row('waitShare', s => `${pct(s.waitShare.share)} (${s.waitShare.minutes} min)`, 'under 20%', s => s.waitShare.met);

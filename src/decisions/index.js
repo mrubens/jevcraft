@@ -305,7 +305,8 @@ const HOLDS_STEP = goal => require('../stillness').HOLDS.has(goal?.step?.action)
 // (tried.js), and one that changed nothing came to nothing.
 const WAIT_ANSWERS = new Set(['stay', 'back_to_wall', 'dig_in_and_fight', 'dig_in_at_spawner', 'fight_at_spawner', 'stay_in_fortress', 'wait_at_spawner', 'wait_for_day_sealed', 'rest_to_heal', 'pillar', 'seal', 'dig_down', 'hold_on_span', 'take_cover', 'out_of_sight', 'nook']);
 // The options offered, for the ledger (tried.js spent).
-const offeredOf = (tree, target = null) => Object.entries(tree || {}).filter(([, n]) => !n?.children).map(([key, n]) => ({ key, target: n?.target || target || null }));
+// A nested option by its path, as the ledger records it (note 611).
+const offeredOf = (tree, target = null) => tried.leavesOf(tree).map(({ key, node }) => ({ key, target: node?.target || target || null }));
 // Not in the ledger: the routing between the layers, asked every turn.
 const UNLEDGERED = new Set(['turn_priority']);
 // Said, never left out nor escalated: a stance against mobs about, the
@@ -379,7 +380,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     tree = read.tree;
     if (read.resting.length) resting = read.resting;
     // Kept on offer with nothing above to ask, each says its own rest.
-    if (read.allResting) { resting = null; if (above?.says) state = { ...(state || {}), nothingAbove: above.says }; }
+    // Kept on offer with nothing above to ask, each says its own rest; one
+    // held by the repeat rule is left out while another is on offer, and
+    // said here (note 611).
+    if (read.allResting) { resting = read.heldOut?.length ? read.heldOut : null; if (above?.says) state = { ...(state || {}), nothingAbove: above.says }; }
     below = tried.escalationsFor(goal, id);
   }
   const takeOne = (one, why = null) => {
@@ -472,14 +476,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       // above is asked with this failure said: not the same question, and
       // not a detour that walks eight blocks and comes back to it (note 571).
       const methods = holding.run ? [holding.run.choice] : holding.streak.map(s => s.choice);
-      if (ledgered) tried.hold(bot, goal, id, methods, holding.says, { target, targets: Object.fromEntries(methods.map(m => [m, tree[m]?.target])) });
+      if (ledgered) tried.hold(bot, goal, id, methods, holding.says, { target, targets: Object.fromEntries(methods.map(m => [m, tried.leafAt(tree, m)?.target])), anyTarget: !holding.run });
       // The answers held rest; a question with other ways left is asked
       // with those, the hold said, and escalates only once they rest too:
       // on 25583 fortress_leg's hold on back_to_fortress and leg_east would
       // have gone to the rung with its heights, the blocks to dig and the
       // Overworld's stone never offered (note 583).
       const after = ledgered && !SAY_ONLY.has(id) ? tried.read(bot, goal, id, original, { target }) : null;
-      if (!after || after.allResting || !Object.keys(after.tree).length || methods.some(m => after.tree[m])) escalateFrom(bot, goal, spec, holding.says, { until: after?.allResting ? after.until : 0 });
+      // A held answer is looked for by its path: a nested one is not a key
+      // of the top level (note 611).
+      if (!after || after.allResting || !Object.keys(after.tree).length || methods.some(m => tried.leafAt(after.tree, m))) escalateFrom(bot, goal, spec, holding.says, { until: after?.allResting ? after.until : 0 });
       tree = after.tree; resting = after.resting.length ? after.resting : null;
       const left = oneWay(tree);
       if (left) return takeOne(left);

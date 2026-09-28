@@ -69,8 +69,14 @@ function ledger(goal) {
   t.entries ||= []; t.escalations ||= [];
   return t;
 }
+// A hold still in force is kept whatever came after it: kept only among the
+// last KEEP entries, it was dropped within a minute and a half by the one
+// way taken at every pass after it, and the held answer was offered again
+// (the replay of mid-243-af-fortress-4, note 611).
 function prune(t, now) {
-  t.entries = t.entries.filter(e => e.outcome === 'pending' ? now - e.at < 3 * WINDOW_MS : now - e.at < 2 * WINDOW_MS).slice(-KEEP);
+  const live = t.entries.filter(e => e.outcome === 'pending' ? now - e.at < 3 * WINDOW_MS : now - e.at < 2 * WINDOW_MS);
+  const kept = new Set(live.slice(-KEEP));
+  t.entries = live.filter(e => kept.has(e) || (e.held && e.until > now));
   t.escalations = t.escalations.filter(e => now - e.at < WINDOW_MS).slice(-20);
 }
 function workOf(goal, now) { try { return require('./stillness').actionOf(goal, now).key; } catch (_) { return null; } }
@@ -182,8 +188,12 @@ function about(goal, { q, method, target = null, here, now = Date.now(), work = 
   const t = goal?.tried;
   if (!t?.entries || !here) return [];
   const tp = P(target);
+  // A hold on answers that came back at once whatever the facts (repeats.js
+  // quickBefore) holds from about here whatever their target: the target is
+  // among the facts that moved between them (note 611).
   return t.entries.filter(e => e.q === q && e.method === method && now - e.at < WINDOW_MS && (!work || !e.work || e.work === work) &&
-    (e.target && tp ? dist(e.target, tp) <= TARGET_NEAR && e.place && dist(e.place, here) <= TARGET_FROM : !e.target && !tp && e.place && dist(e.place, here) <= NEAR));
+    (e.anyTarget && e.until > now ? e.place && dist(e.place, here) <= NEAR
+      : e.target && tp ? dist(e.target, tp) <= TARGET_NEAR && e.place && dist(e.place, here) <= TARGET_FROM : !e.target && !tp && e.place && dist(e.place, here) <= NEAR));
 }
 function blockedOf(list) { return list.filter(e => e.outcome === 'blocked'); }
 // Resting: blocked REST_AFTER times in the window, until REST_MS after the
@@ -223,43 +233,83 @@ function triedSays(list, { here, now = Date.now(), toward = false } = {}) {
 // choice taken unasked); else it stays on offer with its rest said. A
 // say-only question is never escalated from here.
 const addSays = (node, said) => ({ ...node, description: typeof node.description === 'string' ? `${node.description} ${said}` : { ...(node.description || {}), triedFromHere: said } });
+// The options' leaves, each by its path as the ledger records an answer
+// (decide's path joined): a nested answer, obtain_food/return_for_food, is
+// read, rested and held as a top-level one is. The ledger read the top
+// level only, so a repeat hold on a nested answer rested nothing and the
+// next asking offered it again: on mid-243-af-fortress-4 survival_priority
+// was held on obtain food/return for food 362 times and asked again with
+// it on offer 769 times, each within seconds of its hold (note 611).
+function leavesOf(tree, pre = []) {
+  return Object.entries(tree || {}).flatMap(([k, n]) => n?.children ? leavesOf(n.children, [...pre, k]) : [{ key: [...pre, k].join('/'), node: n }]);
+}
+// The tree again with each leaf as `nodes` has it now: a leaf left out is
+// gone, and a branch with nothing left goes with it.
+function rebuilt(tree, nodes, pre = []) {
+  const out = {};
+  for (const [k, n] of Object.entries(tree || {})) {
+    if (n?.children) { const kids = rebuilt(n.children, nodes, [...pre, k]); if (Object.keys(kids).length) out[k] = { ...n, children: kids }; continue; }
+    const node = nodes.get([...pre, k].join('/'));
+    if (node) out[k] = node;
+  }
+  return out;
+}
+// A leaf by its path key ('obtain_food/return_for_food'), or undefined.
+function leafAt(tree, key) {
+  let node = { children: tree };
+  for (const k of String(key).split('/')) node = node?.children?.[k];
+  return node && !node.children ? node : undefined;
+}
 function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.now() } = {}) {
   const here = P(bot?.entity?.position);
   if (!goal?.tried?.entries?.length || !here) return { tree, resting: [], allResting: false };
-  const out = {}, resting = [];
-  for (const [key, node] of Object.entries(tree)) {
-    if (node?.children) { out[key] = node; continue; }
+  const nodes = new Map(), resting = [];
+  for (const { key, node } of leavesOf(tree)) {
     const t = P(node?.target) || P(target);
     // A stance, the body's way out, the shield: only their waits are read
     // (note 521: failedHereJustNow says their failures).
     const list = about(goal, { q, method: key, target: t, here, now }).filter(e => !sayOnly || e.wait);
     const said = triedSays(list, { here, now, toward: !!t });
     const until = restsUntil(list, now);
-    if (until) { resting.push({ key, until, wait: blockedOf(list).every(e => e.wait), said, says: `${label(key)}: ${said} It rests ${ago(until - now)} more from here.` }); out[key] = node; continue; }
-    out[key] = said ? addSays(node, said) : node;
+    // Held by the repeat rule (decisions/repeats.js), and still held.
+    const held = blockedOf(list).some(e => e.held && e.until > now);
+    if (until) { resting.push({ key, until, held, wait: blockedOf(list).every(e => e.wait), said, says: `${label(key)}: ${said} It rests ${ago(until - now)} more from here.` }); nodes.set(key, node); continue; }
+    nodes.set(key, said ? addSays(node, said) : node);
   }
-  if (!resting.length) return { tree: out, resting: [], allResting: false };
+  if (!resting.length) return { tree: rebuilt(tree, nodes), resting: [], allResting: false };
+  const isResting = k => resting.some(r => r.key === k);
+  const onOffer = () => [...nodes.keys()].filter(k => nodes.get(k) && k !== 'none_good');
+  // Every way resting with nothing above to ask stays on offer, each with
+  // its rest said (note 609), but not an answer the repeat rule holds while
+  // one it does not hold stays on offer: a held answer holds until what it
+  // depends on changes (the place, what is carried, a block dug or placed,
+  // its five minutes). Kept on offer at the top, it was chosen again at
+  // once: on mid-242-bb rung_progress was held on keep at it 31 times and
+  // asked again with it on offer 91 times, each within seconds (note 611).
+  const allResting = ({ say }) => {
+    const heldOut = resting.some(r => !r.held && nodes.get(r.key)) ? resting.filter(r => r.held && nodes.get(r.key)) : [];
+    for (const r of heldOut) nodes.delete(r.key);
+    if (say) for (const r of resting) if (nodes.get(r.key)) nodes.set(r.key, addSays(nodes.get(r.key), `${r.said} It rests ${ago(r.until - now)} more from here.`));
+    return { tree: rebuilt(tree, nodes), resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)), heldOut: heldOut.map(r => r.says) };
+  };
   const ways = resting.filter(r => !r.wait), waits = resting.filter(r => r.wait);
-  const open = Object.keys(out).filter(k => !resting.some(r => r.key === k));
+  const open = onOffer().filter(k => !isResting(k));
   // Every way resting: the question above is asked instead where there is
   // one; where there is none, all stay on offer, each with its rest said
   // (note 609).
-  if (!sayOnly && !open.length && !waits.length) {
-    for (const r of resting) out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here.`);
-    return { tree: out, resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)) };
-  }
+  if (!sayOnly && !open.length && !waits.length) return allResting({ say: true });
   const left = [];
-  if (!sayOnly && open.length) for (const r of ways) { delete out[r.key]; left.push(r); }
+  if (!sayOnly && open.length) for (const r of ways) { nodes.delete(r.key); left.push(r); }
   // Waits: left out while two or more other ways, none of them resting,
   // stay on offer.
-  const others = () => Object.keys(out).filter(k => k !== 'none_good' && !resting.some(r => r.key === k)).length;
+  const others = () => onOffer().filter(k => !isResting(k)).length;
   for (const r of waits) {
-    if (others() >= 2) { delete out[r.key]; left.push(r); continue; }
-    out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here, kept on offer: fewer than two other ways are open.`);
+    if (others() >= 2) { nodes.delete(r.key); left.push(r); continue; }
+    nodes.set(r.key, addSays(nodes.get(r.key), `${r.said} It rests ${ago(r.until - now)} more from here, kept on offer: fewer than two other ways are open.`));
   }
-  for (const r of resting) if (!left.includes(r) && !waits.includes(r) && out[r.key]) out[r.key] = addSays(out[r.key], `${r.said} It rests ${ago(r.until - now)} more from here.`);
-  if (!sayOnly && !left.length && !Object.keys(out).some(k => !resting.some(r => r.key === k))) return { tree: out, resting: resting.map(r => r.says), allResting: true, until: Math.min(...resting.map(r => r.until)) };
-  return { tree: out, resting: left.map(r => r.says), allResting: false };
+  for (const r of resting) if (!left.includes(r) && !waits.includes(r) && nodes.get(r.key)) nodes.set(r.key, addSays(nodes.get(r.key), `${r.said} It rests ${ago(r.until - now)} more from here.`));
+  if (!sayOnly && !left.length && !onOffer().some(k => !isResting(k))) return allResting({ say: false });
+  return { tree: rebuilt(tree, nodes), resting: left.map(r => r.says), allResting: false };
 }
 
 // A repeat hold (decisions/index.js): the answers held rest from here for
@@ -267,11 +317,18 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.n
 // fired (repeats.held drops the run), and the next asking began a new run:
 // on 25592, 1,266 of 1,272 other_way answers came within two minutes of
 // one of its 589 holds (note 573's audit, for note 571).
-function hold(bot, goal, q, methods, why, { target = null, targets = {}, now = Date.now() } = {}) {
+// anyTarget: the answers held came back at once whatever the facts said
+// between (repeats.js quickBefore), their targets among them: held from
+// about here whatever the target. On mid-242-bb fortress_approach was held
+// on tunnel, keep searching and cross level with the fortress place found
+// moving 15 to 40 blocks at each asking, the bot standing still, and each
+// place found anew was a way not held, asked again within a second (note
+// 611).
+function hold(bot, goal, q, methods, why, { target = null, targets = {}, anyTarget = false, now = Date.now() } = {}) {
   settle(bot, goal, { q, now });
   for (const method of new Set(methods)) {
     const e = record(bot, goal, { q, method, target: P(targets[method]) || target, outcome: 'blocked', why, now });
-    if (e) Object.assign(e, { held: true, until: now + REST_MS });
+    if (e) Object.assign(e, { held: true, until: now + REST_MS, ...(anyTarget ? { anyTarget: true } : {}) });
   }
 }
 
@@ -573,5 +630,5 @@ function rungDue(goal, says, now = Date.now()) {
   return true;
 }
 
-module.exports = { begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
+module.exports = { begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, leavesOf, leafAt, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
   sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };

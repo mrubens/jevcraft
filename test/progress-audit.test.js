@@ -129,7 +129,7 @@ test('the review measures: quick answers, re-asks after a hold, stall share, Net
   // 1. Seven of eight answers came back at once to nothing; the walked one did not.
   assert.deepEqual(r.quickNothing, [{ id: 'fortress_approach', quick: 7, answers: 8, per15: 7, answer: 'other_way' }]);
   // 2. One hold, one asking after it (the answer said again is not one).
-  assert.deepEqual(r.reask, { holds: { fortress_approach: 1 }, reasked: { fortress_approach: 1 }, total: 1 });
+  assert.deepEqual(r.reask, { holds: { fortress_approach: 1 }, reasked: { fortress_approach: 1 }, total: 1, asked: 1 });
   // 3. A quarter of the clock on persist.
   assert.equal(r.stall.share, 0.25);
   assert.deepEqual(r.stall.by, { persist: 3 });
@@ -260,6 +260,22 @@ test('note 598: a bot log scanned whole, its holds and re-asks split at the depl
   assert.deepEqual([after.repeat, after.reaskAfterHold, after.stall], [{ fortress_approach: 1 }, { fortress_approach: 1 }, 0]);
   // The tail reader counts the same from the deploy on.
   assert.deepEqual(readBotLog(log, at).reaskAfterHold, { fortress_approach: 1 });
+});
+
+test('note 611: a re-ask after a hold is the held answer offered again from where it was held; the question asked with it left out, or from new ground, is not', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'progress-'));
+  const log = path.join(dir, 'bot.log');
+  const tree = held => JSON.stringify({ continue_request: { description: 'c' }, obtain_food: { description: 'f', children: { ...(held ? { return_for_food: { description: 'r' } } : {}), hoglin_food: { description: 'h' } } } });
+  const said = (t, { held = true, x = -204.5 } = {}) => `{"status":"running","decision":{"at":"${iso(t)}","askedAt":"${iso(t - 100)}","id":"survival_priority","kind":"survival","path":["obtain_food","return_for_food"],"options":${tree(held)}},"position":{"x":${x},"y":61,"z":-200.5}}`;
+  const hold = '[repeat] survival priority: obtain food/return for food was chosen 2 times in the last 1 second with these same facts, and nothing measurable came of any of them';
+  // mid-243-af-fortress-4 at 14:24:07: the hold; then the question with the held answer left out, from six blocks
+  // on with it offered, and from where it was held with it offered.
+  fs.writeFileSync(log, [said(t0), hold, said(t0 + 500, { held: false }), said(t0 + 900, { x: -198.5 }), said(t0 + 1300), ''].join('\n'));
+  const r = readBotLog(log, t0 - min);
+  assert.deepEqual(r.askedAfterHold, { survival_priority: 3 });
+  assert.deepEqual(r.reaskAfterHold, { survival_priority: 1 });
+  const { after } = scanBotLog(log, { from: t0 - min, split: t0 - 1, chunk: 64 });
+  assert.deepEqual([after.askedAfterHold, after.reaskAfterHold], [{ survival_priority: 3 }, { survival_priority: 1 }]);
 });
 
 test('note 598: the cohort, before and after a deploy, across the trial records', () => {
