@@ -4677,3 +4677,75 @@ test('a retreat that finds no way says why to the next question', async () => {
   const failed = survival.state.stanceFailed.find(f => f.choice === 'retreat');
   assert.match(failed?.why || '', /no footing near is further from every mob/);
 });
+
+test('a run says who follows it, at each one\'s speed from the jar, and is held no longer than its seconds (mid-239-b)', async () => {
+  // mid-239-b ran ten blocks from a spider three off at seven health, told only that a way was found eleven blocks further from every mob;
+  // the spider (3.9 blocks a second to a sprint's 5.6, and it climbs) was biting again three seconds after, and the held retreat ran again (note 532).
+  const { blocksPerSecond, followRange, PLAYER_SPRINT } = require('../src/combat-estimate');
+  assert.equal(Math.round(blocksPerSecond('spider') * 10) / 10, 3.9);
+  assert.equal(Math.round(blocksPerSecond('zombie') * 10) / 10, 2.3);
+  assert.equal(Math.round(blocksPerSecond('skeleton') * 10) / 10, 2.7);
+  assert.equal(Math.round(PLAYER_SPRINT * 10) / 10, 5.6, 'the same model gives a player\'s sprint as measured');
+  assert.equal(followRange('spider'), 16);
+  assert.equal(followRange('zombie'), 35);
+  const bot = crowdBot({ health: 7 });
+  const footing = [new Vec3(0, 63, 14)];
+  Object.assign(bot, { findBlocks: () => footing, pathfinder: { movements: {}, setGoal() {},
+    getPathTo: () => ({ status: 'success', path: Array.from({ length: 14 }, (_, i) => new Vec3(0.5, 64, 1.5 + i)) }) }, clearControlStates() {} });
+  const spider = { id: 1, name: 'spider', type: 'hostile', position: new Vec3(0.5, 64, -2.5), height: 0.9, isValid: true };
+  bot.entities = { 1: spider };
+  const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } });
+  const danger = [{ entity: spider, distance: 3, visible: true }];
+  await survival.scoutRetreat(new Task('dusk'), danger);
+  const retreat = survival.stanceOptions(new Task('dusk'), {}, () => {}, danger, false).retreat;
+  assert.match(retreat.description, /They follow a running player \(the bot sprints about 5\.6 blocks a second\): the spider 3 blocks off at about 3\.9 blocks a second, climbing walls: about \d+ blocks behind when the run ends, and at the bot about [\d.]+ seconds after/);
+  assert.equal(retreat.expects?.seconds, 2.5, 'held for its run, then asked again');
+  // No way looked for: the speeds and how far each follows.
+  delete survival.state.retreatScout;
+  const zombie = { id: 2, name: 'zombie', type: 'hostile', position: new Vec3(8.5, 64, 0.5), height: 1.95, isValid: true };
+  const blind = survival.stanceOptions(new Task('dusk'), {}, () => {}, [{ entity: zombie, distance: 8, visible: true }], false).retreat;
+  assert.match(blind.description, /the zombie 8 blocks off at about 2\.3 blocks a second, about 3\.3 a second slower than the run, and it gives up only more than 35 blocks behind/);
+  assert.equal(blind.expects, undefined);
+});
+
+test('dig_down\'s race is at the biter\'s own speed: a spider is at the shaft\'s top sooner than a zombie as far', () => {
+  const bot = crowdBot();
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const spider = survival.stanceOptions(new Task('dusk'), {}, () => {}, [crowdMob(1, 'spider', 12)], false).dig_down.description;
+  assert.match(spider, /The spider 12 blocks off can be at the shaft's top in about 3 seconds, before the lid/);
+  const zombie = survival.stanceOptions(new Task('dusk'), {}, () => {}, [crowdMob(2, 'zombie', 8)], false).dig_down.description;
+  assert.match(zombie, /The zombie 8 blocks off can be at the shaft's top in about 3 seconds, before the lid/);
+});
+
+test('knocked off the shaft it is digging, the bot steps back over it before the next block (mid-229-s)', async () => {
+  // mid-229-s: an arrow put it half a block off the column as the first block came out, and the dig went on beside it,
+  // two blocks down a hole it never dropped into, for five seconds under a skeleton's arrows until a zombie came (note 532).
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  const dugCells = new Set();
+  const blockAt = p => { const f = p.floored(); const name = dugCells.has(`${f}`) || f.y >= 63 ? 'air' : f.y >= 58 ? 'dirt' : 'stone'; const b = Block.fromStateId(registry.blocksByName[name].defaultState); b.position = f; return b; };
+  const controls = {};
+  const lowest = () => Math.min(63, ...[...dugCells].map(c => Number(c.replace(/[()]/g, '').split(',')[1])));
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entities: {}, registry, entity: { position: new Vec3(0.5, 63, 0.5), onGround: true },
+    health: 11, inventory: { items: () => [{ name: 'cobblestone', count: 8 }, { name: 'iron_pickaxe', count: 1 }], slots: {} }, blockAt, world: { raycast: () => null },
+    lookAt: async () => {}, getControlState: k => !!controls[k],
+    // A step toward the shaft's middle: over the open cells, the bot drops to the lowest.
+    setControlState(k, v) { controls[k] = v; if (k === 'forward' && v) this.entity.position = new Vec3(0.5, lowest(), 0.5); },
+    clearControlStates() {} });
+  const digs = [];
+  const survival = new Survival(bot, { navigate: async () => {}, place: async () => {},
+    dig: async (b, t, p) => {
+      const at = bot.entity.position;
+      const over = Math.floor(at.x) === p.x && Math.floor(at.z) === p.z;
+      digs.push({ cell: `${p}`, over });
+      dugCells.add(`${p}`);
+      // The first block out: an arrow knocks the bot to the rim of the cell beside; after that it drops into what it digs.
+      if (digs.length === 1) bot.entity.position = new Vec3(0.68, 63.4, -0.43);
+      else if (over) bot.entity.position = new Vec3(at.x, p.y, at.z);
+    } }, { state: { shelters: [] } });
+  const column = survival.shaftColumn({ radius: 0 });
+  assert(column.bottom, JSON.stringify(column));
+  await survival.digShaft(new Task('stance'), {}, () => {}, { ...column, here: column.start, spot: 'x', stance: true });
+  assert(digs.length >= 2, JSON.stringify(digs));
+  assert(digs.slice(1).every(d => d.over), `every block after the knock is dug from over the shaft: ${JSON.stringify(digs)}`);
+  assert.equal(Math.floor(bot.entity.position.z), 0, 'the bot ends in its shaft');
+});

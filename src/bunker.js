@@ -233,14 +233,11 @@ function coverWithin(bot, shooters, { steps = 8, avoid = [] } = {}) {
 // ticks. mid-242-y, told "about 1 damage" out of a skeleton's line three
 // blocks off, was shot as it went; then it dug an L that the skeleton
 // walked into, and was shot from the turn at arm's length (note 522).
-// How fast: a mob's walk is its movement speed twice over (the move
-// control sets both the speed and the input to it), against the ground's
-// friction, 0.6 x 0.91 kept each tick: 0.25 is about 2.75 blocks a second
-// (a skeleton), 0.35 about 5.4 (a pillager), where a player walks 4.3.
+// How fast: combat-estimate's blocksPerSecond, from the jar (a skeleton
+// about 2.7 blocks a second, a pillager 5.3, where a player walks 4.3).
 // A ghast drifts and does not follow a path; a blaze flies at it (below).
-const MOB_SPEED = { skeleton: 0.25, stray: 0.25, bogged: 0.25, parched: 0.25, witch: 0.25, pillager: 0.35, illusioner: 0.5, drowned: 0.23, blaze: 0.23, breeze: 0.63 };
+const { blocksPerSecond } = require('./combat-estimate');
 const FLIERS = new Set(['blaze', 'breeze']);
-const blocksPerSecond = name => { const s = MOB_SPEED[name] ?? 0.25; return s * s * 20 / (1 - 0.6 * 0.91); };
 const DRAW_SECONDS = 1;
 // The seconds until `shooter` has a line to `cell` again by walking its way
 // toward it, the draw included, and the blocks walked: null when it has

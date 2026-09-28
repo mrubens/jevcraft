@@ -179,6 +179,30 @@ function fireballSays(distance) {
 // far it fires from: a blaze by where its volleys land.
 const FIRE_REACH = { ...RANGE, blaze: FIRE_LANDS };
 const HOLD_SECONDS = 15, APPROACH = 3, FUSE = 1.5, LIGHTS_AT = 3;
+// How fast each mob goes after the bot on the ground, from the 26.1 server
+// jar: its movement speed attribute (createAttributes), and the move
+// control sets both the speed and the input to it (Mob.setSpeed sets zza),
+// so a step is the speed squared, the input kept at 0.98 (aiStep), against
+// the ground's friction, 0.6 x 0.91 kept each tick. A player sprinting
+// (0.13, the input at 0.98) comes out at 5.6 blocks a second, as measured:
+// a spider or a hoglin about 3.9, a skeleton or a creeper 2.7, a zombie
+// 2.3, a piglin or a vindicator 5.3. Their chase goals go at this speed
+// (the modifier 1). A mob gives up a target further off than its follow
+// range: sixteen blocks unless set (Mob.createMobAttributes).
+const MOB_SPEED = {
+  zombie: 0.23, husk: 0.23, drowned: 0.23, zombie_villager: 0.23, zombified_piglin: 0.23,
+  spider: 0.3, cave_spider: 0.3, enderman: 0.3, hoglin: 0.3, zoglin: 0.3, warden: 0.3, ravager: 0.3,
+  skeleton: 0.25, stray: 0.25, bogged: 0.25, parched: 0.25, wither_skeleton: 0.25, creeper: 0.25, witch: 0.25, silverfish: 0.25, endermite: 0.25,
+  pillager: 0.35, vindicator: 0.35, piglin: 0.35, piglin_brute: 0.35, illusioner: 0.5, evoker: 0.5, creaking: 0.4,
+  blaze: 0.23, breeze: 0.63, magma_cube: 0.2, slime: 0.2,
+};
+const FOLLOW_RANGE = { zombie: 35, husk: 35, drowned: 35, zombie_villager: 35, zombified_piglin: 35, enderman: 64, blaze: 48, pillager: 32, ravager: 32, creaking: 32, warden: 24, breeze: 24, vindicator: 12, piglin_brute: 12, evoker: 12, illusioner: 18 };
+const SPRINT_SPEED = 0.13;
+const groundSpeed = s => s * s * 0.98 * 20 / (1 - 0.6 * 0.91);
+const blocksPerSecond = name => groundSpeed(MOB_SPEED[name] ?? 0.25);
+const followRange = name => FOLLOW_RANGE[name] ?? 16;
+// The bot's own run, the same way: the input 0.98 at the sprint's speed.
+const PLAYER_SPRINT = SPRINT_SPEED * 0.98 * 20 / (1 - 0.6 * 0.91);
 const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / APPROACH);
 // A shot every two seconds (a witch's potion every three). A shield takes
 // about half of the arrows (raised between swings and against each shot
@@ -389,4 +413,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { WITHER, SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

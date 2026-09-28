@@ -12,7 +12,7 @@ const { maintainVitals, chooseFood, lastResortFood, sideEffectSays, checkAir } =
 const { foodSupply, lastResortSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { kitReady } = require('./mob-policy');
-const { fightEstimate, stanceCost, RANGE } = require('./combat-estimate');
+const { fightEstimate, stanceCost, RANGE, blocksPerSecond, followRange } = require('./combat-estimate');
 const { walkersApart, apartSays } = require('./walk-reach');
 const { darkCells, groundCells, placeTorches, lightSources, blockLight } = require('./torches');
 // Dark enough where the bot stands for monsters to spawn: a fact for the
@@ -70,6 +70,32 @@ const above = (bot, danger) => {
   const y = Math.floor(bot.entity.position.y), up = danger.filter(t => !shooter(t.entity) && t.distance <= 8 && Math.floor(t.entity.position?.y ?? y) >= y + 1);
   return up.length ? ` ${up.length === 1 ? `A ${up[0].entity.name.replaceAll('_', ' ')} stands` : `${up.length} of the mobs stand`} a block or more above the bot's feet (${up.map(t => `${Math.floor(t.entity.position.y) - y} up, ${Math.round(t.distance)} off`).join('; ')}): two up is within reach of ${up.length === 1 ? 'it' : 'them'}.` : '';
 };
+// Who comes after a run, and how soon it is at the bot again: every mob
+// that walks goes after a player it is set on while within its follow
+// range, at its own speed (combat-estimate blocksPerSecond, from the jar).
+// mid-239-b ran ten blocks from a spider three off at seven health, told
+// "a way is found ... 11 blocks further from every mob", as if they stood
+// still; a spider goes 3.9 blocks a second to a sprint's 5.6 and climbs,
+// and was biting again under three seconds after the run ended (note 532).
+// Shooters are said by their shots; a rider and an enderman on their own.
+function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runSeconds = null } = {}) {
+  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && !t.entity.vehicle && t.entity.name !== 'enderman' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name))
+    .sort((a, b) => a.distance - b.distance).slice(0, 3);
+  if (!chasers.length) return '';
+  const r1 = x => Math.round(x * 10) / 10;
+  const dest = destination ? new Vec3(destination.x + 0.5, destination.y, destination.z + 0.5) : null;
+  const each = chasers.map(t => {
+    const name = t.entity.name.replaceAll('_', ' '), v = blocksPerSecond(t.entity.name), range = followRange(t.entity.name);
+    const climbs = REACH_UP[t.entity.name] === 'climbs' ? ', climbing walls' : '';
+    const head = `the ${name} ${Math.round(t.distance)} blocks off at about ${r1(v)} blocks a second${climbs}`;
+    if (!dest || !runSeconds) return `${head}${v >= SPRINT ? ', as fast as the run or faster' : `, about ${r1(SPRINT - v)} a second slower than the run`}, and it gives up only more than ${range} blocks behind`;
+    const toDest = t.entity.position.distanceTo(dest), arrives = Math.max(0, toDest - 1.5) / v, behind = toDest - v * runSeconds;
+    if (behind > range) return `${head}: about ${Math.round(behind)} blocks behind when the run ends, past the ${range} it follows to, and it gives up`;
+    if (arrives <= runSeconds) return `${head}: it is at the bot before the run ends`;
+    return `${head}: about ${Math.max(1, Math.round(behind))} blocks behind when the run ends, and at the bot about ${r1(arrives - runSeconds)} seconds after`;
+  });
+  return ` They follow a running player (the bot sprints about ${SPRINT} blocks a second): ${each.join('; ')}.`;
+}
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
 const NO_ROUTE_YET = ' No route is checked yet: where it ends, how high and how lit, is found as it runs.';
@@ -1853,9 +1879,12 @@ class Survival {
       // zombie eight blocks off, 5.4 seconds of digging against its two of
       // walking; the three came to the shaft's top before the lid, the dig
       // stopped for them, and they dropped in on the bot (note 526).
-      const firstBiter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((a, b) => a.distance - b.distance)[0];
-      const biterAt = firstBiter ? Math.max(0, Math.round((firstBiter.distance - 1.5) / 3)) : null;
-      const digRace = firstBiter && biterAt < setup ? ` The nearest ${firstBiter.entity.name.replaceAll('_', ' ')}, ${Math.round(firstBiter.distance)} blocks off, can be at the shaft's top in about ${biterAt} second${biterAt === 1 ? '' : 's'}, before the lid: a biter within three stops the dig (it follows down an open shaft), and the bot is left at the foot of an open shaft that mobs drop into, onto it.` : '';
+      // At its own speed: a spider twelve blocks off is at the top in under
+      // three seconds, a zombie in four and a half (combat-estimate).
+      const walkIn = t => Math.max(0, t.distance - 1.5) / blocksPerSecond(t.entity.name);
+      const firstBiter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && !apart.ids.has(t.entity.id)).sort((a, b) => walkIn(a) - walkIn(b))[0];
+      const biterAt = firstBiter ? Math.round(walkIn(firstBiter)) : null;
+      const digRace = firstBiter && biterAt < setup ? ` The ${firstBiter.entity.name.replaceAll('_', ' ')} ${Math.round(firstBiter.distance)} blocks off can be at the shaft's top in about ${biterAt} second${biterAt === 1 ? '' : 's'}, before the lid: a biter within three stops the dig (it follows down an open shaft), and the bot is left at the foot of an open shaft that mobs drop into, onto it.` : '';
       options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + digRace + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
         run: async () => {
           this.report(goal, save, { action: 'dig_down', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, depth, stance: true });
@@ -1986,16 +2015,26 @@ class Survival {
     // retreat that failed did so in 1.2 seconds on the median), and the next
     // stance was asked from lower health. The way found before the question
     // (scoutRetreat), or at least the footing.
-    const runShot = seconds => { const c = stanceCost({ mobs: mobs.filter(m => m.shoots), setup: seconds, seconds }); return c.damage ? ` About ${c.damage} damage from the shooters in range over those seconds, the shield down, from ${Math.round(bot.health * 10) / 10} health${c.damage >= bot.health ? ' (more than the bot has)' : ''}.` : ''; };
-    let footing = NO_ROUTE_YET;
+    const runShotCost = seconds => stanceCost({ mobs: mobs.filter(m => m.shoots), setup: seconds, seconds }).damage;
+    const runShot = seconds => { const d = runShotCost(seconds); return d ? ` About ${d} damage from the shooters in range over those seconds, the shield down, from ${Math.round(bot.health * 10) / 10} health${d >= bot.health ? ' (more than the bot has)' : ''}.` : ''; };
+    let footing = NO_ROUTE_YET, runExpects = null;
     const scout = this.state.retreatScout;
+    const scouted = scout && scout.feet === `${feet}` && Date.now() - scout.at < 2000 ? scout : null;
     if (onPillar) footing = ` The bot stands ${onPillar} blocks up on a pillar of its own, and a route drops three blocks at most: from up here there is no way off it to run by.`;
-    else if (scout && scout.feet === `${feet}` && Date.now() - scout.at < 2000) {
-      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}`; }
+    else if (scouted) {
+      // Held no longer than the run: a retreat that reached its footing was
+      // held for fifteen seconds and run again from there without a
+      // question, a spider at arm's length; the new run's route searches
+      // stood the bot still for 3.8 seconds of bites, seven health to one
+      // (mid-239-b, note 532). Past its seconds it is asked again.
+      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10; runExpects = { damage: runShotCost(secs), seconds: Math.max(1, secs), oneHit }; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}`; }
       else if (!scout.spots) footing = ` Nowhere to run to: no footing within ${scout.radius} blocks is four blocks further than here from every mob about, so a run from here fails at once.`;
       else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.`;
-      else footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried as it runs.`;
+      // The rest are searched before a step is taken, up to 150 ms each
+      // (wayAway), not as it runs.
+      else footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, up to about ${Math.max(1, Math.round((scout.candidates - scout.tried) * 0.15))} seconds standing still.`;
     }
+    const chase = chaseSays(bot, danger, { apartIds: apart.ids, destination: scouted?.destination, runSeconds: scouted?.destination ? scouted.blocks / SPRINT : null });
     // A rider on a horse or a camel is faster than a running player:
     // mid-215-a ran four times from a zombie on a zombie horse with a spear,
     // caught each time, 11.3 health to 4.4 in one charge (2026-09-26).
@@ -2006,7 +2045,7 @@ class Survival {
     // arrival each time, 16 health to none (2026-09-27).
     const endermen = danger.some(t => t.entity.name === 'enderman');
     const endermanSays = endermen ? ' An enderman after the bot teleports to it: a run from one ends with it beside the bot again.' : '';
-    options.retreat = { description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + (creeperCount ? ' Creepers and spiders follow a running player.' : '') + riderSays + endermanSays + footing + unseen,
+    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + riderSays + endermanSays + footing + chase + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // In the Nether with its portal close, the way home is a stance too:
     // mid-92-q came out beside its portal among skeletons and ghasts, turned
@@ -3194,16 +3233,37 @@ class Survival {
     if (biting()) return raced('a mob at arm\'s length would follow the bot down the open shaft');
     if (shotAt()) return shooting();
     if (racing(start.y - 1)) return raced();
+    // The bot stays over its shaft: an arrow's knockback on the surface put
+    // mid-229-s half a block off the column as its first block came out,
+    // and the dig went on beside it, two blocks down a hole it never
+    // dropped into, for five seconds under a skeleton's arrows until a
+    // zombie came (the saved world read, note 532). Knocked off, it steps
+    // back over the opening, as a player does, and drops in.
+    // Near its middle, not on its rim: a body three tenths of a block
+    // either side of its center stands on the ground beside until it is.
+    const offMiddle = () => Math.hypot(bot.entity.position.x - (start.x + 0.5), bot.entity.position.z - (start.z + 0.5));
+    const onColumn = () => Math.floor(bot.entity.position.x) === start.x && Math.floor(bot.entity.position.z) === start.z;
+    const backOn = async () => {
+      if (onColumn() && offMiddle() <= 0.25) return true;
+      if (offMiddle() > 2) return false;
+      const over = new Vec3(start.x + 0.5, bot.entity.position.y, start.z + 0.5);
+      await move(bot, task, { label: 'back_over_shaft', keys: ['forward'], sneak: false, why: 'knocked off the shaft it is digging, back over its opening', look: over, maxMs: 800, until: () => offMiddle() <= 0.25 });
+      return onColumn();
+    };
+    const offColumn = () => { this.state.stanceWhy = 'knocked off the shaft\'s column and could not step back over it'; setAside(this, 'shaft_pocket', spot, this.state.stanceWhy, 30000); save(); return false; };
     this.report(goal, save, { action: 'shaft_pocket', from: { ...start }, to: { ...bottom } });
     for (let y = start.y - 1; y >= bottom.y; y--) {
       task.check(); checkAir(bot);
       if (racing(y)) return raced();
       if (biting()) return raced('a mob at arm\'s length would follow the bot down the open shaft');
       if (shotAt()) return shooting();
+      if (!await backOn()) return offColumn();
       const c = new Vec3(start.x, y, start.z);
       if (bot.blockAt(c)?.boundingBox === 'block') await this.actions.dig(bot, task, c, { requireDrops: false, dropInto: true });
+      if (!await backOn()) return offColumn();
       for (let i = 0; i < 20 && bot.entity.position.y > y + 0.1; i++) { task.check(); await sleep(50); }
     }
+    if (!await backOn()) return offColumn();
     // One block over the head: whatever solid block the pockets hold now,
     // cobblestone from the dig among them. Sand or gravel would fall on it.
     const roof = bottom.offset(0, 2, 0);
