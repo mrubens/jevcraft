@@ -22,6 +22,42 @@ The clips are rendered with ReplayMod from recordings of the trials.
 
 Every trial and fix is logged in [docs/trial-notes.md](docs/trial-notes.md).
 
+## Run it yourself
+
+You need Node.js 22 or newer, a [TypeSafe](https://typesafe.ai/) API key, and macOS or Linux. The trial scripts download Java and the Minecraft server for you.
+
+```sh
+git clone https://github.com/mrubens/jevcraft.git
+cd jevcraft
+npm ci
+cp .env.example .env    # then set TYPESAFE_API_KEY in .env
+```
+
+### Play alongside Jev
+
+Point the bot at a Minecraft Java 26.1 server you run. In `.env`, set `MC_HOST` and `MC_PORT` (defaults: localhost, 25565). Leave `MC_AUTH=offline` for an offline-mode server, or use `MC_AUTH=microsoft` with a separate account for the bot. Then:
+
+```sh
+npm start
+```
+
+Join the same server and talk to it in chat, for example `Jev come here` or `Jev your dream is to beat the game`. More in [Using Jev as a chat companion](#using-jev-as-a-chat-companion).
+
+### Run a trial
+
+A trial gives Jev a fresh world on its own server and judges the result, the way we test it.
+
+```sh
+sh scripts/trials/setup.sh 1                          # Java 25, the 26.1.2 server, Fabric and ServerReplay; one server folder on port 25581
+node scripts/first-days.js start first-days-1         # a fresh Normal world and a fresh bot
+node scripts/first-days.js verdict                    # how it is going, or how it ended
+node scripts/trials/trail-map.js 25581 --minutes 15   # a map of where it has been, in artifacts/trails/
+```
+
+The first-days trial lasts an hour of real time, three in-game days. To watch, run `sh scripts/trials/spectate.sh <your Minecraft name> &` and join `localhost:25581`; it puts you in Spectator mode on Jev. To run several at once, pass a larger number to `setup.sh` and choose a server with `FIRST_DAYS_PORT=25582`. Later stages (the Nether, fortresses) start from a world a first-days trial finished: see `scripts/midgame.js` and [scripts/README.md](scripts/README.md).
+
+Each trial server uses up to 2 GB of memory and about one CPU core.
+
 ## How it works
 
 Code decides what is possible. Jev decides what to do.
@@ -182,19 +218,7 @@ More in [docs/](docs/README.md), including the [rule audit](docs/rule-audit.md) 
 
 ## Using Jev as a chat companion
 
-The same bot takes requests in game chat: gather, craft, build, explore, or pursue a long-term goal.
-
-You need Node.js 22+, a Minecraft Java 26.1 server you run, and a TypeSafe or OpenRouter API key.
-
-```sh
-git clone https://github.com/mrubens/jevcraft.git
-cd jevcraft
-npm ci
-cp .env.example .env   # set TYPESAFE_API_KEY and MC_HOST/MC_PORT
-npm start
-```
-
-Use `MC_AUTH=microsoft` on an authenticated server, with the bot's own account. Start messages with "Jev":
+The same bot takes requests in game chat: gather, craft, build, explore, or pursue a long-term goal. Setup is under [Play alongside Jev](#play-alongside-jev). Start messages with "Jev":
 
 | Request | What it does |
 | --- | --- |
