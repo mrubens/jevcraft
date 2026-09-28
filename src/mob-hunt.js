@@ -11,13 +11,13 @@ const { dryStanding } = require('./mining-access');
 const { dryBodySpace, damagingTerrain, supportCell, dropWithin, dropNear, onSpan } = require('./terrain');
 const { fightEstimate } = require('./combat-estimate');
 const { checkAir } = require('./vitals');
-const { surveyRoute, countOf } = require('./skills');
+const { surveyRoute, countOf, pickaxeTier } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
 const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo, surveyCrossing, underFire, blocksCarried, stepOntoFooting, spanBlockSources, gatherSpanBlocks } = require('./bridging');
-const { crossToward, crossingSays, nearer, surveyLeg, legSays, WALK_SPEED, floorWay, walkFloor, headingColumns, wayDownSays, floorWalkSays, goDown, FLOOR_WALKABLE } = require('./nether-travel');
+const { crossToward, crossingSays, crossingSeconds, nearer, surveyLeg, legSays, WALK_SPEED, floorWay, walkFloor, headingColumns, wayDownSays, floorWalkSays, goDown, FLOOR_WALKABLE } = require('./nether-travel');
 const coverage = require('./nether-coverage');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -1121,10 +1121,12 @@ const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 const RESTOCK_REACH = 16, RESTOCK_WALK = 32, RESTOCK_MOST = 128;
 // Seconds a block of this kind takes to dig with the tool the dig would
 // take (skills.js cheapestTool), as the crossing's survey reckons it.
-function digSeconds(bot, block) {
+// `tool`, where given, is the item type it will be dug with (a pickaxe
+// made first), null the hand.
+function digSeconds(bot, block, tool) {
   if (typeof block?.digTime !== 'function') return null;
-  const tool = require('./skills').cheapestTool(bot, block);
-  return block.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000;
+  const type = tool !== undefined ? tool : require('./skills').cheapestTool(bot, block)?.type ?? null;
+  return block.digTime(type, false, false, false, [], {}) / 1000;
 }
 const kindsSaid = tally => Object.entries(tally).sort((x, y) => y[1] - x[1]).map(([n, c]) => `${c.toLocaleString('en-US')} ${n.replaceAll('_', ' ')}`).join(', ');
 // The restock priced: how many (what the longest leg short of blocks still
@@ -1133,25 +1135,120 @@ const kindsSaid = tally => Object.entries(tally).sort((x, y) => y[1] - x[1]).map
 function restockPlan(bot, goal, surveys) {
   const carried = blocksCarried(bot);
   const short = surveys.filter(s => Number.isInteger(s?.runsOut));
-  const need = Math.max(0, ...short.map(s => (s.lay || 0) - carried));
+  const pick = pickaxeFirst(bot);
+  return blocksPlan(bot, goal, Math.max(0, ...short.map(s => (s.lay || 0) - carried)), { tool: pick.carried || pick.none ? undefined : pick.tool });
+}
+// `need` blocks past those carried, as many as can be dug here, priced.
+function blocksPlan(bot, goal, need, { tool } = {}) {
+  const carried = blocksCarried(bot);
   const found = spanBlockSources(bot, { reach: RESTOCK_REACH, walk: RESTOCK_WALK, skip: p => isSetAside(goal, 'reach', p) });
-  if (!need || !found.sources.length) return { found, need, want: 0 };
+  if (!need || !found.sources.length) return { found, need, want: 0, carried };
   const want = Math.min(need, RESTOCK_MOST, found.sources.length);
   const first = found.sources[0], taken = found.sources.slice(0, want);
-  const digs = taken.map(t => digSeconds(bot, t.block));
+  const digs = taken.map(t => digSeconds(bot, t.block, tool));
   const seconds = digs.some(d => d === null) ? null : Math.round(first.walk / WALK_SPEED + digs.reduce((n, d) => n + d, 0) + want / WALK_SPEED);
   return { found, need, want, first, seconds, carried };
 }
-function restockSays(bot, plan, last) {
+function restockSays(bot, plan, last, pick = pickaxeFirst(bot)) {
   const { found, need, want, first, seconds, carried } = plan, here = bot.entity.position;
   const has = found.sources.length;
   const whereFrom = first.walk ? `a walk of ${first.walk} block${first.walk === 1 ? '' : 's'} from here` : 'where the bot stands';
   return `Dig ${want} block${want === 1 ? '' : 's'} to lay spans with here, one after another, from the ${has} that can be dug from ground walked to from here (${kindsSaid(found.reachable)}): ` +
-    `the nearest ${Math.round(first.p.distanceTo(here))} blocks off, dug from ${whereFrom}${seconds === null ? '' : `, about ${seconds} seconds in all`}. ` +
+    `the nearest ${Math.round(first.p.distanceTo(here))} blocks off, dug from ${whereFrom}${seconds === null ? '' : `, about ${seconds} seconds in all`}. ${pick.says}` +
     `The longest leg short of blocks needs ${need + carried} laid and ${carried} are carried: ${need} short${want < need ? `, and only ${want} can be had here` : ''}. ` +
     (Object.keys(found.unreachable).length ? `Within ${RESTOCK_REACH} blocks but not to be dug from ground walked to from here (across open drop, under a span's floor, or with nowhere for the drop to land): ${kindsSaid(found.unreachable)}. ` : '') +
     (last ? `The last restock, ${Math.max(1, Math.round((Date.now() - last.at) / 60000))} min ago ${Math.round(Math.hypot(last.from.x - here.x, last.from.z - here.z))} blocks from here, gained ${last.gained}${last.why ? `: ${last.why}` : ''}. ` : '') +
     'The leg is chosen again after.';
+}
+
+// The pickaxe the blocks are dug with: carried, or made first from the
+// wood carried (the mining step makes one: mid-242-ab-nether-4's iron
+// pickaxe wore out beside its fortress and its restock made a wooden one
+// from four oak logs), or none, and netherrack dug by hand drops nothing.
+// Its restock was offered as "about 65 seconds" dug by hand, and the last
+// one had gained nothing (note 591). `tool` is what the digging is priced
+// with.
+function pickaxeFirst(bot) {
+  if (!bot.inventory?.items) return { carried: false, none: true, tool: null, says: '' };
+  if (pickaxeTier(bot) >= 1) return { carried: true, says: '' };
+  const items = bot.inventory?.items?.() || [];
+  const logs = items.filter(i => /_log$|_stem$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const planks = items.filter(i => /_planks$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const table = countOf(bot, 'crafting_table') > 0;
+  // Three planks and two sticks (a plank's worth), and four more for a table.
+  const enough = logs * 4 + planks >= (table ? 5 : 9);
+  const wood = [logs && `${logs} log${logs === 1 ? '' : 's'}`, planks && `${planks} planks`, table && 'a crafting table'].filter(Boolean).join(', ');
+  if (!enough) return { carried: false, none: true, tool: null, says: 'No pickaxe is carried and none can be made from what is carried: netherrack dug by hand drops nothing. ' };
+  return { carried: false, tool: bot.registry?.itemsByName?.wooden_pickaxe?.id ?? null,
+    says: `No pickaxe is carried, and netherrack dug by hand drops nothing: a wooden pickaxe is made first from what is carried (${wood}), a few seconds, and the rock is dug with it. ` };
+}
+
+// Straight at the fortress with the blocks for it mined here first: the
+// crossing surveyed to its end at the height the bot stands (rock dug,
+// blocks laid over the air and the lava), the blocks it lays against those
+// carried, the netherrack to be had here and its seconds, where the
+// crossing ends against the fortress's floors, and the shooters in sight.
+// mid-242-ab-nether-4 stood 102 blocks from a fortress behind a netherrack
+// wall, no blocks and no pickaxe, and was offered the pathfinder's route
+// ("found no route"), a staircase unmeasured and leaving; the legs offered
+// the blocks for a leg, and Jev answered none good six times in a row.
+// Straight at it at y 47, 142 cells: 205 blocks of rock dug and 36 laid,
+// 13 of them over lava, with 225 netherrack to be dug round the bot (note
+// 591). Null where the crossing needs no more blocks than are carried (the
+// crossing alone is cross_level), makes no ground, or nothing can be mined.
+const FORTRESS_CROSS = 192, CROSS_STACK = 64;
+function mineThenCrossPlan(bot, goal, target, bricks = []) {
+  if (typeof bot.blockAt !== 'function' || !/nether/.test(String(bot.game?.dimension || ''))) return null;
+  const pick = pickaxeFirst(bot);
+  if (pick.none) return null;
+  const tool = pick.carried ? undefined : pick.tool;
+  const carried = blocksCarried(bot);
+  let all = null;
+  try { all = surveyCrossing(bot, target, { cells: FORTRESS_CROSS, blocks: 999, tool }); } catch (_) { return null; }
+  if (!all.cells || all.gain < 1 || all.bridge <= carried) return null;
+  const plan = blocksPlan(bot, goal, Math.min(CROSS_STACK, all.bridge) - carried, { tool });
+  if (!plan.want) return null;
+  const withMined = surveyCrossing(bot, target, { cells: FORTRESS_CROSS, blocks: carried + plan.want, tool });
+  if (withMined.gain < 1) return null;
+  return { all, plan, withMined, pick, want: carried + plan.want, bricks, target };
+}
+function mineThenCrossSays(bot, cross, where) {
+  const { all, plan, withMined, pick, bricks } = cross, here = bot.entity.position;
+  const crossing = crossingSeconds(withMined), minutes = Math.max(1, Math.round(((plan.seconds ?? 0) + crossing) / 60));
+  const whereFrom = plan.first.walk ? `a walk of ${plan.first.walk} block${plan.first.walk === 1 ? '' : 's'}` : 'where the bot stands';
+  // Where it ends against the fortress: its nearest floor from there, or
+  // how high its bricks there run.
+  const end = withMined.end, floors = fortressFloors(bot, bricks);
+  const floor = floors.slice().sort((a, b) => a.distanceTo(end) - b.distanceTo(end))[0];
+  const column = bricks.filter(b => Math.hypot(b.x - end.x, b.z - end.z) <= 3);
+  const endSays = floor && Math.hypot(floor.x - end.x, floor.z - end.z) <= 16
+    ? ` From where it ends the nearest of the fortress's floors is ${Math.round(Math.hypot(floor.x + 0.5 - end.x, floor.z + 0.5 - end.z))} blocks across and ${Math.abs(floor.y + 1 - end.y)} ${floor.y + 1 >= end.y ? 'up' : 'down'}; the way onto it is asked from there.`
+    : column.length ? ` Where it ends, the fortress's bricks there run up to y ${Math.max(...column.map(b => b.y))}, ${Math.max(...column.map(b => b.y)) + 1 - end.y} above the feet; the way up onto them is asked from there.` : '';
+  const shooters = threatsInView(bot).filter(t => shooter(t.entity));
+  const shot = shooters.length
+    ? ` In sight: ${mobsSaid(shooters)}; no block is laid while one that can see the bot is within its reach, and a fireball's push on a one-wide span over open air is the fall.`
+    : ' No ghast or blaze is in sight now; were one to come, no block is laid while it can see the bot, and a fireball\'s push on a one-wide span over open air is the fall.';
+  return `Mine netherrack for blocks here first, then go straight at the fortress with them, ${where}. ${pick.says}` +
+    `The crossing to its end lays ${all.bridge} block${all.bridge === 1 ? '' : 's'} (${all.overLava} over lava) and digs ${all.dig} of rock in ${all.cells} cells; ${withMined.carried - plan.want} carried${all.bridge > withMined.carried ? `, ${withMined.carried} after the mining (${plan.want < plan.need ? `only ${plan.want} to be had here` : `a stack of ${CROSS_STACK} at most`}), so it stops short` : ''}. ` +
+    `Mined first: ${plan.want} from the ${plan.found.sources.length} that can be dug from ground walked to from here (${kindsSaid(plan.found.reachable)}), the nearest ${Math.round(plan.first.p.distanceTo(here))} blocks off, dug from ${whereFrom}${plan.seconds === null ? '' : `, about ${plan.seconds} seconds`}. ` +
+    `Then, with them: ${crossingSays(withMined, 'the fortress')}${endSays}${shot} About ${minutes} minute${minutes === 1 ? '' : 's'} in all.`;
+}
+// Mined, then crossed: the blocks gathered as the restock gathers them
+// (restockStep), then the crossing to its end. Returns why it ended short,
+// null when it went on to its end.
+async function mineThenCross(bot, task, goal, save, actions, state, cross) {
+  const { target } = cross;
+  if (blocksCarried(bot) < cross.want) {
+    const here = bot.entity.position;
+    state.restock = { want: cross.want, since: Date.now(), said: cross.plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) } }; save();
+    await restockStep(bot, task, goal, save, actions, state);
+  }
+  const survey = surveyCrossing(bot, target, { cells: FORTRESS_CROSS });
+  if (!survey.cells || survey.gain < 1) return `no crossing to make after the mining (${blocksCarried(bot)} blocks carried${state.lastRestock?.why ? `; the mining ended: ${state.lastRestock.why}` : ''})${survey.stoppedBy ? `: ${survey.stoppedBy}` : ''}`;
+  goal.step = { action: 'cross_toward', what: 'the fortress', target: { x: target.x, y: target.y, z: target.z }, cells: survey.cells, dig: survey.dig, bridge: survey.bridge, carried: survey.carried }; save();
+  try { await bridgeTo(bot, task, target, { maxBlocks: survey.bridge, maxSteps: survey.cells }); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; return err.message; }
+  return survey.stoppedBy;
 }
 
 // A leg that ended at once, no ground made from where it began, rests
@@ -1366,6 +1463,30 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   }
   if (fortress) {
     if (fortress.offer !== false) options[fortress.key] = { description: fortress.description, run: fortress.run };
+    // Off its floors, straight at it with the blocks mined here first: a
+    // way in the legs' blocks never were (note 591). Chosen here it is
+    // carried out, not the fortress's ways asked again (the flip of note
+    // 541), so it is offered from where Jev left the fortress over it too,
+    // said so; the ledger rests it where it comes to nothing.
+    const bricks = fortress.bricks || [];
+    if (fortress.key === 'back_to_fortress' && bricks.length && actions.mineAt && actions.navigate) {
+      const floors = fortressFloors(bot, bricks), near = list => list.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+      const target = near(floors.length ? floors : bricks);
+      const cross = mineThenCrossPlan(bot, goal, target, bricks);
+      if (cross) {
+        const off = Math.round(flatTo(target, here)), dy = Math.round(target.y + 1 - here.y);
+        options.blocks_then_cross = { description: mineThenCrossSays(bot, cross, `${off} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`) +
+          (fortress.facts?.setAside ? ` The fortress is ${fortress.facts.setAside.replace(/:.*$/, '')}; taken, it is no longer set aside.` : '') +
+          ((fortress.leftHere || []).includes('blocks then cross') ? ' Jev left the fortress from where the bot stands with this way among its ways in.' : ''),
+          run: async () => {
+            state.shunned = (state.shunned || []).filter(sh => !bricks.some(b => Math.hypot(sh.x - b.x, sh.z - b.z) <= (sh.radius || 16)));
+            delete state.leaving; delete state.target; save();
+            const why = await mineThenCross(bot, task, goal, save, actions, state, cross);
+            if (why) state.lastLegError = `the crossing to the fortress: ${why}`;
+            save(); return 'cross';
+          } };
+      }
+    }
     for (const [key, o] of Object.entries(fortress.others || {})) options[key] = o;
     // Where the fortress's bricks go from here, said with each heading: its
     // corridors run on past the last brick seen (fortressRuns).
@@ -1536,6 +1657,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
   const inView = threatsInView(bot);
   const options = {};
+  let noRoute = null;
   if (actions.navigate) {
     const level = new goals.GoalNear(nearest.x, Math.round(here.y), nearest.z, 4);
     const route = await routeSurvey(bot, task, level, nearest);
@@ -1543,7 +1665,11 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       : !route.cells ? 'The pathfinder found no route toward it from here.'
       : `Surveyed toward the first: ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells, placing ${route.place} block${route.place === 1 ? '' : 's'} and digging ${route.dig}, ${route.besideLava} of its cells within two blocks of lava; it ends ${route.gain} blocks nearer.`;
     const edge = route?.besideLava && inView.length ? ` In sight: ${mobsSaid(inView)}; a hit at the lava's edge is the fall.` : '';
-    options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot above it first, then to the bricks' own height if that comes no nearer. ${surveyed} The pathfinder walks upright, not crouched: a push or a misstep at an edge is the fall.${edge}`,
+    // No route found is no way: said in the state, not offered. mid-242-ab-
+    // nether-4 was offered "the pathfinder found no route toward it from
+    // here" as a way in, and chose it (note 591).
+    if (route && !route.cells) noRoute = 'the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)';
+    else options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot above it first, then to the bricks' own height if that comes no nearer. ${surveyed} The pathfinder walks upright, not crouched: a push or a misstep at an edge is the fall.${edge}`,
       run: async () => {
         const from = bot.entity.position.clone();
         let why = null;
@@ -1609,6 +1735,12 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
         } };
     }
   }
+  // Straight at it with the blocks for the crossing mined here first,
+  // where the blocks carried stop it short (note 591).
+  if (actions.mineAt && actions.navigate) {
+    const cross = mineThenCrossPlan(bot, goal, nearest, bricks.length ? bricks : [nearest]);
+    if (cross) options.blocks_then_cross = { description: mineThenCrossSays(bot, cross, where), run: () => mineThenCross(bot, task, goal, save, actions, state, cross) };
+  }
   if (actions.tunnel) {
     const rest = require('./tunneling').restingSays(goal, nearest, here);
     options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}`,
@@ -1620,7 +1752,15 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   // seconds, each time the next brick past sixteen blocks a fortress found
   // anew and its ways asked again (note 533).
   const extent = fortressExtent(bricks, nearest);
-  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.`,
+  // What searching on from here meets: the legs from here that ended at
+  // once and rest, and how long the search has gone. mid-242-ab-nether-4
+  // left its fortress 102 blocks off after 146 minutes of search with every
+  // leg from there resting "out of blocks", told only that the sweep goes
+  // on (note 591).
+  const searching = state.since ? Math.round((Date.now() - state.since) / 60000) : null;
+  const restingHere = HEADING_NAMES.map(n => [n, legResting(state, n, here)]).filter(([, r]) => r);
+  const onFrom = restingHere.length ? ` From here ${restingHere.length === HEADING_NAMES.length ? 'every leg' : `the leg${restingHere.length === 1 ? '' : 's'} ${restingHere.map(([n]) => n).join(', ')}`} ended at once and rest${restingHere.length === 1 || restingHere.length === HEADING_NAMES.length ? 's' : ''} a few minutes (${[...new Set(restingHere.map(([, r]) => r.why))].slice(0, 2).join('; ')}).` : '';
+  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}${searching ? `, ${searching} minutes searching` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.${onFrom}`,
     run: async () => {
       // From where, kept with it: going back from the same spot asks the
       // same ways again (fortressInView). mid-235-q-nether-2 left its
@@ -1652,7 +1792,8 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const tries = (record?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
-  return { options, facts: { fortress: { distance: flat, height: dy }, health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
+  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
+    ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot) } : {}),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
     ...(record?.failed?.length ? { failed: record.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
@@ -1952,7 +2093,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
   // left it over its ways in (keep_searching): the same ways are asked
   // again, and each answer undid the other (note 541). Said as a fact
   // with the legs, not offered (chooseLeg).
-  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why }, ...(sameSpot ? { offer: false } : {}),
+  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why }, ...(sameSpot ? { offer: false, leftHere: shun?.left || [] } : {}),
     description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${state.map ? ` Of its floors seen, ${Object.values(state.map.cells).filter(c => c[0]).length} of ${Object.keys(state.map.cells).length} walked.` : ''} Taken, it is no longer set aside, and ${onFloors ? 'its floors are walked from where the bot stands' : 'the way to its bricks is asked (fortress_approach), or its floors walked when the bot is among them'}.`,
     run: () => {
       delete state.leaving;

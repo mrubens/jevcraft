@@ -9,7 +9,11 @@ const { Vec3 } = require('vec3');
 const { equipBestTool } = require('./skills');
 
 const MATERIALS = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'stone', 'dirt', 'andesite', 'diorite', 'granite', 'blackstone', 'basalt'];
-const NATURAL = /^(netherrack|crimson_nylium|warped_nylium|soul_sand|soul_soil|basalt|blackstone|magma_block|nether_wart_block|warped_wart_block|shroomlight|crimson_stem|warped_stem|crimson_hyphae|warped_hyphae|nether_sprouts|crimson_roots|warped_roots|crimson_fungus|warped_fungus|weeping_vines|twisting_vines|glowstone|gravel|stone|dirt|grass_block|sand|sandstone|andesite|diorite|granite|tuff|deepslate|cobblestone|cobbled_deepslate)/;
+// The Nether's ores are its rock: gold and quartz lie through the
+// netherrack, and a crossing or a leg that stopped at them ("nether gold ore
+// in the way") stopped in plain rock. mid-242-ab-nether-4's legs east and
+// north rested for it beside a fortress 102 blocks off (note 591).
+const NATURAL = /^(netherrack|nether_gold_ore|nether_quartz_ore|crimson_nylium|warped_nylium|soul_sand|soul_soil|basalt|blackstone|magma_block|nether_wart_block|warped_wart_block|shroomlight|crimson_stem|warped_stem|crimson_hyphae|warped_hyphae|nether_sprouts|crimson_roots|warped_roots|crimson_fungus|warped_fungus|weeping_vines|twisting_vines|glowstone|gravel|stone|dirt|grass_block|sand|sandstone|andesite|diorite|granite|tuff|deepslate|cobblestone|cobbled_deepslate)/;
 const passable = b => !b || b.boundingBox === 'empty';
 const solid = b => b?.boundingBox === 'block';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -50,8 +54,10 @@ function stepToward(here, target) {
 // by cell, before it is walked: rock to dig (what is natural, with nothing
 // flowing behind it), open air or lava to lay a block over, and where it has
 // to stop (lava in the body's way, a block that is not dug, the blocks
-// carried running out). Up to `cells` cells.
-function surveyCrossing(bot, target, { cells = 32, blocks = null } = {}) {
+// carried running out). Up to `cells` cells. `tool`: the item type the
+// rock would be dug with, for a crossing made after a pickaxe is (null is
+// the hand); otherwise the cheapest carried.
+function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
   const carried = blocks ?? blocksCarried(bot);
   // From the block the bot rests on, where the span begins (stepOntoFooting).
   const start = require('./terrain').restingCell(bot) || bot.entity.position.floored();
@@ -72,7 +78,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null } = {}) {
       if (!require('./tunneling').safeExcavation(bot, p)) { why = `lava or water behind the ${b.name.replaceAll('_', ' ')}`; break; }
       dig++;
       // With the tool the dig would take (skills.js cheapestTool).
-      if (typeof b.digTime === 'function' && bot.inventory?.items) { const tool = require('./skills').cheapestTool(bot, b); digMs += b.digTime(tool?.type ?? null, false, false, false, [], {}); }
+      if (typeof b.digTime === 'function' && bot.inventory?.items) { const type = tool !== undefined ? tool : require('./skills').cheapestTool(bot, b)?.type ?? null; digMs += b.digTime(type, false, false, false, [], {}); }
     }
     const floor = bot.blockAt(next.offset(0, -1, 0));
     const lay = !solid(floor);
