@@ -47,9 +47,9 @@ const { enterEnd } = require('./end-portal');
 const { fightEndStep } = require('./end-combat');
 const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
-const { collectWater } = require('./water');
+const { collectWater, waterKnown, holdsWater } = require('./water');
 const { makeObsidian, collectLava } = require('./obsidian');
-const { castFrame, leaveNoWater, castSays, plannedWalls, lavaTrip, fetchTrip, fetchSays, tripsCost, castTrips, duration } = require('./portal-cast');
+const { castFrame, castLacksWater, leaveNoWater, castSays, plannedWalls, lavaTrip, fetchTrip, fetchSays, tripsCost, castTrips, duration } = require('./portal-cast');
 const { tidyInventory, roomFor, makeRoom, crowded } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables, restockFromStash } = require('./home-stash');
@@ -468,11 +468,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // stall itself said only strikes (mid-230-s, note 485).
   const stairs = goal.staircaseStalled && now - goal.staircaseStalled.at < require('./tunneling').STAIRCASE_REST_MS ? goal.staircaseStalled : null;
   const failure = stall.error || (stairs && `the staircase is set aside: ${stairs.why}`);
+  const castWait = castWaterWait(bot, goal);
   const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}),
     ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
-    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}) };
+    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}),
+    ...(castWait ? { lacking: castWait } : {}) };
   // Reached: the question goes out (a rung's question cut off before here
   // is put off to a later pass, runGoal).
   stall.asked = true;
@@ -3974,10 +3976,31 @@ function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null,
 }
 // What every way is weighed with, said with each of them alike: only the
 // cast was told where the lava was, and only the ruins how far they lay.
+// The portal's cast waiting for a bucket of water, said where the ladder is
+// asked about the work standing still (the stall's question, the rung's, the
+// detours' travel): the state said nothing of what the rung lacked, and a
+// river seventy-two blocks off was offered as "walk to the river and carry
+// on" and chosen 0.02 (mid-243-bd, note 630). Null unless the cast is what
+// the rung is on and its next block cannot be poured for want of water.
+function castWaterWait(bot, goal) {
+  if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
+  if ((goal.rungTime?.phase || goal.gameProgress?.phase) !== 'reach_nether') return null;
+  const frame = goal.portalFrame;
+  const casting = frame ? !!frame.cast : goal.portalMethod?.kind === 'cast';
+  if (!casting || countOf(bot, 'obsidian') || countOf(bot, 'water_bucket')) return null;
+  if (frame && (frame.castWater || frame.castWaterLeft?.length || frame.blocks.every(p => bot.blockAt(pos(p))?.name === 'obsidian'))) return null;
+  const buckets = countOf(bot, 'bucket'), lava = countOf(bot, 'lava_bucket');
+  return `The portal frame is being cast from lava and water, and its next block cannot be poured: no water bucket is carried (${buckets ? `${buckets} empty bucket${buckets === 1 ? '' : 's'} carried, filled at any water` : 'no empty bucket either: one is three iron ingots'}; ${lava} of lava carried). Water: ${waterKnown(bot).says}.`;
+}
 function portalFacts(bot, goal, ruins, lava = nearestLava(bot, goal)) {
   const depth = require('./strategy').oreFacts(bot, goal, [{ action: 'mine', item: 'diamond_ore' }]).trim();
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  return ` Known for every way: ${lava ? `the nearest known lava is ${lava.distance} blocks away (${lava.how}), about ${Math.round(lava.distance / 4.3)} seconds' walk` : 'no lava is known nearby'}. ${depth} Diamond ore needs an iron pickaxe or better (${pickaxeTier(bot) >= 3 ? 'one carried' : 'none carried'}); a diamond pickaxe is three diamonds (${diamondPickaxeCarried(bot) ? 'one carried' : `${countOf(bot, 'diamond')} diamonds carried`}). ` +
+  // Every way but a finished ruin pours water on lava, and none is carried
+  // more often than not by the time it is asked: where water is known is said
+  // (note 630: a river seventy-two blocks off was in the state and never in
+  // the way's words).
+  const water = countOf(bot, 'water_bucket') ? '' : ` Water, for a bucket of it: ${waterKnown(bot).says}.`;
+  return ` Known for every way: ${lava ? `the nearest known lava is ${lava.distance} blocks away (${lava.how}), about ${Math.round(lava.distance / 4.3)} seconds' walk` : 'no lava is known nearby'}.${water} ${depth} Diamond ore needs an iron pickaxe or better (${pickaxeTier(bot) >= 3 ? 'one carried' : 'none carried'}); a diamond pickaxe is three diamonds (${diamondPickaxeCarried(bot) ? 'one carried' : `${countOf(bot, 'diamond')} diamonds carried`}). ` +
     `Carried: ${countOf(bot, 'obsidian')} obsidian, ${plural(countOf(bot, 'bucket'), 'empty bucket')}, ${countOf(bot, 'water_bucket')} of water and ${countOf(bot, 'lava_bucket')} of lava, ${countOf(bot, 'iron_ingot')} iron ingots (three make a bucket). ` +
     // Each lava bucket takes a slot of its own, where empty ones stack:
     // mid-244-v filled nine with every slot full and kept one (note 470).
@@ -4600,8 +4623,27 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
         // every pass, mid-244-h's staircase to the deep lava was undone four
         // steps down, again and again (2026-09-27, a slip in note 318).
         const origin = pos(frame.origin);
+        // The cast asks for water first at every slot, and the trip for it is
+        // made from where the bot is: walked back to the frame each pass, the
+        // search for water was undone each pass, and mid-243-bd, with nine
+        // buckets of lava and none of water, stayed within twenty blocks of
+        // its frame for an hour looking for a river seventy-two off (note 630).
+        if (bot.entity.position.distanceTo(origin) > 8 && castLacksWater(bot, frame)) {
+          goal.step = { action: 'fill_bucket', item: 'water_bucket', count: 1, consumes: { bucket: 1 }, produces: { water_bucket: 1 } }; save();
+          await acquireStep(bot, task, 'water_bucket', 1, goal, save);
+          return false;
+        }
         if (bot.entity.position.distanceTo(origin) > 8 && (countOf(bot, 'lava_bucket') || countOf(bot, 'obsidian'))) {
-          try { await navigate(bot, task, new goals.GoalNear(origin.x, origin.y, origin.z, 3), { timeoutMs: 60000, stallMs: 8000 }); }
+          // Stairs begun toward the frame go on without the walk tried first
+          // each pass (as the lava's, note 603): five seconds of failed walk
+          // between every stair read as two steps trading the turn, and each
+          // stall's detour took the bot off the shaft it was climbing
+          // (mid-243-bd, 19:31Z).
+          const stairs = frame.stairs && Date.now() - frame.stairs.at < 30000 && bot.entity.position.distanceTo(origin) < frame.stairs.distance - 0.5 ? frame.stairs : null;
+          try {
+            if (stairs) throw Object.assign(new Error(stairs.walk), { heldStairs: true });
+            await navigate(bot, task, new goals.GoalNear(origin.x, origin.y, origin.z, 3), { timeoutMs: 60000, stallMs: 8000 });
+          }
           catch (err) {
             task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
             goal.step = { action: 'return_to_frame', frame: { ...frame.origin } }; save();
@@ -4610,22 +4652,24 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
             // the staircase only digs.
             const distance = Math.round(bot.entity.position.distanceTo(origin));
             let legs = null;
-            if (distance > 48) {
+            if (distance > 48 && !err.heldStairs) {
               if (!isSetAside(goal, 'portal_leg', origin)) {
                 if (await portalLeg(bot, task, goal, origin)) return false;
                 setAside(goal, 'portal_leg', origin, 'a walk toward it made no ground', 120000); save();
               }
               legs = 'legs of thirty-two blocks on foot made no ground';
-            }
+            } else if (distance > 48) legs = 'legs of thirty-two blocks on foot made no ground';
             // Neither the walk nor the staircase gets there, and the way is
             // asked again with that said, as for the lava (note 473): not
             // tried again unasked. mid-215-h, 137 blocks from its frame with
             // lava in hand, walked, had the staircase set aside, and did
             // both again every pass (note 481).
             const held = goal.portalFrame === frame && goal.portalMethod;
+            frame.stairs = { at: Date.now(), distance: bot.entity.position.distanceTo(origin), walk: String(err.message || err).slice(0, 80) }; save();
             try { await tunnelToward(bot, task, goal, save, origin, 'portal_frame'); }
             catch (e) {
               task.check(); if (!held || e.name !== 'StaircaseStalled') throw e;
+              delete frame.stairs;
               const { staircaseWhy, staircaseUntil, WaysResting } = require('./tunneling');
               const failed = { at: { ...frame.origin }, distance, walk: String(err.message || err).slice(0, 80), legs, stairs: staircaseWhy(goal, origin), until: staircaseUntil(goal, origin) };
               // Asked already for this very rest, and kept: every way to it
@@ -4845,6 +4889,9 @@ const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful
 // time, up to fifteen seconds, so an impossible spot costs little per hour) and
 // goes again with a clean slate. Only the player, the game, or a request
 // that is impossible by definition ends a request.
+// The legs walked on each heading are kept through the turn: dropped at every
+// stall, the asking after it said "legsThatWay" empty and began again at one
+// leg, twelve times in mid-243-bd's forty-one askings for water (note 630).
 // A ring search (no frontier heading) is turned too, to its next leg from
 // the same origin. It used to be dropped, so the next search began again
 // from here on its first leg, the same walk that had just failed: the hunt
@@ -4852,7 +4899,7 @@ const IMPOSSIBLE = /No supported survival acquisition|does not spawn in Peaceful
 const turnSearch = search => Object.fromEntries(Object.entries(search || {})
   .filter(([, entry]) => Number.isInteger(entry?.frontier?.heading) || entry?.origin)
   .map(([resource, entry]) => [resource, Number.isInteger(entry.frontier?.heading)
-    ? { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0 } }
+    ? { attempts: 0, frontier: { heading: (entry.frontier.heading + 1) % 8, legs: 0, ...(entry.frontier.legsByHeading ? { legsByHeading: entry.frontier.legsByHeading } : {}) } }
     : { attempts: 0, origin: entry.origin, leg: (entry.leg || 0) + 1 }]));
 // Failing again and again is getting nowhere. It is written in the ledger
 // (tried.js) as the step's way from here, and answered once, one way, up
@@ -5369,6 +5416,15 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
     offer('look_around', `Walk about twenty-four blocks in a direction not tried lately: nothing else can be done from here.${walkRisk}`,
       () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
+  }
+  // A walk to water is what the portal frame's cast is waiting for when it
+  // has none: said on the travel to a biome that has some (the walk is built
+  // from the scratch goal, which does not know the rung; note 630).
+  if (castWaterWait(bot, goal)) {
+    const { biomeFacts } = require('./biomes');
+    for (const [key, node] of Object.entries(tree)) {
+      if (/^travel_/.test(key) && holdsWater({ biome: key.slice(7), has: biomeFacts(key.slice(7)) })) node.description += " It has water, which is what the portal frame's cast is waiting for: no water bucket is carried, and an empty one fills at any water.";
+    }
   }
   const options = Object.keys(tree);
   const stats = survival?.state || goal.survival || goal;

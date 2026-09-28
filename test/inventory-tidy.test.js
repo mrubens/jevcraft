@@ -310,6 +310,16 @@ test('with the portal frame to be cast, the water bucket is said to be what turn
   await makeRoom(bot, task, 'oak_planks', { goal: { portalMethod: { kind: 'cast' } } }).catch(() => {});
   assert.match(offered.drop_0 || '', /turns each block of the portal frame being cast to obsidian/);
   assert.match(offered.drop_2 || '', /a bucket for the lava of the portal frame/);
+  // And how far the trip to water would be: mid-243-bd dropped its water bucket for four sticks with a river
+  // seventy-two blocks off and it took the hour to make up for (note 630).
+  assert.match(offered.drop_0 || '', /a trip to water \(no water is known: none in view within 48 blocks/);
+  const exploration = require('../src/exploration'), was = exploration.biomeView;
+  exploration.biomeView = () => ({ biome: 'forest', biomesNearby: [{ biome: 'river', distance: 72, direction: 'south-west', x: 0, z: 0, has: 'water, sand, clay and gravel; squid and salmon spawn' }] });
+  try {
+    items = [{ name: 'water_bucket', count: 1, type: 1 }, { name: 'dirt', count: 20, type: 2 }, { name: 'bucket', count: 1, type: 3 }];
+    await makeRoom(bot, task, 'oak_planks', { goal: { portalMethod: { kind: 'cast' } } }).catch(() => {});
+    assert.match(offered.drop_0 || '', /a trip to water \(no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/);
+  } finally { exploration.biomeView = was; }
 });
 
 test('before dark, food enough to heal on and the base bed near are offered with the upkeep', async () => {

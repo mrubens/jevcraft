@@ -229,7 +229,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       // with the frame chosen, told only that water breaks a fall
       // (2026-09-26).
       const casting = goal?.portalFrame?.cast || goal?.portalMethod?.kind === 'cast';
-      if (stack.name === 'water_bucket') notes.push(`the water bucket: breaks a fall, puts out fire, turns lava to stone${casting ? '; and the water that turns each block of the portal frame being cast to obsidian: without it the frame cannot be cast, and another is a bucket (three iron) and a trip to water' : ''}`);
+      if (stack.name === 'water_bucket') notes.push(`the water bucket: breaks a fall, puts out fire, turns lava to stone${casting ? `; and the water that turns each block of the portal frame being cast to obsidian: without it the frame cannot be cast, and another is a bucket (three iron) and a trip to water (${require('./water').waterKnown(bot).says})` : ''}`);
       if (stack.name === 'lava_bucket' && casting) notes.push('lava for the portal frame being cast in place, a bucket a block');
       if (stack.name === 'bucket' && casting) notes.push('a bucket for the lava of the portal frame being cast in place, a bucket a block');
       // The portal's lighter, said on the way to the dragon: mid-241-v

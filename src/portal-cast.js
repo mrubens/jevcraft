@@ -292,6 +292,20 @@ function castSays({ obsidian = 0, standing = 0, waterBucket = false, buckets = 0
     `about ${walls} ordinary blocks for the temporary walls, those inside the frame dug out before lighting (${blocks} carried); flint and steel or a fire charge (${lighter ? 'carried' : 'none carried'}). ${tripsSay} ${lavaSay}`;
 }
 
+// What a cast asks for first at every slot is the water bucket (castFrame
+// fetches it before the lava): with none carried and no obsidian to place
+// as it is, nothing at the frame can go on, and no water of the cast's own
+// stands there to be scooped back. The trip for it is made from wherever the
+// bot is, not after a walk to the frame that the search for water then undoes
+// at every pass: mid-243-bd walked back to a frame at y 110 at every
+// pass between short legs toward a river seventy-two blocks off (note 630).
+function castLacksWater(bot, frame) {
+  if (!frame?.cast) return false;
+  if (countOf(bot, 'obsidian') || countOf(bot, 'water_bucket')) return false;
+  if (frame.castWater || frame.castWaterLeft?.length) return false;
+  return true;
+}
+
 async function waitUntil(task, done, ms) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) { task.check(); if (done()) return true; await sleep(25); }
@@ -653,4 +667,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { castFrame, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };
+module.exports = { castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };

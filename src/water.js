@@ -79,4 +79,26 @@ async function collectWater(bot, task, goal, save, { navigate, explore }) {
   } finally { movement.restore(); }
   await explore(bot, task, goal, save, 'water', { surfaceOnly: true });
 }
-module.exports = { sourceWater, fillBucket, fillWaterBucket, collectWater };
+
+// A biome seen that holds water to fill a bucket at (not a cave's, where it
+// is only what the drowned swim in).
+const holdsWater = b => !/^(dripstone_caves|lush_caves|deep_dark)$/.test(b.biome) && /^((open|iced) )?water\b|^shallow water|in shallow water/.test(b.has || '');
+// Where water is known to be, said for whatever needs a bucket of it (the
+// portal cast, portal-cast.js): a source in the loaded ground within
+// forty-eight blocks (what collectWater goes to), else the nearest biome seen
+// that holds water, else none. mid-243-bd stood an hour on a mountain top
+// with lava in nine buckets and no water bucket, told only "none carried",
+// with a river seventy-two blocks off in every state it was asked with
+// (note 630).
+function waterKnown(bot) {
+  let source = null;
+  try {
+    source = bot.findBlocks({ matching: bot.registry.blocksByName.water.id, maxDistance: 48, count: 1, useExtraInfo: sourceWater })[0] || null;
+  } catch (_) { source = null; }
+  if (source) return { kind: 'source', distance: Math.round(source.distanceTo(bot.entity.position)), says: `water in view ${Math.round(source.distanceTo(bot.entity.position))} blocks off` };
+  let biome = null;
+  try { biome = (require('./exploration').biomeView(bot)?.biomesNearby || []).find(holdsWater) || null; } catch (_) { biome = null; }
+  if (biome) return { kind: 'biome', distance: biome.distance, says: `no water in view within 48 blocks; the nearest seen is the ${biome.biome.replaceAll('_', ' ')} ${biome.distance} blocks ${biome.direction} (${biome.has})` };
+  return { kind: 'none', distance: null, says: 'no water is known: none in view within 48 blocks and no biome seen with water' };
+}
+module.exports = { sourceWater, fillBucket, fillWaterBucket, collectWater, waterKnown, holdsWater };

@@ -569,6 +569,7 @@ function resumed(goal, { savedAt, now = Date.now() } = {}) {
   for (const e of t.escalations || []) move(e, ['at', 'consumed']);
   if (t.rung) move(t.rung, ['since', 'lastAt', 'bestAt']);
   if (t.rung?.due) move(t.rung.due, ['at']);
+  for (const left of Object.values(t.left || {})) move(left, ['since', 'lastAt', 'bestAt', 'leftAt']);
   // A save that lay unplayed longer than the rung's own budget is a new
   // session on it (a trial begun from a stage's save), not a restart: the
   // rung's budget and its count of what was given start here, and the
@@ -677,9 +678,28 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   const tkey = target ? `${Math.round(target.at.x / 4)},${Math.round(target.at.y / 4)},${Math.round(target.at.z / 4)}` : null;
   let b = t.rung;
   if (!b || b.rung !== rung) {
-    b = t.rung = { rung, since: now, lastAt: now, idleMs: 0, bestAt: now, origin: P(here), best: { items: have, milestones, far: 0, target: {} }, asked: 0 };
-    if (tkey) b.best.target[tkey] = dist(target.at, here);
-    return null;
+    // A rung the ladder turned from and came back to keeps its record: its
+    // best, where it began and the minutes it has gone without a new one. The
+    // ladder turns to a pickaxe rung and back many times an hour (a pickaxe
+    // wanted for the nether, made, worn or dropped), and a record begun anew
+    // at each return never ran ten minutes: mid-243-bd spent seventy minutes
+    // on reaching the Nether, in stints each cut short by a turn to a pickaxe
+    // rung before ten quiet minutes ran, and the rung's question was never
+    // asked (note 630). The
+    // minutes away are not counted (lastAt begins again here), and a record
+    // left for longer than the rung's own budget times three is a new one.
+    if (b?.rung && b.rung !== rung) { (t.left ||= {})[b.rung] = { ...b, leftAt: now }; for (const k of Object.keys(t.left)) if (now - t.left[k].leftAt > 3 * RUNG_MS) delete t.left[k]; }
+    const back = t.left?.[rung];
+    if (back && now - back.leftAt <= 3 * RUNG_MS) {
+      delete t.left[rung]; delete back.leftAt;
+      b = t.rung = { ...back, lastAt: now };
+      // The rung's new best measures are read from here, not from before.
+      if (tkey && b.best.target[tkey] === undefined) b.best.target[tkey] = dist(target.at, here);
+    } else {
+      b = t.rung = { rung, since: now, lastAt: now, idleMs: 0, bestAt: now, origin: P(here), best: { items: have, milestones, far: 0, target: {} }, asked: 0 };
+      if (tkey) b.best.target[tkey] = dist(target.at, here);
+      return null;
+    }
   }
   const dt = idleSince(bot, b, now, waiting); b.lastAt = now;
   const news = [];
