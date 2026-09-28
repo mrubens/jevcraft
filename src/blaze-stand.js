@@ -231,7 +231,7 @@ const overSays = (cost, doing) => cost.setup ? `in the next ${cost.seconds} seco
 
 // The stands for the blazes in `danger`, as options: { key: { description,
 // expects, site, kind } }. Only with a blaze among them and a sword or axe.
-function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false } = {}) {
+function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, holds = [] } = {}) {
   const blazes = danger.filter(t => t.entity.name === 'blaze');
   const { defenseWeapon, shooter } = require('./combat');
   if (!blazes.length || !/_(sword|axe)$/.test(defenseWeapon(bot)?.name || '')) return {};
@@ -243,6 +243,11 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
   const fire = ce.fireballSays(nearest.distance);
   const oneHit = m => Math.max(0, ...m.filter(x => x.name !== 'creeper').map(x => x.hitsBot || 0));
   const options = {};
+  // Every blaze within its forty-eight, and how many see a stand's cell:
+  // a stand no blaze sees is a wait for one to come (holdSays).
+  let aboutAll = blazes.map(t => t.entity);
+  try { aboutAll = [...aboutAll, ...require('./danger').threats(bot, ce.RANGE.blaze).filter(t => t.entity.name === 'blaze' && !aboutAll.includes(t.entity)).map(t => t.entity)]; } catch (_) { /* no world */ }
+  const seeingAt = cell => bunker.seenFrom(bot, aboutAll, cell).length;
   const hole = pocket ? (dig ? windowSite(bot, from) : null) : dig ? holeSite(bot, from) : inHole(bot);
   if (hole) {
     const open = new Set((hole.window || [hole.hole, hole.hole.offset(0, 1, 0)]).map(c => `${c}`));
@@ -257,7 +262,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
     const inLine = cost.seeing + cost.settling;
     const lineSays = ` Of the ${blazesAbout} blaze${blazesAbout === 1 ? '' : 's'} within their forty-eight blocks, ${inLine ? `${inLine} ${inLine === 1 ? 'has' : 'have'} a line in through the mouth: ${cost.seeing} now, and ${cost.settling} at the bot's own height, where a blaze after a target hovers (its eyes about the target's, from about seven below to six above, a new height every five seconds), counted from then; each that sees in shoots in for the whole hold, out of the sword's reach` : 'none has a line in through the mouth, now or at the bot\'s own height'}.`;
     const where = hole.walkMs ? `the wall ${round(hole.stand.offset(0.5, 0, 0.5).distanceTo(bot.entity.position))} blocks off` : 'beside the bot';
-    options.dig_in_and_fight = { kind: pocket ? 'window' : 'hole', site: hole, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
+    options.dig_in_and_fight = { kind: pocket ? 'window' : 'hole', site: hole, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) }, sees: inLine, about: blazesAbout,
       description: (hole.inside
         ? 'Stay in the hole the bot is in and fight from inside: rock behind it, beside it and over it, one side open.'
         : pocket ? `Open the pocket's wall toward the blazes, one wide and two high (2 blocks of ${words(hole.rock)} ${hole.with}, about ${seconds(round(hole.digMs / 1000))} of digging), and fight from inside the pocket through it.`
@@ -269,7 +274,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
   if (spawner) {
     const setup = round(spawner.steps / WALK);
     const cost = standCost(bot, danger, { setup, at: spawner.cell, atOnce: Math.max(1, require('./survival').openCells(bot, spawner.cell)) });
-    options.fight_at_spawner = { kind: 'spawner', site: spawner, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
+    options.fight_at_spawner = { kind: 'spawner', site: spawner, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) }, sees: seeingAt(spawner.cell), about: aboutAll.length, atSpawner: true,
       description: `${spawner.steps ? `Walk ${spawner.steps} block${spawner.steps === 1 ? '' : 's'} (about ${seconds(setup)}, in their fire meanwhile) to` : 'Stay at'} a cell ${spawner.off} blocks from the blaze spawner's cage, under a ceiling, with no drop or lava within a push, and fight the blazes there as they come out: a spawner puts its blazes within four blocks of itself, up to four at a time every ten to forty seconds while a player is within sixteen, so there they come to the sword rather than being walked to; a ceiling keeps them from hovering over the bot. Broken with a pickaxe, the spawner makes no more.` +
         BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: spawner.steps ? 'walking there' : null, done: 'At the cage', over: overSays(cost, 'walking there') }) };
   }
@@ -277,14 +282,50 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
   if (wall) {
     const setup = round(wall.steps / WALK);
     const cost = standCost(bot, danger, { setup, at: wall.cell, atOnce: Math.max(1, require('./survival').openCells(bot, wall.cell)) });
-    options.back_to_wall = { kind: 'wall', site: wall, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
+    options.back_to_wall = { kind: 'wall', site: wall, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) }, sees: seeingAt(wall.cell), about: aboutAll.length,
       description: `${wall.steps ? `Walk ${wall.steps} block${wall.steps === 1 ? '' : 's'} (about ${seconds(setup)}, in their fire meanwhile) to` : 'Stay on'} footing with a wall at its back on the side away from the blazes and no drop or lava within ${KNOCK} blocks, and fight there: a fireball from them pushes the bot into the wall, and a push any other way lands on ground.` +
         BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: wall.steps ? 'walking there' : null, done: 'Back to the wall', over: overSays(cost, 'walking there') }) };
   }
-  // The hunt says what it is for.
-  if (hunted) for (const o of Object.values(options)) o.description += ' Rods that fall where the bot cannot see them are picked up once no blaze has it in sight.';
+  // The hunt says what it is for, and what holding a stand is: a wait for
+  // blazes to come to the sword, priced by whether any can see it, and by
+  // what the holds already made from about here came to (note 585).
+  if (hunted) for (const o of Object.values(options)) o.description += ' Rods that fall where the bot cannot see them are picked up once no blaze has it in sight.' + holdSays(bot, o, holds);
   return options;
 }
+
+// What holding a stand for the hunt is (huntFromStand, bunker.holdBunker),
+// said on each stand the hunt offers. mid-242-ab-nether-3 held a wall at
+// a fortress four times in ten minutes, two minutes each, offered it as
+// "About 0 damage ... none of them reaches it": true, and all it said. The
+// three blazes about were heard through the walls, none could see the
+// wall, and a blaze comes toward a target only once it has seen it; none
+// came, none was killed, and each hold's end asked the hunt again with
+// the same stand at the same price (note 585).
+const HOLD_NEAR = 6, HOLDS_WINDOW_MS = 10 * 60000;
+const ago = ms => ms < 90000 ? seconds(Math.max(1, Math.round(ms / 1000))) : `${Math.round(ms / 60000)} minutes`;
+const times = n => n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`;
+function holdSays(bot, o, holds = [], now = Date.now()) {
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const mins = Math.round(bunker.HOLD_MS / 60000);
+  let says = ` Taken, the stand is held up to ${mins === 1 ? 'a minute' : `${mins} minutes`}: the bot stays there and strikes only what comes within the sword's reach; the hold ends sooner once a rod is in hand, or once no blaze is within twenty blocks, seen or heard, for ${bunker.QUIET_MS / 1000} seconds.`;
+  if (o.sees === 0 && o.about) says += ` None of the ${plural(o.about, 'blaze')} about sees this spot now (heard through the walls, or out of its line): a blaze comes toward the bot only once it has seen it, so none is coming to it, and the hold waits for one to wander into sight. Waiting does not send blazes away: they keep about the fortress they spawn in${o.atSpawner ? ', and its spawner makes more' : ''}.`;
+  else if (o.sees && o.about) says += ` ${o.sees} of the ${plural(o.about, 'blaze')} about ${o.sees === 1 ? 'sees' : 'see'} this spot now.`;
+  return says + (heldHereSays(bot, holds, now) || '');
+}
+// The holds already made from about here, and what came of each.
+function heldHereSays(bot, holds = [], now = Date.now()) {
+  const here = bot?.entity?.position;
+  if (!here || !holds?.length) return null;
+  const near = holds.filter(h => h.place && now - Date.parse(h.at) < HOLDS_WINDOW_MS && Math.hypot(h.place.x + 0.5 - here.x, h.place.y - here.y, h.place.z + 0.5 - here.z) <= HOLD_NEAR);
+  if (!near.length) return null;
+  const sum = k => near.reduce((n, h) => n + (h[k] || 0), 0);
+  const heldFor = sum('seconds'), kills = sum('kills'), gained = sum('gained'), swings = sum('swings');
+  const most = Math.max(0, ...near.map(h => h.mostInSight || 0));
+  const first = Math.min(...near.map(h => Date.parse(h.at)));
+  const last = near.at(-1);
+  return ` Held from about here ${times(near.length)} in the last ${ago(now - first + (last.seconds || 0) * 1000)}, ${heldFor < 90 ? `${heldFor} seconds` : `${Math.round(heldFor / 6) / 10} minutes`} in all: ${kills} blaze${kills === 1 ? '' : 's'} killed, ${gained} rod${gained === 1 ? '' : 's'}, ${swings ? `${swings} swing${swings === 1 ? '' : 's'} at what came within reach` : 'no blaze came within the sword\'s reach'}, ${most ? `at most ${most} in sight at once` : 'none in sight'}${last.ended ? `; the last ended: ${ENDED[last.ended] || last.ended}` : ''}.`;
+}
+const ENDED = { time: 'its time was up', quiet: 'no blaze within twenty blocks for twenty seconds', rod: 'a rod in hand', hurt: 'under eight health' };
 
 // One beat of holding a stand: a swing if something is in reach, else
 // facing the way it comes from.
@@ -336,19 +377,26 @@ async function takeStand(bot, task, goal, save, option, { navigate } = {}) {
 // the blazes are quiet or the hold runs out), then the rods picked up.
 async function huntFromStand(bot, task, goal, save, actions, option, { item = 'blaze_rod', want = 1 } = {}) {
   const { countOf } = require('./skills');
-  const before = countOf(bot, item);
-  if (!await takeStand(bot, task, goal, save, option, actions)) throw new Error(`Could not take the ${option.kind === 'hole' ? 'hole' : option.kind === 'spawner' ? 'cell by the spawner' : 'wall'}`);
-  const { site, kind } = option;
-  const inside = kind === 'hole' ? site.hole : site.cell;
-  const watch = kind === 'hole' ? site.stand : kind === 'spawner' ? site.spawner : site.cell.minus(site.back);
-  const stand = { inside, watch, mouth: watch };
-  const state = goal.mobHunt ||= {};
-  state.stand = { kind, inside: { ...inside }, at: Date.now() }; save?.();
-  const kills = await bunker.holdBunker(bot, task, goal, save, stand, { item, want });
-  await bunker.collectRods(bot, task, goal, save, stand, actions, item);
-  const gained = countOf(bot, item) - before;
-  state.standResults = [...(state.standResults || []), { at: new Date().toISOString(), kind, kills, gained, health: bot.health }].slice(-12); save?.();
-  return gained;
+  return bunker.keepingStep(goal, save, async () => {
+    const before = countOf(bot, item);
+    if (!await takeStand(bot, task, goal, save, option, actions)) throw new Error(`Could not take the ${option.kind === 'hole' ? 'hole' : option.kind === 'spawner' ? 'cell by the spawner' : 'wall'}`);
+    const { site, kind } = option;
+    const inside = kind === 'hole' ? site.hole : site.cell;
+    const watch = kind === 'hole' ? site.stand : kind === 'spawner' ? site.spawner : site.cell.minus(site.back);
+    const stand = { inside, watch, mouth: watch };
+    const state = goal.mobHunt ||= {};
+    state.stand = { kind, inside: { ...inside }, at: Date.now() }; save?.();
+    // What the hold met is kept however it ends: a hold stopped by a
+    // fireball is a hold that came to nothing too.
+    const stats = {}, startedAt = new Date().toISOString();
+    const result = gained => { state.standResults = [...(state.standResults || []), { at: startedAt, kind, place: { x: inside.x, y: inside.y, z: inside.z }, ...stats, gained, health: bot.health }].slice(-12); save?.(); };
+    try { await bunker.holdBunker(bot, task, goal, save, stand, { item, want, stats }); }
+    catch (err) { result(countOf(bot, item) - before); throw err; }
+    await bunker.collectRods(bot, task, goal, save, stand, actions, item);
+    const gained = countOf(bot, item) - before;
+    result(gained);
+    return gained;
+  });
 }
 
-module.exports = { blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };
+module.exports = { blazeStands, holdSays, heldHereSays, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };

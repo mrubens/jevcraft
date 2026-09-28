@@ -415,6 +415,38 @@ test('any winner stopped by a mob ends its ruling, not only the work (mid-218-q)
   assert.notEqual(again.by, 'held'); assert.equal(again.ask, true, 'asked again after the stop');
 });
 
+test('a layer whose turns were each stopped at once by the threat check says so at the next asking, with what the check finds now; the work is said with the health and the mobs about (mid-242-ab-nether-3, note 585)', async () => {
+  // In a sealed pocket at 10.6 health the meal was given the turn 41 times in six seconds: each time its threat check
+  // found a blaze the seal was chosen against, out of sight behind the wall, and stopped it before a bite, and the
+  // meal's option said only "Eat beef now". At 2.5 health, the work was offered as "Go on with the work: find fortress"
+  // with two blazes 3.4 and 3.9 blocks off out of sight, taken, and walked into their fire.
+  const bot = fakeBot({ health: 10.6, food: 17, inventory: { slots: [] } });
+  const state = {};
+  const stop = Object.assign(new Error('Threat nearby: blaze at 6 blocks'), { name: 'NeedsSafety' });
+  const vitals = { layer: 'vitals', action: 'eat', urgency: 'routine', facts: { health: 10.6, food: 17, healing: false, item: 'beef', foodPoints: 3 }, cost: { seconds: 1.6 }, run: async () => { throw stop; } };
+  const survival = { layer: 'survival', action: 'pocket_next', urgency: 'routine', facts: { health: 10.6, food: 17, healing: false, inPocket: true }, run: async () => true };
+  const work = { layer: 'work', action: 'find_fortress', urgency: 'routine', facts: { request: 'beat the game', doing: 'find fortress' }, run: async () => true };
+  const blaze = mob('blaze', 6.2, 9, false);
+  const was = arbiter.probe.threatNow;
+  arbiter.probe.threatNow = () => ({ ...blaze, stance: 'seal' });
+  try {
+    const trees = [];
+    const decide = async (id, { tree }) => { trees.push(tree); return { path: ['vitals'] }; };
+    for (let i = 0; i < 3; i++) await assert.rejects(arbiter.take(bot, [survival, vitals, work], { state, mobs: [blaze], decide }), /Threat nearby/);
+    assert.equal(trees.length, 3, 'asked again after each stop');
+    assert.equal(trees[0].vitals.description.does, 'Eat beef now, about 1.6 seconds standing still. Health 10.6. Hunger 17 to 20. It does not come back at hunger 17.');
+    assert.match(trees[1].vitals.description.does, /Its last turn was stopped at once by the threat check its run is given: Threat nearby: blaze at 6 blocks\. That check still finds one now: the blaze 6 blocks off \(out of sight\), one the seal stance was chosen against; given the turn again, it is stopped again at once\.$/);
+    assert.match(trees[2].vitals.description.does, /Its last 2 turns, in the last 1 second, were each stopped at once/);
+    assert.match(trees[2].vitals.description.facts.stoppedAtOnce, /stopped again at once/);
+    assert(!/stopped/.test(trees[2].survival.description.does), 'only the layer that was stopped');
+    assert.match(trees[0].work.description.does, /^Go on with the work: find fortress \(toward "beat the game"\)\. Health 10\.6: it does not come back at hunger 17\. Mobs within sixteen blocks now: a blaze 6\.2 blocks off \(out of sight\), about [\d.]+ a hit through the armour worn\.$/);
+    // With nothing found by the check now, that is said.
+    arbiter.probe.threatNow = () => undefined;
+    const tree = (await (async () => { let t; await arbiter.arbitrate(bot, [survival, vitals], { state, mobs: [], decide: async (id, { tree: x }) => { t = x; return { path: ['survival'] }; }, run: false }); return t; })());
+    assert.match(tree.vitals.description.does, /That check finds nothing now\.$/);
+  } finally { arbiter.probe.threatNow = was; }
+});
+
 test('a ruling for the work that the loop marks stopped is asked again (mid-236-k)', () => {
   const work = { layer: 'work', action: 'fill_bucket', urgency: 'routine', facts: {} };
   const survival = { layer: 'survival', action: 'escape_threat', urgency: 'pressing', facts: { threat: { name: 'skeleton', distance: 9, seen: true } } };

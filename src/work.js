@@ -5591,8 +5591,10 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
   const report = step => { vitalsActed = true; goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); };
   const runs = {
     survival: () => survival.step(task, activeWork, saveWork, () => onStep(goal)),
-    vitals: async () => {
-      task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : () => checkThreats(bot);
+    // The meal by its own claim's test (vitals.js checkMeal, note 585); the
+    // rest of the vitals by the work's.
+    vitals: async claimed => {
+      task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : claimed?.action === 'eat' ? () => require('./vitals').checkMeal(bot) : () => checkThreats(bot);
       const ate = await maintainVitals(bot, task, report, { client, goal, save });
       return !!ate || vitalsActed;
     },
@@ -5603,7 +5605,7 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
   // then runs as the backstop, as it did before the arbiter.
   const read = f => { try { return f(); } catch (err) { if (!liveTurn.failed) { liveTurn.failed = true; console.log(`[arbiter] a claim failed (said once): ${err?.stack || err}`); } return null; } };
   const claims = [read(() => require('./survival').claim(bot, activeWork, survival)), read(() => require('./vitals').claim(bot)),
-    read(() => require('./mob-hunt').claim(bot, activeWork)), workClaim(goal)].map(c => c && { ...c, run: runs[c.layer] });
+    read(() => require('./mob-hunt').claim(bot, activeWork)), workClaim(goal)].map(c => c && { ...c, run: () => runs[c.layer](c) });
   return require('./arbiter').take(bot, claims, { task, goal, save, client, backstop: runs.survival, backstopFor });
 }
 // The layer an action reported during the survival step belongs to: the

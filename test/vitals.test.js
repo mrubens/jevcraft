@@ -767,6 +767,47 @@ test('a hoglin is hostile to the meal: none at arm\'s length, and one walking up
   assert.equal(claim(bot), null, 'one that is at the bot within the meal\'s seconds is close');
 });
 
+test('the meal given the turn is stopped by what its claim is made by, not by a blaze the pocket\'s seal was chosen against behind the wall (mid-242-ab-nether-3, note 585)', async () => {
+  // Sealed in at 10.6 health, hunger 17, the meal was given the turn 41 times in six seconds: each time the work's
+  // threat check found the blaze the seal was chosen against, out of sight behind the pocket's wall, and stopped it.
+  const { maintainVitals, claim, checkMeal } = require('../src/vitals');
+  const { checkThreats } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  let eaten = 0, wall = true;
+  const blaze = { id: 9, name: 'blaze', type: 'hostile', position: new Vec3(6.5, 64, 0.5), height: 1.8, width: 0.6, isValid: true };
+  const slots = []; slots[5] = { name: 'iron_helmet' }; slots[6] = { name: 'iron_chestplate' };
+  const bot = { registry, health: 10.6, food: 17, oxygenLevel: 20, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 9: blaze }, game: { gameMode: 'survival', dimension: 'the_nether' },
+    time: { timeOfDay: 6000 }, inventory: { items: () => [{ name: 'beef', count: 1 }], slots }, heldItem: { name: 'beef' },
+    world: { raycast: (from, dir) => wall ? { position: from.plus(dir).floored(), intersect: from.plus(dir) } : null },
+    equip: async () => {}, consume: async () => { eaten++; bot.food += 3; }, deactivateItem() {}, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) };
+  // The seal chosen against it seven seconds ago, last run three seconds ago: held against it for its fifteen seconds.
+  bot._stance = { choice: 'seal', ids: [9], at: Date.now() - 7000, ranAt: Date.now() - 3000, health: 10.6 };
+  assert.equal(claim(bot)?.action, 'eat', 'the meal claims: nothing can get at the bot through the wall');
+  assert.throws(() => checkThreats(bot), /Threat nearby: blaze at 6 blocks/, 'the work\'s check finds the seal\'s blaze');
+  const work = new Task('under the work\'s check'); work.interruptCheck = () => checkThreats(bot);
+  await assert.rejects(maintainVitals(bot, work), /Threat nearby/);
+  assert.equal(eaten, 0);
+  const meal = new Task('under the meal\'s own'); meal.interruptCheck = () => checkMeal(bot);
+  assert.equal(await maintainVitals(bot, meal), true);
+  assert.equal(eaten, 1, 'eaten in the pocket');
+  // In its line, within its reach: no meal claimed, and one begun is stopped.
+  wall = false; bot.food = 17;
+  assert.equal(claim(bot), null);
+  assert.throws(() => checkMeal(bot), /Threat nearby: blaze at 6 blocks/);
+  bot.food = 2;
+  assert.doesNotThrow(() => checkMeal(bot), 'starving, it eats anyway');
+  // And the turn: given the meal by Jev, the loop runs it under the meal's own check, and it eats.
+  wall = true; bot.food = 17; eaten = 0;
+  bot._stance = { choice: 'seal', ids: [9], at: Date.now() - 7000, ranAt: Date.now() - 3000, health: 10.6 };
+  bot._arbiter = {};
+  const { liveTurn } = require('../src/work');
+  const goal = { request: 'beat the game', kind: 'win', step: { action: 'find_fortress' } };
+  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'vitals', confidence: 0.9 } } }) };
+  const turn = await liveTurn(bot, new Task('the turn'), goal, goal, { step: async () => false, state: {} }, () => {}, { client, onStep: () => {}, save: () => {} });
+  assert.equal(turn.layer, 'vitals');
+  assert.equal(eaten, 1, 'the meal Jev gave the turn to is eaten, not stopped at once');
+});
+
 // mid-242-aa-nether-3's ground at 04:14:17 as the death snapshot's region
 // file has it (note 579): x -28 to -15 across, z 40 to 53 down, by layer.
 // The bot's cobblestone walk at y 33 along z 47 over a lava lake (its top

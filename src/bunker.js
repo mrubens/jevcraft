@@ -462,13 +462,39 @@ async function digBunker(bot, task, goal, save, { from = null, navigate = null, 
   return record(bot, { mouth, inside: end, watch: mouth, side, turned: false }, cells);
 }
 
+// The steps a stand writes while it is dug, held and its rods picked up.
+// Left standing after the stand ends, they said "hold bunker" for eleven
+// minutes on mid-242-ab-nether-3 (note 585): the hold was stopped by a
+// fireball ten seconds in, the pocket and the meal had the turn, and every
+// question after read the stale hold as a wait the bot had chosen, so none
+// of them was ever held as coming to nothing, and the work's option said
+// "go on with the work: hold bunker".
+const STAND_STEPS = new Set(['dig_bunker', 'hold_bunker', 'collect_rods', 'dig_in_and_fight']);
+async function keepingStep(goal, save, run) {
+  const before = goal.step;
+  try { return await run(); }
+  finally {
+    if (goal.step !== before && STAND_STEPS.has(goal.step?.action)) {
+      if (before && !STAND_STEPS.has(before.action)) goal.step = before; else delete goal.step;
+      save?.();
+    }
+  }
+}
+
 // Hold the bunker: shield up, strike whatever comes within reach, until
 // the rods are in hand, the blazes have gone quiet, or the hold runs out.
-async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', want = 1 } = {}) {
+// `stats`, when given, is filled with what the hold met: its seconds, the
+// most blazes in sight at once, the swings, the kills and why it ended.
+// A hold is a wait for blazes to come to the sword; what came of each is
+// said on the next stands offered from about here (blaze-stand.js
+// holdsSays).
+async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', want = 1, stats = null } = {}) {
   const started = Date.now(); let lastSeen = Date.now(), kills = 0;
   const onDeath = entity => { if (entity?.name === 'blaze') kills++; };
   bot.on('entityDead', onDeath);
   const sword = defenseWeapon(bot);
+  const met = stats || {};
+  Object.assign(met, { seconds: 0, mostInSight: 0, swings: 0, kills: 0, ended: 'time' });
   try {
     if (sword && bot.heldItem?.name !== sword.name) await bot.equip(sword, 'hand');
     const watch = bunker.watch || bunker.mouth;
@@ -476,13 +502,15 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
     raiseShield(bot);
     while (Date.now() - started < HOLD_MS) {
       task.check(); checkAir(bot);
-      if (countOf(bot, item) >= want) break;
-      if ((bot.health ?? 20) < 8) throw new Error('Too hurt to hold the bunker');
+      if (countOf(bot, item) >= want) { met.ended = 'rod'; break; }
+      if ((bot.health ?? 20) < 8) { met.ended = 'hurt'; throw new Error('Too hurt to hold the bunker'); }
       const near = blazes(bot, 20);
       if (near.length) lastSeen = Date.now();
-      else if (Date.now() - lastSeen > QUIET_MS) break;
+      else if (Date.now() - lastSeen > QUIET_MS) { met.ended = 'quiet'; break; }
+      met.mostInSight = Math.max(met.mostInSight, near.filter(t => t.visible).length);
       goal.step = { action: 'hold_bunker', blazes: near.length, kills, health: bot.health, held: Math.round((Date.now() - started) / 1000) }; save();
       const swung = await defendNearby(bot, task, goal, save);
+      if (swung) met.swings++;
       if (!swung) {
         // Back in place and facing the door between swings.
         const p = bot.entity.position, c = bunker.inside.offset(0.5, 0, 0.5);
@@ -492,7 +520,8 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
         await sleep(150);
       }
     }
-  } finally { lowerShield(bot); bot.removeListener('entityDead', onDeath); }
+  } catch (err) { if (met.ended === 'time') met.ended = err?.name === 'NeedsSafety' ? 'stopped for the survival layer' : String(err?.message || err).slice(0, 80); throw err; }
+  finally { lowerShield(bot); bot.removeListener('entityDead', onDeath); met.seconds = Math.round((Date.now() - started) / 1000); met.kills = kills; }
   return kills;
 }
 
@@ -518,16 +547,20 @@ async function collectRods(bot, task, goal, save, bunker, actions, item = 'blaze
 
 // One bunker fight: dig, hold, collect. Returns the rods gained.
 async function bunkerFight(bot, task, goal, save, actions, { item = 'blaze_rod', want = 1 } = {}) {
-  const before = countOf(bot, item);
-  const state = goal.mobHunt ||= {};
-  const bunker = await digBunker(bot, task, goal, save, { navigate: actions.navigate });
-  state.bunker = { mouth: { ...bunker.mouth }, inside: { ...bunker.inside }, at: Date.now() }; save();
-  bot.chat?.('Too many blazes to face in the open. Digging in beside them and taking them at the door.');
-  const kills = await holdBunker(bot, task, goal, save, bunker, { item, want });
-  await collectRods(bot, task, goal, save, bunker, actions, item);
-  const gained = countOf(bot, item) - before;
-  state.bunkerResults = [...(state.bunkerResults || []), { at: new Date().toISOString(), kills, gained, health: bot.health }].slice(-12); save();
-  return gained;
+  return keepingStep(goal, save, async () => {
+    const before = countOf(bot, item);
+    const state = goal.mobHunt ||= {};
+    const bunker = await digBunker(bot, task, goal, save, { navigate: actions.navigate });
+    state.bunker = { mouth: { ...bunker.mouth }, inside: { ...bunker.inside }, at: Date.now() }; save();
+    bot.chat?.('Too many blazes to face in the open. Digging in beside them and taking them at the door.');
+    const stats = {};
+    const kills = await holdBunker(bot, task, goal, save, bunker, { item, want, stats });
+    await collectRods(bot, task, goal, save, bunker, actions, item);
+    const gained = countOf(bot, item) - before;
+    state.bunkerResults = [...(state.bunkerResults || []), { at: new Date().toISOString(), kills, gained, health: bot.health }].slice(-12);
+    state.standResults = [...(state.standResults || []), { at: new Date().toISOString(), kind: 'bunker', place: { x: bunker.inside.x, y: bunker.inside.y, z: bunker.inside.z }, ...stats, kills, gained, health: bot.health }].slice(-12); save();
+    return gained;
+  });
 }
 
 // A wall where the bot stands, when there is no wall to walk to. Two blocks
@@ -558,4 +591,4 @@ async function raiseCover(bot, task, from) {
   return solid(bot.blockAt(cell)) ? cell : false;
 }
 
-module.exports = { inBunker, liquidBehind, sideRefused, blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };
+module.exports = { keepingStep, STAND_STEPS, HOLD_MS, QUIET_MS, inBunker, liquidBehind, sideRefused, blockDigMs, digsWith, seenFrom, lineRegained, DRAW_SECONDS, coverWithin, nookSite, digNook, bunkerDigMs, bunkerFight, digBunker, holdBunker, collectRods, digCell, stepTo, standable, cornerCell, raiseCover, openToward, reachWall, wallStands, nearWall, swarm, blazes, bunkerSide, centroid, NATURAL, WALK_TO_WALL, SWARM };

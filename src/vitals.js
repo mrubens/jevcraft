@@ -779,8 +779,20 @@ function closeHostile(bot) {
   // (note 559).
   let round;
   const roundCorner = e => { if (!round) { try { round = new Set(danger.unseenClose(bot).map(t => t.entity)); } catch (_) { round = new Set(); } } return round.has(e); };
-  return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
-    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && (reaches(e) || roundCorner(e)));
+  return Object.values(bot.entities || {}).find(e => e !== bot.entity && e.position && e.isValid !== false &&
+    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && (reaches(e) || roundCorner(e))) || false;
+}
+// The meal Jev gave the turn to is stopped by what its claim is made by:
+// a mob that can get at the bot while it eats (closeHostile). Run under
+// the work's threat check, it was stopped by a blaze the pocket's seal was
+// chosen against, out of sight behind the pocket's wall, before a bite:
+// mid-242-ab-nether-3 gave the meal the turn 41 times in six seconds at
+// 10.6 health, each stopped at once, the claim saying it could eat and
+// the run saying it could not (note 585). Starving, it eats anyway.
+function checkMeal(bot) {
+  if ((bot.food ?? 20) <= 2) return;
+  const mob = closeHostile(bot);
+  if (mob) throw new (require('./danger').NeedsSafety)({ entity: mob, distance: mob.position.distanceTo(bot.entity.position) });
 }
 
 // The biters coming at the bot while it would eat, for the meal's claim:
@@ -1129,4 +1141,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

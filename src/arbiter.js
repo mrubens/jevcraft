@@ -93,6 +93,9 @@ const probe = {
   // held, not a reflex, until it could have ended or health falls four more.
   burnLeft: bot => !require('./vitals').inFire(bot) && !!require('./body').held(bot, 'fire'),
   mobs: (bot, radius) => require('./danger').threats(bot, radius),
+  // What the threat check a layer's run is given (work.js liveTurn,
+  // danger.js checkThreats) finds now.
+  threatNow: bot => require('./danger').immediateThreat(bot),
 };
 
 // The reflexes that hold now, as { key, layer, action, facts }. `held` is
@@ -194,6 +197,56 @@ const optionOf = (c, held = null, now = Date.now()) => {
     ...(mine && held.idleSince ? { didNothingWithItSeconds: Math.round((now - held.idleSince) / 1000) } : {}) };
   return { description: { does: claimSays(c), action: c.action, urgency: c.urgency, facts, ...(c.cost ? { cost: c.cost } : {}) }, run: c.run };
 };
+// Said beside a claim's own words, at the asking (note 585):
+// - a layer whose last turns were each stopped at once by the threat check
+//   its run is given, and whether that check finds a threat now. mid-242-
+//   ab-nether-3 was asked turn_priority 41 times in six seconds in a sealed
+//   pocket at 10.6 health: Jev gave the meal the turn each time (0.5 to
+//   0.9), and each time the meal's check found a blaze the stance was
+//   chosen against, out of sight behind the pocket's wall, and stopped it
+//   before a bite; the meal's option said "Eat beef now", nothing more.
+// - the work's option, with the body and the mobs about: at 2.5 health,
+//   hunger 17 and nothing to eat, two blazes 3.4 and 3.9 blocks off out of
+//   sight, the same trial's work was offered as "Go on with the work: find
+//   fortress", taken (none good 0.75, the work the best listed), and it
+//   walked into their fire and died 34 seconds later.
+const STOPS_MS = 10000, STOP_SAID_MS = 30000;
+function stopped(state, layer, why, now = Date.now()) {
+  const was = state.stopped;
+  const again = was?.layer === layer && now - was.at < STOPS_MS;
+  state.stopped = { layer, why: String(why || '').slice(0, 120), at: now, first: again ? was.first : now, count: again ? was.count + 1 : 1 };
+}
+function stoppedSays(bot, state, layer, now = Date.now()) {
+  const s = state.stopped;
+  if (!s || s.layer !== layer || now - s.at > STOP_SAID_MS) return null;
+  let threat = null; try { threat = probe.threatNow(bot); } catch (_) { threat = null; }
+  const span = Math.max(1, Math.round((now - s.first) / 1000));
+  const found = threat ? `the ${String(threat.entity?.name || 'mob').replaceAll('_', ' ')} ${Math.round(threat.distance)} blocks off${threat.visible === false ? ' (out of sight)' : ''}${threat.stance ? `, one the ${String(threat.stance).replaceAll('_', ' ')} stance was chosen against` : ''}` : null;
+  return `${s.count === 1 ? 'Its last turn was' : `Its last ${s.count} turns, in the last ${span} second${span === 1 ? '' : 's'}, were each`} stopped at once by the threat check its run is given: ${s.why}. ${found ? `That check still finds one now: ${found}; given the turn again, it is stopped again at once.` : 'That check finds nothing now.'}`;
+}
+function workBodySays(bot, mobs) {
+  const hp = bot?.health, food = bot?.food;
+  if (typeof hp !== 'number') return null;
+  const ce = require('./combat-estimate');
+  const worn = (() => { try { return ce.armourOf([5, 6, 7, 8].map(s => bot.inventory?.slots?.[s]?.name).filter(Boolean)); } catch (_) { return null; } })();
+  const hit = name => { const m = ce.MOBS[name]; return m?.hit && worn ? Math.round(ce.afterArmour(m.hit, worn) * 10) / 10 : null; };
+  const near = (mobs || []).filter(t => t.entity?.name).slice(0, 4).map(t => {
+    const h = hit(t.entity.name);
+    return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn${h >= hp ? ' (as much as the health left)' : ''}` : ''}`;
+  });
+  const heals = (food ?? 20) >= 18 ? 'it comes back meanwhile, at hunger eighteen or more' : `it does not come back at hunger ${food}`;
+  return `Health ${Math.round(hp * 10) / 10}: ${heals}.${near.length ? ` Mobs within sixteen blocks now: ${near.join('; ')}.` : ''}`;
+}
+function withSays(option, c, bot, state, mobs, now) {
+  const add = [];
+  const stop = stoppedSays(bot, state, c.layer, now);
+  if (stop) add.push(stop);
+  if (c.layer === 'work') { const body = workBodySays(bot, mobs); if (body) add.push(body); }
+  if (!add.length) return option;
+  const d = option.description;
+  return { ...option, description: { ...d, does: `${d.does} ${add.join(' ')}`, ...(stop ? { facts: { ...d.facts, stoppedAtOnce: stop } } : {}) } };
+}
+
 // What giving a layer the turn does, in words: mid-218-n chose the work
 // ("recover_before_nether") over "escape_threat" at seven health with a
 // drowned five blocks off, the options named by their code (note 490).
@@ -255,13 +308,14 @@ async function arbitrate(bot, claims, ctx = {}) {
     const decide = ctx.decide || require('./decisions').decide;
     const state = stateOf(bot, ctx);
     const held = state.holder || null;
-    const tree = Object.fromEntries(live.map(c => [c.layer, optionOf(c, held, now)]));
+    const mobsNow = ctx.mobs || (() => { try { return probe.mobs(bot, 16); } catch (_) { return []; } })();
+    const tree = Object.fromEntries(live.map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
     let setAside = false;
     const askedAt = Date.now();
     const asking = decide('turn_priority', { client: ctx.client, bot, task: ctx.task, goal: ctx.goal, save: ctx.save, tree,
       interrupt: () => { if (setAside) throw new Error('turn_priority set aside'); },
       state: { health: bot?.health, food: bot?.food, claims: live.map(c => c.layer), why,
-        mobs: mobsSaid(ctx.mobs || (() => { try { return probe.mobs(bot, 16); } catch (_) { return []; } })()),
+        mobs: mobsSaid(mobsNow),
         ...(held ? { hasTheTurn: { layer: held.layer, action: held.action, seconds: Math.round((now - held.since) / 1000) } } : {}) } });
     let out;
     try { out = await answerOrCut(bot, asking, { task: ctx.task, askedAt, ms: ctx.askMs ?? ASK_MS }); }
@@ -450,6 +504,7 @@ async function take(bot, claims, ctx = {}) {
   try { acted = !!(w.run ? await w.run(ctx.task) : false); }
   catch (err) {
     if (err?.name === 'NeedsSafety' && state.ruling?.winner === w.layer) { state.ruling.until = 0; state.ruling.stoppedBy = String(err.message || '').slice(0, 120); }
+    if (err?.name === 'NeedsSafety') stopped(state, w.layer, err.message, ctx.now ?? Date.now());
     throw err;
   }
   idled(state, w, acted, ctx.now ?? Date.now());

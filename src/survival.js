@@ -6111,7 +6111,11 @@ class Survival {
       // through in its pocket, the stay said as "nothing is watching it"
       // and never that the day was going by (note 538).
       const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
-      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) + farSays + lidSays + wardenSays(bot) + placeSays,
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) +
+        // Blazes are not waited out (note 585): mid-242-ab-nether-3 stayed
+        // five minutes at full health in a pocket beside its fortress's
+        // corridor, the three blazes outside told only by distance.
+        (blazesOut.length ? ` Staying does not send the blaze${blazesOut.length === 1 ? '' : 's'} away: blazes keep about the fortress they spawn in, and no daylight comes in the Nether to end them.${this.state.watchedSince ? ` Watched in this pocket for ${Math.max(1, Math.round((Date.now() - this.state.watchedSince) / 60000))} minute${Math.round((Date.now() - this.state.watchedSince) / 60000) > 1 ? 's' : ''} so far.` : ''}` : '') + farSays + lidSays + wardenSays(bot) + placeSays,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };

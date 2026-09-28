@@ -1820,6 +1820,41 @@ test('blazes heard through the fortress\'s walls are a worded fight, the stands 
   assert(options.back_to_wall, `a stand is offered with the blazes out of sight: ${Object.keys(options)}`);
 });
 
+test('a stand no blaze can see is said as the wait it is, with the holds already made from about here and what came of them; a hold stopped leaves the work its own step (mid-242-ab-nether-3, note 585)', async () => {
+  // mid-242-ab-nether-3 held a wall beside its fortress four times in ten minutes, two minutes each, the three blazes
+  // about heard through the walls: "About 0 damage ... none of them reaches it" was all the stand said, none came, none
+  // was killed, and each hold's end asked the hunt again with the same wall at the same price. The first hold, stopped
+  // by a fireball ten seconds in, left "hold bunker" as the step for eleven minutes.
+  const { bot, task, target, goal } = fixture('blaze');
+  target.position = new Vec3(16.5, 66, .5);
+  bot.entities[8] = { id: 8, uuid: 'other', name: 'blaze', position: new Vec3(20.5, 68, 4.5), width: .6, height: 1.8, isValid: true };
+  bot.blockAt = p => (p.y < 64 || (p.x === -1 && p.y <= 66)) ? { name: 'netherrack', boundingBox: 'block', diggable: true, position: p, digTime: () => 400 } : { name: 'air', boundingBox: 'empty', position: p };
+  bot.world = { raycast: (from, dir, range) => range > 10 ? { position: from.plus(dir.scaled(5)).floored(), intersect: from.plus(dir.scaled(5)) } : null };
+  goal.mobHunt.targetCount = 8;
+  const at = min => new Date(Date.now() - min * 60000).toISOString();
+  goal.mobHunt.standResults = [
+    { at: at(6), kind: 'wall', place: { x: 0, y: 64, z: 0 }, seconds: 120, mostInSight: 0, swings: 0, kills: 0, gained: 0, ended: 'time', health: 20 },
+    { at: at(3), kind: 'wall', place: { x: 0, y: 64, z: 0 }, seconds: 120, mostInSight: 0, swings: 0, kills: 0, gained: 0, ended: 'time', health: 20 },
+    { at: at(4), kind: 'wall', place: { x: 40, y: 64, z: 0 }, seconds: 120, mostInSight: 2, swings: 3, kills: 1, gained: 1, ended: 'rod', health: 12 },
+  ];
+  goal.step = { action: 'find_fortress', legs: 11 };
+  let asked = null;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, options: questions.branch_0.criteria }; return { answers: { branch_0: { choice: 'back_to_wall', confidence: 0.6 } } }; } };
+  // The hold is stopped for the survival layer at its first look, as the fireball stopped it.
+  const { NeedsSafety } = require('../src/danger');
+  let looks = 0;
+  task.interruptCheck = () => { if (goal.step?.action === 'hold_bunker' && ++looks > 1) throw new NeedsSafety({ entity: target, distance: 16 }); };
+  await assert.rejects(huntObserved(bot, task, goal, () => {}, { navigate: async () => {} }, client), /Threat nearby/);
+  const wall = asked.options.back_to_wall;
+  assert.match(wall, /About 0 damage/);
+  assert.match(wall, /Taken, the stand is held up to 2 minutes: the bot stays there and strikes only what comes within the sword's reach; the hold ends sooner once a rod is in hand, or once no blaze is within twenty blocks, seen or heard, for 20 seconds\./);
+  assert.match(wall, /None of the 2 blazes about sees this spot now \(heard through the walls, or out of its line\): a blaze comes toward the bot only once it has seen it, so none is coming to it, and the hold waits for one to wander into sight\. Waiting does not send blazes away: they keep about the fortress they spawn in\./);
+  assert.match(wall, /Held from about here twice in the last 8 minutes, 4 minutes in all: 0 blazes killed, 0 rods, no blaze came within the sword's reach, none in sight; the last ended: its time was up\./, 'the hold forty blocks off is not this one');
+  assert.equal(goal.step?.action, 'find_fortress', 'the work\'s own step, not a stale "hold bunker"');
+  const last = goal.mobHunt.standResults.at(-1);
+  assert.deepEqual([last.kind, last.place, last.kills, last.gained, last.ended], ['wall', { x: 0, y: 64, z: 0 }, 0, 0, 'stopped for the survival layer']);
+});
+
 test('a hunt fight with others that reach the bot is priced with them, and leaving them is said not to leave their fire (note 533)', async () => {
   // mid-235-p-nether-3 took a blaze at four blocks told 5.9 damage and 14.2 health after, another blaze seven off, the
   // spawner three away; four blazes took it from twenty to nine in five seconds.
