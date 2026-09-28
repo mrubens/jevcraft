@@ -1605,6 +1605,9 @@ function turnSweep(state) {
 const APPROACH_HOLD_MS = 5 * 60000;
 // Bricks seen within this of the last approach's are the same fortress.
 const SAME_FORTRESS = 32;
+// The place the way in was asked about is kept from within this of where
+// the bot stood when it was first asked: tried.js's "from about here".
+const APPROACH_FROM = 16;
 // As far as a span toward a fortress was ever laid.
 const APPROACH_CROSS = 64;
 const retryable = err => !['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
@@ -1669,16 +1672,24 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     // nether-4 was offered "the pathfinder found no route toward it from
     // here" as a way in, and chose it (note 591).
     if (route && !route.cells) noRoute = 'the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)';
-    else options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot above it first, then to the bricks' own height if that comes no nearer. ${surveyed} The pathfinder walks upright, not crouched: a push or a misstep at an edge is the fall.${edge}`,
+    else options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot beside it first, then on up or down to the floor itself. ${surveyed} The pathfinder walks upright, not crouched: a push or a misstep at an edge is the fall.${edge}`,
       run: async () => {
         const from = bot.entity.position.clone();
+        // On to the floor itself once level with it: the walk had ended at
+        // the first point whenever that came nearer, and mid-242-bb stood
+        // three blocks off and two below its target, the walk "getting
+        // somewhere" and the floor never reached (note 613).
+        const onIt = new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3);
         let why = null;
-        for (const g of [level, new goals.GoalNear(nearest.x, nearest.y + 1, nearest.z, 3)]) {
-          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); }
+        for (const g of [level, onIt]) {
+          if (onIt.isEnd(bot.entity.position.floored())) break;
+          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); why = null; }
           catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
-          if (nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5) return null;
         }
-        return why;
+        if (onIt.isEnd(bot.entity.position.floored())) return null;
+        const off = Math.round(nearest.offset(0.5, 1, 0.5).distanceTo(bot.entity.position));
+        const nearer = nearest.distanceTo(bot.entity.position) < nearest.distanceTo(from) - 1.5;
+        return `${nearer ? 'came nearer, ' : ''}ended ${off} blocks from the floor${why ? `: ${why}` : ''}`;
       } };
   }
   if (flatTo(nearest, here) <= 12 && nearest.y < here.y - 2) {
@@ -1717,13 +1728,21 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       // lava (note 551).
       const beside = require('./terrain').dropNear(bot, site, 3);
       const fall = up + (beside?.fallBlocks || 0), into = beside?.into === 'lava' ? 'lava' : beside?.into === 'water' ? 'water' : null;
+      // What lies between the top and the floor, at its height: a pillar
+      // beside the floor gets there; one some blocks off leaves a gap.
+      // mid-242-bb was offered "Pillar straight up 2 blocks ... the floor is
+      // then 6 blocks across", nothing said of the six (note 613).
+      const { stepToward } = require('./bridging');
+      let cell = new Vec3(site.x, nearest.y + 1, site.z), gap = 0;
+      for (let n = 0, step; n < 12 && (step = stepToward(cell, nearest)); n++) { cell = cell.plus(step); if (bot.blockAt(cell.offset(0, -1, 0))?.boundingBox !== 'block') gap++; }
+      const betweenSays = across <= 1 ? '' : gap ? `, with ${gap} of open air with no floor between the top and it at that height (a span, ${blocksCarried(bot)} blocks carried that a span is laid with)` : ', with ground between the top and it at that height';
       const pushSays = `On top a push is a fall of up to ${fall} blocks${beside ? ` (the pillar's ${up}, then a drop of ${beside.fallBlocks} ${beside.blocksAway === 1 ? 'a block' : `${beside.blocksAway} blocks`} from its foot)` : ''}, ${into === 'lava' ? 'into lava' : into === 'water' ? 'into water, no harm' : `about ${Math.max(0, fall - 3)} health`}.`;
       // What pushes up there: a shooter in view within its reach (a ghast
       // sixty-four, a blaze forty-eight), whose shot that lands pushes.
       const { RANGE } = require('./combat-estimate');
       const pushers = inView.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
       const pushersSay = pushers.length ? ` ${capital(mobsSaid(pushers))} can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall.` : '';
-      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across. ${pushSays}${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`,
+      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across${betweenSays}. ${pushSays}${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`,
         run: async () => {
           if (site.distanceTo(bot.entity.position.floored()) >= 1 && actions.navigate) {
             try { await actions.navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
@@ -1817,6 +1836,10 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     state[kind] = { found, failed: stretch ? [{ choice: 'walk_route', why: stretch.why, at: Date.now() }] : [] };
   }
   const approach = state[kind];
+  // Where the bot stood when the way to this place was first asked: the
+  // place is kept from about there (findFortressStep, note 613).
+  const at = bot.entity.position;
+  if (!approach.from || approach.found.x !== found.x || approach.found.y !== found.y || approach.found.z !== found.z) approach.from = { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) };
   approach.found = found;
   goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), legs: state.legs }; save();
   const approaches = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
@@ -1880,8 +1903,23 @@ function fortressFloors(bot, bricks) {
   // Lava on a floor is no floor: mid-242-aa-fortress-1's patrol set out for
   // bricks under a lava fall down a stair onto its corridor (note 557).
   const clear = q => { const b = bot.blockAt(q); return !b || (b.boundingBox === 'empty' && !/lava|water/.test(b.name || '')); };
-  return bricks.filter(b => clear(b.offset(0, 1, 0)) && clear(b.offset(0, 2, 0)));
+  // Ground to walk: a brick, stair or slab of the fortress's with two
+  // clear over it and another such beside it at its height. A lone brick
+  // top is no corridor: mid-242-bb's nearest "floor" was the stump of a
+  // bridge pier it had dug a shaft up, a brick at the shaft's foot, and
+  // before it two bricks of its own stacked in the open, each a place the
+  // way in was asked about with the bridge's deck thirty blocks up (note
+  // 613).
+  // Nor the foot of a hole the bot dug into the fortress's bricks: the
+  // cells over it are its own digging (own-blocks.js), not a corridor's.
+  const listed = new Set(bricks.map(b => `${b.x},${b.y},${b.z}`));
+  const { dugOut } = require('./own-blocks');
+  const open = b => clear(b.offset(0, 1, 0)) && clear(b.offset(0, 2, 0)) && !dugOut(bot, b.offset(0, 1, 0)) && !dugOut(bot, b.offset(0, 2, 0));
+  // A fence or a wart in the list stands on no floor of its own.
+  const floorBlock = b => listed.has(`${b.x},${b.y},${b.z}`) && !NOT_FLOORS.test(bot.blockAt(b)?.name || '') && open(b);
+  return bricks.filter(b => floorBlock(b) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => floorBlock(b.offset(dx, 0, dz))));
 }
+const NOT_FLOORS = /fence|wart|wall/;
 // In the fortress: standing at the height of one of its floors, within six
 // blocks of it. The one test for the patrol, the approach and staying.
 function onFortressFloor(here, floors) {
@@ -2084,16 +2122,26 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
   // (note 557). One found to hold nothing to walk to still is not.
   const onFloors = onFortressFloor(here, fortressFloors(bot, bricks));
   const sameSpot = !(onFloors && shun?.left) && !!shun?.from && Math.hypot(shun.from.x - here.x, shun.from.y - here.y, shun.from.z - here.z) <= 4;
+  // Off its floors with every way in it offered from here resting (the
+  // ledger's), going back is asking those ways again, each resting, and
+  // the approach sends the work straight back here: mid-242-bb chose
+  // back_to_fortress seven times in five minutes, offered as "its ways in
+  // from here came to nothing", each followed within a second by the
+  // approach asked again from the same spot (note 613). Said, not
+  // offered, as from where Jev left it (note 541).
+  const spent = !onFloors ? require('./tried').spent(goal, 'fortress_approach', { here }) : null;
+  const waysRest = !!spent?.spent;
   const why = state.leaving && Math.hypot(state.leaving.x - nearest.x, state.leaving.z - nearest.z) <= LEAVE_RADIUS
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
     : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${!sameSpot ? '' : shun.left ? `, from where the bot stands, over the ways into it from here (${shun.left.length ? shun.left.join(', ') : 'none but leaving'}): going back from here is asking those same ways again` : '; the bot stands where that was found, and from here the same look finds the same'}`
     : aside || 'set aside as a face not approached, for ten minutes';
+  const restSays = waysRest ? `; from here every way into it last offered came to nothing (${spent.keys.map(k => k.replaceAll('_', ' ')).join(', ')}): going back from here is asking those same ways again` : '';
   // Going back from where it was found to hold nothing to walk to is no
   // move: the patrol sets it aside again before a step. Nor from where Jev
   // left it over its ways in (keep_searching): the same ways are asked
   // again, and each answer undid the other (note 541). Said as a fact
   // with the legs, not offered (chooseLeg).
-  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: why }, ...(sameSpot ? { offer: false, leftHere: shun?.left || [] } : {}),
+  return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: `${why}${restSays}` }, ...(sameSpot || waysRest ? { offer: false, leftHere: sameSpot ? shun?.left || [] : [] } : {}),
     description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${state.map ? ` Of its floors seen, ${Object.values(state.map.cells).filter(c => c[0]).length} of ${Object.keys(state.map.cells).length} walked.` : ''} Taken, it is no longer set aside, and ${onFloors ? 'its floors are walked from where the bot stands' : 'the way to its bricks is asked (fortress_approach), or its floors walked when the bot is among them'}.`,
     run: () => {
       delete state.leaving;
@@ -2242,7 +2290,11 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // blocks, and set the fortress aside as "nothing twelve blocks off to
   // walk to" with its floors at (257, 58, 216) and (273, 57, 213); back_to
   // _fortress was chosen and undone in the same breath six times (note 528).
-  const look = count => bot.findBlocks({ matching: ids, maxDistance: 128, count });
+  // Not the bot's own: a brick it laid is not the fortress (own-blocks.js).
+  // mid-242-bb was asked the way to "the fortress, 7 blocks off and 2 up"
+  // over and over about two bricks it had stacked (note 613).
+  const own = require('./own-blocks').ownSet(bot, state);
+  const look = count => bot.findBlocks({ matching: ids, maxDistance: 128, count: count + own.size }).filter(b => !own.has(`${b.x},${b.y},${b.z}`)).slice(0, count);
   let seen = look(FORTRESS_LOOK);
   if (seen.length >= FORTRESS_LOOK) seen = look(FORTRESS_VIEW);
   const cutShort = seen.length >= FORTRESS_VIEW;
@@ -2266,7 +2318,15 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const floors = fortressFloors(bot, bricks);
     const nearest = byNear(bricks)[0];
     state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
-    if (!onFortressFloor(here, floors)) { await approachFortress(bot, task, goal, save, actions, state, byNear(floors.length ? floors : bricks)[0], bricks); return; }
+    // The way in is asked about one place, kept while the bot is about
+    // where it was first asked and the place is still one of the floors:
+    // the nearest, picked afresh at each pass, moved fifteen to forty
+    // blocks as mid-242-bb walked a few steps, so each asking was about a
+    // new place, every way on offer again, none resting (note 613).
+    const candidates = floors.length ? floors : bricks, a = state.approach;
+    const kept = a?.found && a.from && Math.hypot(a.from.x - here.x, a.from.y - here.y, a.from.z - here.z) <= APPROACH_FROM
+      ? candidates.find(f => f.x === a.found.x && f.y === a.found.y && f.z === a.found.z) : null;
+    if (!onFortressFloor(here, floors)) { await approachFortress(bot, task, goal, save, actions, state, kept || byNear(candidates)[0], bricks); return; }
     // Inside: the fortress as the bot has seen it (fortress-map.js), walked
     // a corridor at a time to the nearest floor that runs on into space not
     // yet seen, on foot, digging and laying nothing. mid-242-aa-fortress-1's
@@ -2462,4 +2522,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: state.targetCount, health: bot.health } };
 }
 
-module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG };
+module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress };

@@ -105,6 +105,7 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // wrapped nothing.
   bot.loadPlugin(require('./skills').goalGuardPlugin);
   bot.loadPlugin(require('./skills').digGuardPlugin);
+  bot.loadPlugin(require('./own-blocks').ownBlocksPlugin);
   bot.loadPlugin(require('./gaze').gazePlugin);
   bot.loadPlugin(require('./riders').ridersPlugin);
   // A window click the window refuses ("invalid operation") is logged with

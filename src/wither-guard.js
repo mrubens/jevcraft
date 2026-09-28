@@ -179,6 +179,14 @@ function measuredSays(kind, count = 1, { also = [] } = {}) {
 // The biters the guard answers: those that strike at arm's length, not a
 // creeper (struck and backed from), a shooter or a spear holder (whose
 // charge shield_the_charge meets).
+// A biter the guard faces: in sight, or unseen within five (heard through a
+// wall a step off, or round a corner). The option offered the stance over
+// these and the guard faced only those within two unseen: mid-242-bb chose
+// shield_guard against a piglin 3.3 blocks off out of sight, the guard found
+// none to face and ended at once, twenty times in a second, until the spin
+// watch set it aside (15:06:19, note 613).
+const UNSEEN_WITHIN = 5;
+const inGuard = t => !!t && (t.visible || t.distance <= UNSEEN_WITHIN) && guardable(t);
 function guardable(t) {
   const e = t?.entity;
   if (!e?.position || e.name === 'creeper') return false;
@@ -207,7 +215,7 @@ async function guard(bot, task, { until, radius = 8, stop = () => false, focus =
     while (Date.now() < until) {
       task.check(); checkAir(bot);
       if (stop()) { ended = 'stopped'; break; }
-      const near = threats(bot, radius).filter(t => (t.visible || t.distance <= 2) && guardable(t));
+      const near = threats(bot, radius).filter(inGuard);
       if (!near.length) { ended = 'none left'; break; }
       const me = bot.entity.position;
       // The one to face: a biter at its reach first, else the one chosen
@@ -239,4 +247,4 @@ async function guard(bot, task, { until, radius = 8, stop = () => false, focus =
   return { swings, hurt: Math.round(Math.max(0, start - bot.health) * 10) / 10, ended };
 }
 
-module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, guardable, guard };
+module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, guardable, inGuard, UNSEEN_WITHIN, guard };

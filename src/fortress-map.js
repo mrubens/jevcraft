@@ -81,7 +81,9 @@ function look(bot, state, { now = Date.now(), force = false } = {}) {
     map.lookedAt = now; map.lookedFrom = { x: here.x, y: here.y, z: here.z };
     const eye = here.offset(0, 1.62, 0);
     const ids = FLOORS.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
-    const found = typeof bot.findBlocks === 'function' ? (bot.findBlocks({ matching: ids, maxDistance: LOOK, count: 4096 }) || []) : [];
+    // The bot's own bricks are not the fortress's floors (note 613).
+    const own = require('./own-blocks').ownSet(bot, state);
+    const found = (typeof bot.findBlocks === 'function' ? (bot.findBlocks({ matching: ids, maxDistance: LOOK, count: 4096 }) || []) : []).filter(p => !own.has(`${p.x},${p.y},${p.z}`));
     let rays = 0;
     for (const p of found.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))) {
       if (p.distanceTo(here) > LOOK || map.cells[keyOf(p.x, p.y, p.z)] || !floorAt(bot, p)) continue;

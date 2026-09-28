@@ -1411,7 +1411,8 @@ test('bricks in view with nothing twelve blocks off to walk to are shunned and t
   const { Vec3 } = require('vec3');
   const clear = { boundingBox: 'empty' };
   // A pocket's worth of bricks around the bot: all within five blocks.
-  const pocket = Array.from({ length: 30 }, (_, i) => new Vec3(1 + (i % 3), 64 + Math.floor(i / 9), (i % 9) - 4));
+  // Rows of three along x, each a floor beside a floor (note 613: a lone brick top is no floor).
+  const pocket = Array.from({ length: 30 }, (_, i) => new Vec3(1 + (i % 3), 64 + Math.floor(i / 9), (Math.floor(i / 3) % 3) * 3 - 4));
   const bot = { registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 65, 0.5) }, chat() {},
     blockAt: () => clear, findBlocks: () => pocket };
   const goal = { fortressSearch: { axis: 1, heading: 1, legs: 3, legSince: Date.now() - 60000, target: { x: 0, y: 65, z: 96 } } };
@@ -1453,7 +1454,8 @@ test('a fortress whose walls fill the nearest five hundred bricks is still seen 
 test('a fortress set aside as nothing to walk to says so, and going back is not offered from the spot that found it (note 528)', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
   const clear = { boundingBox: 'empty' };
-  const pocket = Array.from({ length: 30 }, (_, i) => new Vec3(1 + (i % 3), 64 + Math.floor(i / 9), (i % 9) - 4));
+  // Rows of three along x, each a floor beside a floor (note 613: a lone brick top is no floor).
+  const pocket = Array.from({ length: 30 }, (_, i) => new Vec3(1 + (i % 3), 64 + Math.floor(i / 9), (Math.floor(i / 3) % 3) * 3 - 4));
   const bot = { registry, game: { dimension: 'the_nether' }, health: 20, food: 20, entity: { position: new Vec3(0.5, 65, 0.5) }, entities: {}, chat() {},
     inventory: { items: () => [] }, blockAt: () => clear, findBlocks: () => pocket };
   const goal = { fortressSearch: { axis: 1, legs: 3 } };

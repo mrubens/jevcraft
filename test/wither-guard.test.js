@@ -295,3 +295,23 @@ test('the shield guard faces the biter: a blaze off its side is priced as if the
   assert.doesNotMatch(front.description, /more than 60 degrees off/);
   assert.ok(back.expects.damage > front.expects.damage + 1, `${front.expects.damage} with the blazes in front, ${back.expects.damage} behind`);
 });
+
+test('the guard faces a biter out of sight within five, as the stance was offered over, not ending at once twenty times a second (mid-242-bb, 15:06:19, note 613)', async () => {
+  // A piglin 3.3 blocks off out of sight: shield_guard was offered over it (a biter unseen within five) and chosen at 0.78;
+  // the guard's own look took unseen biters only within two, found none, and ended at once, twenty times in a second.
+  const piglin = { id: 77, name: 'piglin', type: 'hostile', position: new Vec3(3.8, 64, 0.5), height: 1.95, width: 0.6, isValid: true, heldItem: { name: 'golden_sword' } };
+  const { bot, skeleton, shield } = cavernBot({ at: new Vec3(0.5, 64, 0.5), skeletonAt: new Vec3(40.5, 64, 0.5), extra: [piglin] });
+  bot.blockAt = flat;
+  bot.world.raycast = (from, dir) => ({ position: from.plus(dir).floored(), intersect: from.plus(dir.scaled(0.5)) });
+  delete bot.entities[skeleton.id];
+  const { threats } = require('../src/danger');
+  const seen = threats(bot, 16).find(t => t.entity.id === 77);
+  assert.ok(seen && !seen.visible && seen.distance > 2 && seen.distance <= 5, 'out of sight, 3.3 off');
+  assert.ok(wg.inGuard(seen), 'one the stance is offered over');
+  const real = Date.now; let t = real();
+  Date.now = () => (t += 20);
+  let r;
+  try { r = await wg.guard(bot, new Task('x'), { until: t + 400, focus: 77, radius: 16 }); } finally { Date.now = real; }
+  assert.equal(r.ended, 'time', `held its time facing it, not ${r.ended}`);
+  assert.ok(shield.some(([s]) => s === 'up'), 'the shield up facing it');
+});

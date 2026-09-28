@@ -5630,7 +5630,7 @@ class Survival {
     const wg = require('./wither-guard');
     const carried = shielded || bot.inventory.items().some(i => i.name === 'shield');
     if (!carried || inWater(bot)) return null;
-    const biters = coming.filter(t => (t.visible || t.distance <= 5) && t.distance <= 16 && wg.guardable(t));
+    const biters = coming.filter(t => t.distance <= 16 && wg.inGuard(t));
     if (!biters.length) return null;
     const faced = biters[0], e = faced.entity, name = e.name.replaceAll('_', ' ');
     const fm = mobs.find(m => m.id === e.id) || mobs.find(m => m.name === e.name && !m.apart);
