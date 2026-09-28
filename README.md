@@ -1,174 +1,52 @@
 # jevcraft
 
-jevcraft is a Minecraft Survival bot built on [mineflayer](https://github.com/PrismarineJS/mineflayer). Code handles the mechanics: pathfinding, digging, crafting, combat moves. The judgment calls go to [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model that picks one option from a typed list in about 0.2 seconds.
+**Can an AI that only chooses from a menu beat Minecraft?**
 
-The goal is to beat the game from a fresh world with an empty inventory ([GOAL.md](GOAL.md)). This README explains how the bot puts decisions to Jev, what we tried, and what we learned. The bot also works as a chat companion you can play alongside.
+Meet Jev. It is trying to beat Minecraft, and so far the Nether is winning.
 
-| | |
-|---|---|
-| ![Jev kills a wither skeleton on a fortress bridge](docs/media/wither-skeleton-kill.gif) | ![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif) |
-| Killing a wither skeleton. Jev chose `shield_guard` (p=0.98). | Killing a blaze for a rod. Jev chose `close_in` (p=0.42) over digging in (0.21) and leaving them (0.14). |
-| ![Jev steps through his portal into the Nether](docs/media/nether-entered.gif) | ![A ghast's fireball knocks Jev into lava](docs/media/ghast-death.gif) |
-| Entering the Nether 7 minutes into a fresh world. | Knocked into lava by a ghast fireball while fighting (`fight`, p=0.22). This death led to note 612, which added stepping back from the edge as an option. |
+Jev does not write text or code to decide what to do. Code lists the actions the bot can really take (fight, retreat, take cover, eat, keep working), and [TypeSafe's Jev](https://typesafe.ai/), a [System One](https://docs.typesafe.ai/concepts/system-one) model, picks one in about 0.2 seconds. **Code decides what is possible. Jev decides what to do.** The bot is built on [mineflayer](https://github.com/PrismarineJS/mineflayer).
 
-The clips are rendered with ReplayMod from recordings of the trials.
+One hard rule: Jev never hurts a chicken or a pig. They are my daughters' favorite animals.
 
-## Status (2026-09-28)
+Starting from a fresh world with an empty inventory, 15 of the 40 worlds we started on 2026-09-28 reached the Nether (the fastest in 7 minutes, the median 28). None has beaten the game. Getting six blaze rods is the current wall. Every run and every fix is logged in [docs/trial-notes.md](docs/trial-notes.md), which this README cites as "note N".
 
-- The first three in-game days (iron tools and armor, a shield, a bed, a home, no deaths) pass reliably.
-- Fresh worlds reach the Nether in 7 to 30 minutes, and usually find a fortress.
-- Blaze rods are the current wall. A handful of trials have taken one or two; none has taken the six needed. Most deaths are blazes at a spawner, fireballs pushing the bot into lava, and running out of health in the Nether with little food.
-- The dragon has only been fought from staged worlds.
+**[Watch a run](#the-experiment-in-two-clips)** | **[Try it](#run-it-yourself)** | **[How a decision works](#how-a-decision-works)** | **[What we learned](#what-we-tried-and-learned)** | **[How coding agents improve it](#how-coding-agents-improve-it)**
 
-Every trial and every fix is a numbered entry in [docs/trial-notes.md](docs/trial-notes.md). This README cites them as "note N".
+## The experiment in two clips
 
-## Run it yourself
+![Jev kills a blaze on a fortress bridge](docs/media/blaze-kill.gif)
 
-You need Node.js 22 or newer, a [TypeSafe](https://typesafe.ai/) API key, and macOS or Linux. The trial scripts download Java and the Minecraft server for you.
+**A win.** A blaze hunt in a Nether fortress. Code offered Jev five things to do about the blazes and it picked `close_in` (p=0.42, in 0.15 seconds) over `dig_in_and_fight` (0.21), leaving them (0.14) and two others. It walked in, killed one blaze and picked up its rod. Each of those options said what it would cost the bot in health and seconds, and what it would gain toward the six rods.
 
-```sh
-git clone https://github.com/mrubens/jevcraft.git
-cd jevcraft
-npm ci
-cp .env.example .env    # then set TYPESAFE_API_KEY in .env
-```
+![A ghast's fireball knocks Jev into lava](docs/media/ghast-death.gif)
 
-### Play alongside Jev
+**A loss.** Jev chose to `fight` (p=0.22) a ghast, and a fireball knocked it off its footing into lava. Nothing in the options priced a push over the edge. That death led to note 612, which added a way to step back from the edge. This is how most of the improvements happen: a death shows a missing option or a wrong price, and the fix goes into the menu. See [More clips](docs/media/) for a wither skeleton kill and the trip into the Nether.
 
-Point the bot at a Minecraft Java 26.1 server you run. In `.env`, set `MC_HOST` and `MC_PORT` (defaults: localhost, 25565). Leave `MC_AUTH=offline` for an offline-mode server, or use `MC_AUTH=microsoft` with a separate account for the bot. Then:
+## Where it stands
 
-```sh
-npm start
-```
+- **Early game:** the first three in-game days (iron tools and armor, a shield, a bed, a home) with no deaths have passed in repeated trials ([GOAL.md](GOAL.md)).
+- **The Nether:** 15 of 40 fresh worlds on 2026-09-28 got there, in a median of 28 minutes (7 to 143). Most of the other 25 died or were still going when this was counted.
+- **Blaze rods:** a handful of trials have taken one or two. None has taken the six needed. What kills the bot now is blazes at a spawner, fireballs that push it into lava, and running out of health in the Nether with little food.
+- **Cost and speed (measured on the same day):** 22,800 decisions over about 178 bot-hours, a median answer of 186 ms (90th percentile 292 ms), about 3,100 input tokens a decision. At TypeSafe's published price of $0.042 per million input tokens (output is free), that is about 1.7 cents per bot-hour.
+- **The dragon:** only fought from staged worlds.
 
-Join the same server and talk to it in chat, for example `Jev come here` or `Jev your dream is to beat the game`. See [Using Jev as a chat companion](#using-jev-as-a-chat-companion).
-
-### Run a trial
-
-A trial gives Jev a fresh world on its own server and judges the result, the way we test it.
-
-```sh
-sh scripts/trials/setup.sh 1                          # Java 25, the 26.1.2 server, Fabric and ServerReplay; one server folder on port 25581
-node scripts/first-days.js start first-days-1         # a fresh Normal world and a fresh bot
-node scripts/first-days.js verdict                    # how it is going, or how it ended
-node scripts/trials/trail-map.js 25581 --minutes 15   # a map of where it has been, in artifacts/trails/
-```
-
-The first-days trial lasts an hour of real time, three in-game days. To watch, run `sh scripts/trials/spectate.sh <your Minecraft name> &` and join `localhost:25581`; it puts you in Spectator mode on Jev. To run several at once, pass a larger number to `setup.sh` and choose a server with `FIRST_DAYS_PORT=25582`. Later stages (the Nether, fortresses) start from a world a first-days trial finished: see `scripts/midgame.js` and [scripts/README.md](scripts/README.md). Each trial server uses up to 2 GB of memory and about one CPU core.
-
-## How it works
-
-Code decides what is possible. Jev decides what to do.
-
-- Code builds the options from the game state. Jev never names a coordinate, item or command, and its pick is checked against what was offered.
-- Each option's description says what it does, what it costs (damage and seconds, against the bot's actual health) and what it gains toward the goal. Mob behavior and numbers such as fireball knockback are taken from the game's own code and checked on a test server.
-- Every play question also offers `none_good`: "the move a player would make is not listed". If Jev picks it, code logs a missing option and takes the highest-probability listed one. Those logs became a worklist for new options.
-- If only one option is possible, Jev is not asked.
-- Each question has a code fallback, used only if the service is down or too slow.
-
-### One decision, end to end
-
-Take a fight. A *stance* is the answer to the fight question `encounter_stance`: what to do about the mobs here for the next few seconds.
-
-1. A blaze comes into view. The survival layer claims the turn.
-2. Code builds the `encounter_stance` options that are possible from where the bot stands: charge the nearest blaze, walk in and fight all of them, take cover, wall itself in, leave to heal, and so on. Each is priced from the fight at hand ([src/blaze-stand.js](src/blaze-stand.js), [src/combat-estimate.js](src/combat-estimate.js)).
-3. Code reads what was already tried from here. An option that came to nothing twice is left out for five minutes and listed as resting.
-4. The state and the options go to Jev in one HTTPS call ([src/typesafe.js](src/typesafe.js)). Jev returns a probability for every option, in about 0.18 seconds. A stance question is 1,500 to 8,000 tokens.
-5. Code checks the pick is one it offered and runs it: walks, raises the shield, swings.
-6. The answer is *held* until a fact it was chosen on changes (the blaze moves or dies, health drops, a new mob arrives), and then the question is asked again with the new facts.
-7. How it went is recorded: progress, or nothing gained and why. That record decides what is offered next time.
-
-Trials make about 500 of these decisions per bot per hour.
-
-### What Jev sees
-
-The `state` is not a dump of the game. It holds what a player would weigh for this decision, worked out by code: health, armor and weapon, the threats with their distance and whether they can be reached, and a fight estimate. A few context fields appear on every play question:
-
-- `riskNow`: how bad things are right now (hostiles in range, shots incoming, what fighting all of them would cost).
-- `healing`: whether health comes back here, what food is carried, where the nearest food is.
-- `deathWouldCost`: what would drop, the walk back from respawn, and the real minutes to make it all again.
-- `runClock`: minutes played, what the bot is working on, and where the time has gone. This lets Jev see it has spent too long on something.
-- `recentPositions`: where the bot has been, every 15 seconds, so it can see it is going in circles.
-- `previousStance`: the last answer to this question, how long ago, and why it is being asked again.
-
-Some fields are sentences rather than numbers. Code never reads them; they are there for Jev, and the instructions that explain each field are only sent when the field is present. Field names keep the codebase's British spelling (`armour`).
-
-Here is a real `encounter_stance` question from a trial (mid-242-af-nether-3-fortress-5, 17:10:53Z), shortened. The bot is at a fortress, burning, with one blaze in sight 8 blocks off and more nearby. `estimate.fightHere` is the price of fighting everything in reach where it stands; each option prices its own plan.
-
-```json
-{
-  "health": 17.5, "food": 20, "dimension": "the_nether",
-  "armour": ["iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots"],
-  "weapon": "iron_sword", "shield": true, "buildingBlocks": 464,
-  "threats": [{ "name": "blaze", "distance": 8.3, "shoots": true, "visible": true }],
-  "estimate": { "fightHere": { "seconds": 6.3, "damageTaken": 3.2, "healthAfter": 14.3 } },
-  "alight": "The bot is alight at 17.5 health: about 4.7 seconds of fire left, a health a second that armour does not stop. Water puts it out at once; the Nether has none.",
-  "riskNow": { "level": "high: the mobs about could kill the bot if they all came",
-               "hostilesWithin": { "blocks": 24, "count": 6, "inSight": 1, "shooters": 6 },
-               "shotsComingAtTheBot": 2 },
-  "healing": { "healthComesBack": "yes: at full hunger ...", "foodCarried": "nothing to eat",
-               "nearestFood": ["1 hoglin seen just now, 35 blocks north-west"] },
-  "deathWouldCost": { "dropsWorn": ["iron helmet", "iron chestplate", "iron leggings", "iron boots", "shield"],
-                      "levelsLost": 7, "realMinutesToMakeAgain": { "iron pickaxe": 5, "iron armour": 9 } },
-  "runClock": { "minutesPlayed": 163, "nowOn": "obtain blaze rods" }
-}
-```
-
-Fifteen options were offered. Three of them, cut short, with the probability Jev gave each:
-
-> `charge_nearest` (0.26): Charge the nearest blaze alone: 8.3 blocks off, over ground the bot can stand on within a sword's reach of it; walk in on it while the volleys rest, behind the shield for each as it comes, strike it until it dies, pick up its rod if it drops one, and be asked again then with what is left ...
->
-> `leave_and_heal` (0.20): Walk 9 blocks (about 2.8 seconds in their fire, about 2.9 damage) to (-170, 58, 128), where none of the 4 blazes about has a line to the bot, stay until the health is full ... The blazes stay where they are; the fight after is asked again with the health back ...
->
-> `keep_working` (0.00): Carry on with the work and leave these mobs be for fifteen seconds ... The blaze in sight keeps shooting while the bot works: about 19 damage in the fifteen seconds, from 18 health, more than the bot has.
-
-The others included `close_in` (0.23) and `take_cover` (0.12). Jev picked `charge_nearest`. Every option says what it gains toward the goal; `take_cover` ends "Toward the rods: none, no blaze killed; the blazes stay, and waiting does not send them away; 7 rods still needed." Before that line was added (note 614), cover and retreat were priced only in damage and looked cheap next to fighting.
-
-A smaller example from the replay suite (`poisoned-by-witch-apple-offered`): the bot is at 1 health, poisoned, in full iron, with a witch 19 blocks off.
-
-> `fight`: ... about 10.2 seconds and 14.4 damage to kill them all, from 1 health (more than the bot has) ...
->
-> `eat_golden_apple`: Eat the golden apple now (2 carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds.
->
-> `retreat`: ... A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.
-
-In the replay suite Jev picks the apple or the retreat; either is accepted, since neither is clearly right at 1 health.
-
-### Defining a question
-
-Questions are declared in [src/decisions/](src/decisions/index.js). This is the shield question in full:
-
-```js
-define({
-  id: 'shield_policy', area: 'combat', parent: 'encounter_stance', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Shooters can hit the bot and a shield is carried: raise the shield at each shot on its way, or leave it down and keep on?',
-  trigger: 'In an encounter, a shield in the off hand and a shooter in sight or a shot on its way ...; held until a shooter not counted comes, health falls four, or a minute.',
-  source: 'src/survival.js (shieldPolicy), src/projectile-guard.js (deflect)',
-  options: [
-    { key: 'shield_at_shots', label: 'raise the shield at each shot on its way', when: 'always; said with each shooter\'s shot flight time ...', level: 'root' },
-    { key: 'take_shots', label: 'leave the shield down and keep on with the stance or the step', when: 'always; said with what each shooter\'s shot does to the bot ...', level: 'root' },
-  ],
-  instructions: { task: 'Shooters can hit the bot and it carries a shield. Choose what the bot does about their shots for the next while.', guidance: 'A shot cannot be answered one by one: it lands in well under a second, and the shield takes a quarter second to rise. ...' },
-  fallback: () => 'shield_at_shots',
-});
-```
-
-`parent` is the question asked instead when every option here has come to nothing. `when` documents when each option is offered and what its description must say; the code that builds the description lives in the file named in `source`. [docs/decisions.md](docs/decisions.md) is generated from these definitions (`node scripts/decisions-doc.js`). There are 91 questions: 43 decision trees, most of them in play, and 48 smaller questions sent together to read chat requests.
-
-### What stays in code
-
-Jev only chooses among options, so some things are not questions:
-
-- Physical safety. The pathfinder refuses moves onto gravel over lava, and a guard on every dig refuses one that would let lava in or drop the bot into it.
-- Anything faster than an answer. A shot lands in less time than a question takes, so Jev sets a standing policy (`shield_policy`) and code raises the shield at each shot.
-- Checking the answer. A pick that was not offered is rejected.
-- The fallback when the service is down.
-
-[docs/rule-audit.md](docs/rule-audit.md) lists what code still decides and why.
-
-Jev is only as good as the options and prices it is given. It cannot invent an option, and it does not redo arithmetic that the description got wrong. When it chooses badly, the cause has almost always been a missing option or a false fact.
+**Help Jev survive the blaze spawner.** The [roadmap](ROADMAP.md) has what comes next, and [CONTRIBUTING.md](CONTRIBUTING.md) explains how a concrete failure becomes a test and a general fix.
 
 ## What we tried and learned
+
+The surprising ones first.
+
+### Loops
+
+Deaths are easy to spot. Trials that stay busy without progressing are not: pacing a bridge for 70 minutes, or sitting in a sealed pocket for half an hour. Each feature used to keep its own list of what had failed, and none saw the others; one question was answered the same way 4,423 times. We replaced them with one shared record of what has been tried and what came of it, the *ledger* ([src/tried.js](src/tried.js), note 571). An option that came to nothing twice rests for five minutes. When every option rests, the parent question is asked instead and told what failed. Waiting and holding a stance are recorded the same way, so a wait that changed nothing counts as a failure (notes 599, 611).
+
+### Judging trials
+
+Judging by deaths alone missed some of the worst trials, which never died. The progress audit and trail maps now flag trials that aren't getting anywhere.
+
+### Fix facts, not rules
+
+When Jev chooses badly, the fix is almost always a wrong price, a false fact or a missing option, not a new threshold. In note 614, Jev kept choosing cover with a blaze four blocks away. The charge was offered only when the bot had a shield, which it didn't; other options' text assumed the shield it didn't have; and no option said what it gained toward the rods. Fixing those changed the answers.
 
 ### Confidence gates
 
@@ -181,14 +59,6 @@ Lava escapes, fire escapes, creeper dodges and shield use used to run before Jev
 ### Who gets the turn
 
 Survival, eating and work each used to take control by their own rules. Now each states a claim and Jev picks one (`turn_priority`, [src/arbiter.js](src/arbiter.js)). The question can hang, so the arbiter falls back if the bot is hurt while waiting or five seconds pass.
-
-### Fix facts, not rules
-
-When Jev chooses badly, the fix is almost always a wrong price, a false fact or a missing option, not a new threshold. In note 614, Jev kept choosing cover with a blaze four blocks away. The charge was offered only when the bot had a shield, which it didn't; other options' text assumed the shield it didn't have; and no option said what it gained toward the rods. Fixing those changed the answers.
-
-### Loops
-
-Deaths are easy to spot. Trials that stay busy without progressing are not: pacing a bridge for 70 minutes, or sitting in a sealed pocket for half an hour. Each feature used to keep its own list of what had failed, and none saw the others; one question was answered the same way 4,423 times. We replaced them with one shared record of what has been tried and what came of it, the *ledger* ([src/tried.js](src/tried.js), note 571). An option that came to nothing twice rests for five minutes. When every option rests, the parent question is asked instead and told what failed. Waiting and holding a stance are recorded the same way, so a wait that changed nothing counts as a failure (notes 599, 611).
 
 ### Time budgets
 
@@ -206,11 +76,9 @@ We built boxing in, lighting the spawner, a corner ambush and retreating to heal
 
 A generative LLM reviewing recovery decisions agreed with Jev, took 14 seconds per decision, and cost about a hundred times more. We removed it.
 
-### Judging trials
+## How coding agents improve it
 
-Judging by deaths alone missed some of the worst trials, which never died. The progress audit and trail maps now flag trials that aren't getting anywhere.
-
-## How we iterated
+The agents change the bot's code, prices and options. Jev itself is not retrained.
 
 1. Run 7 to 20 trials in parallel, one Minecraft server each. Most start from saved stages (entering the Nether, reaching a fortress) so the hard parts get many attempts per hour. Stage saves come from [checkpoint.sh](scripts/trials/checkpoint.sh), which snapshots every trial every 30 seconds.
 2. A watcher reports each death or loop. The [progress audit](scripts/trials/progress-audit.js) and trail maps catch trials that are stuck without failing.
@@ -247,6 +115,160 @@ Damage above 20 means the bot healed during the run. A blaze drops a rod about h
 - Anything that watches trials needs a timeout. A hung check once kept the watcher silent for five hours while trials failed.
 
 More operational notes are in [scripts/README.md](scripts/README.md).
+
+## How a decision works
+
+Code decides what is possible. Jev decides what to do.
+
+- Code builds the options from the game state. Jev never names a coordinate, item or command, and its pick is checked against what was offered.
+- Each option's description says what it does, what it costs (damage and seconds, against the bot's actual health) and what it gains toward the goal. Mob behavior and numbers such as fireball knockback are taken from the game's own code and checked on a test server.
+- Every play question also offers `none_good`: "the move a player would make is not listed". If Jev picks it, code logs a missing option and takes the highest-probability listed one. Those logs became a worklist for new options.
+- If only one option is possible, Jev is not asked.
+- Each question has a code fallback, used only if the service is down or too slow.
+
+### One decision, end to end
+
+Take a fight. A *stance* is the answer to the fight question `encounter_stance`: what to do about the mobs here for the next few seconds.
+
+1. A blaze comes into view. The survival layer claims the turn.
+2. Code builds the `encounter_stance` options that are possible from where the bot stands: charge the nearest blaze, walk in and fight all of them, take cover, wall itself in, leave to heal, and so on. Each is priced from the fight at hand ([src/blaze-stand.js](src/blaze-stand.js), [src/combat-estimate.js](src/combat-estimate.js)).
+3. Code reads what was already tried from here. An option that came to nothing twice is left out for five minutes and listed as resting.
+4. The state and the options go to Jev in one HTTPS call ([src/typesafe.js](src/typesafe.js)). Jev returns a probability for every option, in about 0.18 seconds. A stance question is 1,500 to 8,000 tokens.
+5. Code checks the pick is one it offered and runs it: walks, raises the shield, swings.
+6. The answer is *held* until a fact it was chosen on changes (the blaze moves or dies, health drops, a new mob arrives), and then the question is asked again with the new facts.
+7. How it went is recorded: progress, or nothing gained and why. That record decides what is offered next time.
+
+On 2026-09-28 the trials made about 130 of these decisions per bot-hour (22,800 in about 178 bot-hours).
+
+### What Jev sees
+
+The `state` is not a dump of the game. It holds what a player would weigh for this decision, worked out by code: health, armor and weapon, the threats with their distance and whether they can be reached, and a fight estimate. A few context fields appear on every play question:
+
+- `riskNow`: how bad things are right now (hostiles in range, shots incoming, what fighting all of them would cost).
+- `healing`: whether health comes back here, what food is carried, where the nearest food is.
+- `deathWouldCost`: what would drop, the walk back from respawn, and the real minutes to make it all again.
+- `runClock`: minutes played, what the bot is working on, and where the time has gone. This lets Jev see it has spent too long on something.
+- `recentPositions`: where the bot has been, every 15 seconds, so it can see it is going in circles.
+- `previousStance`: the last answer to this question, how long ago, and why it is being asked again.
+
+Some fields are sentences rather than numbers. Code never reads them; they are there for Jev, and the instructions that explain each field are only sent when the field is present. Field names keep the codebase's British spelling (`armour`).
+
+<details>
+<summary>A real question: the state Jev was sent</summary>
+
+Here is a real `encounter_stance` question from a trial (mid-242-af-nether-3-fortress-5, 17:10:53Z), shortened. The bot is at a fortress, burning, with one blaze in sight 8 blocks off and more nearby. `estimate.fightHere` is the price of fighting everything in reach where it stands; each option prices its own plan.
+
+```json
+{
+  "health": 17.5, "food": 20, "dimension": "the_nether",
+  "armour": ["iron_helmet", "iron_chestplate", "iron_leggings", "iron_boots"],
+  "weapon": "iron_sword", "shield": true, "buildingBlocks": 464,
+  "threats": [{ "name": "blaze", "distance": 8.3, "shoots": true, "visible": true }],
+  "estimate": { "fightHere": { "seconds": 6.3, "damageTaken": 3.2, "healthAfter": 14.3 } },
+  "alight": "The bot is alight at 17.5 health: about 4.7 seconds of fire left, a health a second that armour does not stop. Water puts it out at once; the Nether has none.",
+  "riskNow": { "level": "high: the mobs about could kill the bot if they all came",
+               "hostilesWithin": { "blocks": 24, "count": 6, "inSight": 1, "shooters": 6 },
+               "shotsComingAtTheBot": 2 },
+  "healing": { "healthComesBack": "yes: at full hunger ...", "foodCarried": "nothing to eat",
+               "nearestFood": ["1 hoglin seen just now, 35 blocks north-west"] },
+  "deathWouldCost": { "dropsWorn": ["iron helmet", "iron chestplate", "iron leggings", "iron boots", "shield"],
+                      "levelsLost": 7, "realMinutesToMakeAgain": { "iron pickaxe": 5, "iron armour": 9 } },
+  "runClock": { "minutesPlayed": 163, "nowOn": "obtain blaze rods" }
+}
+```
+
+</details>
+
+Fifteen options were offered. Three of them, cut short, with the probability Jev gave each:
+
+> `charge_nearest` (0.26): Charge the nearest blaze alone: 8.3 blocks off, over ground the bot can stand on within a sword's reach of it; walk in on it while the volleys rest, behind the shield for each as it comes, strike it until it dies, pick up its rod if it drops one, and be asked again then with what is left ...
+>
+> `leave_and_heal` (0.20): Walk 9 blocks (about 2.8 seconds in their fire, about 2.9 damage) to (-170, 58, 128), where none of the 4 blazes about has a line to the bot, stay until the health is full ... The blazes stay where they are; the fight after is asked again with the health back ...
+>
+> `keep_working` (0.00): Carry on with the work and leave these mobs be for fifteen seconds ... The blaze in sight keeps shooting while the bot works: about 19 damage in the fifteen seconds, from 18 health, more than the bot has.
+
+The others included `close_in` (0.23) and `take_cover` (0.12). Jev picked `charge_nearest`. Every option says what it gains toward the goal; `take_cover` ends "Toward the rods: none, no blaze killed; the blazes stay, and waiting does not send them away; 7 rods still needed." Before that line was added (note 614), cover and retreat were priced only in damage and looked cheap next to fighting.
+
+A smaller example from the replay suite (`poisoned-by-witch-apple-offered`): the bot is at 1 health, poisoned, in full iron, with a witch 19 blocks off.
+
+> `fight`: ... about 10.2 seconds and 14.4 damage to kill them all, from 1 health (more than the bot has) ...
+>
+> `eat_golden_apple`: Eat the golden apple now (2 carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds.
+>
+> `retreat`: ... A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.
+
+In the replay suite Jev picks the apple or the retreat; either is accepted, since neither is clearly right at 1 health.
+
+<details>
+<summary>How a question is defined in code</summary>
+
+Questions are declared in [src/decisions/](src/decisions/index.js). This is the shield question in full:
+
+```js
+define({
+  id: 'shield_policy', area: 'combat', parent: 'encounter_stance', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Shooters can hit the bot and a shield is carried: raise the shield at each shot on its way, or leave it down and keep on?',
+  trigger: 'In an encounter, a shield in the off hand and a shooter in sight or a shot on its way ...; held until a shooter not counted comes, health falls four, or a minute.',
+  source: 'src/survival.js (shieldPolicy), src/projectile-guard.js (deflect)',
+  options: [
+    { key: 'shield_at_shots', label: 'raise the shield at each shot on its way', when: 'always; said with each shooter\'s shot flight time ...', level: 'root' },
+    { key: 'take_shots', label: 'leave the shield down and keep on with the stance or the step', when: 'always; said with what each shooter\'s shot does to the bot ...', level: 'root' },
+  ],
+  instructions: { task: 'Shooters can hit the bot and it carries a shield. Choose what the bot does about their shots for the next while.', guidance: 'A shot cannot be answered one by one: it lands in well under a second, and the shield takes a quarter second to rise. ...' },
+  fallback: () => 'shield_at_shots',
+});
+```
+
+`parent` is the question asked instead when every option here has come to nothing. `when` documents when each option is offered and what its description must say; the code that builds the description lives in the file named in `source`. [docs/decisions.md](docs/decisions.md) is generated from these definitions (`node scripts/decisions-doc.js`). There are 91 questions: 43 decision trees, most of them in play, and 48 smaller questions sent together to read chat requests.
+
+</details>
+
+### What stays in code
+
+Jev only chooses among options, so some things are not questions:
+
+- Physical safety. The pathfinder refuses moves onto gravel over lava, and a guard on every dig refuses one that would let lava in or drop the bot into it.
+- Anything faster than an answer. A shot lands in less time than a question takes, so Jev sets a standing policy (`shield_policy`) and code raises the shield at each shot.
+- Checking the answer. A pick that was not offered is rejected.
+- The fallback when the service is down.
+
+[docs/rule-audit.md](docs/rule-audit.md) lists what code still decides and why.
+
+Jev is only as good as the options and prices it is given. It cannot invent an option, and it does not redo arithmetic that the description got wrong. When it chooses badly, the cause has almost always been a missing option or a false fact.
+
+## Run it yourself
+
+You need Node.js 22 or newer, a [TypeSafe](https://typesafe.ai/) API key, and macOS or Linux. The trial scripts download Java and the Minecraft server for you.
+
+```sh
+git clone https://github.com/mrubens/jevcraft.git
+cd jevcraft
+npm ci
+cp .env.example .env    # then set TYPESAFE_API_KEY in .env
+```
+
+### Play alongside Jev
+
+Point the bot at a Minecraft Java 26.1 server you run. In `.env`, set `MC_HOST` and `MC_PORT` (defaults: localhost, 25565). Leave `MC_AUTH=offline` for an offline-mode server, or use `MC_AUTH=microsoft` with a separate account for the bot. Then:
+
+```sh
+npm start
+```
+
+Join the same server and talk to it in chat, for example `Jev come here` or `Jev your dream is to beat the game`. See [Using Jev as a chat companion](#using-jev-as-a-chat-companion).
+
+### Run a trial
+
+A trial gives Jev a fresh world on its own server and judges the result, the way we test it.
+
+```sh
+sh scripts/trials/setup.sh 1                          # Java 25, the 26.1.2 server, Fabric and ServerReplay; one server folder on port 25581
+node scripts/first-days.js start first-days-1         # a fresh Normal world and a fresh bot
+node scripts/first-days.js verdict                    # how it is going, or how it ended
+node scripts/trials/trail-map.js 25581 --minutes 15   # a map of where it has been, in artifacts/trails/
+```
+
+The first-days trial lasts an hour of real time, three in-game days. To watch, run `sh scripts/trials/spectate.sh <your Minecraft name> &` and join `localhost:25581`; it puts you in Spectator mode on Jev. To run several at once, pass a larger number to `setup.sh` and choose a server with `FIRST_DAYS_PORT=25582`. Later stages (the Nether, fortresses) start from a world a first-days trial finished: see `scripts/midgame.js` and [scripts/README.md](scripts/README.md). Each trial server uses up to 2 GB of memory and about one CPU core.
 
 ## Code map
 

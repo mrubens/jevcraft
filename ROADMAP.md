@@ -1,11 +1,11 @@
 # Roadmap
 
-The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). These are priorities, not dates. Where things stand is in the [README](README.md#status-2026-09-28) and the [trial notes](docs/trial-notes.md).
+The goal is to beat Minecraft from a fresh Survival world with an empty inventory, with Jev making the judgment calls and no help from commands, kits or a person ([GOAL.md](GOAL.md)). These are priorities, not dates. Where things stand is in the [README](README.md#where-it-stands) and the [trial notes](docs/trial-notes.md).
 
 ## Done
 
 - The first three in-game days: iron tools and armor, a shield, a bed and a home, with no deaths (`scripts/first-days.js`).
-- Reaching the Nether from a fresh world, usually in 7 to 30 minutes, and finding a fortress.
+- Reaching the Nether from a fresh world (15 of 40 on 2026-09-28, median 28 minutes) and finding a fortress.
 - Most reflexes and hand-written rules handed to Jev as questions ([rule audit](docs/rule-audit.md)).
 
 ## Now: blaze rods
