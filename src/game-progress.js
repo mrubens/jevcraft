@@ -439,12 +439,18 @@ function rodsRest(goal, phase = 'obtain_blaze_rods', now = Date.now()) {
 // for food at 20:59, Jev chose to cross again with none at 21:03, and on
 // the far side the held "go back" turned it round at once, stepping out of
 // the sheet into the soul fire before it (note 502).
+// The minutes sealed in a pocket on the way are not the trip's (sealedAt,
+// the wait's start): mid-242-ab-nether-3-fortress-1 chose to go back for
+// food at 06:27, was sealed in against a blaze at 06:28, and at 06:37, still
+// sealed in, the trip lapsed; the leave went back to the rung and the trip
+// became one more thing to choose again (note 597).
 const NETHER_LEAVE_MS = 10 * 60000;
-function netherLeaveHeld(goal, reason, now = Date.now()) {
+function netherLeaveHeld(goal, reason, now = Date.now(), { sealedAt = 0 } = {}) {
   const held = goal.leaveNether;
   if (!held || held.reason !== reason || held.pick !== 'go_back') return false;
   if (goal.gameProgress?.here?.at > held.at) return false;
-  return held.until ? held.until > now && rodsRest(goal, reason, now).until === held.until : now - held.at < NETHER_LEAVE_MS;
+  const upTo = sealedAt > held.at && sealedAt < now ? sealedAt : now;
+  return held.until ? held.until > now && rodsRest(goal, reason, now).until === held.until : upTo - held.at < NETHER_LEAVE_MS;
 }
 
 // The rods step waits in the Nether: going back, the step taken up again,

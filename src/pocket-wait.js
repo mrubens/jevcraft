@@ -70,6 +70,8 @@ function watchPocket(state, refuge, about, now = Date.now()) {
     w.since = start; w.against ||= againstAt(start);
   }
   w.seenAt = now;
+  // How many were about at the first look, for how that has gone.
+  w.firstLook ||= { at: now, count: about.length };
   for (const t of about) {
     const id = t.entity?.id;
     if (id === undefined) continue;
@@ -108,7 +110,7 @@ function mobWait(w, t, now) {
 // sealed against). Returns the facts for the state and the sentences for
 // stay and leave; `heldOff` is true when every mob outside has held off out
 // of sight for a minute or more of the wait.
-function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = false, noFood = false, now = Date.now() } = {}) {
+function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = false, noFood = false, spawner = null, now = Date.now() } = {}) {
   const w = state.pocketWait;
   if (!w) return null;
   const minutes = minutesSays(now - w.since);
@@ -158,8 +160,24 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   const starving = noFood && hp < 20 && food < 18;
   const foodSays = starving ? ` Nothing carried is food: hunger ${food} does not rise in here, so health does not come back in this pocket however long it waits.` : '';
   if (starving) facts.health = `${Math.round(hp * 10) / 10}, not coming back: nothing carried to eat and hunger ${food}`;
-  // What a stay could wait for, where neither comes.
-  const nothingComes = noDay && starving ? ' Neither daylight nor health comes to this wait: only the mobs outside moving off would change it.' : '';
+  // How many are about now against the first look: mid-242-ab-nether-3-
+  // fortress-1 sealed in twelve blocks from a blaze spawner with five
+  // blazes about, and twenty minutes on twenty and more mobs were within 24
+  // blocks and nineteen blazes within their 48 (note 597); each mob was
+  // said, the count never.
+  const countNow = near.filter(t => t.distance <= 24).length;
+  const fl = w.firstLook;
+  const countSays = fl && now - fl.at >= HELD_MS && countNow !== fl.count
+    ? ` Within 24 blocks of the pocket: ${fl.count} mob${fl.count === 1 ? '' : 's'} at the wait's first look ${minutesSays(now - fl.at)} ago, ${countNow} now.` : '';
+  if (countSays) facts.mobsWithin24 = { firstLook: fl.count, now: countNow };
+  // What a stay could wait for, where neither comes. By a spawner in reach
+  // the mobs outside do not move off either: it makes more of them while
+  // the bot is within its sixteen, and "only the mobs outside moving off
+  // would change it" was said there as if they might (note 597).
+  const spawnerKind = spawner ? `${spawner.mob ? `${name(spawner.mob)} ` : 'mob '}spawner` : '';
+  const nothingComes = noDay && starving
+    ? (spawner ? ` Neither daylight nor health comes to this wait, and the mobs outside do not move off: the ${spawnerKind} ${spawner.distance} blocks off makes more of them while the bot is within its 16 blocks.` : ' Neither daylight nor health comes to this wait: only the mobs outside moving off would change it.') : '';
+  if (nothingComes && spawner) facts.waitingFor = `nothing: no daylight, no health without food, and the ${spawnerKind} ${spawner.distance} blocks off makes more while the bot is within 16`;
   // The rung, and how long since it last got anywhere.
   const { rungOf, rungSays } = require('./tried');
   const r = goal?.tried?.rung, rung = rungOf(goal);
@@ -168,8 +186,8 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   if (rungLine) facts.rung = rungLine.trim();
   return {
     facts, heldOff, minutes,
-    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${daySays}${healSays}${foodSays}${nothingComes}${rungLine}`,
-    leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}`,
+    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${nothingComes}${rungLine}`,
+    leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}${countSays}`,
     claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}) },
   };
 }

@@ -5186,31 +5186,52 @@ class Survival {
   // longer: mid-230-n had no way away from one but the doors (note 412).
   // And from a spawner's block (a position, not a mob), to beyond its
   // sixteen, clear of a creeper too when one is about (also) (note 476).
-  passageOut(from, { clear = PASSAGE_CLEAR, max = PASSAGE_MAX, also = [] } = {}) {
+  // Not only level along the one axis away: mid-242-ab-nether-3-fortress-1
+  // sat twenty-eight minutes and more sealed on the lip of a fortress pier,
+  // twelve blocks from a blaze spawner seven above it, the mobs within 24
+  // blocks growing from five to twenty and more, and was never offered a
+  // way out under rock (note 597). Level, the pier's rock ran out into the air on every side short of
+  // the spawner's sixteen; the way a player digs there, down into the pier
+  // and away, was never looked at. Now each way that does not lead toward it
+  // is surveyed, the one straight away first and then the two across, level
+  // first and then a stair down (a block lower each step, three blocks dug a
+  // step), and the first that ends clear is the passage, its cells kept
+  // (path). `sphere` measures the clearance in three dimensions, as a
+  // spawner's sixteen is.
+  passageOut(from, { clear = PASSAGE_CLEAR, max = PASSAGE_MAX, also = [], sphere = false } = {}) {
     const bot = this.bot;
-    const feet = bot.entity.position.floored(), at = from.entity ? from.entity.position : from.offset(0.5, 0, 0.5);
+    const feet = bot.entity.position.floored(), at = from.entity ? from.entity.position : from.offset(0.5, 0.5, 0.5);
     const clearOf = q => also.every(a => Math.hypot(q.x + 0.5 - a.at.x, q.z + 0.5 - a.at.z) >= a.clear);
+    const far = q => sphere ? Math.hypot(q.x + 0.5 - at.x, q.y - at.y, q.z + 0.5 - at.z) : Math.hypot(q.x + 0.5 - at.x, q.z + 0.5 - at.z);
     const away = feet.offset(0.5, 0, 0.5).minus(at);
-    const dir = Math.abs(away.x) >= Math.abs(away.z) ? new Vec3(Math.sign(away.x) || 1, 0, 0) : new Vec3(0, 0, Math.sign(away.z) || 1);
-    const direction = dir.x === 1 ? 'east' : dir.x === -1 ? 'west' : dir.z === 1 ? 'south' : 'north';
+    const first = Math.abs(away.x) >= Math.abs(away.z) ? new Vec3(Math.sign(away.x) || 1, 0, 0) : new Vec3(0, 0, Math.sign(away.z) || 1);
+    const gain = d => d.x * away.x + d.z * away.z;
+    const across = [new Vec3(first.z, 0, first.x), new Vec3(-first.z, 0, -first.x)].filter(d => gain(d) >= 0).sort((a, b) => gain(b) - gain(a));
+    const named = d => d.x === 1 ? 'east' : d.x === -1 ? 'west' : d.z === 1 ? 'south' : 'north';
     const { safeExcavation } = require('./tunneling');
-    let here = feet, cells = 0;
-    for (let n = 0; n < max; n++) {
-      const next = here.plus(dir);
-      const floor = bot.blockAt(next.offset(0, -1, 0));
-      if (!floor || floor.boundingBox !== 'block' || /lava|water/.test(floor.name)) break;
-      let blocked = false;
-      for (const c of [next, next.offset(0, 1, 0)]) {
-        const b = bot.blockAt(c);
-        if (!b || /lava|water|fire/.test(b.name) || (b.boundingBox === 'block' && (!b.diggable || !safeExcavation(bot, c)))) { blocked = true; break; }
+    const survey = (dir, drop) => {
+      let here = feet, cells = 0;
+      const path = [];
+      for (let n = 0; n < max; n++) {
+        const next = here.plus(dir).offset(0, -drop, 0);
+        const floor = bot.blockAt(next.offset(0, -1, 0));
+        if (!floor || floor.boundingBox !== 'block' || /lava|water/.test(floor.name)) break;
+        const dig = drop ? [next, next.offset(0, 1, 0), next.offset(0, 2, 0)] : [next, next.offset(0, 1, 0)];
+        let blocked = false;
+        for (const c of dig) {
+          const b = bot.blockAt(c);
+          if (!b || /lava|water|fire/.test(b.name) || (b.boundingBox === 'block' && (!b.diggable || !safeExcavation(bot, c)))) { blocked = true; break; }
+        }
+        if (blocked) break;
+        path.push({ at: next, dig });
+        here = next; cells++;
+        if (cells >= PASSAGE_MIN && far(here) >= clear && clearOf(here)) break;
       }
-      if (blocked) break;
-      here = next; cells++;
-      if (cells >= PASSAGE_MIN && Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) >= clear && clearOf(here)) break;
-    }
-    const clearance = Math.round(Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z));
-    if (cells < PASSAGE_MIN || Math.hypot(here.x + 0.5 - at.x, here.z + 0.5 - at.z) < clear || !clearOf(here)) return null;
-    return { dir, direction, cells, clearance, end: here };
+      if (cells < PASSAGE_MIN || far(here) < clear || !clearOf(here)) return null;
+      return { dir, direction: named(dir), cells, clearance: Math.round(far(here)), end: here, down: feet.y - here.y, blocks: path.reduce((n, c) => n + c.dig.length, 0), path };
+    };
+    for (const drop of [0, 1]) for (const dir of [first, ...across]) { const p = survey(dir, drop); if (p) return p; }
+    return null;
   }
 
   // Dig the passage surveyed (passageOut) and go on from its end: the pocket
@@ -5222,16 +5243,19 @@ class Survival {
     this.report(goal, save, { action: 'tunnel_out', origin: refuge.origin, direction: passage.direction, cells: passage.cells, from: creeper.entity.name, distance: Number(creeper.distance.toFixed(1)), health: bot.health });
     const start = bot.entity.position.floored().offset(0.5, 0, 0.5);
     let here = bot.entity.position.floored(), dug = 0;
-    for (let n = 0; n < passage.cells; n++) {
+    // The cells surveyed, level or a stair down (passage.path); one
+    // surveyed without them is the level run along its axis.
+    const cells = passage.path || Array.from({ length: passage.cells }, (_, n) => { const at = here.plus(passage.dir.scaled(n + 1)); return { at, dig: [at, at.offset(0, 1, 0)] }; });
+    for (const cell of cells) {
       task.check();
-      const next = here.plus(passage.dir), head = next.offset(0.5, 0, 0.5);
+      const next = cell.at, head = next.offset(0.5, 0, 0.5);
       // Come round toward the passage: within six of its head and nearer to
       // it than to the pocket it was dug from. (The first cell of a passage
       // dug from five blocks off is six from the creeper by itself.)
       const kind = creeper.entity.name;
       const near = threats(bot, 32).filter(t => t.entity.name === kind).some(t => t.entity.position.distanceTo(head) <= 6 && t.entity.position.distanceTo(head) < t.entity.position.distanceTo(start));
       if (near) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: `a ${kind} come round within six blocks of the passage's head` }); return dug > 0; }
-      for (const c of [next, next.offset(0, 1, 0)]) {
+      for (const c of cell.dig) {
         const b = bot.blockAt(c);
         if (b && b.boundingBox === 'block') {
           if (!require('./tunneling').safeExcavation(bot, c)) { this.report(goal, save, { action: 'tunnel_out_stopped', cells: dug, reason: `lava or water behind the ${b.name.replaceAll('_', ' ')} ahead` }); return dug > 0; }
@@ -6454,7 +6478,7 @@ class Survival {
       // the mobs outside have moved while it waited, no daylight where none
       // comes, and the rung's time without a new best.
       const noFood = foodSupply(bot) === 0 && !(lastResortSupply(bot).points > 0);
-      const waitSays = require('./pocket-wait').pocketWaitSays(bot, this.state, goal, { outside: threats(bot, 16).slice(0, 8), near: threats(bot, 64), night, noFood });
+      const waitSays = require('./pocket-wait').pocketWaitSays(bot, this.state, goal, { outside: threats(bot, 16).slice(0, 8), near: threats(bot, 64), night, noFood, spawner: place?.spawner });
       // Off the Overworld with the trip back for food Jev chose still held
       // (leave_nether go_back, netherLeaveHeld): that trip is the work the
       // leave goes on with, not the rung. mid-242-ab-nether-3-fortress-1 ate
@@ -6462,8 +6486,10 @@ class Survival {
       // on the way to the portal at 05:09, and was told the leave went "back
       // to the obtain blaze rods step", past the blazes (note 589).
       const offWorld = !/overworld/.test(String(bot.game?.dimension || 'overworld'));
-      const foodTrip = offWorld && require('./game-progress').netherLeaveHeld(goal, 'food')
-        ? { to: `go on with the way back to the Overworld for food, as Jev chose at ${new Date(goal.leaveNether.at).toISOString().slice(11, 16)}${this.state.pocketWait?.since > goal.leaveNether.at ? ', before this pocket was sealed on it' : ''}`,
+      // The minutes sealed in on it are not the trip's (note 597), and
+      // leaving to go on with it is choosing it again: its clock starts over.
+      const foodTrip = offWorld && require('./game-progress').netherLeaveHeld(goal, 'food', Date.now(), { sealedAt: this.state.pocketWait?.since })
+        ? { renew: () => { if (goal.leaveNether) { goal.leaveNether.at = Date.now(); save(); } }, to: `go on with the way back to the Overworld for food, as Jev chose at ${new Date(goal.leaveNether.at).toISOString().slice(11, 16)}${this.state.pocketWait?.since > goal.leaveNether.at ? ', before this pocket was sealed on it' : ''}`,
           says: ` ${require('./game-progress').portalTrip(bot, goal)} ${waiting ? `${waiting.charAt(0).toUpperCase()}${waiting.slice(1)}` : 'The work'} waits till the bot is fed and back.` } : null;
       const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
       options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) +
@@ -6514,7 +6540,7 @@ class Survival {
       // (note 476).
       const digging = !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function';
       const spawnerHere = digging && place?.spawner;
-      const fromSpawner = spawnerHere ? this.passageOut(spawnerHere.at, { clear: SPAWNER_REACH + 1, max: 24, also: creeperNear ? [{ at: creeperNear.entity.position, clear: PASSAGE_CLEAR }] : [] }) : null;
+      const fromSpawner = spawnerHere ? this.passageOut(spawnerHere.at, { clear: SPAWNER_REACH + 1, max: 24, sphere: true, also: creeperNear ? [{ at: creeperNear.entity.position, clear: PASSAGE_CLEAR }] : [] }) : null;
       const passage = !fromSpawner && creeperNear && digging ? this.passageOut(creeperNear) : null;
       const fromWatcher = !fromSpawner && !passage && watcher && digging && watcher.entity.name !== 'warden' ? this.passageOut(watcher) : null;
       // Away from blazes about, under rock the whole way: a player low on
@@ -6528,26 +6554,31 @@ class Survival {
       const blazeMid = blazesAbout.length ? require('./bunker').centroid(blazesAbout) : null;
       const fromBlazes = !fromSpawner && !passage && !fromWatcher && blazeMid && digging
         ? this.passageOut({ entity: { position: blazeMid } }, { clear: Math.hypot(bot.entity.position.x - blazeMid.x, bot.entity.position.z - blazeMid.z) + 8, max: 24 }) : null;
-      const outCells = p => `one wide and two high, ${p.cells} blocks, about ${Math.round(p.cells * 2.5)} seconds`;
+      const outCells = p => `one wide and two high, ${p.cells} blocks${p.down ? `, a stair down a block each step to ${p.down} below the pocket's floor (${p.blocks} blocks dug)` : ''}, about ${Math.round((p.blocks || p.cells * 2) * 1.25)} seconds`;
+      // Where it goes from the passage's end: the trip back for food Jev
+      // chose, while it is held (note 597), else the work.
+      const outThen = foodTrip ? `from its end ${foodTrip.to}.${foodTrip.says}` : null;
+      const blazesSay = blazesAbout.length ? ' Rock round it the whole way and the pocket\'s wall toward the blazes left standing: a blaze sees the bot only straight down the passage; a blaze that has not seen it for three seconds gives it up.' : '';
       const outSafe = kind => ` No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if a ${kind.replaceAll('_', ' ')} comes round toward its head within six blocks or the rock ahead is not safe to dig through.`;
       const walksRound = w => ` A ${w.entity.name.replaceAll('_', ' ')} after a player walks round to it through open ground, not through rock${keptFor ? `; this one has kept the pocket ${keptFor} seconds` : ''}.`;
       const outRun = (keeper, p) => async () => {
         delete this.state.watchedSince; delete this.state.pocketWatch;
         if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_out' };
+        foodTrip?.renew();
         return this.tunnelOut(task, goal, save, refuge, keeper, p);
       };
       if (fromSpawner) {
         const spawnerMob = watcher || { entity: { name: 'spawner', position: spawnerHere.at.offset(0.5, 0, 0.5) }, distance: spawnerHere.distance };
-        options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromSpawner.direction} wall, away from the mob spawner: ${outCells(fromSpawner)}, ending ${fromSpawner.clearance} blocks from the spawner (it is ${spawnerHere.distance} off now), beyond the ${SPAWNER_REACH} within which it makes more of its mob; then go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end.${watcher ? walksRound(watcher) : ''}${outSafe(watcher ? watcher.entity.name : 'mob')}${outSays}${outHealth}`,
+        options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromSpawner.direction} wall, away from the mob spawner: ${outCells(fromSpawner)}, ending ${fromSpawner.clearance} blocks from the spawner (it is ${spawnerHere.distance} off now), beyond the ${SPAWNER_REACH} within which it makes more of its mob; then ${outThen || `go back to ${waiting || 'work'}${night ? ' in the dark, where mobs spawn' : ''} from its end.`}${blazesSay}${watcher ? walksRound(watcher) : ''}${outSafe(watcher ? watcher.entity.name : 'mob')}${outSays}${outHealth}`,
           run: outRun(spawnerMob, fromSpawner) };
       } else if (fromWatcher) options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromWatcher.direction} wall, away from the ${watcher.entity.name.replaceAll('_', ' ')}: ${outCells(fromWatcher)}, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${fromWatcher.clearance} blocks from where it is now (it is ${Math.round(watcher.distance)} off${watcher.visible ? '' : ', behind the rock'}).${walksRound(watcher)}${outSafe(watcher.entity.name)}${outSays}${outHealth}`,
         run: outRun(watcher, fromWatcher) };
       else if (fromBlazes) {
         const endFrom = Math.round(Math.min(...blazesAbout.map(t => Math.hypot(t.entity.position.x - (fromBlazes.end.x + 0.5), t.entity.position.z - (fromBlazes.end.z + 0.5)))));
-        options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromBlazes.direction} wall, away from the blazes: ${outCells(fromBlazes)}, ending ${endFrom} blocks from the nearest of them where they are now (the nearest is ${Math.round(blazeNear.distance)} off); then go back to ${waiting || 'work'} from its end. Rock round it the whole way and the pocket's wall toward them left standing: a blaze sees the bot only straight down the passage, and the passage runs away from them; a blaze that has not seen it for three seconds gives it up.${outSafe('blaze')}${outHealth}`,
+        options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromBlazes.direction} wall, away from the blazes: ${outCells(fromBlazes)}, ending ${endFrom} blocks from the nearest of them where they are now (the nearest is ${Math.round(blazeNear.distance)} off); then ${outThen || `go back to ${waiting || 'work'} from its end.`} Rock round it the whole way and the pocket's wall toward them left standing: a blaze sees the bot only straight down the passage, and the passage runs away from them; a blaze that has not seen it for three seconds gives it up.${outSafe('blaze')}${outHealth}`,
           run: outRun(blazeNear, fromBlazes) };
       }
-      if (passage) options.tunnel_out = { description: `Dig a passage out through the pocket's ${passage.direction} wall, away from the creeper: one wide and two high, ${passage.cells} blocks, about ${Math.round(passage.cells * 2.5)} seconds, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${passage.clearance} blocks from where the creeper is now (it is ${Math.round(creeperNear.distance)} off${creeperNear.visible ? '' : ', behind the rock'}). A creeper walks to a player it sees within sixteen blocks and lights its fuse within three; behind rock it sees nothing, and digging makes no noise it follows. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the creeper comes round toward its head within six blocks or the rock ahead is not safe to dig through.${outSays}${outHealth}`,
+      if (passage) options.tunnel_out = { description: `Dig a passage out through the pocket's ${passage.direction} wall, away from the creeper: ${outCells(passage)}, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${passage.clearance} blocks from where the creeper is now (it is ${Math.round(creeperNear.distance)} off${creeperNear.visible ? '' : ', behind the rock'}). A creeper walks to a player it sees within sixteen blocks and lights its fuse within three; behind rock it sees nothing, and digging makes no noise it follows. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the creeper comes round toward its head within six blocks or the rock ahead is not safe to dig through.${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_out' };
@@ -6557,7 +6588,7 @@ class Survival {
       // door past it (note 412).
       const wardenAbout = threats(bot, 32).filter(t => t.entity.name === 'warden').sort((a, b) => a.distance - b.distance)[0];
       const away = wardenAbout && !inWater(bot) && typeof this.actions.dig === 'function' && typeof this.actions.navigate === 'function' ? this.passageOut(wardenAbout, { clear: BOOM_ACROSS + 2, max: 24 }) : null;
-      if (away) options.tunnel_from_warden = { description: `Dig a passage out through the pocket's ${away.direction} wall, away from the warden: one wide and two high, ${away.cells} blocks, about ${Math.round(away.cells * 2.5)} seconds, ending ${away.clearance} blocks across from where it is now, beyond its boom's ${BOOM_ACROSS}; then go back to work from there. Digging is a vibration the warden hears and comes toward. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the warden comes round toward its head within six blocks.` + wardenSays(bot) + outHealth,
+      if (away) options.tunnel_from_warden = { description: `Dig a passage out through the pocket's ${away.direction} wall, away from the warden: ${outCells(away)}, ending ${away.clearance} blocks across from where it is now, beyond its boom's ${BOOM_ACROSS}; then go back to work from there. Digging is a vibration the warden hears and comes toward. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the warden comes round toward its head within six blocks.` + wardenSays(bot) + outHealth,
         run: async () => {
           delete this.state.watchedSince;
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
@@ -6571,6 +6602,7 @@ class Survival {
           // in, and the work opened the lid again, every two seconds for a
           // minute (mid-92-f, 2026-09-26). Held as staying up for two minutes.
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'leave' };
+          foodTrip?.renew();
           return (await this.leave(task, goal, save, refuge, undefined, { past: true })) !== false;
         } };
       // Out for food, by day or night, when hunger is under eighteen and the

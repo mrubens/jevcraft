@@ -1395,9 +1395,17 @@ test('a creeper that keeps every door shut: a passage out through the far wall i
   assert.equal(await again.tunnelOut(new Task('day'), {}, () => {}, refuge, { entity: creeper, distance: 4 }, passage), false);
   assert.deepEqual(dug, [], 'not a block dug toward a creeper within six of the passage');
   assert(again.state.shelters.includes(refuge), 'still the pocket');
-  // No passage where the rock ahead has water behind it.
-  const wet = new Survival(Object.assign(bot, { blockAt: p => ({ name: open.has(`${p}`) ? 'air' : p.x <= -2 ? 'water' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : p.x <= -2 ? 'empty' : 'block', diggable: true, position: p }) }), {}, {});
+  // No passage where the rock ahead has water behind it, on every way that
+  // does not lead toward the creeper, level or down (note 597).
+  const wetAt = p => p.x <= -2 || Math.abs(p.z) >= 2;
+  const wet = new Survival(Object.assign(bot, { blockAt: p => ({ name: open.has(`${p}`) ? 'air' : wetAt(p) ? 'water' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : wetAt(p) ? 'empty' : 'block', diggable: true, position: p }) }), {}, {});
   assert.equal(wet.passageOut({ entity: { position: new Vec3(5.5, 30, 0.5) }, distance: 5 }), null);
+  // Water behind the west run only: across to the north instead, level.
+  const westWet = new Survival(Object.assign(bot, { blockAt: p => ({ name: open.has(`${p}`) ? 'air' : p.x <= -2 ? 'water' : 'stone', boundingBox: open.has(`${p}`) ? 'empty' : p.x <= -2 ? 'empty' : 'block', diggable: true, position: p }) }), {}, {});
+  const across = westWet.passageOut({ entity: { position: new Vec3(5.5, 30, 0.5) }, distance: 5 });
+  assert.equal(across?.direction, 'north');
+  assert.equal(across.down, 0);
+  assert(across.clearance >= 10);
 });
 
 test('sealed in hurt and hungry at night, staying and leaving both say the health and that it does not come back', async () => {

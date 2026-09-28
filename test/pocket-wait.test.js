@@ -157,11 +157,122 @@ test('a Nether pocket with nothing to eat says its wait from the seal across a r
   // Held off unseen: the fight is what it costs should they all come.
   assert.match(leave, /Should they all come at the bot at once, fighting them is estimated at about/);
   assert.doesNotMatch(leave, /Out among them/);
-  // The trip's hold has lapsed (ten minutes): the leave goes back to the
-  // rung, and the way back for food is offered, said with the trip.
-  assert.match(leave, /^Open the pocket and go back to the obtain blaze rods step/);
+  // Twenty-five minutes on, the trip chosen two minutes before the seal is
+  // still held: the minutes sealed in are not the trip's (note 597).
+  assert.match(leave, /^Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it, past a blaze/);
+  assert.ok(!tree.go_for_food?.children?.return_for_food, 'the trip back is the leave\'s, not offered twice');
+  // Chosen more than ten minutes before the seal, it has lapsed: the leave
+  // goes back to the rung, and the way back for food is offered, said with
+  // the trip.
+  goal.leaveNether.at = t0 - 11 * min;
+  ({ tree } = await askAt(again, goal, t0 + 26 * min));
+  assert.match(tree.leave.description, /^Open the pocket and go back to the obtain blaze rods step/);
   assert.match(tree.go_for_food.description, /off the Overworld the food is back through the portal/);
   assert.match(tree.go_for_food.children.return_for_food.description, /Go back through the portal to the Overworld.*The nearest portal remembered is 280 blocks off.*Health does not come back on the way: hunger 16, under eighteen, and nothing to eat/);
+});
+
+// mid-242-ab-nether-3-fortress-1 (25592, note 597): with nothing to eat it
+// chose again to go back for food at 06:27:43, and at 06:28:18, on the way,
+// sealed in against a blaze on the lip of a fortress pier at (-275, 56,
+// -174), a blaze spawner at (-281, 63, -167), 12 blocks off and 7 above.
+// It stayed twenty minutes and more, the mobs within 24 blocks growing from
+// five to twenty. Every way out under rock surveyed level along one axis
+// ran into the air short of the spawner's sixteen, so tunnel_out was never
+// offered; the stay said "only the mobs outside moving off would change it"
+// beside a spawner that makes more of them; and at 06:37, still sealed in,
+// the trip back lapsed and the leave went back to the rung. The blocks are
+// the region file's as saved at 06:48Z, the pocket's seal in them.
+const PIER = require('./fixtures/spawner-pier-mid-242-ab.json');
+function pierPocket() {
+  const registry = require('minecraft-data')('26.1');
+  const Block = require('prismarine-block')(registry);
+  const [Y0, Y1] = PIER.y, cols = new Map(), dug = new Set();
+  const nameAt = q => {
+    const key = `${q.x},${q.z}`;
+    if (!cols.has(key)) {
+      const s = PIER.columns[key];
+      let out = null;
+      if (s) { out = []; for (const [, ch, n] of s.matchAll(/([a-z])(\d*)/g)) for (let i = 0; i < (n ? Number(n) : 1); i++) out.push(PIER.palette[ch.charCodeAt(0) - 97]); }
+      cols.set(key, out);
+    }
+    const c = cols.get(key);
+    return !c || q.y < Y0 || q.y > Y1 ? null : dug.has(`${q}`) ? 'air' : c[q.y - Y0];
+  };
+  const blockAt = p => { const q = new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)), n = nameAt(q); if (!n) return null; const b = Block.fromStateId(registry.blocksByName[n].defaultState, 0); b.position = q; return b; };
+  const spawnerAt = new Vec3(-281, 63, -167), feet = new Vec3(-274.5, 56, -173.5);
+  // Cells a blaze floats in about the spawner, air with air over it.
+  const air = [];
+  for (let r = 3; r <= 9 && air.length < 24; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+    const c = spawnerAt.offset(dx, -3 + (Math.abs(dx + dz) % 4), dz);
+    if (Math.max(Math.abs(dx), Math.abs(dz)) === r && nameAt(c) === 'air' && nameAt(c.offset(0, 1, 0)) === 'air' && !air.some(a => a.equals(c))) air.push(c);
+  }
+  const inv = [['stone_pickaxe', 1], ['iron_sword', 1], ['netherrack', 12], ['coal', 64], ['iron_ingot', 11], ['wheat_seeds', 17]].map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id }));
+  const slots = []; slots[5] = { name: 'iron_helmet' }; slots[6] = { name: 'iron_chestplate' }; slots[45] = { name: 'shield' };
+  const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 12.76, food: 11,
+    time: { timeOfDay: 0 }, entity: { position: feet.clone(), onGround: true, height: 1.8, width: 0.6, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => inv, emptySlotCount: () => 5, slots }, blockAt,
+    findBlocks: ({ matching, point }) => [].concat(matching).includes(registry.blocksByName.spawner.id) && (point || bot.entity.position).distanceTo(spawnerAt) <= 17 ? [spawnerAt] : [],
+    world: { raycast: from => ({ intersect: from.offset(0.3, 0, 0) }) } });
+  let id = 2672;
+  const add = (name, at) => { const e = { id: ++id, name, type: 'hostile', position: at.offset(0.5, 0, 0.5), height: name === 'blaze' ? 1.8 : 2, width: 0.6, isValid: true }; bot.entities[e.id] = e; return e; };
+  return { bot, air, add, dug, spawnerAt, origin: new Vec3(-275, 56, -174) };
+}
+
+test('sealed on a fortress pier by a blaze spawner, nothing to eat: a way out under rock down the pier and away is offered, the stay says the mobs do not move off, and the trip back chosen before the seal holds through it (note 597)', async () => {
+  const { bot, air, add, dug, spawnerAt, origin } = pierPocket();
+  const t0 = 1790576898397, min = 60000;
+  const goal = { kind: 'win', request: 'beat the game', rungTime: { phase: 'obtain_blaze_rods' },
+    portals: [{ x: 18, y: 58, z: 8, dimension: 'nether' }],
+    leaveNether: { reason: 'food', pick: 'go_back', until: 0, at: t0 - 34846 } };
+  for (const c of air.slice(0, 5)) add('blaze', c);
+  const state = { shelters: [{ origin: { ...origin }, dimension: 'the_nether', emergency: true }],
+    stance: { choice: 'seal', ids: [2672], mobs: [{ name: 'blaze', distance: 9.1, visible: false }], at: t0 - 10, health: 12.76 },
+    sealing: { origin: { ...origin }, at: t0 }, pocketOutAt: t0 - 600 };
+  const walked = [];
+  const survival = new Survival(bot, { dig: async (b, t, p) => { dug.add(`${p}`); }, navigate: async (b, t, g) => { walked.push(new Vec3(g.x, g.y, g.z)); bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } },
+    { state, client: { systemOne: async () => ({}) } });
+  await askAt(survival, goal, t0 + 8000);
+  // The spawner goes on making them: fifteen more come in over the wait.
+  for (let m = 2; m <= 18; m += 2) { for (const c of air.slice(5 + (m - 2), 5 + m)) add('blaze', c); await askAt(survival, goal, t0 + m * min); }
+  const { tree, state: s } = await askAt(survival, goal, t0 + 19 * min);
+  const stay = tree.stay.description;
+  // The way a player digs there: down into the pier and away, beyond the
+  // spawner's sixteen, under rock.
+  const out = tree.tunnel_out?.description || '';
+  assert.match(out, /^Dig a passage out through the pocket's north wall, away from the mob spawner: one wide and two high, 4 blocks, a stair down a block each step to 4 below the pocket's floor \(12 blocks dug\), about 15 seconds, ending 17 blocks from the spawner \(it is 12 off now\)/);
+  assert.match(out, /then from its end go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it\. The nearest portal remembered is 344 blocks off/);
+  assert.match(out, /Rock round it the whole way and the pocket's wall toward the blazes left standing/);
+  // Nothing comes to this wait: not daylight, not health, and not the mobs
+  // moving off, with a spawner making more.
+  assert.match(stay, /Neither daylight nor health comes to this wait, and the mobs outside do not move off: the mob spawner 12 blocks off makes more of them while the bot is within its 16 blocks\./);
+  assert.doesNotMatch(stay, /only the mobs outside moving off would change it/);
+  assert.match(stay, /Within 24 blocks of the pocket: 5 mobs at the wait's first look 19 minutes ago, 2\d now\./);
+  assert.deepEqual(s.pocketSoFar.mobsWithin24.firstLook, 5);
+  // Nineteen minutes sealed in are not the trip's: the leave goes on with it.
+  assert.match(tree.leave.description, /^Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it/);
+  // Chosen, the passage is dug as surveyed, three blocks a step down, and
+  // the trip is chosen again from its end.
+  survival.decide = async () => ({ path: ['tunnel_out'], stale: false });
+  const real = Date.now; Date.now = () => t0 + 19 * min + 1000;
+  try { await survival.step(new Task('wait'), goal, () => {}); } finally { Date.now = real; }
+  assert.deepEqual(walked.map(p => [p.x, p.y, p.z]), [[-275, 55, -175], [-275, 54, -176], [-275, 53, -177], [-275, 52, -178]]);
+  for (const c of ['-275,57,-175', '-275,56,-175', '-275,55,-175', '-275,54,-178']) assert(dug.has(`(${c.split(',').join(', ')})`), `dug ${c}`);
+  const end = walked.at(-1);
+  assert(Math.hypot(end.x + 0.5 - (spawnerAt.x + 0.5), end.y - (spawnerAt.y + 0.5), end.z + 0.5 - (spawnerAt.z + 0.5)) > 16, 'beyond the spawner\'s sixteen');
+  assert.equal(goal.leaveNether.at, t0 + 19 * min + 1000, 'going on with the trip is choosing it again');
+});
+
+test('a trip back for food chosen more than ten minutes before the seal has lapsed in the pocket too: the leave goes to the rung and go_for_food offers the way back (note 597)', async () => {
+  const { bot, air, add, origin } = pierPocket();
+  const t0 = 1790576898397, min = 60000;
+  for (const c of air.slice(0, 5)) add('blaze', c);
+  const goal = { kind: 'win', request: 'beat the game', rungTime: { phase: 'obtain_blaze_rods' }, portals: [{ x: 18, y: 58, z: 8, dimension: 'nether' }],
+    leaveNether: { reason: 'food', pick: 'go_back', until: 0, at: t0 - 11 * min } };
+  const survival = new Survival(bot, { dig: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'the_nether', emergency: true }], sealing: { origin: { ...origin }, at: t0 }, pocketOutAt: t0 - 600 }, client: { systemOne: async () => ({}) } });
+  const { tree } = await askAt(survival, goal, t0 + 2 * min);
+  assert.match(tree.leave.description, /^Open the pocket and go back to the obtain blaze rods step/);
+  assert.match(tree.go_for_food.children.return_for_food.description, /The nearest portal remembered is 344 blocks off/);
+  assert.match(tree.tunnel_out.description, /then go back to the obtain blaze rods step from its end\./);
 });
 
 test('a pocket the bot was seen out of since its seal, and one sealed again, are new waits', async () => {
