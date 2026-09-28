@@ -361,10 +361,28 @@ const MOB_SPEED = {
   pillager: 0.35, vindicator: 0.35, piglin: 0.35, piglin_brute: 0.35, illusioner: 0.5, evoker: 0.5, creaking: 0.4,
   blaze: 0.23, breeze: 0.63, magma_cube: 0.2, slime: 0.2,
 };
+// How tall each mob stands, from the 26.1.2 server jar (EntityType, sized).
+// A mob's blow reaches as high as it stands and no higher: its melee range
+// is its own box widened about 0.83 to the sides (the square root of 2.04,
+// less 0.6) and not at all upward (Mob.isWithinMeleeAttackRange,
+// getAttackBoundingBox), against the player's box (1.8 tall).
+const BODY_HEIGHT = { zombie: 1.95, husk: 1.95, drowned: 1.95, zombie_villager: 1.95, zombified_piglin: 1.95, piglin: 1.95, piglin_brute: 1.95, vindicator: 1.95, pillager: 1.95, witch: 1.95, evoker: 1.95, illusioner: 1.95,
+  skeleton: 1.99, stray: 1.99, bogged: 1.99, parched: 1.99, wither_skeleton: 2.4, creeper: 1.7, hoglin: 1.4, zoglin: 1.4, spider: 0.9, cave_spider: 0.5, enderman: 2.9, ravager: 2.2, iron_golem: 2.7, warden: 2.9, creaking: 2.7,
+  silverfish: 0.3, endermite: 0.3, blaze: 1.8, breeze: 1.77 };
+const bodyHeight = name => BODY_HEIGHT[name] ?? 1.95;
 const FOLLOW_RANGE = { zombie: 35, husk: 35, drowned: 35, zombie_villager: 35, zombified_piglin: 35, enderman: 64, blaze: 48, pillager: 32, ravager: 32, creaking: 32, warden: 24, breeze: 24, vindicator: 12, piglin_brute: 12, evoker: 12, illusioner: 18 };
 const SPRINT_SPEED = 0.13;
 const groundSpeed = s => s * s * 0.98 * 20 / (1 - 0.6 * 0.91);
-const blocksPerSecond = name => groundSpeed(MOB_SPEED[name] ?? 0.25);
+// A chase goal's own modifier where it is not 1: a skeleton kind with a
+// blade in hand goes after its target at 1.2 times its speed
+// (AbstractSkeleton's meleeGoal, new MeleeAttackGoal(this, 1.2, false)), so
+// a wither skeleton comes on at a spider's 3.9 blocks a second, not 2.7.
+// Said at 2.7, mid-235-p-nether-4-fortress-2's runs were told the skeleton
+// would be 12 to 15 blocks behind at their end and it was 8.6 to 9.2 (note
+// 550); mid-242-ac-nether-1-fortress-1 ran from one three times, told it
+// would be about 10 behind, and it was at the bot again each time (note 559).
+const CHASE = { wither_skeleton: 1.2 };
+const blocksPerSecond = name => groundSpeed((MOB_SPEED[name] ?? 0.25) * (CHASE[name] ?? 1));
 const followRange = name => FOLLOW_RANGE[name] ?? 16;
 // The bot's own run, the same way: the input 0.98 at the sprint's speed.
 const PLAYER_SPRINT = SPRINT_SPEED * 0.98 * 20 / (1 - 0.6 * 0.91);
@@ -734,9 +752,17 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   if (fight && seconds > setup) {
     const order = mobs.filter(fought).sort((a, b) => a.distance - b.distance);
     const reach = order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length;
+    // `fight.lead`: the fight after the setup is the fight here, begun once
+    // the setup is done: the first is met as the fight here meets it (PACE,
+    // leadFor: the seconds from the start to the first swing). Fought from
+    // a pillar's top with no lead, a wither skeleton seven blocks off read
+    // 16.3 where the fight here read 23.8, the same blade and the same
+    // fight a second and a half later (mid-242-aa, note 559).
+    const first = order[0];
+    const lead = fight.lead && first?.secondsASwing > 0 && !first.inCell ? leadFor(first.distance) : null;
     // The fought ones' wither and poison join the rest's: one effect each,
     // however many give it.
-    for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) })) {
+    for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach), lead })) {
       if (p.effect === 'burn') pieces.push({ ...p, from: p.from + setup, to: p.to + setup });
       else if (p.effect) (p.effect === 'poison' ? poisoning : withering).push([p.from + setup, p.to + setup]);
       else if (p.from < seconds - setup) pieces.push({ ...p, from: p.from + setup, to: Math.min(seconds, p.to + setup) });
@@ -751,4 +777,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };

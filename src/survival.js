@@ -12,7 +12,7 @@ const { maintainVitals, chooseFood, lastResortFood, sideEffectSays, checkAir } =
 const { foodSupply, lastResortSupply, forageChoices } = require('./foraging');
 const { bedCarried, placeOriented, isBed, homeOf, layout, homeChores } = require('./home-base');
 const { kitReady } = require('./mob-policy');
-const { fightEstimate, stanceCost, RANGE, blocksPerSecond, followRange } = require('./combat-estimate');
+const { fightEstimate, stanceCost, RANGE, blocksPerSecond, followRange, bodyHeight } = require('./combat-estimate');
 const { walkersApart, apartSays } = require('./walk-reach');
 const { darkCells, groundCells, placeTorches, lightSources, blockLight } = require('./torches');
 // Dark enough where the bot stands for monsters to spawn: a fact for the
@@ -61,6 +61,32 @@ const REACH_UP = { spider: 'climbs', cave_spider: 'climbs', enderman: 'teleports
   // and it jumped up and knocked the bot off, fifty-five blocks down
   // (2026-09-27).
   magma_cube: 'jumps higher than two blocks, and its hit throws', slime: 'jumps higher than two blocks' };
+// A mob's blow reaches as high as it stands and no higher (combat-estimate
+// BODY_HEIGHT, from the jar): a walker on ground beside a pillar's column
+// reaches a player on the top when that ground's height and its own are
+// over the top: a wither skeleton (2.4) from the bot's own floor, a zombie
+// or a piglin (1.95) from ground one up beside it. mid-242-aa pillared from
+// a tunnel floor at y 73 beside a fortress floor at 74; its top at 75 was
+// one above that floor, and the wither skeleton struck it there twice and
+// stepped up onto the top as the blows pushed the bot off (note 559).
+// The highest ground a walker can stand on in the eight cells round a
+// pillar's column, from its base up to its top (a floor under it, room for
+// a body over it): { up, at } with `up` above the base, or null. The eight
+// all count: a blow reaches a player's box from a diagonal cell too.
+function groundBeside(bot, base, most = 2) {
+  const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/lava/.test(b.name); };
+  const floor = p => bot.blockAt(p)?.boundingBox === 'block';
+  let best = null;
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    if (!dx && !dz) continue;
+    for (let up = most; up >= 0; up--) {
+      if (best && up <= best.up) break;
+      const c = base.offset(dx, up, dz);
+      if (open(c) && open(c.offset(0, 1, 0)) && floor(c.offset(0, -1, 0))) { best = { up, at: c }; break; }
+    }
+  }
+  return best;
+}
 const climbers = danger => { const kinds = [...new Set(danger.map(t => t.entity.name).filter(n => REACH_UP[n]))]; return kinds.length ? ` Two up does not stop ${kinds.map(n => `a ${n.replaceAll('_', ' ')} (${REACH_UP[n]})`).join(' or ')}.` : ''; };
 // Two up is out of reach only of mobs on the bot's own level: one standing
 // a block or more higher (stairs, a slope, a ledge) is level with the top
@@ -94,7 +120,21 @@ function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runS
     if (arrives <= runSeconds) return `${head}: it is at the bot before the run ends`;
     return `${head}: about ${Math.max(1, Math.round(behind))} blocks behind when the run ends, and at the bot about ${r1(arrives - runSeconds)} seconds after`;
   });
-  return ` They follow a running player (the bot sprints about ${SPRINT} blocks a second): ${each.join('; ')}.`;
+  // The wither on the bot ticks on through the run and the wait after it:
+  // the one that comes on meets the bot with that much less. mid-242-ac-
+  // nether-1-fortress-1 ran three times from a wither skeleton at 6.4
+  // health and met it again each time, at 5.4, 3.4 and 2.4 (note 559).
+  let witherSays = '';
+  if (dest && runSeconds) {
+    const { effectLeft, WITHER } = require('./combat-estimate');
+    const left = effectLeft(bot, 'wither')?.seconds || 0;
+    const first = chasers.map(t => { const v = blocksPerSecond(t.entity.name), toDest = t.entity.position.distanceTo(dest); return toDest - v * runSeconds > followRange(t.entity.name) ? null : Math.max(0, toDest - 1.5) / v; }).filter(x => x != null).sort((a, b) => a - b)[0];
+    if (left > 0 && first != null) {
+      const then = Math.max(0, (bot.health ?? 20) - Math.min(left, first) * WITHER.perSecond);
+      witherSays = ` The wither on the bot runs on meanwhile: about ${r1(then)} health when the first of them is at the bot again${then < 1 ? ', or none' : ''}.`;
+    }
+  }
+  return ` They follow a running player (the bot sprints about ${SPRINT} blocks a second): ${each.join('; ')}.${witherSays}`;
 }
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -445,6 +485,8 @@ const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.positio
 // a door shut; at least this long, so the bot is in rock and not at a door;
 // and no longer than this.
 const PASSAGE_CLEAR = 10, PASSAGE_MIN = 4, PASSAGE_MAX = 16;
+// A biter's arm's length, as the shield guard reads it (projectile-guard MELEE_REACH).
+const MELEE_REACH = 3.5;
 // The pocket's choices that open its wall toward the mobs outside.
 const OPENS_ON_MOBS = new Set(['dig_in_and_fight', 'open_on_watcher']);
 
@@ -453,7 +495,24 @@ const OPENS_ON_MOBS = new Set(['dig_in_and_fight', 'open_on_watcher']);
 // nearest shooter that can see the bot, then the nearest mob. mid-227-n
 // held its pillar facing the nearest mob each pass while the skeleton
 // behind it shot through a raised shield (note 395, 2026-09-27).
+// But a biter at arm's length whose blow reaches the bot where it stands
+// comes before any shot or shooter: it hits every second, and the swing
+// and the shield both go the way the bot looks (projectile-guard's own
+// rule, meleeClose). mid-208-k-nether-3-fortress-2 held its pillar facing
+// a blaze twenty blocks off, the wither skeleton three blocks behind it on
+// the floor below, whose blow reaches a player two up: it was struck from
+// behind, 20 to 15.2, and knocked off the top (note 559). A spider at a
+// pillar's foot, which reaches only by climbing, does not turn it from the
+// shooter (note 395).
+function armsLengthBiter(bot, danger) {
+  const { bodyHeight } = require('./combat-estimate');
+  const feetY = bot.entity?.position?.y ?? 0;
+  return danger.filter(t => t.entity?.position && !shooter(t.entity) && t.distance <= MELEE_REACH && t.entity.position.y + bodyHeight(t.entity.name) > feetY + 0.01)
+    .sort((a, b) => a.distance - b.distance)[0] || null;
+}
 function shieldFacing(bot, danger) {
+  const biter = armsLengthBiter(bot, danger);
+  if (biter) return { at: biter.entity.position.offset(0, (biter.entity.height || 1.8) / 2, 0), name: biter.entity.name };
   const shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0];
   if (shot?.position) return { at: shot.position, name: shot.name };
   const aimed = danger.find(t => t.visible && shooter(t.entity)) || danger[0];
@@ -2096,20 +2155,51 @@ class Survival {
     // top. mid-241-k held a pillar told "two up, none of them reaches it"
     // with zombies about a cave's uneven floor and was hit on top, then
     // fought six from 14 health to none (note 424).
+    // A blow reaches as high as the mob stands (BODY_HEIGHT): one whose
+    // ground and height are over the top reaches it, a zombie a block up as
+    // a wither skeleton on the bot's own floor.
     const topY = up ? feet.y : feet.y + 2;
-    const onLedge = coming.filter(t => !shooter(t.entity) && t.entity.position && t.distance <= 5 && t.entity.position.y >= topY - 1.2);
-    const ledgeKinds = new Set(onLedge.map(t => t.entity.name));
+    const reachesTopFrom = (standY, name) => standY + bodyHeight(name) > topY + 0.01;
+    const onLedge = coming.filter(t => !shooter(t.entity) && t.entity.position && t.distance <= 5 && t.entity.position.y >= (up && this.state.pillar ? this.state.pillar.y : feet.y) + 0.5 && reachesTopFrom(t.entity.position.y, t.entity.name));
+    // And the ground round the column, wherever the mobs stand now: they
+    // walk to it. mid-242-aa's wither skeletons were seven blocks off on a
+    // fortress floor one above the tunnel it pillared from (note 559).
+    const base = up && this.state.pillar ? new Vec3(this.state.pillar.x, this.state.pillar.y, this.state.pillar.z) : feet;
+    const beside = groundBeside(bot, base);
+    const besideReach = beside ? coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && !REACH_UP[t.entity.name]?.startsWith('climbs') && reachesTopFrom(base.y + beside.up, t.entity.name)) : [];
+    const ledgeKinds = new Set([...onLedge, ...besideReach].map(t => t.entity.name));
     // Its top in an open column is level with the ground the column opens
     // onto, where walkers stand (columnOpening); and with a mob in the bot's
     // own cells the first block does not go down, so it does not rise while
     // that one stays, and every one about reaches it where it stands.
     const topBesideGround = !up && opening && opening.up <= 3;
     const notRising = !up && inCell.length > 0;
-    const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) }, reaches: m => notRising || m.shoots || m.spear || m.name === 'creeper' || m.name === 'warden' || ledgeKinds.has(m.name) || (topBesideGround && !CLIMBERS.has(m.name)), shield: shielded });
+    const pillarCost = stanceCost({ mobs, setup: up ? 0 : PILLAR_SECONDS, fight: { only: m => CLIMBERS.has(m.name) || (!m.shoots && m.name !== 'creeper' && ledgeKinds.has(m.name)), lead: true }, reaches: m => notRising || m.shoots || m.spear || m.name === 'creeper' || m.name === 'warden' || ledgeKinds.has(m.name) || (topBesideGround && !CLIMBERS.has(m.name)), shield: shielded });
     const pillarBlocked = (notRising ? ` ${ownCellsSays(inCell)}: the pillar's first block goes into the cell under the bot's feet, and no block goes where a body is, so it does not rise while ${inCell.length === 1 ? 'that one stays' : 'they stay'} there.` : '') +
       (topBesideGround ? ` The column over the bot opens onto ground ${opening.up} up at ${opening.ground}: two up is level with ${opening.up === 2 ? 'it' : 'a block under it'}, and walkers that stand there reach a player on the pillar's top.` : '');
-    const ledgeSays = onLedge.length ? ` ${onLedge.length === 1 ? `The ${onLedge[0].entity.name.replaceAll('_', ' ')} ${Math.round(onLedge[0].distance)} blocks off stands` : `${onLedge.length} of them stand`} on ground within a block of the pillar's top (a ledge or a slope): from there ${onLedge.length === 1 ? 'it reaches' : 'they reach'} a player two up.` : '';
-    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.' + ledgeSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
+    const ledgeSays = onLedge.length ? ` ${onLedge.length === 1 ? `The ${onLedge[0].entity.name.replaceAll('_', ' ')} ${Math.round(onLedge[0].distance)} blocks off stands` : `${onLedge.length} of them stand`} on ground above the bot's floor (a ledge or a slope), high enough that ${onLedge.length === 1 ? 'its blow reaches' : 'their blows reach'} a player two up.` : '';
+    // The ground round the column said where it is over the floor: the top
+    // is that much less above it, and who stands there reaches it. A blow
+    // on a top one block wide also puts the bot off it: the game's
+    // knockback (LivingEntity.knockback, 0.4 a tick and a hop) moved
+    // mid-242-aa 0.8 of a block with the first and off the top with the
+    // second, two blocks down among them, and the wither skeleton stepped
+    // up onto the top from the ground beside it (note 559).
+    const besideKinds = [...new Set(besideReach.map(t => t.entity.name))];
+    const besideSays = beside && beside.up >= 1 && !topBesideGround ? ` The ground beside the pillar's column is ${beside.up} up, at ${beside.at.x}, ${beside.at.y}, ${beside.at.z}: two up is ${beside.up >= 2 ? 'level with it' : 'one above it'}, and a blow reaches as high as the mob stands (a zombie or a piglin 1.95, a wither skeleton 2.4)${besideKinds.length ? `, so ${mobList(besideKinds, besideReach.map(t => ({ name: t.entity.name })))} reach${besideReach.length === 1 ? 'es' : ''} a player on the top from there` : ''}${beside.up === 1 ? ', and one there steps up onto the top once the bot is off its middle' : ''}.` : '';
+    const topReachers = coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && (CLIMBERS.has(t.entity.name) || ledgeKinds.has(t.entity.name) || notRising || topBesideGround));
+    // Where every biter about reaches the top, the pillar is no cover from
+    // any of them, said first: told the general rule ("walkers of a
+    // player's height cannot reach a player two up") with the exceptions
+    // after it, Jev took the pillar five times in five on mid-242-aa's
+    // replay (note 559).
+    const biters = coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper');
+    const noCover = biters.length > 0 && biters.every(t => topReachers.includes(t));
+    const pillarOpens = noCover
+      ? `Go two blocks straight up on placed blocks and fight from there. Here two up is no cover from any of the mobs that bite: ${mobList([...new Set(biters.map(t => t.entity.name))], biters.map(t => ({ name: t.entity.name })))} reach${biters.length === 1 ? 'es' : ''} its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit.`
+      : 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.';
+    const knockSays = topReachers.length ? ` A blow that lands knocks the bot back (the game's knockback, with a hop): on a top one block wide the first leaves it at the edge and the next puts it off, two blocks down among them, where it is the fight here.` : '';
+    if ((scaffold >= 2 && headroom) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: pillarOpens + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge),
       // Held up there, the stance is kept: facing the nearest, the swing and
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
@@ -2173,7 +2263,12 @@ class Survival {
     // a ceiling, a wall at the back. The fortress stage's three deaths were
     // offered none of them (notes 509, 512, 514).
     if (blazeAbout && !inWater(bot)) {
-      const stands = require('./blaze-stand').blazeStands(bot, danger, { dig: typeof this.actions.dig === 'function' });
+      // Priced with the biters out of sight that have a way to the bot, as
+      // every other stance is (note 542): mid-242-ac-nether-1-fortress-1's
+      // back_to_wall read "about 0 damage ... none of them reaches it" with
+      // a wither skeleton five blocks off round a corner, and it struck the
+      // bot a second later (note 559).
+      const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function' });
       for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
         run: async () => {
           this.report(goal, save, { action: key, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
@@ -6028,4 +6123,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { claim, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

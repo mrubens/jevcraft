@@ -307,7 +307,7 @@ define({
 define({
   id: 'corpse_run', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Go back for what the last death dropped, or leave it and go on?',
-  trigger: 'After a death whose drops are worth fetching and still there, once the bot is fit to go; asked once a death.',
+  trigger: 'After a death whose drops are worth fetching (what was worn and in the off hand among them) and still there, once the bot is in their dimension, whatever it wears; asked once a death. With no answer, it goes only with the kit worn (in the Nether or below sea level) or by day (note 559).',
   source: 'src/corpse-run.js (corpseRunStep)',
   options: [
     { key: 'go_back', label: 'go back for the drops', when: 'always', level: 'root' },

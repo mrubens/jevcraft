@@ -294,6 +294,21 @@ function nightHunted(bot, entity) {
   return !!hunt && hunt.until > Date.now() && entity?.name === hunt.name;
 }
 
+// The walkers out of sight within a few blocks that have a way to the bot
+// (walk-reach.js, which judges only those that walk; the ones it cannot
+// judge, a spider that climbs or a cube that leaps, are left to the rules
+// above): out of sight is not out of reach (note 542). A creeper and a
+// warden are counted by their own rules above.
+const UNSEEN_CLOSE = 5;
+function unseenClose(bot, list) {
+  const { WALKERS, walkersApart } = require('./walk-reach');
+  const near = (list || threats(bot, UNSEEN_CLOSE)).filter(t => !t.visible && t.distance <= UNSEEN_CLOSE && t.entity?.position && WALKERS.has(t.entity.name) && !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name));
+  if (!near.length) return [];
+  let apart = { ids: new Set() };
+  try { apart = walkersApart(bot, near); } catch (_) { /* unsure: they reach */ }
+  return near.filter(t => !apart.ids.has(t.entity.id));
+}
+
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
   // Another of the kind being fought never ends the fight: the hunt's own
@@ -344,8 +359,15 @@ function immediateThreat(bot) {
     }
     return deadlyEdge;
   };
+  // A biter out of sight a few blocks off with a way to the bot comes
+  // round the corner at arm's length (unseenClose). mid-242-ac-nether-1-
+  // fortress-1, at 13.1 health, had a wither skeleton 3.6 blocks off round
+  // a fortress corner; nothing claimed it, the meal took the turn, and the
+  // skeleton's first blow took 6.7 (note 559).
+  let close;
+  const unseenNear = t => { if (!close) close = new Set(unseenClose(bot, about).map(u => u.entity.id)); return close.has(t.entity.id); };
   const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24) ||
-    (t.distance <= 3.5 && !shooter(t.entity) && edge());
+    (t.distance <= 3.5 && !shooter(t.entity) && edge()) || (t.distance <= UNSEEN_CLOSE && !shooter(t.entity) && unseenNear(t));
   // A shooter is a threat within its own reach: a ghast fires from forty
   // blocks. mid-244-e walked a ledge at y 89 with one in sight at seventeen
   // to nineteen, outside the sixteen counted for any shooter, and its
@@ -500,4 +522,4 @@ function pushersAbout(bot) {
   return list;
 }
 
-module.exports = { pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

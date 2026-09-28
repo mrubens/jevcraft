@@ -399,6 +399,28 @@ test('the wither on the bot is said with its rate and what is left of it (note 5
   assert.match(effectsSay(bot), /The bot is withering, about 10 seconds left: about one health every 2 seconds that armour does not stop, about 5 more before it ends, and it can take the last/);
 });
 
+test('a wither skeleton chases at its melee goal\'s 1.2, a spider\'s 3.9 blocks a second, and a run from it says where it meets the bot and the wither meanwhile (note 559)', () => {
+  // mid-242-ac-nether-1-fortress-1 ran three times from one, told it would be about 10 blocks behind; it was at the bot again each time.
+  const { blocksPerSecond, stanceCost, bodyHeight } = require('../src/combat-estimate');
+  const { chaseSays } = require('../src/survival');
+  const { Vec3 } = require('vec3');
+  assert.equal(Math.round(blocksPerSecond('wither_skeleton') * 10) / 10, 3.9);
+  assert.equal(Math.round(blocksPerSecond('skeleton') * 10) / 10, 2.7, 'one with a bow keeps its own speed');
+  assert.equal(bodyHeight('wither_skeleton'), 2.4);
+  const registry = require('minecraft-data')('26.1');
+  const id = registry.effectsByName?.wither?.id ?? registry.effectsArray.find(x => /wither/i.test(x.name)).id;
+  const bot = { registry, health: 6.4, entity: { position: new Vec3(0.5, 74, 0.5), effects: { [id]: { id, amplifier: 0, duration: 200 } } } };
+  const skeleton = { entity: { id: 1, name: 'wither_skeleton', position: new Vec3(1.5, 74, 0.5) }, distance: 1 };
+  const says = chaseSays(bot, [skeleton], { destination: { x: -19, y: 74, z: 0 }, runSeconds: 19 / 5.6 });
+  assert.match(says, /the wither skeleton 1 blocks off at about 3\.9 blocks a second: about 7 blocks behind when the run ends, and at the bot about 1\.4 seconds after/);
+  assert.match(says, /The wither on the bot runs on meanwhile: about 4 health when the first of them is at the bot again\./);
+  // Fought from a pillar's top, the fight meets it as the fight here does: its closing counted.
+  const mobs = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 7.5, shoots: false, visible: true }], armour: [], weapon: 'stone_sword', health: 20 }).mobs;
+  const bare = stanceCost({ mobs, setup: 1.5, fight: { only: () => true } }).damage;
+  const led = stanceCost({ mobs, setup: 1.5, fight: { only: () => true, lead: true } }).damage;
+  assert(led > bare, `${led} > ${bare}`);
+});
+
 test('a body hurt half a second ago cannot be hurt again: however many bite, two full hits a second land (note 535)', () => {
   const { stanceCost } = require('../src/combat-estimate');
   const IRON_SET = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];

@@ -38,7 +38,12 @@ function corpseRun(bot, goal, now = Date.now()) {
   if (!death) return null;
   if (goal.corpseRun?.deathAt !== death.at) {
     if (recovery?.at !== death.at || recovery.status === 'pending') return null;
-    const items = worth(recovery.inventoryBeforeDeath);
+    // What was worn drops with the rest (recovery.js records it apart from
+    // the pockets): mid-242-aa's iron helmet and chestplate were never on
+    // its list (note 559).
+    const dropped = { ...(recovery.inventoryBeforeDeath || {}) };
+    for (const name of death.worn || []) dropped[name] = (dropped[name] || 0) + 1;
+    const items = worth(dropped);
     for (const [name, count] of Object.entries(recovery.recovered || {})) if (items[name] && (items[name] -= count) <= 0) delete items[name];
     const where = dim(death.dimension);
     goal.corpseRun = { deathAt: death.at, position: { ...death.position }, dimension: where, items, passes: 0, stuck: 0,
@@ -49,17 +54,20 @@ function corpseRun(bot, goal, now = Date.now()) {
   if (run.status !== 'open') return null;
   if (now - Date.parse(run.deathAt) > KEEP_MS) { run.status = 'stale'; return null; }
   if (dim(bot.game?.dimension) !== run.dimension) return null;
-  // Fit to go: the dream run walked back to a fortress's edge with no
-  // armour for the armour it had dropped there, and the wither skeleton that
-  // killed it once killed it again (2026-09-24 00:49). In the Nether the
-  // kit is worn first; in the Overworld the kit, or daylight. A far death's
-  // drops keep meanwhile; a near one's may not, which is the price.
-  if (!fitToGo(bot, run.position)) return null;
   // When the drops started to age: at the death, if the bot came back to
-  // life within the loaded ground round them; else when it came near.
+  // life within the loaded ground round them; else when it came near. The
+  // clock runs whether or not the bot is fit to go: it is the game's.
   if (!run.loadedAt && run.respawn && flat(run.respawn, run.position) <= TICKING) run.loadedAt = run.deathAt;
   if (!run.loadedAt && flat(bot.entity.position, run.position) <= TICKING) run.loadedAt = new Date(now).toISOString();
   if (run.loadedAt && now - Date.parse(run.loadedAt) > DESPAWN_MS - MARGIN_MS) { run.status = 'despawned'; return null; }
+  // Whether it is fit to go is Jev's to weigh (corpse_run, told what was
+  // about at the death, what it wore then and wears now); the kit or
+  // daylight is the fallback's rule only (corpseRunStep). As a gate here it
+  // kept the kit's own way back shut until the kit was made again:
+  // mid-242-aa came back through its Nether portal thirteen blocks from its
+  // iron sword, iron armor, bucket and pickaxe, unarmored, was never
+  // asked, and died to a wither skeleton half an hour later in no armor
+  // and with a stone sword (note 559).
   return run;
 }
 
@@ -94,6 +102,11 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // Jev's to weigh, once a death: what was about when the bot died there,
   // against what it would get back.
   const client = task.opportunityClient;
+  // With no one to ask, the old rule: the kit worn (in the Nether or under
+  // ground), or daylight. The dream run walked back to a fortress's edge
+  // with no armor for the armor it had dropped there, and the wither
+  // skeleton that killed it once killed it again (2026-09-24 00:49).
+  if (!run.choice && !client && !fitToGo(bot, run.position)) { save(); return false; }
   if (!run.choice && client) {
     const death = (goal.survival?.deaths || []).at(-1) || {};
     const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
@@ -108,6 +121,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
       state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night } });
     if (decision.stale) return false;
+    if (decision.fallback && !fitToGo(bot, run.position)) { save(); return false; }
     run.choice = decision.fallback ? 'go_back' : decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
   }

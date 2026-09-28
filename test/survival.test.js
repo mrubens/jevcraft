@@ -2531,6 +2531,27 @@ test('a held pillar faces the shooter, not the nearest mob, and a shot on its wa
   return options.pillar.run().then(() => { assert.deepEqual(looks.at(-1), skeleton.entity.position.offset(0, 1, 0)); });
 });
 
+test('a held pillar faces a wither skeleton at arm\'s length whose blow reaches the top, not a blaze twenty blocks off (mid-208-k-nether-3-fortress-2, note 559)', async () => {
+  // Held facing the blaze, the bot was struck from behind by the wither skeleton three blocks off on the floor below, 20 to 15.2, and knocked off.
+  const { shieldFacing } = require('../src/survival');
+  const skeleton = { entity: { id: 1, name: 'wither_skeleton', position: new Vec3(2.5, 62, 1.5), height: 2.4, isValid: true }, distance: 3.1, visible: true };
+  const blaze = { entity: { id: 2, name: 'blaze', position: new Vec3(-19.5, 66, 0.5), height: 1.8, isValid: true }, distance: 20, visible: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {} };
+  assert.equal(shieldFacing(bot, [skeleton, blaze]).name, 'wither_skeleton');
+  bot.entities[3] = { name: 'small_fireball', position: new Vec3(-5.5, 65, 0.5), velocity: new Vec3(1, 0, 0) };
+  assert.equal(shieldFacing(bot, [skeleton, blaze]).name, 'wither_skeleton', 'before a fireball on its way too: the blow is the harder and the surer');
+  const zombie = { entity: { id: 4, name: 'zombie', position: new Vec3(2.5, 62, 1.5), height: 1.95, isValid: true }, distance: 3.1, visible: true };
+  assert.notEqual(shieldFacing(bot, [zombie, blaze]).name, 'zombie', 'a zombie on the floor below does not reach the top: the shot or the shooter');
+  const looks = [];
+  const world = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5), onGround: true }, entities: {}, health: 20, food: 20,
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' }, world: { raycast: () => null }, findBlocks: () => [],
+    lookAt: async p => looks.push(p), blockAt: p => ({ name: p.y < 62 || (p.x === 0 && p.z === 0 && p.y < 64) ? 'cobblestone' : 'air', position: p, boundingBox: p.y < 62 || (p.x === 0 && p.z === 0 && p.y < 64) ? 'block' : 'empty' }) });
+  const survival = new Survival(world, { navigate: async () => {} }, { state: { pillar: { x: 0, y: 62, z: 0 } } });
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, [skeleton, blaze], false);
+  await options.pillar.run();
+  assert.deepEqual(looks.at(-1), skeleton.entity.position.offset(0, 1.2, 0));
+});
+
 // A bed nook: the carried bed where no two level cells lie beside the feet.
 // Six midgame trials (2026-09-26): the one bot carrying a bed sealed itself
 // in eleven times with it, sleep offered only on two level cells.
@@ -4092,8 +4113,48 @@ test('a zombie on a ledge within a block of the pillar\'s top is said to reach i
   const flat = survival.stanceOptions(new Task('x'), {}, () => {}, [z(1, 4, -14)], false);
   assert.doesNotMatch(flat.pillar.description, /ledge/);
   const ledge = survival.stanceOptions(new Task('x'), {}, () => {}, [z(2, 2, -13)], false);
-  assert.match(ledge.pillar.description, /The zombie 2 blocks off stands on ground within a block of the pillar's top \(a ledge or a slope\): from there it reaches a player two up/);
+  assert.match(ledge.pillar.description, /The zombie 2 blocks off stands on ground above the bot's floor \(a ledge or a slope\), high enough that its blow reaches a player two up/);
   assert(ledge.pillar.expects.damage > flat.pillar.expects.damage);
+});
+
+test('ground one up beside the pillar\'s column puts its top in reach of the walkers there, wherever they stand now; a blow knocks the bot off (mid-242-aa, note 559)', () => {
+  // A tunnel floor at y 64 beside a floor a block higher (x >= 1): two up is one above that floor.
+  const make = step => {
+    const solid = p => p.y < 64 || (step && p.x >= 1 && p.y < 65);
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 20, food: 20, entities: {},
+      entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
+      inventory: { items: () => [{ name: 'stone_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
+      blockAt: p => ({ position: p, name: solid(p.floored()) ? 'netherrack' : 'air', boundingBox: solid(p.floored()) ? 'block' : 'empty' }), world: { raycast: () => null }, findBlocks: () => [] });
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    const y = step ? 65 : 64;
+    const zombie = { entity: { id: 1, name: 'zombie', position: new Vec3(7.5, y, 0.5), height: 1.95 }, distance: Math.hypot(7, y - 64), visible: true };
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [zombie], false).pillar;
+  };
+  const flat = make(false), step = make(true);
+  assert.doesNotMatch(flat.description, /The ground beside the pillar's column/);
+  assert.match(flat.description, /Two up, none of them reaches it/);
+  // Seven blocks off: not "on a ledge within five", but it walks to the column's side.
+  assert.match(step.description, /The ground beside the pillar's column is 1 up, at 1, 65, -1: two up is one above it, and a blow reaches as high as the mob stands \(a zombie or a piglin 1\.95, a wither skeleton 2\.4\), so the zombie reaches a player on the top from there, and one there steps up onto the top once the bot is off its middle\./);
+  assert.match(step.description, /A blow that lands knocks the bot back \(the game's knockback, with a hop\): on a top one block wide the first leaves it at the edge and the next puts it off, two blocks down among them/);
+  assert.match(step.description, /Two up, the zombie still reaches it/);
+  assert(step.expects.damage > flat.expects.damage, `${step.expects.damage} > ${flat.expects.damage}`);
+});
+
+test('a wither skeleton reaches a pillar\'s top from the bot\'s own floor, and the fight up there is priced as the fight here meets it (mid-242-aa, note 559)', () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 20, food: 20, entities: {},
+    entity: { position: new Vec3(0.5, 64, 0.5) }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'stone_sword' }, { name: 'cobblestone', count: 64 }], slots: {} },
+    blockAt: p => ({ position: p, name: p.y < 64 ? 'netherrack' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty' }), world: { raycast: () => null }, findBlocks: () => [] });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const skeleton = { entity: { id: 1, name: 'wither_skeleton', position: new Vec3(7.5, 64, 3.5), height: 2.4 }, distance: Math.hypot(7, 3), visible: true };
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [skeleton], false);
+  assert.match(options.pillar.description, /^Go two blocks straight up on placed blocks and fight from there\. Here two up is no cover from any of the mobs that bite: the wither skeleton reaches its top, and the fight up there is the fight here, begun once the blocks are down, on a top one block wide; shooters still can hit\./);
+  assert.match(options.pillar.description, /Two up does not stop a wither skeleton/);
+  assert.match(options.pillar.description, /A blow that lands knocks the bot back/);
+  // Fought from the top with no approach, it read 16.3 where the fight here read 23.8.
+  const fight15 = Number(/about ([\d.]+) of it in the first fifteen seconds/.exec(options.fight.description)[1]);
+  assert(options.pillar.expects.damage > 18, `${options.pillar.expects.damage}`);
+  assert(options.pillar.expects.damage <= fight15 + 0.01, `${options.pillar.expects.damage} <= ${fight15}`);
 });
 
 test('running from a shooter, no footing beside a drop into lava is chosen: its arrows push', () => {
@@ -4769,6 +4830,26 @@ function brickWorld(solid, { lava = () => false, spawner = null, items = ['iron_
   return bot;
 }
 const blazeAt = (id, x, y, z) => ({ id, name: 'blaze', type: 'hostile', position: new Vec3(x, y, z), height: 1.8, isValid: true });
+
+test('the stands against a blaze are priced with a biter out of sight that has a way to the bot (mid-242-ac-nether-1-fortress-1, note 559)', () => {
+  // back_to_wall read "about 0 damage ... none of them reaches it" with a wither skeleton five blocks off round a corner; it struck a second later.
+  const solid = p => p.y <= 63 || (p.x <= -1 && p.y <= 67);
+  const make = withSkeleton => {
+    const bot = brickWorld(solid);
+    const blaze = blazeAt(3, 8.5, 64.5, 0.5);
+    const skeleton = { id: 4, name: 'wither_skeleton', type: 'hostile', position: new Vec3(0.5, 64, 4.5), height: 2.4, width: 0.7, isValid: true };
+    bot.entities = withSkeleton ? { 3: blaze, 4: skeleton } : { 3: blaze };
+    // Rays toward the south are stopped: the skeleton is round the corner.
+    bot.world = { raycast: (from, dir) => (dir.z > 0.3 ? { position: from.offset(0, 0, 1).floored(), intersect: from.offset(0, 0, 1) } : null) };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, blaze)], false);
+  };
+  const alone = make(false), round = make(true);
+  assert(alone.back_to_wall && round.back_to_wall, Object.keys(round).join(','));
+  assert.match(alone.back_to_wall.description, /Back to the wall, the blaze still reaches it\.$/);
+  assert.match(round.back_to_wall.description, /Back to the wall, the wither skeleton and the blaze still reach it\./);
+  assert(round.back_to_wall.expects.damage > alone.back_to_wall.expects.damage + 5, `${round.back_to_wall.expects.damage} vs ${alone.back_to_wall.expects.damage}`);
+});
 
 test('with a blaze in sight beside a nether-brick wall, the stance offers a hole dug into it, its seconds from the pickaxe carried, and the wall at the back (notes 509, 512, 514)', async () => {
   // Brick floor, a brick mass to the west (x <= -1), open to the east where the blaze is.

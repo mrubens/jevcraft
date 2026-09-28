@@ -231,3 +231,26 @@ test('a held stance keeps a ghast it was chosen against out to its sixty-four, a
   ghast.position = new Vec3(70.5, 70, 0.5);
   assert.deepEqual(stanceMobs(bot), [], 'past its sixty-four');
 });
+
+test('a wither skeleton round a corner a few blocks off, with a way to the bot, is a threat and keeps the meal off; one walled apart is not (mid-242-ac-nether-1-fortress-1, note 559)', () => {
+  // At 13.1 health a wither skeleton 3.6 blocks off out of sight: nothing claimed it, the meal took the turn, and its first blow took 6.7.
+  const { immediateThreat } = require('../src/danger');
+  const { claim } = require('../src/vitals');
+  const registry = require('minecraft-data')('26.1');
+  const skeleton = { id: 7, name: 'wither_skeleton', type: 'hostile', position: new Vec3(2.5, 64, 3.5), height: 2.4, width: 0.7, isValid: true, heldItem: { name: 'stone_sword' } };
+  // Every ray toward it blocked (the corner), the floor open between.
+  let walled = false;
+  const cell = p => p.x === 2 && p.z === 3;
+  // A fortress room: brick outside x -3 to 5, z -3 to 6, y 64 to 67.
+  const room = p => p.x >= -3 && p.x <= 5 && p.z >= -3 && p.z <= 6 && p.y >= 64 && p.y <= 67;
+  const solid = p => !room(p) || (walled && p.y <= 67 && Math.abs(p.x - 2) <= 1 && Math.abs(p.z - 3) <= 1 && (!cell(p) || p.y === 67));
+  const bot = { game: { dimension: 'the_nether', gameMode: 'survival' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, health: 13.1, food: 17, oxygenLevel: 20, time: { timeOfDay: 6000 },
+    world: { raycast: (from, dir) => (dir.z > 0.3 ? { position: from.offset(0, 0, 1).floored(), intersect: from.offset(0, 0, 1) } : null) },
+    blockAt: p => { const f = p.floored(); return { position: f, name: solid(f) ? 'nether_bricks' : 'air', boundingBox: solid(f) ? 'block' : 'empty' }; },
+    entities: { 7: skeleton }, inventory: { items: () => [{ name: 'mutton', count: 6 }], slots: [] } };
+  assert.equal(immediateThreat(bot)?.entity.id, 7, 'out of sight 3.6 blocks off with a way round: a threat');
+  assert.equal(claim(bot), null, 'and no meal with it there');
+  walled = true;
+  assert.equal(immediateThreat(bot), undefined, 'shut in a cell of brick: no way to the bot, not a threat');
+  assert.equal(claim(bot)?.action, 'eat', 'and the meal is claimed');
+});

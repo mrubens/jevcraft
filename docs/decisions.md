@@ -183,7 +183,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Go back for what the last death dropped, or leave it and go on?**
 
-- When: After a death whose drops are worth fetching and still there, once the bot is fit to go; asked once a death.
+- When: After a death whose drops are worth fetching (what was worn and in the off hand among them) and still there, once the bot is in their dimension, whatever it wears; asked once a death. With no answer, it goes only with the kit worn (in the Nether or below sea level) or by day (note 559).
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)

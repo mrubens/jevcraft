@@ -8,10 +8,15 @@ const { swimmableWater } = require('./terrain');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const stock = bot => bot.inventory.items().reduce((out, item) => { out[item.name] = (out[item.name] || 0) + item.count; return out; }, {});
 const pos = p => new Vec3(p.x, p.y, p.z);
+// What is worn and in the off hand: dropped at a death with the rest, and
+// not among inventory.items() (slots 9 to 44). mid-242-aa died in the
+// Nether in an iron helmet and chestplate, and the way back for its drops
+// listed neither (note 559).
+const wornNow = bot => [5, 6, 7, 8, 45].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
 
 function observeAliveInventory(bot, now = Date.now()) {
   if (bot.health > 0 && bot.isAlive && bot.inventory) {
-    bot._aliveInventory = { at: now, entityId: bot.entity.id, items: stock(bot) };
+    bot._aliveInventory = { at: now, entityId: bot.entity.id, items: stock(bot), worn: wornNow(bot) };
   }
 }
 
@@ -31,7 +36,7 @@ function recordDeath(bot, state, now = Date.now()) {
   // drops is weighed against them (corpse-run.js).
   let about = [];
   try { about = require('./danger').threats(bot, 24).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance) })); } catch (_) { about = []; }
-  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  const worn = recent && observed.worn ? [...observed.worn] : wornNow(bot);
   // How it died, in the game's own words, and what Jev had last chosen:
   // said with every question after (decisions/index.js recentDeaths).
   const cause = bot._deathMessage && now - bot._deathMessage.at < 5000 ? bot._deathMessage.text : null;

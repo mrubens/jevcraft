@@ -621,8 +621,16 @@ function closeHostile(bot) {
   // hoglin comes about 3.9 blocks a second, past the five counted here in
   // the meal's second and a half.
   const soon = new Set(danger.coming(bot).filter(t => t.atBotIn <= EAT_MEAL_SECONDS).map(t => t.entity));
+  // Through a wall is not able to get at the bot, but round a corner is: a
+  // biter out of sight within five with a way to the bot (danger.js
+  // unseenClose, walk-reach) is close. mid-242-ac-nether-1-fortress-1 ate
+  // at 13.1 health with a wither skeleton 3.6 blocks off round a fortress
+  // corner, the claim saying nothing of it, and its first blow took 6.7
+  // (note 559).
+  let round;
+  const roundCorner = e => { if (!round) { try { round = new Set(danger.unseenClose(bot).map(t => t.entity)); } catch (_) { round = new Set(); } } return round.has(e); };
   return Object.values(bot.entities || {}).some(e => e !== bot.entity && e.position && e.isValid !== false &&
-    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && reaches(e));
+    hostile(e) && (e.position.distanceTo(here) <= reach(e.name) || soon.has(e)) && (reaches(e) || roundCorner(e)));
 }
 
 // The biters coming at the bot while it would eat, for the meal's claim:

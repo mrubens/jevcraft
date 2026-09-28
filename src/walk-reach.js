@@ -23,7 +23,12 @@ const { shooter } = require('./mob-policy');
 // block. Spiders climb, endermen teleport, cubes and drowned swim or leap
 // up, ghasts and phantoms fly: none of those is judged here.
 const WALKERS = new Set(['zombie', 'husk', 'zombie_villager', 'zombified_piglin', 'piglin', 'piglin_brute', 'hoglin', 'zoglin',
-  'creeper', 'vindicator', 'silverfish', 'endermite', 'polar_bear', 'wolf']);
+  'creeper', 'vindicator', 'silverfish', 'endermite', 'polar_bear', 'wolf',
+  // A wither skeleton only walks too, and stands 2.4 high: it touches the
+  // bot from further below (BELOW is read from the tallest here). Left out,
+  // one round a fortress corner was never judged, so never kept off either
+  // (note 559).
+  'wither_skeleton']);
 // Its body's reach sideways from the bot's centre (half a width each and
 // the eight tenths between), and how far below the bot's feet a walker's
 // feet can be and still touch it (a zombie is 1.95 high; a slab or a path
@@ -48,7 +53,11 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP } = {}) {
   // Where a walker touches the bot, or a creeper lights beside it.
   const seen = new Set(), queue = [];
   const add = c => { const k = key(c); if (seen.has(k)) return; seen.add(k); queue.push(c); };
-  const lo = Math.ceil(here.y - BELOW), reachX = Math.ceil(LIGHTS);
+  // A blow reaches as high as the mob stands (combat-estimate BODY_HEIGHT):
+  // the tallest walker here sets how far below the feet it touches from.
+  const { bodyHeight } = require('./combat-estimate');
+  const below = Math.max(BELOW, ...walkers.map(t => bodyHeight(t.entity.name) + BELOW - bodyHeight('zombie')));
+  const lo = Math.ceil(here.y - below), reachX = Math.ceil(LIGHTS);
   for (let dx = -reachX; dx <= reachX; dx++) for (let dz = -reachX; dz <= reachX; dz++) for (let y = feet.y - reachX; y <= feet.y + reachX; y++) {
     const c = new Vec3(feet.x + dx, y, feet.z + dz);
     const touches = Math.abs(c.x + 0.5 - here.x) <= SIDEWAYS && Math.abs(c.z + 0.5 - here.z) <= SIDEWAYS && y >= lo && y <= here.y + ABOVE;

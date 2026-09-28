@@ -26,21 +26,29 @@ function wearKit(bot) {
   bot.inventory.items = () => [...items, { name: 'iron_sword', count: 1, durabilityUsed: 0 }];
 }
 
-test('in the Overworld with no kit the run waits for daylight', () => {
+// With no one to ask (no client), the old rule waits: the kit, or daylight.
+const noClientStep = (bot, goal, moved) => corpseRunStep(bot, new Task('win'), goal, () => {}, { move: async () => { moved.push(1); }, collect: async () => false });
+
+test('in the Overworld with no kit, and no one to ask, the run waits for daylight', async () => {
   const { bot, goal } = world();
   bot.time.timeOfDay = 15000;
-  assert.equal(corpseRun(bot, goal), null, 'no kit, at night');
+  const moved = [];
+  assert(corpseRun(bot, goal), 'the run is there to weigh');
+  assert.equal(await noClientStep(bot, goal, moved), false, 'no kit, at night: not gone');
+  assert.equal(moved.length, 0);
   assert.equal(goal.corpseRun.status, 'open', 'still to do');
   bot.time.timeOfDay = 1000;
-  assert(corpseRun(bot, goal), 'by day');
+  assert.equal(await noClientStep(bot, goal, moved), true, 'by day');
+  assert.equal(moved.length, 1);
 });
 
-test('daylight is no help below ground: a cave death waits for the kit', () => {
+test('daylight is no help below ground: with no one to ask, a cave death waits for the kit', async () => {
   const { bot, goal } = world();
   goal.survival.deaths[0].position = { x: 400, y: 15, z: 0 };
-  assert.equal(corpseRun(bot, goal), null, 'unarmoured, by day, to a cave at y 15: no');
+  const moved = [];
+  assert.equal(await noClientStep(bot, goal, moved), false, 'unarmored, by day, to a cave at y 15: no');
   wearKit(bot);
-  assert(corpseRun(bot, goal), 'with the kit on');
+  assert.equal(await noClientStep(bot, goal, moved), true, 'with the kit on');
 });
 
 test('what is worth going back for: the kit and supplies, not blocks or stone tools', () => {
@@ -78,9 +86,7 @@ test('a Nether death waits for the next Nether trip; the End is not gone back to
   assert.equal(corpseRun(nether.bot, nether.goal), null);
   assert.equal(nether.goal.corpseRun.status, 'open');
   nether.bot.game.dimension = 'the_nether';
-  assert.equal(corpseRun(nether.bot, nether.goal), null, 'no kit on: not into the Nether for it');
-  wearKit(nether.bot);
-  assert(corpseRun(nether.bot, nether.goal), 'kit on: go');
+  assert(corpseRun(nether.bot, nether.goal), 'in the Nether: there to weigh, kit or no kit (note 559)');
   const end = world({ deathDimension: 'the_end', dimension: 'the_end' });
   assert.equal(corpseRun(end.bot, end.goal), null);
   assert.equal(end.goal.corpseRun.status, 'void');
@@ -128,4 +134,27 @@ test('going back for the drops is Jev\'s choice, told what was about when the bo
   assert.equal(moved, false, 'left: no walk');
   assert.equal(goal.corpseRun.status, 'left');
   assert.equal(corpseRun(bot, goal), null, 'and not asked again for this death');
+});
+
+test('what was worn at the death is gone back for with the rest, and unarmored in the Nether by the drops Jev is asked (mid-242-aa, note 559)', async () => {
+  // mid-242-aa died to piglins in an iron helmet and chestplate thirteen blocks from its Nether portal; back through it unarmored half an hour later it was never asked, and its list had no armor on it.
+  const { recordDeath } = require('../src/recovery');
+  const { bot, goal } = world({ deathDimension: 'the_nether', dimension: 'the_nether', at: new Vec3(390, 64, 0) });
+  const state = { deaths: [] };
+  const dead = { ...bot, entity: { id: 1, position: new Vec3(400, 64, 0) }, blockAt: () => ({ name: 'air' }),
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 30 }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 45: { name: 'shield' } } } };
+  recordDeath(dead, state);
+  assert.deepEqual(state.deaths[0].worn, ['iron_helmet', 'iron_chestplate', 'shield']);
+  goal.survival = { deaths: state.deaths, recovery: { ...state.recovery, status: 'finished' } };
+  const run = corpseRun(bot, goal);
+  assert(run, 'no kit on, in the Nether: still there to weigh');
+  assert.deepEqual(run.items, { iron_sword: 1, iron_helmet: 1, iron_chestplate: 1, shield: 1 });
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = Object.values(questions)[0].criteria; return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: 'go_back', confidence: 0.9 }])) }; } };
+  const walks = [];
+  const task = Object.assign(new Task('run'), { opportunityClient: client });
+  await corpseRunStep(bot, task, goal, () => {}, { move: async (b, t, g) => { walks.push(g); }, collect: async () => false });
+  assert.match(asked.go_back, /^Go back for iron sword, iron helmet, iron chestplate, shield: 10 blocks off\. About \d+ seconds before they vanish\./);
+  assert.match(asked.go_back, /it wore iron helmet, iron chestplate, shield then and wears no armour now/);
+  assert.equal(walks.length, 1, 'gone back for, as Jev chose');
 });
