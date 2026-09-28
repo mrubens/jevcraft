@@ -3593,6 +3593,23 @@ test('on a span with a ghast in sight twenty blocks off, the walls go up before 
   assert.equal(goal.survivalAction?.action, 'rail_span');
 });
 
+test('on a span with a ghast in sight sixty blocks off, the walls go up too, from a block its blast does not break (mid-242-aa-nether-2, note 551)', async () => {
+  // Held still on a span with a ghast in sight fifty-eight to sixty-two blocks off, 102 blocks carried and no wall
+  // raised (only shooters within forty-eight were looked for); its fireball threw the bot five blocks into the lava.
+  const placed = new Map();
+  const ghast = { id: 4, name: 'ghast', type: 'hostile', position: new Vec3(0.5, 70, 60.5), height: 4, isValid: true };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', difficulty: 'normal' }, registry: require('minecraft-data')('26.1'), entity: { position: new Vec3(0.5, 64, 0.5), onGround: true, height: 1.8 }, health: 18, food: 18,
+    entities: { 4: ghast }, time: { timeOfDay: 6000 },
+    inventory: { items: () => [{ name: 'netherrack', count: 60 }, { name: 'cobblestone', count: 42 }, { name: 'iron_sword' }], slots: { 45: { name: 'shield' } } }, world: { raycast: () => null },
+    blockAt: p => { const q = p.floored(); const solid = placed.has(`${q}`) || (q.y === 63 && q.x === 0); return { name: solid ? 'netherrack' : q.y < 30 ? 'lava' : 'air', position: q, boundingBox: solid ? 'block' : 'empty' }; },
+    pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, setControlState() {}, lookAt: async () => {}, attack() {}, equip: async () => {}, activateItem() {}, deactivateItem() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, t, p, material) => { placed.set(`${p}`, material); } }, { state: { shelters: [] } });
+  const goal = {};
+  await survival.flee(new Task('span'), goal, () => {});
+  assert.equal(goal.survivalAction?.action, 'rail_span');
+  assert(placed.size && [...placed.values()].every(m => m === 'cobblestone'), [...placed.values()].join(','));
+});
+
 test('a warden behind the rock is a threat within its boom\'s reach, seen or not', () => {
   // mid-230-h stood recovering at y -52 with a warden sixteen blocks off behind the rock and was killed by its sonic boom (2026-09-27).
   const { immediateThreat } = require('../src/danger');
@@ -5510,4 +5527,72 @@ test('a ghast firing on the bot is survival\'s claim over the food hunt Jev chos
   const c = claim(bot, { kind: 'win' }, { state, currentShelter: () => null });
   assert.equal(c?.action, 'escape_threat', JSON.stringify(c));
   assert.equal(c.facts.threat.name, 'ghast');
+});
+
+// Note 551: mid-235-p-nether-4-fortress-2 hid from a ghast at 15.3 health and died under its fireballs.
+const ghastAt = (x, z, y = 70) => ({ id: 21, name: 'ghast', type: 'hostile', position: new Vec3(x, y, z), height: 4, width: 4, isValid: true });
+
+test('a hiding stance is asked again once the ghast it hid from lands a hit, and its drift is said, not a walk (note 551)', async () => {
+  // A wall at x = -1 between the ghast thirty blocks west and the bot.
+  const make = () => {
+    const bot = rockWorld(p => p.y >= 64 && (p.x !== -1 || p.z < -3 || p.z > 3), ['iron_sword', 'cobblestone']);
+    const ghast = ghastAt(-30.5, 0.5, 64);
+    bot.entities = { 21: ghast };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } }, state: { shelters: [] } });
+    const feet = bot.entity.position.floored();
+    survival.state.stance = { choice: 'out_of_sight', kinds: 'ghast', ids: [21], shooters: ['ghast'], at: Date.now() - 2000, health: 14, expects: { damage: 2, seconds: 15, oneHit: 6 }, hidden: { cell: `${feet}`, seenBy: [] } };
+    let asked = null;
+    survival.decide = async (task, goal, save, question) => { asked = question; return { path: ['out_of_sight'], stale: true }; };
+    return { bot, ghast, survival, asked: () => asked };
+  };
+  const held = make();
+  await held.survival.stanceStep(new Task('t'), {}, () => {}, [threat(held.bot, held.ghast)], false);
+  assert.equal(held.asked(), null, 'no hit since: held');
+  const hit = make();
+  hit.bot._hurtBy = { ghast: Date.now() - 1000 };
+  await hit.survival.stanceStep(new Task('t'), {}, () => {}, [threat(hit.bot, hit.ghast)], false);
+  assert(hit.asked(), 'the ghast it hid from hit the bot: asked again');
+  assert.match(hit.asked().state.previousStance.askedAgainFor, /^the ghast it was chosen against hit the bot 1 seconds ago/);
+  const hidden = hit.asked().tree.out_of_sight.description;
+  assert.doesNotMatch(hidden, /the ghast \d+ blocks off has none within the fifteen seconds/);
+  assert.match(hidden, /The ghast 31 blocks off does not walk to a line: it drifts through the air at random/);
+  // Every stance says when it fires and that it drifts.
+  for (const [k, o] of Object.entries(hit.asked().tree)) assert.match(o.description, /fires only at a bot it can see within 64 blocks: its fireball about 1 second after it has a line, then one every 3 seconds/, k);
+});
+
+test('a ghast in sight: its fireball can be struck back, and it can be shot past twenty blocks, each said with its flight (note 551)', () => {
+  const bot = rockWorld(p => p.y >= 64, ['iron_sword', 'bow', 'arrow', 'cobblestone']);
+  bot.game.dimension = 'the_nether'; bot.health = 7;
+  const ghast = ghastAt(30.5, 0.5, 64);
+  bot.entities = { 21: ghast };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
+  assert(options.return_fireball, Object.keys(options).join(','));
+  const back = options.return_fireball.description;
+  assert.match(back, /^Stand in the ghast's line 30 blocks off, look at it, and strike its fireball when it comes within 5 blocks/);
+  assert.match(back, /kills it outright/);
+  assert.match(back, /each fireball takes about 1\.4 seconds to come 30 blocks, about 1\.1 to go back/);
+  assert.match(back, /no trial has yet measured how often it is struck/);
+  assert.match(back, /an arrow does not send it back/);
+  assert.equal(options.return_fireball.expects.damage, 6, 'one fireball missed, no armour: 6 on Normal');
+  const shot = options.shoot_21;
+  assert(shot, Object.keys(options).join(','));
+  assert.match(shot.description, /^Shoot the ghast 30 blocks off with the bow from here/);
+  assert.match(shot.description, /lands for at least 6, so about 2 that land bring down its 10 health \(64 carried\)/);
+  // A fireball is a fireball, not an arrow.
+  assert.match(options.fight.description, /At 7 health, 2 fireballs from the ghast \(about 6 each after armour\) end it/);
+});
+
+test('cover from a ghast is put from a block its blast does not break, and what breaks is said (note 551)', async () => {
+  const bot = rockWorld(p => p.y >= 64, ['netherrack', 'cobblestone']);
+  bot.game.dimension = 'the_nether';
+  const ghast = ghastAt(20.5, 0.5, 64);
+  bot.entities = { 21: ghast };
+  const placed = [];
+  const survival = new Survival(bot, { place: async (b, t, c, material) => { placed.push(material); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
+  assert(options.take_cover, Object.keys(options).join(','));
+  assert.match(options.take_cover.description, /A ghast's fireball blast breaks a block with a blast resistance under about 4 and never one of 4 or more\. Carried that holds: cobblestone \(64, blast resistance 6\); the cover is put from it\. Carried that it can break: netherrack \(64, blast resistance 0\.4\)\./);
+  await options.take_cover.run();
+  assert(placed.length && placed.every(m => m === 'cobblestone'), placed.join(','));
 });

@@ -780,6 +780,21 @@ function fortressOverhead(position, length = 30) {
   return world;
 }
 
+test('a pillar up over the lava sea with a ghast in view says its push, and that the ghast can shoot the bot on top (mid-208-k-nether-3-fortress-1, note 551)', async () => {
+  // Pillared nine up from a ledge of the lava sea, told "a fall of up to 9 blocks"; a ghast came into view at 54 to 63
+  // blocks and its fireball put the bot thirty-seven blocks down into the lava.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = fortressOverhead(new Vec3(0.5, 49, 0.5), 12);
+  bot.entities = { 21: { id: 21, name: 'ghast', type: 'hostile', position: new Vec3(0.5, 60, 50.5), height: 4, width: 4, isValid: true } };
+  const client = jevStub(['keep_searching']);
+  const goal = { step: { action: 'hunt_mob', entity: 'blaze' }, fortressSearch: { axis: 1, legs: 15 } };
+  const actions = { client, dig: async () => {}, navigate: async () => { throw new Error('No route'); }, tunnel: async () => { throw new Error('The staircase is set aside'); } };
+  try { await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions); } catch (err) { assert.equal(err.name, 'NeedsSafety'); }
+  const asked = client.asked.find(q => q.options?.pillar_up);
+  assert(asked, client.asked.map(q => Object.keys(q.options || {}).join(',')).join(' | '));
+  assert.match(asked.options.pillar_up, /into lava\. In sight: a ghast 51 blocks off\. A ghast 51 blocks off can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall\./);
+});
+
 test('bricks a block off with the fortress\'s floors seven blocks up are not the fortress entered: the way up is asked, a pillar among the ways, and the hunt\'s step is the search (mid-235-p-fortress-6, note 523)', async () => {
   // mid-235-p-fortress-6 stood on its own span beside the fortress's footing, "inside" by a brick a block off, and set out
   // for bricks eight blocks up that no step reached, two a second; each "pass" of that asked stay_in_fortress, and the
@@ -796,7 +811,8 @@ test('bricks a block off with the fortress\'s floors seven blocks up are not the
   const { options, state } = client.asked[0];
   assert.deepEqual(state.fortress, { distance: 1, height: 7 }, 'the way is to its nearest floor, seven up');
   assert.match(options.pillar_up, /^Pillar straight up 7 blocks to the fortress floor's height \(jump and lay a block under the feet, 64 carried that can be laid, 57 left after\)/);
-  assert.match(options.pillar_up, /a push is a fall of up to 7 blocks, about 4 health/);
+  // Over the lava sea: a push off the top lands beside the column's foot, not on it (mid-208-k-nether-3-fortress-1, note 551).
+  assert.match(options.pillar_up, /On top a push is a fall of up to 24 blocks \(the pillar's 7, then a drop of 17 a block from its foot\), into lava\./);
   assert.equal(goal.step.action, 'find_fortress');
   // Set aside as Jev chose: the legs are asked, and the step is still the search. From the spot it was left, going back is
   // those same ways asked again, and mid-235-q-nether-2 left and took back its fortress every three seconds for a

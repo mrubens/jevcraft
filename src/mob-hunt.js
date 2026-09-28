@@ -1314,7 +1314,20 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     if (site && scaffold >= 1) {
       const up = nearest.y + 1 - site.y, walk = Math.round(site.offset(0.5, 0, 0.5).distanceTo(here));
       const across = Math.round(Math.hypot(nearest.x - site.x, nearest.z - site.z));
-      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across. On top a push is a fall of up to ${up} blocks, about ${Math.max(0, up - 3)} health.${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}`,
+      // A push off the top lands beside the column, not on its foot: over
+      // whatever drop is beside the foot. mid-208-k-nether-3-fortress-1 was
+      // told "a fall of up to 9 blocks" from its pillar's top on a ledge of
+      // the lava sea; a ghast's fireball put it thirty-seven down into the
+      // lava (note 551).
+      const beside = require('./terrain').dropNear(bot, site, 3);
+      const fall = up + (beside?.fallBlocks || 0), into = beside?.into === 'lava' ? 'lava' : beside?.into === 'water' ? 'water' : null;
+      const pushSays = `On top a push is a fall of up to ${fall} blocks${beside ? ` (the pillar's ${up}, then a drop of ${beside.fallBlocks} ${beside.blocksAway === 1 ? 'a block' : `${beside.blocksAway} blocks`} from its foot)` : ''}, ${into === 'lava' ? 'into lava' : into === 'water' ? 'into water, no harm' : `about ${Math.max(0, fall - 3)} health`}.`;
+      // What pushes up there: a shooter in view within its reach (a ghast
+      // sixty-four, a blaze forty-eight), whose shot that lands pushes.
+      const { RANGE } = require('./combat-estimate');
+      const pushers = inView.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
+      const pushersSay = pushers.length ? ` ${capital(mobsSaid(pushers))} can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall.` : '';
+      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across. ${pushSays}${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`,
         run: async () => {
           if (site.distanceTo(bot.entity.position.floored()) >= 1 && actions.navigate) {
             try { await actions.navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }

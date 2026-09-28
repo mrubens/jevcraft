@@ -190,6 +190,11 @@ function mobList(names, mobs) {
   const parts = names.map(n => { const k = mobs.filter(m => m.name === n).length; return k > 1 ? `${k} ${n.replaceAll('_', ' ')}s` : `the ${n.replaceAll('_', ' ')}`; });
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts[0] || '';
 }
+// What a shooter's shot is called: a ghast's and a blaze's are fireballs.
+const SHOT_WORDS = { witch: 'potion', ghast: 'fireball', blaze: 'fireball', breeze: 'wind charge', guardian: 'laser', elder_guardian: 'laser' };
+const shotWord = name => SHOT_WORDS[name] || 'arrow';
+// The stances that hide the bot from shooters rather than meet them.
+const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // What a stance costs against the mobs about, said the same way on every
 // stance (combat-estimate.js stanceCost): the crowd deaths were each told
 // the fight's cost and nothing of the others', and Jev took the stances
@@ -1261,8 +1266,13 @@ class Survival {
     // sight twenty-two blocks off, walls never raised, and its fireball
     // threw the bot into the lava (2026-09-27).
     const { RANGE } = require('./combat-estimate');
-    const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 ||
-      threats(bot, 48).some(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
+    // Looked for as far as a ghast fires, sixty-four: looked for within
+    // forty-eight, mid-242-aa-nether-2 held still on a span with a ghast
+    // in sight fifty-eight to sixty-two blocks off, 102 blocks carried and
+    // no wall raised, and its fireball threw the bot five blocks down
+    // into the lava (note 551).
+    const shooting = threats(bot, 64).filter(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
+    const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 || shooting.length > 0;
     // While a span is being laid too, but not on the side it goes on:
     // mid-243-j, crossing at y 59 over the lava sea, was hit twice by an
     // enderman, no wall up, and the second hit threw it thirty blocks into
@@ -1283,7 +1293,7 @@ class Survival {
         return true;
       }
     }
-    if (pressed && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return true;
+    if (pressed && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target, blast: shooting.some(t => t.entity.name === 'ghast') })) return true;
     // No walls to be had (no blocks for them): off the span to firm
     // ground near by, crouched, as a player steps back from a ledge.
     // mid-235-j stood at the end of its span over the lava sea with
@@ -1499,7 +1509,9 @@ class Survival {
     // three or more mobs and a shooter about in the midgame trials of
     // 2026-09-25 and 26, the shield came up within five seconds instead.
     const held = stanceHeld(bot);
-    const busy = held && (MOVING_STANCES.has(held.choice) || (held.choice === 'pillar' && !(this.state.pillar && bot.entity.position.y >= this.state.pillar.y + 1.9)));
+    // Nor while the ghast's fireball is being struck back: the shield up to
+    // it is the strike not made (note 551).
+    const busy = held && (MOVING_STANCES.has(held.choice) || held.choice === 'return_fireball' || (held.choice === 'pillar' && !(this.state.pillar && bot.entity.position.y >= this.state.pillar.y + 1.9)));
     if (!swung && !busy && await deflect(bot, task)) {
       this.report(goal, save, { action: 'block_shot', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health });
       return;
@@ -1878,7 +1890,9 @@ class Survival {
     // reach or in the line of fire: mid-110-h charged a skeleton at 4.5
     // health told only "hands back after six health lost" (2026-09-26).
     const hardest = (estimate.mobs || []).filter(m => m.name !== 'creeper' && !m.apart && m.hitsBot > 0).sort((a, b) => b.hitsBot - a.hitsBot)[0];
-    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.name === 'witch' ? 'potion' : hardest.shoots ? 'arrow' : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '';
+    // Each shooter's shot by its name: a ghast's fireballs were said as "2
+    // arrows from the ghast" (note 551).
+    const hitsLeft = hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? shotWord(hardest.name) : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '';
     // The estimate counts each creeper's blast where it goes off, or none
     // where the swings kill it inside its fuse, and says why beside the
     // figures: trial 118 fought two creepers and a spider with no armour at
@@ -2022,7 +2036,7 @@ class Survival {
           ? `${railing}, then hold here behind it: a push from a shot that lands, or a step back, stops at the wall; nothing is at reach to swing at, and the shooters still shoot where the bot stands.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: 'walling', done: 'Behind the wall' })
           : `${railing}, then fight here: a knock toward the drop stops at the wall.${creeperLeftOut}${edge}${hitsLeft}`,
         run: async () => {
-          if (!await this.railSpan(task, goal, save)) return false;
+          if (!await this.railSpan(task, goal, save, { blast: danger.some(t => t.entity.name === 'ghast') })) return false;
           return noStep ? true : options.fight.run();
         } };
     }
@@ -2191,7 +2205,10 @@ class Survival {
     const lineCache = new Map();
     const regainAt = (cell, { open = null, setup = 0 } = {}) => {
       const out = new Map();
-      for (const t of danger.filter(d => d.visible && shooter(d.entity)).slice(0, 8)) {
+      for (const t of danger.filter(d => (d.visible || d.entity.name === 'ghast') && shooter(d.entity)).slice(0, 8)) {
+        // A ghast flies and drifts at random: it has no way to walk to a
+        // line (bunker.js lineRegained), and none can be said (note 551).
+        if (t.entity.name === 'ghast') { out.set(t.entity.id, { name: t.entity.name, distance: t.distance, drifts: true }); continue; }
         const r = require('./bunker').lineRegained(bot, t.entity, cell, { open, within: Math.max(0, require('./combat-estimate').HOLD_SECONDS - setup), cache: lineCache });
         out.set(t.entity.id, { name: t.entity.name, distance: t.distance, ...(r ? { blocks: r.blocks, seconds: Math.round((setup + r.seconds) * 10) / 10 } : { none: true }) });
       }
@@ -2199,8 +2216,11 @@ class Survival {
     };
     const reachesAgain = regain => m => m.name === 'creeper' || m.name === 'warden' || (m.shoots && regain.get(m.id)?.seconds) || false;
     const regainSays = regain => {
-      const parts = [...regain.values()].slice(0, 4).map(r => `the ${r.name.replaceAll('_', ' ')} ${Math.round(r.distance)} blocks off ${r.none ? 'has none within the fifteen seconds' : r.blocks ? `has one after about ${r.blocks} blocks of walking, about ${r.seconds} seconds in` : `has one from where it stands, about ${r.seconds} seconds in`}`);
-      return parts.length ? ` A shooter that loses sight of the bot walks on toward it by its way and shoots once it has a line again, its bow drawn in about a second: ${parts.join('; ')}.` : '';
+      const walkers = [...regain.values()].filter(r => !r.drifts), drifting = [...regain.values()].filter(r => r.drifts);
+      const ghastHit = mobs.find(m => m.name === 'ghast')?.hitsBot;
+      const drifts = drifting.length ? ` The ghast ${Math.round(drifting[0].distance)} blocks off does not walk to a line: it drifts through the air at random, so when it has one on this spot cannot be worked out, and the figures below leave its fireballs out; each that lands is about ${ghastHit ?? '?'} after armour.` : '';
+      const parts = walkers.slice(0, 4).map(r => `the ${r.name.replaceAll('_', ' ')} ${Math.round(r.distance)} blocks off ${r.none ? 'has none within the fifteen seconds' : r.blocks ? `has one after about ${r.blocks} blocks of walking, about ${r.seconds} seconds in` : `has one from where it stands, about ${r.seconds} seconds in`}`);
+      return (parts.length ? ` A shooter that loses sight of the bot walks on toward it by its way and shoots once it has a line again, its bow drawn in about a second: ${parts.join('; ')}.` : '') + drifts;
     };
     // Where the bot hid, kept with the stance: it is asked again when a
     // shooter has a line there (stanceStep).
@@ -2582,10 +2602,13 @@ class Survival {
       const says = [
         ...cut.map(p => `${p.plan.cells.length === 1 ? 'a block' : `${p.plan.cells.length} blocks, two high,`} in the line from the eyes of ${named(p.t)} to the bot's, ${whereSays(bot, p.plan.cuts)}`),
         ...behind.map(p => `nothing for ${named(p.t)}: the ${p.plan.stoppedBy.name.replaceAll('_', ' ')} at ${p.plan.stoppedBy.cell} is in its line already`)];
+      // Against a ghast, which of the blocks carried its blast breaks: the
+      // cover is put from one that holds (ghast.js, note 551).
+      const ghastCovered = cut.some(p => p.t.entity.name === 'ghast');
       const openSays = open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '';
-      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${openSays}` + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
+      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
         run: async () => {
-          const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 1)?.name;
+          const material = (ghastCovered && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 1)?.name;
           const now = plans.map(({ t }) => { const e = bot.entities?.[t.entity.id] || t.entity; return { t, e, plan: e.isValid === false ? { cells: [], stoppedBy: true } : blockPlan(bot, e) }; });
           const todo = now.filter(p => p.plan.cells.length);
           if (!todo.length && !now.some(p => p.plan.stoppedBy)) throw Object.assign(new Error(now.map(p => `${p.t.entity.name.replaceAll('_', ' ')}: ${p.plan.why}`).join('; ') || 'no shooter in its line'), { name: 'StanceFailed' });
@@ -2613,6 +2636,33 @@ class Survival {
     if (blockCreeper) options.block_creeper = blockCreeper;
     for (const t of shotTargets(bot, danger, { any: true }).slice(0, 3)) options[`shoot_${t.entity.id}`] = { expects: (c => ({ damage: c.damage, seconds: c.seconds, oneHit }))(shotCost(t)), description: `Shoot the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off with the bow from here; each arrow takes about a second to draw, standing still.` + shotFacts(t) + (armsLength ? ' Something that bites is at arm\'s length now, and the draw stops when it closes.' : '') + costSays(shotCost(t), bot.health, mobs, { doing: 'drawing', done: 'The shooter down' }) + edge,
       run: async () => { await this.shootAt(task, goal, save, t); return true; } };
+    // A ghast: its fireball struck back, and the bow past the twenty above
+    // (ghast.js, note 551). mid-235-p-nether-4-fortress-2 was offered only
+    // hiding and cover from one twenty-five to forty blocks off, and died.
+    const ghastHere = danger.find(t => t.entity.name === 'ghast');
+    const ce = require('./combat-estimate');
+    const ghastHit = this.lastGhastHit = !ghastHere ? null : mobs.find(m => m.name === 'ghast')?.hitsBot ?? Math.round(ce.afterArmour(ce.MOBS.ghast.hit, ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean))) * 10) / 10;
+    if (ghastHere && !inWater(bot)) {
+      const ghast = require('./ghast');
+      const others = stanceCost({ mobs: mobs.filter(m => m.name !== 'ghast'), reaches: () => true, shield: false });
+      // The wall against its push: which of the blocks carried its blast
+      // breaks, the wall put from one that holds.
+      if (options.rail_and_fight) options.rail_and_fight.description += ghast.coverSays(bot, shelter.buildingMaterials).replace('the cover is put from it', 'the wall is put from it').replace('the cover can be blown out by the fireball it stops', 'the wall can be blown out by the fireball whose push it stops');
+      const back = ghast.returnOption(bot, danger, { hit: ghastHit, others });
+      if (back) options.return_fireball = { expects: back.expects, description: back.description + edge,
+        run: async () => {
+          this.report(goal, save, { action: 'return_fireball', target: 'ghast', entityId: back.ghast.entity.id, distance: Math.round(back.ghast.distance * 10) / 10, health: bot.health, stance: true });
+          const r = await ghast.returnFireball(bot, task, back.ghast.entity);
+          if (r.strikes) { goal.survivalAction = { ...goal.survivalAction, strikes: r.strikes, ...(r.ghastGone ? { ghastGone: true } : {}) }; save(); }
+          return true;
+        } };
+      for (const t of shotTargets(bot, [ghastHere], { minimum: 20.01, maximum: ghast.GHAST.reach })) {
+        const a = ghast.arrowAt(t.distance);
+        const cost = stanceCost({ mobs, setup: a.arrows, reaches: m => m.shoots && m.name !== 'ghast', shield: shielded });
+        options[`shoot_${t.entity.id}`] = { expects: { damage: cost.damage, seconds: cost.seconds, oneHit }, description: ghast.bowSays(t, countOf(bot, 'arrow')) + costSays(cost, bot.health, mobs, { doing: 'drawing', done: 'The ghast down' }) + edge,
+          run: async () => { await this.shootAt(task, goal, save, t); return true; } };
+      }
+    }
     const kept = apartSays(bot, apart);
     if (kept) for (const o of Object.values(options)) o.description += kept;
     return options;
@@ -2669,7 +2719,14 @@ class Survival {
     // the creeper stands; the moment it walks, or has a line again, it is
     // asked again (note 547).
     const blockAgain = this.blockCreeperHeld(held);
-    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince && !offSpot && !lineAgain.length && !blockAgain;
+    // A stance that hid the bot from shooters (out of sight, the nook, the
+    // cover) is asked again once one of the shooters it was chosen against
+    // lands a hit: it was not hidden from that one. Held within its slack
+    // (its estimate and one blow), mid-235-p-nether-4-fortress-2's hiding
+    // place took two fireballs from a ghast that had drifted to a new line,
+    // and was asked again only when the bot was off the spot (note 551).
+    const shotThrough = HIDING_STANCES.has(held?.choice) ? (held.shooters || []).find(k => (bot._hurtBy?.[k] || 0) > held.at) : null;
+    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
     // And when the stance held is no longer on offer, as that asks too:
@@ -2739,6 +2796,10 @@ class Survival {
     if (spawner) for (const o of Object.values(options)) o.description += spawner.says;
     const farther = fartherShootersSay(bot, danger);
     if (farther) for (const o of Object.values(options)) o.description += farther.says;
+    // A ghast about, said with every stance: when it fires, and that it
+    // drifts rather than walks a way (ghast.js, note 551).
+    const ghastSays = require('./ghast').ghastNote(danger, this.lastGhastHit);
+    if (ghastSays) for (const o of Object.values(options)) o.description += ghastSays;
     // A pocket begun here, said with the stance that would go on with it
     // and in the state: how much of it stands, and the mob in its wall
     // (mid-226-h, note 520).
@@ -2779,7 +2840,8 @@ class Survival {
         estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}), ...(ownCells.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + ownCells.size }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
-          ...(blockAgain ? { askedAgainFor: blockAgain } : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
+          ...(blockAgain ? { askedAgainFor: blockAgain } : shotThrough ? { askedAgainFor: `the ${shotThrough.replaceAll('_', ' ')} it was chosen against hit the bot ${Math.round((Date.now() - bot._hurtBy[shotThrough]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen` }
+            : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
             : following.length ? { askedAgainFor: `it is over, and ${following.length === 1 ? 'a mob it was chosen against is' : `${following.length} mobs it was chosen against are`} still coming at the bot` } : {}) } : null,
@@ -2823,7 +2885,7 @@ class Survival {
       if (decision.fallback) return false;
       choice = decision.path.at(-1);
     }
-    if (!holding || held.choice !== choice) this.state.stance = { choice, kinds, ids: [...new Set([...danger, ...(this.lastHidden || [])].map(t => t.entity.id))], at: Date.now(), health: bot.health, ...(options[choice]?.expects ? { expects: options[choice].expects } : {}) };
+    if (!holding || held.choice !== choice) this.state.stance = { choice, kinds, ids: [...new Set([...danger, ...(this.lastHidden || [])].map(t => t.entity.id))], shooters: [...new Set(danger.filter(t => shooter(t.entity)).map(t => t.entity.name))], at: Date.now(), health: bot.health, ...(options[choice]?.expects ? { expects: options[choice].expects } : {}) };
     // The reflexes see the stance too (the hurt watchdog, the shield, the
     // meal): they give way to it while it holds.
     const stance = bot._stance = this.state.stance;
@@ -3182,7 +3244,10 @@ class Survival {
   // carried; true once the feet are clear of what was beneath them.
   // The open sides of a one-wide ledge walled at the feet, each with the
   // floor beside it laid first to place against. True when a block went down.
-  async railSpan(task, goal, save, { ahead = null } = {}) {
+  // Against a ghast (`blast`), from a block its blast does not break where
+  // one is carried: a netherrack wall is blown out by the fireball it stops
+  // (ghast.js, note 551).
+  async railSpan(task, goal, save, { ahead = null, blast = false } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
     const { dropAt } = require('./terrain');
@@ -3191,7 +3256,7 @@ class Survival {
     const onward = ahead && require('./bridging').stepToward(feet, ahead);
     const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => !(onward && onward.x === dx && onward.z === dz))
       .map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
-    const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2 * open.length)?.name;
+    const material = (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, 2 * open.length)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2 * open.length)?.name;
     if (!open.length || !material) return false;
     this.report(goal, save, { action: 'rail_span', sides: open.length, health: bot.health });
     let placed = 0;

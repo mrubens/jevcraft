@@ -457,7 +457,18 @@ function stanceMobs(bot, now = Date.now()) {
   if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
   if (now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
   if ((bot.health ?? 0) <= s.health - STANCE_HEALTH) return [];
-  return threats(bot).filter(t => s.ids.includes(t.entity.id) && !combatTarget(bot, t.entity)).map(t => ({ ...t, stance: s.choice }));
+  return threats(bot, 64).filter(t => s.ids.includes(t.entity.id) && t.distance <= stanceReach(t.entity) && !combatTarget(bot, t.entity)).map(t => ({ ...t, stance: s.choice }));
+}
+// How far a mob a stance was chosen against is kept: the twenty-four a
+// stance counts, and a shooter as far as it fires from (a ghast's sixty-
+// four, a blaze's forty-eight). mid-235-p-nether-4-fortress-2 hid from a
+// ghast that drifted to twenty-five to forty blocks: past twenty-four the
+// stance kept nothing, the work had the turn and stood still, and the
+// ghast found a new line and fired, three times (note 551).
+function stanceReach(entity) {
+  if (!shooter(entity)) return 24;
+  const { RANGE } = require('./combat-estimate');
+  return Math.max(24, RANGE[entity.name] || 0);
 }
 
 // What can push the bot where it stands, now: a shooter in sight within
@@ -489,4 +500,4 @@ function pushersAbout(bot) {
   return list;
 }
 
-module.exports = { pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

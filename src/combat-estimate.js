@@ -119,7 +119,10 @@ const MOBS = {
   magma_cube: { hit: 6, health: 16, note: 'a big one: it splits into two to four mediums (4 a hit), each of those into two to four smalls (3 a hit)', splits: [{ size: 'medium', count: 3, hit: 4, health: 4 }, { size: 'small', count: 9, hit: 3, health: 1 }] }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
   // Every mob the danger list names (the decision audit, 2026-09-25): one
   // not here added nothing, and a ghast fight read "0 damage".
-  ghast: { hit: 9, health: 10, shoots: true, note: 'fireballs that blast and set alight' }, breeze: { hit: 3, health: 30, shoots: true, note: 'wind charges throw the bot' },
+  // A ghast's fireball is 6 on Normal (LargeFireball.onHitEntity; the
+  // fireball damage type scales with difficulty, 9 is Hard's): through iron
+  // 3.1, what each of mid-235-p-nether-4-fortress-2's cost (note 551).
+  ghast: { hit: 6, health: 10, shoots: true, note: 'fireballs that blast and set alight' }, breeze: { hit: 3, health: 30, shoots: true, note: 'wind charges throw the bot' },
   ravager: { hit: 12, health: 100 }, evoker: { hit: 6, health: 24, note: 'fangs from the ground, and vexes' }, vex: { hit: 9, health: 14, note: 'flies through walls' },
   guardian: { hit: 6, health: 30, shoots: true, note: 'a laser' }, elder_guardian: { hit: 8, health: 80, shoots: true, note: 'a laser, and mining fatigue' },
   warden: { hit: 30, health: 500, note: 'never to be fought' }, creaking: { hit: 3, health: 1, note: 'cannot be hurt while its heart stands' },

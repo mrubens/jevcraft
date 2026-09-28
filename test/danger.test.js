@@ -206,3 +206,28 @@ test('a walker left be as out of a charge\'s reach is a threat again once it wal
   bot._mobTracks = new Map([[210, [{ at: Date.now() - 1000, x: 10.5, y: 64, z: 0.5 }]]]);
   assert.equal(immediateThreat(bot)?.entity.id, 210, 'four blocks nearer in a second: coming, so a threat');
 });
+
+test('a held stance keeps a ghast it was chosen against out to its sixty-four, a walker to twenty-four (mid-235-p-nether-4-fortress-2, note 551)', () => {
+  // Hidden from a ghast that drifted to twenty-five to forty blocks: past twenty-four the stance kept nothing,
+  // the work had the turn and stood still, and the ghast found a new line and fired.
+  const { immediateThreat, stanceMobs, stanceReach } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const ghast = { id: 21, name: 'ghast', type: 'hostile', position: new Vec3(38.5, 70, 0.5), height: 4, width: 4, isValid: true };
+  const zombie = { id: 11, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, 30.5), height: 1.95, width: 0.6, isValid: true };
+  // Rock everywhere but the bot's cell: nothing in sight.
+  const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, health: 15.3, food: 16, time: { timeOfDay: 6000 },
+    world: { raycast: from => ({ position: from.floored(), intersect: from }) }, blockAt: p => ({ position: p, name: 'netherrack', boundingBox: 'block' }),
+    entities: { 21: ghast, 11: zombie }, inventory: { items: () => [], slots: [] } };
+  assert.equal(stanceReach(ghast), 64);
+  assert.equal(stanceReach({ name: 'blaze' }), 48);
+  assert.equal(stanceReach(zombie), 24);
+  bot._stance = { choice: 'out_of_sight', ids: [21, 11], at: Date.now() - 1000, ranAt: Date.now() - 500, health: 15.3, expects: { damage: 1.3, seconds: 15, oneHit: 3.1 } };
+  assert.deepEqual(stanceMobs(bot).map(t => t.entity.id), [21], 'the ghast at thirty-eight kept, the zombie at thirty not');
+  assert.equal(immediateThreat(bot)?.entity.id, 21);
+  assert.equal(immediateThreat(bot).stance, 'out_of_sight', 'survival keeps the turn while the stance holds');
+  // mid-242-aa-nether-2: behind its cover from a ghast sixty-two blocks off, the work walked it out onto a span.
+  ghast.position = new Vec3(61.5, 70, 0.5);
+  assert.equal(immediateThreat(bot)?.entity.id, 21, 'at sixty-two, behind the cover: still the stance\'s');
+  ghast.position = new Vec3(70.5, 70, 0.5);
+  assert.deepEqual(stanceMobs(bot), [], 'past its sixty-four');
+});
