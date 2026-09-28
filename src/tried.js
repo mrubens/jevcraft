@@ -64,11 +64,14 @@ function prune(t, now) {
 function workOf(goal, now) { try { return require('./stillness').actionOf(goal, now).key; } catch (_) { return null; } }
 
 // An answer given: pending until something is seen to come of it or not.
-function begin(bot, goal, { q, method, target = null, waiting = false, now = Date.now() }) {
+// offered: the options the question offered ({ key, target }), kept so a
+// question above can tell whether this one has ways left (spent).
+function begin(bot, goal, { q, method, target = null, waiting = false, offered = null, now = Date.now() }) {
   if (!bot || !goal || !q || !method) return null;
   const t = ledger(goal); prune(t, now);
   const here = P(bot.entity?.position);
-  const entry = { q, method, ...(P(target) ? { target: P(target) } : {}), place: here, at: now, work: workOf(goal, now), outcome: 'pending', mark: mark(bot), ...(waiting ? { waiting: true } : {}) };
+  const entry = { q, method, ...(P(target) ? { target: P(target) } : {}), place: here, at: now, work: workOf(goal, now), outcome: 'pending', mark: mark(bot), ...(waiting ? { waiting: true } : {}),
+    ...(offered?.length ? { offered: offered.map(o => ({ key: o.key, ...(P(o.target) ? { target: P(o.target) } : {}) })) } : {}) };
   t.entries.push(entry);
   return entry;
 }
@@ -93,11 +96,17 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
   if (e.outcome !== 'pending') return false;
   const rung = goal?.tried?.rung;
   const byRung = RUNG_JUDGED.has(e.q) && rung && rung.rung === rungOf(goal);
-  const came = byRung ? (rung.bestAt > e.at ? `a new best on the ${rungSays(rung.rung)} (${rung.lastBest || 'progress'})` : null)
-    : e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  // A stall's answer that brought something home (a hunt's meat, a block
+  // of ore) got somewhere, though not on the rung; its walk alone did not.
+  const carried = e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  const came = byRung ? (rung.bestAt > e.at ? `a new best on the ${rungSays(rung.rung)} (${rung.lastBest || 'progress'})` : carried === 'what is carried changed' ? carried : null)
+    : carried;
   if (onlyIf === 'decided' && !came && !error) return false;
   if (came) { e.outcome = 'progressed'; e.gained = came; }
   else if (e.waiting) e.outcome = 'waited';
+  // Cut short by the survival layer (air, a threat) or a cancellation, with
+  // nothing come of it: not a try that came to nothing (note 583).
+  else if (e.cut && !error) { e.outcome = 'cut'; e.why = e.cut; }
   else { e.outcome = 'blocked'; const why = error || whyItEnded(bot, goal, e.at); if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200); }
   e.settledAt = now; delete e.mark;
   return true;
@@ -112,6 +121,13 @@ function settle(bot, goal, { q = null, error = null, now = Date.now(), passEnd =
   let n = 0;
   for (const e of t.entries) if (e.outcome === 'pending' && (!q || e.q === q) && settleOne(bot, goal, e, { error, now, onlyIf: passEnd ? 'decided' : null })) n++;
   return n;
+}
+
+// The answers under way when the survival layer took the turn or the work
+// was cancelled: said as cut short when next settled, not as tries that
+// came to nothing (note 583).
+function cut(goal, why, now = Date.now()) {
+  for (const e of goal?.tried?.entries || []) if (e.outcome === 'pending' && !e.waiting && now - e.at < WINDOW_MS) e.cut = String(why).slice(0, 120);
 }
 
 // The entries that bear on an option now: the same question and answer,
@@ -186,19 +202,54 @@ function hold(bot, goal, q, methods, why, { target = null, targets = {}, now = D
 // The question to ask next up, when one finds nothing left to try (every
 // option resting), a repeat hold fires, or a step keeps failing: its parent
 // (define's `parent`), the child's answer marked blocked with why, and the
-// failure kept to be said when the parent is asked (escalationsFor). Asked
-// of the same parent again before it has been asked since, the escalation
-// climbs to that parent's own parent: a parent never asked (a way held, a
-// plan derived without a question) cannot keep a child going round.
-// -> { to, says, climbed }
-function escalate(goal, { from, to, why, parentOf = () => null, now = Date.now() }) {
+// failure kept to be said when the parent is asked (escalationsFor).
+// Asked of a parent that is still owed an asking (an escalation to it not
+// yet said to it), the escalation goes past it only when that parent is
+// spent: every option it offered at its last asking has come to nothing
+// from here. A parent with ways left is asked, not passed: on 25583 a
+// failed walk of the fortress's floors escalated to fortress_leg, the step
+// walked the same floor again without asking it, and the next failure went
+// past fortress_leg (its heights, the blocks to dig, the Overworld's stone
+// never tried) to the rung, which was set aside thirty seconds into the
+// trial (note 583). A parent the work cannot ask (a plan held without a
+// question) is passed once it has been owed REST_AFTER times, said.
+// -> { to, says, climbed, passed }
+function escalate(goal, { from, to, why, parentOf = () => null, here = null, now = Date.now() }) {
   const t = ledger(goal); prune(t, now);
   let target = to, climbed = 0;
-  const unasked = p => t.escalations.some(e => e.to === p && !e.consumed && now - e.at < WINDOW_MS);
-  while (target && unasked(target) && climbed < 6) { target = parentOf(target); climbed++; }
-  const says = `${label(from)}: ${why}`;
+  const passed = [];
+  const owed = p => t.escalations.filter(e => e.to === p && !e.consumed && now - e.at < WINDOW_MS).length;
+  while (target && climbed < 6) {
+    const n = owed(target), up = parentOf(target);
+    if (!n || !up) break;
+    const sp = spent(goal, target, { here, now });
+    if (!sp.spent && n < REST_AFTER) break;
+    passed.push(sp.spent ? `${label(target)}: every way it offered ${ago(now - sp.at)} ago has come to nothing from here (${sp.keys.map(label).join(', ')})`
+      : `${label(target)}: not asked since ${plural(n, 'failure')} below were sent to it; the work carried on without asking it`);
+    target = up; climbed++;
+  }
+  const says = `${label(from)}: ${why}${passed.length ? `; passed over ${passed.join('; ')}` : ''}`;
   t.escalations.push({ from, to: target || null, why: says, at: now });
-  return { to: target || null, says, climbed };
+  return { to: target || null, says, climbed, passed };
+}
+// Whether a question has any way left from here: the options of its last
+// asking in the window, each come to nothing from here at least once, or
+// not. Unknown (never asked lately) is not spent.
+// -> { spent, keys, open, at }
+function spent(goal, q, { here = null, now = Date.now() } = {}) {
+  const last = (goal?.tried?.entries || []).filter(e => e.q === q && e.offered?.length && now - e.at < WINDOW_MS).at(-1);
+  if (!last) return { spent: false, keys: [], open: [], at: null };
+  const from = here || last.place;
+  const keys = last.offered.map(o => o.key).filter(k => k !== 'none_good');
+  const open = from ? keys.filter(k => !blockedOf(about(goal, { q, method: k, target: last.offered.find(o => o.key === k)?.target, here: from, now })).length) : keys;
+  return { spent: !open.length && keys.length > 0, keys, open, at: last.at };
+}
+// An escalation owed to a question, not yet said to it: the work holding an
+// answer of that question (a walk of the fortress's floors, a leg) ends it
+// and asks the question. Not consumed here.
+function owed(goal, q, now = Date.now()) {
+  const list = (goal?.tried?.escalations || []).filter(e => e.to === q && !e.consumed && now - e.at < WINDOW_MS);
+  return list.length ? list.map(e => e.why) : null;
 }
 // Said to the parent when it is next asked, and consumed.
 function escalationsFor(goal, q, now = Date.now()) {
@@ -232,12 +283,59 @@ function summary(goal, { work = null, now = Date.now(), withinMs = 2 * WINDOW_MS
   const groups = new Map();
   for (const e of list) {
     const k = `${e.q}|${e.method}|${e.target ? `${Math.round(e.target.x)},${Math.round(e.target.y)},${Math.round(e.target.z)}` : ''}`;
-    const g = groups.get(k) || { q: e.q, method: e.method, target: e.target, n: 0, blocked: 0, progressed: 0, why: null, last: 0 };
-    g.n++; if (e.outcome === 'blocked') { g.blocked++; g.why = e.why || g.why; } if (e.outcome === 'progressed') g.progressed++; g.last = Math.max(g.last, e.at);
+    const g = groups.get(k) || { q: e.q, method: e.method, target: e.target, n: 0, blocked: 0, progressed: 0, cut: 0, why: null, last: 0 };
+    g.n++; if (e.outcome === 'blocked') { g.blocked++; g.why = e.why || g.why; } if (e.outcome === 'progressed') g.progressed++; if (e.outcome === 'cut') g.cut++; g.last = Math.max(g.last, e.at);
     groups.set(k, g);
   }
   return [...groups.values()].sort((a, b) => b.last - a.last).slice(0, 12).map(g =>
-    `${label(g.q)}: ${label(g.method)}${g.target ? ` toward (${Math.round(g.target.x)}, ${Math.round(g.target.y)}, ${Math.round(g.target.z)})` : ''}, ${plural(g.n, 'time')}${g.progressed ? `, ${g.progressed} of them getting somewhere` : ''}${g.blocked ? `, ${g.blocked} coming to nothing${g.why ? ` (last: ${g.why})` : ''}` : ''}, last ${ago(now - g.last)} ago`);
+    `${label(g.q)}: ${label(g.method)}${g.target ? ` toward (${Math.round(g.target.x)}, ${Math.round(g.target.y)}, ${Math.round(g.target.z)})` : ''}, ${plural(g.n, 'time')}${g.progressed ? `, ${g.progressed} of them getting somewhere` : ''}${g.blocked ? `, ${g.blocked} coming to nothing${g.why ? ` (last: ${g.why})` : ''}` : ''}${g.cut ? `, ${g.cut} cut short by the survival layer` : ''}, last ${ago(now - g.last)} ago`);
+}
+
+// How much the rung has had, in words, for the rung's question and its
+// set_aside_rung: how long it has been worked (from when this ledger first
+// saw it, its saved time judged by its own clock), how many answers were
+// given and how they ended, how often the step failed, and the ways the
+// questions below offered that have not been tried from here. On 25583
+// the rods were set aside thirty seconds into a trial, told only that
+// "every way ... has been tried" (note 583).
+function workedOn(goal, { work = null, here = null, now = Date.now() } = {}) {
+  const t = goal?.tried;
+  const rung = t?.rung && t.rung.rung === rungOf(goal) ? t.rung : null;
+  const since = rung?.since ?? null;
+  const from = since ?? now - WINDOW_MS;
+  const list = (t?.entries || []).filter(e => e.at >= from && (!work || !e.work || e.work === work));
+  const answers = list.filter(e => e.q !== 'step');
+  const n = o => answers.filter(e => e.outcome === o).length;
+  const steps = list.filter(e => e.q === 'step' && e.outcome === 'blocked').length;
+  // The latest asking of each question below the rung, with its options
+  // not yet come to nothing from here.
+  const open = [];
+  for (const q of [...new Set(answers.map(e => e.q))]) {
+    if (['stillness_detour', 'rung_progress'].includes(q)) continue;
+    const sp = spent(goal, q, { here, now });
+    if (sp.at && sp.at >= from && sp.open.length) open.push({ q, at: sp.at, keys: sp.open });
+  }
+  const ms = since === null ? null : now - since;
+  const long = ms === null ? 'in the last ten minutes' : `in ${ms < 600000 ? (Math.round(ms / 6000) / 10).toFixed(1) : Math.round(ms / 60000)} minutes on it`;
+  const says = `${long}: ${plural(answers.length, 'answer')} given, ${n('blocked')} coming to nothing, ${n('progressed')} getting somewhere${n('cut') ? `, ${n('cut')} cut short by the survival layer` : ''}${n('pending') ? `, ${n('pending')} still under way` : ''}; the step failed ${plural(steps, 'time')}` +
+    `${open.length ? `; not yet tried from here: ${open.map(o => `${label(o.q)} (asked ${ago(now - o.at)} ago): ${o.keys.map(label).join(', ')}`).join('; ')}` : ''}`;
+  return { ms, answers: answers.length, cameToNothing: n('blocked'), progressed: n('progressed'), steps, open, says };
+}
+
+// A saved ledger taken up again (a restart, a trial begun from a stage's
+// save): its times are its own, moved on by the time it lay saved, so what
+// was tried a minute before the save is a minute old, not the half hour
+// the save waited (note 583).
+function resumed(goal, { savedAt, now = Date.now() } = {}) {
+  const t = goal?.tried;
+  if (!t || !Number.isFinite(savedAt)) return 0;
+  const gap = now - savedAt;
+  if (!(gap > 0)) return 0;
+  const move = (o, keys) => { for (const k of keys) if (Number.isFinite(o?.[k]) && o[k] > 0) o[k] += gap; };
+  for (const e of t.entries || []) move(e, ['at', 'settledAt', 'until']);
+  for (const e of t.escalations || []) move(e, ['at', 'consumed']);
+  if (t.rung) move(t.rung, ['since', 'lastAt', 'bestAt']);
+  return gap;
 }
 // Whether any blocked way for this work rests by place alone (a step off
 // could leave it behind), or none is known: the stall's "differently".
@@ -324,5 +422,5 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   return { rung, says: bestSays };
 }
 
-module.exports = { begin, record, settle, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungOf, rungSays,
+module.exports = { begin, record, settle, cut, spent, owed, workedOn, resumed, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungOf, rungSays,
   NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS };

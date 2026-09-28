@@ -91,3 +91,27 @@ test('the pearl patrol hunts an enderman in view, and otherwise goes on an exped
   bot.entities[4] = { name: 'enderman', position: new Vec3(30, 64, 0), isValid: true };
   assert.equal(patrolChoice(bot, { explore: {}, deep_dark: {} }), 'hunt', 'the fun part');
 });
+
+test('a warped forest whose walk came to nothing is not walked to again at once, twenty times a second: the sweep looks for another, and with the sweep resting the pearls go the old way (mid-244-ad-nether-3, note 583)', async () => {
+  // mid-244-ad-nether-3 (and mid-242-ae-nether-2 and -3-fortress-1): a forest seen across the lava sea 127 blocks off,
+  // the walk there came no nearer, the trip was set aside half an hour, and warped_pearls then returned at once on
+  // every pass (the forest still counted as known, its walk refused), "No measurable progress" every two seconds.
+  const { bot, goal } = fixture('the_nether');
+  goal.landmarks = [{ kind: 'warped_forest', x: 153, y: 63, z: -217, dimension: 'nether' }];
+  const walks = [];
+  const actions = { navigate: async (b, t, g) => { walks.push([g.x, g.z]); throw new Error('No path to the goal!'); }, tunnel: async () => {}, acquireStep: async () => assert.fail('no hunt short of the forest'), notice: () => {} };
+  await assert.rejects(warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 16 }),
+    /^Error: The walk to the warped forest at \(153, -217\), 266 blocks off, came no nearer: No path to the goal!; that walk rests half an hour$/, 'the step\'s own failure, said');
+  assert.equal(walks.length, 1, 'walked there once');
+  assert.match(goal.tried.entries.find(e => e.q === 'step' && e.method === 'warped_pearls').why, /^The walk to the warped forest/, 'in the ledger');
+  const forest = goal.landmarks[0];
+  assert.equal(forest.lastWalk.why, 'No path to the goal!', 'how the walk ended is kept with the place');
+  assert.equal(forest.lastWalk.began, 266);
+  // The next pass: not the resting walk refused and returned, but the sweep for another forest.
+  await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 16 });
+  assert.equal(goal.step.action, 'warped_search', 'the sweep for another forest, not the refused walk again');
+  assert(warped.warpedOpen(goal));
+  setAside(goal, 'rung', 'warped_search', 'none found', 600000);
+  assert.equal(warped.warpedOpen(goal), false, 'the forest\'s walk resting and the sweep resting: not open');
+  assert.equal(nextGameStage(bot, goal).action, 'return_overworld', 'home the old way, not the pearl step spinning');
+});

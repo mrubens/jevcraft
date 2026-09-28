@@ -1863,7 +1863,7 @@ function crossingOptions(bot, task, what, across, actions) {
 // map comes to: walking its corridors again, crossing to floors seen
 // unwalked, waiting by a spawner seen, the blazes. Otherwise its bricks are
 // left behind or set aside, and going back is offered with when and why.
-function fortressInView(bot, goal, save, state, bricks, { stay, map = null, planned = null }) {
+function fortressInView(bot, goal, save, state, bricks, { stay, map = null, planned = null, aside = null }) {
   const here = bot.entity.position;
   const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   const off = Math.round(nearest.distanceTo(here));
@@ -1936,7 +1936,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
   const why = state.leaving && Math.hypot(state.leaving.x - nearest.x, state.leaving.z - nearest.z) <= LEAVE_RADIUS
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
     : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${!sameSpot ? '' : shun.left ? `, from where the bot stands, over the ways into it from here (${shun.left.length ? shun.left.join(', ') : 'none but leaving'}): going back from here is asking those same ways again` : '; the bot stands where that was found, and from here the same look finds the same'}`
-    : 'set aside as a face not approached, for ten minutes';
+    : aside || 'set aside as a face not approached, for ten minutes';
   // Going back from where it was found to hold nothing to walk to is no
   // move: the patrol sets it aside again before a step. Nor from where Jev
   // left it over its ways in (keep_searching): the same ways are asked
@@ -2021,6 +2021,24 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // What is seen of the Nether as the search goes (nether-coverage.js), a
   // few lines a tick, the legs walked in one go included.
   coverage.watch(bot, goal); coverage.stand(bot, state);
+  // An escalation owed to the leg's question (tried.js owed): an answer of
+  // it in hand came to nothing below (the walk of the floors failed, every
+  // way to the fortress rests). That answer ends here and the question is
+  // asked, with the failure said, not carried on unasked while the next
+  // failure goes past the question to the rung: on 25583 a floor two blocks
+  // up with no way to it was walked again after the escalation, and the
+  // rods were set aside thirty seconds into the trial with the heights, the
+  // blocks to dig and the Overworld's stone never offered again; on the
+  // next trial the fortress's ways were asked again a second after theirs
+  // had escalated (mid-242-ae-nether-2 and -3-fortress-1, note 583).
+  const owedLeg = require('./tried').owed(goal, 'fortress_leg');
+  if (owedLeg) {
+    const why = owedLeg.at(-1).slice(0, 200), at = Date.now();
+    if (state.spawnerWait) { state.spawnerWaitEnded = why; delete state.spawnerWait; }
+    if (state.goTo) { const g = state.goTo; (state.goToEnded ||= {})[g.key ? `${g.kind}:${g.key}` : g.kind] = { why, at }; delete state.goTo; }
+    if (state.target) { delete state.target; delete state.rememberedTarget; }
+    delete state.patrolUntil; delete state.restock; save();
+  }
   // A wait by a spawner Jev chose (wait_at_spawner): near its cage until
   // the wait is up; the hunt takes a blaze the moment one is in view.
   if (state.spawnerWait) {
@@ -2083,7 +2101,11 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Jev with the next leg, going back among the ways (fortressInView),
   // said as they stand now, before a leg's end lets them be seen again.
   let setAside = !bricks.length && seen.length >= FORTRESS_MIN_BRICKS ? fortressInView(bot, goal, save, state, seen, { stay: false }) : null;
-  if (bricks.length) {
+  // Off its floors with the leg's question owed: its ways in are what came
+  // to nothing, so going back to it is among the legs, said so.
+  const offFloors = !!owedLeg && bricks.length > 0 && !onFortressFloor(bot.entity.position, fortressFloors(bot, bricks));
+  if (offFloors) setAside = fortressInView(bot, goal, save, state, bricks, { stay: false, aside: `its ways in from here came to nothing: ${owedLeg.at(-1).slice(0, 200)}` });
+  if (bricks.length && !offFloors) {
     const here = bot.entity.position;
     const byNear = list => list.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
     // In the fortress is on its floors (onFortressFloor), not within six
@@ -2119,7 +2141,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       delete state.found; state.patrols = 0; delete state.inFortressSince; save();
       setAside = fortressInView(bot, goal, save, state, seen, { stay: false });
     }
-    else if (planned.frontiers.length || (state.patrolUntil && planned.patrol.length)) {
+    else if (!owedLeg && (planned.frontiers.length || (state.patrolUntil && planned.patrol.length))) {
       const exploring = !!planned.frontiers.length, next = exploring ? planned.frontiers[0] : planned.patrol[0];
       const [x, y, z] = next.at;
       goal.step = { action: 'find_fortress', found: state.found, [exploring ? 'exploring' : 'patrolling']: { x, y, z }, steps: next.steps, walked: planned.walked, seen: planned.seen, legs: state.legs }; save();
@@ -2129,7 +2151,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
         catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
       } else why = 'no way to walk';
       const off = new Vec3(x + 0.5, y + 1, z + 0.5).distanceTo(bot.entity.position);
-      if (off > 3) { map.failed[next.key] = { why: why || `the walk ended ${Math.round(off)} blocks short`, at: Date.now() }; save(); }
+      // Not reached is not stood on: the walk's goal is within a block of
+      // the floor, and a floor two blocks up with no way to it (the walk
+      // failing at once, ending 2.0 off) had counted as reached at three,
+      // walked thirty times in three seconds (mid-242-ae-nether-2-fortress-1,
+      // note 583).
+      if (off > 1.75) { map.failed[next.key] = { why: why || `the walk ended ${Math.round(off)} blocks short`, at: Date.now() }; save(); }
       fm.look(bot, state, { force: true }); save();
       return;
     }

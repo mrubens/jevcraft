@@ -233,7 +233,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // tied to its own target, a step off leaves none of them behind, and the
   // planner derives the same way again (25592: other_way 4,423 times, each
   // hold answered "differently", note 571). Said, when left out.
-  const bound = tried.placeBound(goal, { work: stall.key, now });
+  // The ledger keys its entries by the work (stillness.js actionOf), which
+  // on the game's ladder is the rung; a failed step's stall is keyed by the
+  // step. Read by the step's key, the rung's question said "nothing tried
+  // lately is in the ledger" beside "every way ... has been tried" (note 583).
+  const work = stall.work || stall.key;
+  const bound = tried.placeBound(goal, { work, now });
   const differentlyOpen = !bound.any || bound.byPlace > 0;
   const noDifferently = !differentlyOpen ? `another way from ground eight blocks off is not offered: every way tried for the ${thing} lately (${bound.byTarget}) was toward its own target and rests from anywhere near here, so a step off leaves none of them behind` : null;
   if (!idle && differentlyOpen) answers.differently = { description: mine
@@ -281,9 +286,15 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // cannot be beaten without says so, and the ladder takes up what it can
   // do meanwhile (the rods' own question is leave_nether).
   const needed = rung && !DEFERRABLE.has(rung) ? ' The game cannot be beaten without it: for those thirty minutes the ladder goes on with whatever else it can do, and the rung comes back first after.' : '';
-  if (rung && (DEFERRABLE.has(rung) || rungQuestion)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}`,
+  // How much the rung has had, and what the ladder goes on with instead,
+  // from here: on 25583 the rods were set aside thirty seconds into a trial
+  // at a fortress, told nothing of either, for pearls from a warped forest
+  // whose walk came to nothing at once and then spun (note 583).
+  const worked = rung && rungQuestion ? tried.workedOn(goal, { work, here: bot.entity.position, now }) : null;
+  const instead = rung && rungQuestion ? await nextRungSays(bot, task, goal, rung, now) : null;
+  if (rung && (DEFERRABLE.has(rung) || rungQuestion)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
     run: async () => {
-      setAside(goal, 'rung', rung, `stalled ${stall.strikes} times in ten minutes`, RUNG_WAIT_MS); delete goal.rungTime;
+      setAside(goal, 'rung', rung, `Jev set it aside at the rung's question${worked ? `, worked on ${worked.says}` : `, stalled ${stall.strikes} times`}`.slice(0, 300), RUNG_WAIT_MS); delete goal.rungTime;
       bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
     } };
   // Every way to it resting until a time: other work until then, as one
@@ -330,7 +341,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   }
   // Keeping at the rung, with what has been tried said: its budget starts
   // again, and the ways resting from here stay resting.
-  const triedSaid = tried.summary(goal, { work: stall.key, now });
+  const triedSaid = tried.summary(goal, { work, now });
   if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
     run: async () => { if (goal.tried?.rung) goal.tried.rung.idleMs = 0; } };
   // What it is stuck on, named: a step for another dimension (note 476).
@@ -342,8 +353,54 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const failure = stall.error || (stairs && `the staircase is set aside: ${stairs.why}`);
   const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}),
     ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
-    ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}) };
+    ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
+    ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour' });
+}
+// What the ladder goes on with if the rung is set aside, and what it costs
+// from here, read from a copy of the goal with the rung left: the next
+// rung, where its work is (a warped forest known, how far, and how the last
+// walk there ended), and what the ledger holds of it from here.
+async function nextRungSays(bot, task, goal, rung, now = Date.now()) {
+  if (goal.kind !== 'win') return null;
+  let next = null;
+  try { const probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', rung, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe); }
+  catch (_) { return null; }
+  if (!next?.phase || next.phase === rung) return null;
+  const words = v => String(v || '').replaceAll('_', ' ');
+  const here = bot.entity.position;
+  const parts = [`Set aside, the ladder goes on with ${words(next.phase)}${next.action && next.action !== next.phase ? ` (${words(next.action)}${next.item ? `, ${next.count || ''} ${words(next.item)}`.replace(/ +/g, ' ') : ''})` : next.item ? ` (${next.count || ''} ${words(next.item)})`.replace(/ +/g, ' ') : ''}`];
+  // A place the next rung's work goes to first: a landmark it walks to.
+  const LANDMARK_OF = { warped_pearls: 'warped_forest', bastion_gold: 'bastion_remnant' };
+  const kind = LANDMARK_OF[next.action];
+  if (kind) {
+    const exploration = require('./exploration');
+    let known = [];
+    try { known = exploration.knownLandmarks(bot, goal, kind, 512); } catch (_) { known = []; }
+    if (!known.length) parts.push(`no ${words(kind)} is known: its work begins with a search for one`);
+    else {
+      const k = known[0], l = k.landmark, dy = Number.isFinite(l.y) ? Math.round(l.y - here.y) : null;
+      const trip = `${l.kind}:${l.x},${l.z}`;
+      const aside = isSetAside(goal, 'landmark_trip', trip, now);
+      const why = aside ? attemptsFor(goal).why('landmark_trip', trip) : null;
+      const w = l.lastWalk, walked = w ? `the last walk there (from (${w.from.x}, ${w.from.y}, ${w.from.z})) began ${w.began} blocks off and ended ${w.ended}${w.why ? `: ${w.why}` : ''}` : null;
+      // Whether a way there is found from here: the pathfinder's own look,
+      // half a second of it, said as it came out.
+      let survey = null;
+      if (!aside && bot.pathfinder?.movements && (bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) {
+        try {
+          const r = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNear(l.x, Number.isFinite(l.y) ? l.y : Math.round(here.y), l.z, 12), 500);
+          survey = r?.status === 'success' ? 'a route survey from here found a way there' : r?.status === 'noPath' ? 'a route survey from here found no way there' : 'a half-second route survey from here did not finish (far, or a long way round)';
+        } catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+      }
+      parts.push(`the nearest ${words(kind)} known is ${Math.round(k.distance)} blocks off${dy ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} at (${l.x}, ${l.z})` +
+        `${aside ? `, and the walk there is set aside: ${why || 'it came no nearer'}` : walked ? `; ${walked}` : '; no walk there has been tried'}${survey ? `; ${survey}` : ''}`);
+      if (known.every(o => isSetAside(goal, 'landmark_trip', `${o.landmark.kind}:${o.landmark.x},${o.landmark.z}`, now))) parts.push(`with the walk to ${known.length === 1 ? 'it' : `each of the ${known.length} known`} set aside, its work begins with a search for another`);
+    }
+  }
+  const lately = require('./tried').summary(goal, { work: `step:rung:${next.phase}`, now });
+  if (lately) parts.push(`tried for it lately: ${lately.slice(0, 3).join('; ')}`);
+  return `${parts.join('; ')}.`;
 }
 // Where a step was going, for the ledger (tried.js): its target, its
 // destination, the cell it worked; none, and the step is about its place.
@@ -4651,7 +4708,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   // The answer this step was carrying out: asked again, not the step.
   const owner = !until && tried.owner(goal, { work, skip: new Set(['stillness_detour', 'rung_progress']) });
   const what = `the ${String(failed?.action || 'step').replaceAll('_', ' ')} step failed${goal.struggles === 1 ? '' : ` ${goal.struggles} times running`}: ${String(err.message).slice(0, 160)}`;
-  const up = owner ? tried.escalate(goal, { from: 'step', to: owner.q, why: what, parentOf: require('./decisions').parentOf }) : null;
+  const up = owner ? tried.escalate(goal, { from: 'step', to: owner.q, why: what, parentOf: require('./decisions').parentOf, here: bot.entity?.position }) : null;
   if (owner) tried.markBlocked(owner, what);
   const chose = {};
   try {
@@ -4659,9 +4716,9 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
       console.log(`[escalate] step -> ${up.to.replaceAll('_', ' ')}: ${up.says}`);
       return;
     }
-    const rungAsk = up?.to === 'rung_progress' ? { escalated: { from: owner.q, to: 'rung_progress', says: up.says } } : {};
+    const rungAsk = up?.to === 'rung_progress' ? { escalated: { from: owner.q, to: 'rung_progress', says: up.says, passed: up.passed } } : {};
     if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message });
-    else await answerStall(bot, task, goal, save, { key, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
+    else await answerStall(bot, task, goal, save, { key, work, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
   }
   finally {
     // Back in hand only when Jev chose to try it again, and not where it
@@ -5139,7 +5196,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const step = goal.step;
   const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
   const context = { situation: id === 'rung_progress'
-    ? `${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : `Every way the ${what} had from here has been tried and come to nothing.`} Choose: keep at it with the ways left, change the plan, or set the rung aside for now.`
+    ? `${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : stalled?.whatFailedBelow ? `The ${what} could not go on below this question: ${stalled.whatFailedBelow.replace(/\.$/, '')}.${stalled.workedOnRung ? ` Worked on this rung ${stalled.workedOnRung}.` : ''}` : `The ${what} is brought to the rung's question.`} Choose: keep at it with the ways left, change the plan, or set the rung aside for now.`
     : holding
     ? `The ${what} rests ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}${holding.why ? ` (${holding.why})` : ''}, and Jev chose other work until then. Choose the work for now; it has until the rest ends.`
     : stalled?.failure
@@ -5801,6 +5858,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       // What ended the answers under way: a failure or a stall, not the
       // survival layer taking the turn (the answer is not over).
       if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) && !err.stall?.escalated) passError = err.message;
+      // Taken from the answers under way by the survival layer or a
+      // cancellation: cut short, not tried and come to nothing (tried.js).
+      else if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) require('./tried').cut(goal, `cut short: ${String(err.message || err.name).slice(0, 100)}`);
       if (err.name === 'Stalled' || bot._stalls?.stall) continue;
       if (loopCheck(task)) { noteError(goal, err); save(); onStep(goal); continue; }
       noteError(goal, err);

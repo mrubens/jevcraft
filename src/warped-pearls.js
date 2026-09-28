@@ -19,20 +19,37 @@ const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = l => /nether/.test(String(l.dimension || ''));
 
-// A warped forest remembered anywhere in the Nether.
-const warpedKnown = goal => (goal.landmarks || []).filter(l => l.kind === 'warped_forest' && inNether(l));
-// Whether the pearls should come from the forest now.
+// A warped forest remembered anywhere in the Nether, and whether the walk
+// there rests (exploration.js goToLandmark sets a trip that came no nearer
+// aside half an hour).
+const tripKey = l => `${l.kind}:${l.x},${l.z}`;
+const tripOpen = (goal, l, now = Date.now()) => !isSetAside(goal, 'landmark_trip', tripKey(l), now);
+const warpedKnown = (goal, now = Date.now()) => (goal.landmarks || []).filter(l => l.kind === 'warped_forest' && inNether(l) && tripOpen(goal, l, now));
+// Whether the pearls should come from the forest now: one known whose walk
+// does not rest, or a search for one. A known forest whose walk rested was
+// planned every pass and returned at once, twenty passes a second, until
+// the progress watch failed it over and over (mid-242-ae-nether-3-fortress-1,
+// note 583).
 function warpedOpen(goal, now = Date.now()) {
   if (isSetAside(goal, 'rung', 'warped_pearls', now)) return false;
-  return warpedKnown(goal).length > 0 || !isSetAside(goal, 'rung', 'warped_search', now);
+  return warpedKnown(goal, now).length > 0 || !isSetAside(goal, 'rung', 'warped_search', now);
 }
 
 async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.now } = {}) {
   const exploration = require('./exploration');
   actions.notice?.(bot, goal, save);
-  const known = exploration.knownLandmarks(bot, goal, 'warped_forest', 512)[0];
+  const known = exploration.knownLandmarks(bot, goal, 'warped_forest', 512).find(k => tripOpen(goal, k.landmark, now()));
   if (known) {
     const arrived = await exploration.goToLandmark(bot, task, goal, save, ['warped_forest'], { navigate: actions.navigate, reach: 512, arrive: 16 });
+    // A walk that came no nearer sets the trip aside: said as the step's own
+    // failure, with where and why, and kept in the ledger, not a quiet
+    // return the progress watch calls "No measurable progress" (note 583).
+    if (!arrived && !tripOpen(goal, known.landmark, now())) {
+      const l = known.landmark, w = l.lastWalk;
+      const why = `The walk to the warped forest at (${l.x}, ${l.z}), ${Math.round(known.distance)} blocks off, came no nearer${w?.why ? `: ${w.why}` : ''}; that walk rests half an hour`;
+      require('./tried').record(bot, goal, { q: 'step', method: 'warped_pearls', target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z }, outcome: 'blocked', why });
+      throw new Error(why);
+    }
     if (!arrived) return false;
     // In the forest: the ordinary hunt, which takes the endermen in view.
     const watch = goal.warpedHunt ||= { since: now(), best: count(bot, 'ender_pearl') };

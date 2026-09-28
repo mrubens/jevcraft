@@ -279,6 +279,15 @@ function waitingByChoice(goal, id, now = Date.now()) {
   return HOLDS.has(goal?.step?.action);
 }
 
+// Waiting, for the ledger: a hold or an emergency, whose point is to stay.
+// The stall's own question is never held by the repeat rule, but its
+// answers (a walk off, a hunt, a dig) are not waits: recorded as waits,
+// none of them ever came to nothing, none rested, and a step failing every
+// two seconds was answered "differently" for minutes with nothing above it
+// asked (mid-242-ae-nether-3-fortress-1's pearls, note 583).
+const ledgerWaits = (goal, id) => id !== 'stillness_detour' && waitingByChoice(goal, id);
+// The options offered, for the ledger (tried.js spent).
+const offeredOf = (tree, target = null) => Object.entries(tree || {}).filter(([, n]) => !n?.children).map(([key, n]) => ({ key, target: n?.target || target || null }));
 // Not in the ledger: the routing between the layers, asked every turn.
 const UNLEDGERED = new Set(['turn_priority']);
 // Said, never left out nor escalated: a stance against mobs about, the
@@ -294,12 +303,12 @@ function plainOf(tree, original) { return Object.fromEntries(Object.keys(tree).m
 // the rung's question is asked at once (answerStall).
 function parentOf(id) { try { return question(id).parent || null; } catch (_) { return null; } }
 function escalateFrom(bot, goal, spec, why) {
-  const { to, says } = tried.escalate(goal, { from: spec.id, to: spec.parent || null, why, parentOf });
+  const { to, says, passed } = tried.escalate(goal, { from: spec.id, to: spec.parent || null, why, parentOf, here: bot?.entity?.position });
   // The answer above that led here came to this.
   if (spec.parent) tried.markBlocked(tried.latestOf(goal, spec.parent), says);
   if (to && to !== spec.parent) tried.markBlocked(tried.latestOf(goal, to), says);
   const { raiseFor, Stalled } = require('../stillness');
-  throw new Stalled(raiseFor(bot, goal, says, Date.now(), { escalated: { from: spec.id, to, says } }));
+  throw new Stalled(raiseFor(bot, goal, says, Date.now(), { escalated: { from: spec.id, to, says, passed } }));
 }
 
 class NoSafeDefault extends Error {
@@ -339,15 +348,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (read.resting.length) resting = read.resting;
     below = tried.escalationsFor(goal, id);
   }
-  const one = oneWay(tree);
-  if (one) {
+  const takeOne = one => {
     sayOnce(bot, id, one.path);
     const decision = { ...one, id, only: true };
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
-    if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: waitingByChoice(goal, id) });
+    if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id), offered: offeredOf(original, target) });
     return decision;
-  }
+  };
+  const one = oneWay(tree);
+  if (one) return takeOne(one);
   // How the bot died lately, with every question about playing the game:
   // it walked back to the drowned that had just killed it, and chose to
   // search for food at five health three deaths running, told nothing of
@@ -408,7 +418,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       // not a detour that walks eight blocks and comes back to it (note 571).
       const methods = holding.run ? [holding.run.choice] : holding.streak.map(s => s.choice);
       if (ledgered) tried.hold(bot, goal, id, methods, holding.says, { target, targets: Object.fromEntries(methods.map(m => [m, tree[m]?.target])) });
-      escalateFrom(bot, goal, spec, holding.says);
+      // The answers held rest; a question with other ways left is asked
+      // with those, the hold said, and escalates only once they rest too:
+      // on 25583 fortress_leg's hold on back_to_fortress and leg_east would
+      // have gone to the rung with its heights, the blocks to dig and the
+      // Overworld's stone never offered (note 583).
+      const after = ledgered && !SAY_ONLY.has(id) ? tried.read(bot, goal, id, original, { target }) : null;
+      if (!after || after.allResting || !Object.keys(after.tree).length || methods.some(m => after.tree[m])) escalateFrom(bot, goal, spec, holding.says);
+      tree = after.tree; resting = after.resting.length ? after.resting : null;
+      const left = oneWay(tree);
+      if (left) return takeOne(left);
     }
     const lately = repeats.heldSays(bot);
     const quickly = !again && quick ? quick.says : null;
@@ -476,7 +495,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
-  if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: waitingByChoice(goal, id) });
+  if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id), offered: offeredOf(original, target) });
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');

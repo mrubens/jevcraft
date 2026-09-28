@@ -939,16 +939,17 @@ test('a way chosen that a stall ends is ended with its why, not walked again una
   const { bot } = acFloor();
   const goal = { mobHunt: { entity: 'blaze', item: 'blaze_rod', sightings: [] },
     fortressSearch: { axis: 1, legs: 70, goTo: { x: -108, y: 77, z: 155, kind: 'blazes', since: Date.now() } } };
-  // Three answers back at once before this one, whatever they were.
+  // Three answers back at once before this one, whatever they were: every way the question offers, so the hold
+  // leaves none to ask with (a hold with ways left is asked with those, note 583).
   const now = Date.now();
-  bot._answers = { fortress_approach: { streak: [{ choice: 'other_way', gap: 300, at: now - 900 }, { choice: 'other_way', gap: 300, at: now - 600 }],
+  bot._answers = { fortress_approach: { streak: [{ choice: 'walk_route', gap: 300, at: now - 1200 }, { choice: 'cross_level', gap: 300, at: now - 900 }, { choice: 'tunnel', gap: 300, at: now - 600 }],
     last: { choice: 'other_way', at: now - 300, mark: repeats.mark(bot), judged: false, goal } } };
   const client = jevStub(['other_way']);
   const actions = { client, navigate: async () => { throw new Error('No route from here'); }, tunnel: async () => { throw new Error('The staircase is set aside'); } };
   await assert.rejects(findFortressStep(bot, new Task('hunt'), goal, () => {}, actions), err => err.name === 'Stalled');
   assert.equal(client.asked.length, 0, 'held, not asked');
   assert.equal(goal.fortressSearch.goTo, undefined, 'the way is ended');
-  assert.match(goal.fortressSearch.goToEnded.blazes.why, /^fortress approach: the last 3 answers to this question in a row \(other way 3 times/);
+  assert.match(goal.fortressSearch.goToEnded.blazes.why, /^fortress approach: the last 4 answers to this question in a row \(walk route 1 time, cross level 1 time, tunnel 1 time, other way 1 time/);
 });
 
 // Lines of sight through a test world: the first cell along the line with a
@@ -1938,4 +1939,60 @@ test('on a span over a walkable cavern floor, going down and walking the floor i
   await answers.floor_toward.run();
   assert.deepEqual(nav.map(g => g.constructor.name), ['GoalNear', 'GoalNearXZ']);
   assert(b2.entity.position.x > 30, 'a stretch along the floor toward it');
+});
+
+// Jev's pick among what is offered: the first of `picks` on offer, else the first option.
+function pickStub(picks) {
+  const asked = [];
+  return { asked, systemOne: async ({ kind, state, questions }) => { const options = questions.branch_0.criteria; asked.push({ kind, state, options }); return { answers: { branch_0: { choice: picks.find(p => options[p]) || Object.keys(options)[0], confidence: 0.9 } } }; } };
+}
+
+test('with a failure owed to the leg\'s question, the walk of the floors in hand ends and the question is asked, not walked again unasked (mid-242-ae-nether-2-fortress-1, note 583)', async () => {
+  // 25583: the walk of the fortress's floors failed and escalated to fortress_leg; the next pass walked the same floor
+  // again without asking it, and the next failure went past fortress_leg to the rung, set aside thirty seconds in.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const tried = require('../src/tried');
+  const { bot } = corridor();
+  const goal = { fortressSearch: { axis: 1, legs: 16 } };
+  tried.escalate(goal, { from: 'step', to: 'fortress_leg', why: 'the find fortress step failed: No measurable progress on the walk of the floors' });
+  const walks = [];
+  const client = pickStub(['stay_in_fortress']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: walker(bot, walks), tunnel: async () => {} });
+  assert.equal(walks.length, 0, 'not walked again');
+  assert.equal(client.asked.length, 1, 'the leg\'s question asked');
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  assert.match(client.asked[0].state.whatFailedBelow[0], /^step: the find fortress step failed: No measurable progress/);
+  assert.equal(tried.owed(goal, 'fortress_leg'), null, 'said to it, and so no longer owed');
+});
+
+test('with a failure owed to the leg\'s question off the fortress\'s floors, the leg\'s question is asked, not the ways in again (mid-242-ae-nether-3-fortress-1, note 583)', async () => {
+  // 25583's next trial: fortress_approach's hold escalated to fortress_leg at 04:52:07.5, the next pass asked
+  // fortress_approach again (its one way left, walk_route, twice), and that went past fortress_leg to the rung.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const tried = require('../src/tried');
+  const { bot } = fortressAcrossLava();
+  const goal = { fortressSearch: { axis: 1, legs: 7, target: { x: 96, y: 65, z: 0 } } };
+  tried.escalate(goal, { from: 'fortress_approach', to: 'fortress_leg', why: 'the last 3 answers to this question in a row each came back within 2 seconds' });
+  const client = pickStub(['leg_north']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('the code walked on its own'); }, tunnel: async () => { throw new Error('the code tunnelled on its own'); } });
+  assert.equal(client.asked.length, 1);
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg', 'the leg\'s question, not fortress_approach');
+  const { options, state } = client.asked[0];
+  assert.match(state.whatFailedBelow[0], /^fortress approach: the last 3 answers/);
+  assert.match(options.back_to_fortress, /its ways in from here came to nothing: fortress approach: the last 3 answers/);
+});
+
+test('a floor within three blocks that the walk cannot reach is passed over after one walk, not walked thirty times in three seconds (mid-242-ae-nether-2-fortress-1, note 583)', async () => {
+  // 25583: the floor to walk to was two blocks up with no way to it; the walk ended where it began, 2.0 blocks from
+  // it, and a walk ending within three blocks counted as reached: the same floor thirty times in three seconds.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = corridor({ length: 3 });
+  const goal = { fortressSearch: { axis: 1, legs: 16 } };
+  const walks = [];
+  // The walks to its floors (a leg's walk has no height).
+  const navigate = async (b, t, g) => { if (Number.isFinite(g.y)) walks.push(`${g.x},${g.y},${g.z}`); throw new Error('No path to the goal!'); };
+  for (let i = 0; i < 6; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client: pickStub(['leg_north']), navigate, tunnel: async () => {} });
+  const counts = walks.reduce((m, w) => ({ ...m, [w]: (m[w] || 0) + 1 }), {});
+  assert(walks.length >= 1);
+  assert(Object.values(counts).every(n => n === 1), `each floor walked to once: ${JSON.stringify(counts)}`);
 });

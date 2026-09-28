@@ -438,9 +438,9 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   // stopped on the grass over a buried dungeon and "looted" nothing.
   const goal3 = landmark.y === undefined ? new goals.GoalNearXZ(landmark.x, landmark.z, Math.max(2, arrive - 4)) : new goals.GoalNear(landmark.x, landmark.y, landmark.z, Math.max(2, arrive - 4));
   const distanceNow = () => Math.hypot(landmark.x - bot.entity.position.x, (landmark.y ?? bot.entity.position.y) - bot.entity.position.y, landmark.z - bot.entity.position.z);
-  let timedOut = false;
+  let timedOut = false, walkWhy = null;
   try { await navigate(bot, task, goal3, { timeoutMs: 120000, stallMs: 8000, sprint: true }); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; timedOut = planningTimedOut(err); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; timedOut = planningTimedOut(err); walkWhy = String(err.message || err).slice(0, 160); }
   // Its search out of time, a leg of the way on foot, thirty-two blocks
   // toward it, as to a portal (work.js portalLeg): read as a walk that came
   // no nearer, mid-230-u set aside the four lava pools within two hundred
@@ -459,7 +459,10 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   // out, and never came nearer than the first (2026-09-26).
   const best = landmark.nearest ?? before;
   landmark.nearest = Math.min(best, after);
-  if (before - after < 8 || after >= best - 1) { setAside(goal, 'landmark_trip', key, 'the walk there came no nearer than before', 1800000); }
+  // How the walk ended, kept with the place: said where the place is
+  // offered (the rung set aside for it, note 583), not only "no nearer".
+  landmark.lastWalk = { at: Date.now(), from: { x: Math.round(from.x), y: Math.round(from.y), z: Math.round(from.z) }, began: Math.round(before), ended: Math.round(after), ...(walkWhy ? { why: walkWhy } : {}) };
+  if (before - after < 8 || after >= best - 1) { setAside(goal, 'landmark_trip', key, `the walk there came no nearer than before (${Math.round(before)} blocks off to ${Math.round(after)})${walkWhy ? `: ${walkWhy}` : ''}`, 1800000); }
   save();
   return false;
 }

@@ -629,6 +629,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       const saved = store.read();
       if (saved && ['running', 'recovering'].includes(saved.status) && !survival.state.paused) {
         bot.chat(survival.state.recovery?.status === 'pending' ? "I'm back! I'll look for my dropped items, then carry on." : "I'm back! I'll carry on where I left off.");
+        // What was tried, judged by its own clock: moved on by the time the
+        // save lay unplayed (a restart, a trial begun from a stage's save).
+        require('./tried').resumed(saved, { savedAt: Date.parse(saved.updatedAt) });
         launch(saved);
       } else bot.chat('Call me Jev: "Jev come here", "Jev follow me", "Jev craft a chest", or "Jev get me 8 birch stairs".');
     } catch (err) { console.error('[bot] spawn:', err); bot.quit('Could not initialize the world'); }
