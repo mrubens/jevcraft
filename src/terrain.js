@@ -141,7 +141,7 @@ function dropNear(bot, feet, radius = 3, deepest = 48) {
           fall = dy;
         }
         const damage = into === 'water' ? 0 : Math.max(0, fall - 3);
-        if (!worst || damage > worst.damage || (damage === worst.damage && r < worst.blocksAway)) worst = { blocksAway: r, fallBlocks: fall, into, damage };
+        if (!worst || damage > worst.damage || (damage === worst.damage && r < worst.blocksAway)) worst = { blocksAway: r, fallBlocks: fall, into, damage, cell: { x: c.x, y: c.y, z: c.z } };
         break;
       }
       if (!open(c)) break;
@@ -149,11 +149,85 @@ function dropNear(bot, feet, radius = 3, deepest = 48) {
   }
   return worst;
 }
+// A body in lava is out only on ground it can reach swimming: the nearest
+// block from where it lands whose top is at the lava's surface or a block
+// under it, with room over it, looked for this far. mid-243-ad was thrown
+// off its span by a ghast's fireball twenty-two blocks into the lava sea,
+// told only "into lava" (and the state a fall of 19 damage, from 20 health:
+// lava breaks a fall, and the fall does nothing); nothing stood within
+// reach of where it came up, and it burned from 16.6 to none in four
+// seconds swimming back toward the span (note 563).
+const LAVA_SHORE_RADIUS = 12;
+function lavaShore(bot, landing, radius = LAVA_SHORE_RADIUS) {
+  let best = null;
+  const room = b => !!b && b.boundingBox === 'empty' && !/lava/.test(b.name);
+  for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) {
+    const d = Math.hypot(dx, dz);
+    if (d > radius || (best && d >= best.blocks)) continue;
+    for (const y of [landing.y, landing.y - 1]) {
+      const b = bot.blockAt(new Vec3(landing.x + dx, y, landing.z + dz));
+      if (b?.boundingBox !== 'block') continue;
+      if (room(bot.blockAt(new Vec3(landing.x + dx, y + 1, landing.z + dz))) && room(bot.blockAt(new Vec3(landing.x + dx, y + 2, landing.z + dz)))) {
+        best = { blocks: Math.round(d * 10) / 10, x: landing.x + dx, y: y + 1, z: landing.z + dz };
+        break;
+      }
+    }
+  }
+  return best;
+}
+// What a fall into lava costs, for this body: the lava's four a half second
+// through the armour worn (Entity.lavaHurt; its damage type does not bypass
+// armour: mid-243-ad's iron took each 4 to 2.1), at roughly a block a second
+// swimming (survival.js lavaWays, not measured), to the nearest ground out;
+// none within reach, or more health than the bot has, is death. Fire
+// resistance, or an enchanted golden apple to eat in it, takes the lava's
+// harm away.
+const LAVA_HIT = 4, LAVA_HITS_A_SECOND = 2, LAVA_SWIM_BLOCKS_A_SECOND = 1;
+function lavaFate(bot, drop, health = bot?.health ?? 20) {
+  if (!drop || drop.into !== 'lava' || !drop.cell || typeof bot?.blockAt !== 'function') return null;
+  const round = n => Math.round(n * 10) / 10;
+  const { afterArmour, armourOf } = require('./combat-estimate');
+  const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const perSecond = round(afterArmour(LAVA_HIT, worn) * LAVA_HITS_A_SECOND);
+  const landing = { x: drop.cell.x, y: drop.cell.y - drop.fallBlocks - 1, z: drop.cell.z };
+  let shore = null;
+  try { shore = lavaShore(bot, landing); } catch (_) { shore = null; }
+  const seconds = shore ? Math.max(0.5, round(shore.blocks / LAVA_SWIM_BLOCKS_A_SECOND)) : null;
+  const takes = shore ? round(seconds * perSecond) : null;
+  const apple = (bot.inventory?.items?.() || []).some(i => i.name === 'enchanted_golden_apple');
+  const resistant = (() => { try { return require('./body').fireResistant?.(bot) || false; } catch (_) { return false; } })();
+  const deadly = !resistant && !apple && (!shore || takes >= health);
+  return { perSecond, shoreBlocks: shore ? shore.blocks : null, ...(shore ? { shore: { x: shore.x, y: shore.y, z: shore.z }, seconds, takes } : {}), ...(apple ? { enchantedGoldenApple: true } : {}), ...(resistant ? { fireResistance: true } : {}), deadly };
+}
+function lavaFateSays(fate, fall, health = 20) {
+  const hp = Math.round(health * 10) / 10;
+  const burns = `the lava breaks the fall and burns about ${fate.perSecond} health a second through the armour worn`;
+  if (fate.fireResistance) return `into lava ${fall} blocks down, where fire resistance on the body keeps the lava from hurting while it lasts`;
+  const out = fate.shoreBlocks != null
+    ? `the nearest ground out of it from where the body comes up is about ${fate.shoreBlocks} blocks off, about ${fate.seconds} seconds swimming (not measured), about ${fate.takes} health${fate.takes >= health ? `, more than the ${hp} the bot has` : ` of the ${hp} the bot has`}`
+    : `no ground out of it stands within ${LAVA_SHORE_RADIUS} blocks of where the body comes up`;
+  const end = fate.enchantedGoldenApple ? ': the enchanted golden apple carried, eaten in the lava, is the one way to live through it' : fate.deadly ? ': death' : '';
+  return `into lava ${fall} blocks down; ${burns}, and ${out}${end}`;
+}
+// The drop within `radius`, as the stance question's state gives it: into
+// lava, what the lava costs this body (lavaFate), not the fall's damage,
+// which the lava takes away.
+function dropFacts(bot, feet, radius = 3, health = bot?.health ?? 20) {
+  const drop = dropNear(bot, feet, radius);
+  if (!drop) return null;
+  const { cell, ...facts } = drop;
+  if (drop.into !== 'lava') return { ...facts, ...(drop.damage >= health ? { deadly: true } : {}) };
+  const fate = lavaFate(bot, drop, health);
+  if (!fate) return { ...facts, damage: 'the lava, not the fall' };
+  return { ...facts, damage: fate.deadly ? 'death' : fate.takes ?? 0, lava: fate, ...(fate.deadly ? { deadly: true } : {}) };
+}
 // Said in a stance option: what the drop beside the bot costs a body
-// knocked or stepped into it, at the health it has.
-function dropNote(drop, health) {
+// knocked or stepped into it, at the health it has. With the bot, a drop
+// into lava says what the lava costs from where the body comes up.
+function dropNote(drop, health, bot = null) {
   if (!drop || (drop.into !== 'lava' && drop.damage < 1)) return '';
-  const end = drop.into === 'lava' ? 'into lava' : drop.damage >= (health ?? 20) ? `about ${drop.damage} health from the fall, more than the ${Math.round(health ?? 20)} the bot has` : `about ${drop.damage} of the bot's ${Math.round(health ?? 20)} health from the fall`;
+  const fate = drop.into === 'lava' && bot ? lavaFate(bot, drop, health ?? 20) : null;
+  const end = drop.into === 'lava' ? (fate ? lavaFateSays(fate, drop.fallBlocks, health ?? 20) : 'into lava') : drop.damage >= (health ?? 20) ? `about ${drop.damage} health from the fall, more than the ${Math.round(health ?? 20)} the bot has` : `about ${drop.damage} of the bot's ${Math.round(health ?? 20)} health from the fall`;
   return ` A drop of ${drop.fallBlocks} blocks is ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot, standing on the corner of a block over it'}: a hit's knockback or a step back over it is ${end}.`;
 }
 
@@ -207,4 +281,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

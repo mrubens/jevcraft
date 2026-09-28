@@ -2424,7 +2424,7 @@ test('a drop beside a stance is measured and said with what the fall costs at th
   const feet = new Vec3(0, 24, 0);
   const bot = { blockAt: p => ({ position: p, name: p.x === 2 && p.z === 0 && p.y > 2 ? 'air' : p.y >= 24 ? 'air' : 'stone', boundingBox: (p.x === 2 && p.z === 0 && p.y > 2) || p.y >= 24 ? 'empty' : 'block' }) };
   const drop = dropNear(bot, feet, 3);
-  assert.deepEqual(drop, { blocksAway: 2, fallBlocks: 21, into: 'ground', damage: 18 });
+  assert.deepEqual(drop, { blocksAway: 2, fallBlocks: 21, into: 'ground', damage: 18, cell: { x: 2, y: 24, z: 0 } });
   assert.match(dropNote(drop, 18.6), /A drop of 21 blocks is 2 blocks off: .* about 18 of the bot's 19 health/);
   assert.match(dropNote(drop, 10), /more than the 10 the bot has/);
   assert.equal(dropNote({ blocksAway: 1, fallBlocks: 3, into: 'ground', damage: 0 }, 20), '', 'a step down is not said');

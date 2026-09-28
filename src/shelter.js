@@ -120,6 +120,24 @@ function sealed(bot, shelter) {
 function materialStock(bot) {
   return bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((total, i) => total + i.count, 0);
 }
+// The planks the logs and stems carried make in the hand (a two-by-two
+// craft, no table): the most of one kind. mid-243-ad stood on its span
+// under a ghast's fire told "too few blocks carried (3) to wall", with five
+// oak logs in the pack, twenty planks (note 563; mid-235-q's four oak logs
+// and three crimson stems, note 541).
+function plankCraft(bot) {
+  const stock = {};
+  for (const item of bot.inventory.items()) stock[item.name] = (stock[item.name] || 0) + item.count;
+  return plankCrafts(stock)[0] || null;
+}
+function plankCrafts(stock) {
+  return plankMaterials.flatMap(item => recipes[item].flatMap(recipe => {
+    if (recipe.shape || recipe.ingredients?.length !== 1) return [];
+    const counts = recipe.ingredients[0].map(input => stock[input] || 0).filter(count => count > 0);
+    const available = counts.length ? Math.min(...counts) * recipe.count : 0;
+    return available > 0 ? [{ item, available }] : [];
+  })).sort((a, b) => b.available - a.available);
+}
 function supplyTarget(bot, shortage) {
   const stock = {};
   for (const item of bot.inventory.items()) stock[item.name] = (stock[item.name] || 0) + item.count;
@@ -171,4 +189,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, exits, closures, buildingMaterials, solid, replaceable };
+module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, solid, replaceable };

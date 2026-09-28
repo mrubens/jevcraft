@@ -235,6 +235,59 @@ const SHOT_WORDS = { witch: 'potion', ghast: 'fireball', blaze: 'fireball', bree
 const shotWord = name => SHOT_WORDS[name] || 'arrow';
 // The stances that hide the bot from shooters rather than meet them.
 const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
+// What can throw the bot over an edge with a shot: a shooter in sight
+// within its reach, and one that flies (a ghast, a blaze) within its reach
+// out of sight too: it drifts to a new line at any moment, and fires about
+// a second after it has one (note 551). mid-243-ad hid from a ghast behind
+// its last three planks on its span over the lava sea; the ghast out of
+// sight, the next question priced its fireballs at nothing, the work walked
+// the bot out from behind the planks, and a fireball threw it twenty-two
+// blocks into the lava (note 563).
+const FLYING_SHOOTERS = new Set(['ghast', 'blaze']);
+function shotPushers(bot, range = 64) {
+  const { RANGE } = require('./combat-estimate');
+  let about = [];
+  try { about = threats(bot, range); } catch (_) { return []; }
+  return about.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0) && (t.visible || FLYING_SHOOTERS.has(t.entity.name)))
+    .sort((a, b) => b.visible - a.visible || a.distance - b.distance);
+}
+// Said with every stance that leaves the bot open over the drop beside it
+// while such a shooter is about: one shot that lands is the push over it,
+// and that fall, not the shot's own damage, is the price of standing open.
+// The fall into lava is priced by the lava from where the body comes up
+// (terrain.js lavaFate). Null where there is no drop that costs half the
+// health or more, or nothing that can shoot the bot over it.
+function shotOverEdge(bot, feet, health = bot.health ?? 20) {
+  const pushers = shotPushers(bot);
+  if (!pushers.length) return null;
+  const terrain = require('./terrain');
+  const drop = terrain.dropNear(bot, feet, 3);
+  if (!drop || (drop.into !== 'lava' && drop.damage < health / 2)) return null;
+  const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
+  const worn = armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
+  const p = pushers[0], name = p.entity.name, said = name.replaceAll('_', ' '), word = shotWord(name);
+  const m = MOBS[name];
+  const hit = m ? Math.round((m.ignoresArmour ? m.hit : afterArmour(m.hit, worn)) * 10) / 10 : null;
+  const after = Math.max(0, health - (hit || 0));
+  const fate = drop.into === 'lava' ? terrain.lavaFate(bot, drop, after) : null;
+  const deadly = drop.into === 'lava' ? (fate ? fate.deadly : true) : drop.damage >= after;
+  const where = drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot';
+  // Short: the drop's own sentence (terrain.js dropNote) says the lava's
+  // figures.
+  const fall = drop.into === 'lava'
+    ? `into lava ${drop.fallBlocks} blocks down, ${!fate || fate.shoreBlocks == null ? `no ground to climb out onto within ${terrain.LAVA_SHORE_RADIUS} blocks of where the body comes up` : fate.deadly ? `the nearest ground out ${fate.shoreBlocks} blocks off, more lava than the ${Math.round(after * 10) / 10} health left after the ${word}` : `the nearest ground out ${fate.shoreBlocks} blocks off, about ${fate.takes} health of lava`}`
+    : `a fall of ${drop.fallBlocks} blocks, about ${drop.damage} health${drop.damage >= after ? `, more than the ${Math.round(after * 10) / 10} left after the ${word}` : ''}`;
+  const seen = p.visible ? 'in sight' : `out of sight now; it flies, and can have a line again at any moment, its ${word} about a second after`;
+  const more = pushers.length > 1 ? ` (and ${pushers.length - 1} more that can shoot it here)` : '';
+  const says = ` Open here to the ${said} ${Math.round(p.distance)} blocks off (${seen})${more}: one ${word} that lands pushes the bot off its feet, and the drop ${where} is ${fall}. So a ${word} that lands here is priced by that fall, not by its ${hit ?? 'own'} damage: ${deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}. A wall at the open sides stops the push; a block in the line stops the ${word} only while the line stays there.`;
+  // The walled stances, priced the same way: with the wall up, the shot
+  // costs what it costs.
+  const walled = ` Walled, a ${word} that lands here costs its ${hit ?? 'own'} damage and a push into the wall, not the fall${drop.into === 'lava' ? ' into the lava' : ''}.`;
+  return { says, walled, deadly, pusher: { name, distance: Math.round(p.distance * 10) / 10, visible: !!p.visible }, drop };
+}
+// The stances that close the drop's sides off, or shut the bot in: the rest
+// leave it open to a shot's push over the edge.
+const CLOSES_THE_DROP = new Set(['rail_and_fight', 'seal', 'bunker']);
 // What a stance costs against the mobs about, said the same way on every
 // stance (combat-estimate.js stanceCost): the crowd deaths were each told
 // the fight's cost and nothing of the others', and Jev took the stances
@@ -1324,13 +1377,16 @@ class Survival {
     // eight: mid-202-g held still on a span four seconds with a ghast in
     // sight twenty-two blocks off, walls never raised, and its fireball
     // threw the bot into the lava (2026-09-27).
-    const { RANGE } = require('./combat-estimate');
     // Looked for as far as a ghast fires, sixty-four: looked for within
     // forty-eight, mid-242-aa-nether-2 held still on a span with a ghast
     // in sight fifty-eight to sixty-two blocks off, 102 blocks carried and
     // no wall raised, and its fireball threw the bot five blocks down
     // into the lava (note 551).
-    const shooting = threats(bot, 64).filter(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
+    // And a ghast or a blaze out of sight within its reach: it flies, and
+    // has a line again at any moment. mid-243-ad's ghast was behind its
+    // cover a second; the walls were never up, and when it drifted back to
+    // a line its fireball threw the bot into the lava (note 563).
+    const shooting = shotPushers(bot);
     const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 || shooting.length > 0;
     // While a span is being laid too, but not on the side it goes on:
     // mid-243-j, crossing at y 59 over the lava sea, was hit twice by an
@@ -1469,8 +1525,13 @@ class Survival {
     // the retreat off it among them). Four deaths on spans in a day were
     // the span branch's alone to the end, Jev asked only when too late or
     // never (notes 435, 436, 439, 443).
+    // Nor while a stance Jev chose holds: that stance is carried out, not
+    // the span's hold in its place. mid-243-ad chose to send a ghast's
+    // fireball back on its span, and between its watches this held still
+    // instead, four turns in twelve seconds, the stall watch calling it
+    // "turning between return fireball and hold on span" (note 563).
     const bleeding = (bot._hurtTimes || []).filter(t => Date.now() - t < 6000).length >= 2;
-    if (require('./terrain').onSpan(bot) && !(bleeding && this.client && !bot._spanning)) { await this.holdOnSpan(task, goal, save); return; }
+    if (require('./terrain').onSpan(bot) && !(bleeding && this.client && !bot._spanning) && !(jev && stanceHeld(bot))) { await this.holdOnSpan(task, goal, save); return; }
     // Off the edge before anything else is done about the mob. Only when
     // one is close enough to hit, and only to a cell a few blocks off.
     // A hoglin close and a drop within its toss: a pocket, the one thing it
@@ -1994,7 +2055,7 @@ class Survival {
     // distance: mid-235-p-fortress-1 was thrown off an edge at 5.5 health by
     // one (note 509).
     const blazeAbout = danger.some(t => t.entity.name === 'blaze');
-    const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health) + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
+    const edge = require('./terrain').dropNote(require('./terrain').dropNear(bot, feet, 3), bot.health, bot) + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
     // How many can be at arm's length at once, said where it is not all of
     // them: in a tunnel a crowd comes one or two at a time.
     const inCellSays = inCell.length ? ` ${ownCellsSays(inCell)}, at arm's length whatever the cells round it hold.` : '';
@@ -2078,17 +2139,25 @@ class Survival {
     // On a one-wide span over a drop: the span's own hold, chosen (note
     // 549). It was the code's first answer there before any question; said
     // with the open sides, the blocks for them and what can push.
+    let spanWalled = false;
     if (require('./terrain').onSpan(bot)) {
       const { dropAt } = require('./terrain');
       const openSides = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
       const wallBlocks = openSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
-      const carried = shelter.materialStock(bot);
-      const { RANGE, LIGHTS_AT, APPROACH } = require('./combat-estimate');
-      const pushers = coming.filter(t => (t.distance <= 6 && !shooter(t.entity)) || (shooter(t.entity) && t.visible && t.distance <= Math.max(16, RANGE[t.entity.name] || 0)));
+      // The planks the logs carried make count, said as made first (note
+      // 563): mid-243-ad was told three blocks with five oak logs carried.
+      const stock = shelter.materialStock(bot), planks = shelter.plankCraft?.(bot) || null;
+      const carried = stock + (planks?.available || 0);
+      const madeSays = planks && stock < wallBlocks ? `, the ${planks.item.replaceAll('_', ' ')} for them made first from the logs carried (${planks.available}), about a second more` : '';
+      const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
+      // A shooter that flies counts out of sight too, within its reach: it
+      // drifts to a line again at any moment (shotPushers).
+      const pushers = [...coming.filter(t => (t.distance <= 6 && !shooter(t.entity))), ...shotPushers(bot)];
       const spanCreeper = coming.find(t => t.entity.name === 'creeper' && t.distance <= LIGHTS_AT + APPROACH * 3);
-      const pushSays = pushers.length ? ` What can push the bot here: ${pushers.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}.` : ' Nothing about is within six blocks to hit it, nor a shooter in sight within its reach.';
+      const pushSays = pushers.length ? ` What can push the bot here: ${pushers.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off${t.visible === false ? ' (out of sight, and it flies)' : ''}`).join(', ')}.` : ' Nothing about is within six blocks to hit it, nor a shooter in sight within its reach.';
+      spanWalled = !!openSides.length && !!pushers.length && carried >= wallBlocks;
       const walls = !openSides.length ? ' No side of the span at the feet is open over the drop.'
-        : pushers.length ? (carried >= wallBlocks ? ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} walled first: ${wallBlocks} block${wallBlocks === 1 ? '' : 's'}, about ${Math.round(wallBlocks * BLOCK_SECONDS * 10) / 10} seconds; a push stops at a wall.` : ` Too few blocks carried (${carried}) to wall the ${openSides.length} open side${openSides.length === 1 ? '' : 's'} (${wallBlocks}): with something pushing it steps off the span to firm ground within eight instead, if there is any.`)
+        : pushers.length ? (carried >= wallBlocks ? ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} walled first: ${wallBlocks} block${wallBlocks === 1 ? '' : 's'}, about ${Math.round(wallBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSays}; a push stops at a wall, and the walls stay up while the bot holds here.` : ` Too few blocks carried (${carried}${planks ? `, counting the ${planks.available} planks the logs make` : ''}) to wall the ${openSides.length} open side${openSides.length === 1 ? '' : 's'} (${wallBlocks}): with something pushing it steps off the span to firm ground within eight instead, if there is any.`)
         : ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} left open while nothing pushes.`;
       options.hold_on_span = { description: `Hold still and crouched on the span: nothing is turned to or walked from, what comes to arm's length is struck crouched, and a shot on its way meets the shield, crouched (a player crouched does not walk off an edge, but a hit or a shot's push still throws it).${walls}${spanCreeper ? ` A creeper ${Math.round(spanCreeper.distance)} blocks off: off the span away from it first, walls do not stop a blast.` : ''}${pushSays}${edge}`,
         run: () => this.holdOnSpan(task, goal, save) };
@@ -2107,8 +2176,12 @@ class Survival {
     const railSides = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2)
       ? [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => require('./terrain').dropAt(bot, c)) : [];
     const railBlocks = railSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
-    if (railSides.length && bot.inventory.items().some(i => shelter.buildingMaterials.has(i.name) && i.count >= railBlocks)) {
-      const railing = `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds, anything at reach hitting freely meanwhile)`;
+    // Planks made from the logs carried count, made first (note 563).
+    const railStack = bot.inventory.items().some(i => shelter.buildingMaterials.has(i.name) && i.count >= railBlocks);
+    const railPlanks = !railStack && railSides.length ? shelter.plankCraft?.(bot) : null;
+    const railMade = railPlanks && railPlanks.available + countOf(bot, railPlanks.item) >= railBlocks ? railPlanks : null;
+    if (railSides.length && (railStack || railMade)) {
+      const railing = `Wall the ${railSides.length} open side${railSides.length === 1 ? '' : 's'} at the feet over the drop (${railBlocks} block${railBlocks === 1 ? '' : 's'}, about ${Math.round(railBlocks * BLOCK_SECONDS * 10) / 10} seconds${railMade ? `, the ${railMade.item.replaceAll('_', ' ')} for it made first from the logs carried, about a second more` : ''}, anything at reach hitting freely meanwhile)`;
       const railCost = noStep ? stanceCost({ mobs, setup: railBlocks * BLOCK_SECONDS, shield: shielded }) : null;
       options.rail_and_fight = { ...(railCost ? { expects: { damage: railCost.damage, seconds: railCost.seconds, oneHit } } : {}),
         description: noStep
@@ -2805,6 +2878,25 @@ class Survival {
     // 560).
     const waits = this.workWaits(goal, danger);
     if (waits) for (const [k, o] of Object.entries(options)) if (k !== 'keep_working') o.description += ` ${waits}`;
+    // Over a drop that kills, with a shooter about that can put the bot
+    // over it: every stance that leaves the bot open says so, priced by
+    // the fall (note 563). mid-243-ad's keep_working said "a hit's
+    // knockback ... is into lava" and priced the hidden ghast's fireballs at
+    // nothing; the fall was twenty-two blocks into the lava sea, nothing to
+    // climb out onto within reach.
+    // Leaving them be says its "stops at once if one lands a hit" is, here,
+    // after the fall; the walled stances say what a shot costs behind the
+    // wall. Asked of Jev in the recorded question (keep_working 5 of 5 as
+    // recorded), the fall said on the open stances alone left it split
+    // between the work, the fight and "none of these"; with the walled
+    // price beside it, rail_and_fight 10 of 10 (replay case
+    // span-ghast-hidden-keep-working).
+    const over = shotOverEdge(bot, feet);
+    if (over) for (const [k, o] of Object.entries(options)) {
+      if (k === 'rail_and_fight' || (k === 'hold_on_span' && spanWalled)) { o.description += over.walled; continue; }
+      if (CLOSES_THE_DROP.has(k)) continue;
+      o.description += over.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that throws the bot over.' : '');
+    }
     return options;
   }
 
@@ -3004,7 +3096,7 @@ class Survival {
       const kept = this.lastApart?.mobs.length || this.lastApart?.round?.length ? apartSays(bot, this.lastApart).trim() : null;
       const state = { ...(kept ? { noWayToTheBot: kept } : {}), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
-        dropWithinThreeBlocks: require('./terrain').dropNear(bot, bot.entity.position.floored(), 3) || false,
+        dropWithinThreeBlocks: require('./terrain').dropFacts(bot, bot.entity.position.floored(), 3) || false,
         darkHere: darkHere(bot),
         // Listed apart, those that cannot get to the bot (note 566).
         threats: danger.filter(t => !this.lastApart?.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
@@ -3435,7 +3527,20 @@ class Survival {
     const onward = ahead && require('./bridging').stepToward(feet, ahead);
     const open = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => !(onward && onward.x === dx && onward.z === dz))
       .map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
-    const material = (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, 2 * open.length)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2 * open.length)?.name;
+    const need = open.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
+    const stack = () => (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, need)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= need)?.name;
+    let material = open.length ? stack() : null;
+    // Short of a stack for it, planks from the logs carried (note 563):
+    // mid-243-ad held on its span under a ghast with three planks and five
+    // oak logs, and no wall went up.
+    if (open.length && !material && typeof this.actions.acquireStep === 'function') {
+      const planks = shelter.plankCraft?.(bot);
+      if (planks && planks.available + countOf(bot, planks.item) >= need) {
+        try { await this.actions.acquireStep(bot, task, planks.item, Math.min(countOf(bot, planks.item) + planks.available, countOf(bot, planks.item) + Math.ceil(need / 4) * 4), goal, save); }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+        material = stack();
+      }
+    }
     if (!open.length || !material) return false;
     this.report(goal, save, { action: 'rail_span', sides: open.length, health: bot.health });
     let placed = 0;

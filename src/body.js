@@ -124,4 +124,4 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   return { key: choice, by, acted: acted !== false };
 }
 
-module.exports = { answer, held, lasts, conditionSays, RATE, BURNS_AFTER, ASK_MS, HOLD_HEALTH };
+module.exports = { answer, held, lasts, conditionSays, fireResistant, RATE, BURNS_AFTER, ASK_MS, HOLD_HEALTH };
