@@ -18,7 +18,14 @@ function groundOf(fixture, { changed = null } = {}) {
   const rows = fixture.rle ? fixture.rows.map(unrun) : fixture.rows;
   const zs = box.z[1] - box.z[0] + 1;
   const cache = new Map();
-  const make = (name, x, y, z) => { const b = Block.fromStateId(registry.blocksByName[name].defaultState, 0); b.position = new Vec3(x, y, z); return b; };
+  // A palette entry may carry its block state, "nether_brick_stairs[facing=south,...]"
+  // (wart-stair-mid-242-af.json): a stair's or a fence's shape is its state's.
+  const make = (entry, x, y, z) => {
+    const [, name, props] = /^([a-z_]+)(?:\[(.*)\])?$/.exec(entry);
+    const b = props ? Block.fromProperties(name, Object.fromEntries(props.split(',').map(kv => kv.split('='))), 0) : Block.fromStateId(registry.blocksByName[name].defaultState, 0);
+    b.position = new Vec3(x, y, z); return b;
+  };
+  const nameOf = entry => entry.replace(/\[.*$/, '');
   const blockAt = p => {
     const x = Math.floor(p.x), y = Math.floor(p.y), z = Math.floor(p.z);
     if (x < box.x[0] || x > box.x[1] || y < box.y[0] || y > box.y[1] || z < box.z[0] || z > box.z[1]) return null;
@@ -39,7 +46,7 @@ function groundOf(fixture, { changed = null } = {}) {
       for (let y = box.y[0]; y <= box.y[1]; y++) for (let z = box.z[0]; z <= box.z[1]; z++) {
         const row = rows[(y - box.y[0]) * zs + (z - box.z[0])];
         for (let i = 0; i < row.length; i++) {
-          const c = row.charCodeAt(i), id = registry.blocksByName[palette[c >= 97 ? c - 97 : c - 65 + 26]].id;
+          const c = row.charCodeAt(i), id = registry.blocksByName[nameOf(palette[c >= 97 ? c - 97 : c - 65 + 26])].id;
           if (!index.has(id)) index.set(id, []);
           index.get(id).push(new Vec3(box.x[0] + i, y, z));
         }
@@ -54,7 +61,9 @@ function groundOf(fixture, { changed = null } = {}) {
 // mobs: [{ id, name, at: Vec3, height, width }]
 // indexed: findBlocks from where each kind stands (groundOf's where), the
 // blocks dug or laid since (bot.changed) looked at as they are now.
-function groundBot(fixture, { at, health = 20, food = 20, mobs = [], items = [], worn = [], held = null, dimension = 'overworld', indexed = false }) {
+// shapes: the ray stops at a block's own shapes (a stair's half, a fence's
+// post), as the game's and mineflayer's raycast do, not its whole cell.
+function groundBot(fixture, { at, health = 20, food = 20, mobs = [], items = [], worn = [], held = null, dimension = 'overworld', indexed = false, shapes = false }) {
   const changed = new Map();
   const blockAt = groundOf(fixture, { changed });
   const entities = Object.fromEntries(mobs.map(m => [m.id, { id: m.id, name: m.name, type: 'hostile', position: m.at.clone(), height: m.height ?? 1.7, width: m.width ?? 0.6, isValid: true, metadata: m.metadata || [] }]));
@@ -66,7 +75,15 @@ function groundBot(fixture, { at, health = 20, food = 20, mobs = [], items = [],
     inventory: { items: () => inv, slots, emptySlotCount: () => 10 },
     heldItem: held ? { name: held } : null,
     blockAt,
-    world: { raycast(from, dir, max) { for (let t = 0; t <= max; t += 0.05) { const p = from.plus(dir.scaled(t)), b = blockAt(p); if (b && b.boundingBox === 'block') return Object.assign(b, { intersect: p }); } return null; } },
+    world: { raycast(from, dir, max) {
+      for (let t = 0; t <= max; t += 0.05) {
+        const p = from.plus(dir.scaled(t)), b = blockAt(p);
+        if (!b || b.boundingBox !== 'block') continue;
+        if (shapes) { const x = p.x - Math.floor(p.x), y = p.y - Math.floor(p.y), z = p.z - Math.floor(p.z); if (!b.shapes.some(s => x >= s[0] && x <= s[3] && y >= s[1] && y <= s[4] && z >= s[2] && z <= s[5])) continue; }
+        return Object.assign(b, { intersect: p });
+      }
+      return null;
+    } },
     findBlocks({ matching, maxDistance = 16, count = 1, useExtraInfo = () => true, point = bot.entity.position }) {
       const ids = new Set([].concat(matching)), found = [];
       if (indexed) {

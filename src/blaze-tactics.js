@@ -30,6 +30,7 @@
 //   cells left dark are where the blazes come, at the same pace: lighting
 //   most of them does not slow it; lighting every one stops it.
 const { Vec3 } = require('vec3');
+const { feetCell } = require('./terrain');
 const { goals } = require('mineflayer-pathfinder');
 const ce = require('./combat-estimate');
 const bunker = require('./bunker');
@@ -70,7 +71,10 @@ function lineThrough(bot, from, to, walls) {
   for (let n = 0; n < 256; n++) {
     if (c[0] === end.x && c[1] === end.y && c[2] === end.z) return true;
     const key = `(${c[0]}, ${c[1]}, ${c[2]})`;
-    if (walls.has(key) || solid(bot.blockAt(new Vec3(c[0], c[1], c[2])))) return false;
+    // A block with a shape of its own (a stair, a slab, a fence) stops it
+    // only where the line meets that shape (danger.js blocksRay, note 618).
+    const at = new Vec3(c[0], c[1], c[2]);
+    if (walls.has(key) || require('./danger').blocksRay(bot.blockAt(at), at, from, u, length)) return false;
     const i = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
     if (next[i] > length) return true;
     c[i] += step[i]; next[i] += delta[i];
@@ -84,7 +88,7 @@ const seeing = (bot, blazes, cell, walls = new Set()) => blazes.filter(e => e.po
 
 // The cells a walk reaches within `steps`, nearest first; `ok` picks.
 function walkCells(bot, { steps = 16, avoid = [] } = {}) {
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const out = [{ cell: feet, steps: 0 }], seen = new Set([`${feet}`]);
   let ring = [feet];
@@ -197,7 +201,7 @@ function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [] } = {})
 // How far the box where the bot stands may be walked to: the nearest ground
 // a box fits on (a span over a drop takes none).
 const BOX_WALK = 8;
-const inBox = (bot, site) => bot.entity.position.floored().equals(site.cell);
+const inBox = (bot, site) => feetCell(bot).equals(site.cell);
 const centred = (bot, cell) => inBox(bot, { cell }) && Math.hypot(bot.entity.position.x - cell.x - 0.5, bot.entity.position.z - cell.z - 0.5) < 0.2;
 // Crouched to the middle of the cell: the body clear of every side cell, so
 // a block can go into each (the game puts none where the body is).
@@ -572,7 +576,7 @@ function cornerSite(bot, blazes, { steps = 10, avoid = [] } = {}) {
 // beside the bot at its end the edge they would come round.
 function builtCorner(bot, blazes) {
   const { knockLands } = require('./blaze-stand');
-  const cell = bot.entity.position.floored();
+  const cell = feetCell(bot);
   if (!bunker.standable(bot, cell) || !knockLands(bot, cell) || !blazes.length) return null;
   const mid = blazes.reduce((s, e) => s.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / blazes.length);
   const d = mid.minus(cell.offset(0.5, 0, 0.5));
@@ -605,11 +609,11 @@ async function holdCorner(bot, task, goal, save, site, { navigate, seconds = 30,
   const { STANCE_HEALTH } = require('./danger');
   stand.volleyWatch(bot);
   const c = site.cell;
-  if (!bot.entity.position.floored().equals(c)) {
+  if (!feetCell(bot).equals(c)) {
     stand.claimBlazes?.(bot);
     try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true, sprint: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-    if (!bot.entity.position.floored().equals(c)) throw Object.assign(new Error(`the walk to the corner at (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+    if (!feetCell(bot).equals(c)) throw Object.assign(new Error(`the walk to the corner at (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
   }
   // A corner built where there is none: the wall first, the shield up for
   // each volley between blocks.
@@ -640,7 +644,7 @@ async function holdCorner(bot, task, goal, save, site, { navigate, seconds = 30,
       if (await stand.putOutFlames(bot, task)) continue;
       if (await strikeInReach(bot, task)) { stats.swings++; continue; }
       if (await stand.shieldVolley(bot, task)) continue;
-      if (!bot.entity.position.floored().equals(c)) { await bunker.stepTo(bot, task, c); continue; }
+      if (!feetCell(bot).equals(c)) { await bunker.stepTo(bot, task, c); continue; }
       await bot.lookAt(site.edge.offset(0.5, 1.5, 0.5), true);
       raiseShield(bot);
       await sleep(150);
@@ -669,7 +673,7 @@ function healSite(bot, blazes, { steps = 14, avoid = [] } = {}) {
 // box with its window shut, and the side toward them opened again once the
 // health is back.
 function walledHeal(bot, blazes) {
-  const cell = bot.entity.position.floored();
+  const cell = feetCell(bot);
   const mid = blazes.reduce((s, e) => s.plus(e.position), new Vec3(0, 0, 0)).scaled(1 / blazes.length);
   const fit = boxFits(bot, boxPlan(bot, cell, mid));
   if (!fit) return null;
@@ -686,14 +690,14 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
   const started = Date.now();
   Object.assign(stats, { seconds: 0, ate: 0, from: bot.health, to: bot.health, ended: 'time' });
   goal.step = { action: 'leave_and_heal', cell: { ...c } }; save?.();
-  for (let tries = 0; tries < 5 && !bot.entity.position.floored().equals(c); tries++) {
+  for (let tries = 0; tries < 5 && !feetCell(bot).equals(c); tries++) {
     task.check(); bot._threatResponseAt = Date.now();
     if (await stand.putOutFlames(bot, task)) continue;
     if (await stand.shieldVolley(bot, task)) continue;
     try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 5000, stallMs: 1500, onFoot: true, sprint: true, stopWhen: () => stand.volleyComing(bot) }); }
     catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
   }
-  if (!bot.entity.position.floored().equals(c)) throw Object.assign(new Error(`the walk out of their sight to (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+  if (!feetCell(bot).equals(c)) throw Object.assign(new Error(`the walk out of their sight to (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
   if (site.build?.length) await buildBox(bot, task, goal, save, { cell: c, walls: site.build, window: site.open[1] }, { navigate });
   try {
     const biter = biterWatch(bot);

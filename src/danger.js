@@ -140,6 +140,30 @@ function lineClear(bot, from, to, { open = null } = {}) {
   if (!open || !at || !open.has(`${at}`)) return false;
   return cellsClear(bot, hit.intersect || at.offset(0.5, 0.5, 0.5), to, open);
 }
+// Whether a block stops the ray from `from` along the unit `u` for
+// `length`: a full block always, one with a shape of its own (a stair, a
+// slab, a fence, soul sand) only where the ray meets that shape, as the
+// game's raycast and mineflayer's do. Counted as a whole cube, the low half
+// of a fortress stair hid a bot in a nether wart bed from a blaze resting
+// on the stair above, and it was shot through the open half (note 618).
+function blocksRay(b, cell, from, u, length) {
+  if (b?.boundingBox !== 'block') return false;
+  const shapes = b.shapes;
+  if (!shapes?.length || shapes.some(s => s[0] <= 0 && s[1] <= 0 && s[2] <= 0 && s[3] >= 1 && s[4] >= 1 && s[5] >= 1)) return true;
+  const o = [from.x, from.y, from.z], d = [u.x, u.y, u.z], base = [cell.x, cell.y, cell.z];
+  return shapes.some(s => {
+    let t0 = 0, t1 = length;
+    for (let i = 0; i < 3; i++) {
+      const lo = base[i] + s[i], hi = base[i] + s[i + 3];
+      if (Math.abs(d[i]) < 1e-9) { if (o[i] < lo || o[i] > hi) return false; continue; }
+      let a = (lo - o[i]) / d[i], z = (hi - o[i]) / d[i];
+      if (a > z) [a, z] = [z, a];
+      t0 = Math.max(t0, a); t1 = Math.min(t1, z);
+      if (t0 > t1) return false;
+    }
+    return true;
+  });
+}
 // Cell by cell along the line (Amanatides and Woo), a solid block not in
 // `open` stopping it.
 function cellsClear(bot, from, to, open) {
@@ -152,7 +176,7 @@ function cellsClear(bot, from, to, open) {
   for (let n = 0; n < 512; n++) {
     const key = `(${c[0]}, ${c[1]}, ${c[2]})`;
     if (c[0] === end.x && c[1] === end.y && c[2] === end.z) return true;
-    if (!open.has(key) && bot.blockAt?.(new Vec3(c[0], c[1], c[2]))?.boundingBox === 'block') return false;
+    if (!open.has(key)) { const at = new Vec3(c[0], c[1], c[2]); if (blocksRay(bot.blockAt?.(at), at, from, u, length)) return false; }
     const i = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
     if (next[i] > length) return true;
     c[i] += step[i]; next[i] += delta[i];
@@ -636,4 +660,4 @@ function pushOverDrop(bot) {
   return drop ? { pushers, drop } : null;
 }
 
-module.exports = { closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

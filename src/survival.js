@@ -4,6 +4,7 @@ const { makeRoom } = require('./inventory-tidy');
 const { attemptsFor, setAside, isSetAside, failedWithin, watch, unwatch } = require('./progress');
 const { HOLDS, EMERGENCIES, excused, refused, flipped } = require('./stillness');
 const { Vec3 } = require('vec3');
+const { feetCell } = require('./terrain');
 const { goals } = require('mineflayer-pathfinder');
 const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted, stanceHeld, coming: comingAt, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
 const shelter = require('./shelter');
@@ -17,7 +18,7 @@ const { walkersApart, apartSays } = require('./walk-reach');
 const { darkCells, groundCells, placeTorches, lightSources, blockLight } = require('./torches');
 // Dark enough where the bot stands for monsters to spawn: a fact for the
 // questions that weigh staying against leaving.
-const darkHere = bot => { const feet = bot.entity.position.floored(); return blockLight(feet, lightSources(bot, feet, 4)) === 0 && ((bot.blockAt(feet)?.skyLight ?? 15) < 8 || night(bot)); };
+const darkHere = bot => { const feet = feetCell(bot); return blockLight(feet, lightSources(bot, feet, 4)) === 0 && ((bot.blockAt(feet)?.skyLight ?? 15) < 8 || night(bot)); };
 const { verifyHouse } = require('./objectives');
 const { recoverItems } = require('./recovery');
 const { surveyRoute, countOf } = require('./skills');
@@ -276,7 +277,7 @@ function pocketBiters(bot) {
 // against when that biter can be there (pocketPlan, note 581).
 function pocketRace(bot, danger, plan = null) {
   const biters = danger.filter(t => !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name));
-  plan = plan || pocketPlan(bot, bot.entity.position.floored(), biters);
+  plan = plan || pocketPlan(bot, feetCell(bot), biters);
   if (!plan) return '';
   const n = plan.cells.length;
   // At its own speed (combat-estimate), as dig_down's race: a spider is at
@@ -708,9 +709,9 @@ function pushCarries(bot, cell, from, { health = bot.health ?? 20, reach = BLAST
 // a ghast (or a breeze) in sight within its reach whose push carries the
 // body over a drop that kills, or the floor under the feet its blast can
 // break over such a fall. [{ t, over, floor }].
-function blastPushesOver(bot, cell = bot.entity.position.floored(), { health = bot.health ?? 20, pushers = shotPushers(bot) } = {}) {
+function blastPushesOver(bot, cell = feetCell(bot), { health = bot.health ?? 20, pushers = shotPushers(bot) } = {}) {
   return pushers.filter(t => t.visible && FAR_PUSHERS.has(t.entity?.name) && t.entity.position)
-    .map(t => ({ t, over: walledToward(bot, cell, t.entity.position) ? null : pushCarries(bot, cell, t.entity.position, { health, at: cell.equals(bot.entity.position.floored()) ? bot.entity.position : null }), floor: blastFloor(bot, cell, [t], health) }))
+    .map(t => ({ t, over: walledToward(bot, cell, t.entity.position) ? null : pushCarries(bot, cell, t.entity.position, { health, at: cell.equals(feetCell(bot)) ? bot.entity.position : null }), floor: blastFloor(bot, cell, [t], health) }))
     .filter(x => x.over || x.floor);
 }
 // The nearest footing, by the walk (a level step, one up with head room,
@@ -722,7 +723,7 @@ const FOOTING_STEPS = 16;
 function pushFooting(bot, blasts, { steps = FOOTING_STEPS, health = bot.health ?? 20 } = {}) {
   const list = (blasts || []).filter(t => t.entity?.position);
   if (!list.length || typeof bot?.blockAt !== 'function') return null;
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const key = `${feet}|${list.map(t => `${t.entity.id}@${t.entity.position.floored()}`).join(',')}|${Math.round(health)}`;
   const kept = bot._pushFooting;
   if (kept && kept.key === key && Date.now() - kept.at < 1000) return kept.found;
@@ -810,7 +811,7 @@ function footingStep(bot, footing, pusher, { health = bot.health ?? 20 } = {}) {
 // work and the fight stood the bot where its fireball was the fall.
 function blastOverSays(bot, { health = bot.health ?? 20 } = {}) {
   let at = [];
-  try { at = blastPushesOver(bot, bot.entity.position.floored(), { health }); } catch (_) { at = []; }
+  try { at = blastPushesOver(bot, feetCell(bot), { health }); } catch (_) { at = []; }
   if (!at.length) return null;
   const { t, over, floor } = at[0], name = t.entity.name, said = name.replaceAll('_', ' '), word = shotWord(name);
   const rate = name === 'ghast' ? `one ${word} every ${require('./ghast').GHAST.every} seconds while it has a line, the first about a second after it has one` : `a ${word} about every ${require('./combat-estimate').MOBS[name]?.every || 2} seconds`;
@@ -1124,7 +1125,7 @@ function piglinGoldSays(bot, danger = []) {
 // How many biters can be at arm's length at once where the bot stands: the
 // cells round it a mob could stand in (room for a body, ground under it or
 // a step up). Two in a tunnel, eight on open ground.
-function openCells(bot, feet = bot.entity.position.floored()) {
+function openCells(bot, feet = feetCell(bot)) {
   const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/lava/.test(b.name); };
   const floor = p => bot.blockAt(p)?.boundingBox === 'block';
   let n = 0;
@@ -1146,7 +1147,7 @@ function openCells(bot, feet = bot.entity.position.floored()) {
 // damage, it fought, and the three came down into its cell (note 526).
 // The first cell up the column (two to `most` over the feet) with ground
 // beside it: { up, ground }, or null.
-function columnOpening(bot, feet = bot.entity.position.floored(), most = 4) {
+function columnOpening(bot, feet = feetCell(bot), most = 4) {
   const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); };
   const floor = p => bot.blockAt(p)?.boundingBox === 'block';
   for (let up = 2; up <= most; up++) {
@@ -1167,7 +1168,7 @@ function columnOpening(bot, feet = bot.entity.position.floored(), most = 4) {
 // pocket ("shut in, none of them reaches it", 2.5) five times with three
 // zombies in its cell, each failed without a block placed, and the zombies
 // took it from 12.7 to none in ten seconds (note 526).
-function inOwnCells(bot, danger, feet = bot.entity.position.floored()) {
+function inOwnCells(bot, danger, feet = feetCell(bot)) {
   const { bodyIn } = require('./work');
   return danger.filter(t => t.entity?.position && [0, 1].some(dy => bodyIn(t.entity, feet.offset(0, dy, 0))));
 }
@@ -1218,7 +1219,7 @@ function firmStep(bot, p) {
 // mid-110-h was offered a charge at two skeletons the ground between would
 // not carry it to, and fought on for fifty-four seconds (2026-09-26).
 function chargeStopsAt(bot, target) {
-  let at = bot.entity.position.floored();
+  let at = feetCell(bot);
   const goal = target.position.floored();
   for (let i = 0; i < 24; i++) {
     const flat = goal.minus(at); flat.y = 0;
@@ -1329,7 +1330,7 @@ const SLEEP_DEBT_TICKS = 48000;
 const worldAge = bot => Number(bot.time?.age);
 
 const inLava = bot => require('./terrain').bodyInLava(bot);
-const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.position.floored())?.name === 'water';
+const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(feetCell(bot))?.name === 'water';
 // The shield raised facing the nearest biter within four blocks (at its
 // reach, or there within the second or two the bot stands still), for a
 // moment of standing still: true when it was raised.
@@ -1542,7 +1543,7 @@ async function eatApple(bot, task, apple) {
 // `dryOnly`: the same ranking as `water`, with the water cells left out, for
 // the dry way offered beside the wet one (body_way).
 function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
-  const feet = bot.entity.position.floored(), cells = [];
+  const feet = feetCell(bot), cells = [];
   if (dryOnly) water = true;
   // Water is a way out too, and the best one: it puts the fire out. Making
   // obsidian, the water poured over the pool filled every cell beside the
@@ -1773,7 +1774,7 @@ function mobSourceAbout(bot, goal, { at = bot.entity?.position, places, of = 'he
 const biterAtArm = bot => threats(bot).some(t => t.distance <= 2.2 && !shooter(t.entity));
 
 function firmGround(bot, radius = 4, { margin = 1, awayFrom = null } = {}) {
-  const feet = bot.entity.position.floored(), cells = [];
+  const feet = feetCell(bot), cells = [];
   // Farther from a mob than now by two blocks at least (a creeper coming).
   const gains = c => !awayFrom || c.offset(0.5, 0, 0.5).distanceTo(awayFrom) >= bot.entity.position.distanceTo(awayFrom) + 2;
   const open = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'empty' && !/lava|fire|water|powder_snow/.test(b.name); };
@@ -1869,7 +1870,7 @@ function shaftCap(bot, refuge) {
 // none at 1.6 blocks, and nothing said the pocket would not close (note 520).
 function sealingSays(bot, state, now = Date.now()) {
   const s = state?.sealing;
-  if (!s || now - s.at > 20000 || !bot.entity?.position || pos(s.origin).distanceTo(bot.entity.position.floored()) > 1) return null;
+  if (!s || now - s.at > 20000 || !bot.entity?.position || pos(s.origin).distanceTo(feetCell(bot)) > 1) return null;
   const refuge = { origin: s.origin, dimension: bot.game?.dimension };
   const of = shelter.enclosure(refuge).length, placed = of - shelter.missingShell(bot, refuge).length;
   const { occupant } = require('./work');
@@ -1936,7 +1937,7 @@ function observedBed(bot) {
 const bedToSleepIn = (bot, goal) => nearbyHomeBed(bot, goal) || observedBed(bot);
 
 function bedSite(bot) {
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const floor = p => bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block';
   const free = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/water|lava/.test(b.name); };
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -1948,7 +1949,7 @@ function bedSite(bot) {
 // Two level cells for the bed within a few blocks, with a cell beside them
 // to stand in: from a pocket, out past its walls (sleep_beside).
 function bedSiteNear(bot, radius = 4) {
-  const here = bot.entity.position.floored();
+  const here = feetCell(bot);
   const floor = p => bot.blockAt(p.offset(0, -1, 0))?.boundingBox === 'block';
   const free = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !/water|lava/.test(b.name); };
   const room = p => floor(p) && free(p) && free(p.offset(0, 1, 0));
@@ -1981,7 +1982,7 @@ const WET = /water|lava|bubble_column/;
 const AROUND = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 function bedNook(bot, goal = {}, { sealed = false, shell = [] } = {}) {
   if (!bot.entity?.position || typeof bot.blockAt !== 'function') return null;
-  const feet = bot.entity.position.floored(), filled = new Set(shell.map(String));
+  const feet = feetCell(bot), filled = new Set(shell.map(String));
   const open = b => !!b && b.boundingBox === 'empty' && !WET.test(b.name) && !/cobweb|fire/.test(b.name);
   const found = [];
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -2033,7 +2034,7 @@ const PICKAXE_SPARE_USES = 24;
 // that many left, wore through them on the stairs and dug the last
 // twenty-four blocks by hand, at two a minute (2026-09-25).
 function usesToClimbOut(bot) {
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   let top = feet.y;
   for (let y = feet.y + 2; y <= Math.min(feet.y + 200, 319); y++) {
     const b = bot.blockAt(new Vec3(feet.x, y, feet.z));
@@ -2111,7 +2112,7 @@ function backRoom(bot, entity) {
 // other than the one it backs from and nearer it than when it began.
 function backingEnds(bot, from, startedAt) {
   const { LIGHTS_AT } = require('./combat-estimate');
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   if (dropWithin(bot, feet, 1) || lavaBeside(bot, feet)) return true;
   return Object.values(bot.entities || {}).some(e => e !== from && e.id !== from?.id && e.name === 'creeper' && e.position && e.isValid !== false &&
     e.position.distanceTo(bot.entity.position) < LIGHTS_AT && e.position.distanceTo(bot.entity.position) < (startedAt.get(e.id) ?? Infinity));
@@ -2406,7 +2407,7 @@ class Survival {
     // times, and the fireball threw it into the lava (2026-09-27).
     if (pressed && !isSetAside(this, 'off_span', 'here')) {
       const cell = firmGround(bot, 8, { margin: 2 }) || firmGround(bot, 8);
-      if (cell && !cell.equals(bot.entity.position.floored())) {
+      if (cell && !cell.equals(feetCell(bot))) {
         this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
         try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
@@ -2542,7 +2543,7 @@ class Survival {
     // three deaths in five minutes. The reserve always has the blocks.
     // With Jev asked, the drop is a fact on the stance question instead.
     const tossers = heavyHitters(threats(bot), 6);
-    if (!jev && tossers.length && dropWithin(bot, bot.entity.position.floored(), 3) && !creeperClose(threats(bot)) && shelter.materialStock(bot) >= 4) {
+    if (!jev && tossers.length && dropWithin(bot, feetCell(bot), 3) && !creeperClose(threats(bot)) && shelter.materialStock(bot) >= 4) {
       this.report(goal, save, { action: 'seal_on_ledge', threats: tossers.map(t => t.entity.name), health: bot.health });
       if (await this.sealHere(task, goal, save, threats(bot).filter(t => t.visible))) return;
     }
@@ -2551,7 +2552,7 @@ class Survival {
     // from any drop (the day audit's two Nether falls, one into lava).
     const close = threats(bot).filter(t => t.distance <= 8);
     const heavy = heavyHitters(threats(bot), 10).length > 0;
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     // A deep drop two blocks off is the edge too, with a mob close: an
     // arrow's knockback and a step of the fight carried mid-100-d two blocks
     // and down a twenty-one-block shaft (2026-09-25). Deep is half the
@@ -2842,11 +2843,11 @@ class Survival {
     const near = () => threats(bot, 12).filter(t => t.entity.name === 'creeper' && t.visible).sort((a, b) => a.distance - b.distance)[0];
     const creeper = near();
     if (!creeper || creeper.distance > LIGHTS_AT + 3) return false;
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     if (dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
     await move(bot, task, { label: 'creeper_back_off_waiting', keys: ['back'], sneak: false, why: 'backing from a creeper coming on while the stance is chosen',
       look: creeper.entity.position.offset(0, 1, 0), maxMs: 600, tick: 50,
-      until: () => stop() || !near() || near().distance > LIGHTS_AT + 3 || dropWithin(bot, bot.entity.position.floored(), 1) });
+      until: () => stop() || !near() || near().distance > LIGHTS_AT + 3 || dropWithin(bot, feetCell(bot), 1) });
     return true;
   }
 
@@ -2855,7 +2856,7 @@ class Survival {
     const creeper = danger.find(t => t.entity.name === 'creeper' && t.distance <= 6);
     if (!creeper) return false;
     const armed = /_(sword|axe)$/.test(defenseWeapon(bot)?.name || '');
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     // Backing out blind is only safe with no drop or lava behind.
     if (!armed || dropWithin(bot, feet, 2) || lavaBeside(bot, feet)) return false;
     // Other creepers are the same dance, the nearest hit and all of them
@@ -2965,7 +2966,7 @@ class Survival {
     const inReach = t => t.distance <= 3.2 || canStrike(bot, t.entity);
     const { SCAFFOLD } = require('./pillar-recovery');
     const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     const headroom = [1, 2, 3].every(dy => { const b = bot.blockAt(feet.offset(0, dy, 0)); return b && b.boundingBox === 'empty' && !/lava|water/.test(b.name); });
     // And the climb's own test for each of its two blocks (pillar-recovery
     // climbStop): offered where the climb stops at once, mid-244-ab-nether-3's
@@ -3127,7 +3128,7 @@ class Survival {
     // mid-244-x's fight at a skeleton in a mineshaft was offered as a kill,
     // ran, ended at once, and the one stance left was dug under its arrows
     // (note 447).
-    const chargeRefused = t => t.distance > 8 || Math.abs(t.entity.position.y - bot.entity.position.y) > 2 || besideDrop(bot, bot.entity.position.floored()) || lavaBeside(bot, t.entity.position.floored());
+    const chargeRefused = t => t.distance > 8 || Math.abs(t.entity.position.y - bot.entity.position.y) > 2 || besideDrop(bot, feetCell(bot)) || lavaBeside(bot, t.entity.position.floored());
     const noStep = nearest && ((shootersOnly && chargeStopsAt(bot, nearest.entity)?.blocks === 0) ||
       (shooter(nearest.entity) && !inReach(nearest) && !coming.some(inReach) && chargeRefused(nearest)));
     const shotsIn15 = noStep ? Math.round(mobs.filter(m => m.shoots && m.visible !== false && !m.quiet).reduce((n, m) => n + (m.hitsBot || 0) * 15 / (m.every || 2), 0) * 10) / 10 : 0;
@@ -3188,7 +3189,7 @@ class Survival {
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(groundBy.x, groundBy.y, groundBy.z), { timeoutMs: Math.max(4000, stepSeconds * 2000), stallMs: 1200, ...(footEdgeCells.size ? { edgeTaken: n => footEdgeCells.has(`${n.x},${n.y},${n.z}`) } : {}) }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { if (movements) movements.allow1by1towers = towers; }
-          const at = bot.entity.position.floored();
+          const at = feetCell(bot);
           if (Math.hypot(at.x - groundBy.x, at.z - groundBy.z) > 1.5) return false;
           return options.fight.run();
         } };
@@ -3231,7 +3232,7 @@ class Survival {
       options.out_of_the_push = { expects: { damage: stepCost.damage, seconds: stepCost.seconds, oneHit },
         description: `Step ${footing.steps} block${footing.steps === 1 ? '' : 's'} back from the edge to footing at (${cell.x}, ${cell.y}, ${cell.z}), ${off} blocks off, where a push from the ${said} cannot carry the bot over a drop, and stand there, striking what comes to arm's length${step.crouched ? `; ${step.beside} of the ${footing.steps} cells of its way lie beside the drop, walked crouched` : ''}.${window}${thereSays}${edge}` + costSays(stepCost, bot.health, mobs, { doing: 'stepping there', done: 'There' }),
         run: async () => {
-          const here = bot.entity.position.floored();
+          const here = feetCell(bot);
           if (here.equals(cell)) {
             // Held there: asked again once a push from where the ghast is
             // now would carry the bot over from this cell after all.
@@ -3248,7 +3249,7 @@ class Survival {
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: Math.max(3000, step.seconds * 3000), stallMs: 1200, edgeTaken: n => wayCells.has(`${n.x},${n.y},${n.z}`) }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; walkWhy = err.message; }
           finally { if (movements) movements.allow1by1towers = towers; }
-          if (bot.entity.position.floored().equals(cell)) return true;
+          if (feetCell(bot).equals(cell)) return true;
           const short = Math.round(cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
           this.state.stanceWhy = `the step to (${cell.x}, ${cell.y}, ${cell.z}) ended ${short} blocks short of it${walkWhy ? `: ${walkWhy}` : ''}`;
           return false;
@@ -3624,7 +3625,7 @@ class Survival {
     // safeExcavation), and another side is dug instead.
     const dug = this.state.bunkerDug, inDug = require('./bunker').inBunker(bot, dug);
     const bunkerMs = nearWall(bot, centroid(danger), { dug }) ? require('./bunker').bunkerDigMs(bot, centroid(danger), { dug }) : Infinity;
-    const undug = !inDug && Number.isFinite(bunkerMs) ? require('./bunker').liquidBehind(bot, bot.entity.position.floored(), centroid(danger)) : [];
+    const undug = !inDug && Number.isFinite(bunkerMs) ? require('./bunker').liquidBehind(bot, feetCell(bot), centroid(danger)) : [];
     const undugSays = undug.length ? ` Not dug where ${undug.length === 1 ? 'there is' : 'there are'} ${undug.slice(0, 3).join('; ')}: a cell opened there lets it in, and lava in a tunnel spreads faster than a body moves through it.` : '';
     // The biters at the bot before it is in follow it in and are fought
     // there together, as here; the doorway holds back those that come after.
@@ -3754,7 +3755,7 @@ class Survival {
           let walkWhy = null;
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000, (coverEdge?.seconds || 0) * 3000), stallMs: 1200, ...(coverEdgeCells.size ? { edgeTaken: n => coverEdgeCells.has(`${n.x},${n.y},${n.z}`) } : {}) }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; walkWhy = err.message; }
-          const there = bot.entity.position.floored().equals(cover.cell);
+          const there = feetCell(bot).equals(cover.cell);
           if (there) { hideAt(cover.cell); return true; }
           // Not there: why, said, and the spot passed over from here.
           const moved = Math.round(bot.entity.position.distanceTo(from) * 10) / 10, short = Math.round(cover.cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
@@ -4403,7 +4404,7 @@ class Survival {
     // pillar, offered and then refused by its own headroom check).
     for (let n = 0; n < 8 && bot.entity.onGround === false && !bot.entity.isInWater; n++) { task.check(); await sleep(100); }
     const kinds = [...new Set(danger.map(t => t.entity.name))].sort().join(',');
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     const held = this.state.stance;
     // Leaving the mobs be ends at the first hit, as the option says: held
     // until six health was gone, mid-92-g stood working in the Nether under
@@ -4642,7 +4643,7 @@ class Survival {
       const kept = this.lastApart?.mobs.length || this.lastApart?.round?.length ? apartSays(bot, this.lastApart).trim() : null;
       const state = { ...(kept ? { noWayToTheBot: kept } : {}), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
-        dropWithinThreeBlocks: require('./terrain').dropFacts(bot, bot.entity.position.floored(), 3) || false,
+        dropWithinThreeBlocks: require('./terrain').dropFacts(bot, feetCell(bot), 3) || false,
         darkHere: darkHere(bot),
         // Listed apart, those that cannot get to the bot (note 566).
         threats: danger.filter(t => !this.lastApart?.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
@@ -4924,7 +4925,7 @@ class Survival {
     const creepers = this.creepersOfRun(danger), unsteer = this.steerFromCreepers(movements, creepers);
     try {
       const scout = this.state.retreatScout;
-      const fresh = scout?.pastReach && Date.now() - scout.at < 2000 && scout.feet === `${bot.entity.position.floored()}`;
+      const fresh = scout?.pastReach && Date.now() - scout.at < 2000 && scout.feet === `${feetCell(bot)}`;
       let p = fresh ? pos(scout.pastReach.destination) : null;
       if (!p) {
         const found = this.reachFootings(danger);
@@ -4950,7 +4951,7 @@ class Survival {
       // Beside lava, one knockback is the end: the dream run died that way at
       // its pouring spot, in full iron, with the diamond pickaxe. Get two
       // blocks from the lava first, whatever the mob does meanwhile.
-      if (lavaBeside(bot, bot.entity.position.floored())) {
+      if (lavaBeside(bot, feetCell(bot))) {
         const dry = footing.filter(p => p.distanceTo(bot.entity.position) <= 8).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
         for (const p of dry.slice(0, 6)) {
           const route = await surveyRoute(bot, task, movements, new goals.GoalBlock(p.x, p.y, p.z), 150);
@@ -4968,7 +4969,7 @@ class Survival {
       }
       // The way the stance question already found from here, if it is fresh.
       const scout = this.state.retreatScout;
-      const fresh = scout && !only && gain === 4 && Date.now() - scout.at < 2000 && scout.feet === `${bot.entity.position.floored()}`;
+      const fresh = scout && !only && gain === 4 && Date.now() - scout.at < 2000 && scout.feet === `${feetCell(bot)}`;
       // Every candidate already tried a moment ago from here, none a way.
       const noWay = n => n ? `none of the ${plural(n, 'spot')} further from every mob has a route that passes none of them` : 'no footing near is further from every mob';
       if (fresh && !scout.destination && scout.tried >= scout.candidates) { delete this.state.retreatScout; this.state.failWhy = noWay(scout.candidates); return false; }
@@ -5050,7 +5051,7 @@ class Survival {
     const bot = this.bot;
     const movements = bot.pathfinder?.movements;
     if (!movements || typeof surveyRoute !== 'function') return null;
-    const feet = `${bot.entity.position.floored()}`;
+    const feet = `${feetCell(bot)}`;
     const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
     Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
     const creepers = this.creepersOfRun(danger), unsteer = this.steerFromCreepers(movements, creepers);
@@ -5083,7 +5084,7 @@ class Survival {
     // No route away from here a moment ago is no route now: the search is
     // a second of route surveys, and in the replay of trial 57's ledge each
     // one was a second without a swing while a zombie hit.
-    const here = bot.entity.position.floored(), none = this.state.noRoute;
+    const here = feetCell(bot), none = this.state.noRoute;
     if (!(none && Date.now() - none.at < 5000 && here.distanceTo(pos(none)) < 1.5)) {
       if (await this.runAway(task, goal, save, danger)) { delete this.state.noRoute; return; }
       this.state.noRoute = { x: here.x, y: here.y, z: here.z, at: Date.now() };
@@ -5211,7 +5212,7 @@ class Survival {
   async railSpan(task, goal, save, { ahead = null, blast = false } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     // The side a span being laid goes on is left open for it.
     const onward = ahead && require('./bridging').stepToward(feet, ahead);
     // The sides a push goes toward first (leeFirst): they were walled in a
@@ -5268,7 +5269,7 @@ class Survival {
 
   async pillarFrom(task, goal, save, danger) {
     const bot = this.bot;
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     if (onPillarTop(bot, this.state.pillar)) return false;
     const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
     if (bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) < 2) return false;
@@ -5283,7 +5284,7 @@ class Survival {
       // mid-229-r chose the pillar again twice with the zombies still in
       // the cell its block went into (note 526).
       const inCell = inOwnCells(bot, danger, feet);
-      const stop = require('./pillar-recovery').climbStop(bot, bot.entity.position.floored());
+      const stop = require('./pillar-recovery').climbStop(bot, feetCell(bot));
       this.state.stanceWhy = inCell.length ? `${placed ? `${placed} of 2 blocks went down; ` : 'no block went down: '}${ownCellsSays(inCell).replace(/^./, c => c.toLowerCase())}, where the pillar's block goes` : `${placed} of 2 blocks went down${stop ? `: the climb stops at ${stop}` : ''}`;
       return false;
     }
@@ -5303,7 +5304,7 @@ class Survival {
     if (method === 'shaft_pocket') return this.shaftPocket(task, goal, save);
     if (method === 'night_mine') {
       if (!this.canNightMine(goal)) return false;
-      this.state.nightMine ||= { startedAt: Date.now(), origin: { ...bot.entity.position.floored() }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
+      this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feetCell(bot) }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
       return this.nightMine(task, goal, save);
     }
     return false;
@@ -5332,7 +5333,7 @@ class Survival {
     if (!refuge || shelter.inside(bot, refuge)) return null;
     const o = pos(refuge.origin);
     if (o.distanceTo(bot.entity.position) <= 6 || !bot.pathfinder?.movements) return null;
-    const here = `${bot.entity.position.floored()}`, key = `${o}`;
+    const here = `${feetCell(bot)}`, key = `${o}`;
     const known = (this._refugeWays ||= new Map()).get(key);
     this._refugeWays.delete(key);
     if (!keep && known && known.from === here && Date.now() - known.at < 15000) return known.status;
@@ -5411,7 +5412,7 @@ class Survival {
       if (!resting('seal_here')) options.seal_here = { description: (stock >= 12 ? `Seal a two-block pocket around the bot where it stands with the ${stock} blocks carried; quick, and kept for later nights.` : `Dig into the ground where the bot stands and close it over (${stock} blocks carried, too few for a pocket on open ground).`) + pocketRace(bot, near) + (creeperNoteFor(near) || creeperSays(bot)) };
       if (!resting('shaft_pocket')) {
         const column = this.shaftColumn();
-        const found = column.bottom ? ` A dry column is found${column.start.equals(bot.entity.position.floored()) ? ' underfoot' : ` ${Math.round(column.start.distanceTo(bot.entity.position))} blocks over`}: ${column.start.y - column.bottom.y} blocks down.` : ` ${column.none.charAt(0).toUpperCase()}${column.none.slice(1)}; chosen, it fails and the question comes again.`;
+        const found = column.bottom ? ` A dry column is found${column.start.equals(feetCell(bot)) ? ' underfoot' : ` ${Math.round(column.start.distanceTo(bot.entity.position))} blocks over`}: ${column.start.y - column.bottom.y} blocks down.` : ` ${column.none.charAt(0).toUpperCase()}${column.none.slice(1)}; chosen, it fails and the question comes again.`;
         // The creeper's race said here too: mid-211-a chose the shaft pocket
         // at 9.2 health told "done in seconds", a creeper eight blocks off
         // and said only beside the room, and it followed the bot down and
@@ -5430,7 +5431,7 @@ class Survival {
       // seal_here eleven times, and the bed was never on this list.
       if (bedCarried(bot) && bot.game?.dimension === 'overworld' && !sleepWaiting(this) && !resting('bed_nook') && !isSetAside(this, 'bed_nook', 'here')) {
         const now = sleepable(bot);
-        const nook = bedNook(bot, goal, now ? {} : { sealed: true, shell: shelter.shell(bot.entity.position.floored()) });
+        const nook = bedNook(bot, goal, now ? {} : { sealed: true, shell: shelter.shell(feetCell(bot)) });
         if (nook) options.bed_nook = { description: now ? `Put the carried bed down here instead of a shelter: ${nookSays(bot, nook)}${creeperSays(bot)}`
           : `Seal a pocket where the bot stands, as seal_here does (${stock} blocks carried), and at bedtime ${nookSays(bot, nook, { pocket: true, later: true })}${pocketRace(bot, near)}${creeperNoteFor(near)}` };
       }
@@ -5441,7 +5442,7 @@ class Survival {
         const site = bedSiteNear(bot);
         if (site) options.bed_beside = { description: `Seal a pocket where the bot stands, as seal_here does (${stock} blocks carried), and at bedtime (from ${SLEEP_FROM}, about ${Math.max(0, Math.round((SLEEP_FROM - (bot.time?.timeOfDay ?? 0)) / 20))} seconds off) open it, put the carried bed down on level ground ${Math.round(site.foot.distanceTo(bot.entity.position))} blocks off and sleep: the night passes in seconds instead of about ${minutesToDawn(bot)} real minutes in the pocket, and the bed is picked back up after. Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${monstersByBed(bot, site.foot) || 'none'} now; refused, the pocket is there to go back to.${pocketRace(bot, near)}${creeperNoteFor(near)}` };
       }
-      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: `Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes, about ${minutesToDawn(bot)} real minutes of the run to dawn${workWaiting(goal, bot) ? `, with ${workWaiting(goal, bot)} waiting` : ''}. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}` + creeperSays(bot) };
+      if (this.canNightMine(goal) && !resting('night_mine')) options.night_mine = { description: `Dig a mine from here for the night: a staircase into the rock is shelter and a mine at once, and gains ore while the night passes, about ${minutesToDawn(bot)} real minutes of the run to dawn${workWaiting(goal, bot) ? `, with ${workWaiting(goal, bot)} waiting` : ''}. ${rockHolds(bot, feetCell(bot), attemptsFor(this))}` + creeperSays(bot) };
       if (!Object.keys(options).length) {
         // Nowhere, nothing to build with, no ground to dig: failing that every
         // tick was trial 9's loop at minute ten, with no wood yet to make any
@@ -5541,7 +5542,7 @@ class Survival {
       try {
         const supply = shelter.supplyTarget(bot, required - stock);
         await this.actions.acquireStep(bot, task, supply.item, supply.count, goal, save,
-          { minimumMiningY: Math.min(refuge.origin.y, bot.entity.position.floored().y) - 1 });
+          { minimumMiningY: Math.min(refuge.origin.y, feetCell(bot).y) - 1 });
       } finally { task.interruptCheck = outerCheck; }
       return;
     }
@@ -5665,7 +5666,7 @@ class Survival {
   async sealHere(task, goal, save, danger) {
     const bot = this.bot;
     if (shelter.materialStock(bot) < 12) return this.digIn(task, goal, save, danger);
-    const origin = bot.entity.position.floored();
+    const origin = feetCell(bot);
     if (isSetAside(this, 'seal_here', `${origin}`)) return false;
     let refuge = this.state.shelters.find(s => s.origin.x === origin.x && s.origin.y === origin.y && s.origin.z === origin.z && s.dimension === bot.game.dimension);
     if (!refuge) { refuge = { origin: { ...origin }, dimension: bot.game.dimension, createdAt: new Date().toISOString(), emergency: true }; this.state.shelters.push(refuge); save(); }
@@ -5728,7 +5729,7 @@ class Survival {
   async shaftPocket(task, goal, save) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function' || typeof this.actions.dig !== 'function') return false;
-    const column = this.shaftColumn(), spot = column.spot, here = bot.entity.position.floored();
+    const column = this.shaftColumn(), spot = column.spot, here = feetCell(bot);
     if (column.resting) return false;
     const { start = null, bottom = null } = column;
     if (!bottom) { setAside(this, 'shaft_pocket', spot, 'no dry rock straight down within four blocks', 600000); return false; }
@@ -5748,7 +5749,7 @@ class Survival {
     const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
     const handSoft = b => !!b && (typeof b.digTime === 'function' ? b.digTime(null, false, false, false, [], {}) <= 1000 : /^(dirt|grass_block|podzol|mycelium|coarse_dirt|rooted_dirt|mud|clay|moss_block)$/.test(b.name));
     // Set aside by the column stood on, not for the whole world.
-    const spot = `${bot.entity.position.floored().x},${bot.entity.position.floored().z}`;
+    const spot = `${feetCell(bot).x},${feetCell(bot).z}`;
     if (isSetAside(this, 'shaft_pocket', spot)) return { none: 'a shaft failed on this spot a short while ago', resting: true, spot };
     const wet = c => /water|lava/.test(bot.blockAt(c)?.name || '');
     const sides = c => [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)].map(d => c.plus(d));
@@ -5774,7 +5775,7 @@ class Survival {
     // The column underfoot, or the nearest one within four blocks on the
     // same ground: on the island's edge the first block down had the sea
     // beside it, and the middle of the island did not.
-    const here = bot.entity.position.floored();
+    const here = feetCell(bot);
     const columns = [here];
     for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) if (dx || dz) columns.push(here.offset(dx, 0, dz));
     columns.sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
@@ -5791,7 +5792,7 @@ class Survival {
     if (!start.equals(here)) {
       try { await this.actions.navigate(bot, task, new goals.GoalBlock(start.x, start.y, start.z), { timeoutMs: 8000, stallMs: 3000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-      if (!bot.entity.position.floored().equals(start)) { setAside(this, 'shaft_pocket', spot, 'could not stand on the dry column', 120000); return false; }
+      if (!feetCell(bot).equals(start)) { setAside(this, 'shaft_pocket', spot, 'could not stand on the dry column', 120000); return false; }
     }
     // A creeper that reaches the open shaft before the cap follows the bot
     // into it: counted as the seal counts it, before every block (note 226).
@@ -5890,7 +5891,7 @@ class Survival {
     if (watcher.distance > 4.5 || typeof this.actions.dig !== 'function') return false;
     if (!/_(sword|axe)$/.test(defenseWeapon(bot)?.name || '')) return false;
     if (!chosen && (watcher.entity.name === 'creeper' || (bot.health ?? 20) < 16 || threats(bot, 16).filter(t => t.entity !== watcher.entity).length > 1)) return false;
-    const feet = bot.entity.position.floored(), at = watcher.entity.position;
+    const feet = feetCell(bot), at = watcher.entity.position;
     const dx = at.x - (feet.x + 0.5), dz = at.z - (feet.z + 0.5);
     const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
     const cells = [feet.plus(step).offset(0, 1, 0), feet.plus(step)].filter(c => bot.blockAt(c)?.boundingBox === 'block' && bot.blockAt(c).diggable);
@@ -5908,7 +5909,7 @@ class Survival {
     if (typeof this.actions.place !== 'function') return false;
     const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 4)?.name;
     if (!material) return false;
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     const cells = [];
     for (const d of [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]) for (const dy of [0, 1]) {
       const p = feet.plus(d).offset(0, dy, 0);
@@ -5943,7 +5944,7 @@ class Survival {
     // four blocks up a Nether fortress, the dream run's floor went from
     // under it and it fell thirty blocks (2026-09-24 01:39). The charge
     // neither digs, towers nor drops more than two on its way.
-    const feet = bot.entity.position.floored(), t = nearest.entity.position;
+    const feet = feetCell(bot), t = nearest.entity.position;
     if (Math.abs(t.y - bot.entity.position.y) > 2 || besideDrop(bot, feet)) return false;
     this.report(goal, save, { action: 'charge', target: nearest.entity.name, distance: Number(nearest.distance.toFixed(1)) });
     const movements = bot.pathfinder?.movements;
@@ -6029,14 +6030,14 @@ class Survival {
       description: `${step} down at the ${name} ${r1(target.distance)} blocks off with ${weaponSays}.${rule}${kill}${knock}${way}${food}${othersSay}`,
       run: async () => {
         this.report(goal, save, { action: 'strike_from_above', target: e.name, to: { ...stand.cell }, health: bot.health, stance: true });
-        const feet = bot.entity.position.floored();
+        const feet = feetCell(bot);
         if (!feet.equals(stand.cell)) {
           const movements = bot.pathfinder?.movements, kept = movements && { allow1by1towers: movements.allow1by1towers, canDig: movements.canDig, maxDropDown: movements.maxDropDown };
           if (movements) Object.assign(movements, { allow1by1towers: false, canDig: false, maxDropDown: 0 });
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(stand.cell.x, stand.cell.y, stand.cell.z), { timeoutMs: 4000, stallMs: 1500 }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { if (movements) Object.assign(movements, kept); }
-          const at = bot.entity.position.floored();
+          const at = feetCell(bot);
           if (!at.equals(stand.cell)) throw Object.assign(new Error(`the step to (${stand.cell.x}, ${stand.cell.y}, ${stand.cell.z}) above the ${name} ended at (${at.x}, ${at.y}, ${at.z})`), { name: 'StanceFailed' });
         }
         // Crouched at the edge: a player crouched does not walk off it.
@@ -6167,7 +6168,7 @@ class Survival {
           try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 4000, stallMs: 1500 }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           finally { if (movements) Object.assign(movements, kept); }
-          if (!bot.entity.position.floored().equals(cell)) throw Object.assign(new Error(`the step to (${cell.x}, ${cell.y}, ${cell.z}) ended at ${bot.entity.position.floored()}`), { name: 'StanceFailed' });
+          if (!feetCell(bot).equals(cell)) throw Object.assign(new Error(`the step to (${cell.x}, ${cell.y}, ${cell.z}) ended at ${feetCell(bot)}`), { name: 'StanceFailed' });
         };
         if (plan.kind === 'dig') {
           for (const c of plan.dug) {
@@ -6376,7 +6377,7 @@ class Survival {
     if (typeof this.actions.place !== 'function') return false;
     const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2)?.name;
     if (!material) return false;
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     // The cells of each wall still open: a one-high rail at the feet (rail
     // span) wants only the block on top. Needing both cells empty, mid-235-
     // p-fortress-7's take_cover beside its railed span placed nothing six
@@ -6440,7 +6441,7 @@ class Survival {
   // spawner's sixteen is.
   passageOut(from, { clear = PASSAGE_CLEAR, max = PASSAGE_MAX, also = [], sphere = false } = {}) {
     const bot = this.bot;
-    const feet = bot.entity.position.floored(), at = from.entity ? from.entity.position : from.offset(0.5, 0.5, 0.5);
+    const feet = feetCell(bot), at = from.entity ? from.entity.position : from.offset(0.5, 0.5, 0.5);
     const clearOf = q => also.every(a => Math.hypot(q.x + 0.5 - a.at.x, q.z + 0.5 - a.at.z) >= a.clear);
     const far = q => sphere ? Math.hypot(q.x + 0.5 - at.x, q.y - at.y, q.z + 0.5 - at.z) : Math.hypot(q.x + 0.5 - at.x, q.z + 0.5 - at.z);
     const away = feet.offset(0.5, 0, 0.5).minus(at);
@@ -6481,8 +6482,8 @@ class Survival {
   async tunnelOut(task, goal, save, refuge, creeper, passage) {
     const bot = this.bot;
     this.report(goal, save, { action: 'tunnel_out', origin: refuge.origin, direction: passage.direction, cells: passage.cells, from: creeper.entity.name, distance: Number(creeper.distance.toFixed(1)), health: bot.health });
-    const start = bot.entity.position.floored().offset(0.5, 0, 0.5);
-    let here = bot.entity.position.floored(), dug = 0;
+    const start = feetCell(bot).offset(0.5, 0, 0.5);
+    let here = feetCell(bot), dug = 0;
     // The cells surveyed, level or a stair down (passage.path); one
     // surveyed without them is the level run along its axis.
     const cells = passage.path || Array.from({ length: passage.cells }, (_, n) => { const at = here.plus(passage.dir.scaled(n + 1)); return { at, dig: [at, at.offset(0, 1, 0)] }; });
@@ -6733,7 +6734,7 @@ class Survival {
       // the bot stands all the same, or the pocket is left open: mid-243-m's
       // walk failed, the wall was never put back, and it was out among a
       // spider and a skeleton a moment later (the Fable advice on note 422).
-      if (!bot.entity.position.floored().equals(nook.stand)) {
+      if (!feetCell(bot).equals(nook.stand)) {
         try { await this.actions.navigate(bot, task, new goals.GoalBlock(nook.stand.x, nook.stand.y, nook.stand.z), { timeoutMs: 8000, stallMs: 3000 }); }
         catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
       }
@@ -6978,7 +6979,7 @@ class Survival {
     if (best >= keep) return null;
     const make = pickaxeCraftable(bot);
     if (make && !isSetAside(this, 'night_pickaxe', make)) return null;
-    const r = pickaxeReserve(bot, bot.entity.position.floored());
+    const r = pickaxeReserve(bot, feetCell(bot));
     const spare = make ? `the ${make.replaceAll('_', ' ')} it could make is set aside after a failed try` : `no spare can be made from what is carried (${r.sticksAvailable} sticks' worth of wood; a pickaxe is two sticks and three cobblestone or iron ingots, at a table)`;
     return `the best pickaxe has ${best} uses left, under the ${keep} kept for a dug climb out from here${r.blocksToOpenSky ? ` (${r.blocksToOpenSky} blocks of rock and ground overhead)` : ''}, and ${spare}: the mine would not dig a block`;
   }
@@ -7065,7 +7066,7 @@ class Survival {
       // stone pickaxe to nothing and could not dig out of its own shaft.
       return false;
     }
-    const feet = bot.entity.position.floored();
+    const feet = feetCell(bot);
     const mine = this.state.nightMine ||= { startedAt: Date.now(), origin: { ...feet }, heading: Math.floor(Math.random() * 4), failures: 0, mined: 0 };
     // Boxed in: every heading refused (water or lava behind the rock on all
     // four sides) turned the mine in place fourteen hundred times at a
@@ -7120,7 +7121,7 @@ class Survival {
         // Steps that do not move the bot at all: the server kept putting the
         // blocks back (a client and server that disagree), every step wore
         // the pickaxe by two, and twelve looks was more than the pickaxe had.
-        const at = bot.entity.position.floored();
+        const at = feetCell(bot);
         const key = `${at.x},${at.y},${at.z}`;
         mine.still = mine.still?.key === key ? { key, steps: mine.still.steps + 1 } : { key, steps: 0 };
         // Rested like any other failure: marked recorded when nothing was,
@@ -7248,7 +7249,7 @@ class Survival {
   // none known, up.
   lavaWays(task, goal, save) {
     const bot = this.bot;
-    const feet = bot.entity.position.floored(), feetY = feet.y;
+    const feet = feetCell(bot), feetY = feet.y;
     const isWater = c => [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water');
     const exit = lavaExit(bot, 6, { water: true });
     const wet = exit && isWater(exit) ? exit : null;
@@ -7304,7 +7305,7 @@ class Survival {
     // line to a cell round a corner swims into the rock (note 569). Each
     // cell is given the seconds a body takes to cross one in lava and a
     // second over; out of the lava ends it wherever it is.
-    const out = to => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (to && bot.entity.position.floored().x === to.x && bot.entity.position.floored().z === to.z));
+    const out = to => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (to && feetCell(bot).x === to.x && feetCell(bot).z === to.z));
     const walk = async (to, why) => {
       const route = to ? routeOf(routes, to) : null;
       const points = route?.length ? route : [to];
@@ -7442,7 +7443,7 @@ class Survival {
     }
     // The last dry footing, for the way back out of lava.
     if (bot.entity.onGround && !bot.entity.isInWater) {
-      const f = bot.entity.position.floored();
+      const f = feetCell(bot);
       const last = this.state.lastDry;
       if (!last || last.x !== f.x || last.y !== f.y || last.z !== f.z) this.state.lastDry = { x: f.x, y: f.y, z: f.z, dimension: String(bot.game?.dimension || '') };
     }
@@ -7479,8 +7480,8 @@ class Survival {
       // over the drop, and the route's first move was a pillar there; it
       // fell fourteen blocks, 15.1 to 4.1 (note 466). As the stance does.
       for (let n = 0; n < 8 && bot.entity.onGround === false && !bot.entity.isInWater; n++) { task.check(); await sleep(100); }
-      const deep = bot.entity.onGround === false ? null : dropNear(bot, bot.entity.position.floored(), 2);
-      if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, bot.entity.position.floored())) {
+      const deep = bot.entity.onGround === false ? null : dropNear(bot, feetCell(bot), 2);
+      if ((deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) || lavaBeside(bot, feetCell(bot))) {
         this.state.edgeTriedAt = Date.now();
         // With a creeper the pusher, the ground is away from it, and the walk
         // short: mid-230-m walked two seconds toward ground by the creeper,
@@ -7490,7 +7491,7 @@ class Survival {
         const cell = creeper ? firmGround(bot, 8, { margin: 3, awayFrom: creeper.entity.position }) : firmGround(bot, 8, { margin: 3 });
         if (cell) {
           this.report(goal, save, { action: 'off_the_edge', to: { ...cell }, from: threats(bot, 64).find(pusher)?.entity.name, drop: deep });
-          require('./terrain').holdOffEdge(bot, bot.entity.position.floored(), threats(bot, 64).map(t => t.entity));
+          require('./terrain').holdOffEdge(bot, feetCell(bot), threats(bot, 64).map(t => t.entity));
           // A shot on its way stops the walk for the shield: at the edge its
           // knockback is the fall the walk is getting away from. mid-243-e's
           // walk from a forty-block edge had gone half a block in a second
@@ -7704,7 +7705,7 @@ class Survival {
       const below = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
       const nightCost = night ? ` Until dawn is about ${minutesToDawn(bot)} real minutes of the run${waiting ? `, with ${waiting} waiting` : ''}.` : '';
       if (night && !watcher && !refused(this, 'survival:night_mine') && this.canNightMine(goal))
-        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, bot.entity.position.floored(), attemptsFor(this))}${nightCost}${outside}`, run: () => this.nightMine(task, goal, save) };
+        options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, feetCell(bot), attemptsFor(this))}${nightCost}${outside}`, run: () => this.nightMine(task, goal, save) };
       // Work that needs no walking: the ladder's next item made from what is
       // carried. Trial 30 sat out its second night in a pocket with 29 raw
       // iron, coal and a furnace in its pack, the armour the one thing left.

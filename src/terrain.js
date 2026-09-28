@@ -40,6 +40,27 @@ function supportCell(point) {
   return new Vec3(Math.floor(point.x), Math.ceil(point.y) - 1, Math.floor(point.z));
 }
 
+// The cell the feet are in. Standing on a block lower than a full one
+// (soul sand 0.875, a slab or a stair's low half 0.5, farmland and a path
+// 0.9375) the feet are above that block's cell, and the floored position is
+// the block itself, not the cell over it: mid-242-af-nether-3-fortress-5
+// stood in a fortress's nether wart bed on soul sand at y 52.875 and every
+// stance read its cell as the soul sand at 52 (note 618): its lines from
+// the blaze were tested at points 0.9 below its body and called it out of
+// sight while fireballs hit it, its walks to the cell it stood in never
+// arrived, and the ground for the sword was sought a block too low. As the
+// pathfinder takes its start: one up from a block the body rests on inside
+// that block's own cell.
+function feetCell(bot, p = bot.entity.position) {
+  const c = p.floored(), dy = p.y - c.y;
+  if (dy <= 1e-3 || typeof bot.blockAt !== 'function') return c;
+  const b = bot.blockAt(c);
+  if (!b || b.boundingBox !== 'block') return c;
+  // Resting on one of its shapes lower than a full block (a stair's low
+  // half, with its high half beside the feet, counts).
+  return b.shapes?.some(s => s[4] < 1 && dy >= s[4] - 1e-3) ? c.offset(0, 1, 0) : c;
+}
+
 // The cell the body stands in, by the block it rests on. Crouched at an
 // edge a player's middle hangs over the air, its box resting on the block
 // beside: the cell under the floored feet is open and the floor is a
@@ -512,4 +533,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { fallFrom, digExposes, hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { feetCell, fallFrom, digExposes, hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

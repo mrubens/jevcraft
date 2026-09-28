@@ -21,6 +21,7 @@ const { goals } = require('mineflayer-pathfinder');
 const ce = require('./combat-estimate');
 const bunker = require('./bunker');
 const terrain = require('./terrain');
+const { feetCell } = terrain;
 
 const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 const solid = b => b?.boundingBox === 'block';
@@ -45,7 +46,7 @@ const knockLands = (bot, c) => !terrain.dropAt(bot, c) && !terrain.dropWithin(bo
 
 // What a push does where the bot stands, said beside the drop (note 469's
 // pattern): the drop's distance against the push's.
-function knockSays(bot, feet = bot.entity.position.floored(), { what = 'A blaze\'s fireball that lands' } = {}) {
+function knockSays(bot, feet = feetCell(bot), { what = 'A blaze\'s fireball that lands' } = {}) {
   const drop = terrain.dropNear(bot, feet, 3);
   if (!drop || (drop.into !== 'lava' && drop.damage < 1)) return '';
   const pushes = Math.max(1, Math.ceil(drop.blocksAway / KNOCK));
@@ -57,7 +58,7 @@ function knockSays(bot, feet = bot.entity.position.floored(), { what = 'A blaze\
 // over it, two blocks to dig. Its mouth faces the blazes where the rock
 // allows. Already in one (rock on three sides and a roof, one side open),
 // nothing to dig.
-function inHole(bot, feet = bot.entity.position.floored()) {
+function inHole(bot, feet = feetCell(bot)) {
   if (!solid(bot.blockAt(feet.offset(0, 2, 0))) || !solid(bot.blockAt(feet.offset(0, -1, 0)))) return null;
   const open = SIDES.filter(s => !solid(bot.blockAt(feet.plus(s))) && !solid(bot.blockAt(feet.plus(s).offset(0, 1, 0))));
   if (open.length !== 1) return null;
@@ -142,7 +143,7 @@ function spawnerHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } 
 function windowSite(bot, from) {
   if (!from) return null;
   const { safeExcavation } = require('./tunneling');
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const dx = from.x - (feet.x + 0.5), dz = from.z - (feet.z + 0.5);
   const side = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
   const cells = [feet.plus(side).offset(0, 1, 0), feet.plus(side)];
@@ -159,7 +160,7 @@ function windowSite(bot, from) {
 // that `ok` takes. A walk passes no cell beside a mob that bites, nor one
 // a push from which is a fall.
 function walkTo(bot, ok, { steps = 8, avoid = [] } = {}) {
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const seen = new Set([`${feet}`]);
   let ring = [feet];
@@ -503,7 +504,7 @@ function volleyWatch(bot) {
           return `${e.id}@${round(e.position.distanceTo(bot.entity.position))}${charged(e) ? '*' : ''} ${Math.round(Math.acos(Math.max(-1, Math.min(1, (d.x * face.x + d.z * face.z) / n))) * 180 / Math.PI)}deg`; });
         debug('hurt', round(hp - bot.health), 'to', round(bot.health), bot._shieldRaised ? 'shield up' : 'shield down', `using ${bot.entity.metadata?.[8]}`,
           `raised ${Date.now() - (bot._dbgRaisedAt || 0)}ms ago (lowered ${Date.now() - (bot._dbgLoweredAt || 0)}ms ago, ${bot._dbgRaises} raises)`, bot.entity.metadata?.[0] & 1 ? 'alight' : '',
-          flamesTouching(bot).length ? 'in flames' : '', `${bot.entity.position.floored()}`, bot._survivalGoal?.step?.action || '', seen.join(' '));
+          flamesTouching(bot).length ? 'in flames' : '', `${feetCell(bot)}`, bot._survivalGoal?.step?.action || '', seen.join(' '));
       }
       hp = bot.health;
     });
@@ -618,12 +619,20 @@ function advanceOk(bot, facing, toward) {
 }
 
 // Where to stand to strike a blaze: ground within two blocks across of
-// it, near the bot's height, where a push lands on ground; the nearest to
-// the bot first. None, and the blaze hovers over lava or a drop.
+// it, at any height the sword reaches it from, where a push lands on
+// ground; the nearest to the bot first. None, and the blaze hovers over
+// lava or a drop. Sought at the bot's own height and a block either side
+// only, a blaze resting on a fortress stair four up had none: the stair
+// run beside it, walkable from the wart bed the bot stood in, was never
+// looked at, the charge at it went off after blazes 35 blocks away, and
+// it shot the bot for a minute and a half from 4.9 blocks (note 618). The
+// walk finds which of them it reaches.
 function strikeCells(bot, blaze) {
-  const p = blaze.position, y = bot.entity.position.floored().y, out = [];
-  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (const dy of [0, -1, 1]) {
-    const c = new Vec3(Math.floor(p.x) + dx, y + dy, Math.floor(p.z) + dz);
+  const p = blaze.position, by = Math.floor(p.y), out = [];
+  // Feet from four under the blaze's to two over: an eye 1.62 up within
+  // 3.2 of its middle 0.9 up.
+  for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) for (let dy = -4; dy <= 2; dy++) {
+    const c = new Vec3(Math.floor(p.x) + dx, by + dy, Math.floor(p.z) + dz);
     // A push lands on ground from it, with a block to spare: the sword's
     // fight takes a fireball's push and a biter's knock together, and the
     // wither drill's close-in went over a fortress edge three off into the
@@ -690,7 +699,7 @@ async function sortie(bot, task, goal, save, home, { reach = 5, ms = 3500 } = {}
     }
   } finally {
     bot.clearControlStates?.();
-    if (!bot.entity.position.floored().equals(home)) await walk(home).catch(() => {});
+    if (!feetCell(bot).equals(home)) await walk(home).catch(() => {});
   }
   return true;
 }
@@ -762,7 +771,8 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
   const { countOf } = require('./skills');
   volleyWatch(bot);
   const deadline = Date.now() + seconds * 1000, skip = new Map();
-  let kills = 0, target = null, walked = 0;
+  let kills = 0, target = null, walked = 0, chargeOn = null;
+  const walkFailedAt = new Map();
   const onDeath = e => { if (e?.name === 'blaze' && Date.now() - (bot._struck?.at || 0) < 6000) kills++; };
   bot.on('entityDead', onDeath);
   const live = e => e && bot.entities[e.id] === e && e.isValid !== false;
@@ -855,8 +865,15 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
         continue;
       }
       if (!live(target) || (skip.get(target.id) || 0) > Date.now()) {
+        // The charge is at one blaze, the nearest (charge_nearest): that
+        // one set aside (no ground the sword reaches it from, no walk
+        // there) or gone, it ends and says why, and is asked again. It
+        // went on to blazes 35 and 39 blocks off out of sight, and stood
+        // eight seconds walking at nothing under the one 4.9 off (note 618).
+        if (upTo !== Infinity && chargeOn) { stalled = `${stallSays()}; the blaze it charged ${live(chargeOn) ? 'is set aside' : 'is gone'}`; debug('charge: set aside', chargeOn.id); break; }
         const about = threats(bot, ce.RANGE.blaze).filter(t => t.entity.name === 'blaze' && !((skip.get(t.entity.id) || 0) > Date.now()));
         target = about.sort((a, b) => (b.visible - a.visible) || a.distance - b.distance)[0]?.entity || null;
+        if (upTo !== Infinity && target) chargeOn = target;
       }
       if (!target) {
         // All set aside for now (over lava, or no way yet): face the
@@ -869,8 +886,12 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
       }
       const cells = strikeCells(bot, target);
       goal.step = { action: 'close_in', blaze: target.id, distance: round(target.position.distanceTo(bot.entity.position)), kills, health: bot.health }; save?.();
+      // The nearest of its cells not yet found out of the walk's reach: a
+      // stand on a stair beside it may be walked to where one over a wall
+      // is not.
+      const failed = walkFailedAt.get(target.id) || new Set();
       if (!cells.length || !navigate) { debug('no ground under', target.id, target.position.floored()); stats.noGround++; skip.set(target.id, Date.now() + 6000); target = null; await sleep(150); continue; }
-      const to = cells[0], from = target.position.distanceTo(bot.entity.position);
+      const to = cells.find(c => !failed.has(`${c}`)) || cells[0], from = target.position.distanceTo(bot.entity.position);
       try {
         await navigate(bot, task, new goals.GoalBlock(to.x, to.y, to.z), { timeoutMs: 2500, stallMs: 1200, onFoot: true, sprint: true,
           stopWhen: () => !live(target) || canStrike(bot, target) || anyDue() });
@@ -881,7 +902,12 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
         // way; only a walk that got no nearer sets the blaze aside.
         const nearer = live(target) && from - target.position.distanceTo(bot.entity.position) >= 1;
         debug('walk failed', target.id, err.message, nearer ? '(nearer)' : '');
-        if (!nearer) { stats.walkFailed++; stats.lastWhy = String(err.message || err).slice(0, 80); skip.set(target.id, Date.now() + 6000); target = null; }
+        if (!nearer) {
+          stats.walkFailed++; stats.lastWhy = String(err.message || err).slice(0, 80);
+          failed.add(`${to}`); walkFailedAt.set(target.id, failed);
+          // Set aside once three of its cells, or all it has, found no walk.
+          if (failed.size >= Math.min(3, cells.length)) { walkFailedAt.delete(target.id); skip.set(target.id, Date.now() + 6000); target = null; }
+        }
       }
       // Under it and out of reach: it keeps its eyes near the bot's, so wait
       // a moment facing it rather than walking off.
@@ -1317,7 +1343,7 @@ async function holdBeat(bot, task, goal, save, face, home = null) {
   await sleep(250);
   return true;
 }
-const at = (bot, cell) => bot.entity.position.floored().equals(cell);
+const at = (bot, cell) => feetCell(bot).equals(cell);
 // Going to the stand, and into the hole: one step of it, for a stance
 // held and run again each tick. True while it holds or was carried out.
 async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = {}) {

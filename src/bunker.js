@@ -7,6 +7,7 @@ const { move } = require('./motion');
 // have no line of sight. Code digs the bunker, holds it and picks up the
 // rods; the sword and shield rhythm is the ordinary defence.
 const { Vec3 } = require('vec3');
+const { feetCell } = require('./terrain');
 const { goals } = require('mineflayer-pathfinder');
 const { threats } = require('./danger');
 const { defendNearby, raiseShield, lowerShield, defenseWeapon } = require('./combat');
@@ -99,7 +100,7 @@ const DOORWAY = /nether_brick|fence|netherrack|blackstone|basalt/;
 // dug it out and put them back in view.
 async function openToward(bot, task, from, { spare = [] } = {}) {
   if (!from) return false;
-  const here = bot.entity.position.floored();
+  const here = feetCell(bot);
   const dx = from.x - here.x, dz = from.z - here.z;
   const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
   const cell = here.plus(step);
@@ -187,7 +188,7 @@ function wallStands(bot, from, { distance = 16, count = 512 } = {}) {
 const WALK_TO_WALL = 5;
 function nearWall(bot, from, { within = WALK_TO_WALL, dug = null } = {}) {
   if (inBunker(bot, dug)) return true;
-  if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
+  if (bunkerSide(bot, feetCell(bot), from)) return true;
   const here = bot.entity.position;
   return wallStands(bot, from, { distance: within + 2 }).some(cell => cell.distanceTo(here) <= within);
 }
@@ -199,7 +200,7 @@ function nearWall(bot, from, { within = WALK_TO_WALL, dug = null } = {}) {
 // doorway (2026-09-23 23:16).
 function bunkerDigMs(bot, from, { dug = null } = {}) {
   if (inBunker(bot, dug)) return 0;
-  let feet = bot.entity.position.floored(), side = bunkerSide(bot, feet, from), ms = 0;
+  let feet = feetCell(bot), side = bunkerSide(bot, feet, from), ms = 0;
   if (!side) {
     const stand = wallStands(bot, from, { distance: WALK_TO_WALL + 2 }).find(c => c.distanceTo(bot.entity.position) <= WALK_TO_WALL);
     if (!stand) return Infinity;
@@ -246,7 +247,7 @@ const standable = (bot, c) => { const f = bot.blockAt(c), h = bot.blockAt(c.offs
   return passable(f) && passable(h) && !/lava|water|fire/.test(`${f?.name} ${h?.name}`) && solid(u) && !/magma|campfire/.test(u.name || ''); };
 // `skip`: cells not to end on (a walk to them just failed), still walked through.
 function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false } = {}) {
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const seen = new Set([`${feet}`]);
   // Each cell's way from the feet, for the walk's cells (note 610: the
@@ -276,7 +277,7 @@ function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false 
 // (a level step, one up with head room, one down), fewest steps first, or
 // null within `steps`: the way an escape's walk is counted by (note 610).
 function wayTo(bot, target, { steps = 24 } = {}) {
-  const feet = bot.entity.position.floored(), goal = `${target}`;
+  const feet = feetCell(bot), goal = `${target}`;
   if (`${feet}` === goal) return [];
   const from = new Map([[`${feet}`, null]]);
   let ring = [feet];
@@ -403,10 +404,10 @@ function nookSite(bot, shooters, { within = WALK_TO_WALL } = {}) {
 
 // Dig the nook found and step round its turn.
 async function digNook(bot, task, site, { navigate = null } = {}) {
-  if (!bot.entity.position.floored().equals(site.stand)) {
+  if (!feetCell(bot).equals(site.stand)) {
     if (!navigate) return null;
     await navigate(bot, task, new goals.GoalBlock(site.stand.x, site.stand.y, site.stand.z), { timeoutMs: Math.max(4000, site.walkMs * 3), stallMs: 1500 });
-    if (!bot.entity.position.floored().equals(site.stand)) return null;
+    if (!feetCell(bot).equals(site.stand)) return null;
   }
   for (const cell of site.cells) {
     task.check(); checkAir(bot);
@@ -417,13 +418,13 @@ async function digNook(bot, task, site, { navigate = null } = {}) {
 }
 
 async function reachWall(bot, task, from, navigate) {
-  if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
+  if (bunkerSide(bot, feetCell(bot), from)) return true;
   if (!navigate) return false;
   for (const cell of wallStands(bot, from).slice(0, 4)) {
     task.check();
     try { await navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2500 }); }
     catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; continue; }
-    if (bunkerSide(bot, bot.entity.position.floored(), from)) return true;
+    if (bunkerSide(bot, feetCell(bot), from)) return true;
   }
   return false;
 }
@@ -437,7 +438,7 @@ const DUG_MS = 5 * 60000;
 function inBunker(bot, dug, now = Date.now()) {
   if (!dug?.cells?.length || now - (dug.at || 0) > DUG_MS) return false;
   if (dug.dimension && String(dug.dimension) !== String(bot.game?.dimension || '')) return false;
-  const f = bot.entity.position.floored();
+  const f = feetCell(bot);
   return dug.cells.some(c => c.x === f.x && c.y === f.y && c.z === f.z);
 }
 const record = (bot, bunker, cells) => ({ ...bunker, cells: cells.map(c => ({ x: c.x, y: c.y, z: c.z })), at: Date.now(), dimension: String(bot.game?.dimension || '') });
@@ -447,13 +448,13 @@ async function digBunker(bot, task, goal, save, { from = null, navigate = null, 
   // digging.
   if (inBunker(bot, dug)) {
     const inside = new Vec3(dug.inside.x, dug.inside.y, dug.inside.z), watch = new Vec3(dug.watch.x, dug.watch.y, dug.watch.z);
-    if (!bot.entity.position.floored().equals(inside)) await stepTo(bot, task, inside);
+    if (!feetCell(bot).equals(inside)) await stepTo(bot, task, inside);
     await bot.lookAt?.(watch.offset(0.5, 1.2, 0.5), true);
     return { ...dug, mouth: new Vec3(dug.mouth.x, dug.mouth.y, dug.mouth.z), inside, watch, held: true };
   }
   const centre = from || centroid(blazes(bot));
   await reachWall(bot, task, centre, navigate);
-  const feet = bot.entity.position.floored();
+  const feet = feetCell(bot);
   const side = bunkerSide(bot, feet, centre);
   if (!side) throw new Error('No rock to dig a bunker into here');
   goal.step = { action: 'dig_bunker', side: { x: side.x, z: side.z }, depth: DEPTH }; save();
@@ -618,7 +619,7 @@ const COVER = new Set(['netherrack', 'cobblestone', 'cobbled_deepslate', 'stone'
 async function raiseCover(bot, task, from) {
   const material = bot.inventory.items().find(item => COVER.has(item.name));
   if (!material || !from) return false;
-  const here = bot.entity.position.floored();
+  const here = feetCell(bot);
   const dx = from.x - here.x, dz = from.z - here.z;
   const step = Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
   const cell = here.plus(step), floor = bot.blockAt(cell.offset(0, -1, 0));
