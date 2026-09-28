@@ -344,11 +344,11 @@ define({
 define({
   id: 'upkeep', area: 'resources', kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?',
-  trigger: 'Between work steps, when a pickaxe is nearly worn with the makings of a spare carried, fewer than three logs\' worth of wood are carried, or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes.',
+  trigger: 'Between work steps, when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs\' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).',
   source: 'src/work.js (upkeepStep)',
   options: [
-    { key: 'spare_pickaxe', label: 'make a spare stone pickaxe now', when: 'every pickaxe carried has under twenty-four uses left and cobblestone and sticks (or wood) are carried', level: 'root' },
-    { key: 'wood_reserve', label: 'cut a few logs now', when: 'on the game ladder, fewer than three logs\' worth of wood carried, in the Overworld', level: 'root' },
+    { key: 'spare_pickaxe', label: 'make a spare stone pickaxe now', when: 'every pickaxe carried has under twenty-four uses left, or on the game ladder their uses fall short of the step in hand and the way home after it, and cobblestone and sticks (or wood) are carried; said with the uses, the digs ahead and home, what the pockets make and the nearest wood known (note 543)', level: 'root' },
+    { key: 'wood_reserve', label: 'cut a few logs now', when: 'on the game ladder, fewer than six logs\' worth of wood carried, in the Overworld; said with the depth, the pickaxes\' uses against the step in hand and the way home, and the nearest wood known; chosen underground, it is the climb for the wood chosen', level: 'root' },
     { key: 'block_reserve', label: 'gather building blocks now', when: 'on the game ladder, fewer than sixteen building blocks carried', level: 'root' },
     { key: 'take_bed', label: 'take the base\'s bed along now', when: 'on the game ladder in the Overworld, the base\'s bed standing within a short walk and none carried', level: 'root' },
     { key: 'food_reserve', label: 'find food before dark', when: 'on the game ladder in the Overworld, less than a kit\'s food carried in the last minutes of daylight', level: 'root' },

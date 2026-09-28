@@ -197,7 +197,18 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // Said alike whichever rung is first: "the ladder's next step" beside
   // "ahead of the ladder's order" was a thumb on the scale (the critical
   // review, 2026-09-26). The first is still the fallback.
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+}
+// A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
+// one under a fifth of its uses (or sixty-four) as worn, and said only
+// "stone pickaxe", mid-220-h's rung read as the first pickaxe while its
+// iron one had twelve uses 66 blocks down (note 543). What those uses
+// cover, and what the pockets make, said with it.
+function spareSays(bot, goal, rung) {
+  if (!bot?.inventory?.items || !/_pickaxe$/.test(rung.phase || '') || !bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return '';
+  let budget = null;
+  try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal || {}); } catch (_) { budget = null; }
+  return budget ? ` A spare: the ladder counts a pickaxe under a fifth of its uses (or 64) as worn. ${budget.says}` : '';
 }
 
 // A second bed to carry, once the base's is claimed and none is in the

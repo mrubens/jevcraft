@@ -342,9 +342,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `surface_trip`
 
-**The step in hand wants the surface and the bot is underground: climb to open sky for it, leave the step for now and go on down here with the ladder's next one, or, for a portal site, dig one out of the rock here?**
+**The step in hand wants the surface and the bot is underground: climb to open sky for it, leave the step for now and go on down here with the ladder's next one, dig the ore in view first with the uses the climb does not need, or, for a portal site, dig one out of the rock here?**
 
-- When: Underground in the Overworld, the work's step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with, or for a portal site with one that can be dug out here; asked when the climb would begin, and held to the top once chosen.
+- When: Underground in the Overworld, the work's step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with (the rungs after it that want the same climb are left with it), or for a portal site with one that can be dug out here; asked when the climb would begin, and held to the top once Jev chose it (a climb made with nothing else on offer holds nothing and is looked at again; wood chosen at upkeep is its climb chosen) (note 543).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -353,7 +353,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `climb` | root | climb to open sky for it | always; said with the height, the quicker way out and its time, the pickaxe uses it wears, and the way back down it leaves |
-| `stay_below` | root | leave the step thirty minutes and go on with the ladder's next step here | the ladder has another step to go on with, and it is the work's turn |
+| `stay_below` | root | leave the step thirty minutes and go on with the ladder's next step here | the ladder has another step to go on with that does not want the same climb (those that do are left with it, and named), and it is the work's turn; said with the pickaxes' uses against the step in hand and the way home, what the pockets make and the nearest wood known (note 543) |
+| `mine_first` | root | dig the ore in view first with the uses the climb does not need, then climb | on the game ladder at the work's turn, a pickaxe carried, an ore it can mine within sixteen blocks with no lava beside it, and more uses carried than the climb's quicker way digs; said with the uses, the climb's digs and the spare, and asked again after each ore (note 543) |
 | `dig_site` | root | dig a site for the portal frame out of the rock where the bot stands | the need is a portal site, a pickaxe carried, and a site takes in the bot's feet whose frame and walkways are natural rock to dig, with solid floor and no water, lava or falling block beside; said with the blocks, the seconds and the uses, and how far it is from the lava chosen to cast beside, where the climb says how far above that lava the frame would go (note 531) |
 
 ### `leave_nether`
@@ -588,7 +589,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?**
 
-- When: Between work steps, when a pickaxe is nearly worn with the makings of a spare carried, fewer than three logs' worth of wood are carried, or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes.
+- When: Between work steps, when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).
 - Decision tree, choice; stakes low; ledger kind `upkeep`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -596,8 +597,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `spare_pickaxe` | root | make a spare stone pickaxe now | every pickaxe carried has under twenty-four uses left and cobblestone and sticks (or wood) are carried |
-| `wood_reserve` | root | cut a few logs now | on the game ladder, fewer than three logs' worth of wood carried, in the Overworld |
+| `spare_pickaxe` | root | make a spare stone pickaxe now | every pickaxe carried has under twenty-four uses left, or on the game ladder their uses fall short of the step in hand and the way home after it, and cobblestone and sticks (or wood) are carried; said with the uses, the digs ahead and home, what the pockets make and the nearest wood known (note 543) |
+| `wood_reserve` | root | cut a few logs now | on the game ladder, fewer than six logs' worth of wood carried, in the Overworld; said with the depth, the pickaxes' uses against the step in hand and the way home, and the nearest wood known; chosen underground, it is the climb for the wood chosen |
 | `block_reserve` | root | gather building blocks now | on the game ladder, fewer than sixteen building blocks carried |
 | `take_bed` | root | take the base's bed along now | on the game ladder in the Overworld, the base's bed standing within a short walk and none carried |
 | `food_reserve` | root | find food before dark | on the game ladder in the Overworld, less than a kit's food carried in the last minutes of daylight |

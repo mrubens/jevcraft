@@ -292,13 +292,19 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled });
 }
 
-const spareDue = bot => {
+// A spare is on offer when every pickaxe is nearly worn, or when the uses
+// carried fall short of the step in hand and the way home after it
+// (pickaxe-budget.js), with the makings in the pockets. Short was not
+// said: mid-231-r went down 42 blocks of staircase with 226 uses and no
+// wood, some 350 digs of step and climb, and the last pickaxe broke on
+// the way up (notes 538, 543).
+const spareDue = (bot, budget = null) => {
   if (bot.game?.gameMode === 'creative') return false;
   const pickaxes = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
-  return pickaxes.length > 0 && pickaxes.every(i => remainingUses(bot, i) < SPARE_PICKAXE_DURABILITY) && sparePickaxeMaterials(bot);
+  return pickaxes.length > 0 && (pickaxes.every(i => remainingUses(bot, i) < SPARE_PICKAXE_DURABILITY) || !!budget?.short) && sparePickaxeMaterials(bot);
 };
-async function maintainPickaxe(bot, task, goal, save) {
-  if (!spareDue(bot)) return false;
+async function maintainPickaxe(bot, task, goal, save, budget = null) {
+  if (!spareDue(bot, budget)) return false;
   if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
   await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
   return true;
@@ -320,10 +326,14 @@ const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.
 // a block every twenty-three seconds for four minutes.
 const woodDue = (bot, goal) => reserveWeather(bot) && woodUnits(bot) < WOOD_RESERVE && /overworld/.test(String(bot.game?.dimension || 'overworld')) && !isSetAside(goal, 'block_reserve', 'wood');
 const blocksDue = (bot, goal) => { const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy'); return reserveWeather(bot) && blockStock(bot) < BLOCK_RESERVE && !isSetAside(goal, 'block_reserve', 'gather'); };
+// Wood chosen at upkeep is the climb for it chosen, said there with the
+// depth and the pickaxes: not asked again as a surface trip (note 543).
+const LOG_NEED = /\blog\b|wood/, UPKEEP_WOOD_MS = 15 * 60 * 1000;
 async function gatherWood(bot, task, goal, save) {
   const have = woodUnits(bot);
   const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
-  goal.step = { action: 'wood_reserve', item: species, have }; save();
+  goal.step = { action: 'wood_reserve', item: species, have };
+  goal.surfaceTrip = { need: 'wood', pick: 'climb', asked: true, by: 'upkeep', at: new Date().toISOString() }; save();
   try { await acquireStep(bot, task, species, countOf(bot, species) + Math.ceil(WOOD_RESERVE + 1 - have), goal, save); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'wood', err, 600000); }
   return true;
@@ -419,21 +429,35 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
   const options = {};
   const worn = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name.replaceAll('_', ' ')} (${remainingUses(bot, i)} uses left)`);
-  if (spareDue(bot)) options.spare_pickaxe = { description: `Make a stone pickaxe now, a spare: the pickaxes carried are nearly worn out (${worn.join(', ')}), and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.`, run: () => maintainPickaxe(bot, task, goal, save) };
+  // The uses carried against the step in hand and the way home after it,
+  // looked at every pass; the wood known is looked for only when asking.
+  let budget = null;
+  if (goal.kind === 'win' && worn.length && bot.game?.gameMode !== 'creative') { try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal, { look: false }); } catch (_) { budget = null; } }
+  let saying = null;
+  const said = () => { if (saying === null) { try { saying = ` ${require('./pickaxe-budget').pickaxeBudget(bot, goal).says}`; } catch (_) { saying = ` The pickaxes carried: ${worn.join(', ')}.`; } } return saying; };
+  if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
   // first grass or dirt, which a cave floor above or a sand desert got
   // wrong; and the trees are looked for, not assumed (the decision audit,
   // 2026-09-25).
+  const depthOf = () => { if (!bot.entity?.position || typeof bot.blockAt !== 'function') return 0; try { return require('./surface').climbToSurface(bot, bot.entity.position) ?? 0; } catch (_) { return 0; } };
   const where = () => {
-    const depth = (() => { if (!bot.entity?.position || typeof bot.blockAt !== 'function') return 0; try { return require('./surface').climbToSurface(bot, bot.entity.position) ?? 0; } catch (_) { return 0; } })();
-    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down; with no wood when a pickaxe wears out down here, the climb is by hand at about two blocks a minute by stairs, or seven straight up where the column overhead is open.`;
+    const depth = depthOf();
+    // With the pickaxes' uses said against the step and the way home, the
+    // by-hand rates are in that; said alone, they led (note 543).
+    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down${budget ? '.' : '; with no wood when a pickaxe wears out down here, the climb is by hand at about two blocks a minute by stairs, or seven straight up where the column overhead is open.'}`;
     let treeNear = null;
     try { treeNear = typeof bot.findBlocks === 'function' ? find(bot, bot.registry.blocksArray.filter(b => /_log$|_stem$/.test(b.name)).map(b => b.name), 48, 1)[0] : null; } catch (_) { treeNear = null; }
     return treeNear ? ` A tree is ${Math.round(treeNear.distanceTo(bot.entity.position))} blocks away.` : ' No tree is in view from here.';
   };
-  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { description: `Cut a few logs now: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is.${where()} The pickaxes carried: ${worn.join(', ') || 'none'}.`, run: () => gatherWood(bot, task, goal, save) };
+  if (goal.kind === 'win' && woodDue(bot, goal)) options.wood_reserve = { get description() {
+    // Underground this is a climb for wood, said as one; with the heads for
+    // new pickaxes carried, only the sticks are missing (note 543).
+    const heads = [['iron ingots', countOf(bot, 'iron_ingot')], ['cobblestone', countOf(bot, 'cobblestone') + countOf(bot, 'cobbled_deepslate')]].filter(([, n]) => n >= 3).map(([k, n]) => `${n} ${k}`);
+    const up = depthOf() >= 8;
+    return `${up ? `Go up for wood now${budget?.ahead ? ', before the step in hand' : ''}` : 'Cut a few logs now'}: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is${heads.length ? ` (${heads.join(' and ')} carried for the heads)` : ''}.${where()}${budget ? said() : ` The pickaxes carried: ${worn.join(', ') || 'none'}.`}`; }, run: () => gatherWood(bot, task, goal, save) };
   // In the Nether the blocks are the crossings: mid-235-k, at its fortress
   // with none carried, was offered them three times as "seal a pocket for
   // the night", carried on, and every leg of its search stopped at the
@@ -464,10 +488,12 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   }
   const due = Object.keys(options);
   if (!due.length) return false;
-  const keys = due.sort().join(',');
+  // Falling short of the step and the way home is asked anew, whatever
+  // was carried on from before.
+  const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
   if (!client) return options[due.includes('spare_pickaxe') ? 'spare_pickaxe' : due.includes('wood_reserve') ? 'wood_reserve' : due[0]].run();
-  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.`,
+  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
   const step = goal.step;
   let chosen = null;
@@ -1392,8 +1418,12 @@ async function surfaceStep(bot, task, goal, save) {
 // climbs were 100 of its 180 minutes, none of them asked (note 511).
 async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava = null } = {}) {
   const held = goal.surfaceTrip;
-  // Chosen, the climb holds to the top: not asked again at each stair.
-  if (held?.pick === 'climb' && held.need === need && goal.surfaceReturn) return surfaceStep(bot, task, goal, save);
+  // Chosen, the climb holds to the top: not asked again at each stair. Only
+  // a climb Jev chose holds: one made because nothing else was on offer
+  // then is looked at again, and asked once there is (note 543). Wood
+  // chosen at upkeep is that climb chosen (gatherWood).
+  const woodChosen = held?.by === 'upkeep' && LOG_NEED.test(need) && Date.now() - Date.parse(held.at) < UPKEEP_WOOD_MS;
+  if (held?.pick === 'climb' && held.asked && ((held.need === need && goal.surfaceReturn) || woodChosen)) return surfaceStep(bot, task, goal, save);
   const words = s => String(s || '').replaceAll('_', ' ');
   const cost = tripCost(bot, goal);
   // The ladder's step, when it is the work's turn: a climb survival wants
@@ -1403,12 +1433,53 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   const tree = { climb: { description: `Climb to open sky for ${need}${phase ? ` (for the ${words(phase)})` : ''}: ${cost?.says || 'the column overhead is not all loaded, so the height is not known yet.'}` } };
   const client = task.opportunityClient;
   let next = null;
+  const also = [];
+  // What the pickaxes carried cover, looked at only when there is a choice.
+  let budget;
+  const budgetOf = () => { if (budget === undefined) { try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal); } catch (_) { budget = null; } } return budget; };
   if (phase && client) {
     const { nextGameStage, RUNG_WAIT_MS } = require('./game-progress');
-    // What the ladder hands on with the step left, read from a copy.
-    try { const probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', phase, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe); }
+    // What the ladder hands on with the step left, read from a copy. A rung
+    // after it that wants the same climb is left with it: mid-220-h's stone
+    // pickaxe rung, its iron pickaxe at 12 uses and one plank carried, would
+    // have been left "for the iron pickaxe", whose sticks want the same log
+    // (note 543). One whose first gathering is below (ore to mine) is work
+    // down here, whatever it wants from the surface after.
+    let probe = null;
+    const wantsClimb = (probe, rung) => {
+      if (!rung?.item || !/^acquire/.test(rung.action || '')) return false;
+      try { const first = catalogPlan(bot, rung.item, rung.count || 1, planningInventory(bot), probe).find(s => s.action === 'mine'); return !!first && isSurfaceResource(first.block); }
+      catch (_) { return false; }
+    };
+    try {
+      probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', phase, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe);
+      for (let i = 0; i < 12 && next?.phase && next.phase !== phase && wantsClimb(probe, next); i++) {
+        also.push(next.phase); setAside(probe, 'rung', next.phase, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe);
+      }
+    }
     catch (_) { next = null; }
-    if (next?.phase && next.phase !== phase) tree.stay_below = { description: `Stay down here: leave the ${words(phase)} for thirty minutes and go on with ${words(next.phase)}${next.item ? ` (${next.count || ''} ${words(next.item)})` : ''}. It comes back after, and this climb with it unless the work has gone up by then.` };
+    if (next?.phase && next.phase !== phase && !also.includes(next.phase) && !wantsClimb(probe, next)) {
+      const named = [phase, ...also].map(p => `the ${words(p)}`), left = named.length > 1 ? `${named.slice(0, -1).join(', ')} and ${named.at(-1)}` : named[0];
+      tree.stay_below = { description: `Stay down here: leave ${left}${also.length ? ` (${also.length === 1 ? 'it wants' : 'they want'} the same climb)` : ''} for thirty minutes and go on with ${words(next.phase)}${next.item ? ` (${next.count || ''} ${words(next.item)})` : ''}. It comes back after, and this climb with it unless the work has gone up by then.${budgetOf() ? ` Down here meanwhile: ${budget.says}` : ''}` };
+    }
+  }
+  // Ore in view first, with the uses the climb does not need: the move a
+  // player makes with a worn pickaxe and no wood, when every rung after
+  // wants the same climb and staying below has nothing to go on with
+  // (note 543). Asked again after each, the uses said as they fall.
+  let oreFirst = null;
+  if (phase && client && cost && pickaxeTier(bot) >= 1 && typeof bot.findBlocks === 'function') {
+    try {
+      const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]];
+      oreFirst = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name }))
+        .find(o => {
+          const tools = bot.blockAt(o.p)?.harvestTools;
+          return o.name && !SIDES.some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')) && (!tools || bot.inventory.items().some(i => tools[i.type]));
+        }) || null;
+    } catch (_) { oreFirst = null; }
+    const spare = cost.state.pickaxeUsesLeft - cost.digs;
+    if (oreFirst && spare > 0) tree.mine_first = { description: `Dig the ${words(oreFirst.name)} ${Math.round(oreFirst.p.distanceTo(bot.entity.position))} blocks off first, then climb: the pickaxes have ${cost.state.pickaxeUsesLeft} uses and the climb's quicker way digs about ${cost.digs}, so ${spare} are spare for ore down here; asked again after it.${budgetOf() ? ` ${budget.says}` : ''}` };
+    else oreFirst = null;
   }
   // A portal site is a room dug out of the rock as well as ground up top:
   // said beside the climb with its blocks, and what the climb does to a
@@ -1421,14 +1492,21 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     const o = siteDig.origin, n = siteDig.cells.length;
     tree.dig_site = { description: `Dig a site for the frame out of the rock here instead: the frame's cells and a walkway either side of it, four across and five high, ${n ? `${n} blocks to dig (${siteDig.kinds.join(', ')}), about ${Math.max(5, Math.round(n * 1.5))} seconds and ${n} pickaxe uses` : 'already open'}, at ${o.x}, ${o.y}, ${o.z} where the bot stands; the floor under it is solid and no water, lava or falling block is beside it. The frame goes down there${lava ? `, ${Math.round(Math.hypot(lava.x - o.x, lava.y - o.y, lava.z - o.z))} blocks from the lava chosen` : ''}.` };
   }
-  let pick = 'climb';
-  if (tree.stay_below || tree.dig_site) {
+  let pick = 'climb', asked = false;
+  if (tree.stay_below || tree.dig_site || tree.mine_first) {
     const decision = await require('./decisions').decide('surface_trip', { client, bot, task, goal, save, tree,
       state: { need, step: phase ? words(phase) : null, ...(cost ? { blocksToOpenSky: cost.up, quickerWayOut: cost.way, minutesUp: Math.round(cost.seconds / 60), pickaxes: cost.state.pickaxes, pickaxeUsesLeft: cost.state.pickaxeUsesLeft } : {}),
+        ...(budgetOf() ? { pickaxeBudget: budget.says } : {}),
         ...(tree.stay_below ? { goOnWith: `${words(next.phase)}${next.item ? `: ${next.count || ''} ${words(next.item)}` : ''}` } : {}),
         ...(tree.dig_site ? { siteToDig: { at: { ...siteDig.origin }, blocks: siteDig.cells.length } } : {}) } });
     if (decision.stale) return;
-    pick = decision.path.at(-1);
+    pick = decision.path.at(-1); asked = true;
+  }
+  if (pick === 'mine_first') {
+    goal.surfaceTrip = { need, pick, asked, ...(phase ? { phase } : {}), at: new Date().toISOString() };
+    goal.step = { action: 'mine_first', block: oreFirst.name, target: { x: oreFirst.p.x, y: oreFirst.p.y, z: oreFirst.p.z }, need }; save();
+    await dig(bot, task, oreFirst.p, {});
+    return;
   }
   if (pick === 'dig_site') {
     goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), at: new Date().toISOString() };
@@ -1444,13 +1522,13 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     }
     return;
   }
-  goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), ...(cost ? { up: cost.up } : {}), ...(lava ? { lava: { x: lava.x, y: lava.y, z: lava.z } } : {}), at: new Date().toISOString() };
+  goal.surfaceTrip = { need, pick, ...(asked ? { asked } : {}), ...(phase ? { phase } : {}), ...(cost ? { up: cost.up } : {}), ...(lava ? { lava: { x: lava.x, y: lava.y, z: lava.z } } : {}), at: new Date().toISOString() };
   if (pick === 'stay_below') {
     const { RUNG_WAIT_MS } = require('./game-progress');
-    setAside(goal, 'rung', phase, `Jev chose to stay below rather than climb${cost ? ` ${cost.up} blocks` : ''} for ${need}`, RUNG_WAIT_MS);
+    for (const p of [phase, ...also]) setAside(goal, 'rung', p, `Jev chose to stay below rather than climb${cost ? ` ${cost.up} blocks` : ''} for ${need}`, RUNG_WAIT_MS);
     delete goal.rungTime;
     goal.step = { action: 'stay_below', phase, need }; save();
-    bot.chat?.(`I'll leave the ${words(phase)} for now rather than climb all the way up for ${need}.`);
+    bot.chat?.(`I'll leave the ${[phase, ...also].map(words).join(' and the ')} for now rather than climb all the way up for ${need}.`);
     return;
   }
   save();
