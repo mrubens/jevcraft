@@ -1747,7 +1747,10 @@ test('a creeper coming on at a wall-backed bot is priced by where it goes off: t
 // a helmet and a chestplate, 20 health, a zombie at 3.5 and a creeper come
 // to 3.1, the fight told "0 damage" and asked again and again while it
 // came; it went off there, 20 to 5.1 ("15 at 3 blocks" said beside).
-test('a creeper already lit is priced by the fuse it has left, where the bot can get to in it', () => {
+test('a creeper already lit is priced by the fuse it has left, where the bot can get to in it', t => {
+  // The clock held still: the fuse left is read against Date.now(), and the
+  // setup's time would otherwise take it under 0.45 seconds.
+  t.mock.timers.enable({ apis: ['Date'] });
   const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
   const metadata = []; metadata[keys.indexOf('swell_dir')] = 1; metadata[keys.indexOf('health')] = 20;
   const lit = { id: 9, name: 'creeper', position: new Vec3(3.6, 64, 0.5), height: 1.7, metadata };
@@ -5368,7 +5371,10 @@ test('the state\'s fight estimate prices a creeper with its fuse and the room be
 // bot's level and one three blocks below behind it. Both were priced as
 // going off six blocks off; the dance backed from the first, down the drop
 // and past the second, which went off 4.3 blocks off (16 to 10.9).
-test('the room to back from a creeper ends short of another creeper, and the dance stops backing there', async () => {
+test('the room to back from a creeper ends short of another creeper, and the dance stops backing there', async t => {
+  // The clock driven by hand: the walk steps with the dance's ticks, not
+  // against them on a timer of its own.
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const front = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(3.9, 64, 0.5), height: 1.7, width: 0.6, isValid: true };
   const behind = { id: 10, name: 'creeper', type: 'hostile', position: new Vec3(-3, 64, 0.5), height: 1.7, width: 0.6, isValid: true };
   const bot = creeperBot({ wall: false, health: 16, creeper: front });
@@ -5377,12 +5383,18 @@ test('the room to back from a creeper ends short of another creeper, and the dan
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: front, distance: 3.4, visible: true }, { entity: behind, distance: 3.5, visible: true }], false);
   assert.match(options.fight.description, /goes off first, about 3\.5 blocks off \(0\.5 blocks of room behind the bot\)/);
   assert.doesNotMatch(options.fight.description, /about 6 blocks off, where the blast does nothing/);
-  // The dance backs until it would come within three of the second.
-  let backing = false;
+  // The dance backs until it would come within three of the second, walked
+  // at 0.2 blocks (about four a second) each of its 50 ms ticks.
+  let backing = false, done = false;
   bot.setControlState = (k, v) => { if (k === 'back') backing = v; };
-  const walk = setInterval(() => { if (backing) bot.entity.position = bot.entity.position.offset(-0.2, 0, 0); }, 20);
-  try { await survival.creeperDance(new Task('x'), {}, () => {}, [{ entity: front, distance: 3.4, visible: true }, { entity: behind, distance: 3.5, visible: true }], true, { chosen: true }); }
-  finally { clearInterval(walk); }
+  const dance = survival.creeperDance(new Task('x'), {}, () => {}, [{ entity: front, distance: 3.4, visible: true }, { entity: behind, distance: 3.5, visible: true }], true, { chosen: true }).finally(() => { done = true; });
+  for (let tick = 0; tick < 100 && !done; tick++) {
+    await new Promise(resolve => setImmediate(resolve));
+    if (done) break;
+    if (backing) bot.entity.position = bot.entity.position.offset(-0.2, 0, 0);
+    t.mock.timers.tick(50);
+  }
+  await dance;
   assert(behind.position.distanceTo(bot.entity.position) >= 2.7, `stopped short of the second creeper: ${bot.entity.position}`);
 });
 
