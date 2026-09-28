@@ -223,7 +223,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `encounter_stance`
 
-**Hostile mobs are near the bot: fight here, go up, step out of the shooters' line, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
+**Hostile mobs are near the bot: fight here, go up, step out of the shooters' line, block a creeper's line, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
 
 - When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it); a stance that hid the bot from the shooters (out_of_sight, nook) is asked again once a shooter has a line to where it hid, or the bot is off that spot. A stance that failed stays on offer, its option saying how long ago and how it failed here. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
@@ -234,6 +234,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `take_cover` | root | put a block two high in the line of each shooter in sight and stay behind it | shooters in sight (up to three), two blocks each carried, not in water; said with the blocks, the seconds and the damage in the next fifteen seconds this way |
+| `block_creeper` | root | put a block in the line from a creeper's eyes to the bot's, two high beside the bot, and stay behind it: out of its sight its fuse does not burn | a creeper within seven blocks (the lit one whose fuse ends first, else the nearest), a cell on that line within reach open to a block with a face to place against, and the blocks carried, not in water; said with where the block goes, the seconds until the line is cut against the fuse left or the walk to three blocks and the fuse, the blast where it goes off if that is too late, what the creeper does behind the block, and the damage in the next fifteen seconds this way; held, with the line stopped, it is staying behind the block |
 | `fight_from_footing` | root | step onto firm ground away from the drop, then fight there | the drop beside the bot is into lava or does half its health or more, and ground three blocks from any drop is within sixteen; said with its distance and seconds |
 | `rail_and_fight` | root | wall the open sides at the feet over the drop, then fight | the drop beside the bot is into lava or does half its health or more, a mob can be fought, and blocks for the wall are carried; said with the blocks and seconds |
 | `fight` | root | fight where the bot stands | always, with bare hands when no sword, axe or trident is carried |

@@ -5013,3 +5013,134 @@ test('underground at dusk, carrying on names the work and says the night changes
   assert.match(tree.secure_shelter.description, /real minutes off: that much of the run with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) waiting/);
   assert.match(tree.secure_shelter.description, /Underground the dark is the same at any hour/);
 });
+
+// Note 534: a block in a creeper's line. Its fuse burns only while it sees
+// the bot (26.1.2 SwellGoal.tick, one ray eye to eye), and no sword kills a
+// whole creeper inside its fuse; mid-241-a (4.8 health, a creeper coming on
+// at 4.4, a wall at its back) was offered only stances that cost more than
+// its health.
+test('a block in a creeper\'s line is offered, priced by the seconds until the line is cut against its walk and fuse, and placed two high beside the bot', async () => {
+  const placed = [];
+  const bot = creeperBot();
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => { const f = p.floored(); return placed.includes(`${f}`) ? { position: f, name: 'cobblestone', boundingBox: 'block' } : blockAt(p); };
+  const survival = new Survival(bot, { place: async (b, t, p, m, opts) => { assert.equal(opts?.stay, true, 'placed where the bot stands'); placed.push(`${p.floored()}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const creeper = { entity: { id: 9, name: 'creeper', position: new Vec3(4.95, 64, 0.5), height: 1.7, width: 0.6 }, distance: 4.45, visible: true };
+  bot.entities[9] = creeper.entity;
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
+  const o = options.block_creeper;
+  assert(o, Object.keys(options).join(','));
+  assert.match(o.description, /^Put 2 blocks, two high, in the line from the eyes of the creeper \(4\.5 blocks off\) to the bot's, beside the bot at head height: about 1\.2 seconds until the line is cut \(the second block\), 1\.2 for both, and stay behind it\./);
+  assert.match(o.description, /its sight is one line from its eyes to the bot's, which any block stops; out of its sight the fuse burns back down a tick at a time/);
+  assert.match(o.description, /It is not lit: at 3 blocks in about 0\.5 seconds at its walk, and it goes off 1\.5 seconds after that if it sees the bot\. The line is cut about 0\.8 seconds before it would go off\./);
+  assert.match(o.description, /within 3 blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light\. More than 3 off and not lit, it walks on meanwhile, round the block toward the bot/);
+  assert.match(o.description, /If the bot backs off past 3 blocks from it, it walks round the block and lights again/);
+  assert.equal(o.expects.damage, 0, 'nothing else here reaches it');
+  assert(options.fight.expects.damage > 4.8, 'the fight still costs more than the bot has');
+  assert.equal(await o.run(), true);
+  assert.deepEqual(placed, ['(1, 64, 0)', '(1, 65, 0)'], 'the foot first, then the cell the line crosses');
+  // Held, the line stopped: staying behind the block, nothing placed.
+  survival.state.stance = { choice: 'block_creeper', at: Date.now() };
+  const held = survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
+  assert.match(held.block_creeper?.description || '', /^Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
+  assert.equal(await held.block_creeper.run(), true);
+  assert.equal(placed.length, 2);
+  // Not held: a line already stopped is nothing to offer.
+  delete survival.state.stance;
+  assert.equal(survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false).block_creeper, undefined);
+});
+
+test('a creeper lit with too little fuse left for the block is said as too late, with its blast; one on a ledge above is cut over the head', () => {
+  const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
+  const metadata = []; metadata[keys.indexOf('swell_dir')] = 1; metadata[keys.indexOf('health')] = 20;
+  const lit = { id: 9, name: 'creeper', position: new Vec3(3.6, 64, 0.5), height: 1.7, width: 0.6, metadata };
+  const bot = creeperBot({ health: 20, wall: false, creeper: lit });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  bot._creeperFuses.set(9, Date.now() - 1000);
+  const late = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: lit, distance: 3.1, visible: true }], false).block_creeper;
+  assert.match(late.description, /It is lit, about 0\.5 seconds of its fuse left\. That is about 0\.7 seconds too late: it goes off first, about 3\.1 blocks off, about 12 after the armour worn\./);
+  assert(late.expects.damage >= 11, JSON.stringify(late.expects));
+  // Seen to light just now: in time.
+  bot._creeperFuses.set(9, Date.now());
+  assert.match(survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: lit, distance: 3.1, visible: true }], false).block_creeper.description, /The line is cut about 0\.3 seconds before it would go off/);
+  // mid-241-a's creeper stood on a mineshaft's floor four above the bot's
+  // feet, two across: the line crosses the column over the bot's head,
+  // where a block goes against the wall beside it.
+  const above = { id: 10, name: 'creeper', position: new Vec3(0.6, 68, 2.44), height: 1.7, width: 0.6 };
+  const shaft = creeperBot({ creeper: above });
+  shaft.blockAt = p => { const f = p.floored(); const solid = f.y < 64 || f.z < 0 || (f.y >= 64 && f.y < 68 && f.z >= 2); return { position: f, name: solid ? 'deepslate' : 'air', boundingBox: solid ? 'block' : 'empty' }; };
+  const overhead = new Survival(shaft, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
+    .stanceOptions(new Task('x'), {}, () => {}, [{ entity: above, distance: 4.4, visible: true }], false).block_creeper;
+  assert.match(overhead?.description || '', /^Put a block in the line from the eyes of the creeper \(4\.4 blocks off\) to the bot's, over the bot's head: about 0\.6 seconds until the line is cut/);
+});
+
+test('no block is offered for a creeper with no cell between it and the bot, or none carried', () => {
+  const close = { id: 9, name: 'creeper', position: new Vec3(1.3, 64, 0.5), height: 1.7, width: 0.6 };
+  const bot = creeperBot({ creeper: close });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  assert.equal(survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: close, distance: 0.8, visible: true }], false).block_creeper, undefined);
+  const far = { id: 9, name: 'creeper', position: new Vec3(4.95, 64, 0.5), height: 1.7, width: 0.6 };
+  const bare = creeperBot({ creeper: far });
+  bare.inventory.items = () => [{ name: 'iron_sword', count: 1 }];
+  assert.equal(new Survival(bare, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
+    .stanceOptions(new Task('x'), {}, () => {}, [{ entity: far, distance: 4.45, visible: true }], false).block_creeper, undefined);
+});
+
+// mid-241-n (2026-09-28 00:11:37 to 46): two creepers, one 3.4 off on the
+// bot's level and one three blocks below behind it. Both were priced as
+// going off six blocks off; the dance backed from the first, down the drop
+// and past the second, which went off 4.3 blocks off (16 to 10.9).
+test('the room to back from a creeper ends short of another creeper, and the dance stops backing there', async () => {
+  const front = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(3.9, 64, 0.5), height: 1.7, width: 0.6, isValid: true };
+  const behind = { id: 10, name: 'creeper', type: 'hostile', position: new Vec3(-3, 64, 0.5), height: 1.7, width: 0.6, isValid: true };
+  const bot = creeperBot({ wall: false, health: 16, creeper: front });
+  bot.entities[10] = behind;
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: front, distance: 3.4, visible: true }, { entity: behind, distance: 3.5, visible: true }], false);
+  assert.match(options.fight.description, /goes off first, about 3\.5 blocks off \(0\.5 blocks of room behind the bot\)/);
+  assert.doesNotMatch(options.fight.description, /about 6 blocks off, where the blast does nothing/);
+  // The dance backs until it would come within three of the second.
+  let backing = false;
+  bot.setControlState = (k, v) => { if (k === 'back') backing = v; };
+  const walk = setInterval(() => { if (backing) bot.entity.position = bot.entity.position.offset(-0.2, 0, 0); }, 20);
+  try { await survival.creeperDance(new Task('x'), {}, () => {}, [{ entity: front, distance: 3.4, visible: true }, { entity: behind, distance: 3.5, visible: true }], true, { chosen: true }); }
+  finally { clearInterval(walk); }
+  assert(behind.position.distanceTo(bot.entity.position) >= 2.7, `stopped short of the second creeper: ${bot.entity.position}`);
+});
+
+// mid-244-aa (2026-09-28 00:26:07): full iron, 20 health, a creeper struck
+// once and lit two blocks up a ledge, not at reach. The fight had said its
+// swings did not fit the fuse; the dance held and walked at the ledge, backed
+// with a second left, and the blast came 1.6 blocks off: 20 to none.
+test('the dance holds for a lit creeper only at reach or a step off on its own level, the step counted as the price counts it', async () => {
+  const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
+  const metadata = []; metadata[keys.indexOf('health')] = 14; metadata[keys.indexOf('swell_dir')] = 1;
+  const creeper = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(3.3, 66, 0.5), height: 1.7, width: 0.6, isValid: true, metadata };
+  const bot = creeperBot({ weapon: 'diamond_sword', health: 20, wall: false, creeper });
+  // The ledge's edge between the eyes and the creeper: no strike from here.
+  bot.world.raycast = (eye, dir) => ({ position: new Vec3(1, 63, 0), intersect: eye.plus(dir.scaled(0.8)) });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  bot._creeperFuses.set(9, Date.now());
+  const actions = [];
+  const report = survival.report.bind(survival);
+  survival.report = (goal, save, a) => { actions.push(a.action); return report(goal, save, a); };
+  await survival.creeperDance(new Task('x'), {}, () => {}, [{ entity: creeper, distance: 3.4, visible: true }], false, { chosen: true });
+  assert.equal(actions.at(-1), 'creeper_back_off', actions.join(','));
+});
+
+test('a held stance no longer on offer scouts the run before it asks, as a new question does (mid-241-n, note 534)', async () => {
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 10.9, food: 20,
+    inventory: { items: () => [], slots: {} }, blockAt: p => ({ name: 'air', position: p, boundingBox: 'empty' }) });
+  const survival = new Survival(bot, { navigate: async () => {} });
+  const scouted = [];
+  survival.scoutRetreat = async () => { scouted.push(Date.now()); survival.state.retreatScout = { at: Date.now(), feet: `${bot.entity.position.floored()}`, tried: 3, candidates: 3 }; };
+  survival.stanceOptions = () => ({ fight: { description: 'fight', run: async () => true }, retreat: { description: survival.state.retreatScout ? 'scouted' : 'blind', run: async () => true } });
+  const trees = [];
+  survival.decide = async (task, goal, save, q) => { trees.push(q.tree); return { path: ['fight'] }; };
+  // The dance held (health 16 to 10.9, less than six), its creeper walked
+  // out past six: the dance is no longer offered.
+  survival.state.stance = { choice: 'creeper_dance', ids: [9], at: Date.now(), health: 16 };
+  await survival.stanceStep(new Task('x'), {}, () => {}, [{ entity: { id: 9, name: 'creeper' }, distance: 7.1 }], false);
+  assert.equal(scouted.length, 1, 'the run was looked for before the question');
+  assert.equal(trees[0].retreat.description, 'scouted');
+});

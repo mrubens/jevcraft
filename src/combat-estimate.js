@@ -152,6 +152,21 @@ function creeperFought({ weapon = null, worn = { points: 0, toughness: 0 }, room
   const at = Math.min(BLAST_CLEAR, from + backs);
   return { ...base, diesFirst: false, worn, goesOffAt: round(at), hitsBot: round(afterArmour(creeperBlast(at), worn)) };
 }
+// A block put in a creeper's line from its eyes to the bot's (creeper-
+// sight.js): its fuse burns only in sight, so the block in by the time the
+// fuse would end stops the blast; not in by then, it goes off where it
+// stands, lit, or about where it lights (three blocks), not yet. One not lit
+// walks on meanwhile at its own speed (MOB_SPEED, below). `cutSeconds` is the
+// placing until the block that cuts the line is in.
+function creeperBlocked({ distance, litFor = null, cutSeconds, worn = { points: 0, toughness: 0 } }) {
+  const lit = Number.isFinite(litFor);
+  const lightsIn = lit ? 0 : Math.max(0, (distance - LIGHTS_AT) / blocksPerSecond('creeper'));
+  const goesOffIn = lit ? Math.max(0, FUSE - litFor) : lightsIn + FUSE;
+  const at = lit ? distance : Math.min(distance, LIGHTS_AT);
+  const inTime = cutSeconds < goesOffIn;
+  return { lit, lightsIn: round(lightsIn), goesOffIn: round(goesOffIn), cutSeconds: round(cutSeconds), inTime, margin: round(goesOffIn - cutSeconds),
+    ...(inTime ? {} : { goesOffAt: round(at), blast: round(afterArmour(creeperBlast(at), worn)) }) };
+}
 // The same fight said wherever it is priced.
 function creeperFoughtSays(c, { weapon = null, health = 20, distance = null } = {}) {
   const w = weapon && WEAPONS[weapon] ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands';
@@ -524,4 +539,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, creeperFought, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked,creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
