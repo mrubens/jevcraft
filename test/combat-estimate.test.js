@@ -513,3 +513,21 @@ test('a fight among cave spiders counts the ones round the corner and names the 
   assert.match(spawnerAbout(bot).says, /^ A cave spider spawner is 7 blocks off: while a player is within 16 blocks of it, it makes more cave spiders, up to four at a time/);
   assert.equal(spawnerAbout(bot).mob, 'cave_spider');
 });
+
+test('the fire on the bot is priced, one health a second for its seconds left, and one fire however many blazes light it (mid-208-k, note 548)', () => {
+  // mid-208-k was asked its stance at 5.9 health alight, the fire in no figure, and burned the rest.
+  const { within, burnLeft, FIRE_SECONDS } = require('../src/combat-estimate');
+  const zombie = burningFor => fightEstimate({ threats: [{ name: 'zombie', distance: 3, shoots: false, visible: true }], weapon: 'iron_sword', health: 20, burningFor }).fightHere;
+  const cold = zombie(0), alight = zombie(5);
+  assert.equal(Math.round((alight.damageTaken - cold.damageTaken) * 10) / 10, 5, 'five seconds of fire left: five more');
+  assert.match(alight.fire, /^The bot is alight: about 5 seconds of fire left, 1 health a second that armour does not stop/);
+  // Four blazes' fireballs each light it: one fire, burning one a second, not four.
+  const burn = { from: 0, to: 10, perSecond: 1, effect: 'burn' };
+  assert.equal(within([burn, { ...burn }, { ...burn }, { ...burn }], 15), 10);
+  assert.equal(within([burn, { ...burn, from: 5, to: 20 }], 15), 15, 'overlapping, the longer runs on');
+  // What is left: from the hurt that lit it, while the game says it burns.
+  const now = Date.now();
+  assert.equal(burnLeft({ entity: { metadata: [1] }, _alightUntil: now + FIRE_SECONDS.lava * 1000 }, now), 15);
+  assert.equal(burnLeft({ entity: { metadata: [0] }, _alightUntil: now + 9000 }, now), 0, 'put out');
+  assert.equal(burnLeft({ entity: { metadata: [1] } }, now), 1, 'alight with nothing stamped: the second to come');
+});

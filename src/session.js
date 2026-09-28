@@ -67,6 +67,10 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     const type = bot._damageTypeNames?.[packet.sourceTypeId];
     if (type === 'freeze') bot._freezingAt = Date.now();
     if (type === 'in_fire') bot._inFireAt = Date.now();
+    // What each lights the bot for, the longer kept (combat-estimate
+    // burnLeft): the fire on the bot is in every stance's figures (note 548).
+    const lights = require('./combat-estimate').FIRE_SECONDS[type];
+    if (lights) bot._alightUntil = Math.max(bot._alightUntil || 0, Date.now() + lights * 1000);
     // A warden's boom, counted for the pocket's question (survival.js
     // wardenSays): mid-230-n was boomed through its pocket's wall and asked
     // again told nothing of it (note 412).

@@ -167,34 +167,67 @@ function spawnerSite(bot, spawner = spawnerAt(bot), { steps = 24, avoid = [] } =
   return found && { ...found, spawner, off: round(found.cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
 }
 
-// What the mobs cost over fifteen seconds for a stand: the walk and the
-// digging first, in their fire as it is now; then, there, the shooters that
-// see it shoot and the blazes that come are fought one at a time (or as
-// many as the cells round it allow). A blaze that comes to a hole's mouth
-// swings for its six, not a fireball.
-function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = Infinity, melee = false } = {}) {
+// Where a blaze hovers once it has a target, read from the 26.1.2 server
+// jar (Blaze.customServerAiStep): it rises only while the target's eyes are
+// more than its allowedHeightOffset above its own, and otherwise sinks,
+// slowed; the offset is 0.5 plus a triangle of 6.891 either way, picked
+// again every hundred ticks. So it keeps its eyes about the target's, most
+// often half a block under, anywhere from about seven below to six above,
+// and a new height every five seconds. One in front of a hole's mouth that
+// is above or below its line now is in it at one of those picks: counted
+// from half their five seconds (mid-235-q-nether-3 opened its pocket's wall
+// toward eight blazes told none of the two in sight would see in; the one
+// that came down to its level twenty blocks out, square in front of the
+// mouth, shot it from 7 to none, note 548).
+const HEIGHT_PICK_SECONDS = 5;
+const SETTLE_SECONDS = HEIGHT_PICK_SECONDS / 2;
+const BLAZE_EYE = 1.53;
+function settlesInto(bot, blaze, cell, open) {
+  const { lineClear } = require('./danger');
+  if (!blaze.position) return false;
+  const eye = new Vec3(blaze.position.x, cell.y + 1.62 - 0.5, blaze.position.z);
+  return [1.6, 0.9, 0.15].some(dy => lineClear(bot, eye, cell.offset(0.5, dy, 0.5), { open }));
+}
+// What the mobs cost for a stand: the walk and the digging first, in their
+// fire as it is now; then, there, fifteen seconds held, the shooters that
+// see it shooting and the blazes that come fought one at a time (or as many
+// as the cells round it allow). A blaze that comes to a hole's mouth swings
+// for its six, not a fireball. Held in a hole (`pinned`) the bot fights
+// only what comes to the mouth: a blaze that sees in hovers and shoots for
+// the whole hold, the sword never reaching it, and those in front of the
+// mouth come into its line as they settle (settlesInto). The fifteen are
+// counted after the setup, not within it: a window dug by hand for twenty
+// seconds was priced at nothing, its hold after the digging not counted.
+function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = Infinity, melee = false, pinned = false } = {}) {
   const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
   const { defenseWeapon, shooter } = require('./combat');
   const weapon = defenseWeapon(bot)?.name || null, shield = bot.inventory?.slots?.[45]?.name === 'shield';
-  const base = danger.slice(0, 8);
+  const base = danger.slice(0, pinned ? 12 : 8);
   const shooting = base.filter(t => shooter(t.entity)).map(t => t.entity);
   const seeing = at ? new Set(bunker.seenFrom(bot, shooting, at, { open }).map(e => e.id)) : null;
-  const sees = t => !seeing || seeing.has(t.entity.id);
-  const estimate = vis => ce.fightEstimate({ threats: base.map(t => ({ name: t.entity.name, distance: t.distance, shoots: vis(t) === 'melee' ? false : shooter(t.entity),
-    ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: vis(t) !== false })), armour: worn, weapon, health: bot.health, shield }).mobs;
-  const now = estimate(t => t.visible);
-  const there = estimate(t => shooter(t.entity) ? (sees(t) ? true : melee && t.entity.name === 'blaze' ? 'melee' : false) : true);
+  const settling = pinned && at ? new Set(shooting.filter(e => e.name === 'blaze' && !seeing.has(e.id) && settlesInto(bot, e, at, open)).map(e => e.id)) : new Set();
+  const sees = t => !seeing || seeing.has(t.entity.id) || settling.has(t.entity.id);
+  const burning = ce.burnLeft(bot);
+  const estimate = (vis, burningFor) => ce.fightEstimate({ threats: base.map(t => ({ name: t.entity.name, distance: t.distance, shoots: vis(t) === 'melee' ? false : shooter(t.entity), id: t.entity.id,
+    ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: vis(t) !== false })), armour: worn, weapon, health: bot.health, shield,
+    poisonedFor: ce.effectLeft(bot, 'poison')?.seconds || 0, burningFor }).mobs;
+  const now = estimate(t => t.visible, burning);
+  const there = estimate(t => shooter(t.entity) ? (sees(t) ? true : melee && t.entity.name === 'blaze' ? 'melee' : false) : true, Math.max(0, burning - setup));
   const hit = Math.round(ce.afterArmour(ce.FIREBALL.melee, ce.armourOf(worn)) * 10) / 10;
   for (const m of there) if (m.name === 'blaze' && !m.shoots) m.hitsBot = hit;
-  const first = setup ? ce.stanceCost({ mobs: now, setup: Math.min(setup, ce.HOLD_SECONDS), seconds: Math.min(setup, ce.HOLD_SECONDS) }) : { damage: 0, blasts: [] };
-  const rest = setup < ce.HOLD_SECONDS ? ce.stanceCost({ mobs: there, seconds: ce.HOLD_SECONDS - setup, fight: { atOnce, only: m => !m.shoots || m.name === 'blaze' },
-    reaches: m => m.shoots || m.name === 'creeper' || m.name === 'warden', shield }) : { damage: 0, blasts: [], still: [] };
-  return { seconds: ce.HOLD_SECONDS, setup: round(setup), damage: round(first.damage + rest.damage), blasts: [...first.blasts, ...rest.blasts], still: rest.still, mobs: there, seeing: seeing ? seeing.size : null, shooters: shooting.length };
+  const first = setup ? ce.stanceCost({ mobs: now, setup, seconds: setup }) : { damage: 0, blasts: [] };
+  const rest = ce.stanceCost({ mobs: there, seconds: ce.HOLD_SECONDS, fight: { atOnce, only: pinned ? m => !m.shoots : m => !m.shoots || m.name === 'blaze' },
+    reaches: m => settling.has(m.id) ? SETTLE_SECONDS : m.shoots || m.name === 'creeper' || m.name === 'warden', shield });
+  return { seconds: round(setup + ce.HOLD_SECONDS), setup: round(setup), damage: round(first.damage + rest.damage), blasts: [...first.blasts, ...rest.blasts], still: rest.still, later: rest.later, mobs: there,
+    seeing: seeing ? seeing.size : null, settling: settling.size, shooters: shooting.length };
 }
 
 // What a blaze does, the game's own (26.1 Blaze: its attack goal, and a
 // target it must see): said with every stand.
 const BLAZE_WAYS = ` A blaze that sees the bot hangs back and shoots; one that loses sight of it flies toward it for a moment, then wanders (it gives the bot up after three seconds unseen); within two blocks it swings for ${ce.FIREBALL.melee} before armour instead of shooting, and keeps closing. A shield raised toward a fireball takes it whole, the fire with it, but not its push.`;
+
+// A stand's figure is over its setup and the fifteen seconds held after.
+const overSays = (cost, doing) => cost.setup ? `in the next ${cost.seconds} seconds this way (fifteen held after the ${doing})` : undefined;
 
 // The stands for the blazes in `danger`, as options: { key: { description,
 // expects, site, kind } }. Only with a blaze among them and a sword or axe.
@@ -214,15 +247,23 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
   if (hole) {
     const open = new Set((hole.window || [hole.hole, hole.hole.offset(0, 1, 0)]).map(c => `${c}`));
     const setup = hole.inside ? 0 : round((hole.ms + 250) / 1000);
-    const cost = standCost(bot, danger, { setup, at: hole.hole, open, atOnce: 1, melee: true });
+    // Every blaze within its reach, not only the stance's: a hole is held
+    // for as long as the fight lasts, and one out at forty that comes into
+    // the mouth's line shoots in as one at ten does.
+    let far = [];
+    try { far = require('./danger').threats(bot, ce.RANGE.blaze).filter(t => t.entity.name === 'blaze' && !danger.some(d => d.entity?.id === t.entity.id)); } catch (_) { far = []; }
+    const cost = standCost(bot, [...danger, ...far], { setup, at: hole.hole, open, atOnce: 1, melee: true, pinned: true });
+    const blazesAbout = blazes.length + far.length;
+    const inLine = cost.seeing + cost.settling;
+    const lineSays = ` Of the ${blazesAbout} blaze${blazesAbout === 1 ? '' : 's'} within their forty-eight blocks, ${inLine ? `${inLine} ${inLine === 1 ? 'has' : 'have'} a line in through the mouth: ${cost.seeing} now, and ${cost.settling} at the bot's own height, where a blaze after a target hovers (its eyes about the target's, from about seven below to six above, a new height every five seconds), counted from then; each that sees in shoots in for the whole hold, out of the sword's reach` : 'none has a line in through the mouth, now or at the bot\'s own height'}.`;
     const where = hole.walkMs ? `the wall ${round(hole.stand.offset(0.5, 0, 0.5).distanceTo(bot.entity.position))} blocks off` : 'beside the bot';
     options.dig_in_and_fight = { kind: pocket ? 'window' : 'hole', site: hole, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
       description: (hole.inside
         ? 'Stay in the hole the bot is in and fight from inside: rock behind it, beside it and over it, one side open.'
         : pocket ? `Open the pocket's wall toward the blazes, one wide and two high (2 blocks of ${words(hole.rock)} ${hole.with}, about ${seconds(round(hole.digMs / 1000))} of digging), and fight from inside the pocket through it.`
         : `Dig a hole one wide and two high into the ${words(hole.rock)} ${where} (2 blocks ${hole.with}, about ${seconds(round(hole.digMs / 1000))} of digging${hole.walkMs ? ` after about ${seconds(round(hole.walkMs / 1000))} of walking` : ''}, in their fire meanwhile), step in with the back to the rock and fight from inside.`) +
-        ` Rock behind, beside and over the bot: a fireball's push there meets rock, not a drop; only a blaze in line with the mouth can shoot in (${cost.seeing} of the ${cost.shooters} shooter${cost.shooters === 1 ? '' : 's'} in sight now would see in), and one that comes to the mouth is within the sword, one at a time.` +
-        BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: hole.inside ? null : 'digging in', done: 'In the hole' }) };
+        ` Rock behind, beside and over the bot: a fireball's push there meets rock, not a drop; only a blaze in line with the mouth can shoot in, and one that comes to the mouth is within the sword, one at a time.` + lineSays +
+        BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: hole.inside ? null : pocket ? 'opening it' : 'digging in', done: 'In the hole', over: overSays(cost, pocket ? 'opening' : 'digging in') }) };
   }
   const spawner = spawnerSite(bot, undefined, { avoid: biting });
   if (spawner) {
@@ -230,7 +271,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
     const cost = standCost(bot, danger, { setup, at: spawner.cell, atOnce: Math.max(1, require('./survival').openCells(bot, spawner.cell)) });
     options.fight_at_spawner = { kind: 'spawner', site: spawner, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
       description: `${spawner.steps ? `Walk ${spawner.steps} block${spawner.steps === 1 ? '' : 's'} (about ${seconds(setup)}, in their fire meanwhile) to` : 'Stay at'} a cell ${spawner.off} blocks from the blaze spawner's cage, under a ceiling, with no drop or lava within a push, and fight the blazes there as they come out: a spawner puts its blazes within four blocks of itself, up to four at a time every ten to forty seconds while a player is within sixteen, so there they come to the sword rather than being walked to; a ceiling keeps them from hovering over the bot. Broken with a pickaxe, the spawner makes no more.` +
-        BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: spawner.steps ? 'walking there' : null, done: 'At the cage' }) };
+        BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: spawner.steps ? 'walking there' : null, done: 'At the cage', over: overSays(cost, 'walking there') }) };
   }
   const wall = wallSite(bot, from, { avoid: biting });
   if (wall) {
@@ -238,7 +279,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false }
     const cost = standCost(bot, danger, { setup, at: wall.cell, atOnce: Math.max(1, require('./survival').openCells(bot, wall.cell)) });
     options.back_to_wall = { kind: 'wall', site: wall, expects: { damage: cost.damage, seconds: cost.seconds, oneHit: oneHit(cost.mobs) },
       description: `${wall.steps ? `Walk ${wall.steps} block${wall.steps === 1 ? '' : 's'} (about ${seconds(setup)}, in their fire meanwhile) to` : 'Stay on'} footing with a wall at its back on the side away from the blazes and no drop or lava within ${KNOCK} blocks, and fight there: a fireball from them pushes the bot into the wall, and a push any other way lands on ground.` +
-        BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: wall.steps ? 'walking there' : null, done: 'Back to the wall' }) };
+        BLAZE_WAYS + fire + costSays(cost, hp, cost.mobs, { doing: wall.steps ? 'walking there' : null, done: 'Back to the wall', over: overSays(cost, 'walking there') }) };
   }
   // The hunt says what it is for.
   if (hunted) for (const o of Object.values(options)) o.description += ' Rods that fall where the bot cannot see them are picked up once no blaze has it in sight.';

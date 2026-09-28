@@ -324,6 +324,50 @@ test('in burning grass, the way out is to the nearest cell two blocks clear of a
   assert.equal(inFire(bot), false, 'burning out with no fire near is left to burn out');
 });
 
+test('out of fire, the run goes to no cell beside a fall that kills, and a shallow drop beside is still walked (mid-208-k-nether-2, note 548)', () => {
+  // mid-208-k-nether-2 ran out of a fire at 19.5 health to a cell by an edge
+  // and went on over it, forty-seven blocks into the lava sea.
+  const { fireRoute } = require('../src/vitals');
+  const fire = new Set(['0,81,0', '1,81,0', '-1,81,0', '0,81,1', '0,81,-1']);
+  const make = edge => p => {
+    if (p.x >= 5 && p.y >= edge) return 'air';
+    if (p.y <= 31) return 'lava';
+    if (p.y < 81) return 'netherrack';
+    return fire.has(`${p.x},${p.y},${p.z}`) ? 'fire' : 'air';
+  };
+  const botIn = name => ({ health: 19.5, game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 81, 0.5), metadata: [1] },
+    blockAt: p => { const n = name(p); return { name: n, position: p, boundingBox: n === 'netherrack' ? 'block' : 'empty' }; } });
+  // Void from x 5 down to the lava: the nearest clear cell toward it, x 4, is beside it.
+  const route = fireRoute(botIn(make(32)));
+  assert(route && route.length, 'a way out');
+  for (const c of route) assert(c.x <= 3, `no cell beside the drop: ${c}`);
+  // A drop of two onto rock beside the same cell is no fall that kills: it is still the way.
+  const shallow = fireRoute(botIn(make(79)));
+  assert.equal(`${shallow.at(-1)}`, '(4, 81, 0)', 'the nearest clear cell, a shallow drop beside it');
+});
+
+test('alight with no flames about and no water, the fire reflex stands aside; in flames, or with water at hand, it answers (mid-235-q-nether-3, note 548)', () => {
+  // mid-235-q-nether-3, mid-208-k and mid-235-q-nether-2-fortress-1 each stood five to seven seconds on the reflex,
+  // alight in the Nether with nothing to put it out, a blaze shooting on: 20 to 9, 15.3 to 5.9, 9 to 5.
+  const { fireToAnswer } = require('../src/vitals');
+  const { probe } = require('../src/arbiter');
+  const names = new Map();
+  const at = (dimension, items = []) => ({ game: { dimension }, entity: { position: new Vec3(0.5, 64, 0.5), metadata: [1] }, inventory: { items: () => items },
+    blockAt: p => { const n = names.get(`${p}`) || (p.y < 64 ? 'netherrack' : 'air'); return { name: n, position: p, boundingBox: n === 'netherrack' ? 'block' : 'empty' }; } });
+  const nether = at('the_nether');
+  assert.equal(fireToAnswer(nether), false, 'alight in the Nether, nothing burning about: only time puts it out');
+  assert.equal(probe.burning(nether), false, 'and the reflex does not take the turn');
+  names.set(`${new Vec3(0, 64, 0)}`, 'fire');
+  assert.equal(probe.burning(nether), true, 'standing in flames: stepped out of');
+  names.clear();
+  nether._inFireAt = Date.now();
+  assert.equal(probe.burning(nether), true, 'the server\'s in-fire hurt just now: the same');
+  assert.equal(probe.burning(at('overworld')), false, 'alight in the Overworld, no water near: nothing to do but burn out');
+  assert.equal(probe.burning(at('overworld', [{ name: 'water_bucket', count: 1 }])), true, 'a water bucket carried puts it out');
+  names.set(`${new Vec3(4, 63, 0)}`, 'water');
+  assert.equal(probe.burning(at('overworld')), true, 'and a pond within eight');
+});
+
 test('burning with no fire about and a water bucket carried, the bucket is poured at the feet and taken back', async () => {
   // mid-110-b: out of the lava it was getting obsidian from, burned from thirteen health to two with a water bucket in its pack.
   const { douse } = require('../src/vitals');

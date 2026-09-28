@@ -1447,7 +1447,7 @@ test('a hunt fight with others that reach the bot is priced with them, and leavi
   const fight = asked.hunt_7.fight;
   assert.match(asked.hunt_7.action, /^Fight this observed mob with/, 'not "isolated" with another in reach');
   assert.match(fight.withTheOthers, /^a blaze 8 blocks off reaches the bot here too and fights with it: all of them, about [\d.]+ seconds and [\d.]+ damage from 20 health.*; this one alone would be about [\d.]+ seconds and [\d.]+\./);
-  const alone = Number(/this one alone would be about [\d.]+ seconds and ([\d.]+)/.exec(fight.withTheOthers)[1]);
+  const alone = Number(/this one alone would be about [\d.]+ seconds and ([\d.]*\d)/.exec(fight.withTheOthers)[1]);
   assert(fight.damageTaken > alone, `priced with both (${fight.damageTaken}) above the one alone (${alone})`);
   assert.match(asked.defer, /Leaving them does not take the bot out of their fire: a blaze 4 blocks off, a blaze 8 blocks off, in sight and within reach, keep shooting where it stands/);
 });

@@ -4762,7 +4762,7 @@ test('with a blaze in sight beside a nether-brick wall, the stance offers a hole
   assert.match(options.dig_in_and_fight.description, /a fireball's push there meets rock, not a drop; only a blaze in line with the mouth can shoot in/);
   assert.match(options.dig_in_and_fight.description, /within two blocks it swings for 6 before armour instead of shooting/);
   assert.match(options.dig_in_and_fight.description, /A blaze's fireball lands about \d+ in 100 from 8 blocks/);
-  assert.match(options.dig_in_and_fight.description, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way/);
+  assert.match(options.dig_in_and_fight.description, /About [\d.]+ damage from the mobs here in the next [\d.]+ seconds this way \(fifteen held after the digging in\)/);
   assert(options.dig_in_and_fight.expects.damage >= 0);
   // A wooden pickaxe digs brick slower, and says so.
   const wooden = make('wooden_pickaxe').options.dig_in_and_fight.description;
@@ -4810,6 +4810,64 @@ test('a sealed pocket with blazes about offers its wall opened toward them, foug
   assert(window, 'offered');
   assert.deepEqual(window.site.window.map(String), ['(1, 65, 0)', '(1, 64, 0)'], 'the wall toward the blaze, head and feet');
   assert.match(window.description, /^Open the pocket's wall toward the blazes, one wide and two high \(2 blocks of nether bricks with the iron pickaxe, about [\d.]+ seconds? of digging\), and fight from inside the pocket through it\./);
+});
+
+test('the pocket\'s window is priced over its digging and fifteen held after, with every blaze within forty-eight that sees in or settles into its line (mid-235-q-nether-3, note 548)', () => {
+  // mid-235-q-nether-3 opened its pocket's wall toward eight blazes told none of the two in sight would see in; one twenty
+  // blocks out came down to its height square in front of the mouth and shot it from 7 to none.
+  const pocket = new Vec3(0, 64, 0);
+  const solid = p => !(p.x === pocket.x && p.z === pocket.z && (p.y === 64 || p.y === 65)) && (p.y <= 63 || Math.abs(p.x) <= 1 && Math.abs(p.z) <= 1 && p.y <= 66);
+  const { blazeStands } = require('../src/blaze-stand');
+  const { threats } = require('../src/danger');
+  // A brick pillar twenty out, from three over the floor up: over the line at the bot's height, across one from above.
+  const walled = p => solid(p) || p.x === 20 && p.y >= 67 && p.y <= 76 && Math.abs(p.z) <= 2;
+  const windowWith = far => {
+    const bot = brickWorld(walled);
+    bot.health = 7;
+    // Lines stopped by the brick, stepped a tenth of a block at a time.
+    bot.world.raycast = (from, dir, len) => {
+      for (let t = 0; t <= len; t += 0.1) { const at = from.plus(dir.scaled(t)); if (walled(at.floored())) return { position: at.floored(), intersect: at }; }
+      return null;
+    };
+    bot.entities = { 3: blazeAt(3, 7.5, 64.5, 0.5), ...Object.fromEntries(far.map((p, i) => [10 + i, blazeAt(10 + i, ...p)])) };
+    return blazeStands(bot, threats(bot, 24), { pocket: true }).dig_in_and_fight;
+  };
+  const near = windowWith([]);
+  // One thirty blocks out in front of the mouth, eight over its line, the pillar across it; one behind the pocket's rock to the west.
+  const window = windowWith([[30.5, 72.5, 0.5], [-30.5, 64.5, 0.5]]);
+  assert.match(window.description, /Of the 3 blazes within their forty-eight blocks, 2 have a line in through the mouth: 1 now, and 1 at the bot's own height, where a blaze after a target hovers/);
+  assert(window.expects.damage > near.expects.damage, `the one that settles in front is priced: ${window.expects.damage} over ${near.expects.damage}`);
+  assert(window.expects.seconds > 15, 'the fifteen held come after the digging');
+  assert.match(window.description, /in the next [\d.]+ seconds this way \(fifteen held after the opening\), the [\d.]+ seconds of opening it included/);
+});
+
+test('sealed with blazes about, the window chosen is dug once and the pocket asked again after; the blazes past sixteen are said (mid-235-q-nether-3, note 548)', async () => {
+  // mid-235-q-nether-3's window, chosen once, was dug three times in a minute and a half, never asked again; its stay
+  // said nothing watched the pocket, eight blazes twenty to twenty-eight blocks off.
+  const pocket = new Vec3(0, 64, 0);
+  const solid = p => !(p.x === pocket.x && p.z === pocket.z && (p.y === 64 || p.y === 65)) && (p.y <= 63 || Math.abs(p.x) <= 1 && Math.abs(p.z) <= 1 && p.y <= 66);
+  const bot = brickWorld(solid);
+  Object.assign(bot, { health: 7, food: 14, oxygenLevel: 20 });
+  bot.game.minY = 0; bot.game.height = 256;
+  bot.entity.velocity = new Vec3(0, 0, 0);
+  bot.inventory.emptySlotCount = () => 10;
+  bot.findBlocks = () => [];
+  bot.pathfinder = { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} };
+  bot.entities = { 3: blazeAt(3, 7.5, 64.5, 0.5), 4: blazeAt(4, 24.5, 70.5, 0.5) };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {}, explore: async () => {} },
+    { state: { shelters: [{ origin: { x: 0, y: 64, z: 0 }, dimension: 'the_nether' }] }, client: { systemOne: async () => ({}) } });
+  const asked = [];
+  // The window when offered (the stub digs nothing, so its run does nothing and it rests a minute after).
+  survival.decide = async (task, g, save, q) => { if (q.id === 'pocket_next') asked.push(q.tree); return { path: q.id === 'pocket_next' ? [q.tree.dig_in_and_fight ? 'dig_in_and_fight' : 'stay'] : [Object.keys(q.tree)[0]], stale: q.id !== 'pocket_next' }; };
+  survival.wait = async () => {};
+  await survival.step(new Task('p'), { kind: 'win' }, () => {});
+  assert.equal(asked.length, 1);
+  assert(asked[0].dig_in_and_fight, Object.keys(asked[0]).join(','));
+  assert.equal(survival.state.pocketPlan, undefined, 'the window is not held as the plan for ninety seconds');
+  assert.match(asked[0].stay.description, /Beyond, 1 blaze 25 blocks off, within the reach they fire from at what they see \(a blaze 48 blocks\): the pocket's rock stops them/);
+  assert.match(asked[0].leave.description, /or 1 blaze fireball that lands \(about [\d.]+ each after armour, and 5 seconds of fire\)/);
+  await survival.step(new Task('p'), { kind: 'win' }, () => {});
+  assert.equal(asked.length, 2, 'sealed again, the pocket is a new question');
 });
 
 test('beside a drop into lava with a blaze about, the stances say its fireball\'s push against the drop (note 469\'s pattern)', () => {

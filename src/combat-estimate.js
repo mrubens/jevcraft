@@ -59,6 +59,25 @@ function effectLeft(bot, name, now = Date.now()) {
   }
   return null;
 }
+// Fire on a player, read from the 26.1.2 server jar: a blaze's small
+// fireball that lands sets five seconds (SmallFireball.onHitEntity,
+// igniteForSeconds 5; one a shield takes puts it back out), a fire block
+// eight after the body leaves it (BaseFireBlock.entityInside), lava fifteen
+// (Entity.lavaHurt); each sets the time left to the longer of the two, and
+// it burns one health a second (Entity.baseTick, on_fire, which armour does
+// not stop) however many lit it. Only water or time puts it out, and the
+// Nether has no water.
+const FIRE_SECONDS = { fireball: 5, in_fire: 8, lava: 15 };
+const BURN_PER_SECOND = 1;
+// The seconds of fire left on the bot now: from the last hurt that lit it
+// (session.js stamps _alightUntil), while the game says it burns; alight
+// with nothing stamped, the second to come. mid-208-k was asked its stance
+// at 5.9 health alight, the fire in no figure, and burned the rest (note 548).
+function burnLeft(bot, now = Date.now()) {
+  if (!(bot?.entity?.metadata?.[0] & 1)) return 0;
+  const left = ((bot._alightUntil || 0) - now) / 1000;
+  return left > 0 ? left : 1;
+}
 // The seconds a set of [from, to] spans covers, overlaps counted once.
 function spanned(spans) {
   let total = 0, end = -Infinity;
@@ -325,7 +344,7 @@ const shooting = (m, shield) => m.visible ? (m.hitsBot / (m.every || 2) + (m.bur
 const shotPieces = (m, shield, from, to) => {
   if (!m.visible || !(to > from)) return [];
   const f = shield && m.name !== 'witch' ? 0.5 : 1;
-  return [{ from, to, perSecond: m.hitsBot / (m.every || 2) * f, hit: m.hitsBot }, ...(m.burns ? [{ from, to, perSecond: m.burns * f }] : [])];
+  return [{ from, to, perSecond: m.hitsBot / (m.every || 2) * f, hit: m.hitsBot }, ...(m.burns ? [{ from, to: to + FIRE_SECONDS.fireball, perSecond: m.burns * f, effect: 'burn' }] : [])];
 };
 // A body that has just been hurt cannot be hurt again for half a second
 // (26.1 LivingEntity.hurtServer: within ten ticks of a hit, a blow no
@@ -350,7 +369,9 @@ const HURT_PER_SECOND = 2;
 // (`poisonedFor`, its seconds left). The first bite is taken to land as it
 // comes, the struck third or not: each of mid-243-f's three fights with a
 // cave spider took a bite within a second of its start (note 542).
-function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor = 0 } = {}) {
+// The fire already on the bot (`burningFor`, its seconds left) burns on
+// from the start, one fire with any the shooters light.
+function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor = 0, burningFor = 0 } = {}) {
   const pieces = [], killed = new Map(), withering = new Map(), poisoning = new Map();
   let t = 0;
   order.forEach((m0, i) => {
@@ -385,6 +406,7 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
     killed.set(m0, end);
     t = end;
   });
+  if (burningFor > 0) pieces.push({ from: 0, to: burningFor, perSecond: BURN_PER_SECOND, effect: 'burn' });
   pieces.push(...effectPieces([...withering].map(([m, from]) => [from, killed.get(m) + WITHER.seconds])));
   pieces.push(...effectPieces([...[...poisoning].map(([m, from]) => [from + POISON.first, killed.get(m) + m.poisons]), [0, poisonedFor || 0]], 'poison'));
   return pieces;
@@ -393,10 +415,19 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
 // the pieces that are hits (`hit`, the size of one) at most two of the
 // biggest landing a second between them (HURT_PER_SECOND), the rest as they
 // come.
+// The fire (effect 'burn') is one fire however many light it: at each
+// moment the strongest of its pieces, not their sum (four blazes in sight
+// were four health a second of burning, where the game burns one).
 function within(pieces, seconds = Infinity) {
   const end = p => Math.min(p.to, seconds);
   const hits = pieces.filter(p => p.hit > 0 && end(p) > p.from);
-  let total = pieces.filter(p => !(p.hit > 0)).reduce((n, p) => n + p.perSecond * Math.max(0, end(p) - p.from), 0);
+  let total = pieces.filter(p => !(p.hit > 0) && p.effect !== 'burn').reduce((n, p) => n + p.perSecond * Math.max(0, end(p) - p.from), 0);
+  const burns = pieces.filter(p => p.effect === 'burn' && end(p) > p.from);
+  const burnCuts = [...new Set(burns.flatMap(p => [p.from, end(p)]))].sort((a, b) => a - b);
+  for (let i = 0; i + 1 < burnCuts.length; i++) {
+    const on = burns.filter(p => p.from <= burnCuts[i] && end(p) >= burnCuts[i + 1]);
+    if (on.length && Number.isFinite(burnCuts[i + 1] - burnCuts[i])) total += Math.max(...on.map(p => p.perSecond)) * (burnCuts[i + 1] - burnCuts[i]);
+  }
   const cuts = [...new Set(hits.flatMap(p => [p.from, end(p)]))].sort((a, b) => a - b);
   for (let i = 0; i + 1 < cuts.length; i++) {
     const a = cuts[i], b = cuts[i + 1];
@@ -417,6 +448,11 @@ function poisonFightSays(order, poison, { health = 20, poisonedFor = 0 } = {}) {
   const capped = Math.min(poison, Math.max(0, health - POISON.floor));
   return `About ${round(capped)} of it is poison: ${[running, who].filter(Boolean).join(', and ')}; one health every 1.25 seconds that armour does not stop, however many poison it, and only while health is above 1, so the poison alone leaves the bot at 1 or just under, never dead: the next bite or hit then kills.`;
 }
+// The fire on the bot, said where it is priced.
+function burnSays(seconds) {
+  const s = Math.max(1, Math.round(seconds));
+  return `The bot is alight: about ${s} second${s === 1 ? '' : 's'} of fire left, ${BURN_PER_SECOND} health a second that armour does not stop, whatever is chosen, and each fireball that lands sets it back to ${FIRE_SECONDS.fireball}; counted in the figures. Only water or time puts it out, and the Nether has no water.`;
+}
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
 // weapon: the item name or null; atOnce: how many biters can be at arm's
 // length together where the bot stands.
@@ -432,7 +468,8 @@ const SPEAR_HIT = 13;
 // it does not back off, the bot is put back (note 497).
 const SPEAR = { jab: 5, reach: 3, knock: 1 };
 // `poisonedFor`: the seconds of poison already on the bot (effectLeft).
-function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity, poisonedFor = 0 }) {
+// `burningFor`: the seconds of fire on the bot now (burnLeft).
+function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity, poisonedFor = 0, burningFor = 0 }) {
   const worn = armourOf(armour);
   const [damage, rate] = WEAPONS[weapon] || FIST;
   const unknown = [];
@@ -489,6 +526,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // The poison already on the bot, off the record on each mob: every
   // stance priced from these mobs counts it (stanceCost).
   if (poisonedFor > 0) mobs.forEach(m => Object.defineProperty(m, 'poisonedFor', { value: poisonedFor }));
+  // So is the fire on the bot now.
+  if (burningFor > 0) mobs.forEach(m => Object.defineProperty(m, 'burningFor', { value: burningFor }));
   // One with no way to the bot (walk-reach.js) is not fought, and does not
   // hit (mid-205-v, note 525).
   const order = mobs.filter(m => !m.apart).sort((a, b) => a.distance - b.distance);
@@ -498,7 +537,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // nothing; mid-235-f took it at 0.91 from 5.9 health and was killed
   // (2026-09-27).
   atOnce = Math.max(atOnce, order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length);
-  const timeline = fightTimeline(order, { shield, atOnce, poisonedFor });
+  const timeline = fightTimeline(order, { shield, atOnce, poisonedFor, burningFor });
   const seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
   // Each creeper fought that is not killed inside its fuse goes off once,
   // when its turn in the fight comes and the fuse has run.
@@ -521,6 +560,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       // The same stretch every stance is priced over (stanceCost below).
       inFifteenSeconds: round(poisonFloored(within(timeline, HOLD_SECONDS) + blastsWithin(HOLD_SECONDS), poisonPart(HOLD_SECONDS), health)),
       ...(poisonSays ? { poison: poisonSays } : {}),
+      ...(burningFor > 0 ? { fire: burnSays(burningFor) } : {}),
       ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
       ...(creepers.length ? { creeper: `counted: ${creeperSays} A blast by distance after the armour worn: ${creeperBlastSays(worn)}.` } : {}),
       ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}),
@@ -561,6 +601,9 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   // hurt body cannot be hurt again (within).
   const pieces = [];
   const withering = [], poisoning = [[0, mobs.find(m => m.poisonedFor > 0)?.poisonedFor || 0]];
+  // The fire on the bot now burns on whatever the stance (burnLeft).
+  const burningFor = mobs.find(m => m.burningFor > 0)?.burningFor || 0;
+  if (burningFor > 0) pieces.push({ from: 0, to: burningFor, perSecond: BURN_PER_SECOND, effect: 'burn' });
   const hurts = (m, from, to, shielded) => {
     if (!(to > from)) return;
     if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to)); else pieces.push({ from, to, perSecond: bites(m), hit: bites(m) });
@@ -612,7 +655,8 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // The fought ones' wither and poison join the rest's: one effect each,
     // however many give it.
     for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach) })) {
-      if (p.effect) (p.effect === 'poison' ? poisoning : withering).push([p.from + setup, p.to + setup]);
+      if (p.effect === 'burn') pieces.push({ ...p, from: p.from + setup, to: p.to + setup });
+      else if (p.effect) (p.effect === 'poison' ? poisoning : withering).push([p.from + setup, p.to + setup]);
       else if (p.from < seconds - setup) pieces.push({ ...p, from: p.from + setup, to: Math.min(seconds, p.to + setup) });
     }
     for (const m of order) if (!m.shoots || m.visible) stillReach(m);
@@ -625,4 +669,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked,creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked,creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };

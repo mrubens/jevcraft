@@ -440,6 +440,8 @@ const inWater = bot => !!bot.entity?.isInWater || bot.blockAt(bot.entity.positio
 // a door shut; at least this long, so the bot is in rock and not at a door;
 // and no longer than this.
 const PASSAGE_CLEAR = 10, PASSAGE_MIN = 4, PASSAGE_MAX = 16;
+// The pocket's choices that open its wall toward the mobs outside.
+const OPENS_ON_MOBS = new Set(['dig_in_and_fight', 'open_on_watcher']);
 
 // Where a held stance looks, for the shield: a shield covers only the way
 // the bot faces. A shot on its way first (the guard's own rule), then the
@@ -572,6 +574,11 @@ function effectsSay(bot) {
     else if (name === 'regeneration') out.push(`The bot is regenerating${left}.`);
     else if (name === 'weakness') out.push(`The bot is weakened${left}: its hits do less.`);
   }
+  // The fire on the bot, with what is left of it (combat-estimate burnLeft):
+  // counted in every stance's figures (note 548).
+  const { burnLeft, burnSays } = require('./combat-estimate');
+  const burning = burnLeft(bot);
+  if (burning > 0) out.push(burnSays(burning));
   return out.length ? ' ' + out.join(' ') : '';
 }
 // Shooters that fire from farther than the mobs a stance weighs, in sight
@@ -1738,7 +1745,7 @@ class Survival {
     // every figure (combat-estimate effectLeft).
     const estimate = fightEstimate({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(t.unseen ? { unseen: true } : {}), ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(inCellIds.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: opening ? Infinity : open + inCell.length,
-      poisonedFor: require('./combat-estimate').effectLeft(bot, 'poison')?.seconds || 0 });
+      poisonedFor: require('./combat-estimate').effectLeft(bot, 'poison')?.seconds || 0, burningFor: require('./combat-estimate').burnLeft(bot) });
     const cost = estimate.fightHere;
     const mobs = estimate.mobs || [];
     // One blow from the hardest hitter here: the give a stance's pace is
@@ -4965,7 +4972,18 @@ class Survival {
       const onLid = threats(bot, 8).filter(t => t.entity.position.y >= under.y + 2.5 && Math.hypot(t.entity.position.x - under.x, t.entity.position.z - under.z) <= 1.5 && !canStrike(bot, t.entity));
       const lidSays = onLid.length ? ` ${onLid.length === 1 ? `A ${onLid[0].entity.name.replaceAll('_', ' ')} is` : `${onLid.length} mobs (${onLid.map(t => t.entity.name.replaceAll('_', ' ')).join(', ')}) are`} standing on the pocket's lid, right over the bot: a solid block is between, so the sword cannot reach ${onLid.length === 1 ? 'it' : 'them'} and ${onLid.length === 1 ? 'it cannot' : 'they cannot'} hit the bot through it. Waiting under them gains nothing but time.` : '';
       const options = {};
-      const outside = (who ? ` Outside is ${who}.` : '') + lidSays + wardenSays(bot);
+      // The shooters past the sixteen, within their own reach: a blaze fires
+      // from forty-eight at what it sees, a ghast from sixty-four. mid-235-q-
+      // nether-3's pocket was said as watched by nothing, eight blazes twenty
+      // to twenty-eight blocks off by their spawner, and leaving it as "4
+      // zombie hits or 4 arrows" (note 548).
+      const farShooters = threats(bot, 64).filter(t => t.distance >= 16 && ['blaze', 'ghast'].includes(t.entity.name) && t.distance <= require('./combat-estimate').RANGE[t.entity.name]);
+      const farSays = farShooters.length ? (() => {
+        const kinds = [...new Set(farShooters.map(t => t.entity.name))];
+        const ds = farShooters.map(t => Math.round(t.distance));
+        return ` Beyond, ${farShooters.length} ${kinds.length === 1 ? `${kinds[0]}${farShooters.length === 1 ? '' : 's'}` : 'shooters'} ${Math.min(...ds)}${Math.max(...ds) > Math.min(...ds) ? ` to ${Math.max(...ds)}` : ''} blocks off, within the reach they fire from at what they see (${kinds.map(k => `a ${k} ${require('./combat-estimate').RANGE[k]} blocks`).join(', ')}): the pocket's rock stops them, and out of it each with a line to the bot shoots.`;
+      })() : '';
+      const outside = (who ? ` Outside is ${who}.` : '') + farSays + lidSays + wardenSays(bot);
       // Sleep is refused with a monster within eight blocks of the bed, seen
       // or not (the decision audit): said, with the walk.
       const byBed = homeBed ? monstersByBed(bot, homeBed.foot, 32) : 0;
@@ -5062,7 +5080,7 @@ class Survival {
       // through in its pocket, the stay said as "nothing is watching it"
       // and never that the day was going by (note 538).
       const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
-      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : ', though nothing is watching it'}${healthNow}.${dayLeft}`) + lidSays + wardenSays(bot) + placeSays,
+      options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) + farSays + lidSays + wardenSays(bot) + placeSays,
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : 'Waiting for daylight inside the verified shelter'); return true; } };
@@ -5080,7 +5098,11 @@ class Survival {
       const ce = require('./combat-estimate');
       const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
       const hitsOf = name => Math.max(1, Math.ceil(hp / Math.max(0.5, ce.afterArmour(ce.MOBS[name].hit, worn))));
-      const outHealth = hp >= 20 ? '' : ` It goes out at ${hp} health${(bot.food ?? 20) < 18 ? `, not healing at hunger ${bot.food}` : ''}: about ${hitsOf('zombie')} zombie hits or ${hitsOf('skeleton')} arrows end it${ce.afterArmour(ce.MOBS.creeper.hit, worn) >= hp ? ', or one creeper\'s blast' : ''}.`;
+      // And fireballs, with blazes about: each that lands and its five
+      // seconds of fire (note 548).
+      const blazesAbout = threats(bot, ce.RANGE.blaze).filter(t => t.entity.name === 'blaze');
+      const fireballs = blazesAbout.length ? Math.max(1, Math.ceil(hp / (ce.afterArmour(ce.MOBS.blaze.hit, worn) + ce.FIRE_SECONDS.fireball * ce.BURN_PER_SECOND))) : 0;
+      const outHealth = hp >= 20 ? '' : ` It goes out at ${hp} health${(bot.food ?? 20) < 18 ? `, not healing at hunger ${bot.food}` : ''}: about ${hitsOf('zombie')} zombie hits or ${hitsOf('skeleton')} arrows end it${fireballs ? `, or ${fireballs} blaze fireball${fireballs === 1 ? ' that lands' : 's that land'} (about ${Math.round(ce.afterArmour(ce.MOBS.blaze.hit, worn) * 10) / 10} each after armour, and ${ce.FIRE_SECONDS.fireball} seconds of fire)` : ''}${ce.afterArmour(ce.MOBS.creeper.hit, worn) >= hp ? ', or one creeper\'s blast' : ''}.`;
       // What leaving does with a creeper about, said: a door within six
       // blocks of one stays shut, and with every door so, the pocket waits.
       const creeperNear = threats(bot, 16).filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
@@ -5103,6 +5125,17 @@ class Survival {
       const fromSpawner = spawnerHere ? this.passageOut(spawnerHere.at, { clear: SPAWNER_REACH + 1, max: 24, also: creeperNear ? [{ at: creeperNear.entity.position, clear: PASSAGE_CLEAR }] : [] }) : null;
       const passage = !fromSpawner && creeperNear && digging ? this.passageOut(creeperNear) : null;
       const fromWatcher = !fromSpawner && !passage && watcher && digging && watcher.entity.name !== 'warden' ? this.passageOut(watcher) : null;
+      // Away from blazes about, under rock the whole way: a player low on
+      // health by a fortress does not open the wall on them, and leaving by
+      // a door walks into the lines of all of them. The passage ends eight
+      // blocks further from them than the pocket, its open end away from
+      // them. mid-235-q-nether-3 was offered the window toward eight blazes,
+      // staying, or going out past them, at 7 health with nothing to eat,
+      // and the window let in the fireballs (note 548).
+      const blazeNear = blazesAbout.slice().sort((a, b) => a.distance - b.distance)[0];
+      const blazeMid = blazesAbout.length ? require('./bunker').centroid(blazesAbout) : null;
+      const fromBlazes = !fromSpawner && !passage && !fromWatcher && blazeMid && digging
+        ? this.passageOut({ entity: { position: blazeMid } }, { clear: Math.hypot(bot.entity.position.x - blazeMid.x, bot.entity.position.z - blazeMid.z) + 8, max: 24 }) : null;
       const outCells = p => `one wide and two high, ${p.cells} blocks, about ${Math.round(p.cells * 2.5)} seconds`;
       const outSafe = kind => ` No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if a ${kind.replaceAll('_', ' ')} comes round toward its head within six blocks or the rock ahead is not safe to dig through.`;
       const walksRound = w => ` A ${w.entity.name.replaceAll('_', ' ')} after a player walks round to it through open ground, not through rock${keptFor ? `; this one has kept the pocket ${keptFor} seconds` : ''}.`;
@@ -5117,6 +5150,11 @@ class Survival {
           run: outRun(spawnerMob, fromSpawner) };
       } else if (fromWatcher) options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromWatcher.direction} wall, away from the ${watcher.entity.name.replaceAll('_', ' ')}: ${outCells(fromWatcher)}, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${fromWatcher.clearance} blocks from where it is now (it is ${Math.round(watcher.distance)} off${watcher.visible ? '' : ', behind the rock'}).${walksRound(watcher)}${outSafe(watcher.entity.name)}${outSays}${outHealth}`,
         run: outRun(watcher, fromWatcher) };
+      else if (fromBlazes) {
+        const endFrom = Math.round(Math.min(...blazesAbout.map(t => Math.hypot(t.entity.position.x - (fromBlazes.end.x + 0.5), t.entity.position.z - (fromBlazes.end.z + 0.5)))));
+        options.tunnel_out = { description: `Dig a passage out through the pocket's ${fromBlazes.direction} wall, away from the blazes: ${outCells(fromBlazes)}, ending ${endFrom} blocks from the nearest of them where they are now (the nearest is ${Math.round(blazeNear.distance)} off); then go back to ${waiting || 'work'} from its end. Rock round it the whole way and the pocket's wall toward them left standing: a blaze sees the bot only straight down the passage, and the passage runs away from them; a blaze that has not seen it for three seconds gives it up.${outSafe('blaze')}${outHealth}`,
+          run: outRun(blazeNear, fromBlazes) };
+      }
       if (passage) options.tunnel_out = { description: `Dig a passage out through the pocket's ${passage.direction} wall, away from the creeper: one wide and two high, ${passage.cells} blocks, about ${Math.round(passage.cells * 2.5)} seconds, and go back to work${night ? ' in the dark, where mobs spawn' : ''} from its end, ${passage.clearance} blocks from where the creeper is now (it is ${Math.round(creeperNear.distance)} off${creeperNear.visible ? '' : ', behind the rock'}). A creeper walks to a player it sees within sixteen blocks and lights its fuse within three; behind rock it sees nothing, and digging makes no noise it follows. No block is dug with lava or water behind it, and the passage stops, the bot still enclosed, if the creeper comes round toward its head within six blocks or the rock ahead is not safe to dig through.${outSays}${outHealth}`,
         run: async () => {
           delete this.state.watchedSince;
@@ -5220,6 +5258,13 @@ class Survival {
         choice = decision.path.at(-1);
         this.state.pocketPlan = { choice, key, until: Date.now() + 90000 };
       }
+      // A choice that opens the pocket's wall on the mobs is carried out
+      // once: the pocket sealed again after it is a new question, not the
+      // same wall opened again. mid-235-q-nether-3's window toward the
+      // blazes, chosen once, was dug three times in a minute and a half,
+      // twenty seconds by hand each, the seal going back between, never
+      // asked again; the third opening let in the fireballs (note 548).
+      if (OPENS_ON_MOBS.has(choice)) delete this.state.pocketPlan;
       if (!(await (options[choice] || foodWays[choice]).run())) {
         delete this.state.pocketPlan;
         if (choice !== 'stay') { setAside(this, 'pocket_option', choice, `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket${this.state.leaveRefused ? ` (${this.state.leaveRefused.charAt(0).toLowerCase()}${this.state.leaveRefused.slice(1)})` : ''}`, 60000); delete this.state.leaveRefused; save(); }

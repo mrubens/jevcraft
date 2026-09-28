@@ -468,4 +468,20 @@ function updateDigCapabilities(bot) {
     else movement.blocksCantBreak.add(block.id);
   }
 }
-module.exports = { configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };
+// Note 545's fall rule for a walk that is not the pathfinder's (the fire
+// reflex's run on the keys): the deadly fall, if any, from the eight cells
+// round `feet`, read from the world as fallOff reads the pathfinder's
+// blocks. A body at a run carries on past the cell it stops on; a cell
+// with such a fall beside it is not one to run to. mid-208-k-nether-2 ran
+// out of a fire at 19.5 health, its last cell by an edge, and went on over
+// it, forty-seven blocks into lava (note 548).
+function fallBeside(bot, feet, health = bot?.health ?? 20) {
+  const shim = { getBlock: (p, dx, dy, dz) => {
+    const b = bot.blockAt?.(new Vec3(p.x + dx, p.y + dy, p.z + dz));
+    return b ? { name: b.name, physical: b.boundingBox === 'block', liquid: /water|lava/.test(b.name) } : {};
+  } };
+  for (const [dx, dz] of AROUND) { const fall = SurvivalMovements.prototype.fallOff.call(shim, feet, dx, dz, health); if (fall) return fall; }
+  return null;
+}
+
+module.exports = { fallBeside, configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };

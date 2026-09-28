@@ -430,6 +430,7 @@ function inFire(bot) {
 // runs through a block of fire rather than stand in one).
 function fireRoute(bot) { return fireRouteThrough(bot, false) || fireRouteThrough(bot, true); }
 function fireRouteThrough(bot, throughFire) {
+  const { fallBeside } = require('./movement');
   const start = bot.entity.position.floored();
   const clear = b => b && b.boundingBox === 'empty' && (throughFire || !FIRE.has(b.name)) && b.name !== 'lava';
   const water = p => bot.blockAt(p)?.name === 'water';
@@ -445,6 +446,11 @@ function fireRouteThrough(bot, throughFire) {
       if (!(clear(bot.blockAt(next)) || water(next)) || !clear(bot.blockAt(next.offset(0, 1, 0))) || !(water(next) || floor(next))) continue;
       // A step up needs the head room over the cell left.
       if (dy === 1 && !clear(bot.blockAt(p.offset(0, 2, 0)))) continue;
+      // No cell beside a fall that kills (note 545's rule, movement.js
+      // fallBeside): the run is at a sprint and carries on past the cell
+      // it stops on. mid-208-k-nether-2 ran out of a fire at 19.5 health
+      // onto a cell by an edge and over it, forty-seven into lava (note 548).
+      if (!water(next) && fallBeside(bot, next)) continue;
       seen.add(`${next}`);
       queue.push({ p: next, path: [...path, next] });
     }
@@ -473,6 +479,35 @@ async function outOfFire(bot, task, onAction = () => {}) {
   return !inFire(bot);
 }
 
+// Water within eight blocks a burning body can run into (douse).
+function pondNear(bot) {
+  const here = bot.entity.position.floored();
+  for (let r = 1; r <= 8; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (const dy of [0, -1, 1]) {
+    if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+    const c = here.offset(dx, dy, dz);
+    if (bot.blockAt(c)?.name === 'water' && !/lava|fire/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '')) return c;
+  }
+  return null;
+}
+// Whether the fire on the bot is one the reflex can do anything about: in
+// fire (flames at the feet, beside a burning body, or the server's in-fire
+// hurt), which is stepped out of; or alight where water puts it out, a
+// bucket carried or a pond within eight, which the Nether never has. Alight
+// with neither, only time puts it out (a fireball's five seconds, the
+// eight after fire, lava's fifteen), and standing still spends that time
+// under whatever lit it: mid-235-q-nether-3, mid-208-k and
+// mid-235-q-nether-2-fortress-1 each stood five to seven seconds on the
+// reflex, keys let go, a blaze five to forty-eight blocks off shooting on,
+// 20 to 9, 15.3 to 5.9 and 9 to 5, the stance not asked till it ended
+// (note 548). That burn is a fact of every choice then (its seconds left,
+// combat-estimate burnLeft), and who acts is the claims' question.
+function fireToAnswer(bot) {
+  if (inFire(bot)) return true;
+  if (!onFire(bot) || /nether/.test(String(bot.game?.dimension || ''))) return false;
+  if (bot.inventory?.items?.().some(i => i.name === 'water_bucket')) return true;
+  return !!(bot.blockAt && pondNear(bot));
+}
+
 // Burning with no fire about (lava sets a body burning for a quarter of a
 // minute after it is left): water puts it out, as a player pours the bucket
 // at their feet and takes it back. mid-110-b stepped into the lava pool it
@@ -485,13 +520,7 @@ async function douse(bot, task, onAction = () => {}) {
   // runs for the pond. mid-110-j came out of a lava pool with an empty bucket
   // and burned from sixteen health to nothing on the bank (2026-09-26).
   if (!bucket) {
-    const here = bot.entity.position.floored();
-    let pond = null;
-    for (let r = 1; r <= 8 && !pond; r++) for (let dx = -r; dx <= r && !pond; dx++) for (let dz = -r; dz <= r && !pond; dz++) for (const dy of [0, -1, 1]) {
-      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
-      const c = here.offset(dx, dy, dz);
-      if (bot.blockAt(c)?.name === 'water' && !/lava|fire/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '')) { pond = c; break; }
-    }
+    const pond = pondNear(bot);
     if (!pond) return false;
     onAction({ action: 'douse', health: bot.health, pond: { ...pond } });
     await require('./motion').move(bot, task, { label: 'into_water', keys: ['forward', 'sprint'], sneak: false, why: 'burning, into the water to put it out',
@@ -775,4 +804,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S };
+module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireToAnswer, pondNear, onFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S };

@@ -80,7 +80,9 @@ const URGENCY = { reflex: 0, pressing: 1, routine: 2 };
 // What the reflexes read, injectable for the tests.
 const probe = {
   inLava: bot => require('./terrain').bodyInLava(bot),
-  burning: bot => { const v = require('./vitals'); return !!(bot.entity?.metadata?.[0] & 1) || v.inFire(bot); },
+  // A fire the reflex can answer (vitals.js fireToAnswer): alight in the
+  // Nether with no flames about, it has none, and the claims decide (note 548).
+  burning: bot => require('./vitals').fireToAnswer(bot),
   headInBlock: bot => require('./vitals').headInBlock(bot),
   mobs: (bot, radius) => require('./danger').threats(bot, radius),
 };
