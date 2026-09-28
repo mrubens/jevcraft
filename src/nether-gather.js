@@ -199,6 +199,29 @@ function crossSays(bot, way) {
   const short = whole.bridge > carried ? ` ${plural(carried, 'block')} carried: ${now.cells ? `they take it ${plural(now.cells, 'cell')}, ${plural(Math.round(now.gain), 'block')} nearer, and it stops at the first cell needing another` : 'it stops at the first cell needing one'}.` : whole.bridge ? ` ${plural(carried, 'block')} carried, ${carried - whole.bridge} left after.` : '';
   return `Straight across at y ${y}, crouched: ${plural(whole.cells, 'cell')}, ${work.join(' and ') || 'all open ground'}, about ${travel.crossingSeconds(whole)} seconds; ${ends}.${short}`;
 }
+// Whether the crossing straight at a place reaches it, said, from what is
+// carried and the tool in hand, for a question that offers the trip there
+// (the way back to the portal for food): the same facts the gathering's
+// portal option says of it. The trip was offered as "148 blocks off, about
+// 34 seconds at a walk", and mid-243-af-nether-3-fortress-5 (25586) chose
+// it eleven times in an hour and dug toward the portal by hand with no
+// pickaxe and no block carried, where the crossing ended 107 blocks short
+// at blackstone with lava behind it, a fact the gathering question had said
+// each time and this one never did (note 629). The walk is surveyed by the
+// pathfinder, half a second, which these sentences do not wait for.
+function reachSays(bot, target) {
+  if (!inNether(bot) || typeof bot.blockAt !== 'function' || !bot.entity?.position || !target) return '';
+  let whole, now;
+  const carried = blocksCarried(bot);
+  try {
+    whole = surveyCrossing(bot, target, { cells: CROSS_CELLS, blocks: 999 });
+    now = whole.bridge <= carried ? whole : surveyCrossing(bot, target, { cells: CROSS_CELLS });
+  } catch (_) { return ''; }
+  const way = { cross: { whole, now, carried }, target };
+  const short = flat(now.end, target);
+  const reaches = whole.cells && short <= THERE + 1;
+  return `${crossSays(bot, way)}${reaches ? '' : ` With what is carried that crossing stops ${plural(Math.round(short), 'block')} short of it.`}`;
+}
 function floorSays(way) {
   if (!way.floor) return '';
   const { down, floor } = way.floor;
@@ -430,4 +453,4 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   return true;
 }
 
-module.exports = { netherGather, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
+module.exports = { netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };

@@ -444,7 +444,10 @@ function wayBackSays(bot, portal) {
   const food = (bot.inventory?.items?.() || []).some(i => { try { return require('./vitals').safeFood?.(bot, i); } catch (_) { return false; } });
   const health = Math.round((bot.health ?? 20) * 10) / 10;
   const heals = health >= 20 ? '' : hunger >= 18 ? ` Health comes back on the way at hunger ${hunger}, about a point every four seconds.` : food ? '' : ` Health does not come back on the way: hunger ${hunger}, under eighteen, and nothing to eat; ${health} health is what it walks with.`;
-  return `${line ? ` ${line}` : ''}${touch ? ` ${touch}` : ''}${heals}`;
+  // Whether the crossing at this height reaches it, with what is carried
+  // and the tool in hand (note 629): the line above is ground seen, not a way.
+  let reach = ''; try { reach = require('./nether-gather').reachSays(bot, portal); } catch (_) { reach = ''; }
+  return `${line ? ` ${line}` : ''}${reach ? ` ${reach}` : ''}${touch ? ` ${touch}` : ''}${heals}`;
 }
 
 // The hour the Overworld side is at when the bot comes out there: the

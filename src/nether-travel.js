@@ -60,11 +60,19 @@ function crossingSays(s, what) {
 const CROSS_REST_MS = 5 * 60000;
 const crossKey = (bot, target) => { const h = bot.entity.position; return `${Math.floor(h.x / 8)},${Math.floor(h.z / 8)}>${Math.round(target.x)},${Math.round(target.z)}`; };
 const crossingResting = (bot, goal, target) => isSetAside(goal, 'crossing', crossKey(bot, target));
-async function crossToward(bot, task, goal, save, target, { what = 'the target' } = {}) {
+// `beat`: the nearest the bot has come to the target so far (a portal's
+// approach record). A stretch that ends no nearer than that walks ground the
+// bot has made already, and is not made: the way on from where it stands is
+// something else's, and the walk over its own tunnel took it from the work
+// the crossing left for the next pass (note 629).
+async function crossToward(bot, task, goal, save, target, { what = 'the target', beat = null } = {}) {
   if (!inNether(bot) || typeof bot.blockAt !== 'function') return { tried: false };
   if (crossingResting(bot, goal, target)) return { tried: false, resting: true };
   const survey = surveyCrossing(bot, target, { cells: CROSS_STRETCH });
   if (!survey.cells || survey.gain < 1) return { tried: false, survey };
+  if (Number.isFinite(beat) && flat(target, survey.end) >= beat - 1) {
+    return { tried: false, survey, madeAlready: `a crossing straight at ${what} would go ${survey.cells} blocks and end ${Math.round(flat(target, survey.end))} blocks from it, no nearer than the ${Math.round(beat)} the bot has already come` };
+  }
   goal.step = { action: 'cross_toward', what, target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) },
     cells: survey.cells, dig: survey.dig, bridge: survey.bridge, carried: survey.carried }; save();
   const key = crossKey(bot, target), before = flat(target, bot.entity.position);
@@ -598,7 +606,7 @@ function legTarget(bot, goal) {
     const p = s.portal || s.target || s.found;
     if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) {
       const portal = !!s.portal || /portal/.test(s.action || '');
-      return { at: new Vec3(p.x, p.y ?? bot.entity.position.y, p.z), what: portal ? 'the portal back' : s.action === 'find_fortress' ? 'the fortress search\'s leg' : 'where the work was going', portal };
+      return { at: new Vec3(p.x, p.y ?? bot.entity.position.y, p.z), what: portal ? 'the portal back' : s.action === 'find_fortress' ? 'the fortress search\'s leg' : s.action === 'nether_gather' && s.what ? s.what : 'where the work was going', portal };
     }
   }
   const t = goal.fortressSearch?.target;

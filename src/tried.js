@@ -149,13 +149,48 @@ function waitBrought(before, bot) {
   if (moved) return moved;
   return now.worth > before.worth ? 'more carried' : null;
 }
+// A walk toward a place is judged by how near it came, not by how far it
+// moved (note 629). On mid-243-af-nether-3-fortress-5 (25586) the bot dug a
+// tunnel toward the crimson stems it needed, was taken 30 blocks back along it
+// by the way to the portal, and walked to the stems again, eleven times in
+// forty minutes; each walk was "moved 30 blocks" and so getting somewhere,
+// the ledger said "cross to 1 toward (-178, 72, -112), 3 times, 3 of them
+// getting somewhere", and nothing rested or went to the question above. An
+// answer that had a place to go (option.target) is getting somewhere when it
+// ends nearer that place than any answer of its question toward it did before
+// (by NEARER blocks), or when it was brought from afar; one that began where
+// an earlier one ended (the bot had been taken back) and ended no nearer than
+// that one walked its own ground. What else came of it (something carried, a
+// block dug in a new cell, the stall watch's progress) still counts.
+const NEARER = 2;
+// The walk began within this of where the nearest earlier one ended: the bot had been taken back, not brought from afar.
+const TAKEN_BACK = 64;
+function reachOf(goal, e, bot) {
+  const here = P(bot?.entity?.position);
+  if (!e.target || !here || e.waiting) return null;
+  const reached = Math.round(dist(here, e.target) * 10) / 10;
+  const earlier = (goal?.tried?.entries || []).filter(o => o !== e && o.q === e.q && o.target && o.at < e.at && Number.isFinite(o.reached) && dist(o.target, e.target) <= TARGET_FROM);
+  const best = earlier.length ? earlier.reduce((m, o) => o.reached < m.reached ? o : m) : null;
+  return { reached, best, here };
+}
 function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null } = {}) {
   if (e.outcome !== 'pending') return false;
   const rung = goal?.tried?.rung;
   const byRung = RUNG_JUDGED.has(e.q) && rung && rung.rung === rungOf(goal);
   // A stall's answer that brought something home (a hunt's meat, a block
   // of ore) got somewhere, though not on the rung; its walk alone did not.
-  const carried = e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  let carried = e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  const reach = byRung ? null : reachOf(goal, e, bot);
+  let noNearer = null;
+  if (reach) {
+    e.reached = reach.reached; e.endedAt = reach.here;
+    const back = reach.best?.endedAt && e.place && dist(e.place, reach.best.endedAt) <= TAKEN_BACK;
+    if (back && /^moved /.test(carried || '') && reach.reached >= reach.best.reached - NEARER) {
+      noNearer = `ended ${Math.round(reach.reached)} blocks from it, no nearer than the ${Math.round(reach.best.reached)} an answer toward it reached ${ago(Math.max(0, e.at - (reach.best.settledAt || reach.best.at)))} before this began`;
+      carried = cameOf({ ...e.mark, x: NaN }, mark(bot), e.at);
+      if (!carried) e.noNearer = true;
+    }
+  }
   // A wait's own building is not something come of it: the walls of a box,
   // the blocks of a cover or a pocket, a window dug. Counted as getting
   // somewhere, a box by a blaze spawner was chosen sixteen times in
@@ -179,7 +214,7 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
   // Cut short by the survival layer (air, a threat) or a cancellation, with
   // nothing come of it: not a try that came to nothing (note 583).
   else if (e.cut && !error) { e.outcome = 'cut'; e.why = e.cut; }
-  else { e.outcome = 'blocked'; const why = error || whyItEnded(bot, goal, e.at); if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200); }
+  else { e.outcome = 'blocked'; const why = error || whyItEnded(bot, goal, e.at) || noNearer; if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200); }
   e.settledAt = now; delete e.mark; delete e.scene;
   return true;
 }
@@ -211,9 +246,15 @@ function about(goal, { q, method, target = null, here, now = Date.now(), work = 
   // A hold on answers that came back at once whatever the facts (repeats.js
   // quickBefore) holds from about here whatever their target: the target is
   // among the facts that moved between them (note 611).
-  return t.entries.filter(e => e.q === q && e.method === method && now - e.at < WINDOW_MS && (!work || !e.work || e.work === work) &&
+  const same = t.entries.filter(e => e.q === q && e.method === method && now - e.at < WINDOW_MS && (!work || !e.work || e.work === work) &&
     (e.anyTarget && e.until > now ? e.place && dist(e.place, here) <= NEAR
       : e.target && tp ? dist(e.target, tp) <= TARGET_NEAR && e.place && dist(e.place, here) <= TARGET_FROM : !e.target && !tp && e.place && dist(e.place, here) <= NEAR));
+  // Another way to the same place, from about here, that ended no nearer than an
+  // earlier walk there (noNearer): the place came to nothing, not the way (note
+  // 629). On foot and straight across were the same tunnel to the same stems, and
+  // with the crossing resting the walk was taken six of six.
+  const kin = tp ? t.entries.filter(e => e.q === q && e.method !== method && e.outcome === 'blocked' && e.noNearer && e.target && dist(e.target, tp) <= TARGET_NEAR && e.place && dist(e.place, here) <= TARGET_FROM && now - e.at < WINDOW_MS && (!work || !e.work || e.work === work)) : [];
+  return kin.length ? [...same, ...kin] : same;
 }
 function blockedOf(list) { return list.filter(e => e.outcome === 'blocked'); }
 // Resting: blocked REST_AFTER times in the window, until REST_MS after the
@@ -598,6 +639,29 @@ function rungTarget(bot, goal) {
   return null;
 }
 const count = (bot, names) => (bot.inventory?.items?.() || []).filter(i => names.includes(i.name)).reduce((n, i) => n + i.count, 0);
+// The minutes since the rung was last looked at that count toward its ten.
+// The look is made once a pass, and a pass can be one await of minutes (a
+// crossing dug by hand, a walk of sixty blocks): the look caps what one
+// credits, so as not to count a restart's downtime or a suspended machine,
+// and at thirty seconds a four-and-a-half-minute pass counted half a minute.
+// On mid-243-af-nether-3-fortress-5 (25586) the bot went from a crossing of
+// the portal way to a walk to the crimson stems and back for 71 minutes,
+// each leg a pass of one to five minutes, and the rung's ten minutes without
+// a new best (note 599) were never reached: 16.8 minutes passed between two
+// new bests, about 9 of them credited, and the question was asked 0 times
+// (note 629). Within one process the gap is what passed, up to the rung's
+// budget; the first look after a start credits thirty seconds at most, and a
+// gap that began in a wait something was bringing to an end (asleep, a batch
+// cooking, health coming back) credits nothing.
+const LOOK_FIRST_MS = 30000;
+function idleSince(bot, b, now, waiting) {
+  const gap = Math.max(0, now - b.lastAt);
+  const seen = bot?._rungLooked;
+  if (bot && typeof bot === 'object') bot._rungLooked = { at: now, waiting: !!waiting };
+  if (!seen) return Math.min(LOOK_FIRST_MS, gap);
+  if (seen.waiting) return 0;
+  return Math.min(RUNG_MS, gap);
+}
 // -> null, or { rung, says, facts } when the rung's question is due
 function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   // Not in Creative, nor in the End, whose fight owns its turn (as the
@@ -617,7 +681,7 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
     if (tkey) b.best.target[tkey] = dist(target.at, here);
     return null;
   }
-  const dt = Math.min(30000, Math.max(0, now - b.lastAt)); b.lastAt = now;
+  const dt = idleSince(bot, b, now, waiting); b.lastAt = now;
   const news = [];
   if (have > b.best.items) news.push(`${plural(have - b.best.items, 'more')} ${items.map(label).join(' or ')}`);
   b.best.items = Math.max(b.best.items, have);

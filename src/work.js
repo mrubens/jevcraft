@@ -3590,9 +3590,10 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   if (where === 'nether') {
     const { crossToward } = require('./nether-travel');
     portalApproach(goal, p, bot.entity.position);
-    const crossed = await crossToward(bot, task, goal, save, pos(p), { what: 'the portal back' });
+    const crossed = await crossToward(bot, task, goal, save, pos(p), { what: 'the portal back', beat: approachBest(goal, p) });
     if (crossed.tried && portalApproach(goal, p, bot.entity.position)) return true;
     if (crossed.tried) walk += '; a crossing straight toward it at this height came no nearer';
+    else if (crossed.madeAlready) walk += `; ${crossed.madeAlready}`;
   }
   // Farther off, a leg of the way on foot first: ninety-six blocks from
   // the portal the staircase was the only thing tried, and it went up and
@@ -3846,6 +3847,10 @@ async function portalLeg(bot, task, goal, p) {
 }
 // The nearest the bot has come to a portal it is making for, kept per
 // portal; whether `at` is a new nearest by more than a block.
+// The nearest yet, as portalApproach keeps it (undefined before a first look).
+function approachBest(goal, p) {
+  return goal.portalApproach?.[`${p.x},${p.y},${p.z}`]?.best;
+}
 function portalApproach(goal, p, at) {
   const key = `${p.x},${p.y},${p.z}`;
   const all = goal.portalApproach ||= {};
@@ -4817,9 +4822,9 @@ async function returnFromNether(bot, task, goal, save) {
     const walk = `the walk into it failed (${String(err.message || err).slice(0, 80)})`;
     const { crossToward } = require('./nether-travel');
     portalApproach(goal, portal, bot.entity.position);
-    const crossed = await crossToward(bot, task, goal, save, pos(portal), { what: 'the portal back' });
+    const crossed = await crossToward(bot, task, goal, save, pos(portal), { what: 'the portal back', beat: approachBest(goal, portal) });
     if (crossed.tried && portalApproach(goal, portal, bot.entity.position)) return;
-    await stairsOrWay(bot, task, goal, save, portal, 'nether', crossed.tried ? `${walk}; a crossing straight toward it at this height came no nearer` : walk);
+    await stairsOrWay(bot, task, goal, save, portal, 'nether', crossed.tried ? `${walk}; a crossing straight toward it at this height came no nearer` : crossed.madeAlready ? `${walk}; ${crossed.madeAlready}` : walk);
   }
 }
 
