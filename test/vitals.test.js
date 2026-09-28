@@ -918,3 +918,33 @@ test('the straight walk at a drop is not taken onto a hot floor (mid-242-aa-neth
   // Along the cobblestone east, none.
   assert.equal(hotOnTheWay(bot, new Vec3(-18.5, 34, 47.5)), null);
 });
+
+// mid-242-ah-fortress-2 (25587), 11:50:21 to 11:50:31 (note 602): at y 44
+// on the column of blocks it had risen on out of an earlier fire, a deadly
+// drop on every side, a flame lit in its own cell by a blaze's fireball.
+// No way out was found and no rise offered (no block left), so body_way was
+// never asked and the old run found no steps twenty-one times a second
+// while it burned from 8.5 to none, the flame a punch away.
+function risenColumnInFire({ dig = true } = {}) {
+  const feet = new Vec3(-197, 44, -152), dug = [];
+  const lit = new Set([`${feet}`]);
+  const name = p => lit.has(`${p}`) ? 'fire' : p.x === feet.x && p.z === feet.z && p.y < feet.y && p.y >= 30 ? 'netherrack' : p.y < 30 ? 'lava' : 'air';
+  const bot = { health: 8.1, food: 20, oxygenLevel: 20, game: { dimension: 'the_nether' }, _inFireAt: Date.now(),
+    entity: { position: new Vec3(-196.5, 44, -151.5), metadata: [1], onGround: true, eyeHeight: 1.62, yaw: 0, pitch: 0 },
+    entities: {}, inventory: { items: () => [{ name: 'mutton', count: 9 }], slots: {} }, heldItem: null,
+    blockAt: p => { const q = p.floored ? p.floored() : p; const n = name(q); return { name: n, position: q, boundingBox: n === 'netherrack' ? 'block' : 'empty' }; },
+    setControlState() {}, getControlState() { return false; }, clearControlStates() {}, lookAt: async () => {}, look: async () => {} };
+  if (dig) bot.dig = async b => { dug.push(`${b.position}`); lit.delete(`${b.position}`); };
+  return { bot, dug };
+}
+test('in a flame on a risen column with nowhere to walk and no block to rise on, the way offered is to punch the flame out, and it is punched (mid-242-ah-fortress-2, note 602)', async () => {
+  const vitals = require('../src/vitals');
+  const { bot, dug } = risenColumnInFire();
+  assert.equal(vitals.inFire(bot), true);
+  assert.equal(vitals.fireRoute(bot), null, 'no cell to walk to');
+  const ways = vitals.fireWays(bot, new Task('t'));
+  assert.deepEqual(Object.keys(ways), ['put_out_flames']);
+  assert.match(ways.put_out_flames.description, /^Punch out the flame the body stands in or beside \(1\), where it stands: a hit puts fire out at once/);
+  assert.equal(await ways.put_out_flames.run(), true, 'out of the fire once the flame is punched');
+  assert.deepEqual(dug, ['(-197, 44, -152)']);
+});

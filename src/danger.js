@@ -278,6 +278,13 @@ function claimed(bot, entity) {
   return !!hunt && hunt.name === entity.name && hunt.until > Date.now() && fitToFight(bot);
 }
 
+// The kind a chosen stance is walking in on to strike (blaze-stand.js), for
+// the walk only: not a claim the reflexes or the survival layer yield to.
+function closingOn(bot, entity) {
+  const c = bot._closingOn;
+  return !!c && c.name === entity?.name && c.until > Date.now();
+}
+
 function hunted(bot, entity) {
   const hunt = bot._huntingEntity;
   // Never within a sword's reach. The exemption exists so a distant blaze
@@ -478,7 +485,13 @@ function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
     // freshly dug cell was refused, an hour and a half in one spot. The
     // claim still lapses under fourteen health, and the survival layer
     // takes over as before.
-    if (combatTarget(bot, entity) || hunted(bot, entity)) return true;
+    // And the kind a stance Jev chose goes at (close_in, break_spawner:
+    // blaze-stand.js closingOn), whatever the health: the hunt's claim
+    // lapses under fourteen, and with it every walk toward a blaze in sight
+    // was "no route". mid-243-ag-fortress-1 chose close_in at 14.1 and stood
+    // on one cell 22 seconds behind the shield, burning, the walk refused at
+    // 13.1 (note 602); six live deaths chose it and closed on nothing.
+    if (combatTarget(bot, entity) || hunted(bot, entity) || closingOn(bot, entity)) return true;
     // Out of sight, a mob only matters when it is nearly at the wall.
     const radius = !seen(bot, entity) ? 6 : shooter(entity) ? 20 : 12;
     return entity.position.distanceTo(point) >= Math.min(radius, entity.position.distanceTo(bot.entity.position) - 0.25);
@@ -623,4 +636,4 @@ function pushOverDrop(bot) {
   return drop ? { pushers, drop } : null;
 }
 
-module.exports = { atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

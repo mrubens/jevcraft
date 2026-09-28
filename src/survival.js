@@ -373,7 +373,7 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // picked up). A stance whose point is to strike (STRIKING_STANCES) and was
 // held to its end with none of these failed; any stance that ended without
 // them, with nothing changed about it since, would end the same again.
-const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling']);
+const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling', 'close_in']);
 const STANCE_IDLE_MS = 10 * 60000;
 const carriedCount = bot => { try { return bot.inventory?.items?.().reduce((n, i) => n + (i.count || 0), 0) ?? 0; } catch (_) { return 0; } };
 function stanceMark(bot) {

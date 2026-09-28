@@ -360,6 +360,17 @@ function fireballHit(distance) {
   return p;
 }
 const volleyHit = distance => 1 - (1 - fireballHit(distance)) ** FIREBALL.volley;
+// A blaze's fire at the game's own pace (note 602): three fireballs a volley,
+// a volley about every nine seconds, each landing by its distance, so a
+// landing about every `every` seconds; and the chance the bot is alight at a
+// moment from its five seconds a landing. Priced at a shot every two seconds
+// and alight whenever one was in sight, a blaze ten off cost 1.35 a second
+// and the burning where the game's own numbers give about 0.3 and 0.4: four
+// blazes about read as 48 to 62 in fifteen seconds for every stance.
+function blazeCadence(distance) {
+  const every = FIREBALL.volleySeconds / (FIREBALL.volley * fireballHit(Math.max(FIREBALL.meleeReach, distance || 0)));
+  return { every: round(every, 2), burns: round(1 - Math.exp(-FIRE_SECONDS.fireball / every), 2) };
+}
 // The farthest a blaze's volley lands one more often than not.
 const FIRE_LANDS = (() => { let d = 1; while (d < RANGE.blaze && volleyHit(d + 1) >= 0.5) d++; return d; })();
 const inHundred = p => Math.round(p * 100);
@@ -543,7 +554,9 @@ function within(pieces, seconds = Infinity) {
   const burnCuts = [...new Set(burns.flatMap(p => [p.from, end(p)]))].sort((a, b) => a - b);
   for (let i = 0; i + 1 < burnCuts.length; i++) {
     const on = burns.filter(p => p.from <= burnCuts[i] && end(p) >= burnCuts[i + 1]);
-    if (on.length && Number.isFinite(burnCuts[i + 1] - burnCuts[i])) total += Math.max(...on.map(p => p.perSecond)) * (burnCuts[i + 1] - burnCuts[i]);
+    // One fire however many light it: alight at a moment unless none of
+    // them has (each piece's rate is the chance it keeps the bot alight).
+    if (on.length && Number.isFinite(burnCuts[i + 1] - burnCuts[i])) total += (1 - on.reduce((q, p) => q * (1 - Math.min(1, p.perSecond)), 1)) * (burnCuts[i + 1] - burnCuts[i]);
   }
   const cuts = [...new Set(hits.flatMap(p => [p.from, end(p)]))].sort((a, b) => a - b);
   for (let i = 0; i + 1 < cuts.length; i++) {
@@ -685,7 +698,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       // A blow that varies (a hoglin's three to eight): its least and its
       // hardest through the armour worn, and how often it comes (note 587).
       ...(m.most && !spear ? { hitsBotLeast: round(afterArmour(m.least, worn)), hitsBotMost: round(afterArmour(m.most, worn)) } : {}), ...(m.blowEvery && !spear ? { blowEvery: m.blowEvery } : {}),
-      swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
+      swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(t.name === 'blaze' && !t.split ? blazeCadence(t.distance) : { ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}) }), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });

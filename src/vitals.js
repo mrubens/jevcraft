@@ -415,6 +415,18 @@ function fireNear(bot, p, r, { from = -1, to = 2 } = {}) {
   for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = from; dy <= to; dy++) if (FIRE.has(bot.blockAt?.(p.offset(dx, dy, dz))?.name)) return true;
   return false;
 }
+// The flames that make the body "in fire" (inFire): those its box stands in
+// and those beside it at its feet and head, each a punch away.
+function flamesAbout(bot) {
+  const feet = bot.entity?.position?.floored();
+  if (!feet || typeof bot.blockAt !== 'function') return [];
+  const found = new Map(require('./blaze-stand').flamesTouching(bot).map(b => [`${b.position}`, b]));
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const dy of [0, 1]) {
+    const b = bot.blockAt(feet.offset(dx, dy, dz));
+    if (b && FIRE.has(b.name)) found.set(`${b.position || feet.offset(dx, dy, dz)}`, b.position ? b : Object.assign(b, { position: feet.offset(dx, dy, dz) }));
+  }
+  return [...found.values()];
+}
 // Or told so by the server: an in-fire hurt within the last second and a
 // half (session.js). The flames a fireball lights can sit where the feet
 // cell does not show them: mid-229-g took ten in-fire hurts in seven
@@ -897,6 +909,23 @@ function fireWays(bot, task, onAction = () => {}) {
     const rise = riseOutOfFire(bot);
     if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the fire's cell underfoot, which puts that flame out, and stand on it a block up: about ${round(PILLAR_RISE_SECONDS)} seconds; ${rise.flamesBeside ? `${rise.flamesBeside} flame${rise.flamesBeside === 1 ? '' : 's'} still beside the cell it rises to, so the body may stand beside fire there` : 'no flame beside the cell it rises to'}${rise.flamesBelow ? ` (${rise.flamesBelow} beside the block under it, a level down, which do not touch a body standing on it)` : ''}${rise.fall ? `, and ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}; then burning on up to eight seconds.`,
       run: () => riseOnBlock(bot, task, onAction) };
+    // The flame punched out where the body stands, as a player does: fire
+    // breaks at the first hit. mid-242-ah-fortress-2 stood at y 44 on the
+    // blocks it had risen on out of an earlier fire, a deadly drop beside
+    // it, when a flame was lit in its cell: no way out was found and no
+    // rise offered, the old run found no steps twenty-one times a second
+    // and never asked, and it burned from 8.5 to none in ten seconds with
+    // the flame a punch away (note 602).
+    const flames = flamesAbout(bot);
+    if (flames.length && typeof bot.dig === 'function') ways.put_out_flames = { description: `Punch out the flame${flames.length === 1 ? '' : 's'} the body stands in or beside (${flames.length}), where it stands: a hit puts fire out at once, about a quarter second a flame, no step taken; then burning on up to eight seconds, and another fireball that misses can light the cell again.`,
+      run: async () => {
+        onAction({ action: 'out_of_fire', way: 'put_out_flames', flames: flames.length, health: bot.health });
+        bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
+        for (const b of flamesAbout(bot)) { try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } task?.check?.(); }
+        // Out, the hurt from before the punch says nothing of the cell now (inFire).
+        if (!flamesAbout(bot).length) bot._fireLeftAt = Date.now();
+        return !inFire(bot);
+      } };
     if (apple) ways.eat_golden_apple = eat();
     return ways;
   }
@@ -1176,4 +1205,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

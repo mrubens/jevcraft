@@ -62,6 +62,9 @@ const ARENAS = Object.freeze({
     blocks: [[[1836, 71, 1809], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
     open: [1812.5, 71, 1809.5],
     wall: [1812.5, 71, 1806.5],
+    // Eleven and a half from the spawner's cage, within its sixteen: where
+    // mid-243-ag-fortress-1 stood with four blazes about it (note 602).
+    near: [1824.5, 71, 1809.5],
   },
   // A pit in a cavern floor, one wide and two deep, the bot in it and
   // blazes hovering over the cavern: a hole open above is a hole they
@@ -206,6 +209,14 @@ const DRILLS = Object.freeze([
     loadout: 'fortress', fire: true, nudge: false,
     at: [[1835.5, 73, 1812.5], [1837.5, 74, 1807.5], [1833.5, 72.5, 1810.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
     why: 'mid-208-k-fortress-4 and the fortress deaths of notes 548 and 557: blazes by their spawner twenty to twenty-five blocks off, the bot on the fortress floor with a lava sea over the edge.' },
+  // Four blazes nine to eleven off by a live spawner within its sixteen,
+  // spread round the bot, two over the floor and two over the lava sea
+  // (mid-243-ag-fortress-1 at 11:45, and the three close_in deaths of note
+  // 602).
+  { name: 'blaze_spawner_four_near', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'fortress', stand: 'near',
+    loadout: 'fortress', fire: true, nudge: false,
+    at: [[1834.5, 73, 1809.5], [1832.5, 75, 1806.5], [1831.5, 72, 1815.5], [1816.5, 73, 1815.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
+    why: 'mid-243-ag-fortress-1, 2026-09-28 11:45: four blazes nine to eleven off by a live spawner twelve off; close_in chosen at 14.1 and at 7.1, and the bot burned to death on one cell (note 602).' },
   { name: 'blaze_wither_fortress', mode: 'hunt', entity: ['wither_skeleton', 'blaze', 'blaze'], prey: 'blaze', item: 'blaze_rod', count: 3, arena: 'fortress', stand: 'open',
     loadout: 'fortress', fire: true, nudge: false,
     at: [[1814.5, 71, 1808.5], [1822.5, 73, 1811.5], [1833.5, 72.5, 1810.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
@@ -317,7 +328,9 @@ function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
   // want that fire, the others a shell no creeper can open.
   const commands = [`execute in ${dimension} run tp ${user} ${place(HOLDING)}`, `gamerule minecraft:mob_griefing ${d.fire ? 'true' : 'false'}`,
     ...arenaBuild(d.arena, { dimension }),
-    `kill @e[type=minecraft:item]`, `clear ${user}`, `effect clear ${user}`,
+    // The drops in this arena only: a second session on the same server
+    // (another worktree's drills) keeps its own.
+    `execute in ${dimension} run kill @e[type=minecraft:item,${(([x1, y1, z1, x2, y2, z2]) => `x=${x1},y=${y1},z=${z1},dx=${x2 - x1},dy=${y2 - y1},dz=${z2 - z1}`)(arena.shell)}]`, `clear ${user}`, `effect clear ${user}`,
     `execute in ${dimension} run tp ${user} ${place(stand)} ${d.arena === 'corridor' ? 0 : 90} 0`];
   for (const [slot, item] of Object.entries(kit.armor)) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${item}`);
   commands.push(`item replace entity ${user} weapon.offhand with minecraft:${kit.offhand}`);

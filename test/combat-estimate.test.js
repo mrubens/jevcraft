@@ -354,9 +354,23 @@ test('a big magma cube is fought with the mediums and smalls it splits into, eac
 test('a blaze is priced with the burn its fireballs set, not the hit alone (mid-235-p-fortress-2)', () => {
   const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
   const e = fightEstimate({ threats: [{ name: 'blaze', distance: 15, visible: true, shoots: true }], armour: iron, weapon: 'iron_sword', health: 20 });
-  assert.equal(e.mobs[0].burns, 1);
-  // Its fireball through iron is about 2.8 every two seconds; the burn adds one a second.
-  assert(e.fightHere.damageTaken >= 15, `${e.fightHere.damageTaken}`);
+  // At the game's pace (note 602): a volley of three about every 8.9 seconds,
+  // each landing about 24 in 100 from 15, a landing about every 12 seconds;
+  // alight from each for five, so alight about 34 in 100 of the time.
+  assert.equal(e.mobs[0].every, 11.9);
+  assert.equal(e.mobs[0].burns, 0.34);
+  // The burn counted beside the hits: 2.5 a landing over its eight seconds is 1.7.
+  assert(e.fightHere.damageTaken >= 1.7 + 0.34 * 8 - 0.1, `${e.fightHere.damageTaken}`);
+});
+
+test('four blazes about burn the bot as one fire, lit more often the more of them there are (note 602)', () => {
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
+  const one = fightEstimate({ threats: [{ name: 'blaze', distance: 10, visible: true, shoots: true }], armour: iron, weapon: 'iron_sword', health: 20 });
+  const four = fightEstimate({ threats: [1, 2, 3, 4].map(() => ({ name: 'blaze', distance: 10, visible: true, shoots: true })), armour: iron, weapon: 'iron_sword', health: 20 });
+  const { stanceCost } = require('../src/combat-estimate');
+  const burnOf = mobs => stanceCost({ mobs: mobs.map(m => ({ ...m, hitsBot: 0 })), seconds: 10, reaches: () => true }).damage;
+  const b1 = burnOf(one.mobs), b4 = burnOf(four.mobs);
+  assert(b4 > b1 * 2 && b4 <= 10, `one ${b1}, four ${b4}: more than the likeliest one alone, never more than a health a second`);
 });
 
 test('a blaze\'s fireball lands by the game\'s scatter: about 46 in 100 at 4 blocks, 24 at 16, 14 at 48, and its volleys mostly land within about twenty-two (notes 509, 513)', () => {

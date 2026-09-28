@@ -325,7 +325,8 @@ bot.once('spawn', async () => {
       fs.writeFileSync(path.join(directory, 'results.json'), JSON.stringify({ at: new Date().toISOString(), repeats, rows, runs: rows.length }, null, 2));
       log({ summary: row });
     }
-    await commands([`kill @e[tag=arena]`, `clear ${username}`]);
+    // Only this session's arenas: another session on the same server keeps its mobs.
+    await commands([...[...new Set(selected.map(d => d.arena))].map(a => sweep(a)), `clear ${username}`]);
     const report = table(rows);
     fs.writeFileSync(path.join(directory, 'scoreboard.md'), `${report}\n`);
     finished = true;
