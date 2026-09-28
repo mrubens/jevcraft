@@ -6283,7 +6283,18 @@ class Survival {
       // this pocket, what it was sealed against and where that is now, how
       // the mobs outside have moved while it waited, no daylight where none
       // comes, and the rung's time without a new best.
-      const waitSays = require('./pocket-wait').pocketWaitSays(bot, this.state, goal, { outside: threats(bot, 16).slice(0, 8), near: threats(bot, 64), night });
+      const noFood = foodSupply(bot) === 0 && !(lastResortSupply(bot).points > 0);
+      const waitSays = require('./pocket-wait').pocketWaitSays(bot, this.state, goal, { outside: threats(bot, 16).slice(0, 8), near: threats(bot, 64), night, noFood });
+      // Off the Overworld with the trip back for food Jev chose still held
+      // (leave_nether go_back, netherLeaveHeld): that trip is the work the
+      // leave goes on with, not the rung. mid-242-ab-nether-3-fortress-1 ate
+      // its last rotten flesh, chose to go back for food at 05:07, sealed in
+      // on the way to the portal at 05:09, and was told the leave went "back
+      // to the obtain blaze rods step", past the blazes (note 589).
+      const offWorld = !/overworld/.test(String(bot.game?.dimension || 'overworld'));
+      const foodTrip = offWorld && require('./game-progress').netherLeaveHeld(goal, 'food')
+        ? { to: `go on with the way back to the Overworld for food, as Jev chose at ${new Date(goal.leaveNether.at).toISOString().slice(11, 16)}${this.state.pocketWait?.since > goal.leaveNether.at ? ', before this pocket was sealed on it' : ''}`,
+          says: ` ${require('./game-progress').portalTrip(bot, goal)} ${waiting ? `${waiting.charAt(0).toUpperCase()}${waiting.slice(1)}` : 'The work'} waits till the bot is fed and back.` } : null;
       const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
       options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run with nothing gained${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) +
         // Blazes are not waited out (note 585): mid-242-ab-nether-3 stayed
@@ -6382,7 +6393,7 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
           return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
         } };
-      options.leave = { description: `Open the pocket and go back to ${waiting || 'work'}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
+      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : ''}${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
@@ -6405,9 +6416,19 @@ class Survival {
       if ((bot.food ?? 20) < 18 && foodSupply(bot) < 18 - (bot.food ?? 20) && goal.kind !== 'creative') {
         // Surveyed once in half a minute: the pocket is visited every step,
         // and each animal in view is a route found.
-        let ways = this._pocketFood?.until > Date.now() ? this._pocketFood.ways : {};
-        if (!(this._pocketFood?.until > Date.now())) {
-          try { ways = !/overworld/.test(String(bot.game?.dimension || 'overworld')) ? {} : await forageChoices(bot, task, goal, save, this.actions, this.state); }
+        // Off the Overworld the ways are back through the portal and the
+        // Nether's hoglins (offWorldFood, the food question's own), said with
+        // the trip: mid-242-ab-nether-3-fortress-1 sat twenty-six minutes in
+        // a Nether pocket with nothing to eat, offered no way to food at all
+        // (note 589). The trip back is the leave's when the leave goes on
+        // with it already (Jev's go_back held), not offered twice.
+        let ways = offWorld ? {} : this._pocketFood?.until > Date.now() ? this._pocketFood.ways : {};
+        if (offWorld) {
+          ways = this.offWorldFood(task, goal, save);
+          if (foodTrip) delete ways.return_for_food;
+          else if (ways.return_for_food) ways.return_for_food.description += ` ${require('./game-progress').portalTrip(bot, goal)}`;
+        } else if (!(this._pocketFood?.until > Date.now())) {
+          try { ways = await forageChoices(bot, task, goal, save, this.actions, this.state); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
           this._pocketFood = { until: Date.now() + 30000, ways };
         }
@@ -6425,7 +6446,8 @@ class Survival {
             return true;
           } };
         const heal = require('./healing').healingSays(bot, goal);
-        const known = Array.isArray(heal?.nearestFood) ? `the food known: ${heal.nearestFood.join('; ')}` : 'no food known nearby: a search walks to look for animals';
+        const known = offWorld ? `${foodSupply(bot) ? 'the food carried is not enough' : 'nothing carried is food'}, and off the Overworld the food is back through the portal, where it is hunted and cooked${foodWays.hoglin_food ? ', or the Nether\'s hoglins' : ''}`
+          : Array.isArray(heal?.nearestFood) ? `the food known: ${heal.nearestFood.join('; ')}` : 'no food known nearby: a search walks to look for animals';
         if (Object.keys(foodWays).length) options.go_for_food = {
           description: `Open the pocket and go for food, the way chosen next: ${known}. Food is the only way health comes back: ${hp} health and hunger ${bot.food}, and health returns only at eighteen or more${(bot.food ?? 20) <= 6 ? `; at hunger 0 the bot starves, a health every four seconds` : ''}. ${heal?.daylight ? `${heal.daylight.charAt(0).toUpperCase()}${heal.daylight.slice(1)}.` : ''}${night ? ' Mobs spawn in the dark on the way.' : ''}${who ? ` Outside is ${who}.` : ''}${outSays}${outHealth}`,
           children: foodWays };

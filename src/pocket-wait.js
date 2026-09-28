@@ -39,16 +39,35 @@ const minutesSays = ms => {
 // against (the stance that made it, chosen within two minutes), and the mobs
 // about, each with where it began, its nearest and farthest, and whether it
 // has had the bot in sight.
+// The clock runs from the seal, not from the first look: mid-242-ab-nether-
+// 3-fortress-1 (note 589) sealed in at 05:09 and was told "13 minutes so far"
+// at 05:34, the bot restarted at 05:22 (the record began then, a look more
+// than half a minute after the last) and the blaze it had sealed against
+// forgotten with it. The seal pass keeps where and when it sealed
+// (state.sealing), and every step out of a pocket when it was last seen out
+// (pocketOutAt): a pocket sealed since the bot was last seen out is the same
+// wait, across a restart or a gap in the looks, and a new one begins only
+// when the bot has been out of it or it has been sealed again.
 function watchPocket(state, refuge, about, now = Date.now()) {
   const o = refuge.origin, key = `${o.x},${o.y},${o.z}`;
   let w = state.pocketWait;
-  // Not looked at for half a minute: the bot was out of it, and this is a
-  // new wait, in the same place or not.
-  if (!w || w.key !== key || now - (w.seenAt ?? w.since) > 30000) {
+  const s = state.sealing, sealedAt = s?.origin && `${s.origin.x},${s.origin.y},${s.origin.z}` === key && s.at <= now ? s.at : null;
+  const outAt = state.pocketOutAt || 0;
+  // Sealed since the bot was last seen out: the wait began at the seal.
+  const start = sealedAt && sealedAt > outAt ? sealedAt : null;
+  // The stance chosen for this seal: within two minutes before it.
+  const againstAt = since => {
     const st = state.stance;
-    const against = st && SEALING.has(st.choice) && now - st.at < 120000
-      ? { choice: st.choice, at: st.at, ids: st.ids || [], mobs: st.mobs || (st.kinds || []).map(n => ({ name: n })) } : null;
-    w = state.pocketWait = { key, since: now, against, mobs: {} };
+    return st && SEALING.has(st.choice) && st.at <= since + 30000 && since - st.at < 120000
+      ? { choice: st.choice, at: st.at, ids: st.ids || [], mobs: st.mobs || [].concat(st.kinds || []).map(n => ({ name: n })) } : null;
+  };
+  if (!w || w.key !== key || outAt > w.since || (sealedAt && sealedAt > w.since)) {
+    const since = start ?? now;
+    w = state.pocketWait = { key, since, against: againstAt(since), mobs: {} };
+  } else if (start && start < w.since) {
+    // A record begun after the seal (by a look after a gap, or before this
+    // was kept): moved back to it.
+    w.since = start; w.against ||= againstAt(start);
   }
   w.seenAt = now;
   for (const t of about) {
@@ -63,17 +82,25 @@ function watchPocket(state, refuge, about, now = Date.now()) {
   return w;
 }
 
-// Left the pocket: its record goes with it.
-function leftPocket(state) { delete state.pocketWait; }
+// Out of any pocket: its record goes with it, and when the bot was last seen
+// out is kept (a pocket sealed after it is a new wait).
+function leftPocket(state, now = Date.now()) { delete state.pocketWait; state.pocketOutAt = now; }
 
 // How one mob outside has gone while the bot waited, or null when it has not
-// been about a minute of it.
+// been about a minute of it. One come nearer is said with how near and how
+// far it has been over the wait: the blazes outside mid-242-ab-nether-3-
+// fortress-1's pocket were said as "come from 23 to 8 blocks off" and had
+// been from 4 to 24 and back, drifting about their fortress (note 589).
+// Whether it has had the bot in sight is said either way for one come
+// nearer: a mob takes the bot as its target only once it has seen it.
 function mobWait(w, t, now) {
   const m = w?.mobs?.[t.entity?.id];
   if (!m || now - m.since < HELD_MS) return null;
   const nearer = t.distance < m.first - NEARER;
-  return { m, nearer, heldOff: !nearer && !m.seen && !t.visible,
-    says: `the ${name(t.entity.name)} ${round(t.distance)} blocks off, about for ${minutesSays(now - m.since)} of the wait, ${nearer ? `come from ${round(m.first)} to ${round(t.distance)} blocks off` : `${round(m.min)}${round(m.max) > round(m.min) ? ` to ${round(m.max)}` : ''} blocks off all that time, never nearer`}${m.seen || t.visible ? ', and it has had the bot in sight' : ''}` };
+  const seen = m.seen || !!t.visible;
+  const span = round(m.min) < round(t.distance) - NEARER || round(m.max) > round(m.first) + NEARER ? `, from ${round(m.min)} to ${round(m.max)} over it` : '';
+  return { m, id: t.entity?.id, nearer, seen,
+    says: `the ${name(t.entity.name)} ${round(t.distance)} blocks off, about for ${minutesSays(now - m.since)} of the wait, ${nearer ? `come from ${round(m.first)} to ${round(t.distance)} blocks off${span}` : `${round(m.min)}${round(m.max) > round(m.min) ? ` to ${round(m.max)}` : ''} blocks off all that time, never nearer`}${seen ? ', and it has had the bot in sight' : nearer ? ', never with the bot in sight' : ''}` };
 }
 
 // What the wait has been, said: `outside` is the mobs within sixteen that the
@@ -81,7 +108,7 @@ function mobWait(w, t, now) {
 // sealed against). Returns the facts for the state and the sentences for
 // stay and leave; `heldOff` is true when every mob outside has held off out
 // of sight for a minute or more of the wait.
-function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = false, now = Date.now() } = {}) {
+function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = false, noFood = false, now = Date.now() } = {}) {
   const w = state.pocketWait;
   if (!w) return null;
   const minutes = minutesSays(now - w.since);
@@ -103,10 +130,19 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
     againstSays = ` It was sealed when ${name(w.against.choice)} was chosen against ${was.join(', ')}; ${whatNow}.`;
     facts.sealedAgainst = `${was.join(', ')} (${name(w.against.choice)}); ${whatNow}`;
   }
-  // The mobs outside, as they have gone while the bot waited.
+  // The mobs outside, as they have gone while the bot waited. Held off is
+  // every one of them about a minute or more of the wait, none with the bot
+  // in sight in it, and none the mob the pocket was sealed against (which
+  // may be after the bot still). One come nearer unseen counts: a mob takes
+  // the bot as its target only on sight (a warden aside), so its coming is
+  // not coming at the bot. mid-242-ab-nether-3-fortress-1's two blazes,
+  // drifting 4 to 24 blocks off unseen, priced "out among them" at 27.5
+  // damage, kept it in its pocket twenty-six minutes (note 589).
   const waits = outside.map(t => mobWait(w, t, now)).filter(Boolean);
-  const heldOff = outside.length > 0 && waits.length === outside.length && waits.every(x => x.heldOff);
-  const mobsSays = waits.length ? ` Of the mobs outside: ${waits.map(x => x.says).join('; ')}${heldOff ? `. None of them has come nearer or had the bot in sight while it waited` : ''}.` : '';
+  const againstIds = new Set(w.against?.ids || []);
+  const heldOff = outside.length > 0 && waits.length === outside.length && waits.every(x => !x.seen && !againstIds.has(x.id)) && !outside.some(t => t.entity?.name === 'warden');
+  const anyNearer = waits.some(x => x.nearer);
+  const mobsSays = waits.length ? ` Of the mobs outside: ${waits.map(x => x.says).join('; ')}${heldOff ? (anyNearer ? '. None of them has had the bot in sight while it waited, and a mob takes the bot as its target only once it has seen it' : '. None of them has come nearer or had the bot in sight while it waited') : ''}.` : '';
   if (waits.length) facts.mobsOutside = waits.map(x => x.says);
   // No daylight to wait for.
   const dim = String(bot.game?.dimension || 'overworld');
@@ -115,6 +151,15 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   if (noDay) facts.daylight = 'none here: a stay ends only when the bot opens the pocket';
   const hp = bot.health ?? 20;
   const healSays = !night && hp >= 20 ? ' Health is full: staying heals nothing.' : '';
+  // Nothing to eat, hurt and under eighteen: the wait brings no health back
+  // however long it runs (mid-242-ab-nether-3-fortress-1 ate its last
+  // rotten flesh two minutes before it sealed in, note 589).
+  const food = bot.food ?? 20;
+  const starving = noFood && hp < 20 && food < 18;
+  const foodSays = starving ? ` Nothing carried is food: hunger ${food} does not rise in here, so health does not come back in this pocket however long it waits.` : '';
+  if (starving) facts.health = `${Math.round(hp * 10) / 10}, not coming back: nothing carried to eat and hunger ${food}`;
+  // What a stay could wait for, where neither comes.
+  const nothingComes = noDay && starving ? ' Neither daylight nor health comes to this wait: only the mobs outside moving off would change it.' : '';
   // The rung, and how long since it last got anywhere.
   const { rungOf, rungSays } = require('./tried');
   const r = goal?.tried?.rung, rung = rungOf(goal);
@@ -123,7 +168,7 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   if (rungLine) facts.rung = rungLine.trim();
   return {
     facts, heldOff, minutes,
-    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${daySays}${healSays}${rungLine}`,
+    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${daySays}${healSays}${foodSays}${nothingComes}${rungLine}`,
     leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}`,
     claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}) },
   };

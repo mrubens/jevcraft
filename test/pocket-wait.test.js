@@ -68,20 +68,114 @@ test('a pocket in the Nether says how the wait has gone: its minutes, the ghast 
   assert.match(claimSays(c), /^In a sealed pocket, 5 minutes so far, sealed against a ghast in sight 25 blocks off \(dig down\); that ghast is not about now: whether to stay/);
 });
 
-test('a mob that has come nearer through the wait is said so, and leaving is priced among them as before', async () => {
+test('a mob that has come nearer through the wait is said so, and leaving is priced among them as before when it is the mob the pocket was sealed against', async () => {
   const { bot, origin, piglin } = netherPocket({ mob: 'zombie', piglinAt: new Vec3(15.5, 30, 0.5) });
   delete bot.entities[9];
   const t0 = 1_800_000_000_000;
   const goal = { kind: 'win', request: 'beat the game' };
-  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { ...origin }, dimension: 'the_nether' }] }, client: { systemOne: async () => ({}) } });
+  // Sealed against this zombie, in sight: it may be after the bot still.
+  const survival = new Survival(bot, {}, { state: { shelters: [{ origin: { ...origin }, dimension: 'the_nether' }],
+    stance: { choice: 'seal', kinds: ['zombie'], ids: [7], mobs: [{ name: 'zombie', distance: 15.2, visible: true }], at: t0 - 5000, health: 20 } }, client: { systemOne: async () => ({}) } });
   await askAt(survival, goal, t0);
   for (let s = 20; s <= 120; s += 20) { piglin.position = new Vec3(15.5 - 8 * s / 120, 30, 0.5); await askAt(survival, goal, t0 + s * 1000); }
   const { tree } = await askAt(survival, goal, t0 + 120000);
   assert.match(tree.stay.description, /In this pocket 2 minutes so far\./);
-  assert.match(tree.stay.description, /Of the mobs outside: the zombie 7 blocks off, about for 2 minutes of the wait, come from 15 to 7 blocks off\./);
-  assert.doesNotMatch(tree.stay.description, /It was sealed when/, 'no stance sealed it: nothing said of one');
+  assert.match(tree.stay.description, /Of the mobs outside: the zombie 7 blocks off, about for 2 minutes of the wait, come from 15 to 7 blocks off, never with the bot in sight\./);
+  assert.match(tree.stay.description, /It was sealed when seal was chosen against a zombie in sight 15 blocks off; now the zombie 7 blocks off, out of sight\./);
   assert.match(tree.leave.description, /Out among them, fighting them all is estimated/);
   assert.doesNotMatch(tree.leave.description, /Should they all come/);
+});
+
+// mid-242-ab-nether-3-fortress-1 (25592, note 589): at its fortress with
+// nothing left to eat, Jev chose to go back to the Overworld for food at
+// 05:07; on the way to the portal a blaze 7 blocks off had it seal in at
+// 05:08:56, and it sat there twenty-six minutes and more, pocket_next stay
+// every time. The bot was restarted at 05:22 and the wait was said from
+// there ("13 minutes so far"), the blaze it sealed against forgotten; the
+// two blazes outside, drifting 4 to 24 blocks off and never seeing it, were
+// said as "come from 23 to 8 blocks off" and leaving priced "out among
+// them" at 27.5 damage; the leave said "go back to the obtain blaze rods
+// step" while the trip back for food was the work; no way to food was on
+// offer, and nothing said health could not come back in there.
+function fortressPocket() {
+  const origin = new Vec3(-180, 58, -191);
+  const open = new Set([`${origin}`, `${origin.offset(0, 1, 0)}`]);
+  const blaze = (id, x) => ({ id, name: 'blaze', type: 'hostile', position: new Vec3(x, 60, -190.5), height: 1.8, width: 0.6, isValid: true });
+  const a = blaze(4720, -156.5), b = blaze(5008, -157.5);
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, entities: { 4720: a, 5008: b }, health: 15.8, food: 16,
+    registry: require('minecraft-data')('26.1'), time: { timeOfDay: 0 }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+    inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 64 }, { name: 'netherrack', count: 64 }], emptySlotCount: () => 10, slots: [] },
+    blockAt: p => ({ name: open.has(`${p}`) ? 'air' : 'netherrack', boundingBox: open.has(`${p}`) ? 'empty' : 'block', position: p }),
+    world: { raycast: from => ({ intersect: from.offset(0.6, 0, 0) }) } });
+  return { bot, origin, a, b };
+}
+
+test('a Nether pocket with nothing to eat says its wait from the seal across a restart, the blazes drifting unseen, that neither daylight nor health comes, and offers the way back for food (note 589)', async () => {
+  const { bot, origin, a, b } = fortressPocket();
+  const t0 = 1_800_000_000_000, min = 60000;
+  const goal = { kind: 'win', request: 'beat the game', rungTime: { phase: 'obtain_blaze_rods' },
+    portals: [{ x: 18, y: 58, z: 8, dimension: 'nether' }],
+    // Jev's go_back for food, two minutes before the seal.
+    leaveNether: { reason: 'food', pick: 'go_back', until: 0, at: t0 - 2 * min },
+    tried: { entries: [], escalations: [], rung: { rung: 'obtain_blaze_rods', since: t0 - 60 * min, bestAt: t0 - 5 * min, lastBest: 'nearer the blazes (11 blocks)' } } };
+  // As the trial left it: the stance record from before note 584 (kinds a
+  // string, no mobs), and the seal pass's where and when.
+  const persisted = { shelters: [{ origin: { ...origin }, dimension: 'the_nether', emergency: true }],
+    stance: { choice: 'seal', kinds: 'blaze', ids: [3130], shooters: ['blaze'], at: t0 - 10, health: 15.8 },
+    sealing: { origin: { ...origin }, at: t0 }, pocketOutAt: t0 - 30000 };
+  const survival = new Survival(bot, {}, { state: JSON.parse(JSON.stringify(persisted)), client: { systemOne: async () => ({}) } });
+  // Five minutes in, the trip back still held: the leave goes on with it.
+  let { tree } = await askAt(survival, goal, t0 + 5 * min);
+  assert.match(tree.leave.description, /^Open the pocket and go on with the way back to the Overworld for food, as Jev chose at \d\d:\d\d, before this pocket was sealed on it\./);
+  assert.match(tree.leave.description, /The nearest portal remembered is 280 blocks off, about 65 seconds at a walk.*The obtain blaze rods step waits till the bot is fed and back\./);
+  assert.ok(!tree.go_for_food?.children?.return_for_food, 'the trip back is the leave\'s, not offered twice');
+  // The bot restarted at thirteen minutes, as the trial's was: its record
+  // begun at the first look after the restart, the blaze sealed against
+  // not in it, and no pocketOutAt (before this was kept). The clock still
+  // runs from the seal.
+  const saved = JSON.parse(JSON.stringify(survival.state));
+  saved.pocketWait = { key: `${origin.x},${origin.y},${origin.z}`, since: t0 + 13 * min - 1000, against: null, mobs: {}, seenAt: t0 + 13 * min - 1000 };
+  delete saved.pocketOutAt;
+  const again = new Survival(bot, {}, { state: saved, client: { systemOne: async () => ({}) } });
+  ({ tree } = await askAt(again, goal, t0 + 13 * min));
+  assert.match(tree.stay.description, /In this pocket 13 minutes so far\. It was sealed when seal was chosen against a blaze; that blaze is not about now\./);
+  // The two blazes drift about the fortress, never seeing the bot: A from
+  // 22 in to 4 (5 with the height), out to 22 and back to 9; B from 21 in
+  // to 5 and out to 11.
+  const pathA = [22, 18, 12, 6, 4, 10, 18, 22, 20, 14, 9], pathB = [21, 16, 9, 5, 8, 12, 16, 14, 11, 11, 11];
+  for (let i = 0; i < pathA.length; i++) {
+    a.position = new Vec3(-179.5 + pathA[i], 60, -190.5); b.position = new Vec3(-179.5 + pathB[i], 58, -189.5);
+    ({ tree } = await askAt(again, goal, t0 + (15 + i) * min));
+  }
+  const stay = tree.stay.description, leave = tree.leave.description;
+  assert.match(stay, /In this pocket 25 minutes so far\./);
+  assert.match(stay, /the blaze 9 blocks off, about for 12 minutes of the wait, come from 2\d to 9 blocks off, from 5 to 2\d over it, never with the bot in sight/);
+  assert.match(stay, /the blaze 11 blocks off, about for 12 minutes of the wait, come from 2\d to 11 blocks off, from 5 to 2\d over it, never with the bot in sight/);
+  assert.match(stay, /None of them has had the bot in sight while it waited, and a mob takes the bot as its target only once it has seen it\./);
+  assert.match(stay, /Nothing carried is food: hunger 16 does not rise in here, so health does not come back in this pocket however long it waits\. Neither daylight nor health comes to this wait: only the mobs outside moving off would change it\./);
+  assert.match(stay, /The obtain blaze rods has had no new best for 30 minutes/);
+  // Held off unseen: the fight is what it costs should they all come.
+  assert.match(leave, /Should they all come at the bot at once, fighting them is estimated at about/);
+  assert.doesNotMatch(leave, /Out among them/);
+  // The trip's hold has lapsed (ten minutes): the leave goes back to the
+  // rung, and the way back for food is offered, said with the trip.
+  assert.match(leave, /^Open the pocket and go back to the obtain blaze rods step/);
+  assert.match(tree.go_for_food.description, /off the Overworld the food is back through the portal/);
+  assert.match(tree.go_for_food.children.return_for_food.description, /Go back through the portal to the Overworld.*The nearest portal remembered is 280 blocks off.*Health does not come back on the way: hunger 16, under eighteen, and nothing to eat/);
+});
+
+test('a pocket the bot was seen out of since its seal, and one sealed again, are new waits', async () => {
+  const { bot, origin } = fortressPocket();
+  bot.entities = {};
+  const t0 = 1_800_000_000_000;
+  const state = { shelters: [{ origin: { ...origin }, dimension: 'the_nether' }], sealing: { origin: { ...origin }, at: t0 - 20 * 60000 }, pocketOutAt: t0 - 60000 };
+  const survival = new Survival(bot, {}, { state, client: { systemOne: async () => ({}) } });
+  let { tree } = await askAt(survival, { kind: 'win' }, t0);
+  assert.match(tree.stay.description, /In this pocket 1 second so far\./, 'out of it since the old seal: the wait begins now');
+  await askAt(survival, { kind: 'win' }, t0 + 60000);
+  survival.state.sealing = { origin: { ...origin }, at: t0 + 90000 };
+  ({ tree } = await askAt(survival, { kind: 'win' }, t0 + 120000));
+  assert.match(tree.stay.description, /In this pocket 30 seconds so far\./, 'sealed again: from the new seal');
 });
 
 test('in the Overworld at night the stay says its minutes and not the Nether\'s lack of day', async () => {
