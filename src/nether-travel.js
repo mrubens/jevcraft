@@ -91,6 +91,9 @@ const ROCK_CELL_SECONDS = 6;
 // fortress is seen from afar (its bricks are found within 128 blocks).
 const CAVERN_DROP = 4;
 const passable = b => !b || b.boundingBox === 'empty';
+// Whether a cell of rock may be dug by the rule every dig keeps (no lava or
+// water behind it). Required when used: tunneling.js reaches this module.
+const safeDig = (bot, p) => require('./tunneling').safeExcavation(bot, p);
 // A cell of open air with no floor under it is crossed only on a block laid
 // there, crouched: the crossing's pace (crossingSeconds), not a walk.
 // mid-211-s-nether-4 and mid-202-o, in a basalt delta with nothing carried,
@@ -121,6 +124,13 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
     const body = [next, next.offset(0, 1, 0)].map(p => bot.blockAt(p));
     if (body.some(b => !b)) { out.stoppedBy = 'unloaded ground'; out.stoppedAt = out.cells; break; }
     if (body.some(b => /lava|fire/.test(b.name || ''))) { out.stoppedBy = 'lava in the way'; out.stoppedAt = out.cells; break; }
+    // Rock with lava or water behind it is not dug, by the rule every dig
+    // keeps (tunneling.js safeExcavation): the leg stops there. Counted as
+    // rock to dig, mid-244-ab-nether-2's legs from a pocket over the lava
+    // sea were offered ninety-six blocks long and each ended at once, "lava
+    // or water behind the netherrack" (note 572).
+    const walled = [next, next.offset(0, 1, 0)].find((p, k) => !passable(body[k]) && !safeDig(bot, p));
+    if (walled) { out.stoppedBy = `${String(bot.blockAt(walled)?.name || 'rock').replaceAll('_', ' ')} with lava or water behind it (not dug)`; out.stoppedAt = out.cells; break; }
     if (body.some(b => !passable(b))) { note('rock'); out.rock++; seconds += ROCK_CELL_SECONDS; }
     else {
       out.open++;
