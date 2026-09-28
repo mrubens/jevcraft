@@ -161,3 +161,36 @@ test('the mobs a held stance was chosen against stay the survival layer\'s while
   bot.health = 17.4; delete bot._stance.ranAt;
   assert.equal(immediateThreat(bot), undefined, 'chosen but not yet run: nothing to hold');
 });
+
+test('a retreat\'s chasers still coming at the bot once its run is over stay the survival layer\'s, and the stance is asked again (mid-244-a, note 544)', () => {
+  // mid-244-a: the run ended ten blocks ahead of four zombies walking up; past the eight counted for a biter nothing was a threat, and the night's shaft pocket was asked and dug until they bit.
+  const { immediateThreat, followers, coming } = require('../src/danger');
+  const registry = require('minecraft-data')('26.1');
+  const zombie = { id: 21, name: 'zombie', type: 'hostile', position: new Vec3(10.5, 70, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const other = { id: 22, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 70, 12.5), height: 1.95, width: 0.6, isValid: true };
+  const bot = { game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 70, 0.5) }, registry, health: 13.1, food: 16, time: { timeOfDay: 16000 },
+    world: { raycast: () => null }, blockAt: p => ({ position: p, name: p.y < 70 ? 'grass_block' : 'air', boundingBox: p.y < 70 ? 'block' : 'empty' }),
+    entities: { 21: zombie, 22: other }, inventory: { items: () => [], slots: [] } };
+  // The retreat chosen against the first, run 2.5 seconds, over.
+  bot._stance = { choice: 'retreat', ids: [21], at: Date.now() - 3000, ranAt: Date.now() - 400, health: 14.5, expects: { damage: 0, seconds: 2.5, oneHit: 1.4 } };
+  assert.equal(immediateThreat(bot), undefined, 'not known to be coming: nothing measured yet');
+  // A second ago both were 2.3 blocks further from where the bot is now: coming at a zombie's walk.
+  const was = Date.now() - 1000;
+  bot._mobTracks = new Map([[21, [{ at: was, x: 12.8, y: 70, z: 0.5 }]], [22, [{ at: was, x: 0.5, y: 70, z: 14.8 }]]]);
+  const threat = immediateThreat(bot);
+  assert.equal(threat?.entity.id, 21, 'the retreat\'s chaser, still coming, is a threat ten blocks off');
+  assert.equal(threat.following, 'retreat');
+  assert(Math.abs(threat.atBotIn - 8.5 / 2.3) < 0.2, `at the bot in about 3.7 seconds at its own speed, not ${threat.atBotIn}`);
+  assert.deepEqual(followers(bot).map(t => t.entity.id), [21], 'the other was not run from: a fact, not the stance\'s');
+  assert.deepEqual(coming(bot).map(t => t.entity.id), [21, 22], 'both are coming, each said');
+  // One standing where it was is not following.
+  bot._mobTracks = new Map([[21, [{ at: was, x: 10.5, y: 70, z: 0.5 }]]]);
+  assert.equal(immediateThreat(bot), undefined, 'milling ten blocks off: not coming');
+  // Nor once the mobs were left be, or out of sight (a pocket closed round the bot).
+  bot._mobTracks = new Map([[21, [{ at: was, x: 12.8, y: 70, z: 0.5 }]]]);
+  bot._stance.choice = 'keep_working';
+  assert.equal(immediateThreat(bot), undefined, 'leaving the mobs be holds nothing against them');
+  bot._stance.choice = 'retreat';
+  bot.world.raycast = from => ({ position: from.floored(), intersect: from });
+  assert.equal(immediateThreat(bot), undefined, 'out of sight behind a wall: not counted as coming');
+});

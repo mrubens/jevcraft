@@ -195,7 +195,59 @@ function threats(bot, radius = 24) {
     else if (!t.visible && t.distance <= 8 && now - (seen.get(t.entity.id) || 0) < 3000) Object.assign(t, { visible: true, remembered: true });
   }
   if (seen.size > 64) for (const [id, at] of seen) if (now - at > 3000) seen.delete(id);
+  // Where each was a moment ago, for how fast it is coming (approach).
+  trackMobs(bot, list, now);
   return list;
+}
+
+// Whether a mob is coming at the bot: how much nearer to where the bot is
+// now it has walked over the last second or two, in blocks a second. Its
+// own walk, not the gap: a zombie after a running player walks at it at
+// 2.3 blocks a second while the gap grows. mid-244-a's retreat ran fourteen
+// blocks from four zombies, told they would be at the bot 3.5 seconds after
+// the run; the run over, they were ten blocks off, past the eight counted
+// for a biter, and nothing was a threat: the night's pocket was asked in
+// the stance's place and dug with them walking up (note 544).
+const TRACK_MS = 2000, TRACK_MIN_MS = 400;
+function trackMobs(bot, list, now = Date.now()) {
+  const tracks = bot._mobTracks ||= new Map();
+  for (const t of list) {
+    const p = t.entity.position, id = t.entity.id;
+    if (!p || id === undefined) continue;
+    const samples = tracks.get(id) || [];
+    if (!samples.length || now - samples.at(-1).at >= 100) samples.push({ at: now, x: p.x, y: p.y, z: p.z });
+    while (samples.length && now - samples[0].at > TRACK_MS + 500) samples.shift();
+    tracks.set(id, samples);
+    const here = bot.entity.position;
+    const old = samples.find(s => now - s.at <= TRACK_MS && now - s.at >= TRACK_MIN_MS);
+    if (old && here) t.approach = (new Vec3(old.x, old.y, old.z).distanceTo(here) - t.distance) / ((now - old.at) / 1000);
+  }
+  if (tracks.size > 128) for (const [id, s] of tracks) if (!s.length || now - s.at(-1).at > 5000) tracks.delete(id);
+}
+// A block a second nearer: coming, not milling about. A walker's chase is
+// two to five blocks a second (combat-estimate MOB_SPEED).
+const COMING = 1;
+// The walkers coming at the bot now, within the twenty-four a stance
+// counts and their own follow range: each with its speed and how soon it
+// is at the bot at that speed (the jar's, as dig_down's race and the
+// retreat's chase are said). Facts for the questions asked while they
+// come: the night's pocket, the wait for daylight, the stance.
+function coming(bot, { radius = 24, list = null } = {}) {
+  const { blocksPerSecond, followRange } = require('./combat-estimate');
+  return (list || threats(bot, radius)).filter(t => t.distance <= Math.min(radius, followRange(t.entity.name)) && !shooter(t.entity) && t.visible && t.approach >= COMING)
+    .map(t => ({ ...t, speed: blocksPerSecond(t.entity.name), atBotIn: Math.max(0, t.distance - 1.5) / blocksPerSecond(t.entity.name) }))
+    .sort((a, b) => a.atBotIn - b.atBotIn);
+}
+// The mobs a stance Jev chose was chosen against, still coming at the bot
+// once it is over: a retreat's chasers walking up after the run, the
+// zombies come back round a pillar come down. The stance question is
+// asked again with them, not the night's pocket or the work in its place.
+// In sight: a pocket closed round the bot hides the ones outside it.
+function followers(bot, { list = null } = {}) {
+  const s = bot?._stance;
+  if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
+  if (!s.ids.some(id => bot.entities?.[id])) return [];
+  return coming(bot, { list: list && list.filter(t => t.distance <= 24) }).filter(t => s.ids.includes(t.entity.id) && !combatTarget(bot, t.entity) && !hunted(bot, t.entity)).map(t => ({ ...t, following: s.choice }));
 }
 
 // Mid-encounter, a second mob interrupts only when it is nearly on the
@@ -307,7 +359,8 @@ function immediateThreat(bot) {
   // shots landing are what make it one. Counted at its forty-eight, every
   // blaze in sight near a fortress held the turn (notes 509, 513).
   const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? Math.max(48, RANGE[t.entity.name] || 0) : hurt ? 32 : 16, FIRE_REACH[t.entity.name] || 0);
-  const mob = threats(bot, 64).find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+  const about = threats(bot, 64);
+  const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
   if (mob) return mob;
   // The mobs a stance Jev chose was chosen against, while it holds: the
@@ -319,6 +372,12 @@ function immediateThreat(bot) {
   // bot on the pillar's edge five seconds under a skeleton's arrows (note 535).
   const kept = stanceMobs(bot)[0];
   if (kept) return kept;
+  // And once it is over, those of them still coming at the bot (followers):
+  // mid-244-a's run ended with four zombies ten blocks behind and walking
+  // up, past the eight counted for a biter, and the night's pocket was
+  // asked and dug in the stance's place until they bit (note 544).
+  const follower = followers(bot, { list: about })[0];
+  if (follower) return follower;
   // A shot on its way is a threat of its own, its shooter seen or not:
   // mid-230-g, waiting to heal by a fortress, was hit by four fireballs in
   // six seconds from a ghast out of view, the fourth throwing it into the
@@ -426,4 +485,4 @@ function pushersAbout(bot) {
   return list;
 }
 
-module.exports = { pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs,STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed };
+module.exports = { pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

@@ -2898,6 +2898,63 @@ test('every way to shelter says how soon a creeper about could go off, the shaft
   assert(tree.shaft_pocket, 'a shaft pocket is on offer here');
 });
 
+test('the shaft pocket says its seconds of digging and the mobs coming at the bot against them, not "done in seconds" (mid-244-a, note 544)', async () => {
+  // mid-244-a: ten blocks ahead of four zombies after a run, the shaft pocket was offered as "done in seconds"; its dig outlasted their walk and they bit it to death.
+  const { bot } = nookFixture({ time: 16000, items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
+  bot.health = 13.1; bot.food = 16;
+  bot.entities = { 7: { id: 7, name: 'zombie', type: 'hostile', position: bot.entity.position.offset(8, 0, 0), height: 1.95, isValid: true } };
+  const track = dx => { const p = bot.entity.position.offset(dx, 0, 0); return new Map([[7, [{ at: Date.now() - 1000, x: p.x, y: p.y, z: p.z }]]]); };
+  bot._mobTracks = track(10.3);
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
+  let tree = null, state = null;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'shelter_method') { tree = q.tree; state = q.state; } return { stale: true, path: [] }; };
+  try { await survival.refugeStep(new Task('night'), { kind: 'win' }, () => {}); } catch (_) {}
+  assert(tree?.shaft_pocket, Object.keys(tree || {}).join(','));
+  assert.doesNotMatch(tree.shaft_pocket.description, /done in seconds/);
+  assert.match(tree.shaft_pocket.description, /about [\d.]+ seconds of digging and the cap/);
+  assert.match(tree.shaft_pocket.description, /Coming at the bot now: the zombie 8 blocks off at about 2\.3 blocks a second; at the bot in about 2\.8 seconds, before the shaft is done/);
+  assert.match(tree.shaft_pocket.description, /A biter within three blocks stops the dig part-way/);
+  assert.equal(state.comingAtTheBot?.[0]?.name, 'zombie');
+  // One standing still is not said to be coming.
+  bot._mobTracks = track(8);
+  tree = null;
+  try { await survival.refugeStep(new Task('night'), { kind: 'win' }, () => {}); } catch (_) {}
+  assert.doesNotMatch(tree.shaft_pocket.description, /Coming at the bot/);
+});
+
+test('after a retreat, its chasers coming ten blocks back claim the turn for the stance, said with how soon they are at the bot, not the night\'s pocket (mid-244-a, note 544)', () => {
+  const { claim } = require('../src/survival');
+  const { bot } = nookFixture({ time: 16000, items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open: p => p.y >= 30 });
+  bot.health = 13.1; bot.food = 16;
+  bot.entities = { 7: { id: 7, name: 'zombie', type: 'hostile', position: bot.entity.position.offset(10, 0, 0), height: 1.95, isValid: true } };
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { state: { shelters: [] } });
+  bot._stance = { choice: 'retreat', ids: [7], at: Date.now() - 3000, ranAt: Date.now() - 400, health: 14.5, expects: { damage: 0, seconds: 2.5, oneHit: 1.4 } };
+  const p = bot.entity.position.offset(12.3, 0, 0);
+  bot._mobTracks = new Map([[7, [{ at: Date.now() - 1000, x: p.x, y: p.y, z: p.z }]]]);
+  const c = claim(bot, { kind: 'win' }, survival);
+  assert.equal(c?.action, 'escape_threat', JSON.stringify(c));
+  assert.deepEqual(c.facts.comingAtTheBot, { after: 'retreat', blocksASecond: 2.3, atBotInSeconds: 3.7 });
+  // Standing ten blocks off, not coming: the night's own question.
+  bot._mobTracks = new Map([[7, [{ at: Date.now() - 1000, x: bot.entity.position.x + 10, y: p.y, z: p.z }]]]);
+  assert.notEqual(claim(bot, { kind: 'win' }, survival)?.action, 'escape_threat');
+});
+
+test('waiting sealed for daylight says the zombie coming at the bot and how soon, against a shaft pocket dug here (note 544)', async () => {
+  const { bot } = nookFixture({ time: 6000, items: [{ name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open: p => p.y >= 30 });
+  bot.health = 6; bot.food = 14; bot.pathfinder = { movements: {}, getPathTo: () => ({ status: 'noPath', path: [] }), setGoal() {} };
+  bot.entities = { 7: { id: 7, name: 'zombie', type: 'hostile', position: bot.entity.position.offset(12, 0, 0), height: 1.95, isValid: true } };
+  const p = bot.entity.position.offset(14.3, 0, 0);
+  bot._mobTracks = new Map([[7, [{ at: Date.now() - 1000, x: p.x, y: p.y, z: p.z }]]]);
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
+  let tree = null, state = null;
+  survival.decide = async (task, goal, save, q) => { if (q.id === 'survival_priority') { tree = tree || q.tree; state = state || q.state; } return { path: ['continue_request'], action: q.tree.continue_request || Object.values(q.tree)[0], stale: true }; };
+  await survival.step(new Task('hurt'), { kind: 'win', request: 'beat the game' }, () => {});
+  assert(tree?.wait_for_day_sealed, Object.keys(tree || {}).join(','));
+  assert.match(tree.wait_for_day_sealed.description, /Coming at the bot now: the zombie 12 blocks off at about 2\.3 blocks a second; at the bot in about 4\.6 seconds/);
+  assert.match(tree.wait_for_day_sealed.description, /a shaft pocket dug here/);
+  assert.equal(state.comingAtTheBot?.[0]?.atBotInSeconds, 4.6);
+});
+
 test('a stance priced at more than the bot has is still asked again when it runs ahead of its pace, not held to the death', async () => {
   // mid-205-a ate on for four seconds under two zombies and a creeper walking up.
   const bot = crowdBot({ health: 18 });
