@@ -3949,7 +3949,15 @@ test('sealed in with a warden about, the pocket\'s choices say its boom goes thr
   for (const key of ['stay', 'leave']) {
     assert.match(tree?.[key]?.description || '', /sonic boom that passes through blocks and armour/, key);
     assert.match(tree[key].description, /The warden is 8 blocks off, within the boom's reach\. The bot has been hit by the boom once in the last minute\./, key);
+    // What the boom does at this health, not left to "healing from 10 health" beside it (note 554).
+    assert.match(tree[key].description, /about 10 damage, about every five seconds.* At 10 health, one boom ends it, whatever heals before it\./, key);
   }
+  // On Hard it is fifteen, and a bot at twenty takes two.
+  bot.game.difficulty = 'hard'; bot.health = 20; tree = null;
+  const hard = new Survival(bot, { dig: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld' }] }, client: { systemOne: async () => ({}) } });
+  hard.decide = survival.decide; hard.wait = async () => {};
+  await hard.step(new Task('night'), { kind: 'win' }, () => {});
+  assert.match(tree.stay.description, /about 15 damage, .* At 20 health, 2 booms end it, the last about 5 seconds after the first, less what heals between them\./);
   // And a way away from it, beyond the boom, that is not a door past it.
   assert.match(tree.tunnel_from_warden?.description || '', /pocket's west wall, away from the warden: one wide and two high, 9 blocks, .* ending 17 blocks across from where it is now, beyond its boom's 15/);
 });

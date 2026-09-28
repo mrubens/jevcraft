@@ -525,17 +525,28 @@ function pickaxeReserve(bot, feet) {
 // two minutes with a warden seven to eleven blocks off, told only that it
 // was outside, and was boomed through the wall three times, twenty health
 // to none (2026-09-27).
+// The 26.1.2 jar (SonicBoom): 10 damage scaled by difficulty ("scaling":
+// "always": 6 on Easy, 15 on Hard), past armour and its enchantments (the
+// bypasses_armor and bypasses_enchantments tags), released 34 ticks into a
+// 60-tick charge with 40 ticks' cooldown after, so one about every five
+// seconds. At the health the bot has, the booms that end it are said (note
+// 554: "healing from 10 health" stood beside a boom of 10, and a stay in
+// reach of it was chosen as if the wait came out even).
 const BOOM_ACROSS = 15, BOOM_UP = 20;
+const BOOM_DAMAGE = { easy: 6, normal: 10, hard: 15 };
 function wardenSays(bot) {
   const warden = threats(bot, 32).filter(t => t.entity.name === 'warden').sort((a, b) => a.distance - b.distance)[0];
   const booms = (bot._sonicBooms || []).filter(t => Date.now() - t < 60000).length;
   if (!warden && !booms) return '';
   const p = bot.entity.position, w = warden?.entity.position;
   const inReach = w && Math.hypot(w.x - p.x, w.z - p.z) <= BOOM_ACROSS && Math.abs(w.y - p.y) <= BOOM_UP;
-  const facts = ` A warden is blind: it finds a player by the vibrations of moving, digging and placing, and by smell, and each sniff angers it more. Angry at a player it cannot reach, it strikes with a sonic boom that passes through blocks and armour: about 10 damage, every few seconds, within ${BOOM_ACROSS} blocks across and ${BOOM_UP} up or down. A wall does not stop it; only distance does.`;
+  const damage = BOOM_DAMAGE[bot.game?.difficulty] || BOOM_DAMAGE.normal;
+  const facts = ` A warden is blind: it finds a player by the vibrations of moving, digging and placing, and by smell, and each sniff angers it more. Angry at a player it cannot reach, it strikes with a sonic boom that passes through blocks and armour: about ${damage} damage, about every five seconds, within ${BOOM_ACROSS} blocks across and ${BOOM_UP} up or down. A wall does not stop it; only distance does.`;
   const here = warden ? ` The warden is ${Math.round(warden.distance)} blocks off, ${inReach ? 'within the boom\'s reach' : 'beyond the boom\'s reach'}.` : '';
   const hit = booms ? ` The bot has been hit by the boom ${booms === 1 ? 'once' : `${booms} times`} in the last minute.` : '';
-  return facts + here + hit;
+  const hp = Math.round(bot.health ?? 20), toEnd = Math.max(1, Math.ceil(hp / damage));
+  const ends = inReach || booms ? ` At ${hp} health, ${toEnd === 1 ? 'one boom ends it, whatever heals before it' : `${toEnd} booms end it, the last about ${(toEnd - 1) * 5} seconds after the first, less what heals between them`}.` : '';
+  return facts + here + hit + ends;
 }
 // A mob spawner within its reach of the bot: it makes more of its mob
 // while a player is within sixteen blocks, so a fight beside it, or a wait
