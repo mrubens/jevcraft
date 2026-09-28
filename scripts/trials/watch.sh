@@ -8,6 +8,9 @@
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 TRIAL=${TRIAL:-midgame}
 cd "$ROOT" || exit 1
+# Each check has two minutes: a verdict or lsof that never returned kept the
+# watcher silent for five hours while trials failed (2026-09-28).
+limit() { perl -e 'alarm shift; exec @ARGV' 120 "$@"; }
 # auto: every running server whose world is of this kind (mid- or
 # first-days-); a stopped one is not a trial.
 ports() {
@@ -16,14 +19,14 @@ ports() {
     for d in "$ROOT"/.clean-run "$ROOT"/.clean-run-*; do
       grep -q "^level-name=$PREFIX" "$d/server.properties" 2>/dev/null || continue
       P=$(sed -n 's/^server-port=//p' "$d/server.properties")
-      lsof -tiTCP:"$P" -sTCP:LISTEN >/dev/null 2>&1 && echo "$P"
+      limit lsof -tiTCP:"$P" -sTCP:LISTEN >/dev/null 2>&1 && echo "$P"
     done
   else echo "$@"; fi
 }
 while :; do
   for p in $(ports "$@"); do
-    if [ "$TRIAL" = midgame ]; then V=$(MIDGAME_PORT=$p node scripts/midgame.js verdict 2>/dev/null)
-    else V=$(FIRST_DAYS_PORT=$p node scripts/first-days.js verdict 2>/dev/null); fi
+    if [ "$TRIAL" = midgame ]; then V=$(MIDGAME_PORT=$p limit node scripts/midgame.js verdict 2>/dev/null </dev/null)
+    else V=$(FIRST_DAYS_PORT=$p limit node scripts/first-days.js verdict 2>/dev/null </dev/null); fi
     if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(v.done||(v.reasons||[]).some(r=>/death|loop/.test(r))?0:1)}catch{process.exit(1)}})"; then
       echo "attention on $p"; echo "$V" | head -30; exit 0
     fi
