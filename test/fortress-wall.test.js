@@ -126,7 +126,7 @@ test('from the recorded spot, fortress_approach offers mining the blocks and cro
   assert.match(d, /No ghast or blaze is in sight now/);
   assert.match(d, /About \d+ minutes in all\./);
   // Leaving says what searching on from here meets.
-  assert.match(options.keep_searching, /\(22 legs so far, 146 minutes searching\).*From here every leg ended at once and rests a few minutes \(nether gold ore in the way; out of blocks \(0 carried\)\)\.$/);
+  assert.match(options.keep_searching, /\(22 legs so far, 146 minutes searching\).*From here every leg ended at once and rests a few minutes \(nether gold ore in the way; out of blocks \(0 carried\)\)\./);
 });
 
 test('left from the recorded spot over its ways in, the fortress is offered to the legs as the crossing with blocks mined, and the restock says the pickaxe (mid-242-ab-nether-4, note 591)', async () => {

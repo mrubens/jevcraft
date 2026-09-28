@@ -97,7 +97,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
   // From the block the bot rests on, where the span begins (stepOntoFooting).
   const start = require('./terrain').restingCell(bot) || bot.entity.position.floored();
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
-  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
+  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot), stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
   let here = start, digMs = 0;
   for (let n = 0; n < cells; n++) {
     const step = stepToward(here, target);

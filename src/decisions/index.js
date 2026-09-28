@@ -144,6 +144,7 @@ const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, w
 // A sense of pace said as a fact, not a limit: what the minutes played
 // compare with.
 const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
+const STOCK = 'blockStock is what can be laid and that, with no pickaxe carried, none comes back or can be dug: what is carried is all there will be until a pickaxe is made (makingAPickaxe says what that takes and what is carried toward it); with none carried every way that lays a block is closed.';
 const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
 const HEALING = 'healing is the bot\'s health and hunger, whether health comes back, the food carried by kind (the last resort with what it may cost), the nearest food known, the time to daylight, and what standing still costs.';
 // Off the Overworld, hurt with nothing that brings hunger to eighteen: the
@@ -158,7 +159,7 @@ function withRealTime(spec, state = {}) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
   const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '');
-  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '');
+  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
 
@@ -430,6 +431,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.healing) {
     let healing = null; try { healing = require('../healing').healingSays(bot, goal); } catch (_) { /* no body */ }
     if (healing) state = { ...state, healing };
+  }
+  // The stock of blocks, in the Nether with no pickaxe: mid-243-ah-fortress-7
+  // spent 90 blocks in three minutes and stood on its span for three hours,
+  // told in each option what it spent and in no question that none comes
+  // back (note 642).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.blockStock) {
+    let blocks = null; try { blocks = require('../block-stock').stockSays(bot); } catch (_) { /* no body */ }
+    if (blocks) state = { ...state, blockStock: blocks };
   }
   // The body alight, with every such question but the body's own: while
   // the way out was left be, mid-244-bb was asked survival_priority and

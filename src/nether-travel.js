@@ -10,6 +10,7 @@
 // own, going on without the Overworld) are Jev's, with what each needs.
 const { Vec3 } = require('vec3');
 const { surveyCrossing, bridgeTo, blocksCarried } = require('./bridging');
+const blockStock = require('./block-stock');
 const { advance, setAside, isSetAside } = require('./progress');
 
 const inNether = bot => /nether/.test(String(bot.game?.dimension || ''));
@@ -45,7 +46,7 @@ function crossingSays(s, what) {
   if (s.bridge) work.push(`laying ${s.bridge} block${s.bridge === 1 ? '' : 's'} over open ${s.overLava ? `air and lava (${s.overLava} of them over lava)` : 'air'}`);
   if (!work.length) work.push('over ground already open');
   return `Go straight at ${what} at the height the bot stands, ${s.cells} blocks, ${work.join(' and ')}, crouched all the way so a step does not go over an edge: about ${crossingSeconds(s)} seconds. ` +
-    `${s.carried} blocks carried${s.bridge ? `, ${s.carried - s.bridge} left after` : ''}. It ends ${Math.round(s.gain)} blocks nearer, ${Math.round(s.from - s.gain)} from it` +
+    `${s.carried} blocks carried${s.bridge ? `, ${s.carried - s.bridge} left after` : ''}.${s.bridge ? blockStock.afterSays({ noPickaxe: s.noPickaxe, left: s.carried - s.bridge }) : ''} It ends ${Math.round(s.gain)} blocks nearer, ${Math.round(s.from - s.gain)} from it` +
     `${s.stoppedBy ? `; there, ${s.stoppedBy}` : ''}. Rock is dug only where no lava or water is behind it.`;
 }
 
@@ -122,7 +123,7 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
   if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
   const [dx, dz] = heading;
   const carried = blocks ?? blocksCarried(bot);
-  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null, first: [] };
+  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot), runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null, first: [] };
   let here = from || bot.entity.position.floored(), seconds = 0;
   // The first cells as runs of what they are (rock, floor, no floor):
   // what the leg meets before anything else, said with it (legSays).
@@ -172,7 +173,7 @@ function legSays(survey, { direction, length, y }) {
   const stop = survey.stoppedBy ? ` ${survey.stoppedBy[0].toUpperCase()}${survey.stoppedBy.slice(1)} stops it at cell ${survey.stoppedAt}.` : '';
   const lay = survey.lay || 0, carried = survey.carried ?? 0, short = Number.isInteger(survey.runsOut);
   const blocks = !lay ? '' : ` ${lay} of the open cells have no floor: it needs ${lay} block${lay === 1 ? '' : 's'} laid, crouched, about ${Math.round(LAY_CELL_SECONDS * 10) / 10} seconds a cell, ${carried} carried: ` +
-    (short ? `the blocks run out at cell ${survey.runsOut}, about ${survey.reachSeconds} seconds in, where the leg stops with none to lay.` : `${carried - lay} left after.`);
+    (short ? `the blocks run out at cell ${survey.runsOut}, about ${survey.reachSeconds} seconds in, where the leg stops with none to lay.` : `${carried - lay} left after.`) + blockStock.afterSays({ noPickaxe: survey.noPickaxe, left: short ? 0 : carried - lay });
   return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${firstSays(survey)}`;
 }
 

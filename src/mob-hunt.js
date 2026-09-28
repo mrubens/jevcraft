@@ -1812,7 +1812,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       const { RANGE } = require('./combat-estimate');
       const pushers = inView.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
       const pushersSay = pushers.length ? ` ${capital(mobsSaid(pushers))} can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall.` : '';
-      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across${betweenSays}. ${pushSays}${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`,
+      options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}${require('./block-stock').afterSays({ noPickaxe: !require('./block-stock').pickaxeCarried(bot), left: scaffold - up }).replace(/^ /, '; ').replace(/\.$/, '')}), from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across${betweenSays}. ${pushSays}${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`,
         run: async () => {
           if (site.distanceTo(bot.entity.position.floored()) >= 1 && actions.navigate) {
             try { await actions.navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
@@ -1849,7 +1849,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const searching = state.since ? Math.round((Date.now() - state.since) / 60000) : null;
   const restingHere = HEADING_NAMES.map(n => [n, legResting(state, n, here)]).filter(([, r]) => r);
   const onFrom = restingHere.length ? ` From here ${restingHere.length === HEADING_NAMES.length ? 'every leg' : `the leg${restingHere.length === 1 ? '' : 's'} ${restingHere.map(([n]) => n).join(', ')}`} ended at once and rest${restingHere.length === 1 || restingHere.length === HEADING_NAMES.length ? 's' : ''} a few minutes (${[...new Set(restingHere.map(([, r]) => r.why))].slice(0, 2).join('; ')}).` : '';
-  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}${searching ? `, ${searching} minutes searching` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.${onFrom}`,
+  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}${searching ? `, ${searching} minutes searching` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.${onFrom}${require('./block-stock').pickaxeCarried(bot) ? '' : ` The sweep's legs over open air and lava lay a block a cell, and with no pickaxe carried none comes back or can be dug: the ${blocksCarried(bot)} carried are all there will be.`}`,
     run: async () => {
       // From where, kept with it: going back from the same spot asks the
       // same ways again (fortressInView). mid-235-q-nether-2 left its
@@ -2085,7 +2085,7 @@ function crossingOptions(bot, task, what, across, actions) {
   const blocksSays = c => {
     const need = c.cover + c.span;
     if (!need) return '';
-    return ` ${need} block${need === 1 ? '' : 's'} laid of the ${carried} carried${need > carried ? `: they run out ${carried} in, and the crossing stops there` : `, ${carried - need} left after`}.`;
+    return ` ${need} block${need === 1 ? '' : 's'} laid of the ${carried} carried${need > carried ? `: they run out ${carried} in, and the crossing stops there` : `, ${carried - need} left after`}.${require('./block-stock').afterSays({ noPickaxe: !require('./block-stock').pickaxeCarried(bot), left: carried - need })}`;
   };
   const toolSays = c => {
     if (!c.digs) return '';

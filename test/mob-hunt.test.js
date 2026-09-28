@@ -859,7 +859,7 @@ test('bricks a block off with the fortress\'s floors seven blocks up are not the
   assert.equal(client.asked.length, 1); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
   const { options, state } = client.asked[0];
   assert.deepEqual(state.fortress, { distance: 1, height: 7 }, 'the way is to its nearest floor, seven up');
-  assert.match(options.pillar_up, /^Pillar straight up 7 blocks to the fortress floor's height \(jump and lay a block under the feet, 64 carried that can be laid, 57 left after\)/);
+  assert.match(options.pillar_up, /^Pillar straight up 7 blocks to the fortress floor's height \(jump and lay a block under the feet, 64 carried that can be laid, 57 left after[;)]/);
   // Over the lava sea: a push off the top lands beside the column's foot, not on it (mid-208-k-nether-3-fortress-1, note 551).
   assert.match(options.pillar_up, /On top a push is a fall of up to 24 blocks \(the pillar's 7, then a drop of 17 a block from its foot\), into lava\./);
   assert.equal(goal.step.action, 'find_fortress');
@@ -1176,7 +1176,7 @@ test('on a fortress floor cut off by lava lying on its corridor, the way across 
   assert.equal(client.asked.length, 2); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
   ({ options } = client.asked[1]);
   assert.match(options.cover_lava, /^Cover the lava lying on the floor on the way to unwalked floors of the fortress, seen across a gap: 7 cells from \(11, 65, -?\d\) to \(18, 65, -?\d\): 6 of lava lying on the floor/);
-  assert.match(options.cover_lava, /6 blocks laid of the 64 carried, 58 left after\. About \d+ seconds\./);
+  assert.match(options.cover_lava, /6 blocks laid of the 64 carried, 58 left after\.[^]*About \d+ seconds\./);
   assert.match(options.cover_lava, /The lava is flowing, with no source seen among the \d+ lava cells followed from it/);
   assert.match(options.cover_lava, /\d+ of its cells are beside lava: a misstep or a push there puts the bot in it, about 8 health a second while in it and burning up to 15 seconds after/);
   assert.equal(options.scoop_lava, undefined, 'no bucket carried, and no source on the way');
