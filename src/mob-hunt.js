@@ -1767,7 +1767,15 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       const open = survey.overLava ? 'lava' : 'open air';
       const risk = survey.bridge ? `${inView.length ? ` In sight: ${mobsSaid(inView)}; a hit on a one-wide span over ${open} is the fall.` : ''} On the span no mob is swung at or turned to: the bot holds still, crouched, until it is off.` : '';
       const shot = fire ? ` A ${fire.entity.name.replaceAll('_', ' ')} ${Math.round(fire.distance)} blocks off can see the bot now: no block is laid while something that shoots can, so the span stops at once.` : '';
-      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${risk}${shot}`,
+      // The crossing is level: the "N from it" of its text is across, and a
+      // fortress standing well above ends the span under it, out of blocks
+      // and over the lava it was laid across (mid-242-bb-nether-1-fortress-*:
+      // a span of 16 blocks toward a fortress 38 up, "2 from it", ended 37
+      // under its bricks with none carried, and the bot stood there, a
+      // fireball's push from the lava, for the rest of the ten minutes).
+      const under = Math.round(nearest.y - survey.end.y), left = survey.carried - survey.bridge;
+      const climb = under >= 4 ? ` It stays level: it ends ${under} blocks under the nearest brick (y ${Math.round(nearest.y)}), and the ${under} blocks up are still to be made from the end of the span, with ${left} block${left === 1 ? '' : 's'} left${survey.overLava ? ', over the lava it was laid across' : ''}; the way up is asked again from there.` : '';
+      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${risk}${shot}`,
         run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
     }
   }

@@ -580,12 +580,30 @@ test('a fortress in view is Jev\'s to approach: each way with what it meets, the
   assert.match(options.cross_level, /64 blocks carried, 38 left after/);
   assert.match(options.cross_level, /It ends 29 blocks nearer/);
   assert.match(options.cross_level, /a hoglin 4 blocks off; a hit on a one-wide span over lava is the fall/);
+  assert.doesNotMatch(options.cross_level, /It stays level/, 'a fortress at the height of the span has nothing left to climb');
   assert.match(options.walk_route, /walks upright/);
   assert.deepEqual(state.threatsInView, ['hoglin 4 blocks off']);
   assert.equal(laid.size, 26, 'the span Jev chose, a block for each cell over the lava');
   assert.equal(bot.entity.position.x, 29.5);
   assert.equal(goal.fortressSearch.approach.choice, 'cross_level');
   assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+});
+
+test('note 641: a level crossing toward a fortress well above says the climb is still to be made from the end of the span', async () => {
+  // mid-242-bb-nether-1-fortress-*: "2 from it" was across; the span of 16 blocks ended 37 under the bricks, with none carried, over the lava.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const bricks = Array.from({ length: 25 }, (_, i) => new Vec3(30 + i, 103, 0));
+  const rock = p => p.y <= 31 ? 'lava' : p.y === 103 && p.z === 0 && p.x >= 30 && p.x <= 54 ? 'nether_bricks' : p.y === 64 && p.x <= 3 ? 'netherrack' : null;
+  const { bot } = netherWorld(new Vec3(0.5, 65, 0.5), rock);
+  bot.findBlocks = () => bricks;
+  bot.time = { timeOfDay: 6000 };
+  bot.entities = {};
+  const client = jevStub(['keep_searching']);
+  const goal = { fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('the code walked on its own'); }, tunnel: async () => { throw new Error('the code tunnelled on its own'); } });
+  const { options } = client.asked[0];
+  assert.match(options.cross_level, /39 blocks up at the height the bot stands/);
+  assert.match(options.cross_level, /It stays level: it ends 38 blocks under the nearest brick \(y 103\), and the 38 blocks up are still to be made from the end of the span, with \d+ blocks? left, over the lava it was laid across; the way up is asked again from there\./);
 });
 
 test('a fortress in view is asked whether the visit happens now before the way in (fortress_visit, note 638); leaving it shuns it and asks no way in', async () => {

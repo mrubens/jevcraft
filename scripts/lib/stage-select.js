@@ -26,10 +26,27 @@
 //      back to the nether stage's saves, by the same rule;
 //   4. STAGE_ANY=1 keeps the old pick: the least started save, whatever it
 //      carried or came from.
+// Two more (note 641), from the eight deaths in an hour on
+// mid-242-bb-nether-1-215842: a save the bot was taken on, standing on a span
+// one block wide over lava, was 7 deaths in 8 starts, five of them a ghast's
+// fireball pushing it off in the first thirteen minutes, and every start from
+// it measured that one place; and three saves of one map take every start
+// when only they qualify.
+//   5. a save whose player stands on a span one or two blocks wide with lava
+//      at the bottom of a drop of three or more (or a drop of 23 or more) is
+//      not a start (save-spot.js
+//      reads it from the world files; where it cannot, the save counts);
+//   6. a save started MAX_PER_HOUR times in the last hour rests (starts are
+//      logged in .trial-checkpoints/stage-starts.log by start-stage.sh, not in
+//      the saves), so a pool of a few saves gives way to the nether stage's
+//      instead of taking every start.
 const fs = require('node:fs');
 const path = require('node:path');
 
 const MIN_HEALTH = 20, MIN_HUNGER = 18, MIN_FOOD = 40, MIN_QUALIFYING = 3;
+// Starts of one save in an hour after which it rests (STAGE_MAX_PER_HOUR).
+const MAX_PER_HOUR = 4, HOUR_MS = 3600000;
+const { spotOf, spotSays } = require('./save-spot');
 // Foods that are not food to a bot that wants health back.
 const NOT_FOOD = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'chorus_fruit', 'suspicious_stew']);
 
@@ -69,7 +86,8 @@ async function vitalsOf(snapshotDir, { nbt = require('prismarine-nbt') } = {}) {
   try {
     const { parsed } = await nbt.parse(fs.readFileSync(path.join(dir, file)));
     const p = nbt.simplify(parsed), f = foodPoints(p.Inventory);
-    return { health: p.Health, hunger: p.foodLevel, saturation: Math.round((p.foodSaturationLevel ?? 0) * 10) / 10, foodPoints: f.points, foods: f.items, dimension: String(p.Dimension || '').replace('minecraft:', '') };
+    const [x, y, z] = Array.isArray(p.Pos) ? p.Pos : [];
+    return { health: p.Health, hunger: p.foodLevel, saturation: Math.round((p.foodSaturationLevel ?? 0) * 10) / 10, foodPoints: f.points, foods: f.items, dimension: String(p.Dimension || '').replace('minecraft:', ''), position: [x, y, z].every(Number.isFinite) ? { x, y, z } : null };
   } catch (err) { return { error: String(err.message).slice(0, 80) }; }
 }
 
@@ -84,18 +102,44 @@ function shortfalls(v, { stage = 'fortress', minFood = MIN_FOOD } = {}) {
   return out;
 }
 
-// The snapshots of a stage, each { name, dir, stage, source, started, vitals }.
-async function readStage(root, stage, { vitals = vitalsOf } = {}) {
+// Why a save is not a start beyond its vitals (an empty list: none): where the
+// player stands, and how often it was started from in the hour before.
+function placeShortfalls(s, { maxPerHour = MAX_PER_HOUR } = {}) {
+  const out = [];
+  const says = spotSays(s.spot);
+  if (says) out.push(says);
+  if (maxPerHour > 0 && (s.recent || 0) >= maxPerHour) out.push(`started ${s.recent} times in the last hour (rests at ${maxPerHour})`);
+  return out;
+}
+const allShortfalls = (s, opts = {}) => [...shortfalls(s.vitals, { stage: s.stage, minFood: opts.minFood ?? MIN_FOOD }), ...placeShortfalls(s, opts)];
+
+// The starts of each save in the hour before `now`, from the log
+// start-stage.sh appends to: "<ISO time>\t<stage>\t<save name>" a line.
+function recentStarts(root, now = Date.now()) {
+  const by = {};
+  let text = ''; try { text = fs.readFileSync(path.join(root, '.trial-checkpoints', 'stage-starts.log'), 'utf8'); } catch (_) { return by; }
+  for (const line of text.split('\n')) {
+    const [at, stage, name] = line.split('\t');
+    const t = Date.parse(at);
+    if (name && Number.isFinite(t) && now - t >= 0 && now - t < HOUR_MS) by[`${stage}/${name}`] = (by[`${stage}/${name}`] || 0) + 1;
+  }
+  return by;
+}
+
+// The snapshots of a stage, each { name, dir, stage, source, started, recent,
+// spot, vitals }.
+async function readStage(root, stage, { vitals = vitalsOf, spot = spotOf, now = Date.now() } = {}) {
   const base = path.join(root, '.trial-checkpoints', 'stages', stage);
   let names = [];
   try { names = fs.readdirSync(base).sort(); } catch (_) { return []; }
-  const out = [];
+  const out = [], recent = recentStarts(root, now);
   for (const name of names) {
     const dir = path.join(base, name);
     if (!fs.existsSync(path.join(dir, 'world')) || !fs.existsSync(path.join(dir, 'state'))) continue;
     let started = 0; try { started = Number(fs.readFileSync(path.join(dir, 'started'), 'utf8').trim()) || 0; } catch (_) { /* never */ }
     let last = 0; try { last = fs.statSync(path.join(dir, 'started')).mtimeMs; } catch (_) { /* never */ }
-    out.push({ name, dir, stage, source: sourceWorld(name), started, last, vitals: await vitals(dir) });
+    const v = await vitals(dir);
+    out.push({ name, dir, stage, source: sourceWorld(name), started, last, recent: recent[`${stage}/${name}`] || 0, vitals: v, spot: v && !v.error ? spot(dir, v) : null });
   }
   return out;
 }
@@ -120,28 +164,38 @@ function rotate(pool, all = pool) {
 
 // The pick for a stage: { snapshot, stage, rule, why } or { error }.
 // `stages` maps a stage name to its snapshots (fortress needs nether too).
-function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, minFood = MIN_FOOD } = {}) {
+function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, minFood = MIN_FOOD, maxPerHour = MAX_PER_HOUR } = {}) {
   const own = stages[stage] || [];
   if (any) {
     const best = [...own].sort((a, b) => a.started - b.started || (a.name < b.name ? -1 : 1))[0];
     return best ? { snapshot: best, stage, rule: 'any', why: `STAGE_ANY: the least started ${stage} save (${best.started} starts), whatever it carried or came from` } : { error: `no usable ${stage} snapshot` };
   }
-  const qualifying = pool => pool.filter(s => !shortfalls(s.vitals, { stage: pool[0]?.stage, minFood }).length);
+  const qualifying = pool => pool.filter(s => !allShortfalls(s, { minFood, maxPerHour }).length);
   const good = qualifying(own);
+  // What kept saves out beyond health, hunger and food, said with the pick.
+  const kept = (pool, label = stage) => {
+    const fit = pool.filter(s => !shortfalls(s.vitals, { stage: s.stage, minFood }).length);
+    const span = fit.filter(s => spotSays(s.spot)).length, rest = maxPerHour > 0 ? fit.filter(s => (s.recent || 0) >= maxPerHour).length : 0;
+    const t = [span && `${span} on a span over lava or a deadly drop`, rest && `${rest} resting after ${maxPerHour} starts in the hour`].filter(Boolean).join(', ');
+    return t ? ` (${label} stage: ${t} left out)` : '';
+  };
+  // Where no save qualifies the start is still made, but from a save that is
+  // not on a span or resting when there is one.
+  const off = pool => { const ok = pool.filter(s => !placeShortfalls(s, { maxPerHour }).length); return ok.length ? ok : pool; };
   const describe = (s, pool) => `${s.name} from world ${s.source}, ${worldStarts(pool)[s.source]} starts in it so far: health ${s.vitals.health}, hunger ${s.vitals.hunger}, ${s.vitals.foodPoints} food points; ${new Set(pool.map(x => x.source)).size} source worlds in the pool`;
   if (good.length >= (stage === 'fortress' ? minQualifying : 1)) {
     const pick = rotate(good, own);
-    return { snapshot: pick, stage, rule: 'qualifying', why: `${good.length} of ${own.length} ${stage} saves were saved at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more${stage === 'fortress' ? ` and ${minFood}+ food points` : ''}; took the source world started least (${describe(pick, good)})` };
+    return { snapshot: pick, stage, rule: 'qualifying', why: `${good.length} of ${own.length} ${stage} saves were saved at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more${stage === 'fortress' ? ` and ${minFood}+ food points` : ''}; took the source world started least (${describe(pick, good)})${kept(own)}` };
   }
   if (stage === 'fortress') {
     const nether = stages.nether || [], ng = qualifying(nether);
-    const why = `only ${good.length} of ${own.length} fortress saves qualify (needs ${minQualifying}); fell back to the nether stage`;
-    if (ng.length) { const pick = rotate(ng, nether); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether', why: `${why}: ${ng.length} of ${nether.length} nether saves at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more; took the source world started least (${describe(pick, ng)})` }; }
-    if (nether.length) { const pick = rotate(nether); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether-any', why: `${why}, and no nether save qualifies either: took the source world started least (${describe(pick, nether)})` }; }
-    if (own.length) { const pick = rotate(own); return { snapshot: pick, stage, rule: 'none-qualify', why: `${why}, and there are no nether saves: took the source world started least among all fortress saves (${describe(pick, own)})` }; }
+    const why = `only ${good.length} of ${own.length} fortress saves qualify (needs ${minQualifying}); fell back to the nether stage${kept(own)}`;
+    if (ng.length) { const pick = rotate(ng, nether); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether', why: `${why}: ${ng.length} of ${nether.length} nether saves at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more; took the source world started least (${describe(pick, ng)})${kept(nether, 'nether')}` }; }
+    if (nether.length) { const pick = rotate(off(nether), nether); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether-any', why: `${why}, and no nether save qualifies either: took the source world started least (${describe(pick, nether)})` }; }
+    if (own.length) { const pick = rotate(off(own), own); return { snapshot: pick, stage, rule: 'none-qualify', why: `${why}, and there are no nether saves: took the source world started least among all fortress saves (${describe(pick, own)})` }; }
     return { error: 'no usable fortress snapshot' };
   }
-  if (own.length) { const pick = rotate(own); return { snapshot: pick, stage, rule: 'none-qualify', why: `no ${stage} save at health ${MIN_HEALTH} and hunger ${MIN_HUNGER} or more: took the source world started least (${describe(pick, own)})` }; }
+  if (own.length) { const pick = rotate(off(own), own); return { snapshot: pick, stage, rule: 'none-qualify', why: `no ${stage} save at health ${MIN_HEALTH} and hunger ${MIN_HUNGER} or more: took the source world started least (${describe(pick, own)})` }; }
   return { error: `no usable ${stage} snapshot` };
 }
 
@@ -152,17 +206,17 @@ function listing(stages, stage, opts = {}) {
   const order = [...own].sort((a, b) => starts[a.source] - starts[b.source] || a.started - b.started);
   const pick = choose(stages, stage, opts);
   lines.push(`${stage}: ${own.length} saves from ${new Set(own.map(s => s.source)).size} source worlds`);
-  const rows = [['snapshot', 'source', 'health', 'hunger', 'food pts', 'started', 'world starts', 'qualifies']];
+  const rows = [['snapshot', 'source', 'health', 'hunger', 'food pts', 'started', 'last hour', 'world starts', 'qualifies']];
   for (const s of order) {
-    const v = s.vitals, why = shortfalls(v, { stage, minFood: opts.minFood ?? MIN_FOOD });
-    rows.push([s.name + (pick.snapshot === s ? ' <- next' : ''), s.source, v.error ? '?' : String(Math.round(v.health * 10) / 10), v.error ? '?' : String(v.hunger), v.error ? '?' : String(v.foodPoints), String(s.started), String(starts[s.source]), why.length ? 'no: ' + why.join('; ') : 'yes']);
+    const v = s.vitals, why = allShortfalls(s, opts);
+    rows.push([s.name + (pick.snapshot === s ? ' <- next' : ''), s.source, v.error ? '?' : String(Math.round(v.health * 10) / 10), v.error ? '?' : String(v.hunger), v.error ? '?' : String(v.foodPoints), String(s.started), String(s.recent || 0), String(starts[s.source]), why.length ? 'no: ' + why.join('; ') : 'yes']);
   }
   const width = rows[0].map((_, i) => Math.max(...rows.map(r => r[i].length)));
   for (const r of rows) lines.push(r.map((c, i) => c.padEnd(width[i])).join('  ').trimEnd());
-  const q = own.filter(s => !shortfalls(s.vitals, { stage, minFood: opts.minFood ?? MIN_FOOD }).length);
+  const q = own.filter(s => !allShortfalls(s, opts).length);
   lines.push(`${q.length} of ${own.length} qualify (health ${MIN_HEALTH}, hunger ${MIN_HUNGER}+${stage === 'fortress' ? `, ${opts.minFood ?? MIN_FOOD}+ food points` : ''}), from ${new Set(q.map(s => s.source)).size} of ${new Set(own.map(s => s.source)).size} source worlds`);
   lines.push(pick.error ? pick.error : `next start: ${pick.snapshot.name} (${pick.stage}; rule ${pick.rule}): ${pick.why}`);
   return lines.join('\n');
 }
 
-module.exports = { sourceWorld, foodPoints, vitalsOf, shortfalls, readStage, worldStarts, rotate, choose, listing, MIN_HEALTH, MIN_HUNGER, MIN_FOOD, MIN_QUALIFYING };
+module.exports = { sourceWorld, foodPoints, vitalsOf, shortfalls, placeShortfalls, allShortfalls, recentStarts, readStage, worldStarts, rotate, choose, listing, MIN_HEALTH, MIN_HUNGER, MIN_FOOD, MIN_QUALIFYING, MAX_PER_HOUR };
