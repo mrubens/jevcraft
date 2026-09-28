@@ -17,7 +17,7 @@ const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo, surveyCrossing, underFire, blocksCarried, stepOntoFooting, spanBlockSources, gatherSpanBlocks } = require('./bridging');
-const { crossToward, crossingSays, nearer, surveyLeg, legSays, WALK_SPEED } = require('./nether-travel');
+const { crossToward, crossingSays, nearer, surveyLeg, legSays, WALK_SPEED, floorWay, walkFloor, headingColumns, wayDownSays, floorWalkSays, goDown, FLOOR_WALKABLE } = require('./nether-travel');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -1066,8 +1066,9 @@ const FORTRESS_Y = 64, FORTRESS_BAND = 8;
 const headingIndex = state => Number.isInteger(state.heading) ? state.heading % 4 : (state.axis === -1 ? 2 : 0);
 function fortressLegTarget(state, position) {
   // A leg seeking the fortress heights (chooseLeg's seek_fortress_height)
-  // ends at them; a level leg keeps its height between the sea and the roof.
-  const y = state.legMode === 'descend' ? FORTRESS_Y : Math.max(40, Math.min(80, Math.round(position.y)));
+  // ends at them; a leg down to the floor (floor_<heading>) at the floor's
+  // height; a level leg keeps its height between the sea and the roof.
+  const y = state.legMode === 'descend' ? FORTRESS_Y : state.legMode === 'floor' && Number.isFinite(state.floorY) ? state.floorY : Math.max(40, Math.min(80, Math.round(position.y)));
   const [dx, dz] = HEADINGS[headingIndex(state)];
   return new Vec3(Math.round(position.x + FORTRESS_LEG * dx), y, Math.round(position.z + FORTRESS_LEG * dz));
 }
@@ -1081,7 +1082,9 @@ function fortressLegTarget(state, position) {
 // filed as the level leg's, mid-202-o-nether-2's leg_north grew to "564
 // tries from there" while seek_fortress_height, chosen again and again,
 // said nothing of its own failure (note 500).
-const legKey = (i, seeking) => seeking ? `seek_${HEADING_NAMES[i]}` : HEADING_NAMES[i];
+// A leg down to the floor and along it (floor_<heading>) is kept apart as
+// well: its failure is the way down's or the floor's, not the level leg's.
+const legKey = (i, mode) => mode === true || mode === 'descend' ? `seek_${HEADING_NAMES[i]}` : mode === 'floor' ? `floor_${HEADING_NAMES[i]}` : HEADING_NAMES[i];
 function legEnded(state, why, seeking = false) {
   const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
   const history = state.legHistory ||= {};
@@ -1154,14 +1157,14 @@ function legResting(state, key, here, now = Date.now()) {
 }
 function restLeg(state, why, here, made = 0, now = Date.now()) {
   const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
-  const key = legKey(i, state.legMode === 'descend');
+  const key = legKey(i, state.legMode);
   (state.legRests ||= {})[key] = { from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, until: now + LEG_REST_MS, at: now, made, why: why || 'no way on' };
   return key;
 }
 function restSays(key, r, now = Date.now()) {
-  const [seek, name] = key.startsWith('seek_') ? [true, key.slice(5)] : [false, key];
+  const [kind, name] = key.startsWith('seek_') ? ['seek', key.slice(5)] : key.startsWith('floor_') ? ['floor', key.slice(6)] : ['level', key];
   const mins = Math.max(1, Math.round((r.until - now) / 60000));
-  return `${seek ? `the staircase toward the fortress heights heading ${name}` : `leg ${name}`}: ended ${Math.round((now - r.at) / 60000)} minutes ago ${r.made ? `${r.made} block${r.made === 1 ? '' : 's'} from where it began` : 'where it began'}, no way on (${r.why}); not offered from here for ${mins} more minute${mins === 1 ? '' : 's'}`;
+  return `${kind === 'seek' ? `the staircase toward the fortress heights heading ${name}` : kind === 'floor' ? `the floor below, heading ${name}` : `leg ${name}`}: ended ${Math.round((now - r.at) / 60000)} minutes ago ${r.made ? `${r.made} block${r.made === 1 ? '' : 's'} from where it began` : 'where it began'}, no way on (${r.why}); not offered from here for ${mins} more minute${mins === 1 ? '' : 's'}`;
 }
 // The pickaxe carried, as the ways that dig need it said: a staircase, a
 // tunnel and a crossing through rock dig nothing without one. mid-242-ac-
@@ -1236,6 +1239,24 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : ''),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
   });
+  // Down to the floor and along it: where the ground under the bot lies
+  // four or more below and a way down to it is found, each heading's floor
+  // walked from the foot of that way (nether-travel.js). mid-244-ad-nether-2
+  // laid ninety blocks of span at y 74 over a cavern floor walkable fifteen
+  // to twenty below, and chose to go back for blocks twenty-eight times
+  // (note 568): only the level legs were offered.
+  const down = typeof bot.blockAt === 'function' ? floorWay(bot) : null;
+  if (down) HEADINGS.forEach((h, i) => {
+    const key = legKey(i, 'floor'), rest = legResting(state, key, here);
+    if (rest) { resting.push(restSays(key, rest)); return; }
+    const floor = walkFloor(bot, down.way.end, headingColumns(down.way.end, h, FORTRESS_LEG));
+    if (floor.floor < FLOOR_WALKABLE) return;
+    const fortressUp = down.y < 48 ? ` Fortress corridors stand mostly between y 48 and 75: from the floor at y ${down.y} they are seen above through open air, and reached by climbing to them.` : '';
+    options[key] = { description: `Go down to the floor and walk it ${HEADING_NAMES[i]} ${FORTRESS_LEG} blocks, bridging only across the lava and open air on it. ${wayDownSays(down)} ${floorWalkSays(floor, { along: HEADING_NAMES[i] })}${fortressUp}` +
+      (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, key, here),
+      run: () => { state.heading = i; state.legMode = 'floor'; state.floorY = down.y;
+        state.descent = { x: down.way.end.x, y: down.way.end.y, z: down.way.end.z, floorY: down.y, maxDrop: down.way.maxDrop, dug: down.way.dug, path: down.way.path.map(p => ({ x: p.x, y: p.y, z: p.z })) }; return true; } };
+  });
   const off = y - FORTRESS_Y;
   if (Math.abs(off) > FORTRESS_BAND && actions.tunnel) {
     // A heading whose staircase rests is not offered as a fresh one: mid-
@@ -1288,8 +1309,8 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const blazesSeen = blazesSeenFacts(bot, goal);
   const facts = { ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
-    lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, seeking)];
-      return `${seeking ? 'a staircase toward the fortress heights ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
+    lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, state.legMode)];
+      return `${seeking ? 'a staircase toward the fortress heights ' : state.legMode === 'floor' ? 'down to the floor and along it ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
     ...(resting.length ? { legsResting: resting } : {}),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(fortress ? { fortressInView: fortress.facts } : {}) };
@@ -1901,7 +1922,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // A leg walked to its end: whatever was left behind may be seen again,
     // and that heading's failure is history.
     if (state.target && !state.rememberedTarget) delete state.leaving;
-    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) { delete state.legHistory[legKey(state.lastHeading, false)]; delete state.legHistory[legKey(state.lastHeading, true)]; }
+    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) { for (const mode of ['level', 'descend', 'floor']) delete state.legHistory[legKey(state.lastHeading, mode)]; }
     delete state.rememberedTarget;
     // A leg begun again where the last one began got nowhere, however the
     // step was cut short: mid-83-f began five legs south from one spot in
@@ -1928,6 +1949,21 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // up toward the leg's end, until the bot is within the band; a crossing at
   // the standing height would keep it where nothing is seen.
   const seeking = state.legMode === 'descend' && Math.abs(here.y - FORTRESS_Y) > FORTRESS_BAND;
+  // Down to the floor first, by the way found when it was chosen; the leg
+  // then goes on along the floor at its height. A way down that does not
+  // get there ends the leg, and that heading's floor rests from here.
+  if (state.legMode === 'floor' && state.descent) {
+    const d = state.descent;
+    goal.step = { action: 'find_fortress', target: state.target, down: { x: d.x, y: d.y, z: d.z }, legs: state.legs }; save();
+    const done = actions.navigate ? await goDown(bot, task, d, actions.navigate) : { reached: false, why: 'no way to walk' };
+    delete state.descent; save();
+    if (done.reached) { state.legFails = 0; return; }
+    state.lastLegError = `the way down to the floor at y ${d.floorY}: ${done.why}`;
+    legEnded(state, state.lastLegError, 'floor');
+    restLeg(state, state.lastLegError, here, 0);
+    delete state.target; save();
+    return;
+  }
   if (seeking) {
     try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
@@ -1956,7 +1992,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Counted from nothing on a fresh search: incremented from undefined it
   // was NaN, never four, and a leg that never once made ground never turned.
   state.legFails = (state.legFails || 0) + 1;
-  legEnded(state, state.lastLegError || state.lastCrossStop, seeking);
+  legEnded(state, state.lastLegError || state.lastCrossStop, seeking ? 'descend' : state.legMode);
   // Every way on failed within a few blocks of where the leg began: the leg
   // ends here and its heading rests from this spot (legResting), its
   // failure said with the next ask, not tried again tick after tick.

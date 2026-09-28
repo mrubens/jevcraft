@@ -158,6 +158,348 @@ function legSays(survey, { direction, length, y }) {
   return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${firstSays(survey)}`;
 }
 
+// The floor below: going down to the ground and walking it, where the
+// ground allows. mid-244-ad-nether-2 laid a one-wide span ninety blocks long
+// at y 74 over a netherrack cavern whose floor was walkable fifteen to
+// twenty blocks down, piglins on it, ran out of blocks and chose to go back
+// for more twenty-eight times; mid-244-ad-nether-1 laid a diagonal one at
+// y 63 over a crimson forest walkable at y 32 to 45 and, 186 blocks from
+// its portal, was asked the way back ninety-five times in ten minutes
+// (note 568). Every way on was a straight level line at the height it
+// stood: the leg's cells ahead at y N (surveyLeg), its target at that
+// height (mob-hunt.js fortressLegTarget), the crossing at the feet's
+// height (surveyCrossing), and the pathfinder, which drops three at most
+// and digs no netherrack, found nothing down from a span. A player crosses
+// the Nether on its floors where they are walkable (forests, soul sand
+// valleys, netherrack caverns) and bridges only across lava or a void.
+// Here the floor is found (floorBelow), the way down to it (wayDown: a walk,
+// the drops a body takes, steps dug down through rock) and the floor that
+// way (walkFloor: floor to walk, rises, lava on it, gaps, the mobs by it),
+// each priced for Jev's question beside the level ways.
+const FLOOR_LOOK = 48;
+// A floor this far below the feet or more is a way of its own: the drop a
+// cavern's view is counted from (CAVERN_DROP).
+const FLOOR_BELOW = CAVERN_DROP;
+// The columns each way round the bot its height is read from, and how many
+// of them must show ground that far down.
+const FLOOR_SAMPLE = 16, FLOOR_SEEN = 8;
+// How far across the way down is looked for, and the cells looked at: a
+// span is walked back along to its start, sixty blocks out and more.
+const DOWN_REACH = 64, DOWN_NODES = 8000;
+// Floor cells a way along it needs among its cells to be offered.
+const FLOOR_WALKABLE = 8;
+// A fall's damage weighed against seconds in finding the way down.
+const DAMAGE_SECONDS = 4;
+// A block of height climbed by a block laid under the feet, or a step dug.
+const CLIMB_SECONDS = 1.2;
+// On soul sand a walk goes at about four tenths of its pace.
+const SOUL_PACE = 0.4;
+const NETHER_MOBS = /^(piglin|piglin_brute|hoglin|zoglin|zombified_piglin|magma_cube|ghast|blaze|wither_skeleton|skeleton|enderman)$/;
+const burns = b => /lava|fire/.test(b?.name || '');
+const openCell = b => !!b && b.boundingBox === 'empty' && !burns(b);
+const solidCell = b => !!b && b.boundingBox === 'block' && !burns(b);
+// Feet at `feet` stand: a floor under, body and head open, nothing burning.
+function stands(bot, feet) {
+  return solidCell(bot.blockAt(feet.offset(0, -1, 0))) && openCell(bot.blockAt(feet)) && openCell(bot.blockAt(feet.offset(0, 1, 0)));
+}
+const lavaBeside = (bot, feet) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => /lava/.test(bot.blockAt(feet.offset(dx, dy, dz))?.name || '')));
+// The deepest drop a body takes: its damage (a point a block past three)
+// under half the health, as the staircase's drops are judged.
+const deepestDrop = bot => Math.min(DROP_DEEPEST, Math.ceil((bot.health ?? 20) / 2) + 2);
+const DROP_DEEPEST = 24;
+const hasPickaxe = bot => (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name));
+const HEADS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+const median = list => { const s = list.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+
+// The first ground under a column, from the height `y` down: the feet's
+// height on it, or lava, or a wall at `y` itself; null past what is loaded.
+function groundUnder(bot, x, z, y, look = FLOOR_LOOK) {
+  for (let dy = 0; dy <= look; dy++) {
+    const b = bot.blockAt(new Vec3(x, y - dy, z));
+    if (!b) return null;
+    if (/lava/.test(b.name || '')) return { lava: true, y: y - dy };
+    if (b.boundingBox !== 'block') continue;
+    if (dy === 0) return { wall: true };
+    if (dy === 1) return { y };
+    return openCell(bot.blockAt(new Vec3(x, y - dy + 2, z))) ? { y: y - dy + 1, name: b.name } : null;
+  }
+  return null;
+}
+
+// The floor round the bot: the ground under the columns out to sixteen each
+// way, where it lies four or more below the feet. Its height is the middle
+// of those; null where fewer than eight columns show it (the bot is on the
+// ground, or over the lava sea).
+function floorBelow(bot, from = null) {
+  if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
+  const start = from || require('./terrain').restingCell(bot) || bot.entity.position.floored();
+  const deep = [];
+  let lava = 0;
+  for (const [dx, dz] of HEADS) for (let k = 1; k <= FLOOR_SAMPLE; k++) {
+    const g = groundUnder(bot, start.x + dx * k, start.z + dz * k, start.y);
+    if (g?.lava && start.y - g.y >= FLOOR_BELOW) lava++;
+    else if (Number.isFinite(g?.y) && start.y - g.y >= FLOOR_BELOW) deep.push(g.y);
+  }
+  if (deep.length < FLOOR_SEEN) return null;
+  const y = median(deep);
+  return { y, depth: start.y - y, columns: deep.length, lava, from: start };
+}
+
+// The way down to feet at `floorY` or lower from where the bot stands,
+// within thirty-two across: walked (a step up or level), a drop a body
+// takes (landing on no lip beside lava or a deadly drop, as the pathfinder
+// lands), or, with a pickaxe, a step dug down into rock with nothing
+// flowing behind it (the staircase's step). The cheapest by seconds and a
+// fall's damage. Null where none is found.
+// The world read once a cell for a search that looks at each many times.
+function cachedView(bot) {
+  const cells = new Map();
+  const view = Object.create(bot);
+  view.blockAt = p => { const k = `${p.x},${p.y},${p.z}`; if (!cells.has(k)) cells.set(k, bot.blockAt(p)); return cells.get(k); };
+  return view;
+}
+function wayDown(live, floorY, { from = null, reach = DOWN_REACH, nodes = DOWN_NODES } = {}) {
+  const bot = cachedView(live);
+  const start = from || require('./terrain').restingCell(bot) || bot.entity.position.floored();
+  const health = bot.health ?? 20, deepest = deepestDrop(bot), pick = hasPickaxe(bot);
+  const { dropNear } = require('./terrain'), { safeExcavation } = require('./tunneling');
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const best = new Map([[key(start), 0]]), prev = new Map();
+  const heap = [{ p: start, cost: 0 }];
+  const push = n => { heap.push(n); let i = heap.length - 1; while (i > 0) { const j = (i - 1) >> 1; if (heap[j].cost <= heap[i].cost) break; [heap[i], heap[j]] = [heap[j], heap[i]]; i = j; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l].cost < heap[m].cost) m = l; if (r < heap.length && heap[r].cost < heap[m].cost) m = r; if (m === i) break; [heap[i], heap[m]] = [heap[m], heap[i]]; i = m; } } return top; };
+  const digTime = b => { if (typeof b.digTime !== 'function') return ROCK_CELL_SECONDS / 2; const tool = require('./skills').cheapestTool?.(bot, b); return b.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000; };
+  const edgeDeadly = p => { const e = dropNear(bot, p, 1); return e && (e.into === 'lava' || e.damage >= health / 2); };
+  let seen = 0, end = null;
+  while (heap.length && seen < nodes) {
+    const { p, cost } = pop();
+    if (cost > best.get(key(p))) continue;
+    seen++;
+    if (p.y <= floorY) { end = p; break; }
+    for (const [dx, dz] of HEADS) {
+      const n = p.offset(dx, 0, dz);
+      if (Math.abs(n.x - start.x) > reach || Math.abs(n.z - start.z) > reach) continue;
+      const moves = [];
+      if (stands(bot, n) && !lavaBeside(bot, n)) moves.push({ to: n, seconds: 1 / WALK_SPEED });
+      else if (stands(bot, n.offset(0, 1, 0)) && openCell(bot.blockAt(p.offset(0, 2, 0))) && !lavaBeside(bot, n.offset(0, 1, 0))) moves.push({ to: n.offset(0, 1, 0), seconds: 1 / WALK_SPEED + 0.3 });
+      else if (openCell(bot.blockAt(n)) && openCell(bot.blockAt(n.offset(0, 1, 0)))) {
+        // Over the edge: where the body comes down.
+        for (let k = 1; k <= deepest + 1; k++) {
+          const b = bot.blockAt(n.offset(0, -k, 0));
+          if (!b || burns(b)) break;
+          if (b.boundingBox !== 'block') continue;
+          const fall = k - 1, land = n.offset(0, -fall, 0);
+          if (fall < 1 || fall > deepest || lavaBeside(bot, land)) break;
+          if (fall >= 2 && edgeDeadly(land)) break;
+          moves.push({ to: land, seconds: 1 / WALK_SPEED + fall * 0.1, fall, damage: Math.max(0, fall - 3) });
+          break;
+        }
+      }
+      // A step dug down into rock, a pickaxe carried: the cells from the
+      // head's height ahead down to the new feet, each natural and with
+      // nothing flowing in behind it, and a floor under.
+      if (pick && !moves.length) {
+        const to = n.offset(0, -1, 0), floor = bot.blockAt(to.offset(0, -1, 0));
+        if (solidCell(floor) && !lavaBeside(bot, to)) {
+          let secs = 0, dug = 0, ok = true;
+          for (const c of [n.offset(0, 1, 0), n, to]) {
+            const b = bot.blockAt(c);
+            if (!b || burns(b)) { ok = false; break; }
+            if (b.boundingBox !== 'block' && openCell(b)) continue;
+            if (!b.diggable || !NATURAL_ROCK.test(b.name || '') || !safeExcavation(bot, c)) { ok = false; break; }
+            dug++; secs += digTime(b);
+          }
+          if (ok && dug) moves.push({ to, seconds: 1 / WALK_SPEED + secs, dug });
+        }
+      }
+      for (const m of moves) {
+        const c = cost + m.seconds + (m.damage || 0) * DAMAGE_SECONDS, k = key(m.to);
+        if (m.to.y < floorY - 2 || c >= (best.get(k) ?? Infinity)) continue;
+        best.set(k, c); prev.set(k, { from: p, ...m }); push({ p: m.to, cost: c });
+      }
+    }
+  }
+  if (!end) return null;
+  const way = { end, cells: 0, seconds: 0, damage: 0, drops: [], dug: 0, maxDrop: 0, path: [] };
+  for (let at = end; !at.equals(start);) {
+    const step = prev.get(key(at));
+    way.cells++; way.seconds += step.seconds; way.damage += step.damage || 0; way.dug += step.dug || 0;
+    if (step.fall >= 2) { way.drops.unshift(step.fall); way.maxDrop = Math.max(way.maxDrop, step.fall); }
+    way.path.unshift(at); at = step.from;
+  }
+  way.seconds = Math.round(way.seconds);
+  way.across = Math.round(Math.hypot(end.x - start.x, end.z - start.z));
+  way.from = start;
+  return way;
+}
+const NATURAL_ROCK = /^(netherrack|crimson_nylium|warped_nylium|soul_sand|soul_soil|basalt|blackstone|nether_wart_block|warped_wart_block|shroomlight|crimson_stem|warped_stem|crimson_hyphae|warped_hyphae|gravel|glowstone|nether_gold_ore|nether_quartz_ore)$/;
+
+// Columns along a heading, or straight toward a target (the crossing's
+// cells: along whichever axis has farther to go).
+function headingColumns(from, [dx, dz], cells) { return Array.from({ length: cells }, (_, i) => ({ x: from.x + dx * (i + 1), z: from.z + dz * (i + 1) })); }
+function lineColumns(from, target, cells) {
+  const out = []; let x = from.x, z = from.z;
+  for (let i = 0; i < cells; i++) {
+    const ddx = Math.floor(target.x) - x, ddz = Math.floor(target.z) - z;
+    if (Math.abs(ddx) <= 1 && Math.abs(ddz) <= 1) break;
+    if (Math.abs(ddx) >= Math.abs(ddz)) x += Math.sign(ddx); else z += Math.sign(ddz);
+    out.push({ x, z });
+  }
+  return out;
+}
+
+// The floor along `columns` from feet at `from`, following the ground: a
+// step up one or down three is walked; lava on the floor, or open air with
+// no ground within what a body drops, is a block laid; a rise of two to
+// six a climb (a block laid under the feet a block of height, or a step
+// dug); a higher wall rock to dig; a deeper drop a body takes is a fall.
+// With the mobs within eight of the ground walked.
+function walkFloor(bot, from, columns, { blocks = null } = {}) {
+  const carried = blocks ?? blocksCarried(bot), deepest = deepestDrop(bot);
+  const out = { cells: 0, floor: 0, lava: 0, gap: 0, rise: 0, climb: 0, drops: 0, damage: 0, rock: 0, lay: 0, soul: 0, magma: 0, carried, runsOut: null, seconds: 0, stoppedBy: null, stoppedAt: null, mobs: {}, lowest: from.y, highest: from.y, first: [] };
+  const walked = [];
+  const note = kind => { if (out.cells >= FIRST_CELLS) return; const last = out.first.at(-1); if (last?.kind === kind) last.n++; else out.first.push({ kind, n: 1 }); };
+  let h = from.y;
+  for (const { x, z } of columns) {
+    const at = y => new Vec3(x, y, z), b = y => bot.blockAt(at(y));
+    if ([h - 1, h, h + 1].some(y => !b(y))) { out.stoppedBy = 'unloaded ground'; out.stoppedAt = out.cells; break; }
+    let stand = null;
+    for (const y of [h, h - 1, h - 2, h - 3, h + 1]) {
+      if (!stands(bot, at(y))) continue;
+      if (y < h && ![h, h + 1].every(c => openCell(b(c)))) continue;
+      stand = y; break;
+    }
+    let kind;
+    if (stand !== null) {
+      kind = 'floor'; out.floor++; h = stand;
+      const under = b(h - 1)?.name || '';
+      if (/soul_s(and|oil)/.test(under)) { out.soul++; out.seconds += 1 / (WALK_SPEED * SOUL_PACE); } else out.seconds += 1 / WALK_SPEED;
+      if (/magma_block/.test(under)) out.magma++;
+    } else if (burns(b(h)) || burns(b(h + 1)) || /lava/.test(b(h - 1)?.name || '')) {
+      kind = 'lava'; out.lava++;
+    } else if (!openCell(b(h)) || !openCell(b(h + 1))) {
+      let up = null;
+      for (let k = 2; k <= 6; k++) if (stands(bot, at(h + k))) { up = k; break; }
+      if (up) { kind = 'rise'; out.rise++; out.climb += up; out.seconds += up * CLIMB_SECONDS; h += up; }
+      else { kind = 'rock'; out.rock++; out.seconds += ROCK_CELL_SECONDS; }
+    } else {
+      let fall = null;
+      for (let k = 4; k <= deepest; k++) { const c = b(h - k - 1); if (!c || burns(c)) break; if (c.boundingBox === 'block') { if (!lavaBeside(bot, at(h - k))) fall = k; break; } }
+      if (fall) { kind = 'drop'; out.drops++; out.damage += fall - 3; h -= fall; out.seconds += 1 / WALK_SPEED; }
+      else { kind = 'gap'; out.gap++; }
+    }
+    if (kind === 'lava' || kind === 'gap') {
+      if (out.lay >= carried && out.runsOut === null) out.runsOut = out.cells;
+      out.lay++; out.seconds += LAY_CELL_SECONDS;
+    }
+    note(kind);
+    walked.push(at(h));
+    out.lowest = Math.min(out.lowest, h); out.highest = Math.max(out.highest, h);
+    out.cells++;
+  }
+  out.seconds = Math.round(out.seconds);
+  out.end = walked.at(-1) || from;
+  // The mobs by the ground walked: within eight across and eight up or down
+  // of a cell of it.
+  for (const e of Object.values(bot.entities || {})) {
+    if (!NETHER_MOBS.test(e?.name || '') || e.isValid === false || !e.position) continue;
+    if (walked.some(p => Math.hypot(e.position.x - p.x - 0.5, e.position.z - p.z - 0.5) <= 8 && Math.abs(e.position.y - p.y) <= 8)) out.mobs[e.name] = (out.mobs[e.name] || 0) + 1;
+  }
+  return out;
+}
+
+const FLOOR_FIRST = { floor: 'floor to walk', lava: 'lava on the floor', gap: 'open air with no ground a body drops to', rise: 'a rise to climb', rock: 'wall to dig', drop: 'a drop to take' };
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+// The way down said: how far across and down, walked, dropped or dug, the
+// seconds and the damage.
+function wayDownSays(down) {
+  const w = down.way, parts = [`${w.cells} step${w.cells === 1 ? '' : 's'} ending ${w.across} blocks across from here`];
+  if (w.drops.length) parts.push(`dropping ${w.drops.join(', ')} (${w.damage ? `about ${w.damage} damage` : 'no damage'})`);
+  if (w.dug) parts.push(`digging ${plural(w.dug, 'block')} of rock for the steps down`);
+  return `The way down to the floor ${down.depth} blocks below (y ${down.y}, seen under ${down.columns} of the 64 columns round the bot) is ${parts.join(', ')}: about ${w.seconds} seconds, found on the ground and rock about the bot, walked upright by the pathfinder.`;
+}
+function floorWalkSays(f, { along }) {
+  const parts = [];
+  if (f.floor) parts.push(`${f.floor} of floor to walk${f.soul ? ` (${f.soul} of soul sand or soil, at under half the pace)` : ''}${f.magma ? ` (${f.magma} of magma, which burns to stand on)` : ''}`);
+  if (f.rise) parts.push(`${plural(f.rise, 'rise')} to climb, ${f.climb} blocks of height in all`);
+  if (f.drops) parts.push(`${plural(f.drops, 'drop')} to take, about ${f.damage} damage`);
+  if (f.lava) parts.push(`${f.lava} of lava on the floor`);
+  if (f.gap) parts.push(`${f.gap} of open air with no ground a body drops to`);
+  if (f.rock) parts.push(`${f.rock} of wall to dig (about ${ROCK_CELL_SECONDS} seconds a cell)`);
+  const lay = !f.lay ? ' No block is laid.' : ` The lava and open air need ${f.lay} block${f.lay === 1 ? '' : 's'} laid, ${f.carried} carried: ${Number.isInteger(f.runsOut) ? `they run out at cell ${f.runsOut}` : `${f.carried - f.lay} left after`}.`;
+  const mobs = Object.entries(f.mobs).map(([n, c]) => `${c} ${n.replaceAll('_', ' ')}${c === 1 ? '' : 's'}`);
+  const firstRuns = f.first.map(r => `${r.n} of ${FLOOR_FIRST[r.kind]}`).join(', ');
+  return `On the floor, of the ${f.cells} cells ${along}: ${parts.join(', ') || 'none open'}, ${f.lowest === f.highest ? `all at y ${f.lowest}` : `from y ${f.lowest} to ${f.highest}`}; about ${f.seconds} seconds.${lay}` +
+    `${f.stoppedBy ? ` ${capital(f.stoppedBy)} stops it at cell ${f.stoppedAt}.` : ''}${firstRuns ? ` The first cells, in order: ${firstRuns}.` : ''}` +
+    ` ${mobs.length ? `By the floor that way: ${mobs.join(', ')}.` : 'No mobs are known by the floor that way.'}`;
+}
+const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
+// The height back up: to the height the bot stands, or to what it is going to.
+function backUpSays(down, upTo, what) {
+  const up = Math.round(upTo - down.y);
+  if (up < 3) return '';
+  return ` ${capital(what)} is ${up} blocks above the floor: that height is climbed again at the end (a block laid under the feet a block of height, the ground's own slopes where they rise, or a staircase dug), ${down.carried} blocks carried.`;
+}
+// The floor under the bot and the way down to it, or null.
+function floorWay(bot) {
+  const floor = floorBelow(bot);
+  if (!floor) return null;
+  const way = wayDown(bot, floor.y + 1, { from: floor.from });
+  return way ? { ...floor, way, carried: blocksCarried(bot) } : null;
+}
+// Down the way found, by the pathfinder: its drops allowed as deep as the
+// way's deepest, the rock of the steps down let dug, and the cells of the
+// way walked though an edge is beside them (the choice was Jev's, said
+// with the drops). Reached when the feet are within two of the floor.
+async function goDown(bot, task, down, navigate) {
+  const m = bot.pathfinder?.movements, end = down.end || down.way?.end || down, floorY = down.floorY ?? down.y;
+  const cells = new Set((down.path || down.way?.path || []).map(p => `${p.x},${p.y},${p.z}`));
+  const kept = m ? { maxDropDown: m.maxDropDown } : null, freed = [];
+  if (m) {
+    m.maxDropDown = Math.max(m.maxDropDown ?? 3, down.maxDrop ?? down.way?.maxDrop ?? 0);
+    if ((down.dug ?? down.way?.dug) && m.blocksCantBreak?.delete) for (const [name, b] of Object.entries(bot.registry?.blocksByName || {})) if (NATURAL_ROCK.test(name) && m.blocksCantBreak.has(b.id)) { m.blocksCantBreak.delete(b.id); freed.push(b.id); }
+  }
+  let why = null;
+  try {
+    const { goals } = require('mineflayer-pathfinder');
+    await navigate(bot, task, new goals.GoalNear(end.x, end.y, end.z, 1), { timeoutMs: 60000, stallMs: 8000, besideLava: n => cells.has(`${n.x},${n.y},${n.z}`) });
+  } catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+  finally { if (m) { m.maxDropDown = kept.maxDropDown; for (const id of freed) m.blocksCantBreak.add(id); } }
+  const y = Math.floor(bot.entity.position.y);
+  return y <= floorY + 2 ? { reached: true } : { reached: false, why: `${why ? `${why}; ` : ''}it ended at y ${y}, the floor at y ${floorY}` };
+}
+// The floor toward a target: the way down and the floor along the straight
+// line from where the way down ends.
+function floorToward(bot, down, target, cells = 96) {
+  return walkFloor(bot, down.way.end, lineColumns(down.way.end, target, cells));
+}
+// Down, then a stretch of the floor toward the target on foot (the
+// pathfinder, bridging where the floor has lava or a gap): what the way
+// down and the floor come to. One that ends no lower and no nearer rests
+// from this eight-block area toward this target, with why, as a crossing
+// does.
+const floorKey = (bot, target) => { const h = bot.entity.position; return `${Math.floor(h.x / 8)},${Math.floor(h.y / 8)},${Math.floor(h.z / 8)}>${Math.round(target.x)},${Math.round(target.z)}`; };
+async function walkFloorToward(bot, task, goal, save, target, down, navigate) {
+  const key = floorKey(bot, target), before = bot.entity.position.clone();
+  goal.step = { action: 'floor_toward', target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }, floorY: down.y, down: { x: down.way.end.x, y: down.way.end.y, z: down.way.end.z } }; save();
+  const done = await goDown(bot, task, down, navigate);
+  let why = done.why || null;
+  if (done.reached) {
+    const here = bot.entity.position, d = Math.hypot(target.x - here.x, target.z - here.z), step = Math.min(CROSS_STRETCH, Math.max(0, d - 4)) / (d || 1);
+    const { goals } = require('mineflayer-pathfinder');
+    try { await navigate(bot, task, new goals.GoalNearXZ(here.x + (target.x - here.x) * step, here.z + (target.z - here.z) * step, 4), { timeoutMs: 30000, stallMs: 8000 }); }
+    catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+  }
+  const lower = before.y - bot.entity.position.y >= 2, nearer = flat(target, before) - flat(target, bot.entity.position) >= 1;
+  if (!lower && !nearer) { setAside(goal, 'floor_toward', key, why || 'it came no lower and no nearer', CROSS_REST_MS); save(); }
+  return { reached: done.reached, lower, nearer, why };
+}
+function floorTowardSays(down, floor, { what, target }) {
+  const off = Math.round(Math.hypot(target.x - down.way.end.x, target.z - down.way.end.z));
+  return `Go down to the floor and walk it toward ${what}. ${wayDownSays(down)} ${floorWalkSays(floor, { along: `on the straight line toward it (${off} blocks from the foot of the way down)` })}` +
+    `${backUpSays(down, target.y, what)}`;
+}
+
 // Whether food is why the bot is going back: hungry, with nothing to eat
 // or the return for food chosen.
 function foodReason(bot, goal) {
@@ -249,6 +591,15 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
         if (!target.portal && goal.fortressSearch && !goal.fortressSearch.target) goal.fortressSearch.target = { x: target.at.x, y: target.at.y, z: target.at.z };
         await crossToward(bot, task, goal, save, target.at, { what: target.what });
       } };
+    // Down to the floor and along it toward the same target, where the
+    // ground below is walkable and a way down is found (note 568).
+    const down = !isSetAside(goal, 'floor_toward', floorKey(bot, target.at)) && actions.navigate ? floorWay(bot) : null;
+    const floor = down && floorToward(bot, down, target.at);
+    if (floor && floor.floor >= FLOOR_WALKABLE) answers.floor_toward = { description: floorTowardSays(down, floor, { what: target.what, target: target.at }),
+      run: async () => {
+        if (!target.portal && goal.fortressSearch && !goal.fortressSearch.target) goal.fortressSearch.target = { x: target.at.x, y: down.y, z: target.at.z };
+        await walkFloorToward(bot, task, goal, save, target.at, down, actions.navigate);
+      } };
   }
   const food = foodReason(bot, goal);
   if (food && survival?.foodHunt) {
@@ -281,4 +632,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { walkFloorToward, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, legTarget, hoglinsKnown, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };

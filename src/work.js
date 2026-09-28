@@ -3365,8 +3365,8 @@ async function sideLeg(bot, task, p, side) {
   // With x east and z south, left of a heading (hx, hz) is (hz, -hx).
   const [ux, uz] = side === 'left' ? [dz / d, -dx / d] : [-dz / d, dx / d];
   try { await navigate(bot, task, new goals.GoalNearXZ(here.x + ux * 32, here.z + uz * 32, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return false; }
-  return true;
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return { ok: false, why: String(err.message || err).slice(0, 120) }; }
+  return { ok: true };
 }
 
 // The boat's last word on this water: failed and resting, or the walk
@@ -3403,6 +3403,15 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   // the question asked again.
   const held = goal.portalWay, again = held && held.key === key && held.until === until && held.from === from ? held : null;
   if (again?.pick === 'wait_rest') throw new WaysResting(`${says} The way was asked from here with this, and other work chosen until then.`, until);
+  // The ways tried from here in this rest that came to nothing (moved under
+  // four blocks and came no nearer): not offered again from here, said.
+  // mid-244-ad-nether-1 was asked this ninety-five times in ten minutes on
+  // its span, around_right and around_left in turn, each leg back within a
+  // third of a second having moved nothing; "chosen from here before" went
+  // on the last one only, so the other looked fresh, and the answers and
+  // facts changing each time, note 560's same-answer rule never saw a run
+  // (note 568).
+  const tried = Object.fromEntries(Object.entries(again?.tried || {}).filter(([, t]) => now - t.at < PORTAL_WAY_TRIED_MS));
   const tree = {};
   const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
   if (where === 'overworld') {
@@ -3417,13 +3426,30 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   if (climb) tree.climb_here = { description: climb.says };
   for (const side of ['left', 'right']) tree[`around_${side}`] = { description: `Go round: a leg of thirty-two blocks on foot to the ${side} of the heading to the portal, the pathfinder bridging and climbing where it can, and the way asked again from where it ends.` };
   if (boat) tree.boat_again = { description: `Take the boat again over the water toward it, though ${boat}: the crossing is surveyed from here and the boat made or taken from the pack.` };
+  // Down to the floor and along it toward the portal, where the ground
+  // below is walkable and a way down is found (note 568).
+  const nt = require('./nether-travel');
+  const down = where === 'nether' ? nt.floorWay(bot) : null, floor = down && nt.floorToward(bot, down, target);
+  if (floor && floor.floor >= nt.FLOOR_WALKABLE) tree.floor_way = { description: nt.floorTowardSays(down, floor, { what: 'the portal', target }) };
   if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.` };
+  const triedSays = Object.entries(tried).map(([k, t]) => `${k.replaceAll('_', ' ')}: ended ${t.moved} block${t.moved === 1 ? '' : 's'} from here and no nearer, ${Math.max(1, Math.round((now - t.at) / 1000))} seconds ago${t.why ? ` (${t.why})` : ''}`);
+  for (const k of Object.keys(tried)) delete tree[k];
   if (again && tree[again.pick]) tree[again.pick].description += ' Chosen from here before in this rest, and the bot is back here.';
+  // Every way from here tried and come to nothing: said, and the way rests
+  // (the stall's question answers it), not asked again.
+  if (!Object.keys(tree).length) throw new WaysResting(`${says} Every way offered from here was tried in this rest and came to nothing: ${triedSays.join('; ')}.`, Math.max(until, now + PORTAL_WAY_TRIED_MS));
   const decision = await decide('portal_way', { client, bot, task, goal, save, tree,
-    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), health: bot.health, food: bot.food } });
+    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), ...(triedSays.length ? { triedFromHereToNothing: triedSays } : {}), health: bot.health, food: bot.food } });
   if (decision.stale) return true;
   const pick = decision.path.at(-1);
-  goal.portalWay = { key, until, from, pick, at: now }; save();
+  goal.portalWay = { key, until, from, pick, at: now, tried }; save();
+  // What the way chosen came to, kept for the next asking from here.
+  const start = bot.entity.position.clone(), startOff = Math.hypot(p.x - start.x, p.z - start.z);
+  const cameTo = why => {
+    const at = bot.entity.position, moved = Math.round(Math.hypot(at.x - start.x, at.y - start.y, at.z - start.z));
+    if (moved >= 4 || startOff - Math.hypot(p.x - at.x, p.z - at.z) >= 1) return;
+    goal.portalWay.tried = { ...goal.portalWay.tried, [pick]: { at: Date.now(), moved, ...(why ? { why: String(why).slice(0, 120) } : {}) } }; save();
+  };
   if (pick === 'wait_rest') throw new WaysResting(`${says} Jev chose other work until then.`, until);
   if (pick === 'portal_here' && where === 'overworld') { setAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }, 'Jev chose a portal made here, this one out of reach', 30 * 60000); save(); return false; }
   if (pick === 'portal_here') {
@@ -3439,11 +3465,21 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     if (site.distanceTo(bot.entity.position.floored()) < 1.5) await pillarUp(bot, task, target.y, { dig });
+    cameTo(site.distanceTo(bot.entity.position.floored()) >= 1.5 ? 'the walk to the column did not get there' : null);
     return true;
   }
-  await sideLeg(bot, task, p, pick === 'around_left' ? 'left' : 'right');
+  if (pick === 'floor_way') {
+    const went = await nt.walkFloorToward(bot, task, goal, save, target, down, navigate);
+    // Down and nearer is ground made, whatever the four-block measure says.
+    if (!went.lower && !went.nearer) cameTo(went.why);
+    return true;
+  }
+  const leg = await sideLeg(bot, task, p, pick === 'around_left' ? 'left' : 'right');
+  cameTo(leg.why);
   return true;
 }
+// How long a way from a place that came to nothing is left out from there.
+const PORTAL_WAY_TRIED_MS = 5 * 60000;
 
 // Up to a portal overhead and far across, by a pillar where the bot stands:
 // jump and lay a block under the feet, from a column with no lava or water

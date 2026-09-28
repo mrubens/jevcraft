@@ -1667,3 +1667,71 @@ test('a hunt fight with others that reach the bot is priced with them, and leavi
   assert.match(asked.hunt_7, /A blaze drops a rod about half the time; blaze rods are what the request needs now/);
   assert.match(asked.defer, /Leaving them does not take the bot out of their fire: a blaze 4 blocks off, a blaze 8 blocks off, in sight and within reach, keep shooting where it stands/);
 });
+
+// A one-wide cobblestone span at y 73 running east from a ledge over a netherrack cavern whose floor stands at y 56
+// (feet 57), seventeen below, with a ramp down the ledge's face beside the span's first cells, a lava pool on the
+// floor and piglins on it: mid-244-ad-nether-2's ninety blocks of span at y 74 over a cavern floor walkable fifteen
+// to twenty below (note 568).
+function spanOverCavern(carried = [{ name: 'cobblestone', count: 12 }]) {
+  const pool = p => p.x >= 40 && p.x <= 42 && p.z >= -2 && p.z <= 2 && p.y === 56;
+  const rock = p => {
+    if (p.y <= 20) return 'lava';
+    if (pool(p)) return 'lava';
+    if (p.x <= 0 && p.y <= 73) return 'netherrack';
+    if (p.y === 73 && p.z === 0 && p.x >= 1 && p.x <= 30) return 'cobblestone';
+    if (p.z >= -3 && p.z <= -1 && p.x >= 1 && p.x <= 17 && p.y <= 73 - p.x) return 'netherrack';
+    if (p.y <= 56 && p.x > -40 && p.x < 140 && p.z > -40 && p.z < 40) return 'netherrack';
+    return null;
+  };
+  return { rock, ...netherWorld(new Vec3(30.5, 74, 0.5), rock, carried) };
+}
+
+test('on a span over a walkable cavern floor, going down and walking the floor is a leg of its own, priced by the way down, the floor and its mobs, and taken by the pathfinder down the ground (mid-244-ad-nether-2, note 568)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = spanOverCavern();
+  bot.entities = { 1: { id: 1, name: 'piglin', position: new Vec3(60.5, 57, 3.5), isValid: true }, 2: { id: 2, name: 'piglin', position: new Vec3(62.5, 57, -4.5), isValid: true } };
+  const client = jevStub(['floor_east']);
+  const walks = [];
+  const movements = { maxDropDown: 3, blocksCantBreak: new Set() };
+  bot.pathfinder = { movements };
+  const actions = { client, tunnel: async () => {},
+    navigate: async (b, t, g, opts = {}) => { walks.push({ goal: g, drop: movements.maxDropDown, beside: opts.besideLava }); if (Number.isFinite(g.y)) bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); } };
+  const goal = {};
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(client.asked.length, 1);
+  const { options } = client.asked[0];
+  // The level legs lay a block a cell out from the span and run out at cell 12; the floor is walked.
+  assert.match(options.leg_east, /it needs 96 blocks laid.*the blocks run out at cell 12/);
+  for (const k of ['floor_east', 'floor_south', 'floor_west', 'floor_north']) assert(options[k], `${k} offered`);
+  const said = options.floor_east;
+  assert.match(said, /^Go down to the floor and walk it east 96 blocks, bridging only across the lava and open air on it\. The way down to the floor 17 blocks below \(y 57, seen under \d+ of the 64 columns round the bot\) is \d+ steps ending \d+ blocks across from here, dropping 3 \(no damage\): about \d+ seconds/);
+  assert.match(said, /On the floor, of the 96 cells east: 93 of floor to walk, 3 of lava on the floor, all at y 57; about \d+ seconds\. The lava and open air need 3 blocks laid, 12 carried: 9 left after\./);
+  assert.match(said, /By the floor that way: 2 piglins\./);
+  assert.match(options.floor_west, /of wall to dig/);
+  // Chosen: down the ground by the pathfinder, its drops allowed as deep as the way's and the way's cells walked though an
+  // edge is beside them; then the leg goes on along the floor at its height.
+  const search = goal.fortressSearch;
+  assert.equal(search.legMode, 'floor'); assert.equal(search.floorY, 57); assert.equal(search.target.y, 57);
+  assert.equal(walks.length, 1, 'the way down, and nothing more this tick');
+  assert.equal(walks[0].goal.constructor.name, 'GoalNear'); assert.equal(walks[0].goal.y, 57);
+  assert(walks[0].drop >= 3); assert.equal(typeof walks[0].beside, 'function');
+  assert.equal(movements.maxDropDown, 3, 'the drop allowance put back');
+  assert.equal(Math.floor(bot.entity.position.y), 57);
+  assert.equal(search.descent, undefined);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
+  assert.equal(walks[1].goal.constructor.name, 'GoalNearXZ', 'the leg walked on the floor');
+  assert.equal(client.asked.length, 1, 'not asked again');
+  // The stall's answers in the Nether: the floor toward where the leg was going, beside the crossing at this height.
+  const { netherAnswers } = require('../src/nether-travel');
+  const { bot: b2 } = spanOverCavern();
+  b2.pathfinder = { movements: { maxDropDown: 3, blocksCantBreak: new Set() } };
+  const g2 = { step: { action: 'find_fortress', target: { x: 126, y: 74, z: 0 } } };
+  const nav = [];
+  const answers = netherAnswers(b2, new Task('stall'), g2, () => {}, { actions: { navigate: async (b, t, g) => { nav.push(g); if (Number.isFinite(g.y)) b2.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); else b2.entity.position = new Vec3(g.x, 57, g.z); } } });
+  assert(answers.cross_toward, 'the crossing at this height is still offered');
+  assert.match(answers.floor_toward.description, /^Go down to the floor and walk it toward the fortress search's leg\. The way down to the floor 17 blocks below/);
+  assert.match(answers.floor_toward.description, /of floor to walk, 3 of lava on the floor/);
+  await answers.floor_toward.run();
+  assert.deepEqual(nav.map(g => g.constructor.name), ['GoalNear', 'GoalNearXZ']);
+  assert(b2.entity.position.x > 30, 'a stretch along the floor toward it');
+});
