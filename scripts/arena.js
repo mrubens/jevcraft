@@ -5,7 +5,7 @@
 // and mob-hunt code against it, and scores what it cost. Repeat, change a
 // rule, compare the column.
 //
-//   sh .test-combat/start.sh &                     # the arena server
+//   sh scripts/trials/arena-start.sh &             # the arena server
 //   MC_PORT=25574 node scripts/arena.js            # every drill, three runs
 //   MC_PORT=25574 node scripts/arena.js blaze_swarm_wall
 //   ARENA_REPEATS=5 ARENA_JEV=1 node scripts/arena.js wither_skeleton_pair
@@ -19,14 +19,14 @@ const { Task, navigate, countOf } = require('../src/skills');
 const { createSurvival, dig, waitFor, Blocked } = require('../src/work');
 const { tunnelStep, resourceTunnelStep } = require('../src/tunneling');
 const { prepareMobHunt, huntObserved } = require('../src/mob-hunt');
-const { DRILLS, drill, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, summarise, table } = require('./lib/arena');
+const { DRILLS, drill, arenaDir, kitOf, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, summarise, table } = require('./lib/arena');
 
 const port = Number(process.env.MC_PORT || 25574);
 // The player's worlds and the dream run must never see an arena command.
 if (!Number.isInteger(port) || port < 1 || port > 65535 || [25565, 25570, 25577, 25579].includes(port)) {
   throw new Error('The arena needs an isolated MC_PORT; 25565, 25570, 25577 and 25579 are in use elsewhere');
 }
-const consolePath = process.env.ARENA_CONSOLE || path.join(__dirname, '..', '.test-combat', 'console.in');
+const consolePath = process.env.ARENA_CONSOLE || path.join(arenaDir(), 'console.in');
 const repeats = Number(process.env.ARENA_REPEATS || 3);
 if (!Number.isInteger(repeats) || repeats < 1 || repeats > 20) throw new Error('ARENA_REPEATS must be 1 to 20');
 const names = process.argv.slice(2);
@@ -66,7 +66,7 @@ let currentGoal = { request: 'arena', status: 'starting' };
 // Everything a run is scored on, gathered by listener rather than by asking
 // the bot afterwards: health has been restored by then and the mobs are gone.
 let run = null;
-const startRun = () => { run = { deaths: 0, damageTaken: 0, minHealth: 20, kills: 0, strikes: 0, shieldRaises: 0, actions: new Set(), errors: [], struck: new Map() }; };
+const startRun = () => { run = { asked: [], deaths: 0, damageTaken: 0, minHealth: 20, kills: 0, strikes: 0, shieldRaises: 0, actions: new Set(), errors: [], struck: new Map() }; };
 let previousHealth = 20;
 bot.on('health', () => {
   if (!run) { previousHealth = bot.health; return; }
@@ -76,7 +76,7 @@ bot.on('health', () => {
 });
 bot.on('death', () => { if (run) { run.deaths++; run.died = true; } previousHealth = 20; });
 bot.on('entityDead', entity => {
-  if (!run || entity?.name !== run.entity) return;
+  if (!run || !(Array.isArray(run.entity) ? run.entity.includes(entity?.name) : entity?.name === run.entity)) return;
   if (Date.now() - (run.struck.get(entity.id) || 0) < 6000) run.kills++; else run.diedOnTheirOwn = (run.diedOnTheirOwn || 0) + 1;
 });
 bot.on('error', err => { if (run) run.errors.push(err.message); log({ error: err.message }); });
@@ -89,7 +89,7 @@ const alive = name => Object.values(bot.entities).filter(e => (Array.isArray(nam
 // What actually killed the bot, in the server's own words. "Slain by
 // zombified piglin" is the difference between a combat finding and a
 // contaminated arena, and the bot itself cannot tell them apart.
-const serverLog = process.env.ARENA_SERVER_LOG || path.join(__dirname, '..', '.test-combat', 'logs', 'arena-console.log');
+const serverLog = process.env.ARENA_SERVER_LOG || path.join(arenaDir(), 'logs', 'arena-console.log');
 function deathCause() {
   try {
     const lines = fs.readFileSync(serverLog, 'utf8').split('\n').filter(l => l.includes(`]: ${username} `));
@@ -136,7 +136,7 @@ async function runDrill(d, attempt) {
   // with the kit on before anything is summoned.
   await waitFor(task, () => String(bot.game.dimension).includes('nether') &&
     bot.entity.position.distanceTo({ x: d.at[0][0], y: bot.entity.position.y, z: d.at[0][2] }) < 48 &&
-    bot.inventory.slots?.[45]?.name === 'shield' && countOf(bot, 'diamond_sword') >= 1, 30000);
+    bot.inventory.slots?.[45]?.name === 'shield' && countOf(bot, kitOf(d).items[0][0]) >= 1, 30000);
   await bot.waitForChunksToLoad();
   // Rebuild once if the room is not there; a second failure is the harness's
   // fault and must not be scored as the bot's.
@@ -158,7 +158,9 @@ async function runDrill(d, attempt) {
   currentGoal = goal;
   const save = () => fs.writeFileSync(path.join(directory, `${d.name}-${attempt}-goal.json`), JSON.stringify(goal, null, 2));
   const survival = createSurvival(bot, { state: goal.survival, client });
-  const step = { action: 'hunt_mob', entity: d.entity, item: d.item, count: d.count };
+  // A mixed group hunts one kind of it (prey): blazes with a wither
+  // skeleton among them are a blaze hunt.
+  const step = { action: 'hunt_mob', entity: d.prey || d.entity, item: d.item, count: d.count };
   if (d.mode === 'hunt') goal.step = step;
 
   await commands(spawnCommands(d));
@@ -186,7 +188,9 @@ async function runDrill(d, attempt) {
     // A mob summoned outside its aggro range sometimes never came, and a
     // drill where nothing happens measures nothing. Eight seconds of that
     // and the encounter is brought to the bot.
-    if (Date.now() - (run.nudgedAt || started) > 8000 && alive(d.entity).length &&
+    // Not in the drills from the fortress deaths (nudge: false): a blaze
+    // that sees the bot keeps off and shoots, and that is the fight.
+    if (d.nudge !== false && Date.now() - (run.nudgedAt || started) > 8000 && alive(d.entity).length &&
         !alive(d.entity).some(e => e.position.distanceTo(bot.entity.position) < 6)) {
       run.nudged = true; run.nudgedAt = Date.now();
       const p = bot.entity.position;
@@ -196,12 +200,15 @@ async function runDrill(d, attempt) {
     if (Date.now() - beat > 5000) {
       beat = Date.now();
       const near = alive(d.entity).map(e => Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10).sort((a, b) => a - b);
+      // How far up or down each is, for flyers: a blaze out of the sword's
+      // reach overhead reads as near.
+      const heights = alive(d.entity).map(e => Math.round((e.position.y - bot.entity.position.y) * 10) / 10);
       log({ drill: d.name, attempt, beat: Math.round((Date.now() - started) / 1000), health: bot.health,
-        at: bot.entity.position.floored(), targets: near, action: goal.survivalAction?.action || goal.step?.action || null });
+        at: bot.entity.position.floored(), targets: near, heights, action: goal.survivalAction?.action || goal.step?.action || null });
     }
     try {
       if (d.mode === 'hunt') {
-        goal.mobHunt ||= { item: d.item, entity: d.entity, targetCount: before + d.count };
+        goal.mobHunt ||= { item: d.item, entity: d.prey || d.entity, targetCount: before + d.count };
         if (await huntObserved(bot, task, goal, save, huntActions, client)) continue;
         if (await survival.step(task, goal, save)) continue;
         goal.step = step;
@@ -227,7 +234,7 @@ async function runDrill(d, attempt) {
     deaths: run.deaths, damageTaken: Math.round(run.damageTaken * 10) / 10, minHealth: Math.round(run.minHealth * 10) / 10,
     kills: run.kills, drops: d.item ? countOf(bot, d.item) - before : 0, strikes: run.strikes,
     bunkerError: goal.mobHunt?.lastBunkerError || null, diedOnTheirOwn: run.diedOnTheirOwn || 0,
-    shieldRaises: run.shieldRaises, actions: [...run.actions], errors: [...new Set(run.errors)].slice(0, 6) };
+    shieldRaises: run.shieldRaises, actions: [...run.actions], chose: [...new Set(run.asked.map(a => a.choice))], errors: [...new Set(run.errors)].slice(0, 6) };
   run = null;
   log({ result });
   bot.pathfinder.setGoal(null); bot.clearControlStates(); bot.stopDigging?.();
@@ -248,6 +255,39 @@ bot.once('spawn', async () => {
       require('../src/env').loadEnv();
       client = new (require('../src/typesafe').TypeSafe)();
       log({ jev: 'System One decides which target to take' });
+    }
+    // What each stand costs and takes, measured one at a time: ARENA_PREFER
+    // names options (blaze stands, say) answered at once wherever they are
+    // offered, the rest still Jev's. Every answer is logged with what was
+    // offered, so a drill's column says what was chosen as well as what it
+    // cost.
+    const prefer = (process.env.ARENA_PREFER || '').split(',').filter(Boolean);
+    if (client || prefer.length) {
+      const inner = client;
+      client = {
+        async systemOne(request) {
+          const forced = {}, rest = {};
+          for (const [id, q] of Object.entries(request.questions)) {
+            // A name ending in * is a prefix: hunt_* is whichever blaze.
+            const keys = Object.keys(q.criteria || {});
+            const key = prefer.map(k => k.endsWith('*') ? keys.find(c => c.startsWith(k.slice(0, -1))) : keys.includes(k) && k).find(Boolean);
+            if (key) forced[id] = { choice: key, confidence: 1, forced: true }; else rest[id] = q;
+          }
+          let response = { answers: {}, usage: null };
+          if (Object.keys(rest).length) {
+            if (!inner) throw Object.assign(new Error('No Jev in this arena run'), { name: 'TypeSafeError', status: 503 });
+            response = await inner.systemOne({ ...request, questions: rest });
+          }
+          const answers = { ...response.answers, ...forced };
+          if (run) for (const [id, q] of Object.entries(request.questions)) {
+            const a = answers[id];
+            run.asked.push({ options: Object.keys(q.criteria || {}), choice: a?.choice, confidence: a?.confidence, forced: !!a?.forced });
+            log({ asked: Object.keys(q.criteria || {}).join(' '), choice: a?.choice, confidence: a?.confidence, ...(a?.forced ? { forced: true } : {}), health: bot.health });
+          }
+          return { ...response, answers };
+        },
+      };
+      if (prefer.length) log({ prefer });
       if (process.env.JEV_ENCOUNTERS === '1') log({ jev: 'System One also picks the stance for each encounter (encounter_stance)' });
     }
     // Count the swings and the shield from the inside: the arena scores what
@@ -261,7 +301,9 @@ bot.once('spawn', async () => {
     const activate = bot.activateItem.bind(bot);
     bot.activateItem = (offHand, ...rest) => { if (run && offHand) run.shieldRaises++; return activate(offHand, ...rest); };
 
-    await commands([`op ${username}`, ...(audience ? [`op ${audience}`] : [])]);
+    // The bot is not an operator, as in a trial: everything is staged
+    // through the console. Only a watcher is opped, for spectating.
+    if (audience) await command(`op ${audience}`);
     await commands(sessionSetup());
     for (const arena of ['holding', ...new Set(selected.map(d => d.arena))]) { await commands(arenaBuild(arena)); await sleep(1200); }
     log({ phase: 'arena ready', drills: selected.map(d => d.name), repeats, directory, server: `127.0.0.1:${port}` });

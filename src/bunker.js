@@ -509,8 +509,23 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
       else if (Date.now() - lastSeen > QUIET_MS) { met.ended = 'quiet'; break; }
       met.mostInSight = Math.max(met.mostInSight, near.filter(t => t.visible).length);
       goal.step = { action: 'hold_bunker', blazes: near.length, kills, health: bot.health, held: Math.round((Date.now() - started) / 1000) }; save();
-      const swung = await defendNearby(bot, task, goal, save);
-      if (swung) met.swings++;
+      // Flames at the feet put out, and the shield turned to each blaze's
+      // volley as it comes (blaze-stand.js), then a swing at what is in
+      // reach.
+      const stand = require('./blaze-stand');
+      if (await stand.putOutFlames(bot, task)) continue;
+      // A rod fallen just outside the mouth, picked up between volleys: a
+      // step out and back.
+      const out = bunker.watch && bunker.watch !== bunker.inside ? bunker.watch : null;
+      const rod = out && Object.values(bot.entities).find(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(out.offset(0.5, 0, 0.5)) < 1.8);
+      if (rod && !stand.volleyComing(bot)) {
+        lowerShield(bot);
+        await stepTo(bot, task, out); await sleep(250); await stepTo(bot, task, bunker.inside);
+        continue;
+      }
+      const struck = await defendNearby(bot, task, goal, save);
+      if (struck) met.swings++;
+      const swung = struck || await stand.shieldVolley(bot, task) || await stand.sortie(bot, task, goal, save, bunker.inside);
       if (!swung) {
         // Back in place and facing the door between swings.
         const p = bot.entity.position, c = bunker.inside.offset(0.5, 0, 0.5);
@@ -531,7 +546,9 @@ async function collectRods(bot, task, goal, save, bunker, actions, item = 'blaze
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     task.check();
-    if (blazes(bot, 16).some(t => t.visible)) { await sleep(500); continue; }
+    // Between volleys: at a spawner some blaze always has the bot in sight,
+    // and waiting for none left every rod on the floor.
+    if (require('./blaze-stand').volleyComing(bot)) { await sleep(250); continue; }
     const drop = Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(bunker.mouth) < 10)
       .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
     if (!drop) return;

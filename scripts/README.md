@@ -47,7 +47,9 @@ Scripts that stage a world write commands to the server's console through a name
 
 ## Arena and drills (`.test-combat`, 25574)
 
-- `arena.js`: combat drills staged from real deaths, repeated and scored; `ARENA_JEV=1` asks Jev for the stance. Set `ARENA_WATCHER` to a player name to be put in Spectator on the bot.
+- `trials/arena-start.sh`: makes `.test-combat` in the main checkout (the 26.1.2 jar and Java 25 from `../.tools`, a flat world, port 25574; `ARENA_DIR`/`ARENA_PORT` for a second arena) and runs it with the console pipe and `logs/arena-console.log` the arena reads.
+- `arena.js`: combat drills staged from real deaths, repeated and scored; `ARENA_JEV=1` asks Jev for the stance, `ARENA_PREFER=close_in,hunt_*` answers those options wherever offered (one stand measured at a time), and every answer is logged with what was offered. Set `ARENA_WATCHER` to a player name to be put in Spectator on the bot.
+- `blaze-probe.js`: one or more blazes at a set distance against a player in iron standing with the shield down, up, or up for each volley (read from the blaze's glow); `PROBE_SWORD`, `PROBE_UP`, `PROBE_HOLE`, `PROBE_OFF` vary the hand, the height, a hole round the player and the facing.
 - `terrain.js`: terrain drills (flooded ore, ledges) against the real movement and mining code.
 - `threat-probe.js`: what the danger layer makes of each mob.
 - `shield-probe.js`: stances against skeletons, measured; the results are in its header and in the stance question's guidance.

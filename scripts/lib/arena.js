@@ -49,6 +49,30 @@ const ARENAS = Object.freeze({
   },
   // Somewhere to wait while an arena is rebuilt. Filling a shell around the
   // bot would bury it for as long as the next command takes.
+  // A fortress walkway where the blaze-stage trials died: seven wide, of
+  // nether brick, along a netherrack cliff on its north side and open to a
+  // lava sea nine blocks down on its south, with a blaze spawner at its east
+  // end. The bot stands twenty-four blocks from the spawner, its blazes
+  // hovering about it (mid-208-k-fortress-4, 2026-09-28: take_cover twice,
+  // burned from 10.6 to none by blazes twenty to twenty-five off).
+  fortress: {
+    shell: [1802, 57, 1802, 1844, 88, 1822],
+    hollow: [1806, 61, 1806, 1840, 84, 1818],
+    fills: [[[1806, 61, 1806, 1840, 62, 1818], 'lava'], [[1806, 70, 1806, 1840, 70, 1812], 'nether_bricks']],
+    blocks: [[[1836, 71, 1809], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
+    open: [1812.5, 71, 1809.5],
+    wall: [1812.5, 71, 1806.5],
+  },
+  // A pit in a cavern floor, one wide and two deep, the bot in it and
+  // blazes hovering over the cavern: a hole open above is a hole they
+  // shoot into (the stands in holes of notes 548 and 557).
+  pit: {
+    shell: [1700, 66, 1700, 1730, 96, 1730],
+    hollow: [1705, 75, 1705, 1725, 92, 1725],
+    fills: [[[1705, 75, 1705, 1725, 76, 1725], 'netherrack'], [[1715, 75, 1715, 1715, 76, 1715], 'air']],
+    open: [1715.5, 75, 1715.5],
+    wall: [1715.5, 75, 1715.5],
+  },
   holding: {
     shell: [2096, 72, 2096, 2108, 84, 2108],
     hollow: [2101, 77, 2101, 2103, 79, 2103],
@@ -57,6 +81,17 @@ const ARENAS = Object.freeze({
   },
 });
 const HOLDING = [2102.5, 77, 2102.5];
+
+// What the fortress-stage trials carry to the blazes (mid-208-k-fortress-4:
+// an iron sword, a shield, iron armour, an iron pickaxe, a few blocks),
+// for the drills built from their deaths. The KIT's diamond sword is kept
+// for the older drills, so their columns stay comparable.
+const FORTRESS_KIT = Object.freeze({
+  armor: { head: 'iron_helmet', chest: 'iron_chestplate', legs: 'iron_leggings', feet: 'iron_boots' },
+  offhand: 'shield',
+  items: [['iron_sword', 1], ['iron_pickaxe', 1], ['cobblestone', 32], ['netherrack', 16], ['cooked_beef', 8]],
+});
+const kitOf = d => (d.loadout === 'fortress' ? FORTRESS_KIT : KIT);
 
 // The fortress loadout: the iron set with golden boots for the piglin
 // truce, a diamond sword, a shield, blocks to wall with and food to heal on.
@@ -144,20 +179,61 @@ const DRILLS = Object.freeze([
     at: [[2016.5, 80, 2010.5], [2016.5, 80, 2008.5], [2016.5, 80, 2012.5], [2017.5, 80, 2010.5]],
     seconds: 90, expect: { deaths: 0 },
     why: 'The same swarm in the open: the bot has to reach a wall before it can dig in.' },
+  // From the fortress-stage deaths of 2026-09-27 and 28, with the trials'
+  // kit, the game's own fire (a fireball that misses lights the ground) and
+  // no nudge: a blaze that sees the bot keeps its distance and shoots, and
+  // bringing it to three blocks measured a fight the trials never had.
+  { name: 'blaze_fortress_spawner', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 3, arena: 'fortress', stand: 'open',
+    loadout: 'fortress', fire: true, nudge: false,
+    at: [[1835.5, 73, 1812.5], [1837.5, 74, 1807.5], [1833.5, 72.5, 1810.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
+    why: 'mid-208-k-fortress-4 and the fortress deaths of notes 548 and 557: blazes by their spawner twenty to twenty-five blocks off, the bot on the fortress floor with a lava sea over the edge.' },
+  { name: 'blaze_wither_fortress', mode: 'hunt', entity: ['wither_skeleton', 'blaze', 'blaze'], prey: 'blaze', item: 'blaze_rod', count: 3, arena: 'fortress', stand: 'open',
+    loadout: 'fortress', fire: true, nudge: false,
+    at: [[1814.5, 71, 1808.5], [1822.5, 73, 1811.5], [1833.5, 72.5, 1810.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
+    why: 'mid-235-p-nether-4-fortress-4, 2026-09-28 04:34: a wither skeleton at 1.8 blocks and blazes eight to twenty-five off on a fortress floor; hit to 2.1, then withered to death while the questions went round.' },
+  { name: 'blaze_pit_above', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 3, arena: 'pit', stand: 'open',
+    loadout: 'fortress', fire: true, nudge: false,
+    at: [[1719.5, 83, 1715.5], [1715.5, 84, 1710.5], [1711.5, 82, 1718.5]], seconds: 90, expect: { deaths: 0, drops: 1 },
+    why: 'A stand in a hole the blazes shoot into (notes 548, 557): the bot two deep in a pit, three blazes hovering five to eight blocks over the cavern floor.' },
+  { name: 'blaze_open_eight', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 1, arena: 'room', stand: 'open',
+    loadout: 'fortress', fire: true, nudge: false,
+    at: [[2018.5, 78, 2010.5]], seconds: 75, expect: { deaths: 0, drops: 1 },
+    why: 'One blaze in the open at eight blocks, the bot\'s own level: the fight every blaze stage has to be able to win.' },
 ]);
 
 const drill = name => DRILLS.find(d => d.name === name);
 
+// The arena server's folder, .test-combat in the main checkout, which every
+// worktree shares (scripts/trials/arena-start.sh makes it there). A
+// worktree's .git is a file naming <main>/.git/worktrees/<name>.
+function arenaDir() {
+  const fs = require('fs'), path = require('path');
+  const here = path.join(__dirname, '..', '..');
+  try {
+    const link = fs.readFileSync(path.join(here, '.git'), 'utf8').match(/^gitdir: (.+)$/m);
+    if (link) return path.join(path.resolve(here, link[1].trim()), '..', '..', '..', '.test-combat');
+  } catch (_) { /* a main checkout: .git is a folder */ }
+  return path.join(here, '.test-combat');
+}
+
 // Gamerules first: the arena is only the mobs that were summoned, at noon,
 // in fixed weather, with the shell safe from a creeper or a ghast.
 function sessionSetup() {
-  return ['difficulty normal', 'gamerule doMobSpawning false', 'gamerule doDaylightCycle false',
-    'gamerule doWeatherCycle false', 'gamerule doFireTick false', 'gamerule mobGriefing false',
-    'gamerule keepInventory true', 'gamerule doImmediateRespawn true', 'time set noon'];
+  // 26.1 named the rules anew; the old camelCase names were refused
+  // ("Incorrect argument for command") and every drill ran with mobs
+  // spawning. Fire keeps the game's own ticking (fire_spread_radius_around
+  // _player left at its default): at 0 no fire ever burns out, and a
+  // fortress floor a blaze fight has lit stays lit and walled with fire,
+  // which no trial's floor is.
+  return ['difficulty normal', 'gamerule minecraft:spawn_mobs false', 'gamerule minecraft:advance_time false',
+    'gamerule minecraft:advance_weather false', 'gamerule minecraft:mob_griefing false',
+    'gamerule minecraft:keep_inventory true', 'gamerule minecraft:immediate_respawn true', 'time set noon'];
 }
 
 const box = ([x1, y1, z1, x2, y2, z2], block) => `fill ${x1} ${y1} ${z1} ${x2} ${y2} ${z2} minecraft:${block}`;
 
+// Every volume under the 32,768 blocks one `fill` may change: a shell
+// over it is refused and the bot is put into whatever the Nether had there.
 // A solid block of netherrack with the room cut out of it: whatever the
 // Nether generated here, the arena is the same every time.
 //
@@ -174,7 +250,8 @@ function arenaBuild(name, { dimension = 'minecraft:the_nether' } = {}) {
     box([x1, y1, z1, x2, y2, z2], 'netherrack'), box(arena.hollow, 'air'),
     // A second chamber below, sealed off, for the arenas that have one.
     ...(arena.chamber ? [box(arena.chamber, 'air')] : []),
-    ...(arena.fills || []).map(([volume, block]) => box(volume, block))]
+    ...(arena.fills || []).map(([volume, block]) => box(volume, block)),
+    ...(arena.blocks || []).map(([at, block]) => `setblock ${at.join(' ')} minecraft:${block}`)]
     .map(command => `execute in ${dimension} run ${command}`), sweep(name, { dimension })];
 }
 
@@ -207,13 +284,17 @@ function resetCommands(user, d, { dimension = 'minecraft:the_nether' } = {}) {
   // run found the bot behind its own netherrack with no line of sight to the
   // mob, so nothing was a threat and nothing happened. Three drills scored
   // zero damage and zero swings and meant nothing at all.
-  const commands = [`execute in ${dimension} run tp ${user} ${place(HOLDING)}`,
+  const kit = kitOf(d);
+  // A blaze's fireball that misses lights where it lands only with mob
+  // griefing on, as in every trial; the drills from the fortress deaths
+  // want that fire, the others a shell no creeper can open.
+  const commands = [`execute in ${dimension} run tp ${user} ${place(HOLDING)}`, `gamerule minecraft:mob_griefing ${d.fire ? 'true' : 'false'}`,
     ...arenaBuild(d.arena, { dimension }),
     `kill @e[type=minecraft:item]`, `clear ${user}`, `effect clear ${user}`,
     `execute in ${dimension} run tp ${user} ${place(stand)} ${d.arena === 'corridor' ? 0 : 90} 0`];
-  for (const [slot, item] of Object.entries(KIT.armor)) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${item}`);
-  commands.push(`item replace entity ${user} weapon.offhand with minecraft:${KIT.offhand}`);
-  for (const [item, n] of [...KIT.items, ...(d.kit || [])]) commands.push(`give ${user} minecraft:${item} ${n}`);
+  for (const [slot, item] of Object.entries(kit.armor)) commands.push(`item replace entity ${user} armor.${slot} with minecraft:${item}`);
+  commands.push(`item replace entity ${user} weapon.offhand with minecraft:${kit.offhand}`);
+  for (const [item, n] of [...kit.items, ...(d.kit || [])]) commands.push(`give ${user} minecraft:${item} ${n}`);
   commands.push(`effect give ${user} minecraft:instant_health 1 20 true`, `effect give ${user} minecraft:saturation 1 20 true`);
   return commands;
 }
@@ -252,9 +333,12 @@ function summarise(d, runs) {
   if (expect.drops !== undefined && drops < expect.drops) failures.push(`${drops} drops in ${runs.length} runs, wanted ${expect.drops}`);
   if (expect.damage !== undefined && damage !== null && damage > expect.damage) failures.push(`${damage} damage over ${expect.damage}`);
   const actions = [...new Set(runs.flatMap(r => r.actions || []))].sort();
+  // What was chosen, over the set: the stands Jev took, and how often.
+  const chose = {};
+  for (const r of runs) for (const c of r.chose || []) if (c) chose[c] = (chose[c] || 0) + 1;
   return { drill: d.name, mode: d.mode, runs: runs.length, deaths, cleared, drops, damage, seconds,
     strikes: median(runs.map(r => r.strikes)), shieldRaises: median(runs.map(r => r.shieldRaises)),
-    actions, verdict: failures.length ? 'FAIL' : 'PASS', failures };
+    actions, chose, verdict: failures.length ? 'FAIL' : 'PASS', failures };
 }
 
 // A table, because the point of the arena is comparing today's column with
@@ -270,4 +354,4 @@ function table(rows) {
   return [line(header), `|${widths.map(w => '-'.repeat(w + 2)).join('|')}|`, ...body.map(line)].join('\n');
 }
 
-module.exports = { ARENAS, DRILLS, KIT, HOLDING, drill, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, median, summarise, table };
+module.exports = { ARENAS, DRILLS, KIT, FORTRESS_KIT, kitOf, HOLDING, drill, arenaDir, sessionSetup, arenaBuild, standingCell, sweep, resetCommands, spawnCommands, median, summarise, table };

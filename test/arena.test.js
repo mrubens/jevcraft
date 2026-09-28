@@ -75,7 +75,7 @@ test('mobs are summoned tagged and persistent so a despawn cannot look like a ki
 
 test('the session is staged with no natural spawns, a fixed noon and a shell no mob can break', () => {
   const setup = sessionSetup().join('\n');
-  for (const rule of ['doMobSpawning false', 'doDaylightCycle false', 'mobGriefing false', 'difficulty normal', 'time set noon']) {
+  for (const rule of ['spawn_mobs false', 'advance_time false', 'mob_griefing false', 'difficulty normal', 'time set noon']) {
     assert(setup.includes(rule), rule);
   }
   const build = arenaBuild('room');

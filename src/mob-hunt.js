@@ -392,6 +392,12 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
       // shot and no turn from there (terrain.js onSpan). The fight ends and
       // the survival layer holds the bot still, crouched.
       if (onSpan(bot)) throw new NeedsSafety({ entity: target, distance: target.position.distanceTo(bot.entity.position) });
+      // A blaze's volley is seen coming by its glow, three seconds ahead:
+      // the shield is up and facing it for the shots, and down between
+      // (blaze-stand.js shieldVolley).
+      // And the flames they light at the bot's feet are put out with a punch.
+      if (target.name === 'blaze' && (await require('./blaze-stand').putOutFlames(bot, task) ||
+        await require('./blaze-stand').shieldVolley(bot, task, { toward: target.position }))) continue;
       // A fireball in the air outranks everything else for half a second.
       if (!canStrike(bot, target) && await deflect(bot, task)) continue;
       if (!canStrike(bot, target)) {
@@ -413,8 +419,9 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
         const approach = await combatRoute(bot, task, target, movement);
         if (!approach) throw new Error(`No dry combat route to ${target.name}`);
         const destination = approach.destination;
+        const volley = target.name === 'blaze' ? () => require('./blaze-stand').volleyComing(bot) : () => false;
         await actions.navigate(bot, task, destination, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,
-          stopWhen: () => dead || !valid(bot, target) || canStrike(bot, target) });
+          stopWhen: () => dead || !valid(bot, target) || canStrike(bot, target) || volley() });
         continue;
       }
       bot.pathfinder.setGoal(null); bot.clearControlStates();
@@ -593,7 +600,10 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // way out (note 533).
   const firing = reaching.filter(t => shooter(t.entity));
   const stillShoot = firing.length ? ` Leaving them does not take the bot out of their fire: ${mobsSaid(firing)}, in sight and within reach, keep${firing.length === 1 ? 's' : ''} shooting where it stands; getting out of their line (a retreat, out of sight, cover) is the encounter's own choice once they claim the bot.` : '';
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  // What leaving them came to in the arena, where it was measured: the
+  // blazes stay, and so does their fire (blaze-stand.js MEASURED).
+  const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
@@ -641,7 +651,7 @@ function huntSays(bot, target, { handler, distance, mob, one, all, others, spawn
   const how = handler.passive ? 'Chase it and strike it with what is carried'
     : handler.ranged && bowReady(bot) ? 'Shoot it from range while it is in view, then close with the sword'
     : `Close on it and strike it${weapon ? ` with the ${weapon}` : ' bare-handed'}${shield ? ', the shield raised toward its shots' : ''}${worn ? `, ${worn} piece${worn === 1 ? '' : 's'} of armour worn` : ', no armour worn'}`;
-  const drop = target.name === 'blaze' ? ` A blaze drops a rod about half the time; ${item.replaceAll('_', ' ')}s are what the request needs now, and the drop is picked up after.` : ` Its drop is picked up after.`;
+  const drop = target.name === 'blaze' ? ` A blaze drops a rod about half the time; ${item.replaceAll('_', ' ')}s are what the request needs now, and the drop is picked up after.${require('./blaze-stand').measuredSays('open', bot).says}` : ` Its drop is picked up after.`;
   const price = !mob || handler.passive ? '' : all
     ? ` With ${mobsSaid(others)} reaching the bot here too and fighting with it: about ${all.fightHere.seconds} seconds and ${all.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${all.fightHere.healthAfter <= 0 ? ' (more than the bot has)' : `, ${all.fightHere.healthAfter} after`}; this one alone would be about ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken}.${spawnerSays}`
     : ` About ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health, ${one.fightHere.healthAfter} after; it lands about ${mob.hitsBot} a hit through what is worn.`;

@@ -1722,7 +1722,7 @@ test('a blaze hunt beside a nether-brick wall is offered the hole dug into it an
   const { blockDigMs } = require('../src/bunker');
   const secs = Math.round(2 * blockDigMs(bot, bot.blockAt(new Vec3(-1, 64, 0))) / 100) / 10;
   assert.match(asked.options.dig_in_and_fight, new RegExp(`^Dig a hole one wide and two high into the nether bricks beside the bot \\(2 blocks with the iron pickaxe, about ${secs} seconds? of digging`));
-  assert.match(asked.options.dig_in_and_fight, /Rods that fall where the bot cannot see them are picked up once no blaze has it in sight\./);
+  assert.match(asked.options.dig_in_and_fight, /Rods that fall near are picked up between volleys\./);
   assert.match(asked.options.dig_in_and_fight, /Health 20; hunger 20/, 'the fitness said on it too');
   assert.match(asked.options.back_to_wall, /^Stay on footing with a wall at its back/);
   // Left for now, the stands are left too: not asked again each pass.
