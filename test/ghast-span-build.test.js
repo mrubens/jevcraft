@@ -78,8 +78,10 @@ test('the rail and the span\'s hold say the seconds before the wall on the side 
   assert.ok(options.rail_and_fight, Object.keys(options).join(','));
   const rail = options.rail_and_fight.description;
   // North and west are open over the drop, each a floor and a wall; the push goes north-west, away from the ghast:
-  // both lee, 4 blocks and the planks first, 3.4 seconds, more than the 3 between its fireballs.
-  assert.match(rail, /Until the wall on the side a push goes stands, about 3\.4 seconds, the bot is open over the drop: the ghast 60 blocks off fires one fireball every 3 seconds while it has a line \(one may be on its way already\), so a fireball can all but surely land first, and one that lands before then is the push over the drop: the bot's death/);
+  // both lee, 4 blocks, 2.4 seconds. The five warped wart blocks carried are blocks for them (note 619); before,
+  // uncounted, the planks were made first and it was 3.4 seconds, more than the 3 between its fireballs.
+  assert.match(rail, /Until the wall on the side a push goes stands, about 2\.4 seconds, the bot is open over the drop: the ghast 60 blocks off fires one fireball every 3 seconds while it has a line \(one may be on its way already\), so about 80 in 100 that a fireball lands first, and one that lands before then is the push over the drop: the bot's death/);
+  assert.match(rail, /Carried that it can break: warped wart block \(5, blast resistance 1\), oak planks \(2, blast resistance 3\)/);
   assert.match(rail, /Walled, a fireball that lands here costs its 3\.4 damage and a push into the wall/, 'what it costs once the walls stand is still said');
   assert.ok(rail.indexOf('Until the wall') < rail.indexOf('Walled, a fireball'), 'the open seconds before the walled price');
 });

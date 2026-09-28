@@ -4224,7 +4224,7 @@ class Survival {
             try { await this.actions.acquireStep(bot, task, coverMade.item, countOf(bot, coverMade.item) + Math.min(coverMade.available, Math.ceil(coverBlocks / 4) * 4), goal, save); }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           }
-          const material = (ghastCovered && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 1)?.name;
+          const material = (ghastCovered && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials)) || shelter.buildingItem(bot, 1)?.name;
           const now = plans.map(({ t }) => { const e = bot.entities?.[t.entity.id] || t.entity; return { t, e, plan: e.isValid === false ? { cells: [], stoppedBy: true } : blockPlan(bot, e) }; });
           const todo = now.filter(p => p.plan.cells.length);
           if (!todo.length && !now.some(p => p.plan.stoppedBy)) throw Object.assign(new Error(now.map(p => `${p.t.entity.name.replaceAll('_', ' ')}: ${p.plan.why}`).join('; ') || 'no shooter in its line'), { name: 'StanceFailed' });
@@ -5225,7 +5225,7 @@ class Survival {
     // A block that holds over air for each floor and for walls while one
     // is carried (against a ghast, one its blast does not break first); a
     // wall on a floor of gravel or sand past those (note 610).
-    const holding = () => (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, 1)) || bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count > 0)?.name || null;
+    const holding = () => (blast && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials, 1)) || shelter.buildingItem(bot)?.name || null;
     const loose = () => bot.inventory.items().find(i => WALL_FALLING.has(i.name) && i.count > 0)?.name || null;
     const stock = wallStock(bot, open);
     let enough = open.length > 0 && stock.enough;
@@ -5609,7 +5609,7 @@ class Survival {
         this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: 'twenty seconds and not sealed' }); save();
         return;
       }
-      const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
+      const material = shelter.buildingItem(bot)?.name;
       if (!material) throw new Error('Shelter material inventory changed before sealing');
       // Snow/vegetation is being cleared to seal a room, not harvested. A
       // shovel must not become a prerequisite for emergency shelter.
@@ -5677,7 +5677,7 @@ class Survival {
     // off and the dance are the answers to a creeper that near.
     if (creeperRace(bot, shelter.missingShell(bot, refuge).length)) return false;
     this.report(goal, save, { action: 'dig_in', threats: danger.map(t => t.entity.name), cells: shelter.missingShell(bot, refuge).length });
-    const material = () => bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
+    const material = () => shelter.buildingItem(bot)?.name;
     // The side over a drop first, then the ways a walker comes in by, the
     // side toward the soonest biter first, as the seal was priced
     // (pocketPlan, note 581).
@@ -5854,7 +5854,7 @@ class Survival {
     // One block over the head: whatever solid block the pockets hold now,
     // cobblestone from the dig among them. Sand or gravel would fall on it.
     const roof = bottom.offset(0, 2, 0);
-    const cap = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name));
+    const cap = shelter.buildingItem(bot);
     if (!cap) { setAside(this, 'shaft_pocket', spot, 'nothing solid to close the shaft with', 600000); return false; }
     if (!shelter.solid(bot.blockAt(roof))) {
       try { await this.actions.place(bot, task, roof, cap.name); }
@@ -5907,7 +5907,7 @@ class Survival {
   async digIn(task, goal, save, danger) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
-    const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 4)?.name;
+    const material = shelter.buildingItem(bot, 4)?.name;
     if (!material) return false;
     const feet = feetCell(bot);
     const cells = [];
@@ -6298,7 +6298,7 @@ class Survival {
         // back out (note 547).
         if (stance?.blockCreeper) { stance.askAgain = `the creeper has come round the block to a line to the bot, ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off${creeperSwelling(bot, e) ? ', lit' : ''}`; return true; }
         if (!now.cells.length) throw Object.assign(new Error(now.why || 'no cell in its line takes a block'), { name: 'StanceFailed' });
-        const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= now.cells.length)?.name;
+        const material = shelter.buildingItem(bot, now.cells.length)?.name;
         if (!material) throw Object.assign(new Error(`not ${now.cells.length} building blocks of one kind carried`), { name: 'StanceFailed' });
         const r1 = v => Math.round(v * 10) / 10;
         this.report(goal, save, { action: 'block_creeper', creeper: r1(e.position.distanceTo(bot.entity.position)), creeperAt: { x: r1(e.position.x), y: r1(e.position.y), z: r1(e.position.z) }, lit: creeperSwelling(bot, e), cells: now.cells.map(p => ({ ...p })) });
@@ -6375,7 +6375,7 @@ class Survival {
   async wallOff(task, goal, save, danger, { reach = 6, action = 'wall_off' } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
-    const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= 2)?.name;
+    const material = shelter.buildingItem(bot, 2)?.name;
     if (!material) return false;
     const feet = feetCell(bot);
     // The cells of each wall still open: a one-high rail at the feet (rail
@@ -6740,7 +6740,7 @@ class Survival {
       }
       for (const p of [...wall].sort((a, b) => a.y - b.y)) {
         if (bot.blockAt(p)?.boundingBox !== 'empty' || isBed(bot.blockAt(p))) continue;
-        const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name))?.name;
+        const material = shelter.buildingItem(bot)?.name;
         if (!material) break;
         try { await this.actions.place(bot, task, p, material); }
         catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }

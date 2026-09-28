@@ -9,8 +9,25 @@ const position = p => new Vec3(p.x, p.y, p.z);
 const plankMaterials = Object.keys(recipes).filter(name => name.endsWith('_planks'));
 // Nether stone too: cornered by a hoglin with sixty netherrack in the
 // pockets, the bot had "no blocks" to wall itself off with.
+// Wool and the wart blocks too: full blocks that hold where they are put,
+// as a wall, a floor under one or a block in a shooter's line. mid-242-bb-
+// fortress-5 stood at the end of its span over the lava sea with nine wool
+// and fourteen gravel, a ghast in sight, told "buildingBlocks: 0" and "too
+// few blocks carried (14) to wall the 3 open sides (6, 3 of them floors
+// ..., which gravel or sand does not make)", and offered no cover; the
+// fireball pushed it off the span's end into the lava (note 619). They are
+// put last (buildingItem): the wool is a bed's, and neither holds against a
+// blast.
+const LAST_MATERIALS = new Set([...['white', 'orange', 'magenta', 'light_blue', 'yellow', 'lime', 'pink', 'gray', 'light_gray', 'cyan', 'purple', 'blue',
+  'brown', 'green', 'red', 'black'].map(c => `${c}_wool`), 'nether_wart_block', 'warped_wart_block']);
 const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', ...plankMaterials, 'andesite', 'diorite', 'granite', 'stone',
-  'netherrack', 'nether_bricks', 'blackstone', 'basalt', 'tuff', 'deepslate', 'end_stone']);
+  'netherrack', 'nether_bricks', 'blackstone', 'basalt', 'tuff', 'deepslate', 'end_stone', ...LAST_MATERIALS]);
+// The stack a block is put from: one of `need` or more, the wool and the
+// wart blocks only when nothing else is.
+function buildingItem(bot, need = 1) {
+  const items = bot.inventory.items().filter(i => buildingMaterials.has(i.name) && i.count >= need);
+  return items.find(i => !LAST_MATERIALS.has(i.name)) || items[0] || null;
+}
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
 
 function foundation(origin) {
@@ -189,4 +206,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, solid, replaceable };
+module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, solid, replaceable };

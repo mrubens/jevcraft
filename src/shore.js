@@ -225,7 +225,7 @@ async function stepOut(bot, task, goal, save) {
   const { inWater } = require('./survival');
   const shelter = require('./shelter');
   if (!inWater(bot) || typeof bot.placeBlock !== 'function') return false;
-  const block = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name));
+  const block = shelter.buildingItem(bot);
   if (!block) return false;
   const feet = bot.entity.position.floored();
   const water = /water/.test(bot.blockAt(feet)?.name || '') ? feet : feet.offset(0, -1, 0);

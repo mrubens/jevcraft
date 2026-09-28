@@ -960,7 +960,7 @@ async function leakResponse(bot, task, p, LIQUID, { placer = place } = {}) {
     await sleep(ms);
     const liquid = bot.blockAt(p)?.name || '';
     if (!LIQUID.test(liquid)) continue;
-    const material = bot.inventory.items().find(i => buildingMaterials.has(i.name));
+    const material = require('./shelter').buildingItem(bot);
     if (!material) return false;
     const client = task.opportunityClient;
     if (client) {
@@ -995,7 +995,7 @@ async function plugLeak(bot, task, p, LIQUID = /^(water|lava|flowing_water|flowi
   for (const ms of [300, 700]) {
     await sleep(ms);
     if (!LIQUID.test(bot.blockAt(p)?.name || '')) continue;
-    const material = bot.inventory.items().find(i => buildingMaterials.has(i.name))?.name;
+    const material = require('./shelter').buildingItem(bot)?.name;
     if (!material) return false;
     try { await placer(bot, task, p, material); console.log(`[leak] plugged the gap at ${p} with ${material}`); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return false; }

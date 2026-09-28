@@ -87,7 +87,7 @@ function lowCeilingPlan(bot, danger, { blockSeconds = 0.6 } = {}) {
   const { walkersApart } = require('./walk-reach');
   const shelter = require('./shelter');
   const feet = bot.entity.position.floored();
-  const stock = bot.inventory.items().filter(i => shelter.buildingMaterials.has(i.name)).sort((a, b) => b.count - a.count)[0];
+  const stock = bot.inventory.items().filter(i => shelter.buildingMaterials.has(i.name)).sort((a, b) => shelter.LAST_MATERIALS.has(a.name) - shelter.LAST_MATERIALS.has(b.name) || b.count - a.count)[0];
   const keptOff = (at, opts) => { let kept; try { kept = walkersApart(bot, tall, { at, ...opts }); } catch (_) { return false; } return tall.every(t => kept.ids.has(t.entity.id)); };
   const eye = bot.entity.position.offset(0, 1.62, 0);
   const plans = [];

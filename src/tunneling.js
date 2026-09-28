@@ -560,7 +560,7 @@ const FLOOR_FACES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]];
 async function floorStair(bot, task, goal, save, target, p, { dig, place }) {
   const { buildingMaterials } = require('./shelter');
   const gap = p.offset(0, -1, 0);
-  const material = bot.inventory.items().find(i => buildingMaterials.has(i.name));
+  const material = require('./shelter').buildingItem(bot);
   const face = FLOOR_FACES.some(([x, y, z]) => bot.blockAt(gap.offset(x, y, z))?.boundingBox === 'block');
   if (!material || !face) {
     const cave = caveUnder(bot, p, target);
