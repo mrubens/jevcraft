@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-86 questions: 38 decision trees and 48 batched questions.
+88 questions: 40 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -194,11 +194,37 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `go_back` | root | go back for the drops | always |
 | `leave_them` | root | leave them and go on | always |
 
+### `body_way`
+
+**The body is in danger of its own (in lava, alight or in fire, the head in a block, out of breath under water): which way out, now?**
+
+- When: The moment a step meets the condition (the survival step for lava and burning, the vitals step for fire, a head in a block and the breath), with two or more ways out (one is taken without asking); asked again each time the step meets it, unless burning was chosen to be left to burn out, which holds until it could have burned out or health falls four more.
+- Decision tree, choice; stakes high; ledger kind `survival`
+- Bar: none: Jev's pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the code's old order answers only when Jev cannot be reached or has not answered in a second
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, headWays, airWays)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `to_dry_ground` | root | out of the lava onto the nearest dry cell | in lava with a dry cell (floor under it, air over it) within six blocks; said with its distance, how high above the feet (a jump rises one), lava or a drop beside it, and the seconds |
+| `to_water` | root | into water, which puts the fire out | in lava with water within six blocks that is not a step up; or alight with water within eight blocks (not in the Nether); said with its distance and seconds |
+| `pillar_out` | root | put blocks underfoot and rise to the way out above | in lava with the way out two or more above the feet and scaffold blocks carried; said with the blocks and seconds |
+| `back_the_way_came` | root | back toward the last dry footing stood on | in lava with the last dry footing known in this dimension; said with its distance |
+| `swim_up` | root | swim straight up in the lava | in lava with no way out found and no dry footing known |
+| `out_of_fire` | root | run out of the fire to a cell two blocks from any flame, or into water | standing in fire with such a cell within twelve blocks; said with the steps and seconds and whether the way runs through a flame |
+| `douse_bucket` | root | pour the carried water bucket at the feet and take the water back | alight out of the fire, a water bucket carried, not in the Nether, standing on a block in air |
+| `burn_out` | root | leave the burning to end by itself and go on | alight out of the fire; held until the burning could have ended or health falls four more |
+| `eat_golden_apple` | root | eat the enchanted golden apple: fire resistance for five minutes | in lava or alight with an enchanted golden apple carried; said with the 1.6 seconds of eating first |
+| `step_aside` | root | step out from under the block into the open cell beside the feet | the head in a block and an open cell beside with a floor and nothing that falls over it |
+| `dig_out` | root | dig the block the head is in, and what falls after it | the head in a block; said with the block and the seconds with the best tool carried |
+| `swim_to_air` | root | swim the shortest way to air, digging what is in the way | under water with a way to air found within the breath and the drowning after it; said with its seconds and digs |
+| `straight_up` | root | swim and dig straight up to air | under water with the column overhead diggable to air within the breath and the drowning after it; said with its seconds |
+
 ### `turn_priority`
 
 **Which layer has the bot's turn now: survival, the meal and breath, the hunt, or the work?**
 
-- When: When two or more layers claim the turn and none of them is a reflex (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
+- When: When two or more layers claim the turn and none of them is the body's own danger (lava, fire, a head in a block, the breath: that layer's step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
 - Decision tree, choice; stakes high; ledger kind `survival`
 - Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -233,7 +259,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Hostile mobs are near the bot: fight here, go up, step out of the shooters' line, block a creeper's line, dig into the wall, dig down, seal in, run, eat, shoot, charge the shooters, dance with the creeper, or leave them be and keep working?**
 
-- When: An encounter the reflexes (the swing at arm's length, a shield against an arrow in flight, off a ledge) have not settled, with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it); a stance that hid the bot from the shooters (out_of_sight, nook) is asked again once a shooter has a line to where it hid, or the bot is off that spot. A stance that failed stays on offer, its option saying how long ago and how it failed here. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.
+- When: An encounter (a threat the survival step answers, a mob at arm's length among them, in a sealed pocket too, and a hurt beside a deep drop while the hunt waits to heal), asked before anything is done about it while no stance holds: the swing at arm's length is part of the stance chosen, the step off a ledge is fight_from_footing, the hold on a span is hold_on_span, and the shield at shots is shield_policy (the code does these first only when Jev cannot be reached); with two or more stances possible (one is taken without asking); held for fifteen seconds, until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it); a stance that hid the bot from the shooters (out_of_sight, nook) is asked again once a shooter has a line to where it hid, or the bot is off that spot. A stance that failed stays on offer, its option saying how long ago and how it failed here. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
 - Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
 - Jev unreachable: stops: no safe default
@@ -262,9 +288,25 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `dig_in_and_fight` | root | dig a hole one wide and two high into the brick or netherrack and fight the blazes from inside | a blaze among the mobs, a sword or axe carried, not in water, and a cell of natural rock or brick beside the bot or a wall within five blocks with rock behind, beside and over it (or the bot already in such a hole); said with the blocks, the tool, the seconds of digging, how many shooters would see in, what a blaze does, its fireball's chance to land by distance and its push, and the damage in the next fifteen seconds this way |
 | `fight_at_spawner` | root | walk to a cell within three of the blaze spawner's cage under a ceiling and fight them there as they come out | a blaze among the mobs, a sword or axe carried, a spawner within twenty-four, and a cell within three of it with a block over the head and no drop or lava within a push, within twenty-four blocks of walking; said as the hole is |
 | `back_to_wall` | root | walk to footing with a wall at its back and fight there | a blaze among the mobs, a sword or axe carried, and footing within eight blocks of walking with rock at its back on the side away from the blazes and no drop or lava within a fireball's push (two blocks); said as the hole is |
+| `hold_on_span` | root | hold crouched on the span: wall its open sides where something can push, strike what comes to arm's length and meet shots with the shield, crouched; off it away from a creeper first | standing on a one-wide span over a drop; said with the walls' blocks and what can push |
 | `get_out_of_water` | root | swim for dry ground and deal with the mobs from there | in water; the pillar, the pocket, the bunker and digging down are not offered there |
 | `portal_back` | root | go back through the portal to the Overworld | in the Nether with a portal within eight blocks and a way back through it |
 | `shoot_\d+` (pattern) | root | shoot this mob with the bow | a bow, arrows and a clear arrow path (up to two targets) |
+
+### `shield_policy`
+
+**Shooters can hit the bot and a shield is carried: raise the shield at each shot on its way, or leave it down and keep on?**
+
+- When: In an encounter (the survival step's answer to a threat), a shield in the off hand and a shooter in sight or a shot on its way, with no choice standing for these shooters; held until a shooter not counted comes, health falls four, or a minute.
+- Decision tree, choice; stakes medium; ledger kind `combat`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/survival.js (shieldPolicy), src/projectile-guard.js (deflect)
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `shield_at_shots` | root | raise the shield at each shot on its way | always; said with each shooter's shot flight time from where it is, the quarter second the shield takes to rise, that it stops whatever the bot is doing for up to 0.7 seconds a shot and covers only the way it faces, and that it is not raised with something that bites within 3.5 blocks or a creeper that could reach the bot meanwhile |
+| `take_shots` | root | leave the shield down and keep on with the stance or the step | always; said with what each shooter's shot does to the bot through what it wears |
 
 ### `hunt_target`
 

@@ -227,7 +227,9 @@ class NoSafeDefault extends Error {
 // One decision over a tree of feasible options the caller built. Returns
 // what decideTree returns, plus `id`, and `gated` when a low confidence
 // sent it to the fallback. A single feasible leaf is taken without asking.
-async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100 }) {
+// watchAir false: the question is about the breath or the lava itself
+// (body_way), which checkAir would stop at once.
+async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true }) {
   const spec = question(id);
   // The question's stages, from here (queued) to its record, each as
   // milliseconds since: asked (the turn taken), the client's sent, headers,
@@ -296,7 +298,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const watcher = setInterval(() => {
       // When the watcher last looked: a check starved would show here.
       trace.lookedMs = Math.round(performance.now() - trace.t0);
-      try { task?.check(); if (bot) checkAir(bot); interrupt(); }
+      try { task?.check(); if (bot && watchAir) checkAir(bot); interrupt(); }
       catch (err) { if (!controller.signal.aborted) { stage(trace, 'stopped', { why: String(err?.message || err).slice(0, 100) }); controller.abort(err); } }
     }, watchMs);
     const stopThinking = spec.thinking && bot ? require('../speech').thinking(bot) : () => {};
@@ -309,7 +311,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     } finally { clearInterval(watcher); stopThinking(); }
     const tookMs = performance.now() - trace.t0;
     if (tookMs >= SLOW_MS) console.log(`[question] ${id} answered in ${(tookMs / 1000).toFixed(1)}s: ${saysStages(trace)}`);
-    task?.check(); if (bot) checkAir(bot); interrupt();
+    task?.check(); if (bot && watchAir) checkAir(bot); interrupt();
     // The gate: a judgment below the question's threshold is not acted on
     // as asked. Where the fallback is the safer answer, it is taken.
     const low = !decision.stale && !decision.fallback && spec.gate && (decision.judgments || []).find(j => (j.confidence ?? 1) < spec.gate.threshold);

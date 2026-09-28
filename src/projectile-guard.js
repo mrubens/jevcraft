@@ -50,6 +50,24 @@ function incoming(bot, { reach = REACH } = {}) {
   }).sort((a, b) => a.position.distanceTo(eye) - b.position.distanceTo(eye));
 }
 
+// The standing choice about shots (shield_policy, asked by survival.js
+// shieldPolicy): a shot is in the air a fraction of a second, less than an
+// answer, so what to do about shots is chosen for the shooters about, not
+// for each shot. It stands until a shooter not counted in it comes into
+// sight, health falls four below where it was chosen, or a minute.
+const POLICY_MS = 60000, POLICY_HEALTH = 4;
+function policy(bot, now = Date.now()) {
+  const p = bot?._shieldPolicy;
+  if (!p) return null;
+  let newShooter = false;
+  try {
+    const { threats } = require('./danger'), { shooter } = require('./combat');
+    newShooter = threats(bot, 48).some(t => t.visible && shooter(t.entity) && !p.ids.includes(t.entity.id));
+  } catch (_) { /* no mobs to read */ }
+  if (now - p.at > POLICY_MS || (bot.health ?? 20) <= p.health - POLICY_HEALTH || newShooter) { delete bot._shieldPolicy; return null; }
+  return p;
+}
+
 // Hold the block until the shot has landed or gone by, then hand movement
 // back. Bounded in tens of milliseconds: this runs inside a fight loop.
 // Not with a mob at arm's length that does not shoot: the shield covers one
@@ -82,6 +100,9 @@ function meleeClose(bot, { holdMs = 700 } = {}) {
 // shield in hand (2026-09-27).
 async function deflect(bot, task, { holdMs = 700 } = {}) {
   if (!shielded(bot) || meleeClose(bot, { holdMs })) return false;
+  // Left down by Jev's choice (shield_policy): the shots land and what the
+  // bot is doing goes on.
+  if (policy(bot)?.choice === 'take_shots') return false;
   const shot = incoming(bot)[0];
   if (!shot) return false;
   const deadline = Date.now() + holdMs;
@@ -105,4 +126,4 @@ async function deflect(bot, task, { holdMs = 700 } = {}) {
   return true;
 }
 
-module.exports = { deflect, incoming, meleeClose, INCOMING, REACH };
+module.exports = { deflect, incoming, meleeClose, policy, INCOMING, REACH, POLICY_MS, POLICY_HEALTH };

@@ -244,7 +244,7 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       checkEndEmergency(bot);
     };
     if (safeEndPoint(bot, bot.entity.position)) {
-      if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); })) return;
+      if (await maintainVitals(bot, task, action => { goal.survivalAction = { ...action, at: new Date().toISOString() }; save(); }, { client, goal, save })) return;
     }
     if (bot.food < 16 && !chooseFood(bot)) throw blocked('End combat has no carried food to restore hunger');
     // No survival layer in the End: the game loop hands the dimension to

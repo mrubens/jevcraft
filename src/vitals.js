@@ -503,6 +503,9 @@ function pondNear(bot) {
 // combat-estimate burnLeft), and who acts is the claims' question.
 function fireToAnswer(bot) {
   if (inFire(bot)) return true;
+  // An enchanted golden apple carried is a way too, in any dimension: its
+  // fire resistance ends what burning is left (body_way, note 549).
+  if (onFire(bot) && bot.inventory?.items?.().some(i => i.name === 'enchanted_golden_apple')) return true;
   if (!onFire(bot) || /nether/.test(String(bot.game?.dimension || ''))) return false;
   if (bot.inventory?.items?.().some(i => i.name === 'water_bucket')) return true;
   return !!(bot.blockAt && pondNear(bot));
@@ -521,11 +524,7 @@ async function douse(bot, task, onAction = () => {}) {
   // and burned from sixteen health to nothing on the bank (2026-09-26).
   if (!bucket) {
     const pond = pondNear(bot);
-    if (!pond) return false;
-    onAction({ action: 'douse', health: bot.health, pond: { ...pond } });
-    await require('./motion').move(bot, task, { label: 'into_water', keys: ['forward', 'sprint'], sneak: false, why: 'burning, into the water to put it out',
-      look: pond.offset(0.5, 1, 0.5), maxMs: 4000, tick: 50, until: () => !onFire(bot) || !!bot.entity.isInWater });
-    return !onFire(bot);
+    return pond ? intoWater(bot, task, pond, onAction) : false;
   }
   const feet = bot.entity.position.floored(), below = feet.offset(0, -1, 0);
   if (bot.blockAt(below)?.boundingBox !== 'block' || !['air', 'cave_air'].includes(bot.blockAt(feet)?.name)) return false;
@@ -542,6 +541,13 @@ async function douse(bot, task, onAction = () => {}) {
     bot.activateItem();
     await sleep(150);
   }
+  return !onFire(bot);
+}
+
+async function intoWater(bot, task, pond, onAction = () => {}) {
+  onAction({ action: 'douse', health: bot.health, pond: { ...pond } });
+  await require('./motion').move(bot, task, { label: 'into_water', keys: ['forward', 'sprint'], sneak: false, why: 'burning, into the water to put it out',
+    look: pond.offset(0.5, 1, 0.5), maxMs: 4000, tick: 50, until: () => !onFire(bot) || !!bot.entity.isInWater });
   return !onFire(bot);
 }
 
@@ -656,28 +662,62 @@ async function until(task, predicate, timeout, message) {
   task.check();
 }
 
-async function maintainVitals(bot, task, onAction = () => {}) {
-  task.check();
-  // A submerged head with the air bar full is a reason to swim up only while
-  // swimming up works. Under a stone roof it never could: the replay run and
-  // its drill tried every tick, and the way out (the shore search, which can
-  // dig) never had a turn. After a failed swim, only low air sends it up
-  // again for a minute.
-  const lately = bot._surfaceFailedAt > Date.now() - 60000;
-  // Out of the block first. A falling column refills the head's cell after
-  // every dig, so a step aside into open air beside the feet comes first, as
-  // a player steps out from under gravel; then the dig, as often as it takes.
-  // Nothing but a cancellation stops it: a creeper ten blocks off and the
-  // spare pickaxe each broke off the dig, four tries a time, while mid-79-c
-  // suffocated under gravel from nineteen health (2026-09-26).
-  if (headInBlock(bot)) {
-    const feet = bot.entity.position.floored();
-    const open = b => b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name);
-    const aside = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz))
-      .find(c => open(bot.blockAt(c)) && open(bot.blockAt(c.offset(0, 1, 0))) && bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' &&
-        !/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(bot.blockAt(c.offset(0, 2, 0))?.name || ''));
-    if (aside) {
-      onAction({ action: 'dig_out_of_block', block: bot.blockAt(feet.offset(0, 1, 0))?.name, stepAside: { ...aside } });
+// The ways out of fire, a block over the head and the water, for body_way
+// (src/body.js), each run by the mechanics below; the old rule's way first,
+// its fallback.
+const round = n => Math.round(n * 10) / 10;
+// A sprint, about 5.6 blocks a second.
+const SPRINT = 5.6;
+function fireWays(bot, task, onAction = () => {}) {
+  const ways = {};
+  const standing = inFire(bot), nether = /nether/.test(String(bot.game?.dimension || ''));
+  const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
+  const eat = () => ({ description: `Eat the enchanted golden apple (${apple.count} carried): about ${EAT_MEAL_SECONDS} seconds eating first, then fire resistance for five minutes (burning no longer hurts), sixteen extra health as absorption and strong regeneration.`,
+    run: async () => { onAction({ action: 'eat', item: apple.name, health: bot.health, burning: true }); return require('./survival').eatApple(bot, task, apple); } });
+  if (standing) {
+    const clear = fireRouteThrough(bot, false), route = clear || fireRouteThrough(bot, true);
+    if (route) ways.out_of_fire = { description: `Run out of the fire, ${route.length} step${route.length === 1 ? '' : 's'} to ${bot.blockAt(route.at(-1))?.name === 'water' ? 'water' : 'a cell two blocks from any flame'}${clear ? '' : ', through a flame on the way'}: about ${round(Math.max(0.3, route.length / SPRINT))} seconds at a sprint, then burning on up to eight seconds unless it ends in water.`,
+      run: () => outOfFire(bot, task, onAction) };
+    if (apple) ways.eat_golden_apple = eat();
+    return ways;
+  }
+  const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
+  const feet = bot.entity.position.floored();
+  const pours = bucket && !nether && bot.blockAt(feet.offset(0, -1, 0))?.boundingBox === 'block' && ['air', 'cave_air'].includes(bot.blockAt(feet)?.name);
+  if (pours) ways.douse_bucket = { description: 'Pour the water bucket at the feet, which puts the fire out at once, and take the water back: about a second.', run: () => douse(bot, task, onAction) };
+  // The Nether has no water to run into (fireToAnswer).
+  const pond = !nether && pondNear(bot);
+  if (pond) {
+    const d = round(pond.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
+    ways.to_water = { description: `Run into the water ${d} blocks off at (${pond.x}, ${pond.y}, ${pond.z}): about ${round(Math.max(0.3, d / SPRINT))} seconds at a sprint, burning meanwhile, and the fire is out.`,
+      run: () => intoWater(bot, task, pond, onAction) };
+  }
+  const left = Math.max(1, Math.round(require('./combat-estimate').burnLeft(bot))), hp = bot.health ?? 20;
+  ways.burn_out = { description: `Leave it to burn out and go on: about ${left} second${left === 1 ? '' : 's'} of fire left, a health a second that armour does not stop, about ${Math.min(left, round(hp))} health${left >= hp ? ', all the health the bot has' : ''}${nether ? '; in the Nether nothing else puts it out' : ''}. Asked again if health falls ${require('./body').HOLD_HEALTH} more.`,
+    hold: 15, run: async () => false };
+  if (apple) ways.eat_golden_apple = eat();
+  // The old rule: the bucket poured where it can be, else (none carried)
+  // the water run into, else nothing.
+  const first = pours ? 'douse_bucket' : !bucket && pond ? 'to_water' : 'burn_out';
+  return { [first]: ways[first], ...ways };
+}
+// The way out from under a block, as the old rule stepped: aside into an
+// open cell with a floor and nothing that falls over it, then the dig of
+// what is still there (maintainVitals below).
+function asideCell(bot) {
+  const feet = bot.entity.position.floored();
+  const open = b => b && b.boundingBox === 'empty' && !/lava|fire|water/.test(b.name);
+  return [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz))
+    .find(c => open(bot.blockAt(c)) && open(bot.blockAt(c.offset(0, 1, 0))) && bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' &&
+      !/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(bot.blockAt(c.offset(0, 2, 0))?.name || '')) || null;
+}
+function headWays(bot, task, onAction = () => {}) {
+  const ways = {};
+  const block = suffocatingBlock(bot) || bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored());
+  const aside = asideCell(bot);
+  if (aside) ways.step_aside = { description: `Step out from under it into the open cell beside the feet at (${aside.x}, ${aside.y}, ${aside.z}): about half a second, nothing falling over that cell; what is still over the head after is dug.`,
+    run: async () => {
+      onAction({ action: 'dig_out_of_block', block: bot.blockAt(bot.entity.position.floored().offset(0, 1, 0))?.name, stepAside: { ...aside } });
       try {
         // Only a cancellation stops the step: the threat check would end it
         // at the first creeper in view.
@@ -685,8 +725,45 @@ async function maintainVitals(bot, task, onAction = () => {}) {
         await require('./motion').move(bot, only, { label: 'out_from_under', keys: ['forward'], sneak: false, why: 'stepping out from under a block over the head',
           look: aside.offset(0.5, 1.6, 0.5), maxMs: 1200, tick: 50, until: () => !headInBlock(bot) || bot.entity.position.floored().equals(aside) });
       } catch (err) { if (err.name === 'Cancelled') throw err; }
-    }
+      return !headInBlock(bot);
+    } };
+  const secs = block ? digSeconds(bot, block) : null;
+  ways.dig_out = { description: `Dig the ${block ? block.name.replaceAll('_', ' ') : 'block'} the head is in${secs != null ? `, about ${round(secs)} seconds with the best tool carried` : ''}, and whatever falls after it${block && /sand|gravel/.test(block.name) ? ' (a falling column keeps coming, a dig each block)' : ''}.`,
+    run: async () => true };
+  return ways;
+}
+function airWays(bot, task, onAction = () => {}) {
+  const ways = {};
+  const breath = breathSeconds(bot), left = breath + drowningSeconds(bot);
+  const route = airRoute(bot, new Set(), { budgetS: breath }) || airRoute(bot, new Set(), { budgetS: left });
+  if (route) {
+    const digs = route.reduce((n, c) => n + (c.digs?.length || 0), 0);
+    ways.swim_to_air = { description: `Swim the shortest way to air, ${route.length} cell${route.length === 1 ? '' : 's'}${digs ? `, digging ${digs} block${digs === 1 ? '' : 's'} on the way` : ''}: about ${round(route.seconds ?? route.length * STEP_S)} seconds, against ${round(breath)} seconds of breath${route.seconds > breath ? ' (past the breath, into the drowning)' : ''}.`,
+      run: () => surfaceForAir(bot, task, onAction) };
   }
+  const up = secondsUp(bot);
+  if (up != null && up <= left) ways.straight_up = { description: `Swim and dig straight up to air: about ${round(up)} seconds, against ${round(breath)} seconds of breath${up > breath ? ' (past the breath, into the drowning)' : ''}.`,
+    run: async () => { onAction({ action: 'surface', oxygen: bot.oxygenLevel, way: 'straight_up' }); await straightUp(bot, task); } };
+  return ways;
+}
+
+async function maintainVitals(bot, task, onAction = () => {}, { client = null, goal = null, save = () => {} } = {}) {
+  task.check();
+  const asked = { client, goal, save };
+  // A submerged head with the air bar full is a reason to swim up only while
+  // swimming up works. Under a stone roof it never could: the replay run and
+  // its drill tried every tick, and the way out (the shore search, which can
+  // dig) never had a turn. After a failed swim, only low air sends it up
+  // again for a minute.
+  const lately = bot._surfaceFailedAt > Date.now() - 60000;
+  // Out of the block first, the way Jev chooses (body_way): a step aside
+  // into open air beside the feet, as a player steps out from under gravel,
+  // or the dig; then the dig of what is still there, as often as it takes.
+  // Nothing but a cancellation stops it: a creeper ten blocks off and the
+  // spare pickaxe each broke off the dig, four tries a time, while mid-79-c
+  // suffocated under gravel from nineteen health (2026-09-26).
+  const body = require('./body');
+  if (headInBlock(bot)) await body.answer(bot, task, 'head_in_block', headWays(bot, task, onAction), { ...asked, facts: { block: suffocatingBlock(bot)?.name } });
   // And on while the column is still coming down: between one gravel dug
   // and the next landing the head's cell is air for a moment, the dig
   // stopped there, and the next block fell on a bot doing something else.
@@ -723,10 +800,23 @@ async function maintainVitals(bot, task, onAction = () => {}) {
   task.check();
   // In powder snow, or told by the server it is freezing.
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) { await outOfPowderSnow(bot, task, onAction); task.check(); }
-  if (inFire(bot)) { await outOfFire(bot, task, onAction); task.check(); }
-  if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot)) { await douse(bot, task, onAction); task.check(); }
+  // The fire and the burning: the way is Jev's (body_way). Standing in fire
+  // with no way out found, the old run, which says so.
+  if (inFire(bot)) {
+    const ways = fireWays(bot, task, onAction);
+    if (Object.keys(ways).length) await body.answer(bot, task, 'fire', ways, { ...asked, facts: { inFire: true } });
+    else await outOfFire(bot, task, onAction);
+    task.check();
+  }
+  if (onFire(bot) && !inFire(bot) && !require('./terrain').bodyInLava(bot) && !body.held(bot, 'fire')) {
+    await body.answer(bot, task, 'fire', fireWays(bot, task, onAction), { ...asked, facts: { inFire: false } }); task.check();
+  }
   if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
-    try { await surfaceForAir(bot, task, onAction); delete bot._surfaceFailedAt; }
+    // The way up is Jev's (body_way); with none found, the old swim, which
+    // throws that no way up was found.
+    const ways = airWays(bot, task, onAction);
+    const surface = () => Object.keys(ways).length ? body.answer(bot, task, 'air', ways, { ...asked, facts: { air: bot.oxygenLevel } }) : surfaceForAir(bot, task, onAction);
+    try { await surface(); delete bot._surfaceFailedAt; }
     catch (err) { if (err.name !== 'Cancelled' && /breathable air/.test(err.message)) bot._surfaceFailedAt = Date.now(); throw err; }
   }
   // Natural regeneration needs at least 18 hunger points. A sheltered injured
@@ -784,7 +874,7 @@ function claim(bot) {
   // An alert (a creeper in reach, a mob at arm's length) is pressing, and
   // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
   if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'vitals', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: reflex.facts };
-  if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
+  if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'body', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel, ...(bot.health < 20 ? { healing: bot.food >= 18 } : {}) };
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };
   if (headSubmerged(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
@@ -804,4 +894,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'out_of_powder_snow', 'surface']);
 
-module.exports = { claim, ACTIONS, suffocatingBlock, douse, inFire, fireToAnswer, pondNear, onFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S };
+module.exports = { claim, ACTIONS, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

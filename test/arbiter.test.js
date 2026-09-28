@@ -7,7 +7,7 @@ const { EMERGENCIES } = require('../src/stillness');
 
 const fakeBot = (over = {}) => ({ entity: { position: new Vec3(0, 64, 0) }, health: 20, food: 20, oxygenLevel: 20, entities: {}, ...over });
 const claim = (layer, urgency = 'routine', extra = {}) => ({ layer, action: `${layer}_step`, urgency, facts: {}, run: async () => true, ...extra });
-const reflex = key => { const r = arbiter.REFLEXES.find(x => x.key === key); return claim(r.layer, 'reflex', { action: r.action, reflex: key }); };
+const reflex = key => { const r = arbiter.REFLEXES.find(x => x.key === key); return claim(r.layer, 'body', { action: r.action, reflex: key }); };
 const look = ({ lava = false, fire = false, head = false, mobs = [] } = {}) => ({ inLava: () => lava, burning: () => fire, headInBlock: () => head, mobs: () => mobs });
 const mob = (name, distance, id = 1, visible = true) => ({ entity: { name, id }, distance, visible });
 
@@ -20,7 +20,7 @@ test('the reflexes win in their fixed order, over any claim, and are never asked
   const decide = async () => { asked++; return { path: ['work'] }; };
   const all = ['arm', 'creeper', 'air', 'head_in_block', 'fire', 'lava'].map(reflex);
   const out = await arbiter.arbitrate(fakeBot(), [claim('work'), claim('vitals', 'pressing'), ...all], { state: {}, decide, dry: true });
-  assert.equal(out.winner.reflex, 'lava'); assert.equal(out.by, 'reflex'); assert.equal(out.ask, false);
+  assert.equal(out.winner.reflex, 'lava'); assert.equal(out.by, 'body'); assert.equal(out.ask, false);
   const next = await arbiter.arbitrate(fakeBot(), [claim('work'), reflex('arm'), reflex('creeper')], { state: {}, decide });
   assert.equal(next.winner.reflex, 'creeper');
   assert.equal(next.acted, true, 'run, not dry: the winner acts');

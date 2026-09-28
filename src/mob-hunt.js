@@ -733,6 +733,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     if (bot._recentHurtAt > Date.now() - 2000) {
       const { dropNear } = require('./terrain');
       const deep = dropNear(bot, bot.entity.position.floored(), 2);
+      // With Jev reachable and a mob about to answer, the encounter is the
+      // stance's (note 549): the survival step asks it, the drop said and
+      // firm ground offered there (fight_from_footing). The step below is
+      // the code's own only without Jev, or with nothing seen to ask about.
+      const about = (actions.client || task.opportunityClient) && process.env.JEV_ENCOUNTERS !== '0' && threats(bot, 16).sort((a, b) => a.distance - b.distance)[0];
+      if (deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2) && about) throw new NeedsSafety(about);
       if (deep && (deep.into === 'lava' || deep.damage >= (bot.health ?? 20) / 2)) {
         const { firmGround } = require('./survival');
         const cell = firmGround(bot, 8, { margin: 3 });

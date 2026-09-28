@@ -9,7 +9,7 @@
 //
 // Here each layer says what it would do as a claim, with what it observed,
 // and one place gives the turn:
-//   claim   null, or { layer, action, urgency: 'reflex'|'pressing'|'routine',
+//   claim   null, or { layer, action, urgency: 'body'|'pressing'|'routine',
 //           facts: {observed values}, run: async task => bool, preemptible,
 //           minHoldMs, reflex (the key below, for a reflex), cost }
 // A reflex is physical safety and never asked: the first in REFLEXES wins.
@@ -75,7 +75,7 @@ const ALERTS = new Set(['creeper', 'arm']);
 // Without Jev (the question's fallback, and the shadow's pick): the more
 // urgent claim, and among equals the layer that keeps the bot alive first.
 const LAYERS = ['survival', 'vitals', 'hunt', 'work'];
-const URGENCY = { reflex: 0, pressing: 1, routine: 2 };
+const URGENCY = { body: 0, pressing: 1, routine: 2 };
 
 // What the reflexes read, injectable for the tests.
 const probe = {
@@ -84,6 +84,9 @@ const probe = {
   // Nether with no flames about, it has none, and the claims decide (note 548).
   burning: bot => require('./vitals').fireToAnswer(bot),
   headInBlock: bot => require('./vitals').headInBlock(bot),
+  // Burning out of the fire that Jev chose to leave to burn out (body_way):
+  // held, not a reflex, until it could have ended or health falls four more.
+  burnLeft: bot => !require('./vitals').inFire(bot) && !!require('./body').held(bot, 'fire'),
   mobs: (bot, radius) => require('./danger').threats(bot, radius),
 };
 
@@ -94,7 +97,7 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   const was = new Set(held), out = [];
   const add = (key, facts) => { const r = REFLEXES.find(x => x.key === key); out.push({ key, layer: r.layer, action: r.action, facts }); };
   if (look.inLava(bot)) add('lava', { inLava: true, health: bot.health });
-  if (look.burning(bot)) add('fire', { burning: true, health: bot.health });
+  if (look.burning(bot) && !look.burnLeft?.(bot)) add('fire', { burning: true, health: bot.health });
   if (look.headInBlock(bot)) add('head_in_block', { headInBlock: true, health: bot.health });
   const air = bot.oxygenLevel ?? 20;
   if (air <= AIR + (was.has('air') ? HYSTERESIS : 0)) add('air', { air });
@@ -316,7 +319,7 @@ function rule(bot, claims, ctx = {}) {
   const now = ctx.now ?? Date.now();
   const state = stateOf(bot, ctx);
   const live = (claims || []).filter(Boolean);
-  const reflexes = live.filter(c => c.urgency === 'reflex').sort((a, b) => (REFLEX_RANK[a.reflex] ?? 99) - (REFLEX_RANK[b.reflex] ?? 99));
+  const reflexes = live.filter(c => c.urgency === 'body').sort((a, b) => (REFLEX_RANK[a.reflex] ?? 99) - (REFLEX_RANK[b.reflex] ?? 99));
   // Held to two past its line, reflex or alert alike (observeReflexes).
   state.reflexes = [...new Set(live.map(c => c.reflex || c.alert).filter(Boolean))];
   // Ruling for real, the arbiter has picked up what the watch stopped the
@@ -332,7 +335,7 @@ function rule(bot, claims, ctx = {}) {
     delete bot._preempt;
   }
   const gone = missing(state, live);
-  if (reflexes.length) { delete state.ruling; return { winner: reflexes[0], by: 'reflex', ask: false }; }
+  if (reflexes.length) { delete state.ruling; return { winner: reflexes[0], by: 'body', ask: false }; }
   // The ruling's claims absent one pass still count for it (ABSENT_PASSES).
   // Its winner absent one pass: nobody has the turn this pass, a breath,
   // and the ruling stands; its claim's run is not taken from a pass it was
@@ -421,7 +424,7 @@ async function take(bot, claims, ctx = {}) {
   const w = r.winner;
   holding(w.layer, w.action, { urgency: w.urgency, ...(w.reflex ? { reflex: w.reflex } : {}) });
   said(bot, `[arbiter] gave ${w.layer} ${w.action} (${r.by}${r.why && r.by === 'jev' ? `: ${r.why}` : ''})`, now);
-  if (ctx.backstop && w.urgency !== 'reflex' && (ctx.backstopFor || ['vitals', 'work']).includes(w.layer) && unclaimed) {
+  if (ctx.backstop && w.urgency !== 'body' && (ctx.backstopFor || ['vitals', 'work']).includes(w.layer) && unclaimed) {
     const given = state.holder;
     holding('survival', 'step');
     if (await ctx.backstop()) {

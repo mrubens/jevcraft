@@ -1505,7 +1505,7 @@ test('in lava with no dry cell in sight the bot swims up and back toward its las
   const goal = {};
   const started = Date.now();
   assert(await survival.step(new Task('lava'), goal, () => {}));
-  assert.equal(goal.survivalAction.action, 'leave_lava'); assert.equal(goal.survivalAction.to, null);
+  assert.equal(goal.survivalAction.action, 'leave_lava'); assert.equal(goal.survivalAction.way, 'back_the_way_came', 'no cell out: back toward the last dry footing');
   assert(held.has('jump') && held.has('forward'), 'swimming, not standing');
   assert(looked && looked.x < -29 && looked.z < -59, 'toward the last dry footing');
   assert(Date.now() - started >= 2000, 'the step held the keys, it did not return at once');

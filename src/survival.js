@@ -456,8 +456,36 @@ function shieldFacing(bot, danger) {
 }
 // Out to six blocks: at three, a fall into the Nether's lava sea found no
 // shore, the step did nothing, and the bot burned four seconds standing.
-function lavaExit(bot, radius = 6, { water = false } = {}) {
+// Through lava a body moves about a block a second: not measured, and said
+// as rough wherever a way through lava is priced (body_way).
+const LAVA_BLOCKS_A_SECOND = 1;
+// A shot's speed, roughly (not measured here), for shield_policy: an arrow
+// or a trident about thirty blocks a second, a fireball about ten.
+const SHOT_SPEED = { arrow: 30, fireball: 10 };
+// Eaten only when one is gone: the equip's own held-item change came after
+// the eating began and ended it at once (mineflayer finishes an eat on any
+// held-item change), and mid-244-n "ate" its golden apple every half second
+// for four seconds, none eaten, zombies hitting it from 9.6 to none
+// (2026-09-27). The hand settles before the eat. In lava too (body_way),
+// where the task's own lava check is held off while it eats.
+async function eatApple(bot, task, apple) {
+  const before = countOf(bot, apple.name), wasLeaving = bot._leavingLava;
+  if (require('./terrain').bodyInLava(bot)) bot._leavingLava = true;
+  try {
+    await bot.equip(apple, 'hand');
+    for (let n = 0; n < 10 && bot.heldItem?.name !== apple.name; n++) { task.check(); await sleep(50); }
+    await sleep(100);
+    await bot.consume();
+    return countOf(bot, apple.name) < before;
+  }
+  catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+  finally { bot._leavingLava = wasLeaving; }
+}
+// `dryOnly`: the same ranking as `water`, with the water cells left out, for
+// the dry way offered beside the wet one (body_way).
+function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
   const feet = bot.entity.position.floored(), cells = [];
+  if (dryOnly) water = true;
   // Water is a way out too, and the best one: it puts the fire out. Making
   // obsidian, the water poured over the pool filled every cell beside the
   // bot when it went into the lava, the nearest dry cell was seven blocks
@@ -476,6 +504,7 @@ function lavaExit(bot, radius = 6, { water = false } = {}) {
     // lava against the obsidian under the water it had poured, the one
     // exit it was steered at, and burned from sixteen (2026-09-26).
     if (water && c.y > feet.y && [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water')) continue;
+    if (dryOnly && [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water')) continue;
     cells.push(c);
   }
   const far = c => c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
@@ -1203,8 +1232,162 @@ class Survival {
     if (action.threats && action.action !== 'keep_working') this.bot._threatResponseAt = Date.now();
   }
 
+  // The hold on a one-wide span over a drop (hold_on_span): nothing swung at
+  // but what is at arm's length, crouched and still, the open sides walled
+  // where something can push, off it away from a creeper first. A stance
+  // (stanceOptions), and the code's own first answer only when Jev cannot be
+  // reached (flee).
+  async holdOnSpan(task, goal, save) {
+    const bot = this.bot;
+    const close = threats(bot).filter(t => t.distance <= 8);
+    // A hold refused (a stall, a spin) is no reason to stop answering the
+    // mob: the swing and the shield below still come (note 420).
+    try { this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health }); }
+    catch (err) { if (err.name !== 'SetAside') throw err; }
+    bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.(); lowerShield(bot);
+    bot.setControlState?.('sneak', true);
+    // Crouched is no hold against a hit: its knockback throws a player a
+    // block, and off a one-wide ledge that is the fall. mid-230-f, on a
+    // ravine ledge at y -28 with zombies at arm's length, held still,
+    // was hit from ten to seven and knocked twenty-three blocks down
+    // (2026-09-27). With a mob that hits within six, the open sides are
+    // walled first, the floor beside the feet and a block on it: a
+    // player thrown into a wall stays where it is.
+    // Shots too: a blocked fireball still pushes, and mid-242-h, bridging
+    // toward a fortress under a blaze's fire, blocked four and drifted
+    // off its span with them, thirty blocks into the lava (2026-09-27).
+    // A shooter in sight within its own reach counts, not only within
+    // eight: mid-202-g held still on a span four seconds with a ghast in
+    // sight twenty-two blocks off, walls never raised, and its fireball
+    // threw the bot into the lava (2026-09-27).
+    const { RANGE } = require('./combat-estimate');
+    const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 ||
+      threats(bot, 48).some(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
+    // While a span is being laid too, but not on the side it goes on:
+    // mid-243-j, crossing at y 59 over the lava sea, was hit twice by an
+    // enderman, no wall up, and the second hit threw it thirty blocks into
+    // the lava (2026-09-27).
+    const pressed = shots || close.some(t => t.distance <= 6 && !shooter(t.entity));
+    // A creeper coming: walls do not stop a blast, and crouched still is
+    // where it goes off. Off the span, away from it, first. mid-241-h held
+    // on a ledge at y 74 at 8.9 health and one went off beside it
+    // (2026-09-27).
+    const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
+    const creeper = close.filter(t => t.entity.name === 'creeper' && t.distance <= LIGHTS_AT + APPROACH * 3).sort((a, b) => a.distance - b.distance)[0];
+    if (creeper && !isSetAside(this, 'off_span', 'here')) {
+      const cell = firmGround(bot, 8, { margin: 2, awayFrom: creeper.entity.position }) || firmGround(bot, 8, { awayFrom: creeper.entity.position });
+      if (cell) {
+        this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: ['creeper'], health: bot.health });
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
+        return true;
+      }
+    }
+    if (pressed && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return true;
+    // No walls to be had (no blocks for them): off the span to firm
+    // ground near by, crouched, as a player steps back from a ledge.
+    // mid-235-j stood at the end of its span over the lava sea with
+    // sixteen gravel and two planks, a ghast shooting, held still five
+    // times, and the fireball threw it into the lava (2026-09-27).
+    if (pressed && !isSetAside(this, 'off_span', 'here')) {
+      const cell = firmGround(bot, 8, { margin: 2 }) || firmGround(bot, 8);
+      if (cell && !cell.equals(bot.entity.position.floored())) {
+        this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
+        return true;
+      }
+    }
+    // A mob at arm's length is struck crouched and still (combat.js
+    // defendNearby on a span); nothing else is done about it here.
+    if (await defendNearby(bot, task, goal, save)) return true;
+    // A shot on its way meets the shield, crouched (projectile-guard.js
+    // deflect keeps the crouch on a span): this returned before the
+    // shield's turn, and mid-227-l held still on a fortress bridge under
+    // two blazes' fire, no wall to be had and no firm ground near, from
+    // 7.5 to none (2026-09-27).
+    if (await deflect(bot, task)) { this.report(goal, save, { action: 'block_shot', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health }); return; }
+    try { for (let n = 0; n < 4; n++) { task.check(); await sleep(100); } }
+    finally { if (!bot._spanning) bot.setControlState?.('sneak', false); }
+    return true;
+  }
+
+  // The mobs an encounter answers: those in sight, a creeper within four
+  // or a warden within twenty-four seen or not, and the mob that stopped the
+  // work whatever its sight line reads this time: mid-244-f's skeleton at
+  // three blocks stopped the work twenty times a second for four minutes
+  // while the stance, held for a creeper, never saw it, its line of sight
+  // flickering between the two looks; seven health to under three
+  // (2026-09-27).
+  encounterDanger() {
+    const bot = this.bot;
+    const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24));
+    const urgent = require('./danger').immediateThreat(bot);
+    if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
+    return danger;
+  }
+
+  // What to do about shots while shooters are about (shield_policy): a shot
+  // is in the air a fraction of a second, less than an answer and the
+  // shield's quarter second to rise, so the shot itself cannot be asked
+  // about; what to do about them for the next while can. Asked beside the
+  // stance and not waited for: until the answer stands, the shield rises at
+  // each shot (the fallback, the old rule). Held by projectile-guard.js
+  // policy.
+  shieldPolicy(task, goal, save, danger = []) {
+    const bot = this.bot;
+    if (!encounterJudgments(this) || bot.inventory?.slots?.[45]?.name !== 'shield' || this._askingShield) return null;
+    const guard = require('./projectile-guard');
+    if (guard.policy(bot)) return null;
+    const shooters = threats(bot, 48).filter(t => t.visible && shooter(t.entity));
+    const inAir = guard.incoming(bot).length;
+    if (!shooters.length && !inAir) return null;
+    const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
+    const wornNames = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), worn = armourOf(wornNames);
+    const round = n => Math.round(n * 10) / 10;
+    const speed = name => ['blaze', 'ghast'].includes(name) ? SHOT_SPEED.fireball : SHOT_SPEED.arrow;
+    const each = shooters.slice(0, 4).map(t => { const m = MOBS[t.entity.name]; return { name: t.entity.name, distance: round(t.distance), flightSeconds: round(t.distance / speed(t.entity.name)), ...(m ? { hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(m.hit, worn)) } : {}), ...(m?.note ? { note: m.note } : {}) }; });
+    const said = n => n.replaceAll('_', ' ');
+    const flights = each.length ? each.map(e => `the ${said(e.name)} ${Math.round(e.distance)} blocks off, its shot about ${e.flightSeconds} seconds in the air`).join('; ') : 'a shot on its way from a shooter out of sight';
+    const hits = each.length ? each.map(e => `the ${said(e.name)}'s about ${e.hitsBot ?? '?'} health a shot through what the bot wears${e.note ? ` (${e.note})` : ''}`).join('; ') : 'a shot from a shooter out of sight';
+    const tree = {
+      shield_at_shots: { description: `Raise the shield at each shot on its way: ${flights} (rough speeds, not measured), against the quarter second the shield takes to rise. Each time it stops whatever the bot is doing (a walk, a dig, a swing, a block placed) for up to 0.7 seconds and covers only the way the bot faces; it is not raised with something that bites within 3.5 blocks, or a creeper that could reach the bot meanwhile.` },
+      take_shots: { description: `Leave the shield down and keep on with the stance or the step: the shots land, ${hits}; at ${round(bot.health ?? 20)} health.` },
+    };
+    const held = stanceHeld(bot);
+    const state = { health: bot.health, armour: wornNames, shooters: each, shotsInTheAir: inAir, ...(held ? { stance: held.choice } : {}),
+      biters: danger.filter(t => !shooter(t.entity)).slice(0, 4).map(t => ({ name: t.entity.name, distance: round(t.distance) })),
+      standsUntil: `a shooter not counted here comes into sight, health falls ${guard.POLICY_HEALTH} below ${round(bot.health ?? 20)}, or ${guard.POLICY_MS / 60000} minute` };
+    const ids = shooters.map(t => t.entity.id), health = bot.health ?? 20;
+    // Only a cancellation stops the question: the task's own check throws
+    // for the very shooters it is asked about.
+    const only = { get cancelled() { return task?.cancelled; }, label: task?.label, check() { if (task?.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
+    this._askingShield = true;
+    return this.decide(only, goal, save, { id: 'shield_policy', state, tree })
+      .then(d => { if (d && !d.stale && d.path?.[0] && tree[d.path[0]]) bot._shieldPolicy = { choice: d.path[0], ids, at: Date.now(), health, by: d.fallback ? 'fallback' : 'jev' }; return d; })
+      .catch(() => null)
+      .finally(() => { this._askingShield = false; });
+  }
+
   async flee(task, goal, save) {
     const bot = this.bot;
+    const jev = encounterJudgments(this);
+    // Asked first (note 549): with Jev reachable and no stance holding, the
+    // encounter is Jev's before anything is done about it. The hold on a
+    // span (hold_on_span), the step off an edge (fight_from_footing, and the
+    // drop said with every stance), the swing (every stance swings at what
+    // is in reach, and the question's wait swings meanwhile) and the shield
+    // (shield_policy) were the code's first, and are so below only when Jev
+    // cannot be reached or has not answered.
+    let asked = false;
+    if (jev && !stanceHeld(bot)) {
+      const danger = this.encounterDanger();
+      if (danger.length) {
+        this.shieldPolicy(task, goal, save, danger);
+        asked = true;
+        if (await this.stanceStep(task, goal, save, danger, false)) return;
+      }
+    }
     // On a one-wide span over a drop, nothing is swung at, turned to or
     // walked from: the bot holds still, crouched (terrain.js onSpan). A
     // swing at a hoglin behind mid-215-e turned it about on its span, and
@@ -1215,79 +1398,7 @@ class Survival {
     // the span branch's alone to the end, Jev asked only when too late or
     // never (notes 435, 436, 439, 443).
     const bleeding = (bot._hurtTimes || []).filter(t => Date.now() - t < 6000).length >= 2;
-    if (require('./terrain').onSpan(bot) && !(bleeding && this.client && !bot._spanning)) {
-      const close = threats(bot).filter(t => t.distance <= 8);
-      // A hold refused (a stall, a spin) is no reason to stop answering the
-      // mob: the swing and the shield below still come (note 420).
-      try { this.report(goal, save, { action: 'hold_on_span', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health }); }
-      catch (err) { if (err.name !== 'SetAside') throw err; }
-      bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.(); lowerShield(bot);
-      bot.setControlState?.('sneak', true);
-      // Crouched is no hold against a hit: its knockback throws a player a
-      // block, and off a one-wide ledge that is the fall. mid-230-f, on a
-      // ravine ledge at y -28 with zombies at arm's length, held still,
-      // was hit from ten to seven and knocked twenty-three blocks down
-      // (2026-09-27). With a mob that hits within six, the open sides are
-      // walled first, the floor beside the feet and a block on it: a
-      // player thrown into a wall stays where it is.
-      // Shots too: a blocked fireball still pushes, and mid-242-h, bridging
-      // toward a fortress under a blaze's fire, blocked four and drifted
-      // off its span with them, thirty blocks into the lava (2026-09-27).
-      // A shooter in sight within its own reach counts, not only within
-      // eight: mid-202-g held still on a span four seconds with a ghast in
-      // sight twenty-two blocks off, walls never raised, and its fireball
-      // threw the bot into the lava (2026-09-27).
-      const { RANGE } = require('./combat-estimate');
-      const shots = require('./projectile-guard').incoming(bot, { reach: 24 }).length > 0 ||
-        threats(bot, 48).some(t => t.visible && shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
-      // While a span is being laid too, but not on the side it goes on:
-      // mid-243-j, crossing at y 59 over the lava sea, was hit twice by an
-      // enderman, no wall up, and the second hit threw it thirty blocks into
-      // the lava (2026-09-27).
-      const pressed = shots || close.some(t => t.distance <= 6 && !shooter(t.entity));
-      // A creeper coming: walls do not stop a blast, and crouched still is
-      // where it goes off. Off the span, away from it, first. mid-241-h held
-      // on a ledge at y 74 at 8.9 health and one went off beside it
-      // (2026-09-27).
-      const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
-      const creeper = close.filter(t => t.entity.name === 'creeper' && t.distance <= LIGHTS_AT + APPROACH * 3).sort((a, b) => a.distance - b.distance)[0];
-      if (creeper && !isSetAside(this, 'off_span', 'here')) {
-        const cell = firmGround(bot, 8, { margin: 2, awayFrom: creeper.entity.position }) || firmGround(bot, 8, { awayFrom: creeper.entity.position });
-        if (cell) {
-          this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: ['creeper'], health: bot.health });
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
-          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
-          return;
-        }
-      }
-      if (pressed && await this.railSpan(task, goal, save, { ahead: bot._spanning?.target })) return;
-      // No walls to be had (no blocks for them): off the span to firm
-      // ground near by, crouched, as a player steps back from a ledge.
-      // mid-235-j stood at the end of its span over the lava sea with
-      // sixteen gravel and two planks, a ghast shooting, held still five
-      // times, and the fireball threw it into the lava (2026-09-27).
-      if (pressed && !isSetAside(this, 'off_span', 'here')) {
-        const cell = firmGround(bot, 8, { margin: 2 }) || firmGround(bot, 8);
-        if (cell && !cell.equals(bot.entity.position.floored())) {
-          this.report(goal, save, { action: 'off_span', to: { ...cell }, threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health });
-          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
-          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'off_span', 'here', err, 10000); }
-          return;
-        }
-      }
-      // A mob at arm's length is struck crouched and still (combat.js
-      // defendNearby on a span); nothing else is done about it here.
-      if (await defendNearby(bot, task, goal, save)) return;
-      // A shot on its way meets the shield, crouched (projectile-guard.js
-      // deflect keeps the crouch on a span): this returned before the
-      // shield's turn, and mid-227-l held still on a fortress bridge under
-      // two blazes' fire, no wall to be had and no firm ground near, from
-      // 7.5 to none (2026-09-27).
-      if (await deflect(bot, task)) { this.report(goal, save, { action: 'block_shot', threats: close.map(t => t.entity.name).slice(0, 4), health: bot.health }); return; }
-      try { for (let n = 0; n < 4; n++) { task.check(); await sleep(100); } }
-      finally { if (!bot._spanning) bot.setControlState?.('sneak', false); }
-      return;
-    }
+    if (require('./terrain').onSpan(bot) && !(bleeding && this.client && !bot._spanning)) { await this.holdOnSpan(task, goal, save); return; }
     // Off the edge before anything else is done about the mob. Only when
     // one is close enough to hit, and only to a cell a few blocks off.
     // A hoglin close and a drop within its toss: a pocket, the one thing it
@@ -1295,7 +1406,6 @@ class Survival {
     // the ledge by the live run's Nether portal each ended thirty blocks down,
     // three deaths in five minutes. The reserve always has the blocks.
     // With Jev asked, the drop is a fact on the stance question instead.
-    const jev = encounterJudgments(this);
     const tossers = heavyHitters(threats(bot), 6);
     if (!jev && tossers.length && dropWithin(bot, bot.entity.position.floored(), 3) && !creeperClose(threats(bot)) && shelter.materialStock(bot) >= 4) {
       this.report(goal, save, { action: 'seal_on_ledge', threats: tossers.map(t => t.entity.name), health: bot.health });
@@ -1371,14 +1481,9 @@ class Survival {
     const swung = await defendNearby(bot, task, goal, save);
     // With a creeper out of sight within four blocks among them (danger.js
     // immediateThreat): it is the danger, seen or not.
-    const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24));
-    // The mob that stopped the work is among them, whatever its sight line
-    // reads this time: mid-244-f's skeleton at three blocks stopped the work
-    // twenty times a second for four minutes while the stance, held for a
-    // creeper, never saw it, its line of sight flickering between the two
-    // looks; seven health to under three (2026-09-27).
-    const urgent = require('./danger').immediateThreat(bot);
-    if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
+    const danger = this.encounterDanger();
+    // The shots, while a stance holds or without the stance asked above.
+    if (danger.length) this.shieldPolicy(task, goal, save, danger);
     // A shot from a shooter out of view: the shield up to it, since there
     // is no mob here to answer (danger.js immediateThreat, projectile).
     if (!danger.length) {
@@ -1402,7 +1507,7 @@ class Survival {
     // The stance is Jev's. The rules below answer only when Jev cannot be
     // reached, is switched off (JEV_ENCOUNTERS=0), or every stance has just
     // failed.
-    if (jev && await this.stanceStep(task, goal, save, danger, swung)) return;
+    if (jev && !asked && await this.stanceStep(task, goal, save, danger, swung)) return;
     // The rule: a creeper is fought the player's way.
     if (await this.creeperDance(task, goal, save, danger, swung)) return;
     if (!swung && await this.closeOnShooter(task, goal, save, danger)) return;
@@ -1871,6 +1976,24 @@ class Survival {
           return options.fight.run();
         } };
     }
+    // On a one-wide span over a drop: the span's own hold, chosen (note
+    // 549). It was the code's first answer there before any question; said
+    // with the open sides, the blocks for them and what can push.
+    if (require('./terrain').onSpan(bot)) {
+      const { dropAt } = require('./terrain');
+      const openSides = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz)).filter(c => dropAt(bot, c));
+      const wallBlocks = openSides.reduce((n, c) => n + (bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' ? 1 : 2), 0);
+      const carried = shelter.materialStock(bot);
+      const { RANGE, LIGHTS_AT, APPROACH } = require('./combat-estimate');
+      const pushers = coming.filter(t => (t.distance <= 6 && !shooter(t.entity)) || (shooter(t.entity) && t.visible && t.distance <= Math.max(16, RANGE[t.entity.name] || 0)));
+      const spanCreeper = coming.find(t => t.entity.name === 'creeper' && t.distance <= LIGHTS_AT + APPROACH * 3);
+      const pushSays = pushers.length ? ` What can push the bot here: ${pushers.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}.` : ' Nothing about is within six blocks to hit it, nor a shooter in sight within its reach.';
+      const walls = !openSides.length ? ' No side of the span at the feet is open over the drop.'
+        : pushers.length ? (carried >= wallBlocks ? ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} walled first: ${wallBlocks} block${wallBlocks === 1 ? '' : 's'}, about ${Math.round(wallBlocks * BLOCK_SECONDS * 10) / 10} seconds; a push stops at a wall.` : ` Too few blocks carried (${carried}) to wall the ${openSides.length} open side${openSides.length === 1 ? '' : 's'} (${wallBlocks}): with something pushing it steps off the span to firm ground within eight instead, if there is any.`)
+        : ` The ${openSides.length} open side${openSides.length === 1 ? '' : 's'} at the feet ${openSides.length === 1 ? 'is' : 'are'} left open while nothing pushes.`;
+      options.hold_on_span = { description: `Hold still and crouched on the span: nothing is turned to or walked from, what comes to arm's length is struck crouched, and a shot on its way meets the shield, crouched (a player crouched does not walk off an edge, but a hit or a shot's push still throws it).${walls}${spanCreeper ? ` A creeper ${Math.round(spanCreeper.distance)} blocks off: off the span away from it first, walls do not stop a blast.` : ''}${pushSays}${edge}`,
+        run: () => this.holdOnSpan(task, goal, save) };
+    }
     // Where there is no ground to go to, the edge walled at the feet, then
     // the fight: a knock stops at a block. mid-211-s's ledge ran beside a
     // netherrack wall with lava in it and no ground three from a drop within
@@ -2316,20 +2439,7 @@ class Survival {
         : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`) + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }),
       run: async () => {
         this.report(goal, save, { action: 'eat', item: apple.name, food: bot.food, health: bot.health, stance: true });
-        // Eaten only when one is gone: the equip's own held-item change came
-        // after the eating began and ended it at once (mineflayer finishes an
-        // eat on any held-item change), and mid-244-n "ate" its golden apple
-        // every half second for four seconds, none eaten, zombies hitting it
-        // from 9.6 to none (2026-09-27). The hand settles before the eat.
-        const before = countOf(bot, apple.name);
-        try {
-          await bot.equip(apple, 'hand');
-          for (let n = 0; n < 10 && bot.heldItem?.name !== apple.name; n++) { task.check(); await sleep(50); }
-          await sleep(100);
-          await bot.consume();
-          return countOf(bot, apple.name) < before;
-        }
-        catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+        return eatApple(bot, task, apple);
       } };
     // Where a run could go, said before it is chosen: with three or more
     // mobs about, 25 of the 39 retreats chosen with none at arm's length in
@@ -4753,6 +4863,79 @@ class Survival {
     } finally { this._answeringSetAside = false; }
   }
 
+  // The ways out of lava the code can carry out from here, for body_way:
+  // the old rule's way first (its fallback), each with where it goes and its
+  // seconds. The old rule: the nearest cell out, water or dry (water puts
+  // the fire out); a pillar where that cell is out of a jump's reach and
+  // blocks are carried; with no cell, back toward the last dry footing; with
+  // none known, up.
+  lavaWays(task, goal, save) {
+    const bot = this.bot;
+    const feet = bot.entity.position.floored(), feetY = feet.y;
+    const isWater = c => [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water');
+    const exit = lavaExit(bot, 6, { water: true });
+    const wet = exit && isWater(exit) ? exit : null;
+    const dry = exit && !wet ? exit : lavaExit(bot, 6, { dryOnly: true });
+    const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
+    const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
+    // Of this dimension; one kept before the dimension was recorded counts.
+    const last = this.state.lastDry && (!this.state.lastDry.dimension || String(this.state.lastDry.dimension) === String(bot.game?.dimension || '')) ? pos(this.state.lastDry) : null;
+    const round = n => Math.round(n * 10) / 10;
+    const far = c => round(c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
+    // Not measured: the body moves slowly in lava, and this is said as rough.
+    const seconds = c => Math.max(0.5, round(far(c) / LAVA_BLOCKS_A_SECOND));
+    const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || '')));
+    const where = c => `${far(c)} blocks off at (${c.x}, ${c.y}, ${c.z})${c.y - feetY >= 2 ? `, ${c.y - feetY} above the feet: a jump out of lava rises one, so a walk alone does not reach it` : c.y - feetY === 1 ? ', a block up (a jump)' : ''}` +
+      `${lavaBy(c) ? ', lava beside it' : ''}${besideDrop(bot, c) ? ', beside a drop' : ''}`;
+    const said = (c, lead) => `${lead} ${where(c)}: about ${seconds(c)} seconds at roughly a block a second through lava (not measured).`;
+    const report = (way, to) => this.report(goal, save, { action: 'leave_lava', way, to: to && { ...to }, health: bot.health });
+    // The walk out, as the old rule walked it. Out of the lava and over the
+    // cell chosen is out: the keys held after that carried mid-235-a on past
+    // it, upright, and off the ledge it stood on (2026-09-26). Out into water
+    // is out, too: the water puts the fire out and holds the body, and jump
+    // held there swims. mid-237-j left the lava into a waterfall's foot and
+    // swam six blocks up it on these keys, toward the lip it had fallen from
+    // (note 518). With no cell, never stand: the step with nothing to do
+    // returned at once, a thousand times in four seconds, while the bot
+    // burned.
+    const walk = async (to, why) => {
+      const toward = to ? to.offset(0.5, 1, 0.5) : null;
+      bot._leavingLava = true;
+      try {
+        await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false, why, look: toward || undefined, maxMs: 2500, tick: 50,
+          until: () => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (to && bot.entity.position.floored().x === to.x && bot.entity.position.floored().z === to.z)) });
+      } finally { bot._leavingLava = false; }
+      return !inLava(bot);
+    };
+    const ways = {};
+    const toCell = (key, c, lead, why) => { ways[key] = { description: said(c, lead), run: async () => { report(key, c); return walk(c, why); } }; };
+    if (wet) toCell('to_water', wet, 'Into the water', 'in lava: into the water, which puts the fire out');
+    if (dry) toCell('to_dry_ground', dry, 'Onto the dry cell', 'in lava: the nearest dry cell, whatever the ground');
+    // Out of reach of a jump: up on blocks placed underfoot, where the lava
+    // is, as a player pillars out of a pit.
+    const high = exit && exit.y > feetY + 1 ? exit : dry && dry.y > feetY + 1 ? dry : null;
+    if (high && scaffold) {
+      const rise = high.y - feetY;
+      ways.pillar_out = { description: `Put blocks underfoot and rise ${rise} to the way out ${where(high)}: about ${round(rise * PILLAR_SECONDS / 2)} seconds of blocks, then the step onto it; ${scaffold} scaffold blocks carried.`,
+        run: async () => {
+          report('pillar_out', high);
+          bot._leavingLava = true;
+          try { await pillarUp(bot, task, high.y, { dig: this.actions.dig, maxBlocks: rise, threats: false }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          finally { bot._leavingLava = false; }
+          return inLava(bot) ? walk(high, 'in lava: onto the ledge the pillar rose to') : true;
+        } };
+    }
+    if (last) ways.back_the_way_came = { description: `Back toward the last dry footing stood on, ${far(last)} blocks off at (${last.x}, ${last.y}, ${last.z}), swimming up as it goes: about ${seconds(last)} seconds at roughly a block a second through lava (not measured)${far(last) > 6 ? '; farther than any cell out seen from here' : ''}.`,
+      run: async () => { report('back_the_way_came', last); return walk(last, 'in lava with no dry cell in sight: up, and back the way the bot came'); } };
+    if (!Object.keys(ways).length) ways.swim_up = { description: 'Swim straight up in the lava: no cell out within six blocks and no dry footing known.', run: async () => { report('swim_up', null); return walk(null, 'in lava with nothing out in sight: up'); } };
+    const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
+    if (apple) ways.eat_golden_apple = { description: `Eat the enchanted golden apple (${countOf(bot, apple.name)} carried): about ${EAT_SECONDS} seconds eating in the lava first, then fire resistance for five minutes (the lava and burning no longer hurt), sixteen extra health as absorption and strong regeneration; the way out still to take after.`,
+      run: async () => { report('eat_golden_apple', null); return eatApple(bot, task, apple); } };
+    const first = exit ? (high === exit && scaffold ? 'pillar_out' : wet ? 'to_water' : 'to_dry_ground') : last ? 'back_the_way_came' : 'swim_up';
+    return ways[first] ? { [first]: ways[first], ...ways } : ways;
+  }
+
   async stepOnce(task, goal, save, onStep) {
     const bot = this.bot;
     // The survival layer has the turn: what the watchdogs held for it is met.
@@ -4773,48 +4956,20 @@ class Survival {
     // when this layer had nothing to do: mid-235-m came out of a lava pool
     // at 6.6 health still alight, with a water bucket, and this layer rebuilt
     // its span's walls every tick while it burned to none (note 434).
+    // The way out is Jev's (body_way, src/body.js): the douse, the water or
+    // letting it burn, asked the moment the step meets it. Burning left to
+    // burn out by Jev's choice is held (body.js held).
     if (!inLava(bot) && !require('./terrain').bodyInLava(bot)) {
       const vitals = require('./vitals');
-      if ((bot.entity?.metadata?.[0] & 1) && !vitals.inFire(bot)) {
+      if ((bot.entity?.metadata?.[0] & 1) && !vitals.inFire(bot) && !require('./body').held(bot, 'fire')) {
         let acted = false;
-        const done = await vitals.douse(bot, task, step => { acted = true; this.report(goal, save, { ...step, health: bot.health }); });
-        if (acted || done) { onStep(goal); return true; }
+        const ways = vitals.fireWays(bot, task, step => { acted = true; this.report(goal, save, { ...step, health: bot.health }); });
+        const r = await require('./body').answer(bot, task, 'fire', ways, { client: this.client, goal, save, facts: { inFire: false } });
+        if (acted || (r.acted && r.key !== 'burn_out')) { onStep(goal); return true; }
       }
     }
     if (inLava(bot)) {
-      const exit = lavaExit(bot, 6, { water: true });
-      this.report(goal, save, { action: 'leave_lava', to: exit && { ...exit }, health: bot.health });
-      // No dry cell in sight: swim up and back toward the last dry footing,
-      // never stand. The step with nothing to do returned at once, a
-      // thousand times in four seconds, while the bot burned.
-      const toward = exit ? exit.offset(0.5, 1, 0.5) : this.state.lastDry ? pos(this.state.lastDry).offset(0.5, 1, 0.5) : null;
-      // Out of reach of a jump: up on blocks placed underfoot, where the
-      // lava is, as a player pillars out of a pit.
-      const feetY = bot.entity.position.floored().y;
-      if (exit && exit.y > feetY + 1) {
-        const { pillarUp, SCAFFOLD } = require('./pillar-recovery');
-        if (bot.inventory.items().some(i => SCAFFOLD.includes(i.name))) {
-          bot._leavingLava = true;
-          try { await pillarUp(bot, task, exit.y, { dig: this.actions.dig, maxBlocks: exit.y - feetY, threats: false }); }
-          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-          finally { bot._leavingLava = false; }
-          if (!inLava(bot)) { onStep(goal); return true; }
-        }
-      }
-      bot._leavingLava = true;
-      try {
-        await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false,
-          why: exit ? 'in lava: the nearest dry cell, whatever the ground' : 'in lava with no dry cell in sight: up, and back the way the bot came',
-          look: toward || undefined, maxMs: 2500, tick: 50,
-          // Out of the lava and over the cell chosen is out: the keys held
-          // after that carried mid-235-a on past it, upright, and off the
-          // ledge it stood on (2026-09-26). Out into water is out, too: the
-          // water puts the fire out and holds the body, and jump held there
-          // swims. mid-237-j left the lava into a waterfall's foot and swam
-          // six blocks up it on these keys, toward the lip it had fallen
-          // from (note 518).
-          until: () => !inLava(bot) && (bot.entity.onGround || bot.entity.isInWater || (exit && bot.entity.position.floored().x === exit.x && bot.entity.position.floored().z === exit.z)) });
-      } finally { bot._leavingLava = false; }
+      await require('./body').answer(bot, task, 'lava', this.lavaWays(task, goal, save), { client: this.client, goal, save });
       onStep(goal); return true;
     }
     // The last dry footing, for the way back out of lava.
@@ -4878,7 +5033,7 @@ class Survival {
         }
       }
     }
-    await maintainVitals(bot, task, action => this.report(goal, save, action));
+    await maintainVitals(bot, task, action => this.report(goal, save, action), { client: this.client, goal, save });
     // Still in a block: nothing else this turn, the dig out comes again at
     // once. mid-79-c went on to craft its spare pickaxe under the gravel.
     if (require('./vitals').headInBlock(bot)) { onStep(goal); return true; }
@@ -4946,6 +5101,9 @@ class Survival {
       // never to the swing, and the reflex held the pocket two hours and
       // twenty minutes without a hit or a question (note 478).
       const reach = watcher && strikeTarget(bot);
+      // The stance's, with Jev reachable and none holding (note 549): the
+      // fight here is among its options, with the rest.
+      if (reach && encounterJudgments(this) && !stanceHeld(bot)) { await this.flee(task, goal, save); onStep(goal); return true; }
       if (reach) {
         this.report(goal, save, { action: 'fight_in_pocket', target: reach.entity.name, distance: Number(reach.distance.toFixed(1)), health: bot.health });
         await defendNearby(bot, task, goal, save);
@@ -5710,7 +5868,7 @@ function claim(bot, goal = {}, survival = null) {
   // An alert (a creeper in reach, a mob at arm's length) is pressing, and
   // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
   if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'survival', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: { ...reflex.facts, ...pocket } };
-  if (reflex) return { layer: 'survival', action: reflex.action, urgency: 'reflex', reflex: reflex.key, facts: reflex.facts, preemptible: false };
+  if (reflex) return { layer: 'survival', action: reflex.action, urgency: 'body', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   // What rests, and why: the facts a failed plan leaves. Read straight from
   // the record (progress.js), which attemptsFor would create on a first look.
   const resting = {}, attempts = Object.values(state.attempts || {});
@@ -5793,4 +5951,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { claim, onPillarTop, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { claim, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

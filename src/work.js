@@ -5295,7 +5295,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       if (turn && turn.layer !== 'work') { if (!turn.acted) await sleep(250); }
       else {
         if (goal.recoveryAdvice?.active) {
-          await maintainVitals(bot, task);
+          await maintainVitals(bot, task, () => {}, { client: task.opportunityClient, goal, save });
           if (await recoveryAdviser.step(task, goal, save)) { save(); onStep(goal); continue; }
         }
         await keepRoom(bot, task, goal);
@@ -5355,7 +5355,7 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
     survival: () => survival.step(task, activeWork, saveWork, () => onStep(goal)),
     vitals: async () => {
       task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : () => checkThreats(bot);
-      const ate = await maintainVitals(bot, task, report);
+      const ate = await maintainVitals(bot, task, report, { client, goal, save });
       return !!ate || vitalsActed;
     },
     hunt: () => huntObserved(bot, task, activeWork, saveWork, { navigate }, client),
@@ -5459,7 +5459,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       layerNow = 'work';
       if (goal.recoveryAdvice?.active) {
-        await maintainVitals(bot, task);
+        await maintainVitals(bot, task, () => {}, { client: task.opportunityClient, goal, save });
         if (await recoveryAdviser.step(task, goal, save)) { turnShadow?.gave('work'); save(); onStep(goal); continue; }
       }
       // End combat owns eating and arena escape. Overworld nighttime shelter
@@ -5479,7 +5479,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       layerNow = 'vitals';
       if (!endTask && !ruled) {
         require('./turn').takeTurn(bot, 'vitals', 'maintain');
-        await maintainVitals(bot, task, step => { vitalsActed = true; goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); });
+        await maintainVitals(bot, task, step => { vitalsActed = true; goal.survivalAction = { ...step, at: new Date().toISOString() }; save(); onStep(goal); }, { client: decisionClient, goal, save });
       }
       turnShadow?.gave(vitalsActed ? 'vitals' : 'work');
       require('./turn').takeTurn(bot, 'work', goal.step?.action || 'step');
