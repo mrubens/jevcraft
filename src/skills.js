@@ -332,6 +332,23 @@ function digGuardPlugin(bot) {
 function goalGuardPlugin(bot) {
   const setGoal = bot.pathfinder?.setGoal;
   if (!setGoal) { console.log('[bug] goal guard: no pathfinder to guard; load it after the pathfinder'); return; }
+  // A block the pathfinder lays level with its floor is laid from where the
+  // bot stands, not from the edge it backs out to first (its
+  // LOSWhenPlacingBlocks, on by default). With that on, each such block
+  // leaves the bot a place to return to (returningPos), and until it
+  // stands there the pathfinder does nothing else: no route is searched
+  // for any goal given after, and nothing clears it but getting there
+  // (mineflayer-pathfinder 2.4.5, resetPath and setGoal leave it). A push,
+  // a pillar or a block laid in that cell and the bot can never get
+  // there: every walk after stands still pressing forward, for as long as
+  // the process lives. mid-242-ah-nether-2-fortress-5 laid a block at
+  // 17:32:16 and stood on the cell it was to return to; its out_of_sight
+  // and four retreats in the next 45 seconds each stood three seconds
+  // where they began, looking down at its feet, while a ghast's fireballs
+  // took it from 20 health to none (note 621). The server takes a block
+  // put against a face the bot does not see; the edge was for servers
+  // that check.
+  bot.pathfinder.LOSWhenPlacingBlocks = false;
   bot.pathfinder.setGoal = (goal, dynamic) => setGoal.call(bot.pathfinder, wholeGoal(goal), dynamic);
 }
 

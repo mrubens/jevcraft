@@ -345,6 +345,30 @@ function describeMove(m) {
   return `${m.does}${facts.length ? ` ${facts.join('; ')}.` : ''}`;
 }
 
+// The shooters past the sixteen blocks the threats are read within whose
+// fire reaches the bot (a ghast to 64), the push over a drop where the bot
+// stands (survival.js blastOverSays), and each move's end where that push
+// does or no longer does carry the body over: { shooters, here, moves }.
+function pushFacts(bot, feet, moves) {
+  const out = { shooters: [], here: null, moves: new Map() };
+  let s;
+  try { s = require('./survival'); } catch (_) { return out; }
+  let pushers = [];
+  try { pushers = s.shotPushers(bot); } catch (_) { return out; }
+  out.shooters = pushers.filter(t => t.distance > 16).slice(0, 4).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: !!t.visible }));
+  if (!pushers.some(t => t.visible)) return out;
+  try { out.here = s.blastOverSays(bot)?.says?.trim() || null; } catch (_) { out.here = null; }
+  const health = bot.health ?? 20;
+  const hereOver = !!s.pushAtSays(bot, feet, { health, pushers });
+  for (const m of moves) {
+    if (!m.to) continue;
+    const there = s.pushAtSays(bot, m.to, { health, pushers });
+    if (there) out.moves.set(m.key, ` There ${there}${hereOver ? ', as it does here' : ', where here it does not'}.`);
+    else if (hereOver) out.moves.set(m.key, ' There a push from the shooter in sight no longer carries the body over the drop it does here.');
+  }
+  return out;
+}
+
 // The live bot's view: the blocks it sees and what it carries.
 const PICKS = ['netherite_pickaxe', 'diamond_pickaxe', 'iron_pickaxe', 'stone_pickaxe', 'golden_pickaxe', 'wooden_pickaxe'];
 function liveView(bot) {
@@ -475,12 +499,22 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     if (done || surfaced) { record.out = true; save(); return true; }
     if (!moves.length) return false;
     const failedHere = key => record.moves.filter(r => r.move === key && r.from === `${feet}` && !r.reached).length;
-    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }) }]));
+    // A shooter whose blast can push the bot over a drop that kills (a
+    // ghast in sight): where it does so here, and at each move's end, said
+    // on the move. mid-243-af-fortress-5 stepped north off the one cell of
+    // its ledge a push could not carry over the edge, the ghast 47 blocks
+    // off in sight and in none of this, and its fireball threw the body
+    // off the ledge, 32 down (note 621).
+    const push = pushFacts(bot, feet, moves);
+    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }) + (push.moves.get(m.key) || '') }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
       state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
-        // The mobs about while it works free, seen or not (the decision audit).
+        // The mobs about while it works free, seen or not (the decision
+        // audit), and the shooters farther off whose fire reaches the bot.
         threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
+        ...(push.shooters.length ? { shootersFartherOff: push.shooters } : {}),
+        ...(push.here ? { pushHere: push.here } : {}),
         // And whenever a move could flood the pocket, not only in water
         // already: mid-244-y chose its dig into a lake with no breath in
         // the state (note 477).
@@ -516,4 +550,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

@@ -421,6 +421,16 @@ function coverFailedSays(list) {
 const FLYING_SHOOTERS = new Set(['ghast', 'blaze']);
 // Lava n blocks down, in words: level with the feet at none.
 const lavaDown = n => n ? `${n} block${n === 1 ? '' : 's'} down` : 'level with the feet';
+// A run cut short: true where it got a block or more from where it began
+// (a partial escape, the mobs looked at again), false with the stance's
+// failure said where it did not.
+function ranFrom(survival, from, p, err) {
+  const moved = Math.round(survival.bot.entity.position.distanceTo(from) * 10) / 10;
+  if (moved >= 1) return true;
+  const short = Math.round(p.offset(0.5, 0, 0.5).distanceTo(survival.bot.entity.position) * 10) / 10;
+  survival.state.failWhy = `the run to the footing at (${p.x}, ${p.y}, ${p.z}) ended ${short} blocks short of it, where it began${err?.message ? `: ${err.message}` : ''}`;
+  return false;
+}
 function shotPushers(bot, range = 64) {
   const { RANGE } = require('./combat-estimate');
   let about = [];
@@ -713,6 +723,24 @@ function blastPushesOver(bot, cell = feetCell(bot), { health = bot.health ?? 20,
   return pushers.filter(t => t.visible && FAR_PUSHERS.has(t.entity?.name) && t.entity.position)
     .map(t => ({ t, over: walledToward(bot, cell, t.entity.position) ? null : pushCarries(bot, cell, t.entity.position, { health, at: cell.equals(feetCell(bot)) ? bot.entity.position : null }), floor: blastFloor(bot, cell, [t], health) }))
     .filter(x => x.over || x.floor);
+}
+// Whether a blast's push carries the body over a drop that kills from
+// `cell` (a move's end), in words for the move: "a fireball from the ghast
+// 49 blocks off that lands there pushes the body over the drop 3 blocks
+// south, a fall of 32 blocks", or null where none does. For a question that
+// moves the bot a cell at a time (unstuck_move): mid-243-af-fortress-5
+// stepped from the one cell of its fortress ledge a push could not carry
+// over the edge into the next, told nothing of the ghast 47 blocks off in
+// sight, and its fireball threw the body 3.8 blocks south, 32 down (note
+// 621).
+function pushAtSays(bot, cell, { health = bot.health ?? 20, pushers = shotPushers(bot) } = {}) {
+  let at = [];
+  try { at = blastPushesOver(bot, cell, { health, pushers }); } catch (_) { at = []; }
+  if (!at.length) return null;
+  const { t, over, floor } = at[0], said = t.entity.name.replaceAll('_', ' ');
+  const fall = over ? `pushes the body over the drop ${over.blocksAway} block${over.blocksAway === 1 ? '' : 's'} ${over.toward}, ${over.into === 'lava' ? `into lava ${lavaDown(over.fallBlocks)}` : over.into === 'unknown' ? `a fall of at least ${over.fallBlocks} blocks` : `a fall of ${over.fallBlocks} blocks, about ${over.damage} health`}`
+    : `can break the ${floor.name.replaceAll('_', ' ')} under the feet, over ${floor.into === 'lava' ? `lava ${lavaDown(floor.fall)}` : `a fall of ${floor.fall} blocks`}`;
+  return `a ${shotWord(t.entity.name)} from the ${said} ${Math.round(t.distance)} blocks off that lands there ${fall}`;
 }
 // The nearest footing, by the walk (a level step, one up with head room,
 // one down, as bunker.js wayTo), where no blast pusher's push carries the
@@ -4035,6 +4063,23 @@ class Survival {
     let footing = NO_ROUTE_YET, runExpects = null;
     const { creeperRunSays, standingAgainstCreepers } = require('./creeper-run');
     const runCreepers = this.creepersOfRun(danger), runWorn = require('./combat-estimate').armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
+    // Whether the footing is out of the shooters' sight, as the run says
+    // it goes: each shooter in sight that has a line to it from where it
+    // is now, and what its shots cost there over the rest of the fifteen
+    // seconds, the run's included. mid-242-ah-nether-2-fortress-5 was told
+    // "a way is found ... about 4.5 damage" at 7.4 health, four times, to
+    // footing a ghast 40 blocks off, in sight with a range of 64, had a
+    // line to (note 621).
+    const footingSight = (d, secs) => {
+      const shooting = danger.filter(t => t.visible && shooter(t.entity)).map(t => t.entity);
+      if (!shooting.length) return '';
+      const cell = new Vec3(d.x, d.y, d.z), seen = require('./bunker').seenFrom(bot, shooting, cell);
+      if (!seen.length) return ` No shooter in sight has a line to that footing from where it is now${shooting.some(e => e.name === 'ghast') ? ' (a ghast drifts, and may have one again)' : ''}.`;
+      const ids = new Set(seen.map(e => e.id)), names = shooterNames(seen);
+      // Every shooter in range over the run, then those with a line to it.
+      const all = stanceCost({ mobs: mobs.filter(m => m.shoots), setup: secs, reaches: m => ids.has(m.id) }).damage;
+      return ` The footing is not out of their sight: ${names} ${seen.length === 1 ? 'has' : 'have'} a line to it from where ${seen.length === 1 ? 'it is' : 'they are'} now, and ${seen.length === 1 ? 'its' : 'their'} shots go on there as here: about ${all} damage from the shooters in the next fifteen seconds this way, the run included, from ${Math.round(bot.health * 10) / 10} health${all >= bot.health ? ' (more than the bot has)' : ''}.`;
+    };
     const scout = this.state.retreatScout;
     const scouted = scout && scout.feet === `${feet}` && Date.now() - scout.at < 2000 ? scout : null;
     if (onPillar) footing = ` The bot stands ${onPillar} blocks up on a pillar of its own, and a route drops three blocks at most: from up here there is no way off it to run by.`;
@@ -4048,7 +4093,7 @@ class Survival {
       // blast where it goes off counted in the price (creeper-run.js, note
       // 604); the run told "passing none of them" came back past one, or
       // dropped into its sight beside it.
-      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}${c.says}`; }
+      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}${c.says}${footingSight(scout.destination, secs)}`; }
       else if (!scout.spots) footing = ` Nowhere to run to: no footing within ${scout.radius} blocks is four blocks further than here from every mob about, so a run from here fails at once.`;
       else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.`;
       // The rest are searched before a step is taken, up to 150 ms each
@@ -4883,6 +4928,17 @@ class Survival {
     // fallback, because standing still beside a creeper is never the answer.
     const far = persistent ? footing.filter(p => p.distanceTo(bot.entity.position) >= 20 && distance(p) >= 20 && edgeSafe(p)).sort((a, b) => distance(b) - distance(a)) : [];
     const near = footing.filter(p => p.distanceTo(bot.entity.position) >= (only ? 3 : 6) && gaining(p) && edgeSafe(p)).sort((a, b) => distance(b) - distance(a));
+    // Out of sight first, as the retreat says it runs: of the nearest
+    // two dozen, those no shooter in sight has a line to from where it is
+    // now go before those it has. Farther from the mobs alone, a ghast
+    // with a range of 64 had a line to every footing the runs went for
+    // (note 621).
+    const shooting = danger.filter(t => t.visible && shooter(t.entity)).map(t => t.entity);
+    if (shooting.length && near.length) {
+      const { seenFrom } = require('./bunker'), head = near.splice(0, 24);
+      const seen = new Map(head.map(p => [p, seenFrom(bot, shooting, p).length > 0]));
+      near.unshift(...head.filter(p => !seen.get(p)), ...head.filter(p => seen.get(p)));
+    }
     return { about, footing, far, near, heavy, persistent, radius };
   }
 
@@ -4935,8 +4991,9 @@ class Survival {
       }
       delete this.state.retreatScout;
       this.report(goal, save, { action: 'leave_reach', destination: { x: p.x, y: p.y, z: p.z }, threats: danger.map(t => t.entity.name).slice(0, 4) });
+      const from = bot.entity.position.clone();
       try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 10000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
-      catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'escape', p, err, 60000); save(); return true; }
+      catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'escape', p, err, 60000); save(); return ranFrom(this, from, p, err); }
     } finally { Object.assign(movements, previous); unsteer(); bot.clearControlStates(); }
   }
 
@@ -4982,13 +5039,19 @@ class Survival {
       delete this.state.retreatScout;
       if (!way.p) { this.state.failWhy = noWay(candidates.length); return false; }
       const p = way.p, destination = new goals.GoalBlock(p.x, p.y, p.z);
+      const from = bot.entity.position.clone();
       try { await this.actions.navigate(bot, task, destination, { timeoutMs: persistent ? 14000 : 7000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
       catch (err) {
         task.check(); if (err.name === 'NeedsAir') throw err;
         setAside(this, 'escape', p, err, 60000); save();
         // Reobserve positions after a partial escape instead of running the
-        // next stale route against the old mob positions.
-        return true;
+        // next stale route against the old mob positions. A run that never
+        // left where it began is no escape: said as the failure it is.
+        // mid-242-ah-nether-2-fortress-5's four retreats each stood three
+        // seconds where they began under a ghast's fire, every one taken
+        // as done, and each next stance was told "a way is found" again,
+        // nothing said of the last (note 621).
+        return ranFrom(this, from, p, err);
       }
     } finally { Object.assign(movements, previous); unsteer(); bot.clearControlStates(); }
   }
@@ -8536,4 +8599,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };

@@ -907,6 +907,47 @@ const SPRINT = 5.6;
 // A block put underfoot on a jump: half the survival step's pillar seconds
 // (survival.js PILLAR_SECONDS, two blocks).
 const PILLAR_RISE_SECONDS = 0.75;
+// The shooters in sight while the body burns, for body_way: each one's
+// rate and hit through the armour worn, its shots in the air at the bot,
+// and how many that land end the bot at the health it has; and a way's end
+// in or out of their line (bunker.js seenFrom). mid-242-ah-nether-2-
+// fortress-5 at 3.9 health, in fire, a ghast 52 blocks off in sight firing
+// every three seconds, was asked only of the fire: it ran seven steps out
+// into the ghast's line and the next fireball, 3.1 through its iron, and
+// the burning ended it (note 621). { says, shooters, entities } or null.
+function shootersAtBody(bot) {
+  let pushers = [];
+  try { pushers = require('./survival').shotPushers(bot).filter(t => t.visible && t.entity?.position); } catch (_) { return null; }
+  if (!pushers.length) return null;
+  const ce = require('./combat-estimate'), s = require('./survival');
+  const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const hp = round(bot.health ?? 20);
+  const shooters = pushers.slice(0, 3).map(t => {
+    const name = t.entity.name, m = ce.MOBS[name] || {};
+    const hit = round(m.ignoresArmour ? m.hit : ce.afterArmour(m.hit || 0, worn));
+    const every = name === 'ghast' ? require('./ghast').GHAST.every : name === 'blaze' ? round(ce.FIREBALL.volleySeconds) : m.every || 2;
+    let due = null;
+    try { due = s.shotsDue(bot, t); } catch (_) { due = null; }
+    const inAir = due?.shots?.filter(x => x.air) || [];
+    return { name, distance: Math.round(t.distance), hit, every, ...(inAir.length ? { inTheAirDueIn: inAir.map(x => x.in) } : {}) };
+  });
+  const says = shooters.map(k => {
+    const said = k.name.replaceAll('_', ' '), word = k.name === 'ghast' || k.name === 'blaze' ? 'fireball' : 'shot';
+    const lands = k.hit > 0 ? Math.max(1, Math.ceil(hp / k.hit)) : null;
+    return `The ${said} ${k.distance} blocks off has the bot in sight and fires ${k.name === 'blaze' ? `a volley of three about every ${k.every} seconds` : `a ${word} about every ${k.every} seconds while it keeps a line`}, about ${k.hit} health a ${word} through the armour worn${k.inTheAirDueIn ? `; ${k.inTheAirDueIn.length === 1 ? `one is in the air at the bot, due in about ${k.inTheAirDueIn[0]} seconds` : `${k.inTheAirDueIn.length} are in the air at the bot`}` : ''}${lands ? `: at ${hp} health, ${lands === 1 ? 'the next that lands ends it' : `${lands} that land end it`}, the burning besides` : ''}. A way whose end is out of its line is out of its fire; one whose end is in it is not.`;
+  }).join(' ');
+  return { says, shooters, entities: pushers.map(t => t.entity) };
+}
+// In or out of the line of the shooters in sight at `cell`, for a way's
+// description: '' with none in sight.
+function lineAtEnd(bot, at, cell) {
+  if (!at || !cell) return '';
+  let seen = [];
+  try { seen = require('./bunker').seenFrom(bot, at.entities, cell); } catch (_) { return ''; }
+  const names = [...new Set(at.entities.map(e => e.name.replaceAll('_', ' ')))];
+  return seen.length ? ` Its end is in the line of the ${[...new Set(seen.map(e => e.name.replaceAll('_', ' ')))].join(' and the ')}: its fire goes on there.` : ` Its end is out of the line of the ${names.join(' and the ')} from where ${names.length === 1 ? 'it is' : 'they are'} now.`;
+}
+
 function fireWays(bot, task, onAction = () => {}) {
   const ways = {};
   const standing = inFire(bot), nether = /nether/.test(String(bot.game?.dimension || ''));
@@ -920,7 +961,8 @@ function fireWays(bot, task, onAction = () => {}) {
     const to = route => bot.blockAt(route.at(-1))?.name === 'water' ? 'water' : 'a cell two blocks from any flame';
     const steps = route => `${route.length} step${route.length === 1 ? '' : 's'}`;
     const clear = fireRouteThrough(bot, false), route = clear || fireRouteThrough(bot, true);
-    if (route) ways.out_of_fire = { description: `Run out of the fire, ${steps(route)} to ${to(route)}${clear ? '' : ', through a flame on the way'}: about ${round(Math.max(0.3, route.length / SPRINT))} seconds at a sprint, then burning on up to eight seconds unless it ends in water.`,
+    const shot = shootersAtBody(bot), endOf = route => route?.length ? route.at(-1) : null;
+    if (route) ways.out_of_fire = { description: `Run out of the fire, ${steps(route)} to ${to(route)}${clear ? '' : ', through a flame on the way'}: about ${round(Math.max(0.3, route.length / SPRINT))} seconds at a sprint, then burning on up to eight seconds unless it ends in water.${lineAtEnd(bot, shot, endOf(route))}`,
       run: () => outOfFire(bot, task, onAction, route) };
     const edgeClear = fireRouteThrough(bot, false, { edges: true }), edgeRoute = edgeClear || fireRouteThrough(bot, true, { edges: true });
     const edgeSteps = edgeRoute ? fireSteps(bot, edgeRoute) : [];
@@ -935,11 +977,11 @@ function fireWays(bot, task, onAction = () => {}) {
       // priced by its rate of fire, as every escape's way is (survival.js
       // routeEdge, note 610).
       const pushed = require('./survival').routeEdge(bot, edgeRoute);
-      ways.crouch_out_of_fire = { description: `Walk out of the fire crouched, ${steps(edgeRoute)} to ${to(edgeRoute)}${edgeClear ? '' : ', through a flame on the way'}, ${crouched} of them beside ${drop}: crouched, a body does not walk off an edge (a hit or a push still throws it), at about ${round(SNEAK)} blocks a second; about ${round(edgeSeconds)} seconds, then burning on up to eight seconds unless it ends in water.${pushed?.beside ? pushed.says : ''}`,
+      ways.crouch_out_of_fire = { description: `Walk out of the fire crouched, ${steps(edgeRoute)} to ${to(edgeRoute)}${edgeClear ? '' : ', through a flame on the way'}, ${crouched} of them beside ${drop}: crouched, a body does not walk off an edge (a hit or a push still throws it), at about ${round(SNEAK)} blocks a second; about ${round(edgeSeconds)} seconds, then burning on up to eight seconds unless it ends in water.${pushed?.beside ? pushed.says : ''}${lineAtEnd(bot, shot, endOf(edgeRoute))}`,
         run: () => outOfFire(bot, task, onAction, edgeRoute) };
     }
     const rise = riseOutOfFire(bot);
-    if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the fire's cell underfoot, which puts that flame out, and stand on it a block up: about ${round(PILLAR_RISE_SECONDS)} seconds; ${rise.flamesBeside ? `${rise.flamesBeside} flame${rise.flamesBeside === 1 ? '' : 's'} still beside the cell it rises to, so the body may stand beside fire there` : 'no flame beside the cell it rises to'}${rise.flamesBelow ? ` (${rise.flamesBelow} beside the block under it, a level down, which do not touch a body standing on it)` : ''}${rise.fall ? `, and ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}; then burning on up to eight seconds.`,
+    if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the fire's cell underfoot, which puts that flame out, and stand on it a block up: about ${round(PILLAR_RISE_SECONDS)} seconds; ${rise.flamesBeside ? `${rise.flamesBeside} flame${rise.flamesBeside === 1 ? '' : 's'} still beside the cell it rises to, so the body may stand beside fire there` : 'no flame beside the cell it rises to'}${rise.flamesBelow ? ` (${rise.flamesBelow} beside the block under it, a level down, which do not touch a body standing on it)` : ''}${rise.fall ? `, and ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}; then burning on up to eight seconds.${lineAtEnd(bot, shot, rise.top)}`,
       run: () => riseOnBlock(bot, task, onAction) };
     // The flame punched out where the body stands, as a player does: fire
     // breaks at the first hit. mid-242-ah-fortress-2 stood at y 44 on the
@@ -949,7 +991,7 @@ function fireWays(bot, task, onAction = () => {}) {
     // and never asked, and it burned from 8.5 to none in ten seconds with
     // the flame a punch away (note 602).
     const flames = flamesAbout(bot);
-    if (flames.length && typeof bot.dig === 'function') ways.put_out_flames = { description: `Punch out the flame${flames.length === 1 ? '' : 's'} the body stands in or beside (${flames.length}), where it stands: a hit puts fire out at once, about a quarter second a flame, no step taken; then burning on up to eight seconds, and another fireball that misses can light the cell again.`,
+    if (flames.length && typeof bot.dig === 'function') ways.put_out_flames = { description: `Punch out the flame${flames.length === 1 ? '' : 's'} the body stands in or beside (${flames.length}), where it stands: a hit puts fire out at once, about a quarter second a flame, no step taken; then burning on up to eight seconds, and another fireball that misses can light the cell again.${lineAtEnd(bot, shot, bot.entity.position.floored())}`,
       run: async () => {
         onAction({ action: 'out_of_fire', way: 'put_out_flames', flames: flames.length, health: bot.health });
         bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
@@ -1137,7 +1179,8 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   // with no way out found, the old run, which says so.
   if (inFire(bot)) {
     const ways = fireWays(bot, own, onAction);
-    if (Object.keys(ways).length) await body.answer(bot, own, 'fire', ways, { ...asked, facts: { inFire: true } });
+    const shot = shootersAtBody(bot);
+    if (Object.keys(ways).length) await body.answer(bot, own, 'fire', ways, { ...asked, facts: { inFire: true, ...(shot ? { shotAt: shot.says, shooters: shot.shooters } : {}) } });
     else await outOfFire(bot, own, onAction);
     own.check();
   }
@@ -1237,4 +1280,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
