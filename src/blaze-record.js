@@ -38,4 +38,14 @@ function says(bot, { day = DAY } = {}) {
   return parts.join('');
 }
 
-module.exports = { DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says };
+const bandOf = health => HEALTH.find(h => health > h.over) || HEALTH.at(-1);
+// The row a fight begun at this health and hunger falls in, said as counts
+// (note 638): the health rows and the hunger rows were counted apart, so
+// there is no row for both at once, and each is what happened to bots that
+// began there, not what getting to another row first would do.
+function rowSays(health, food) {
+  const band = bandOf(health), hungry = food < 18, h = hungry ? HUNGER.hungry : HUNGER.fed;
+  return `at health ${Math.round(health * 10) / 10}: ${band.said}, ${band.fights} fights begun there, ${band.diedPct}% died, ${rodSays(band.rodPct)}; at hunger ${food}: ${hungry ? 'under 18' : '18 or more'}, ${h.fights} fights begun there, ${h.diedPct}% died, ${rodSays(h.rodPct)}`;
+}
+
+module.exports = { DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };

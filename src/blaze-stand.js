@@ -1258,20 +1258,35 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
       description: `${built ? `No rock to go round within ten blocks of walking: make a corner where the bot stands, a wall two high and three wide a step toward the blazes' middle (${n(built, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire), and wait behind it` : corner.steps ? `Walk ${n(corner.steps, 'block')} (about ${setup.time} in their fire) round` : 'Stay at'}${built ? ` at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})` : ` the corner at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})`}, where none of the ${n(about.length, 'blaze')} about has a line to the bot and the cell beside it has one, and wait there facing the corner${shield ? ', the shield up' : ''}, striking what comes within reach: the nearest is ${corner.nearest} blocks from it. What comes: a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering. Out of their sight the bot takes nothing from them (about ${setup.hurt} ${built ? 'while building' : 'on the way'}, the burning on the body burning on).${spawnSays} Held up to thirty seconds, or until a rod is carried or six health is gone.` + m.says };
   }
 
-  // Away to heal.
+  // Away to heal. Offered whenever a blaze fight is on and a cell out of
+  // every blaze's sight exists (note 638): it was hidden at hunger under 18
+  // with nothing to eat, the one state where walking out of their sight is
+  // the whole of it (no health comes back, but the fire and the volleys
+  // end). What it does at that hunger is said as it is: nothing comes back.
   const food = require('./vitals').chooseFood?.(bot);
-  if (hp < 20 && about.length && (food || (bot.food ?? 20) >= 18)) {
+  if (hp < 20 && about.length) {
     const site = T.healSite(bot, about, { avoid: biting });
     if (site) {
       const walled = site.build?.length || 0;
       const setup = underFire(site.steps / WALK + walled * PLACE_SECONDS);
       const after = Math.max(0, hp - setup.damage);
-      const fast = (bot.food ?? 20) >= 20 || !!food;
-      const eat = food && (bot.food ?? 20) < 20;
-      const heal = round((20 - after) * (fast ? 0.5 : 4) + (eat ? 1.6 : 0));
+      const hunger = bot.food ?? 20;
+      const points = (() => { try { return require('./healing').foodCarried(bot).reduce((n, f) => n + f.count * f.points, 0); } catch (_) { return food ? 4 : 0; } })();
+      // Health comes back at hunger 18 or more, and eating what is carried
+      // raises hunger by its points.
+      const eatenTo = Math.min(20, hunger + (food ? points : 0));
+      const healable = hunger >= 18 || eatenTo >= 18;
+      const fast = eatenTo >= 20;
+      const eat = food && hunger < 20;
+      const heal = healable ? round((20 - after) * (fast ? 0.5 : 4) + (eat ? 1.6 : 0)) : 0;
       const m = measuredSays('heal', bot);
-      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - setup.wall)), seconds: round(setup.wall + heal), oneHit: fireHit, heals: round(20 - after) },
-        description: `Go out of their sight to heal and come back: ${walled ? `no rock to go behind within fourteen blocks of walking, so wall the bot in where it stands, the box shut all round (${n(walled, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire, about ${setup.hurt}), where none of the ${n(about.length, 'blaze')} about has a line to it (the nearest ${site.nearest} blocks off), ` : `walk ${n(site.steps, 'block')} (about ${setup.time} in their fire, about ${setup.hurt}) to (${site.cell.x}, ${site.cell.y}, ${site.cell.z}), where none of the ${n(about.length, 'blaze')} about has a line to the bot (the nearest ${site.nearest} blocks off), `}${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}. The blazes stay where they are${cageNear ? ', and the spawner makes more meanwhile while the bot is within sixteen of it' : ''}; the fight after is asked again with the health back${walled ? ', the side toward them opened first' : ''}.` + m.says };
+      const where = walled ? `no rock to go behind within fourteen blocks of walking, so wall the bot in where it stands, the box shut all round (${n(walled, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire, about ${setup.hurt}), where none of the ${n(about.length, 'blaze')} about has a line to it (the nearest ${site.nearest} blocks off), ` : `walk ${n(site.steps, 'block')} (about ${setup.time} in their fire, about ${setup.hurt}) to (${site.cell.x}, ${site.cell.y}, ${site.cell.z}), where none of the ${n(about.length, 'blaze')} about has a line to the bot (the nearest ${site.nearest} blocks off), `;
+      const stays = `The blazes stay where they are${cageNear ? ', and the spawner makes more meanwhile while the bot is within sixteen of it' : ''}; the fight after is asked again${healable ? ' with the health back' : ' at the health it has now'}${walled ? ', the side toward them opened first' : ''}.`;
+      const what = healable
+        ? `${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}.`
+        : `${food ? `eat the ${words(food.name)} (it brings hunger only to ${eatenTo}) and ` : ''}stay only until the fire on the body is out: at hunger ${hunger}, under eighteen, no health comes back (${food ? `eating all that is carried leaves hunger at ${eatenTo}` : 'nothing carried is food'}), so healing there would take never. It gets the bot out of the fire and the volleys and no health back${setup.damage >= hp ? '; and the health runs out before it is out of their sight' : `: it stays at about ${round(after)} health`}, and each point lost from here on stays lost until the bot has eaten to eighteen.`;
+      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - setup.wall)), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
+        description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}` + m.says };
     }
   }
   return options;

@@ -534,6 +534,14 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
     !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
+  // A blaze hunt about to go at blazes none of which sees the bot yet is a
+  // visit beginning (note 638); with one in sight the fight is on, and the
+  // stances are asked.
+  if (state.entity === 'blaze' && candidates.length && !(() => { try { return threats(bot, 48).some(t => t.entity.name === 'blaze' && t.visible); } catch (_) { return true; } })()) {
+    const visit = await require('./fortress-visit').ask(bot, task, goal, save, { ...actions, client: actions.client || client }, {});
+    if (visit === null) return false;
+    if (visit !== 'go_in') return true;
+  }
   const tree = {}, positions = new Map(), pushed = [];
   const footing = state.entity === 'blaze' ? require('./blaze-stand').knockSays(bot) : '';
   // What reaches the bot where it would fight: a shooter in sight within
@@ -2363,7 +2371,20 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const candidates = floors.length ? floors : bricks, a = state.approach;
     const kept = a?.found && a.from && Math.hypot(a.from.x - here.x, a.from.y - here.y, a.from.z - here.z) <= APPROACH_FROM
       ? candidates.find(f => f.x === a.found.x && f.y === a.found.y && f.z === a.found.z) : null;
-    if (!onFortressFloor(here, floors)) { await approachFortress(bot, task, goal, save, actions, state, kept || byNear(candidates)[0], bricks); return; }
+    if (!onFortressFloor(here, floors)) {
+      const target = kept || byNear(candidates)[0];
+      // Whether the visit happens now is asked before the way in (note 638):
+      // the bot's health and hunger are what a fight's outcome turns on.
+      const visit = await require('./fortress-visit').ask(bot, task, goal, save, actions, { fortress: { distance: Math.round(flatTo(target, here)), height: Math.round(target.y + 1 - here.y), at: { x: target.x, y: target.y, z: target.z } },
+        leave: () => {
+          state.shunned.push({ x: target.x, z: target.z, radius: fortressExtent(bricks, target), until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on',
+            from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, left: ['the visit itself'] });
+          delete state.target; save();
+          bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
+        } });
+      if (visit !== 'go_in') return;
+      await approachFortress(bot, task, goal, save, actions, state, target, bricks); return;
+    }
     // Inside: the fortress as the bot has seen it (fortress-map.js), walked
     // a corridor at a time to the nearest floor that runs on into space not
     // yet seen, on foot, digging and laying nothing. mid-242-aa-fortress-1's

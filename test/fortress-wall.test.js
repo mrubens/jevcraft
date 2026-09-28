@@ -81,7 +81,7 @@ function wallBot({ items = CARRIED } = {}) {
 }
 function jevStub(picks) {
   const asked = [];
-  return { asked, systemOne: async ({ state, questions }) => { asked.push({ id: questions.branch_0, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  return { asked, systemOne: async ({ state, questions }) => { if (questions.branch_0.criteria.go_in) return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } }; asked.push({ id: questions.branch_0, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
 }
 
 test('the recorded crossing through the wall: ore is dug as rock, and the line at the bot\'s height reaches the fortress (mid-242-ab-nether-4, note 591)', () => {

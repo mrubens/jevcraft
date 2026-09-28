@@ -683,6 +683,8 @@ function walledHeal(bot, blazes) {
   const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
   return { cell, steps: 0, score: 0, nearest: round(near), build, open: [fit.window.offset(0, -1, 0), fit.window] };
 }
+// How long a bot with nothing to heal on waits for its fire to burn out.
+const FIRE_WAIT_MS = 8000;
 async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 60, stats = {} } = {}) {
   const stand = require('./blaze-stand');
   const { chooseFood } = require('./vitals');
@@ -701,7 +703,7 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
   if (!feetCell(bot).equals(c)) throw Object.assign(new Error(`the walk out of their sight to (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
   if (site.build?.length) await buildBox(bot, task, goal, save, { cell: c, walls: site.build, window: site.open[1] }, { navigate });
   try {
-    const biter = biterWatch(bot);
+    const biter = biterWatch(bot), arrived = Date.now();
     while (Date.now() - started < seconds * 1000 && (bot.health ?? 20) < 20) {
       task.check(); bot._threatResponseAt = Date.now();
       const came = biter(); if (came) { stats.ended = came; break; }
@@ -717,7 +719,14 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
         if (bot.food <= before) await sleep(300);
         continue;
       }
-      if ((bot.food ?? 20) < 18) { stats.ended = 'no food'; break; }
+      // Nothing to eat and hunger under eighteen: no health comes back, so
+      // waiting for it is waiting for nothing (note 638). Out of their sight
+      // is what this got: it ends once the fire on the body is out (a few
+      // seconds; the fire is the one thing standing here still changes).
+      if ((bot.food ?? 20) < 18) {
+        if (require('./vitals').onFire(bot) && Date.now() - arrived < FIRE_WAIT_MS) { await sleep(250); continue; }
+        stats.ended = `out of their sight and the fire out; at hunger ${bot.food} nothing comes back`; stats.outOfSight = true; break;
+      }
       await sleep(250);
     }
     if ((bot.health ?? 20) >= 20) stats.ended = 'healed';

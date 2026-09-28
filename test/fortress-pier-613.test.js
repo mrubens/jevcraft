@@ -35,7 +35,10 @@ function pierBot(at = new Vec3(-84.3, 44, 124.2)) {
 }
 function jevStub(picks) {
   const asked = [];
-  return { asked, systemOne: async ({ kind, state, questions }) => { asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  // The visit itself (fortress_visit, note 638) is answered go_in: these tests are about the way in.
+  return { asked, systemOne: async ({ kind, state, questions }) => {
+    if (questions.branch_0.criteria.go_in) return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } };
+    asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
 }
 test('under the bridge, the way in is asked about a floor of the fortress\'s own, not the bot\'s own bricks nor the stump of the pier it dug up (mid-242-bb, note 613)', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
@@ -126,7 +129,7 @@ test('the place the way in is asked about is kept as the bot moves a few steps, 
   const bot = pierBot();
   const goal = { fortressSearch: { axis: 1, legs: 81, own: recorded(OWN), dug: recorded(DUG) } };
   const asked = [];
-  const client = { systemOne: async ({ questions }) => { const o = questions.branch_0.criteria; asked.push(o); return { answers: { branch_0: { choice: o.walk_route ? 'walk_route' : 'tunnel', confidence: 0.9 } } }; } };
+  const client = { systemOne: async ({ questions }) => { const o = questions.branch_0.criteria; if (o.go_in) return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } }; asked.push(o); return { answers: { branch_0: { choice: o.walk_route ? 'walk_route' : 'tunnel', confidence: 0.9 } } }; } };
   // Each walk takes the bot a few blocks along under the deck, and no further.
   const moves = [new Vec3(-81.5, 44, 125.5), new Vec3(-78.5, 44, 128.5)];
   const nav = async () => { bot.entity.position = moves.shift() || bot.entity.position; throw new Error('No path to the goal!'); };

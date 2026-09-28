@@ -57,6 +57,32 @@ define({
   ungated: 'every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter\'s fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over',
 });
 
+// Whether the visit happens now (note 638). Note 631 measured that a blaze
+// fight's health and hunger at its beginning are what moves its death rate;
+// fortress_approach asked how to go in, never whether. Asked once per visit
+// (held until a death, two points of hunger, or five minutes), with the
+// played record's rows for the bot's state and what can change the row
+// first. Nothing here refuses a visit for health: the record is facts.
+define({
+  id: 'fortress_visit', area: 'endgame', parent: 'rung_progress', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
+  ungated: 'every way offered is a real route the bot can run from here (a wait eats what is carried and stops when a mob comes; the trip back and the hoglin hunt are the ones leave_nether and the food answers run), none refuses a visit for health, and the outage default is to go in, as the code did before the question',
+  question: 'The bot is about to approach a Nether fortress (or go at blazes) for blaze rods, at the health and hunger it has: go in now, eat and heal first where that is possible, go back for food, hunt a hoglin, or leave this fortress and search another?',
+  trigger: 'On the fortress search, when a fortress in view is about to be approached (before fortress_approach asks the way in), and on a blaze hunt when blazes heard out of sight are about to be gone at; asked once per visit and held until the bot dies, its hunger falls two points, or its time is out (five minutes for going in, three for a wait, two for the trip back and the hunt); a wait ends when health is full or a mob comes, and the visit then goes on as chosen.',
+  source: 'src/fortress-visit.js (ask, options), src/mob-hunt.js (findFortressStep, huntObserved), src/blaze-record.js (rowSays)',
+  options: [
+    { key: 'go_in', label: 'go in now at this health and hunger', when: 'always; said with the health, hunger, food carried, and the played record\'s rows for the bot\'s health and hunger (fights begun there, the share that died and that brought a rod), as a day\'s record and not a forecast, and whether health comes back on the way', level: 'root' },
+    { key: 'heal_first', label: 'eat what is carried and wait here until the health is full, then go on', when: 'health under twenty and health comes back (hunger 18 or more, or what is carried brings it there), or hunger under eighteen with food carried; said with the food, the seconds to full at the pace that applies, that standing still spends no hunger, and how the rows the record counts change if it works (fights begun in that row, not a trial of waiting); at most three minutes; a mob ends it', level: 'root' },
+    { key: 'go_back', label: 'go back through the portal to the Overworld for food and come back fed', when: 'in the Nether, health cannot come back here (hunger under eighteen and what is carried does not bring it to eighteen) and the way back is at hand; said with the walk at the measured pace of 17 to 30 blocks a minute (minutes, not seconds), what became of the walks back that day, and the food known on the other side', level: 'root' },
+    { key: 'hoglin_hunt', label: 'hunt a hoglin for its meat', when: 'in the Nether at hunger under eighteen with a hoglin in view or seen; said with the hoglin\'s drop and the fight at this health, the pillar stance\'s measured 0.1 health lost in 168 stances against hoglins with two deaths, and that none of the 66 hunts begun in the Nether brought meat (this hunt is on foot, not from a pillar)', level: 'root' },
+    { key: 'leave_fortress', label: 'leave this fortress for ten minutes and search for another', when: 'on an approach to a fortress in view; said with what it changes (neither health nor hunger) and gains (no rod)', level: 'root' },
+  ],
+  instructions: {
+    task: 'The bot is about to begin a visit to a Nether fortress for blaze rods. Choose whether it goes in now, first eats and heals where that is possible, goes back for food, hunts a hoglin, or leaves this fortress.',
+    guidance: 'playedRecord is what the bot\'s own fights with blazes came to in the trials: by the health a fight began at (over 16, 8 to 16, under 8) and by the hunger (18 or more, under 18), each counted apart. Health and hunger at the beginning are what moved the outcome; iron armor made no difference. It is a day\'s record of fights begun in a row, not a trial of what waiting or eating first does. healthComesBack says whether waiting can heal at this hunger: under eighteen with too little to eat, none of it comes back, and the options that need it are not offered. Each option says what it costs in minutes and what it gains toward the rods (none, except going in). Nothing is refused for health.',
+  },
+  fallback: children => children.go_in ? 'go_in' : Object.keys(children)[0],
+});
+
 // The next leg of the fortress search. mid-205-m's thirteen legs went the
 // way the compass said at the height the bot stood, y 96 to 104, straight
 // through solid netherrack at six seconds a cell, and saw nothing in fifty-

@@ -558,8 +558,12 @@ function fortressAcrossLava() {
 }
 // Jev as a stub: records what it was asked and answers from `picks`.
 function jevStub(picks) {
-  const asked = [];
-  return { asked, systemOne: async ({ kind, state, questions }) => { asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  const asked = [], visits = [];
+  // Whether the visit happens now (fortress_visit, note 638) is answered go_in: these tests are about what comes after it.
+  return { asked, visits, systemOne: async ({ kind, state, questions }) => {
+    if (questions.branch_0.criteria.go_in) { visits.push({ state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } }; }
+    asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } };
+  } };
 }
 
 test('a fortress in view is Jev\'s to approach: each way with what it meets, the span\'s cells over lava and the hoglin in sight', async () => {
@@ -582,6 +586,30 @@ test('a fortress in view is Jev\'s to approach: each way with what it meets, the
   assert.equal(bot.entity.position.x, 29.5);
   assert.equal(goal.fortressSearch.approach.choice, 'cross_level');
   assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
+});
+
+test('a fortress in view is asked whether the visit happens now before the way in (fortress_visit, note 638); leaving it shuns it and asks no way in', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const goal0 = () => ({ fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } });
+  // Go in: the visit is asked first, the way in second, and the answer is held for the next pass.
+  const a = fortressAcrossLava();
+  const client = jevStub(['cross_level']);
+  const goal = goal0();
+  await findFortressStep(a.bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} });
+  assert.equal(client.visits.length, 1, 'the visit asked once');
+  assert.deepEqual(Object.keys(client.visits[0].options).sort(), ['go_in', 'leave_fortress']);
+  assert.match(client.visits[0].state.visit, /^about to approach a Nether fortress \d+ blocks off/);
+  assert.equal(client.asked[0].kind, 'fortress');
+  assert.equal(goal.fortressVisit.pick, 'go_in');
+  // Leave it: no way in is asked, the fortress is shunned for ten minutes.
+  const b = fortressAcrossLava();
+  const leave = { asked: [], systemOne: async ({ questions }) => { const o = questions.branch_0.criteria; leave.asked.push(Object.keys(o)); return { answers: { branch_0: { choice: o.leave_fortress ? 'leave_fortress' : 'walk_route', confidence: 0.9 } } }; } };
+  const g2 = goal0();
+  await findFortressStep(b.bot, new Task('hunt'), g2, () => {}, { client: leave, navigate: async () => {}, tunnel: async () => {} });
+  assert.equal(leave.asked.length, 1, 'only the visit was asked');
+  assert.equal(g2.fortressSearch.shunned.length, 1);
+  assert(g2.fortressSearch.shunned[0].until > Date.now() + 500000);
+  assert.equal(g2.fortressSearch.shunned[0].why, 'Jev chose to leave it and search on');
 });
 
 test('the way chosen to a fortress holds while it makes ground, and a failure is asked again with what failed', async () => {
@@ -1777,6 +1805,7 @@ function fortressFromLedge(position, length = 60) {
   return world;
 }
 const pickFirst = picks => { const asked = []; return { asked, systemOne: async ({ kind, state, questions }) => {
+  if (questions.branch_0.criteria.go_in) return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } };
   asked.push({ kind, state, options: questions.branch_0.criteria });
   return { answers: { branch_0: { choice: picks.shift() || Object.keys(questions.branch_0.criteria)[0], confidence: 0.9 } } };
 } }; };
@@ -2051,6 +2080,32 @@ test('with a failure owed to the leg\'s question and a fortress remembered 26 bl
   assert.match(client.asked[0].state.whatFailedBelow[0], /^fortress approach: every way it had from here rests/);
   assert.equal(tried.owed(goal, 'fortress_leg'), null, 'said to it, and so no longer owed');
   assert.match(Object.values(client.asked[0].options).join(' '), /the fortress remembered at \(-70, 32, 140\)/, 'the remembered fortress is said on the legs that lie its way');
+});
+
+// Note 638: a blaze hunt about to go at blazes none of which sees the bot is a visit beginning: asked whether it
+// happens now (fortress_visit) before the hunt; with a blaze in sight the fight is on and the hunt/stance is asked.
+test('a blaze hunt at blazes out of sight is asked the visit first; with one in sight it is not', async () => {
+  const scene = withWall => {
+    const f = brickHunt(p => p.y <= 63 || (withWall && p.x === 3 && p.y <= 68));
+    f.target.position = new Vec3(9.5, 64.5, 0.5);
+    f.bot.health = 9; f.bot.food = 20;
+    // The wall stops every ray across x = 3.
+    f.bot.world = { raycast: (from, dir, length) => withWall && from.x < 3 && from.x + dir.x * length > 3 ? { intersect: new Vec3(3, from.y, from.z), position: new Vec3(3, 64, 0) } : null };
+    return f;
+  };
+  const run = async f => {
+    const seen = [];
+    const client = { systemOne: async ({ questions }) => { const o = questions.branch_0.criteria; seen.push(Object.keys(o)); return { answers: { branch_0: { choice: o.go_in ? 'go_in' : 'defer', confidence: 0.9 } } }; } };
+    await huntObserved(f.bot, f.task, f.goal, () => {}, { navigate: async () => {} }, client);
+    return { seen, goal: f.goal };
+  };
+  const hidden = await run(scene(true));
+  assert(hidden.seen[0]?.includes('go_in'), `the visit was asked first: ${JSON.stringify(hidden.seen)}`);
+  assert(hidden.seen[0].includes('heal_first'), 'health 9 with the hunger to heal: waiting is offered');
+  assert(!hidden.seen[0].includes('leave_fortress'), 'no fortress in view to leave on a hunt');
+  assert.equal(hidden.goal.fortressVisit.pick, 'go_in');
+  const open = await run(scene(false));
+  assert(!open.seen.some(o => o.includes('go_in')), `in sight the fight is on, no visit asked: ${JSON.stringify(open.seen)}`);
 });
 
 // Note 631: mid-242-bc-fortress-2 (25587, 17:55:22Z) was asked hunt_target at 20 health with 2 blazes in sight

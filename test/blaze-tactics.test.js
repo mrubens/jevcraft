@@ -210,6 +210,61 @@ test('away to heal: offered hurt with food, the walk out of every line and the h
   assert.equal(stand.blazeStands(full, near(full)).leave_and_heal, undefined);
 });
 
+// Note 638: the option was hidden at hunger under 18 with nothing to eat (`hp < 20 && about.length && (food || hunger >= 18)`),
+// the one state where going out of every blaze's sight is the whole of it: no health comes back, but the fire and the
+// volleys end. It is offered, with what it does said as it is.
+const healPillar = p => p.y <= 63 || (p.y <= 65 && p.z === 0 && p.x >= 2 && p.x <= 4);
+test('away to heal at hunger 14 with nothing to eat: offered, and says nothing comes back and that healing there would take never', () => {
+  const bot = floorWorld({ spawner: null, solid: healPillar, at: new Vec3(6.5, 64, 0.5), health: 5, food: 14, items: [['iron_sword', 1], ['stone_pickaxe', 1], ['cobblestone', 24]] });
+  blazeAt(bot, 1, 12.5, 64.5, 0.5);
+  const o = stand.blazeStands(bot, near(bot)).leave_and_heal;
+  assert(o, 'offered at hunger 14 with nothing to eat');
+  assert.match(o.description, /^Go out of their sight \(no health comes back at this hunger\): walk \d+ blocks? /);
+  assert.match(o.description, /stay only until the fire on the body is out: at hunger 14, under eighteen, no health comes back \(nothing carried is food\), so healing there would take never/);
+  assert.match(o.description, /It gets the bot out of the fire and the volleys and no health back: it stays at about [\d.]+ health, and each point lost from here on stays lost until the bot has eaten to eighteen/);
+  assert.match(o.description, /the fight after is asked again at the health it has now/);
+  assert.doesNotMatch(o.description, /to 20 takes about|seconds to full|until the health is full/, 'no seconds to full where none comes back');
+  assert.equal(o.expects.heals, 0);
+  assert(o.expects.seconds < 10, `only the walk is counted: ${o.expects.seconds}`);
+});
+
+test('away to heal at hunger 14 with one cooked chicken: eating brings hunger to 20, so it heals; with a raw potato it does not', () => {
+  const fed = floorWorld({ spawner: null, solid: healPillar, at: new Vec3(6.5, 64, 0.5), health: 9, food: 14, items: [['iron_sword', 1], ['cooked_chicken', 1]] });
+  blazeAt(fed, 1, 12.5, 64.5, 0.5);
+  const a = stand.blazeStands(fed, near(fed)).leave_and_heal;
+  assert.match(a.description, /^Go out of their sight to heal and come back:/);
+  assert.match(a.description, /eat the cooked chicken \(about 1\.6 seconds\) and stay until the health is full/);
+  const thin = floorWorld({ spawner: null, solid: healPillar, at: new Vec3(6.5, 64, 0.5), health: 9, food: 10, items: [['iron_sword', 1], ['potato', 1]] });
+  blazeAt(thin, 1, 12.5, 64.5, 0.5);
+  const b = stand.blazeStands(thin, near(thin)).leave_and_heal;
+  assert(b, 'offered');
+  assert.match(b.description, /^Go out of their sight \(no health comes back at this hunger\)/);
+  assert.match(b.description, /eat the potato \(it brings hunger only to 11\) and stay only until the fire on the body is out/);
+});
+
+test('away to heal with nothing that heals ends once out of sight and the fire is out, and says so: not sixty seconds', async () => {
+  const bot = floorWorld({ spawner: null, solid: healPillar, at: new Vec3(3.5, 64, 0.5), health: 5, food: 14, items: [['iron_sword', 1], ['stone_pickaxe', 1]] });
+  blazeAt(bot, 1, 12.5, 64.5, 0.5);
+  const site = { cell: new Vec3(3, 64, 0), steps: 0, nearest: 9 };
+  const stats = {}, task = { check() {} };
+  // Alight for a second and a half on arrival: it waits for the fire, then ends.
+  bot.entity.metadata = [1];
+  setTimeout(() => { bot.entity.metadata = [0]; }, 1500);
+  const began = Date.now();
+  await T.leaveAndHeal(bot, task, {}, () => {}, site, { navigate: async () => {}, stats });
+  const took = Date.now() - began;
+  assert(took >= 1400 && took < 6000, `waited for the fire, no longer: ${took} ms`);
+  assert.equal(stats.ended, 'out of their sight and the fire out; at hunger 14 nothing comes back');
+  assert.equal(stats.outOfSight, true);
+  assert.equal(stats.from, 5); assert.equal(stats.to, 5);
+  // Not alight: it ends at once.
+  bot.entity.metadata = [0];
+  const s2 = {}, t0 = Date.now();
+  await T.leaveAndHeal(bot, task, {}, () => {}, site, { navigate: async () => {}, stats: s2 });
+  assert(Date.now() - t0 < 1500, 'at once');
+  assert.match(s2.ended, /nothing comes back/);
+});
+
 test('every tactic offered is declared by the questions that offer it', () => {
   const { question } = require('../src/decisions');
   require('../src/decisions/combat'); require('../src/decisions/survival');
