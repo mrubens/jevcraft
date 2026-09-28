@@ -27,6 +27,10 @@ The milestone is two fortress runs in a row that reach six rods and twelve pearl
 - The dragon: crystals, the fight, food, falls and the exit portal. So far it has only been fought from staged worlds.
 - One continuous run from a fresh world, checked independently: Normal difficulty, no item grants, teleports, Creative mode or manual help.
 
+## Later: netherite
+
+The bot does not aim for netherite. It counts ancient debris as worth picking up and knows netherite gear is stronger, but nothing searches for debris, smelts scrap, crafts ingots or uses a smithing table. Netherite armor would help against fireball pushes (it resists knockback). The chain is long and dangerous: debris at y 8 to 22 in lava-rich caves with a diamond pickaxe, four scrap and four gold ingots plus a diamond piece and a template for each upgrade, and the templates come from bastion chests. It comes after reliable rods and pearls and full diamond armor. When it does, Jev chooses whether to go for it, with the prices in front of it.
+
 ## Companion
 
 The chat companion runs on the same code, so the game work improves it too. Open items: longer multi-item requests without repeated work, keeping a request through a death or disconnect, oriented blocks (stairs, slabs, doors) in builds, and farming, breeding and trading as ways to get items.
