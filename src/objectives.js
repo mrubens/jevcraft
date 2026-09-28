@@ -199,7 +199,22 @@ class GoalStore {
   save(goal) {
     fs.mkdirSync(path.dirname(this.file), { recursive: true });
     goal.updatedAt = new Date().toISOString();
-    fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(goal, null, 2));
+    // A value that loops back on itself is dropped and said, not thrown: a
+    // throw here ended the process with the bot in lava (note 569's route
+    // kept on a cell that its own route held, 2026-09-28).
+    let text;
+    try { text = JSON.stringify(goal, null, 2); } catch (err) {
+      const seen = new WeakSet(), dropped = [];
+      text = JSON.stringify(goal, function (key, value) {
+        if (value && typeof value === 'object') {
+          if (seen.has(value)) { dropped.push(key); return undefined; }
+          seen.add(value);
+        }
+        return value;
+      }, 2);
+      console.error('[bug] saved goal had a value that loops back on itself; dropped:', dropped.slice(0, 5).join(', '));
+    }
+    fs.writeFileSync(`${this.file}.tmp`, text);
     fs.renameSync(`${this.file}.tmp`, this.file);
   }
 }

@@ -5327,7 +5327,7 @@ class Survival {
     const where = c => `${far(c)} blocks off ${routed(c) ? 'by the way through' : 'in a straight line'} at (${c.x}, ${c.y}, ${c.z})${c.y - feetY >= 2 ? `, ${c.y - feetY} above the feet: a jump out of lava rises one, so a walk alone does not reach it` : c.y - feetY === 1 ? ', a block up (a jump)' : ''}` +
       `${lavaBy(c) ? `, lava beside it (${lavaSpreads(bot)}, so it may be lava by the time the body gets there)` : ''}${besideDrop(bot, c) ? ', beside a drop' : ''}`;
     const said = (c, lead) => `${lead} ${where(c)}: about ${seconds(c)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava (the game's lava drag).`;
-    const report = (way, to) => this.report(goal, save, { action: 'leave_lava', way, to: to && { ...to }, health: bot.health });
+    const report = (way, to) => this.report(goal, save, { action: 'leave_lava', way, to: to && { x: to.x, y: to.y, z: to.z }, health: bot.health });
     // The walk out, as the old rule walked it. Out of the lava and over the
     // cell chosen is out: the keys held after that carried mid-235-a on past
     // it, upright, and off the ledge it stood on (2026-09-26). Out into water

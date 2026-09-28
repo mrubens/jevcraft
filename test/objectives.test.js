@@ -131,3 +131,16 @@ test('an observed wood species is used instead of the unspecified default', () =
   assert.equal(inv.cherry_planks, 8);
   assert(!inv.oak_planks);
 });
+test('a saved goal holding a value that loops back on itself is saved without it, not thrown (the route kept on a lava exit, 2026-09-28)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jev-goal-'));
+  const original = console.error; console.error = () => {};
+  try {
+    const file = path.join(dir, 'goal.json');
+    const cell = new Vec3(1, 64, 2); cell.route = [cell];
+    const goal = { version: 1, kind: 'win', status: 'running', step: { action: 'leave_lava', to: cell } };
+    assert.doesNotThrow(() => new GoalStore(file).save(goal));
+    const read = new GoalStore(file).read();
+    assert.equal(read.step.action, 'leave_lava');
+    assert.equal(read.step.to.x, 1);
+  } finally { console.error = original; fs.rmSync(dir, { recursive: true }); }
+});
