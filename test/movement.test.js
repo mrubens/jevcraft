@@ -488,3 +488,21 @@ test('no block laid level beside the floor from a cell over lava or a fall that 
     else assert(laid.some(n => n.x === 0 && n.y === 49 && n.z === -1), 'over a short fall the tower still bridges to the bank');
   }
 });
+
+test('no block laid to climb from a top whose four sides fall more than three, on a walk to somewhere no higher', () => {
+  // mid-243-ab's walks to sheep on the ground built a staircase into the air from the canopy and a tower on it, 97 to 129 (note 565).
+  const rises = (movement, node) => movement.getNeighbors(node).filter(n => n.y > node.y && n.toPlace.some(p => p.dy === 1));
+  // A one-wide column of dirt up to y 79 over ground at 64.
+  const column = namedWorld('overworld', p => p.y <= 64 ? 'stone' : p.x === 0 && p.z === 0 && p.y <= 79 ? 'dirt' : 'air');
+  column.bot.health = 20;
+  const top = { x: 0, y: 80, z: 0, remainingBlocks: 64 };
+  assert(rises(column, top).length > 0, 'with no goal height known, as before');
+  column.walkGoalY = 65;
+  assert.equal(rises(column, top).length, 0, 'the walk to the ground lays nothing to climb');
+  column.walkGoalY = 90;
+  assert(rises(column, top).some(n => n.x === 0 && n.z === 0 && n.y === 81), 'a goal above still climbs');
+  // On open ground the tower up is the walk's to take.
+  const ground = namedWorld('overworld', p => p.y <= 64 ? 'stone' : 'air');
+  ground.walkGoalY = 65;
+  assert(rises(ground, { x: 0, y: 65, z: 0, remainingBlocks: 64 }).length > 0);
+});

@@ -310,6 +310,18 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   if (optOut) movements.besideLava = besideLava;
   const foot = onFoot && movements ? { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks } : null;
   if (foot) Object.assign(movements, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
+  // Off a top the walk cannot step down from, the way down first: asked of
+  // Jev and carried out (way-down.js, note 565). Still on one after, the
+  // walk builds no tower: from a top a tower only climbs higher. A block
+  // laid level is the fall rule's (overFall) and a span Jev's, as before.
+  const wayDown = require('./way-down');
+  if (movements && !stopWhen?.()) await wayDown.comeDownFirst(bot, task, goal);
+  const perch = movements && !foot ? wayDown.livePerch(bot) : null;
+  const stillUp = perch && !wayDown.goalOnTop(goal, perch) ? { allow1by1towers: movements.allow1by1towers } : null;
+  if (stillUp) movements.allow1by1towers = false;
+  // The goal's height, for the climb rule (movement.js climbOverFall).
+  const hadGoalY = !!movements && Object.hasOwn(movements, 'walkGoalY'), walkGoalY = hadGoalY ? movements.walkGoalY : undefined;
+  if (movements) movements.walkGoalY = goalPoint(goal)?.y;
   const deadline = Date.now() + timeoutMs;
   try {
     for (let attempt = 0; ; attempt++) {
@@ -327,6 +339,9 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     if (sprinting) movements.allowSprinting = walked;
     if (optOut) movements.besideLava = lavaOptOut;
     if (foot) Object.assign(movements, foot);
+    if (stillUp) Object.assign(movements, stillUp);
+    if (hadGoalY) movements.walkGoalY = walkGoalY;
+    else if (movements) delete movements.walkGoalY;
   }
 }
 

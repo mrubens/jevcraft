@@ -163,7 +163,7 @@ class SurvivalMovements extends Movements {
     }
     // In every dimension, no move that leaves the ground beside a fall that
     // kills (note 545, overFall below).
-    for (let i = kept.length - 1; i >= 0; i--) if (this.overFall(node, kept[i])) kept.splice(i, 1);
+    for (let i = kept.length - 1; i >= 0; i--) if (this.overFall(node, kept[i]) || this.climbOverFall(node, kept[i])) kept.splice(i, 1);
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
@@ -207,6 +207,34 @@ class SurvivalMovements extends Movements {
     }
     return null;
   }
+  // Note 565: no block laid to rise from a cell whose four sides all fall
+  // more than three, on a walk whose goal is no higher. The fall rule above
+  // refuses every drop and every block laid level off such a top, and what
+  // the search had left were blocks laid to climb: a tower up (getMoveUp)
+  // or a step laid on the side and jumped onto (getMoveJumpUp). mid-243-ab's
+  // walks to sheep on the ground from the forest canopy built a staircase
+  // into the air and a tower on it, 97 to 129, twenty and more over the
+  // canopy, every walk "no route" and every one a block or two higher. A
+  // goal above (a portal overhead) still climbs; the way down off a top is
+  // way-down.js's, asked before the walk.
+  climbOverFall(node, next) {
+    if (next.y <= node.y || !(next.toPlace || []).some(p => p.dy === 1)) return false;
+    const goalY = this.walkGoalY;
+    if (!Number.isFinite(goalY) || goalY > node.y) return false;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const cell = this.getBlock(node, dx, 0, dz);
+      if (cell.name === undefined || cell.physical || cell.liquid) return false;
+      let open = 0;
+      for (let dy = 1; dy <= 4; dy++) {
+        const under = this.getBlock(node, dx, -dy, dz);
+        if (under.name === undefined || under.physical || under.liquid) break;
+        open++;
+      }
+      if (open <= 3) return false;
+    }
+    return true;
+  }
+
   // The fall from the cell beside `feet` (dx, dz), open at the feet: into
   // lava at any depth, or onto ground whose damage (a point a block past
   // three) is half the health or more; water breaks it. Unknown is no fact.

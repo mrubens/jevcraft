@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-88 questions: 40 decision trees and 48 batched questions.
+89 questions: 41 decision trees and 48 batched questions.
 
 ## Batches
 
@@ -162,6 +162,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `(step\|climb\|place)_(north\|east\|south\|west)` (pattern) | root | walk, climb or place a block that way | the cells that way allow it |
 | `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
 | `dig_up\|dig_down\|swim_up\|pillar` (pattern) | root | dig over the head or underfoot, swim up, or pillar | what is over the head or underfoot allows it |
+
+### `way_down`
+
+**On a top with no way down at a walk: dig down through the column, ride a poured waterfall down, or step off a side?**
+
+- When: A walk to somewhere off the top (not on it, nor a place just above it) from a top whose every side falls more than three blocks, with no mob at hand; asked again from wherever the way chosen leaves the bot while it is still on a top, up to four times a walk.
+- Decision tree, choice; stakes medium; ledger kind `survival`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/way-down.js (perchOf, waysDown, comeDownFirst); asked from src/skills.js navigate
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `dig_down` | root | dig down through the column underfoot, a block at a time, never into a fall that hurts | a column of the top has a block underfoot that can be dug with no fall over three under it |
+| `ride_water` | root | pour the water bucket at the feet and step off into the waterfall | a water bucket carried, not in the Nether, and an open side whose fall runs clear to the ground or water |
+| `step_off` | root | step off a side and take the fall | a side whose fall leaves more than a point of health |
 
 ### `climb_out`
 

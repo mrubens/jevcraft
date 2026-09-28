@@ -215,6 +215,23 @@ define({
   fallback: children => Object.keys(children)[0],
 });
 
+// Down off a top no walk steps down from (src/way-down.js, note 565):
+// mid-243-ab stood an hour on its own tower twenty over the canopy, every
+// walk "no route", and was never asked how to come down.
+define({
+  id: 'way_down', area: 'survival', kind: 'survival', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'On a top with no way down at a walk: dig down through the column, ride a poured waterfall down, or step off a side?',
+  trigger: 'A walk to somewhere off the top (not on it, nor a place just above it) from a top whose every side falls more than three blocks, with no mob at hand; asked again from wherever the way chosen leaves the bot while it is still on a top, up to four times a walk.',
+  source: 'src/way-down.js (perchOf, waysDown, comeDownFirst); asked from src/skills.js navigate',
+  options: [
+    { key: 'dig_down', label: 'dig down through the column underfoot, a block at a time, never into a fall that hurts', when: 'a column of the top has a block underfoot that can be dug with no fall over three under it', level: 'root' },
+    { key: 'ride_water', label: 'pour the water bucket at the feet and step off into the waterfall', when: 'a water bucket carried, not in the Nether, and an open side whose fall runs clear to the ground or water', level: 'root' },
+    { key: 'step_off', label: 'step off a side and take the fall', when: 'a side whose fall leaves more than a point of health', level: 'root' },
+  ],
+  instructions: { task: 'The bot has to walk somewhere off the top it stands on, and no side of the top comes down within three blocks, so no walk can start from here. Choose how it comes down.', guidance: 'Each way says what it costs: the blocks to dig and the seconds and pickaxe uses, the water bucket spent, the health a fall takes, and where it ends: somewhere a walk goes on, or still up on the tower, where this is asked again. `top` says how far the sides fall; `triedLately` is what the ways chosen lately did.' },
+  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : Object.keys(children)[0],
+});
+
 // Climbing out of the mine by digging (src/surface.js): a staircase, or
 // straight up the column overhead. mid-72-b spent twenty-seven minutes
 // climbing, three digs a block of height, and went on by hand at over
