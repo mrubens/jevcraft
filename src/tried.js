@@ -368,7 +368,17 @@ function summary(goal, { work = null, now = Date.now(), withinMs = 2 * WINDOW_MS
 // questions below offered that have not been tried from here. On 25583
 // the rods were set aside thirty seconds into a trial, told only that
 // "every way ... has been tried" (note 583).
-function workedOn(goal, { work = null, here = null, now = Date.now() } = {}) {
+// How little is said as well as how much: on 25590 the rods were set aside
+// at the rung's question 3.2 minutes into a trial from a fortress save,
+// told "17 answers given, 1 coming to nothing, 0 getting somewhere", where
+// the seventeen were two answers given eight times each and counted as
+// waits, of the sixteen ways the fortress's questions had offered, and the
+// question had come by a failure below, not the rung's ten minutes (note
+// 605). Now the different ways tried of those offered, the waits, and how
+// far into its budget an escalation brought it are said, and `openBelow`
+// is the work's own questions with ways not yet tried from here (not the
+// stall's question and those under it).
+function workedOn(goal, { work = null, here = null, now = Date.now(), escalated = false } = {}) {
   const t = goal?.tried;
   const rung = t?.rung && t.rung.rung === rungOf(goal) ? t.rung : null;
   const since = rung?.since ?? null;
@@ -379,18 +389,46 @@ function workedOn(goal, { work = null, here = null, now = Date.now() } = {}) {
   const steps = list.filter(e => e.q === 'step' && e.outcome === 'blocked').length;
   // The latest asking of each question below the rung, with its options
   // not yet come to nothing from here.
-  const open = [];
+  const open = [], offered = new Set();
   for (const q of [...new Set(answers.map(e => e.q))]) {
     if (['stillness_detour', 'rung_progress'].includes(q)) continue;
     const sp = spent(goal, q, { here, now });
+    if (sp.at && sp.at >= from) for (const k of sp.keys) offered.add(`${q}|${k}`);
     if (sp.at && sp.at >= from && sp.open.length) open.push({ q, at: sp.at, keys: sp.open });
   }
+  const ways = new Set(answers.filter(e => !['stillness_detour', 'rung_progress'].includes(e.q)).map(e => `${e.q}|${e.method}`));
+  for (const w of ways) offered.add(w);
+  const openBelow = open.filter(o => workBelowRung(o.q));
   const ms = since === null ? null : now - since;
   const before = rung?.beforeMs >= 60000 ? ` in this session (and ${Math.round(rung.beforeMs / 60000)} minutes before the save it was taken up from)` : '';
-  const long = ms === null ? 'in the last ten minutes' : `in ${ms < 600000 ? (Math.round(ms / 6000) / 10).toFixed(1) : Math.round(ms / 60000)} minutes on it${before}`;
-  const says = `${long}: ${plural(answers.length, 'answer')} given, ${n('blocked')} coming to nothing, ${n('progressed')} getting somewhere${n('cut') ? `, ${n('cut')} cut short by the survival layer` : ''}${n('pending') ? `, ${n('pending')} still under way` : ''}; the step failed ${plural(steps, 'time')}` +
-    `${open.length ? `; not yet tried from here: ${open.map(o => `${label(o.q)} (asked ${ago(now - o.at)} ago): ${o.keys.map(label).join(', ')}`).join('; ')}` : ''}`;
-  return { ms, answers: answers.length, cameToNothing: n('blocked'), progressed: n('progressed'), steps, open, says };
+  const minutes = x => (Math.round(x / 6000) / 10).toFixed(1);
+  const long = ms === null ? 'in the last ten minutes' : `in ${ms < 600000 ? minutes(ms) : Math.round(ms / 60000)} minutes on it${before}`;
+  const different = answers.length ? ` to ${plural(ways.size, 'different way')}${offered.size > ways.size ? ` of the ${offered.size} its questions offered` : ''}` : '';
+  const early = escalated && ms !== null && ms < RUNG_MS ? `; brought to this question by a failure below ${minutes(ms)} minutes into the rung's ten, not by its ten minutes running out` : '';
+  const says = `${long}: ${plural(answers.length, 'answer')} given${different}, ${n('blocked')} coming to nothing, ${n('progressed')} getting somewhere${n('waited') ? `, ${n('waited')} counted as waits` : ''}${n('cut') ? `, ${n('cut')} cut short by the survival layer` : ''}${n('pending') ? `, ${n('pending')} still under way` : ''}; the step failed ${plural(steps, 'time')}` +
+    `${open.length ? `; not yet tried from here: ${open.map(o => `${label(o.q)} (asked ${ago(now - o.at)} ago): ${o.keys.map(label).join(', ')}`).join('; ')}` : ''}${early}`;
+  return { ms, answers: answers.length, ways: ways.size, offered: offered.size, cameToNothing: n('blocked'), progressed: n('progressed'), steps, open, openBelow, says };
+}
+// A question of the rung's own work: under the rung's question, and not the
+// stall's question or one under it (its moves, working free).
+function workBelowRung(q) {
+  let parentOf;
+  try { parentOf = require('./decisions').parentOf; } catch (_) { return false; }
+  const seen = new Set();
+  for (let p = parentOf(q); p && !seen.has(p); p = parentOf(p)) {
+    if (p === 'stillness_detour') return false;
+    if (p === 'rung_progress') return true;
+    seen.add(p);
+  }
+  return false;
+}
+// The rung's question sending the work back to a question below it that
+// still has ways from here: owed to it, said when it is next asked, and the
+// work that holds its answer ends it and asks it (the fortress search's leg,
+// mob-hunt.js).
+function sendBack(goal, q, why, now = Date.now()) {
+  const t = ledger(goal); prune(t, now);
+  t.escalations.push({ from: 'rung_progress', to: q, why: String(why).slice(0, 300), at: now, back: true });
 }
 
 // A saved ledger taken up again (a restart, a trial begun from a stage's
@@ -529,5 +567,5 @@ function rungDue(goal, says, now = Date.now()) {
   return true;
 }
 
-module.exports = { begin, record, settle, cut, spent, owed, workedOn, resumed, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
+module.exports = { begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
   sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };

@@ -1996,3 +1996,27 @@ test('a floor within three blocks that the walk cannot reach is passed over afte
   assert(walks.length >= 1);
   assert(Object.values(counts).every(n => n === 1), `each floor walked to once: ${JSON.stringify(counts)}`);
 });
+
+test('with a failure owed to the leg\'s question and a fortress remembered 26 blocks off, the leg\'s question is asked, not the remembered fortress walked to unasked (mid-242-aa-nether-1-fortress-4, 25590, note 605)', async () => {
+  // 25590 at 12:35:04: fortress_approach's every way rested and escalated to fortress_leg. Each pass after, the owed
+  // hook dropped the search's target and its "remembered" mark, and the next lines took the fortress remembered at
+  // (-70, 32, 140) as the target again at once: the walk there ran unasked, "No measurable progress" at 12:35:09 and
+  // 12:35:11, both sent to fortress_leg, never asked, and the second passed over it to the rung, set aside 3.2
+  // minutes into the trial with eleven of the leg's twelve ways never tried.
+  const { findFortressStep } = require('../src/mob-hunt');
+  const tried = require('../src/tried');
+  const rock = p => p.y <= 31 ? 'lava' : p.y === 54 && Math.abs(p.x + 83) <= 6 && Math.abs(p.z - 142) <= 6 ? 'netherrack' : null;
+  const { bot } = netherWorld(new Vec3(-82.7, 55, 142.5), rock);
+  const goal = { fortressSearch: { axis: 1, legs: 12 },
+    landmarks: [{ kind: 'nether_fortress', x: -70, y: 32, z: 140, bricks: 128, dimension: 'nether' }] };
+  tried.escalate(goal, { from: 'fortress_approach', to: 'fortress_leg', why: 'every way it had from here rests: cross level: Tried 2 times toward the same place from about here in the last 1 second, and it came to nothing' });
+  const walks = [];
+  const client = pickStub(['leg_west']);
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async (b, t, g) => { walks.push(`${g.x},${g.z}`); throw new Error('No path to the goal!'); }, tunnel: async () => {} });
+  assert(!walks.includes('-70,140'), `the remembered fortress not walked to unasked: ${walks.join(' ')}`);
+  assert.equal(client.asked.length, 1, 'the leg\'s question asked');
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  assert.match(client.asked[0].state.whatFailedBelow[0], /^fortress approach: every way it had from here rests/);
+  assert.equal(tried.owed(goal, 'fortress_leg'), null, 'said to it, and so no longer owed');
+  assert.match(Object.values(client.asked[0].options).join(' '), /the fortress remembered at \(-70, 32, 140\)/, 'the remembered fortress is said on the legs that lie its way');
+});

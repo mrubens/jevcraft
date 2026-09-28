@@ -176,7 +176,13 @@ function actionOf(goal, now = Date.now()) {
   // Keyed by step, trial 19's plot repair and tilling split their time
   // between two keys and neither stalled, flipping every second and a half
   // until the audit called the loop (2026-09-24). A detour is its own.
-  const rung = goal?.kind === 'win' && step.action !== 'detour' ? goal.rungTime?.phase || goal.gameProgress?.phase : null;
+  // A rung set aside is not the purpose of what is done while it waits
+  // (tried.js rungOf): the rods' waiting stage is keyed as that wait, which
+  // is how its hold names it. Keyed by the rung, 25590's stall watch struck
+  // "rung:obtain blaze rods" every 45 seconds through the hold it did not
+  // see, set aside at the rung's question a minute before (note 605).
+  const phase = goal?.kind === 'win' && step.action !== 'detour' ? goal.rungTime?.phase || goal.gameProgress?.phase : null;
+  const rung = phase && !require('./progress').isSetAside(goal, 'rung', phase, now) ? phase : null;
   const purpose = rung ? `rung:${rung}` : step.block || step.resource || item || (step.choice ? `${step.action}:${step.choice}` : step.action);
   return { key: `step:${purpose}`, layer: 'work', name: step.action,
     target: P(step.target) || P(step.destination) || P(step.to) || P(step.cell) || P(step.portal), item, ...blocked };

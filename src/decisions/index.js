@@ -285,7 +285,16 @@ function waitingByChoice(goal, id, now = Date.now()) {
 // none of them ever came to nothing, none rested, and a step failing every
 // two seconds was answered "differently" for minutes with nothing above it
 // asked (mid-242-ae-nether-3-fortress-1's pearls, note 583).
-const ledgerWaits = (goal, id, path = null) => id !== 'stillness_detour' && (waitingByChoice(goal, id) || WAIT_ANSWERS.has(String(path?.at?.(-1) || '')));
+// Nor are the work's own answers (a question under the rung's, not the
+// stall's) waits for the survival layer's action of a few seconds before:
+// the work asks them only while it holds the turn. On 25590 off_the_edge
+// lingered its eight seconds at every asking of fortress_leg and
+// fortress_approach from 12:34:55 to 12:35:03, sixteen answers each coming
+// back within a second were recorded as waits, none came to nothing, and
+// the rung's question read "17 answers given, 1 coming to nothing" (note
+// 605). What an answer is (WAIT_ANSWERS) and a hold step still make a wait.
+const ledgerWaits = (goal, id, path = null) => id !== 'stillness_detour' && ((tried.workBelowRung(id) ? HOLDS_STEP(goal) : waitingByChoice(goal, id)) || WAIT_ANSWERS.has(String(path?.at?.(-1) || '')));
+const HOLDS_STEP = goal => require('../stillness').HOLDS.has(goal?.step?.action);
 // Answers that are waits by what they are, whatever holds the turn when
 // they are chosen (note 599): a hunt's stand held for blazes to come, the
 // fortress walked again or a spawner waited by, a wait for day or for

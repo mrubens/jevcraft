@@ -298,12 +298,26 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // from here: on 25583 the rods were set aside thirty seconds into a trial
   // at a fortress, told nothing of either, for pearls from a warped forest
   // whose walk came to nothing at once and then spun (note 583).
-  const worked = rung && rungQuestion ? tried.workedOn(goal, { work, here: bot.entity.position, now }) : null;
+  // Brought here by a failure below rather than its ten minutes (an
+  // escalation): said, with how far into them.
+  const byEscalation = rungQuestion && !stall.rung;
+  const worked = rung && rungQuestion ? tried.workedOn(goal, { work, here: bot.entity.position, now, escalated: byEscalation }) : null;
   const instead = rung && rungQuestion ? await nextRungSays(bot, task, goal, rung, now) : null;
   // Every way below resting until a time (an escalation, decisions/index.js
   // escalateFrom): when the first comes off rest.
   const restUntil = stall.until > now ? stall.until : 0;
-  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion)) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
+  // A rung comes to its question by a failure below only once the work's
+  // own questions have nothing left to try from here (escalate, never
+  // re-ask, note 571); brought here with ways still untried below (a plan
+  // passed over for not being asked), it is not set aside: the question
+  // below is asked next with its ways, and that is said. On 25590 the rods
+  // were set aside 3.2 minutes into a trial from a fortress save with
+  // fortress_leg's legs, floors, heights and restock never tried, and waited
+  // thirty minutes (note 605). Its ten minutes running out still offers it.
+  const untriedBelow = byEscalation && worked?.openBelow?.length ? worked.openBelow : null;
+  const untriedSays = untriedBelow ? untriedBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ') : '';
+  const setAsideNotOffered = untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}` : null;
+  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion) && !setAsideNotOffered) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
     run: async () => {
       setAside(goal, 'rung', rung, `Jev set it aside at the rung's question${worked ? `, worked on ${worked.says}` : `, stalled ${stall.strikes} times`}`.slice(0, 300), RUNG_WAIT_MS); delete goal.rungTime;
       // What it was set aside for, from where, and until when that stands:
@@ -408,8 +422,16 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // With every way below resting from here, keeping at it here meets those
   // rests at the next pass, and this question comes again: said.
   const keepMeets = restUntil && stall.escalated ? ` Every way the ${String(stall.escalated.from || 'question below').replaceAll('_', ' ')} had from here rests ${agoSays(restUntil - now)} more: kept at from here now, the next pass meets the same rests and this question comes again.` : '';
-  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
-    run: async () => { if (goal.tried?.rung) goal.tried.rung.idleMs = 0; } };
+  // With ways untried below, keeping at it sends the work back to that
+  // question, owed (tried.sendBack): the fortress search ends its walk and
+  // asks its leg's question with them.
+  const sendsBack = untriedBelow ? ` The ${untriedBelow.map(o => o.q.replaceAll('_', ' ')).join(' and the ')} question${untriedBelow.length === 1 ? ' is' : 's are'} asked next, with the ways not yet tried from here: ${untriedSays}.` : '';
+  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${sendsBack}${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
+    run: async () => {
+      if (goal.tried?.rung) goal.tried.rung.idleMs = 0;
+      for (const o of untriedBelow || []) tried.sendBack(goal, o.q, `the rung's question sent the work back here: ${stall.escalated?.says || 'a failure below'}`, now);
+      save();
+    } };
   // What it is stuck on, named: a step for another dimension (note 476).
   const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
   // A staircase set aside for want of ground gained is the failure, with
@@ -421,7 +443,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
-    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}) };
+    ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}) };
   await breakStillness(bot, task, goal, save, { client, survival, onStep, reason: stall.key, now, answers, stalled, id: rungQuestion ? 'rung_progress' : 'stillness_detour' });
 }
 // What the ladder goes on with if the rung is set aside, and what it costs
@@ -5289,7 +5311,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const step = goal.step;
   const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
   const context = { situation: id === 'rung_progress'
-    ? `${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : stalled?.whatFailedBelow ? `The ${what} could not go on below this question: ${stalled.whatFailedBelow.replace(/\.$/, '')}.${stalled.workedOnRung ? ` Worked on this rung ${stalled.workedOnRung}.` : ''}` : `The ${what} is brought to the rung's question.`} Choose: keep at it with the ways left, change the plan, or set the rung aside for now.`
+    ? `${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : stalled?.whatFailedBelow ? `The ${what} could not go on below this question: ${stalled.whatFailedBelow.replace(/\.$/, '')}.${stalled.workedOnRung ? ` Worked on this rung ${stalled.workedOnRung}.` : ''}` : `The ${what} is brought to the rung's question.`}${stalled?.setAsideNotOffered ? ' Choose: keep at it with the ways left below, or change the plan; setting the rung aside is not offered here, and why is said.' : ' Choose: keep at it with the ways left, change the plan, or set the rung aside for now.'}`
     : holding
     ? `The ${what} rests ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}${holding.why ? ` (${holding.why})` : ''}, and Jev chose other work until then. Choose the work for now; it has until the rest ends.`
     : stalled?.failure
@@ -5661,6 +5683,9 @@ function gameHandlers(bot, decisionClient) {
         strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient),
           planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g) }),
         acquireStep, acquireSetStep, return_overworld: returnFromNether, client: decisionClient,
+        // Other work until a rung's rest ends, Jev's leave_nether wait_here:
+        // the waiting stage's own work (note 605).
+        hold_for_rest: (b, t, g, sv, { reason, until, why }) => holdForRest(b, t, g, sv, { client: decisionClient, reason, until, why }),
         planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g),
         enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),

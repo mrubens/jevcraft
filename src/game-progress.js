@@ -492,8 +492,20 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   const minutes = stage.until ? Math.max(1, Math.ceil((stage.until - now) / 60000)) : 0;
   const rest = minutes ? `, taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}` : '';
   const waits = `The blaze rods step waits (${stage.why})${rest}.`;
+  // Other work until the rest ends, as Jev chose: the stage's own work, a
+  // piece at a time (work.js holdForRest), not the rods step thrown as a
+  // failure at every pass. Thrown, "The blaze rods step waits" went to
+  // persist as the step failing, the stall's question asked again what
+  // leave_nether had just answered, and every pass after met the throw
+  // again: 25590 threw it every forty-five seconds for six minutes, each
+  // round a stall of the set-aside rung and working free (note 605).
+  const otherWork = async () => {
+    if (!actions.hold_for_rest) throw new WaysResting(`${waits} Jev chose other work in the Nether until then.`, stage.until);
+    await actions.hold_for_rest(bot, task, goal, save, { reason: 'step:rods_waiting', until: stage.until, why: `${waits} Jev chose other work in the Nether until then.` });
+    return false;
+  };
   const held = goal.leaveNether;
-  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until) throw new WaysResting(`${waits} Jev chose other work in the Nether until then.`, stage.until);
+  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until) return otherWork();
   const search = goal.fortressSearch;
   const searched = search ? ` The fortress search so far: ${search.legs || 0} leg${search.legs === 1 ? '' : 's'} in ${search.since ? Math.round((now - search.since) / 60000) : 0} minutes${search.lastLegError ? `; the last ended: ${search.lastLegError}` : ''}.` : '';
   const tree = {
@@ -511,7 +523,7 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   const pick = decision.path.at(-1);
   goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now }; save();
   if (pick === 'search_on') { attemptsFor(goal).clear('rung', stage.phase); delete goal.elsewhere; save(); return false; }
-  if (pick === 'wait_here') throw new WaysResting(`${waits} Jev chose other work in the Nether until then.`, stage.until);
+  if (pick === 'wait_here') return otherWork();
   if (actions.return_overworld) await actions.return_overworld(bot, task, goal, save);
   return false;
 }
@@ -700,7 +712,13 @@ async function gameStep(bot, task, goal, save, actions) {
     if (await actions.take_cache(bot, task, goal, save)) return false;
   }
   progress.phase = stage.phase; goal.step = { action: 'game_progression', ...stage };
-  timeRung(bot, goal, stage.phase);
+  // The rods waiting out their set-aside are not the rung in hand (tried.js
+  // rungOf): not timed as it, and the stall's question does not name it.
+  // Timed here, the waiting stage put the set-aside rung back in rungTime at
+  // every pass, and the stall watch and the stall's question ("keep at the
+  // obtain blaze rods another way") went on naming it (25590, note 605).
+  if (stage.action === 'rods_waiting' && isSetAside(goal, 'rung', stage.phase)) delete goal.rungTime;
+  else timeRung(bot, goal, stage.phase);
   save();
   if (stage.phase === 'complete') {
     progress.milestones.returned_alive = { at: Date.now(), dimension: 'overworld', position: position(bot) }; save(); return true;

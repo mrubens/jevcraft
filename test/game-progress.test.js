@@ -311,16 +311,23 @@ test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why 
   const asked = [], left = [];
   const picks = ['wait_here', 'go_back'];
   const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
-  const actions = { client, return_overworld: async () => left.push('portal'), acquireStep: async () => assert.fail('the rods wait') };
-  // Other work here till the rest ends: every way resting, said, and not asked again for the same rest.
-  await assert.rejects(gameStep(bot, task, goal, () => {}, actions), err => err.name === 'WaysResting' && /The blaze rods step waits \(No measurable progress on find_fortress\), taken up again in 10 minutes/.test(err.message));
+  const holds = [];
+  const actions = { client, return_overworld: async () => left.push('portal'), acquireStep: async () => assert.fail('the rods wait'), hold_for_rest: async (b, t, g, sv, opts) => holds.push(opts) };
+  // Other work here till the rest ends: the stage's own work (note 605), and not asked again for the same rest.
+  await gameStep(bot, task, goal, () => {}, actions);
+  assert.equal(holds.length, 1); assert.equal(holds[0].reason, 'step:rods_waiting');
+  assert.match(holds[0].why, /The blaze rods step waits \(No measurable progress on find_fortress\), taken up again in 10 minutes/);
   assert.equal(asked.length, 1);
   assert.deepEqual(Object.keys(asked[0]).sort(), ['go_back', 'search_on', 'wait_here']);
   assert.match(asked[0].go_back, /The nearest portal remembered is 31 blocks off, about 7 seconds at a walk/);
   assert.match(asked[0].go_back, /comes out in the Overworld at dusk/);
   assert.match(asked[0].go_back, /Back there the ladder's next step is the Nether again for the rods/);
-  await assert.rejects(gameStep(bot, task, goal, () => {}, actions), err => err.name === 'WaysResting');
+  await gameStep(bot, task, goal, () => {}, actions);
+  assert.equal(holds.length, 2);
   assert.equal(asked.length, 1, 'the same rest met again is not the question again');
+  // Without the hold (a caller that has none), the rest is thrown as before.
+  const { hold_for_rest: _unused, ...bare } = actions;
+  await assert.rejects(gameStep(bot, task, goal, () => {}, bare), err => err.name === 'WaysResting');
   assert.deepEqual(left, []);
   // Asked afresh: back, as Jev chose, and kept while the rest stands.
   delete goal.leaveNether;

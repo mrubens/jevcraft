@@ -2334,7 +2334,15 @@ async function findFortressStep(bot, task, goal, save, actions) {
   const here = bot.entity.position;
   // A fortress seen before (exploration.js remembers them) is walked back
   // to rather than swept for again.
-  const remembered = require('./exploration').knownLandmarks(bot, goal, 'nether_fortress').find(k => k.distance > 24 && !shunned(k.landmark));
+  // Not while the leg's question is owed a failure: the owed hook above
+  // drops the target and its mark, and taken again here at once, the walk
+  // to the fortress remembered ran unasked. On 25590 the fortress at (-70,
+  // 32, 140) was walked to pass after pass with fortress_leg owed, both
+  // failures went to it, the second passed it over, and the rods were set
+  // aside 3.2 minutes into the trial with eleven of its twelve ways never
+  // tried (note 605). The fortress remembered is said on the legs that lie
+  // its way (sightingsThatWay).
+  const remembered = !owedLeg && require('./exploration').knownLandmarks(bot, goal, 'nether_fortress').find(k => k.distance > 24 && !shunned(k.landmark));
   if (remembered && !state.rememberedTarget) {
     state.target = { x: remembered.landmark.x, y: remembered.landmark.y, z: remembered.landmark.z }; state.rememberedTarget = true; state.legSince = Date.now();
   }

@@ -316,11 +316,16 @@ test('a step that never asks its plan passes the plan over only after two failur
   assert.match(s.whatFailedBelow, /passed over fortress leg: not asked since 2 failures below were sent to it; the work carried on without asking it/);
   assert.doesNotMatch(rung.state.situation, /Every way/);
   assert.match(rung.state.situation, /^The find fortress could not go on below this question: step: the find fortress step failed 3 times running/);
-  assert.match(s.workedOnRung, /^in 0\.5 minutes on it: 3 answers given, 3 coming to nothing, 0 getting somewhere; the step failed 3 times; not yet tried from here: fortress leg \(asked \d+ seconds ago\): seek fortress height, restock blocks, return for blocks/);
-  assert.match(rung.options.set_aside_rung, /Worked on this rung in 0\.5 minutes on it: .*not yet tried from here: fortress leg/);
+  assert.match(s.workedOnRung, /^in 0\.5 minutes on it: 3 answers given to 2 different ways of the 5 its questions offered, 3 coming to nothing, 0 getting somewhere; the step failed 3 times; not yet tried from here: fortress leg \(asked \d+ seconds ago\): seek fortress height, restock blocks, return for blocks; brought to this question by a failure below 0\.5 minutes into the rung's ten, not by its ten minutes running out$/);
+  // Brought here by a failure below with the leg's ways untried, the rung is not set aside (note 605): said, and
+  // keeping at it sends the work back to the leg's question with them.
+  assert.equal(rung.options.set_aside_rung, undefined);
+  assert.match(s.setAsideNotOffered, /^setting the obtain blaze rods aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: fortress leg \(seek fortress height, restock blocks, return for blocks\)$/);
+  assert.match(rung.options.keep_at_it, /The fortress leg question is asked next, with the ways not yet tried from here: fortress leg \(seek fortress height, restock blocks, return for blocks\)\./);
   assert.match(rung.options.keep_at_it, /Tried lately: /, 'what was tried is read from the rung\'s own work, not the step\'s');
-  assert.match(rung.options.set_aside_rung, /Set aside, the ladder goes on with obtain ender pearls \(warped pearls, 16 ender pearl\); the nearest warped forest known is 114 blocks off and 4 up at \(-77, -4\), and the walk there is set aside: the walk there came no nearer than before \(114 blocks off to 114\): No path to the goal!; with the walk to it set aside, its work begins with a search for another\./);
-  assert.match(s.setAsideGoesOnWith, /^Set aside, the ladder goes on with obtain ender pearls/);
+  // What setting it aside would go on with is still said, for the question once the ways below are spent.
+  assert.match(s.setAsideGoesOnWith, /^Set aside, the ladder goes on with obtain ender pearls \(warped pearls, 16 ender pearl\); the nearest warped forest known is 114 blocks off and 4 up at \(-77, -4\), and the walk there is set aside: the walk there came no nearer than before \(114 blocks off to 114\): No path to the goal!; with the walk to it set aside, its work begins with a search for another\./);
+  assert.match(require('../src/tried').owed(goal, 'fortress_leg')?.at(-1) || '', /^the rung's question sent the work back here/);
 });
 
 test('a saved ledger is judged by its own times: a trial begun from a stage\'s save twenty minutes old sees what was tried a minute before the save as a minute old (note 583)', () => {
