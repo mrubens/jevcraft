@@ -41,7 +41,14 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
   // skeletons it could not see, was told "low: a fight the bot wins, 2.5
   // damage" beside a leave option that said 72.6, chose to leave at 0.51,
   // and died among them in half a minute (2026-09-26).
-  const estimate = fightEstimate({ threats: about.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+  // The walkers with no way to the bot (walk-reach.js) are no fight here:
+  // counted apart and left out of the figures, as every stance leaves them
+  // (note 566). mid-244-ad-nether-2's stance was told "fighting all here:
+  // 8.2 damage" for a sword piglin with no way onto its bridge.
+  let apart = new Set();
+  try { apart = require('./danger').noWayIds(bot, about); } catch (_) { apart = new Set(); }
+  const reach = about.filter(t => !apart.has(t.entity.id));
+  const estimate = fightEstimate({ threats: [...reach, ...about.filter(t => apart.has(t.entity.id))].slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true, ...(apart.has(t.entity.id) ? { apart: true } : {}) })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
   const t = bot.time?.timeOfDay ?? 0;
   const surface = (bot.blockAt?.(bot.entity.position.floored())?.skyLight ?? 15) >= 8;
   const spawning = dark ?? ((t >= DAY.NIGHT && t < DAY.DAWN && surface) || !surface);
@@ -54,13 +61,14 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
   const endsIt = animals.find(a => UNPROVOKED[a.name].hit >= health);
   const level = endsIt ? `high: one hit from the ${endsIt.name.replaceAll('_', ' ')} ${endsIt.distance} blocks off would end the bot`
     : fight.healthAfter <= 0 ? 'high: the mobs about could kill the bot if they all came'
-    : about.some(m => m.entity.name === 'creeper' && m.distance <= 8) ? 'high: a creeper is within eight blocks'
+    : reach.some(m => m.entity.name === 'creeper' && m.distance <= 8) ? 'high: a creeper is within eight blocks'
     : fight.damageTaken >= health / 2 ? 'moderate: fighting them all would take half the health or more'
-    : about.length ? 'low: the mobs about are a fight the bot wins'
+    : reach.length ? 'low: the mobs about are a fight the bot wins'
+    : about.length ? 'low: none of the mobs about has a way to the bot, and none shoots'
     : shots ? `low: nothing hostile in view, but ${shots === 1 ? 'a shot in the air is' : `${shots} shots in the air are`} coming at the bot` : spawning ? 'low for now: nothing hostile in view, but mobs spawn here in the dark' : 'none in view';
   return {
     level,
-    hostilesWithin: { blocks: radius, shootersTo: SHOOTER_REACH, count: about.length, kinds: [...new Set(about.map(m => m.entity.name))], inSight: about.filter(m => m.visible).length, shooters: about.filter(m => shooter(m.entity)).length },
+    hostilesWithin: { blocks: radius, shootersTo: SHOOTER_REACH, count: about.length, kinds: [...new Set(about.map(m => m.entity.name))], inSight: about.filter(m => m.visible).length, shooters: about.filter(m => shooter(m.entity)).length, ...(apart.size ? { cannotGetToTheBot: about.filter(t => apart.has(t.entity.id)).length } : {}) },
     ...(shots ? { shotsComingAtTheBot: shots } : {}),
     fightingAllHere: { damageTaken: fight.damageTaken, healthAfter: fight.healthAfter, ...(fight.creeper ? { creeper: fight.creeper } : {}) },
     health, food, healing: food >= 18 ? 'health comes back while hunger stays at eighteen or more' : 'no healing: health comes back only at eighteen hunger or more, so eat first',

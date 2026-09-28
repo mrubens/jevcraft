@@ -37,11 +37,13 @@ const SIDEWAYS = 1.6, BELOW = 2.5, ABOVE = 1, LIGHTS = 3.5;
 const RADIUS = 12, DEPTH = 12, CAP = 5000;
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 
-function walkersApart(bot, danger, { radius = RADIUS, cap = CAP } = {}) {
-  const none = { ids: new Set(), mobs: [] };
+// `at`, where the bot would stand instead of where it stands: the firm
+// ground a stance steps to, judged for the same walkers (note 566).
+function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null } = {}) {
+  const none = { ids: new Set(), mobs: [], round: [] };
   const walkers = danger.filter(t => t.entity?.position && WALKERS.has(t.entity.name) && !shooter(t.entity) && !t.entity.vehicle);
   if (!walkers.length || typeof bot.blockAt !== 'function') return none;
-  const here = bot.entity.position, feet = here.floored();
+  const here = at || bot.entity.position, feet = here.floored();
   const key = c => `${c.x},${c.y},${c.z}`;
   const cache = new Map();
   let unknown = false, outside = false;
@@ -97,12 +99,19 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP } = {}) {
   if (unknown) return none;
   const kept = walkers.filter(t => { const cells = pending.get(t.entity.id); return cells.length && !cells.some(k => seen.has(k)); });
   if (!outside) return { ids: new Set(kept.map(t => t.entity.id)), mobs: kept, radius, round: [] };
-  // Not kept off for sure: said with the least walk a way round could be
-  // (out past the bounds from the mob, and back in to the bot), and left in
-  // the figures.
+  // The search left its bounds: a walker inside them that it did not reach
+  // has no way to the bot within them, and any way it has goes out past
+  // them and back, said with the least walk that could be. It cannot get to
+  // the bot on that walk before it is inside the bounds again on ground the
+  // search reaches, so it is apart as the sure ones are (in ids, out of the
+  // figures, not a threat) while that holds; the search is made again at
+  // every look (note 566). A walker outside the bounds is not judged: the
+  // search never came near it, and its way may be straight (a zombie
+  // fourteen blocks off on open ground was said to have none).
   const cheb = p => Math.max(Math.abs(Math.floor(p.x) - feet.x), Math.abs(Math.floor(p.z) - feet.z));
-  const round = kept.map(t => ({ t, atLeast: Math.max(0, radius + 1 - cheb(t.entity.position)) + Math.max(0, radius - Math.ceil(SIDEWAYS)) }));
-  return { ids: new Set(), mobs: [], radius, round };
+  const within = kept.filter(t => inside(t.entity.position.floored()));
+  const round = within.map(t => ({ t, atLeast: Math.max(0, radius + 1 - cheb(t.entity.position)) + Math.max(0, radius - Math.ceil(SIDEWAYS)) }));
+  return { ids: new Set(within.map(t => t.entity.id)), mobs: [], radius, round };
 }
 
 // A walker said by what it carries: a piglin with a crossbow shoots (and is
@@ -130,7 +139,7 @@ function roundSays(bot, apart) {
   if (!apart.round?.length) return '';
   return apart.round.map(({ t, atLeast }) => {
     const d = Math.round(t.entity.position.distanceTo(bot.entity.position) * 10) / 10, below = Math.round(bot.entity.position.y - t.entity.position.y);
-    return ` The ${t.entity.name.replaceAll('_', ' ')} ${d} blocks off${below >= 2 ? `, ${below} below the bot's feet,` : ''}${heldSays(t)} has no way to the bot within ${apart.radius} blocks of it: any way it has goes round, ${atLeast} blocks of walking or more, if there is one at all.`;
+    return ` The ${t.entity.name.replaceAll('_', ' ')} ${d} blocks off${below >= 2 ? `, ${below} below the bot's feet,` : ''}${heldSays(t)} has no way to the bot within ${apart.radius} blocks of it: any way it has goes round, ${atLeast} blocks of walking or more, if there is one at all. It is left out of the figures here while that holds.`;
   }).join('');
 }
 

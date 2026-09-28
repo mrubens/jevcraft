@@ -5130,6 +5130,50 @@ test('a sword piglin on the slope with no way onto the bridge is said first wher
   assert.doesNotMatch(Object.values(options).map(o => o.description).join(' '), /no way to the bot/);
 });
 
+// Note 566: the same bridge, with ground to step to. `land` at the bridge's own start, across the valley from the
+// piglin; `level`, the slope raised to the bridge's height, still a gap from it, so the piglin can walk onto it.
+function groundBridgeBot({ land = false, level = false } = {}) {
+  const bot = bridgeBot(-6);
+  const slopeTop = level ? 64 : 62;
+  const isSolid = f => f.y < 40 || (f.x >= 3 && f.x <= 14 && f.z >= 5 && f.z <= 14 && f.y <= slopeTop) || (f.y === 64 && f.z === 0 && f.x >= -6 && f.x <= 0) ||
+    (land && f.x >= -22 && f.x <= -7 && f.z >= -8 && f.z <= 8 && f.y <= 64);
+  bot.blockAt = p => { const f = p.floored(); return { position: f, name: isSolid(f) ? (f.y === 64 && f.z === 0 && f.x <= 0 && f.x >= -6 ? 'cobblestone' : 'netherrack') : 'air', boundingBox: isSolid(f) ? 'block' : 'empty', diggable: true }; };
+  return bot;
+}
+const piglinAt = (bot, y) => { const position = new Vec3(4.5, y, 6.5); return [{ entity: { id: 7, name: 'piglin', position, height: 1.95, heldItem: { name: 'golden_sword' } }, distance: position.distanceTo(bot.entity.position), visible: true }]; };
+
+test('carrying on past a walker with no way to the bot says where the work stands and the others\' real reach, and firm ground says whether the walker can get there (note 566)', async () => {
+  const goal = { step: { action: 'cross_toward', what: 'a fortress', target: { x: 0, y: 70, z: -80 }, bridge: 40 } };
+  // Across the valley from the piglin: firm ground at the bridge's start.
+  const bot = groundBridgeBot({ land: true });
+  bot._stalls = { records: { [require('../src/stillness').actionOf(goal).key]: { idle: 1000 } } };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), goal, () => {}, piglinAt(bot, 63), false);
+  const keep = options.keep_working.description;
+  assert.doesNotMatch(keep, /nearest 8 blocks/, 'not priced by the piglin that cannot get to the bot');
+  assert.match(keep, /Where the work stands: its target, a fortress, is 80 blocks off and 5 up; this stretch has 40 blocks to lay, 64 carried; it was making headway when these mobs stopped it/);
+  assert.match(keep, /None of the mobs here can get to the bot, and none of them shoots: nothing here stops the work while that holds/);
+  assert.ok(options.fight_from_footing, 'firm ground at the bridge\'s start is offered');
+  assert.match(options.fight_from_footing.description, /The piglin 7 blocks off has no way to that ground either: nothing here comes to be fought there, and the fight stands and waits for one that does\./);
+  assert.doesNotMatch(options.fight_from_footing.description, /the mobs hitting freely meanwhile/);
+  // The question's state lists it apart, unpriced, and the risk leaves it out.
+  let asked;
+  survival.decide = async (task, g, save, q) => { asked = q; return { path: ['keep_working'], stale: false }; };
+  await survival.stanceStep(new Task('x'), goal, () => {}, piglinAt(bot, 63), false);
+  assert.equal(asked?.id, 'encounter_stance');
+  assert.deepEqual(asked.state.threats, []);
+  assert.deepEqual(asked.state.cannotGetToTheBot.map(t => t.name), ['piglin']);
+  assert.equal(asked.state.estimate.fightHere.damageTaken, 0);
+
+  // The slope level with the bridge: the piglin still has no way onto it, but it can walk onto the ground stepped to.
+  const level = groundBridgeBot({ level: true });
+  const survival2 = new Survival(level, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options2 = survival2.stanceOptions(new Task('x'), goal, () => {}, piglinAt(level, 65), false);
+  assert.match(options2.keep_working.description, /^The piglin \(holding golden sword.*has no way to the bot/);
+  assert.ok(options2.fight_from_footing, 'the slope is firm ground');
+  assert.match(options2.fight_from_footing.description, /The piglin 7 blocks off, with no way to the bot here, is not kept from that ground \(a way there, or none the search can rule out\): stepping there can put the bot where it can get to it\./);
+});
+
 test('a retreat that finds no way says why to the next question', async () => {
   const bot = columnBot();
   bot.pathfinder = { movements: {}, setGoal: () => {} };

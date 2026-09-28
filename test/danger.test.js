@@ -254,3 +254,46 @@ test('a wither skeleton round a corner a few blocks off, with a way to the bot, 
   assert.equal(immediateThreat(bot), undefined, 'shut in a cell of brick: no way to the bot, not a threat');
   assert.equal(claim(bot)?.action, 'eat', 'and the meal is claimed');
 });
+
+// mid-244-ad-nether-2 (notes 560, 566): on its own one-wide bridge over a valley, a sword piglin on the slope below
+// with no way onto it. The stance was asked of it every fifteen seconds for minutes and the crossing never went on.
+function bridgeWorld(from, { ramp = false } = {}) {
+  const isSolid = f => f.y < 40 || (f.x >= 3 && f.x <= 14 && f.z >= 5 && f.z <= 14 && f.y <= 62) || (f.y === 64 && f.z === 0 && f.x >= from && f.x <= 0) ||
+    // A ledge from the slope up to beside the bridge's end: a step up from the slope, and the bot within reach from it.
+    (ramp && f.x >= 0 && f.x <= 3 && f.z >= 1 && f.z <= 5 && f.y <= 63);
+  return p => { const f = p.floored(); return { position: f, name: isSolid(f) ? (f.y === 64 ? 'cobblestone' : 'netherrack') : 'air', boundingBox: isSolid(f) ? 'block' : 'empty' }; };
+}
+const bridgeThreatBot = (world, held = 'golden_sword') => {
+  const piglin = { id: 7, name: 'piglin', type: 'hostile', position: new Vec3(4.5, 63, 6.5), height: 1.95, width: 0.6, isValid: true, heldItem: { name: held } };
+  return { game: { dimension: 'the_nether', gameMode: 'survival' }, entity: { position: new Vec3(0.5, 65, 0.5) }, registry: require('minecraft-data')('26.1'), health: 20, food: 20, time: { timeOfDay: 6000 },
+    world: { raycast: () => null }, blockAt: world, entities: { 7: piglin }, inventory: { items: () => [], slots: [] } };
+};
+test('a walker with no way to the bot is no encounter while it stays so, unless it hits the bot or shoots (mid-244-ad-nether-2, note 566)', () => {
+  const { immediateThreat, noWayIds } = require('../src/danger');
+  // The short bridge closes the search inside its bounds (sure); the long one leaves them (any way round is 17 or more).
+  for (const from of [-6, -30]) {
+    const bot = bridgeThreatBot(bridgeWorld(from));
+    assert.equal(immediateThreat(bot), undefined, `bridge from ${from}: the sword piglin on the slope cannot get to the bot`);
+    assert.deepEqual([...noWayIds(bot)], [7], `bridge from ${from}`);
+    bot._hurtById = { 7: Date.now() };
+    assert.equal(immediateThreat(bot)?.entity.id, 7, `bridge from ${from}: once it has hit the bot it is one`);
+    const crossbow = bridgeThreatBot(bridgeWorld(from), 'crossbow');
+    assert.equal(immediateThreat(crossbow)?.entity.id, 7, `bridge from ${from}: a crossbow piglin shoots, and is one`);
+  }
+  const ramp = bridgeThreatBot(bridgeWorld(-6, { ramp: true }));
+  assert.equal(immediateThreat(ramp)?.entity.id, 7, 'with a way up beside the bridge, it is one');
+  // And the risk said to every question leaves it out of what fighting them all costs.
+  const risk = require('../src/risk').riskNow(bridgeThreatBot(bridgeWorld(-30)));
+  assert.equal(risk.fightingAllHere.damageTaken, 0);
+  assert.equal(risk.hostilesWithin.cannotGetToTheBot, 1);
+  assert.match(risk.level, /none of the mobs about has a way to the bot/);
+});
+
+test('a walker outside the search\'s bounds is not said to have no way to the bot: its way may be straight (note 566)', () => {
+  const { walkersApart } = require('../src/walk-reach');
+  const flat = p => { const f = p.floored(); return { position: f, name: f.y < 64 ? 'stone' : 'air', boundingBox: f.y < 64 ? 'block' : 'empty' }; };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, blockAt: flat };
+  const apart = walkersApart(bot, [{ entity: { id: 3, name: 'zombie', position: new Vec3(14.5, 64, 0.5) }, distance: 14 }]);
+  assert.equal(apart.ids.size, 0);
+  assert.deepEqual(apart.round, [], 'a zombie fourteen blocks off on open ground has a straight way, not one round');
+});

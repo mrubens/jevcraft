@@ -309,6 +309,32 @@ function unseenClose(bot, list) {
   return near.filter(t => !apart.ids.has(t.entity.id));
 }
 
+// The walkers about with no way to the bot (walk-reach.js: none within the
+// search's twelve blocks, sure or with any way round past them), kept half
+// a second: every look asks, and the search is a few thousand cells.
+// mid-244-ad-nether-2 stood on its own bridge for minutes, the stance asked
+// every fifteen seconds for a sword piglin on the slope below that had no
+// way onto it, and the crossing never went on (notes 560, 566).
+const NO_WAY_MS = 500, NO_WAY_REACH = 16;
+function noWayIds(bot, list = null) {
+  const { WALKERS, walkersApart } = require('./walk-reach');
+  const walkers = (list || threats(bot, NO_WAY_REACH)).filter(t => t.distance <= NO_WAY_REACH && t.entity?.position && WALKERS.has(t.entity.name) && !shooter(t.entity) && !t.entity.vehicle);
+  if (!walkers.length || !bot.entity?.position) return new Set();
+  const cell = p => `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+  const key = `${bot.game?.dimension}|${cell(bot.entity.position)}|${walkers.map(t => `${t.entity.id}@${cell(t.entity.position)}`).sort().join(';')}`;
+  const now = Date.now(), kept = bot._noWay;
+  if (kept && kept.key === key && now - kept.at < NO_WAY_MS) return kept.ids;
+  let ids = new Set();
+  try { ids = walkersApart(bot, walkers).ids; } catch (_) { /* unsure: they reach */ }
+  bot._noWay = { key, at: now, ids };
+  return ids;
+}
+// A walker with no way to the bot is no encounter while it stays so, unless
+// it has hit the bot a moment ago (then the search is wrong about it: a
+// knock, a gap it fits). What it holds is its own: a crossbow piglin
+// shoots, and walk-reach judges no shooter.
+const cannotGetToTheBot = (bot, t, list) => !shooter(t.entity) && !(bot._hurtById?.[t.entity.id] > Date.now() - ATTRIBUTE_MS) && noWayIds(bot, list).has(t.entity.id);
+
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
   // Another of the kind being fought never ends the fight: the hunt's own
@@ -387,7 +413,9 @@ function immediateThreat(bot) {
   const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? Math.max(48, RANGE[t.entity.name] || 0) : hurt ? 32 : 16, FIRE_REACH[t.entity.name] || 0);
   const about = threats(bot, 64);
   const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
-    t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)));
+    t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)) &&
+    // Last, as it is the dearest: a walker that cannot get to the bot.
+    !cannotGetToTheBot(bot, t, about));
   if (mob) return mob;
   // The mobs a stance Jev chose was chosen against, while it holds: the
   // survival layer's, seen or not. mid-242-a's pillar went two up with
@@ -522,4 +550,4 @@ function pushersAbout(bot) {
   return list;
 }
 
-module.exports = { unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

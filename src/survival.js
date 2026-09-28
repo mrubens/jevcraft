@@ -2045,7 +2045,24 @@ class Survival {
     const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && firmGround(bot, 16, { margin: 3 });
     if (groundBy) {
       const far = Math.round(groundBy.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
-      options.fight_from_footing = { description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${Math.max(1, Math.round(far / 4.3))} second${far > 4.3 ? 's' : ''}, the mobs hitting freely meanwhile), then fight there: a knock there lands on ground, where here it goes over the edge.${creeperCount ? creeperFoughtText({ there: true }) : ''}${edge}`,
+      // The mobs with no way to the bot here, judged again from that
+      // ground: whether the step brings the bot to them or there is nothing
+      // to fight there either. mid-244-ad-nether-2 was offered this against
+      // a piglin with no way onto its bridge, told nothing of whether it
+      // could get to the ground stepped to, and took it four times in five
+      // over carrying on across (note 566).
+      const apartHere = danger.filter(t => apart.ids.has(t.entity.id));
+      let thereSays = '';
+      if (apartHere.length) {
+        let there = { ids: new Set() };
+        try { there = walkersApart(bot, apartHere, { at: groundBy.offset(0.5, 0, 0.5) }); } catch (_) { there = { ids: new Set() }; }
+        const name = t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`;
+        const list = ts => ts.length > 1 ? `${ts.slice(0, -1).map(name).join(', ')} and ${name(ts.at(-1))}` : name(ts[0]);
+        const come = apartHere.filter(t => !there.ids.has(t.entity.id)), still = apartHere.filter(t => there.ids.has(t.entity.id));
+        if (come.length) thereSays += ` ${list(come)[0].toUpperCase()}${list(come).slice(1)}, with no way to the bot here, ${come.length === 1 ? 'is' : 'are'} not kept from that ground (a way there, or none the search can rule out): stepping there can put the bot where ${come.length === 1 ? 'it' : 'they'} can get to it.`;
+        if (still.length) thereSays += ` ${list(still)[0].toUpperCase()}${list(still).slice(1)} ${still.length === 1 ? 'has' : 'have'} no way to that ground either${!coming.length && !come.length ? ': nothing here comes to be fought there, and the fight stands and waits for one that does' : ''}.`;
+      }
+      options.fight_from_footing = { description: `Step to firm ground ${far} blocks off, three blocks or more from any drop (about ${Math.max(1, Math.round(far / 4.3))} second${far > 4.3 ? 's' : ''}${coming.length ? ', the mobs hitting freely meanwhile' : ''}), then fight there: a knock there lands on ground, where here it goes over the edge.${thereSays}${creeperCount ? creeperFoughtText({ there: true }) : ''}${edge}`,
         run: async () => {
           this.report(goal, save, { action: 'fight_from_footing', to: { ...groundBy } });
           const movements = bot.pathfinder?.movements, towers = movements?.allow1by1towers;
@@ -2536,7 +2553,20 @@ class Survival {
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.
-    if (!coming.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work${(w => w ? ` (${w.replaceAll('_', ' ')})` : '')(goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action)} and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
+    // Priced by the others' real reach, how soon each that can get to the
+    // bot is at it at its own speed, and said with where the work stands:
+    // mid-244-ad-nether-2's carry-on was "nearest 8 blocks", the piglin that
+    // had no way onto the bridge, and the drop's knock beside it, with
+    // nothing of the crossing it would go on with (note 566).
+    const reachers = coming.filter(t => !shooter(t.entity));
+    const reachSays = (() => {
+      if (!coming.length) return ' None of the mobs here can get to the bot, and none of them shoots: nothing here stops the work while that holds, nor can knock the bot anywhere.';
+      if (!reachers.length) return '';
+      const soon = reachers.map(t => ({ t, at: Math.round(Math.max(0, t.distance - 1.5) / blocksPerSecond(t.entity.name) * 10) / 10 })).sort((a, b) => a.at - b.at);
+      const first = soon[0];
+      return ` Of those that can get to the bot, the nearest, the ${first.t.entity.name.replaceAll('_', ' ')} ${Math.round(first.t.distance)} blocks off, can be at it in about ${first.at} seconds at its own speed${soon.length > 1 ? `, and ${soon.length - 1} more after it` : ''}.`;
+    })();
+    if (!coming.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work${(w => w ? ` (${w.replaceAll('_', ' ')})` : '')(goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action)} and leave these mobs be for fifteen seconds${coming.length ? ` (nearest that can get to the bot ${Math.round(coming[0].distance)} blocks)` : ''}.${this.workProgress(goal)}${reachSays} The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
       // When the work would stop, against when the creeper lights: the
       // work stops at three blocks, which is where the fuse starts (the
       // decision review, 2026-09-26).
@@ -2620,9 +2650,12 @@ class Survival {
     const shotFacts = t => {
       const { MOBS, APPROACH, LIGHTS_AT, FUSE } = require('./combat-estimate');
       const hp = MOBS[t.entity.name]?.health, arrows = hp ? Math.ceil(hp / 6) : null;
-      const walks = !shooter(t.entity);
+      // One with no way to the bot does not come on while it is shot at
+      // (walk-reach.js): said as walking up, it was a race that is not
+      // (note 566).
+      const walks = !shooter(t.entity) && !apart.ids.has(t.entity.id);
       const at = t.entity.name === 'creeper' ? Math.max(0, (t.distance - LIGHTS_AT) / APPROACH) + FUSE : Math.max(0, (t.distance - 1.5) / APPROACH);
-      return `${arrows ? ` About ${arrows} arrow${arrows === 1 ? '' : 's'} bring it down, about ${arrows} seconds of drawing.` : ''}${walks ? ` It walks on meanwhile: ${t.entity.name === 'creeper' ? `beside the bot and going off in about ${Math.round(at * 10) / 10} seconds if it keeps coming` : `at the bot in about ${Math.round(at * 10) / 10} seconds`}.` : ''}`;
+      return `${arrows ? ` About ${arrows} arrow${arrows === 1 ? '' : 's'} bring it down, about ${arrows} seconds of drawing.` : ''}${walks ? ` It walks on meanwhile: ${t.entity.name === 'creeper' ? `beside the bot and going off in about ${Math.round(at * 10) / 10} seconds if it keeps coming` : `at the bot in about ${Math.round(at * 10) / 10} seconds`}.` : !shooter(t.entity) ? ' It has no way to the bot from where it stands, so it does not come on meanwhile.' : ''}`;
     };
     // In water: the blocks of a pillar, a pocket or a bunker do not hold
     // the bot there (a pocket is full of water, a pillar's jump is a swim),
@@ -2788,6 +2821,28 @@ class Survival {
     return `The work (${step.replaceAll('_', ' ')}) waits meanwhile${secs >= 5 ? `: it has waited ${secs} seconds for these mobs so far` : ''}.`;
   }
 
+  // Where the work stands, said with carrying on (note 566): how far its
+  // target is, and whether it was getting anywhere when these mobs stopped
+  // it, by the stall watch's own record of it (stillness.js look: new
+  // ground, a block dug or placed, something gained).
+  workProgress(goal) {
+    const bot = this.bot;
+    const step = goal?.step?.action === 'combined_request' ? goal.step.detail : goal?.step;
+    if (!step?.action) return '';
+    const parts = [];
+    const target = [step.target, step.destination, step.to].find(p => p && Number.isFinite(p.x) && Number.isFinite(p.z));
+    const here = bot.entity?.position;
+    if (target && here) parts.push(`its target${step.what ? `, ${String(step.what).replaceAll('_', ' ')},` : ''} is ${Math.round(Math.hypot(target.x + 0.5 - here.x, target.z + 0.5 - here.z))} blocks off${Number.isFinite(target.y) && Math.abs(target.y - here.y) >= 4 ? ` and ${Math.abs(Math.round(target.y - here.y))} ${target.y > here.y ? 'up' : 'down'}` : ''}`);
+    if (Number.isFinite(step.bridge) && step.bridge > 0) parts.push(`this stretch has ${step.bridge} block${step.bridge === 1 ? '' : 's'} to lay, ${require('./bridging').blocksCarried(bot)} carried`);
+    let record = null;
+    try { record = bot._stalls?.records?.[require('./stillness').actionOf({ ...goal, survivalAction: null }).key]; } catch (_) { record = null; }
+    if (record) {
+      const idle = Math.round((record.idle || 0) / 1000);
+      parts.push(idle >= 5 ? `in its last ${idle} seconds at it the work made no headway (no new ground, nothing dug, placed or gained)` : 'it was making headway when these mobs stopped it (new ground, a block dug or placed, or something gained within its last few seconds at it)');
+    }
+    return parts.length ? ` Where the work stands: ${parts.join('; ')}.` : '';
+  }
+
   async stanceStep(task, goal, save, danger, swung) {
     const bot = this.bot;
     // Measured from the ground, not mid-jump: floored in the air, the feet
@@ -2951,7 +3006,9 @@ class Survival {
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropNear(bot, bot.entity.position.floored(), 3) || false,
         darkHere: darkHere(bot),
-        threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
+        // Listed apart, those that cannot get to the bot (note 566).
+        threats: danger.filter(t => !this.lastApart?.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
+        ...(this.lastApart?.ids.size ? { cannotGetToTheBot: danger.filter(t => this.lastApart.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}) })) } : {}),
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
         // A creeper with its room to back into, its health and its fuse, as
