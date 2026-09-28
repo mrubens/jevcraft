@@ -116,7 +116,8 @@ test('a fortress chest is opened in the Nether only with no piglin in sight; a v
   bot.entities[9] = { id: 9, name: 'piglin', position: new Vec3(20, 70, 10), isValid: true };
   assert.equal(lootableChests(bot, { landmarks: [fortress] }).length, 0, 'a piglin looking on');
   const bastion = { ...fortress, kind: 'bastion' };
-  assert.equal(lootableChests(bot, { landmarks: [bastion] }).length, 1, 'a bastion raid opens its chests whoever is looking');
+  assert.equal(lootableChests(bot, { landmarks: [bastion] }).length, 0, 'a bastion\'s chests are not opened unless Jev chose the raid (bastion-raid.js)');
+  assert.equal(lootableChests(bot, { landmarks: [bastion], bastionRaid: { key: 'bastion:10,10', pick: 'raid_chests', at: Date.now() } }).length, 1, 'a raid Jev chose opens them whoever is looking');
   const village = world({ '105,64,100': 'chest' }, { position: new Vec3(100, 64, 100) }).bot;
   assert.equal(lootableChests(village, { villages: [{ x: 100, y: 64, z: 100, dimension: 'overworld' }] }).length, 1);
 });

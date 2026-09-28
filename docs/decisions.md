@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-92 questions: 43 decision trees and 49 batched questions.
+93 questions: 44 decision trees and 49 batched questions.
 
 ## Batches
 
@@ -584,6 +584,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `wall_home` | root | build a wall two blocks high round home, with a door by the bed | by day in the Overworld, and the bed and the chest are down and home is not walled yet |
 | `again` | root | try the failed step again as it was | a step failed again and again (persist), and it does not rest in the ledger from here (src/tried.js): tried twice from here and come to nothing, it rests five minutes; only this answer puts the failed step back in hand |
 | `recover_[0-9]+` (pattern) | root | a recovery move the code checked (gather footing, the surface, another standing spot, another source, down off a pillar) | a step failed again and again, and src/recovery-options.js found the move feasible from here (it was the separate recovery_action question, folded in here in note 571) |
+
+### `bastion_raid`
+
+**A bastion is remembered in the Nether: go for its chests (gold, golden apples, food, armor, now and then netherite and the upgrade template, at the price of every piglin that sees a lid lift), take only the gold blocks no piglin can see, or leave it alone?**
+
+- When: In the Nether on the game ladder, the pearl step short of pearls with no gold to barter, and a bastion remembered within 384 blocks whose walk is not resting; asked when the trip begins, held forty-five minutes (or until the bot dies or the raid closes) so it is not asked at each leg.
+- Decision tree, choice; stakes high; ledger kind `strategy`
+- Bar: none: Jev's pick is taken at any confidence: the ways are carried out by the survival layer's own stances and the loot code's guards (health, a mob that bites in sight), an unsure raid is one trip held forty-five minutes and asked again after, and the code default (gold only) answers only when Jev cannot be reached
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/bastion-raid.js (chooseTrip, facts, options), src/bartering.js (gatherBastionGold), src/looting.js (lootableChests reads raidOn)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `raid_chests` | root | raid the bastion's chests: walk there, open the nearest chest, take the loot list, go on to the next | a bastion is remembered within 384 blocks in the Nether and its walk is not resting; said with the distance and legs, what is in view, what the chests hold by room (from the 26.1.2 jar), what lifting a lid does, the fights priced from the game's numbers, gold armor worn or not, health, hunger, food, and that no bastion chest has ever been opened by the bot |
+| `gold_only` | root | take only the gold blocks and gilded blackstone no piglin is within 16 blocks of, open no chest | the same bastion; the gold rung as it was before chests were a question |
+| `leave_it` | root | leave the bastion alone for thirty minutes and go on with the ladder's next step or another way to the pearls | always with the others |
 
 ## work
 

@@ -9,8 +9,13 @@
 // opened: a chest anyone placed, the stash beside the bed included, is not
 // loot. Two chests are left alone whatever they hold. A desert temple's
 // sit over a pressure plate wired to TNT, so any chest with TNT beside it
-// is shunned; and a bastion's anger every piglin that sees the lid lift,
-// so nothing in the Nether is opened.
+// is shunned (physical safety). A bastion's chests are Jev's to open or
+// leave: lifting a lid angers every piglin within sixteen blocks that sees
+// it (the jar's PiglinAi.angerNearbyPiglins), which is a price to weigh, not
+// a wall. They are opened only while a raid Jev chose is on
+// (bastion-raid.js: the question bastion_raid, asked once per bastion trip,
+// and its flag on the goal); otherwise they are passed like any chest the
+// bot has no leave to open.
 //
 // Near one, a chest is looted as a rule, the way a keepsake lying on the
 // ground is picked up. A trip to a remembered structure whose chests are
@@ -19,7 +24,8 @@
 // Besides chest blocks: a mineshaft's chests ride in minecarts (entities,
 // opened the same way), passed over where a spawner is near (cave spiders);
 // a village's chests (bread, iron, now and then diamonds); and in the
-// Nether a fortress's, never a bastion's, and only with no piglin in sight.
+// Nether a fortress's, and only with no piglin in sight; a bastion's only on
+// a raid Jev chose.
 const { countOf: countCarried } = require('./skills');
 const { isKeepsake, isKitMaterial } = require('./home-stash');
 const { roomFor, makeRoom } = require('./inventory-tidy');
@@ -32,7 +38,7 @@ const NEAR = 24, OF_STRUCTURE = 16, HOME_CLEAR = 24;
 // What is taken beyond the keepsakes and the kit: what the ladder uses.
 // An ancient city's chests add the enchanted books, echo shards and
 // diamond gear that make the trip worth its warden.
-const LOOT = /^(gold_(ingot|nugget|block)|iron_(ingot|nugget|block)|diamond|diamond_(helmet|chestplate|leggings|boots|sword|pickaxe|axe|hoe|shovel)|obsidian|crying_obsidian|flint_and_steel|fire_charge|ender_pearl|ender_eye|blaze_rod|(enchanted_)?golden_apple|golden_carrot|golden_(helmet|chestplate|leggings|boots)|bucket|water_bucket|lava_bucket|bread|coal|emerald|enchanted_book|echo_shard|experience_bottle|lapis_lazuli|trial_key|ominous_trial_key|heavy_core|netherite_scrap|ancient_debris|netherite_ingot|spectral_arrow|arrow)$/;
+const LOOT = /^(gold_(ingot|nugget|block)|netherite_upgrade_smithing_template|cooked_porkchop|porkchop|iron_(ingot|nugget|block)|diamond|diamond_(helmet|chestplate|leggings|boots|sword|pickaxe|axe|hoe|shovel)|obsidian|crying_obsidian|flint_and_steel|fire_charge|ender_pearl|ender_eye|blaze_rod|(enchanted_)?golden_apple|golden_carrot|golden_(helmet|chestplate|leggings|boots)|bucket|water_bucket|lava_bucket|bread|coal|emerald|enchanted_book|echo_shard|experience_bottle|lapis_lazuli|trial_key|ominous_trial_key|heavy_core|netherite_scrap|ancient_debris|netherite_ingot|spectral_arrow|arrow)$/;
 const wanted = (bot, name) => LOOT.test(name) || isKeepsake(name) || isKitMaterial(bot, name);
 const key = p => `${p.x},${p.y},${p.z}`;
 const overworld = bot => /overworld$/.test(String(bot.game?.dimension || 'overworld'));
@@ -56,6 +62,14 @@ function structureOf(goal, p, bot = null) {
     let bricks = 0;
     for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -2; dz <= 2; dz++) if (/^nether_brick/.test(bot.blockAt(p.offset(dx, dy, dz))?.name || '')) bricks++;
     if (bricks >= 4) return { kind: 'nether_fortress', x: p.x, y: p.y, z: p.z, dimension: 'nether', inferred: true };
+  }
+  // And among blackstone, a bastion's, whichever landmark was recorded: a
+  // chest fifty blocks from the bastion written down was "a chest seen" and
+  // opened with no piglin in sight, the raid Jev had not chosen.
+  if (bot && /nether/.test(where(bot)) && typeof bot.blockAt === 'function') {
+    let stone = 0;
+    for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -2; dz <= 2; dz++) if (/blackstone/.test(bot.blockAt(p.offset(dx, dy, dz))?.name || '')) stone++;
+    if (stone >= 4) return { kind: 'bastion', x: p.x, y: p.y, z: p.z, dimension: 'nether', inferred: true };
   }
   // A village is its own record (villages.js), not a landmark.
   const village = (goal.villages || []).find(v => (bot ? sameDimension(bot, v) : true) && Math.hypot(v.x - p.x, v.z - p.z) <= VILLAGE_REACH);
@@ -90,14 +104,15 @@ function lootableChests(bot, goal, { reach = NEAR } = {}) {
   const id = bot.registry?.blocksByName?.chest?.id;
   if (id === undefined || typeof bot.findBlocks !== 'function') return [];
   // In the Nether a fortress's with no piglin looking on, and a bastion's
-  // whoever is looking: a bastion raid is packed light and planned to die
-  // (trip-kit.js); opening its chests turns the piglins, and that is the raid.
+  // only on a raid Jev chose (bastion-raid.js): a raid is packed light and
+  // planned to die (trip-kit.js); opening its chests turns the piglins that
+  // see it, and that is the price the question puts.
   if (!overworld(bot) && !/nether/.test(where(bot))) return [];
   const watched = !overworld(bot) && piglinInSight(bot);
   const here = bot.entity.position, looted = goal.looted || {};
   return bot.findBlocks({ matching: id, maxDistance: reach, count: 16 })
     .filter(p => { const s = !looted[key(p)] && !isSetAside(goal, 'loot_chest', key(p)) && !ownChest(goal, p) && structureOf(goal, p, bot);
-      return s && (overworld(bot) || (['nether_fortress', 'chest'].includes(s.kind) && !watched) || s.kind === 'bastion') && !trapped(bot, p); })
+      return s && (overworld(bot) || (['nether_fortress', 'chest'].includes(s.kind) && !watched) || (s.kind === 'bastion' && require('./bastion-raid').raidOn(goal))) && !trapped(bot, p); })
     .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
 }
 
@@ -159,6 +174,25 @@ async function takeWanted(bot, task, window) {
   return { took, left };
 }
 
+// A lid lifted in the Nether angers every piglin within sixteen blocks that
+// can see the bot, gold armor or not (the jar: ChestBlock, PiglinAi
+// angerNearbyPiglins). The survival layer leaves a piglin be while gold is
+// worn until one strikes, so those that saw the lid are marked as provoked
+// the moment it opens: the stances price them as the biters they now are.
+function angerFromLid(bot) {
+  if (overworld(bot) || !bot.entity?.position) return [];
+  const { lineClear } = require('./danger');
+  const eye = bot.entity.position.offset(0, 1.62, 0), angered = [];
+  for (const e of Object.values(bot.entities || {})) {
+    if (e.name !== 'piglin' || e.isValid === false || !e.position || e.position.distanceTo(bot.entity.position) > 16) continue;
+    let seen = true;
+    try { seen = lineClear(bot, eye, e.position.offset(0, 1.6, 0)); } catch (_) { seen = true; }
+    if (!seen) continue;
+    (bot._provokedMobs ||= new Map()).set(e.id, e); angered.push(e);
+  }
+  return angered;
+}
+
 // Open one chest and take what is wanted. The record says what was taken
 // and what was left, so the chest is not opened again.
 async function lootChest(bot, task, goal, save, position, { approach, open, now = Date.now() } = {}) {
@@ -166,7 +200,9 @@ async function lootChest(bot, task, goal, save, position, { approach, open, now 
   goal.step = { action: 'loot_chest', structure: structure?.kind, position: plain(position) }; save();
   const block = await approach(bot, task, 'chest', [position]);
   if (!block) { setAside(goal, 'loot_chest', key(position), 'could not reach the lid', 1800000); save(); return false; }
-  const { took, left } = await takeWanted(bot, task, await open(bot, task, block));
+  const window = await open(bot, task, block);
+  angerFromLid(bot);
+  const { took, left } = await takeWanted(bot, task, window);
   (goal.looted ||= {})[key(position)] = { at: now, structure: structure?.kind, took, left };
   markLandmarkLooted(bot, goal, now);
   save();
@@ -199,7 +235,7 @@ async function lootNearby(bot, task, goal, save, actions) {
   // spotted, and they were on it in four seconds (2026-09-27).
   if (bot.game?.gameMode === 'creative' || immediateThreat(bot) || (bot.health ?? 20) < 10) return false;
   if (require('./danger').threats(bot, 16).some(t => t.visible)) return false;
-  const chest = lootableChests(bot, goal)[0];
+  const chest = lootableChests(bot, goal, { reach: !overworld(bot) && require('./bastion-raid').raidOn(goal) ? require('./bastion-raid').RAID_REACH : NEAR })[0];
   if (!chest) {
     const cart = actions.navigate && lootableMinecarts(bot, goal)[0];
     if (!cart) return false;
@@ -247,4 +283,4 @@ async function lootStep(bot, task, goal, save, actions) {
   return false;
 }
 
-module.exports = { LOOTABLE, wanted, structureOf, trapped, lootableChests, lootableMinecarts, lootChest, lootMinecart, lootNearby, lootStep, unlootedLandmarks, markLandmarkLooted, phraseTaken, spawnerNear };
+module.exports = { angerFromLid, LOOTABLE, wanted, structureOf, trapped, lootableChests, lootableMinecarts, lootChest, lootMinecart, lootNearby, lootStep, unlootedLandmarks, markLandmarkLooted, phraseTaken, spawnerNear };

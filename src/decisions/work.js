@@ -395,6 +395,23 @@ define({
     || (children.without ? 'without' : Object.keys(children)[0]),
 });
 
+// A bastion's chests (note 636): a rule that opened them whoever was looking,
+// and no trip that went for them. Asked once per bastion trip and held.
+define({
+  id: 'bastion_raid', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'high', tree: true,
+  ungated: 'Jev\'s pick is taken at any confidence: the ways are carried out by the survival layer\'s own stances and the loot code\'s guards (health, a mob that bites in sight), an unsure raid is one trip held forty-five minutes and asked again after, and the code default (gold only) answers only when Jev cannot be reached',
+  question: 'A bastion is remembered in the Nether: go for its chests (gold, golden apples, food, armor, now and then netherite and the upgrade template, at the price of every piglin that sees a lid lift), take only the gold blocks no piglin can see, or leave it alone?',
+  trigger: 'In the Nether on the game ladder, the pearl step short of pearls with no gold to barter, and a bastion remembered within 384 blocks whose walk is not resting; asked when the trip begins, held forty-five minutes (or until the bot dies or the raid closes) so it is not asked at each leg.',
+  source: 'src/bastion-raid.js (chooseTrip, facts, options), src/bartering.js (gatherBastionGold), src/looting.js (lootableChests reads raidOn)',
+  options: [
+    { key: 'raid_chests', label: 'raid the bastion\'s chests: walk there, open the nearest chest, take the loot list, go on to the next', when: 'a bastion is remembered within 384 blocks in the Nether and its walk is not resting; said with the distance and legs, what is in view, what the chests hold by room (from the 26.1.2 jar), what lifting a lid does, the fights priced from the game\'s numbers, gold armor worn or not, health, hunger, food, and that no bastion chest has ever been opened by the bot', level: 'root' },
+    { key: 'gold_only', label: 'take only the gold blocks and gilded blackstone no piglin is within 16 blocks of, open no chest', when: 'the same bastion; the gold rung as it was before chests were a question', level: 'root' },
+    { key: 'leave_it', label: 'leave the bastion alone for thirty minutes and go on with the ladder\'s next step or another way to the pearls', when: 'always with the others', level: 'root' },
+  ],
+  instructions: workInstructions('The bot is in the Nether and a bastion is remembered. Choose whether to open its chests, to take only the gold in its walls, or to leave it. The state gives the trip (distance, legs), what is in view, what a chest holds by room, what a lifted lid does to piglins and brutes, the fights priced from the game\'s numbers, and the bot\'s health, food and armor. A number said as not known is not known: how many mobs live there and how many chests it has are not counted. The record says whether this has been tried; do not read a missing record as a good or a bad one.'),
+  fallback: children => children.gold_only ? 'gold_only' : Object.keys(children)[0],
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,

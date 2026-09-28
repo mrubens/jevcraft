@@ -5861,7 +5861,7 @@ function gameHandlers(bot, decisionClient) {
         prepare_combat: (bot, task, goal, save) => prepareCombatGear(bot, task, goal, save, { acquireStep }),
         barter: (bot, task, goal, save) => barterStep(bot, task, goal, save, { acquireStep, navigate }),
         bastion_gold: async (bot, task, goal, save) => {
-          try { return await gatherBastionGold(bot, task, goal, save, { acquireStep, navigate, dig, place, approachDryMining, collectNearbyDrops,
+          try { return await gatherBastionGold(bot, task, goal, save, { client: decisionClient, acquireStep, navigate, dig, place, approachDryMining, collectNearbyDrops,
             loot: (b2, t2, g2, sv2) => lootNearby(b2, t2, g2, sv2, lootActions()) }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'rung', 'bastion_gold', err, 1800000); save(); return false; }
         },
