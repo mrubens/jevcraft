@@ -49,7 +49,7 @@ const { exitEnd } = require('./end-exit');
 const { prepareEndSupplies } = require('./end-supplies');
 const { collectWater } = require('./water');
 const { makeObsidian, collectLava } = require('./obsidian');
-const { castFrame, castSays, plannedWalls, lavaTrip, fetchTrip, fetchSays, tripsCost, castTrips, duration } = require('./portal-cast');
+const { castFrame, leaveNoWater, castSays, plannedWalls, lavaTrip, fetchTrip, fetchSays, tripsCost, castTrips, duration } = require('./portal-cast');
 const { tidyInventory, roomFor, makeRoom, crowded } = require('./inventory-tidy');
 const { homeStep, homeChores , gatherWool, woolCarried } = require('./home-base');
 const { stashValuables, restockFromStash, NETHER_FOOD_POINTS } = require('./home-stash');
@@ -3218,7 +3218,17 @@ async function enterPortal(bot, task, portal, arrived) {
     // Crouched, it cannot step down: a portal a block below the bot's feet
     // is walked into upright, the one step checked to land in the sheet.
     const below = portal.y < Math.floor(bot.entity.position.y);
-    await move(bot, task, { label: 'enter_portal', keys: ['forward'], sneak: !below, why: below ? 'a step down into the portal' : undefined,
+    // From water the step in is a swimmer's climb out, forward and jump,
+    // upright: crouched, a swimmer sinks. mid-242-ab's portal had water
+    // before its face (its cast's own, note 567); the walk ended afloat at
+    // the sheet, the crouched step sank it to the bottom of the hole in
+    // front, and the step failed there every two seconds for half an hour.
+    // Afloat is in the water too, bobbing with the feet a moment above it.
+    const wet = p => /^water$|^bubble_column$/.test(bot.blockAt(p)?.name || '');
+    const feet = bot.entity.position.floored();
+    const swimming = bot.entity.isInWater === true || wet(feet) || (!bot.entity.onGround && wet(feet.offset(0, -1, 0)));
+    await move(bot, task, { label: 'enter_portal', keys: swimming ? ['forward', 'jump'] : ['forward'], sneak: !below && !swimming,
+      why: swimming ? 'a climb out of the water into the portal: crouched, a swimmer sinks' : below ? 'a step down into the portal' : undefined,
       look: pos(portal).offset(0.5, 0.5, 0.5), maxMs: 4000, tick: 50, until: () => inPortal(bot) || arrived() });
   }
   if (arrived()) return;
@@ -3994,6 +4004,13 @@ async function crossing(bot, task, goal, save, client) {
   const portal = lowestPortalBlock(bot);
   if (portal) {
     goal.portal = { ...portal }; rememberPortal(goal, save, portal, 'overworld'); save();
+    // A cast frame lit with its water still standing (a scoop that failed,
+    // a restart between the pour and the scoop) has it taken back first: it
+    // runs down past the portal's face and floods the way in (note 567).
+    const frame = goal.portalFrame;
+    if (frame && (frame.castWater || frame.castWaterLeft?.length) && pos(frame.origin).distanceTo(pos(portal)) <= 6) {
+      await leaveNoWater(bot, task, frame, save, { navigate, place });
+    }
     // Loaded is not routable: forty-two blocks away through solid ground the
     // walk ended short forty-seven times. When it fails, dig toward it.
     try { await enterPortal(bot, task, portal, () => String(bot.game.dimension).includes('nether')); return true; }

@@ -164,6 +164,39 @@ test('entering a portal stops inside it and stands still, instead of walking thr
   assert.equal(controls.forward, false);
 });
 
+test('afloat before a portal whose floor is a block up, the step in is a climb out of the water, not a crouch that sinks', async () => {
+  // mid-242-ab (note 567): water before its portal's face, a hole under it. The walk ended afloat at the sheet,
+  // the crouched step sank the bot to the bottom of the hole, and the step failed there every two seconds.
+  const { enterPortal } = require('../src/work');
+  const controls = {}, used = new Set();
+  // The portal's sheet from y 65 at z -1, on obsidian at y 64; before it, water at y 63 and 64 in a hole.
+  const nameAt = p => p.x === 0 && p.z === -1 ? (p.y === 64 ? 'obsidian' : p.y === 65 || p.y === 66 ? 'nether_portal' : p.y < 64 ? 'stone' : 'air')
+    : p.x === 0 && p.z === 0 && (p.y === 63 || p.y === 64) ? 'water' : p.y < 64 ? 'stone' : 'air';
+  // Where the walk left it: afloat at the sheet, the feet a moment above the water.
+  const bot = { entity: { position: new Vec3(0.5, 65.2, 0.5), onGround: false, isInWater: true }, game: { dimension: 'overworld' },
+    pathfinder: { setGoal() {}, movements: {}, goto: async () => {}, isMoving: () => false }, lookAt: async () => {},
+    setControlState: (key, on) => { controls[key] = on; if (on) used.add(key); }, clearControlStates() {},
+    blockAt: p => ({ name: nameAt(p.floored()), position: p }) };
+  // The world: in water, jump swims up and a crouch sinks, to the water's floor at 63; forward goes toward -z only
+  // once the feet clear the obsidian's top (the game's lift of a swimmer against a wall), then stands on it.
+  let inside = 0;
+  const tick = setInterval(() => {
+    let { x, y, z } = bot.entity.position;
+    if (z > 0) y = Math.max(63, Math.min(65.3, y + (controls.jump ? 0.15 : 0) - (controls.sneak ? 0.1 : 0.02) - (y > 65.1 ? 0.08 : 0)));
+    if (controls.forward && (y >= 65 || z > 0.35)) z = Math.max(-0.5, z - 0.2);
+    if (z < 0 && y > 65) y = 65;
+    bot.entity.position = new Vec3(x, y, z); bot.entity.isInWater = z > 0 && y < 65.2; bot.entity.onGround = z < 0;
+    inside = nameAt(bot.entity.position.floored()) === 'nether_portal' && !controls.forward ? inside + 1 : 0;
+    if (inside >= 6) bot.game.dimension = 'the_nether';
+  }, 50);
+  try {
+    await enterPortal(bot, new Task('portal'), new Vec3(0, 65, -1), () => bot.game.dimension === 'the_nether');
+  } finally { clearInterval(tick); }
+  assert(used.has('jump'), 'it swims up and climbs out');
+  assert.equal(bot.game.dimension, 'the_nether');
+  assert.equal(controls.forward, false);
+});
+
 test('a furnace batch saved in the Overworld is parked in the Nether, not a wall every step runs into, and comes back at home', () => {
   const { localBatch } = require('../src/work');
   const bot = { game: { dimension: 'the_nether' } };

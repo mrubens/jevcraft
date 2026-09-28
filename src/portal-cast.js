@@ -564,12 +564,55 @@ async function castFrame(bot, task, goal, save, actions) {
     if (!water) throw new Error(`No place to pour water onto the lava in the frame slot at ${p}`);
     stepIs(p, 'water', { water: { x: water.into.x, y: water.into.y, z: water.into.z } });
     await pourAlong(bot, task, 'water_bucket', water, () => /water/.test(w.name(water.into) || '') || w.name(p) === 'obsidian');
+    // A source from an earlier pour that was not taken back is kept in
+    // mind, not forgotten under this one.
+    const before = frame.castWater;
+    if (before && !at(before).equals(water.into) && sourceWater(bot.blockAt(at(before)))) (frame.castWaterLeft ||= []).push(before);
     frame.castWater = { x: water.into.x, y: water.into.y, z: water.into.z }; save();
     const cast = await waitUntil(task, () => w.name(p) === 'obsidian', CONVERSION_MS);
     await takeWaterBack(bot, task, frame, save, navigate);
     if (!cast) throw new Error(`The lava in the frame slot at ${p} did not turn to obsidian`);
   }
+  // The frame whole, the water it was cast with goes too. The scoop at each
+  // slot's start never comes after the last slot: mid-242-ab's last scoop
+  // failed ("outside visible interaction reach"), the frame was whole at
+  // the next pass, and the source stood on the frame's corner (19, 76, 58),
+  // running down past the portal's face into the hole before it; the bot
+  // swam in and out of that hole for half an hour (note 567).
+  await leaveNoWater(bot, task, frame, save, actions);
   return true;
+}
+
+// Every source the cast poured and has not taken back: scooped, or where
+// the scoop cannot be made, filled with a temporary block as a slot's
+// feeder is. Tried on three passes, then left, kept with why
+// (castWaterStanding).
+async function leaveNoWater(bot, task, frame, save, { navigate, place }) {
+  const all = [...(frame.castWaterLeft || []), ...(frame.castWater ? [frame.castWater] : [])];
+  if (!all.length) return true;
+  const standing = c => { const b = bot.blockAt(at(c)); return !!b && sourceWater(b); };
+  const left = [];
+  for (const c of all) {
+    if (!standing(c)) continue;
+    const p = at(c);
+    if (countOf(bot, 'bucket')) await scoopSource(bot, task, p, navigate, err => { frame.castWaterError = err.message; save(); });
+    const material = standing(c) && portalSupports(bot).material;
+    if (material && place) {
+      try {
+        await place(bot, task, p, material);
+        frame.castTemp = [...(frame.castTemp || []).filter(t => !at(t).equals(p)), { x: p.x, y: p.y, z: p.z, material }];
+      } catch (err) { task.check(); if (fatal(err)) throw err; frame.castWaterError = err.message; }
+    }
+    if (standing(c)) left.push(c);
+  }
+  delete frame.castWaterLeft; delete frame.castWater;
+  if (left.length) {
+    frame.castWaterTries = (frame.castWaterTries || 0) + 1;
+    if (frame.castWaterTries < 3) { frame.castWater = left.at(-1); if (left.length > 1) frame.castWaterLeft = left.slice(0, -1); }
+    else frame.castWaterStanding = left.map(c => ({ ...c, why: frame.castWaterError || 'not taken back' }));
+  } else delete frame.castWaterTries;
+  save();
+  return !left.length;
 }
 
 // Any of the slot's walls missing (the pathfinder's own digging, a creeper).
@@ -584,4 +627,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { castFrame, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };
+module.exports = { castFrame, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };

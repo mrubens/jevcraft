@@ -388,6 +388,39 @@ test('the cast\'s water left standing is walked back to and scooped, from out of
   assert.equal(goal.portalFrame.castWater, undefined);
 });
 
+test('the water of the last slot is taken back once the frame is whole, and filled with a block where it cannot be scooped', async () => {
+  // mid-242-ab (note 567): the last slot's scoop failed ("outside visible interaction reach"), the frame was whole at
+  // the next pass, the loop over the slots never came to the scoop again, and the source on the frame's corner ran
+  // down past the portal's face into the hole before it for half an hour.
+  const { Task } = require('../src/skills');
+  for (const bucket of [1, 0]) {
+    const { bot, w, actions } = castingBot({ bucket, cobblestone: 64 });
+    const goal = { portalFrame: newFrame('x') };
+    for (const p of goal.portalFrame.blocks) w.set(new Vec3(p.x, p.y, p.z), 'obsidian');
+    const last = cast.castOrder(goal.portalFrame).at(-1), left = last.offset(1, 1, 0);
+    w.set(left, 'water');
+    goal.portalFrame.castWater = { x: left.x, y: left.y, z: left.z };
+    assert.equal(await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions), true);
+    assert.notEqual(w.nameAt(left), 'water', bucket ? 'scooped' : 'filled');
+    assert.equal(w.nameAt(left), bucket ? 'air' : 'cobblestone');
+    assert.equal(goal.portalFrame.castWater, undefined);
+    if (!bucket) assert(goal.portalFrame.castTemp.some(t => t.x === left.x && t.y === left.y && t.z === left.z), 'the block is the cast\'s own, recorded');
+  }
+});
+
+test('a source from an earlier pour not taken back is kept in mind under the next, and taken back with it', async () => {
+  const { Task } = require('../src/skills');
+  const { bot, w, actions } = castingBot({ bucket: 1, cobblestone: 64 });
+  const goal = { portalFrame: newFrame('x') };
+  const a = new Vec3(30, 64, 30), b = new Vec3(32, 64, 30);
+  w.set(a, 'water'); w.set(b, 'water');
+  goal.portalFrame.castWaterLeft = [{ x: a.x, y: a.y, z: a.z }];
+  goal.portalFrame.castWater = { x: b.x, y: b.y, z: b.z };
+  assert.equal(await cast.leaveNoWater(bot, new Task('cast'), goal.portalFrame, () => {}, actions), true);
+  assert.notEqual(w.nameAt(a), 'water'); assert.notEqual(w.nameAt(b), 'water');
+  assert.equal(goal.portalFrame.castWaterLeft, undefined);
+});
+
 test('a cast that fails at its site three passes running, nothing cast, leaves the site for another', async () => {
   // mid-227-e's frame went down in a cave by the lava; every pass failed there until the stall watch ended the trial (2026-09-27).
   const { Task } = require('../src/skills');
