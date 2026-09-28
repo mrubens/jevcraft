@@ -9,10 +9,11 @@
 // Normal difficulty. Melee mobs hit about once a second at arm's length;
 // shooters about every two seconds while in sight. Every biting mob is taken
 // to reach the bot, and the nearest is killed first. The mob being struck is
-// knocked back by each swing and lands about a third of its hits. Checked
-// against the arena's cave trio (a skeleton and two zombies, iron armour
-// with gold boots, a diamond sword): estimated about 8 damage in 6 seconds,
-// measured 4.9 to 5.5 in 7 (with a shield raised between swings).
+// knocked back by each swing and lands about a third of its hits (the
+// bot's recorded fights, 0.27 a second, note 550). Checked against the
+// arena's cave trio (a skeleton and two zombies, iron armor with gold
+// boots, a diamond sword): estimated about 8 damage in 6 seconds, measured
+// 4.9 to 5.5 in 7 (with a shield raised between swings).
 const STRUCK = 1 / 3;
 const WALK = 4; // blocks a second, closing on a mob
 
@@ -100,15 +101,19 @@ function effectPieces(spans, effect = 'wither') {
 // The spans an effect covers, each [from, to] clipped to [0, end].
 const clipped = (spans, end) => spans.map(([a, b]) => [Math.max(0, a), Math.min(b, end)]);
 
-// Damage per hit on Normal, and health.
+// Damage per hit on Normal, and health; `armor`, the armor points a mob
+// wears by its kind, which the bot's swings go through as the bot's own
+// armor takes a mob's (26.1.2 Zombie.createAttributes: two, which the husk,
+// the drowned, the zombie villager and the zombified piglin keep): a stone
+// sword's five comes to 4.9, and a zombie takes five swings of it, not four.
 const MOBS = {
-  zombie: { hit: 3, health: 20 }, husk: { hit: 3, health: 20 }, drowned: { hit: 3, health: 20 }, zombie_villager: { hit: 3, health: 20 },
+  zombie: { hit: 3, health: 20, armor: 2 }, husk: { hit: 3, health: 20, armor: 2 }, drowned: { hit: 3, health: 20, armor: 2 }, zombie_villager: { hit: 3, health: 20, armor: 2 },
   spider: { hit: 2, health: 16 }, cave_spider: { hit: 2, health: 12, poisons: 7, note: 'each bite that lands poisons the bot for seven seconds, renewed by the next: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
-  skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 20, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, poisons: 5, note: 'each arrow that lands poisons the bot for five seconds: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
+  skeleton: { hit: 3, health: 20, shoots: true }, stray: { hit: 3, health: 20, shoots: true, note: 'slows' }, parched: { hit: 3, health: 16, shoots: true }, bogged: { hit: 3, health: 16, shoots: true, poisons: 5, note: 'each arrow that lands poisons the bot for five seconds: one health every 1.25 seconds that armour does not stop, only while health is above 1' },
   pillager: { hit: 4, health: 24, shoots: true }, witch: { hit: 6, health: 26, shoots: true, ignoresArmour: true, every: 3, poisons: 45, note: 'harming potions go through armour; its first at a bot not yet poisoned is poison, forty-five seconds of one health every 1.25 seconds that armour does not stop, only while health is above 1; slowness keeps the bot from getting away' },
   creeper: { hit: 24, health: 20, note: 'the hit is its blast two blocks off, once; fought, it goes off where the bot stands when its fuse ends (creeperFought)' },
   enderman: { hit: 7, health: 40 }, vindicator: { hit: 13, health: 24 }, slime: { hit: 4, health: 16, splits: [{ size: 'medium', count: 3, hit: 2, health: 4 }] },
-  zombified_piglin: { hit: 8, health: 20 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
+  zombified_piglin: { hit: 8, health: 20, armor: 2 }, piglin: { hit: 8, health: 16 }, piglin_brute: { hit: 13, health: 50 },
   hoglin: { hit: 6, health: 40, note: '3 to 8 a hit, and throws the bot about three blocks' }, zoglin: { hit: 6, health: 40, note: 'throws the bot about three blocks' },
   wither_skeleton: { hit: 8, health: 20, withers: WITHER.perSecond, note: 'each hit withers the bot for ten seconds, renewed by the next: about one health every two seconds that armour does not stop, and it can take the last' }, blaze: { hit: 5, health: 20, shoots: true, burns: 1, note: 'sets alight: each fireball that lands burns for five seconds more, about one a second through armour, and there is no water in the Nether to put it out' },
   magma_cube: { hit: 6, health: 16, note: 'a big one: it splits into two to four mediums (4 a hit), each of those into two to four smalls (3 a hit)', splits: [{ size: 'medium', count: 3, hit: 4, health: 4 }, { size: 'small', count: 9, hit: 3, health: 1 }] }, silverfish: { hit: 1, health: 8 }, phantom: { hit: 4, health: 20 },
@@ -173,6 +178,37 @@ function creeperBlastSays(worn) {
 // mob struck cannot be hurt again).
 const SWING_MS = { sword: 700, axe: 1300, pickaxe: 950, shovel: 1200, trident: 1000, fist: 500 };
 const swingMsOf = weapon => SWING_MS[weapon ? weapon.split('_').at(-1) : 'fist'] || SWING_MS.fist;
+// The pace the bot's own fights went, measured from the flight records of
+// 2026-09-26 to 28 (note 550), where the kill had been priced at the
+// weapon's recharge (a sword's 1.6 swings a second, every swing landing):
+// - A kill took about 0.9 seconds per swing its health needs after the
+//   first (the median of 369 kills, the mob gone a second after its last
+//   swing, its death's 20 ticks; 1.12 on the mean, the long ones pulling
+//   it), counting the swing's own 0.7 and about 0.2 more: the jump for a
+//   critical (four swings in ten), the knockback walked back, and the swings
+//   that miss, which the criticals' extra half about makes up.
+// - Closing on one out of reach took about 1.6 to 2 seconds a block past
+//   three and a half before the first swing (91 fights: 2.4 at four to five
+//   blocks, 4.4 at five to six, 4.5 at six to seven, 13 at seven to eight),
+//   where a walk is a quarter second a block: the charge's route runs to
+//   where the mob stood, not where it comes to meet the bot; mid-235-p-
+//   nether-4's wither skeleton came to 0.9 blocks during it and took 20 to
+//   6.6 health in three hits before a swing, and fortress-2 the same.
+// - The mob landed 0.18 hits a second of that time (49 in 271 s, a quarter
+//   of it at reach, 0.69 a second there); and from the first swing to the
+//   kill about 0.27 a second (34 in 127 s of fights that ended in a kill),
+//   near the third a second reckoned for the one struck (STRUCK).
+// The 52 fight stances against one biter that ended in its kill took 243
+// seconds from the answer to the kill and 105 health in its blows: priced
+// by this, 252 and 106 (at a sword's recharge, as before, 129 and 67). The
+// 0.2 and the 1.6 are fitted to those 52 (the swing's 0.2 is also the
+// median of the 369 kills); a pace that runs to the mob as it comes, not to
+// where it stood, would be seen in the next records as a shorter closing.
+const PACE = { extra: 0.2, closeFrom: 3.5, closePerBlock: 1.6, leadBites: 0.18 };
+// The seconds from one swing that counts to the next with this weapon.
+const swingEvery = weapon => round(swingMsOf(WEAPONS[weapon] ? weapon : null) / 1000 + PACE.extra, 2);
+// The seconds before the first swing at a mob this far off.
+const leadFor = distance => round(Math.max(0, (distance || 0) - PACE.closeFrom) * PACE.closePerBlock);
 // A creeper fought, by the game (26.1.2 SwellGoal and Creeper.tick): its
 // fuse lights once a player it targets is within three blocks, about where
 // the sword reaches; while lit it stands still, and the fuse burns on while
@@ -371,11 +407,16 @@ const HURT_PER_SECOND = 2;
 // cave spider took a bite within a second of its start (note 542).
 // The fire already on the bot (`burningFor`, its seconds left) burns on
 // from the start, one fire with any the shooters light.
-function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor = 0, burningFor = 0 } = {}) {
+// `lead`: the seconds before the first swing at the first in order, a biter
+// out of reach closed on (fightEstimate), in place of that mob's first
+// swing's interval; it lands PACE.leadBites of its hits a second meanwhile
+// (note 550).
+function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor = 0, burningFor = 0, lead = null } = {}) {
   const pieces = [], killed = new Map(), withering = new Map(), poisoning = new Map();
   let t = 0;
   order.forEach((m0, i) => {
-    const end = t + m0.secondsToKill;
+    const led = i === 0 && lead != null && m0.secondsASwing > 0 ? lead : null;
+    const end = t + (led != null ? led + m0.secondsToKill - m0.secondsASwing : m0.secondsToKill);
     let biters = 0;
     order.slice(i).forEach((m, j) => {
       if (m.name === 'creeper') return;
@@ -399,7 +440,10 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
       if (m.jab) perSecond = m.jab;
       else if (++biters > atOnce) return;
       else perSecond = (j === 0 && !m.inCell ? STRUCK : 1) * m.hitsBot;
-      if (perSecond > 0 && end > from) pieces.push({ from, to: end, perSecond, hit: m.jab ?? m.hitsBot });
+      // Closed on first: its hits as they came while the bot got to it.
+      const closing = j === 0 && led > 0 && !m.jab && !m.inCell ? Math.min(led, end - from) : 0;
+      if (closing > 0) pieces.push({ from, to: from + closing, perSecond: PACE.leadBites * m.hitsBot, hit: m.hitsBot });
+      if (perSecond > 0 && end > from + closing) pieces.push({ from: from + closing, to: end, perSecond, hit: m.jab ?? m.hitsBot });
       if (m.withers && !m.shoots && !withering.has(m)) withering.set(m, from);
       if (m.poisons && perSecond > 0 && end > from && !poisoning.has(m)) poisoning.set(m, from);
     });
@@ -467,6 +511,26 @@ const SPEAR_HIT = 13;
 // knocked the bot about a block back and the zombie followed to its reach:
 // it does not back off, the bot is put back (note 497).
 const SPEAR = { jab: 5, reach: 3, knock: 1 };
+// The pace in words, said with the fight's figures: the swings each kind
+// takes, how often one that counts came in the bot's own fights, and the
+// closing first. mid-235-p-nether-4 was told "about 2.5 seconds" for a
+// wither skeleton seven blocks off, four swings at a sword's recharge; it
+// took three hits before the first swing and was dead in six (note 550).
+function paceSays(order, { weapon = null, lead = null } = {}) {
+  const biters = order.filter(m => m.secondsASwing > 0);
+  if (!biters.length) return '';
+  const w = WEAPONS[weapon] ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands';
+  const [damage, rate] = WEAPONS[weapon] || FIST;
+  const kinds = [...new Set(biters.map(m => m.name))].slice(0, 3).map(name => {
+    const m = biters.find(x => x.name === name), n = biters.filter(x => x.name === name).length;
+    const health = m.health ?? MOBS[name]?.health;
+    return `${n > 1 ? `each of the ${n} ${name.replaceAll('_', ' ')}s` : `the ${name.replaceAll('_', ' ')}`} ${m.swingsToKill} (${health} health, ${m.eachSwing ?? damage} a swing${m.eachSwing ? ' through its armor' : ''}${m.spear ? ', twice the time for the jabs that put the bot back' : ''})`;
+  });
+  const swings = biters.reduce((n, m) => n + m.swingsToKill, 0);
+  const every = biters[0].secondsASwing / (biters[0].spear ? 2 : 1);
+  const closing = lead > 0 ? ` Closing on the ${order[0].name.replaceAll('_', ' ')} ${Math.round(order[0].distance)} blocks off came first: about ${lead} seconds before the first swing in those fights (about 1.6 a block past three and a half, the run going where the mob stood while it came on), the mob landing about one hit in each five or six seconds of it on the average; one that walks straight in is at reach in about ${round(Math.max(0, order[0].distance - 1.5) / blocksPerSecond(order[0].name))} seconds at its own speed, and at reach before the first swing they landed about 0.7 hits a second.` : '';
+  return `With ${w}, about ${swings} swing${swings === 1 ? '' : 's'} that land: ${kinds.join(', ')}. In the bot's own fights so far one came about every ${every} seconds, not the ${round(1 / rate, 2)} of the weapon's recharge: the jump for a critical, the knockback walked back and the misses.${closing}`;
+}
 // `poisonedFor`: the seconds of poison already on the bot (effectLeft).
 // `burningFor`: the seconds of fire on the bot now (burnLeft).
 function fightEstimate({ threats, armour = [], weapon = null, health = 20, shield = false, atOnce = Infinity, poisonedFor = 0, burningFor = 0 }) {
@@ -499,7 +563,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // thirteen before armour.
     const spear = /_spear$/.test(t.held || '');
     const m = spear ? { ...base, hit: Math.max(base.hit, SPEAR_HIT), note: `a spear: it jabs for about ${SPEAR.jab} before armour about once a second from about ${SPEAR.reach} blocks, each jab knocking the bot about a block back, and its charged thrust hits for about thirteen` } : base;
-    const hitsToKill = Math.ceil(m.health / damage);
+    const dealt = afterArmour(damage, { points: t.split ? 0 : m.armor || 0, toughness: 0 });
+    const hitsToKill = Math.ceil(m.health / dealt);
     const shoots = !!(m.shoots || t.shoots);
     // A shooter backs off after each hit and is closed on again: twice the
     // swinging time, and the walk to it first. Trial 44 was told a skeleton
@@ -511,11 +576,18 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     // A creeper is killed inside its fuse or goes off (creeperFought): the
     // fight with it lasts the swings or the fuse.
     const fought = t.name === 'creeper' && !t.split ? creeperFought({ weapon, worn, room: t.backRoom ?? null, distance: t.distance, litFor: t.litFor ?? null, ...(Number.isFinite(t.health) ? { health: t.health } : {}) }) : null;
-    const seconds = fought ? (fought.fuseLeft != null ? (fought.diesFirst ? fought.killSeconds : fought.fuseLeft) : (fought.diesFirst ? fought.killSeconds : FUSE) + Math.max(0, (t.distance || 0) - LIGHTS_AT) / WALK) : shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill / rate * (spear ? 2 : 1);
-    return { name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}), ...(t.inCell ? { inCell: true } : {}),
+    // A biter at the pace the bot's fights went (PACE, note 550): a swing
+    // that counts each `every` seconds, the first one interval in (the look,
+    // the weapon to hand and its recharge, or the turn from the one before).
+    // A shooter keeps its twice the recharge: the recorded skeleton kills
+    // took about 2.9 seconds from the first swing and four in all, near it.
+    const every = swingEvery(weapon);
+    const seconds = fought ? (fought.fuseLeft != null ? (fought.diesFirst ? fought.killSeconds : fought.fuseLeft) : (fought.diesFirst ? fought.killSeconds : FUSE) + Math.max(0, (t.distance || 0) - LIGHTS_AT) / WALK) : shoots ? hitsToKill / rate * 2 + Math.max(0, (t.distance || 0) - 3) / WALK : hitsToKill * every * (spear ? 2 : 1);
+    return Object.defineProperty({ name: t.name, distance: t.distance, shoots, visible: t.visible !== false, ...(t.apart ? { apart: true } : {}), ...(t.inCell ? { inCell: true } : {}),
+      ...(!fought && !shoots ? { secondsASwing: round(every * (spear ? 2 : 1), 2) } : {}), ...(m.armor && !t.split ? { armor: m.armor, eachSwing: round(dealt) } : {}),
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
-      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) };
+      hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)), swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
@@ -537,18 +609,24 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // nothing; mid-235-f took it at 0.91 from 5.9 health and was killed
   // (2026-09-27).
   atOnce = Math.max(atOnce, order.filter(m => !m.shoots && m.name !== 'creeper' && m.distance <= 3).length);
-  const timeline = fightTimeline(order, { shield, atOnce, poisonedFor, burningFor });
-  const seconds = order.reduce((n, m) => n + m.secondsToKill, 0);
+  // The first, a biter out of reach, is closed on before its first swing
+  // (PACE): that lead in place of its first swing's interval.
+  const first = order[0];
+  const lead = first?.secondsASwing > 0 ? (first.inCell ? 0 : leadFor(first.distance)) : null;
+  const timeline = fightTimeline(order, { shield, atOnce, poisonedFor, burningFor, lead });
+  const spans = order.map((m, i) => i === 0 && lead != null ? lead + m.secondsToKill - m.secondsASwing : m.secondsToKill);
+  const seconds = spans.reduce((n, s) => n + s, 0);
   // Each creeper fought that is not killed inside its fuse goes off once,
   // when its turn in the fight comes and the fuse has run.
   const blasts = [];
-  order.reduce((t, m) => { if (m.fought?.blast > 0) blasts.push({ at: t + m.secondsToKill, damage: m.fought.blast }); return t + m.secondsToKill; }, 0);
+  order.reduce((t, m, i) => { if (m.fought?.blast > 0) blasts.push({ at: t + spans[i], damage: m.fought.blast }); return t + spans[i]; }, 0);
   const blastsWithin = s => blasts.filter(b => b.at <= s).reduce((n, b) => n + b.damage, 0);
   // The poison takes nothing below 1: counted to 1 at most, the bites and
   // blasts beside it as they come.
   const poisonPart = s => within(timeline.filter(p => p.effect === 'poison'), s);
   const taken = poisonFloored(within(timeline) + blastsWithin(Infinity), poisonPart(Infinity), health);
   const poisonSays = poisonFightSays(order, poisonPart(Infinity), { health, poisonedFor });
+  const pace = paceSays(order, { weapon, lead });
   const creepers = order.filter(m => m.name === 'creeper');
   const nearestCreeper = creepers[0];
   const nearestThreat = nearestCreeper && threats.find(t => t.name === 'creeper' && !t.from && t.distance === nearestCreeper.distance);
@@ -561,6 +639,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       inFifteenSeconds: round(poisonFloored(within(timeline, HOLD_SECONDS) + blastsWithin(HOLD_SECONDS), poisonPart(HOLD_SECONDS), health)),
       ...(poisonSays ? { poison: poisonSays } : {}),
       ...(burningFor > 0 ? { fire: burnSays(burningFor) } : {}),
+      ...(pace ? { pace } : {}), ...(lead > 0 ? { closingFirst: lead } : {}),
       ...(Number.isFinite(atOnce) ? { atArmsLengthAtOnce: atOnce } : {}),
       ...(creepers.length ? { creeper: `counted: ${creeperSays} A blast by distance after the armour worn: ${creeperBlastSays(worn)}.` } : {}),
       ...(unknown.length ? { notCounted: `no figures for ${[...new Set(unknown)].join(', ')}` } : {}),
@@ -669,4 +748,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked,creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT };
+module.exports = { FIRE_SECONDS, BURN_PER_SECOND, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };

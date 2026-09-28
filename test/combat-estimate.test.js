@@ -13,12 +13,18 @@ test('armour takes what the game takes: full iron cuts a zombie\'s hit from 3 to
 test('three zombies against a stone sword and no armour cost more than eight health', () => {
   const zombie = d => ({ name: 'zombie', distance: d, shoots: false, visible: true });
   const e = fightEstimate({ threats: [zombie(6), zombie(7), zombie(8)], armour: [], weapon: 'stone_sword', health: 8 });
-  assert.equal(e.mobs[0].swingsToKill, 4); assert.equal(e.mobs[0].secondsToKill, 2.5); assert.equal(e.mobs[0].hitsBot, 3);
-  // 2.5 s under three, then two, then one, the one being struck landing a
-  // third of its hits: 7, 4 and 1 a second, but no more than two hits a
-  // second land on a body hurt half a second ago (note 535): (6 + 4 + 1) *
-  // 2.5 = 27.5.
-  assert.equal(e.fightHere.damageTaken, 27.5);
+  // Five swings each through a zombie's armor of two (4.9 a swing), at the
+  // 0.9 seconds a swing the bot's fights went (note 550).
+  assert.equal(e.mobs[0].swingsToKill, 5); assert.equal(e.mobs[0].secondsToKill, 4.5); assert.equal(e.mobs[0].hitsBot, 3);
+  // Four seconds closing on the first, six blocks off, under the other two
+  // (it lands 0.18 of its hits a second as it comes); then 3.6 seconds of
+  // swings at it, 4.5 at the second and 4.5 at the third, the one being
+  // struck landing a third of its hits; no more than two hits a second land
+  // on a body hurt half a second ago (note 535): 6 * 4 + 6 * 3.6 + 4 * 4.5
+  // + 1 * 4.5 = 68.1, in 16.6 seconds.
+  assert.equal(e.fightHere.closingFirst, 4);
+  assert.equal(e.fightHere.seconds, 16.6);
+  assert.equal(e.fightHere.damageTaken, 68.1);
   assert(e.fightHere.healthAfter < 0);
   const armed = fightEstimate({ threats: [zombie(6)], armour: ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'], weapon: 'iron_sword', health: 20 });
   assert(armed.fightHere.damageTaken < 5, JSON.stringify(armed.fightHere));
@@ -96,13 +102,15 @@ test('a skeleton is not a quick kill: it backs off after each hit and shoots whi
   assert(e.fightHere.healthAfter < 4, 'at nine health it is close to fatal');
 });
 
-test('bare hands land two hits a second, not four: a zombie takes ten seconds and about half the health', () => {
+test('bare hands land two hits a second at most, not four: a zombie takes about fifteen seconds and most of the health', () => {
   // A mob struck is unhurt for half a second after. Told five seconds and
   // five damage, a bare-handed fight looked cheap; the ledge replay of trial
-  // 57 lost one in three at about that pace.
+  // 57 lost one in three at about that pace. Twenty-two punches through a
+  // zombie's armor of two, one each 0.7 seconds at the pace the bot's
+  // fights went (note 550).
   const fight = fightEstimate({ threats: [{ name: 'zombie', distance: 2, shoots: false, visible: true }], weapon: null, health: 20 }).fightHere;
-  assert.equal(fight.seconds, 10);
-  assert(fight.damageTaken >= 8, `took ${fight.damageTaken}`);
+  assert.equal(fight.seconds, 14.7);
+  assert(fight.damageTaken >= 12, `took ${fight.damageTaken}`);
 });
 
 test('the mob being fought stays in view for a few seconds when it steps below a ledge\'s edge', () => {
@@ -371,12 +379,13 @@ test('a wither skeleton withers as it hits: half a health a second through armou
   assert.equal(e.mobs[0].withers, 0.5);
   assert.match(e.mobs[0].note, /withers the bot for ten seconds/);
   assert(e.fightHere.damageTaken > 15.5, JSON.stringify(e.fightHere));
-  // Alone: its 2.5 seconds of blade (a third of its hits) and 12.5 seconds withering.
+  // Alone: its 2.7 seconds of blade (four swings at 0.9, the first at once;
+  // a third of its hits) and 12.7 seconds withering.
   const alone = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.3, visible: true }], armour: iron, weapon: 'iron_sword', health: 15.5 });
-  assert.equal(alone.fightHere.damageTaken, 10);
-  // Two at once wither the bot no faster: 15 seconds of it, not 27.5.
+  assert.equal(alone.fightHere.damageTaken, Math.round((2.7 * 4.5 / 3 + 12.7 * 0.5) * 10) / 10);
+  // Two at once wither the bot no faster: 16.3 seconds of it, not 29.
   const two = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.3, visible: true }, { name: 'wither_skeleton', distance: 1.5, visible: true }], armour: iron, weapon: 'iron_sword', health: 20 });
-  assert(Math.abs(two.fightHere.damageTaken - (2.5 * 4.5 / 3 + 2.5 * 4.5 + 2.5 * 4.5 / 3 + 15 * 0.5)) < 0.06, JSON.stringify(two.fightHere));
+  assert(Math.abs(two.fightHere.damageTaken - (2.7 * 4.5 / 3 + 2.7 * 4.5 + 3.6 * 4.5 / 3 + 16.3 * 0.5)) < 0.06, JSON.stringify(two.fightHere));
   // A stance it still reaches withers the bot too.
   const { stanceCost } = require('../src/combat-estimate');
   assert.equal(stanceCost({ mobs: alone.mobs, reaches: () => true }).damage, 15 * 4.5 + 15 * 0.5);
@@ -411,11 +420,15 @@ test('a body hurt half a second ago cannot be hurt again: however many bite, two
 test('two zombies in the bot\'s own cell each bite at full rate while struck: mid-241-aa, told 5.8, took 10.8 in five seconds (note 535)', () => {
   const armour = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
   const zombies = inCell => [1.3, 1.6].map(distance => ({ name: 'zombie', distance, visible: true, ...(inCell ? { inCell: true } : {}) }));
+  // Out of its cell, the one struck at a third: 1.4 a bite, 1.33 a second
+  // for 2.7 seconds, then a third of one for 3.6 (at the pace of note 550;
+  // told 5.8 then, at a sword's recharge).
   const then = fightEstimate({ threats: zombies(false), armour, weapon: 'iron_sword', health: 10.8, atOnce: 2 });
-  assert.equal(then.fightHere.damageTaken, 5.8, 'as it was told: the one struck at a third');
+  assert.equal(then.fightHere.damageTaken, 6.7);
   const now = fightEstimate({ threats: zombies(true), armour, weapon: 'iron_sword', health: 10.8, atOnce: 2 });
-  // 1.4 a bite: two a second for 2.5 seconds, then one for 2.5.
-  assert.equal(now.fightHere.damageTaken, 10.5);
+  // Two a second for 2.7 seconds, then one for 3.6: more than the bot had.
+  assert.equal(now.fightHere.damageTaken, 12.6);
+  assert(now.fightHere.healthAfter < 0);
   assert(now.mobs.every(m => m.inCell));
 });
 
@@ -429,15 +442,17 @@ test('a cave spider\'s bite poisons: priced a point each 1.25 seconds through ar
   // 2.4 seconds before on the bot. Told 1.3 seconds and 0.4 damage.
   const e = fightEstimate({ threats: spider, armour: IRON_KIT, weapon: 'iron_sword', health: 6.1, poisonedFor: 4.6 });
   assert.equal(e.mobs[0].poisons, 7, 'seven seconds on Normal');
-  // The bites: a third of 0.88 a second for 1.25 seconds; the poison to
-  // seven seconds past the kill, 8.25 seconds, floored at 1: 5.1 of it.
-  assert.equal(e.fightHere.damageTaken, 5.5, JSON.stringify(e.fightHere));
-  assert.equal(e.fightHere.healthAfter, 0.6);
+  // The bites: 0.18 of 0.9 a second for the 2.4 seconds closing on it five
+  // blocks off, then a third of 0.9 a second for its second swing's 0.9
+  // (note 550); the poison to seven seconds past the kill, floored at 1:
+  // 5.1 of it.
+  assert.equal(e.fightHere.damageTaken, 5.8, JSON.stringify(e.fightHere));
+  assert.equal(e.fightHere.healthAfter, 0.3);
   assert.match(e.fightHere.poison, /^About 5\.1 of it is poison: the poison on the bot now has about 4\.6 seconds left, and each cave spider bite that lands poisons the bot \(cave spider 7 seconds, renewed by the next\); one health every 1\.25 seconds that armour does not stop, however many poison it, and only while health is above 1/);
   // At full health the same fight's poison is whole: one bite at the
-  // start and one at the kill, 0.75 to 8.25 seconds.
+  // start and one at the kill, 0.75 to 10.3 seconds.
   const whole = fightEstimate({ threats: spider, armour: IRON_KIT, weapon: 'iron_sword', health: 20 });
-  assert.equal(whole.fightHere.damageTaken, Math.round((1.25 * 0.88 / 3 + 7.5 * 0.8) * 10) / 10);
+  assert.equal(whole.fightHere.damageTaken, Math.round((2.4 * 0.9 * 0.18 + 0.9 * 0.9 / 3 + 9.55 * 0.8) * 10) / 10);
   // Two poison the bot no faster than one: one poison, renewed.
   const one = stanceCost({ mobs: whole.mobs, reaches: () => true });
   const two = stanceCost({ mobs: fightEstimate({ threats: [...spider, { name: 'cave_spider', distance: 5.5, visible: true }], armour: IRON_KIT, weapon: 'iron_sword' }).mobs, reaches: () => true });
@@ -530,4 +545,61 @@ test('the fire on the bot is priced, one health a second for its seconds left, a
   assert.equal(burnLeft({ entity: { metadata: [1] }, _alightUntil: now + FIRE_SECONDS.lava * 1000 }, now), 15);
   assert.equal(burnLeft({ entity: { metadata: [0] }, _alightUntil: now + 9000 }, now), 0, 'put out');
   assert.equal(burnLeft({ entity: { metadata: [1] } }, now), 1, 'alight with nothing stamped: the second to come');
+});
+
+// mid-235-p-nether-4 (25590, 2026-09-28 01:17:35): full iron, an iron
+// sword and a shield at 20 health, a wither skeleton 7.1 blocks off. The
+// fight was told "about 2.5 seconds and 10 damage to kill them all" (four
+// swings at the sword's recharge); the charge ran for four seconds with the
+// skeleton at 0.9 to 1.8 blocks and nothing swung, three hits took 20 to
+// 6.6, two criticals did not kill it, and the bot was dead six seconds in.
+// fortress-2 (25585, 01:30:30) went the same way (note 550).
+test('the kill is priced at the pace the bot\'s own fights went, the closing first: a wither skeleton seven blocks off (mid-235-p-nether-4, note 550)', () => {
+  const { PACE, swingEvery, leadFor } = require('../src/combat-estimate');
+  assert.equal(swingEvery('iron_sword'), 0.9, 'a sword\'s 0.7 and about 0.2 of jumps, knockback walked back and misses');
+  assert.equal(swingEvery(null), 0.7);
+  assert.equal(leadFor(3), 0);
+  assert.equal(leadFor(7.1), Math.round((7.1 - PACE.closeFrom) * PACE.closePerBlock * 10) / 10);
+  const e = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 7.1, held: 'stone_sword', visible: true }], armour: IRON, weapon: 'iron_sword', health: 20, shield: true, atOnce: 8 });
+  assert.equal(e.mobs[0].swingsToKill, 4);
+  assert.equal(e.mobs[0].secondsASwing, 0.9);
+  assert.equal(e.fightHere.closingFirst, 5.8);
+  // 5.8 closing, then four swings, the first at once: 8.5 seconds, not 2.5.
+  assert.equal(e.fightHere.seconds, 8.5);
+  assert(e.fightHere.damageTaken > 15, `nearly all of the twenty: ${e.fightHere.damageTaken}`);
+  assert.match(e.fightHere.pace, /^With the iron sword, about 4 swings that land: the wither skeleton 4 \(20 health, 6 a swing\)\. In the bot's own fights so far one came about every 0\.9 seconds, not the 0\.63 of the weapon's recharge: the jump for a critical, the knockback walked back and the misses\. Closing on the wither skeleton 7 blocks off came first: about 5\.8 seconds before the first swing/);
+  // At reach there is no closing: the first swing at once, then one each 0.9.
+  const near = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.5, visible: true }], armour: IRON, weapon: 'iron_sword', health: 20, shield: true });
+  assert.equal(near.fightHere.seconds, 2.7);
+  assert.equal(near.fightHere.closingFirst, undefined);
+  assert.doesNotMatch(near.fightHere.pace, /Closing/);
+});
+
+test('a zombie\'s armor takes from the bot\'s swings as the bot\'s takes from its bite, and the healths are the 26.1 jar\'s (note 550)', () => {
+  const { MOBS, WEAPONS } = require('../src/combat-estimate');
+  // Zombie.createAttributes: armor 2, kept by the husk, the drowned, the
+  // zombie villager and the zombified piglin. A stone sword's five is 4.9.
+  for (const name of ['zombie', 'husk', 'drowned', 'zombie_villager', 'zombified_piglin']) assert.equal(MOBS[name].armor, 2, name);
+  const stone = fightEstimate({ threats: [{ name: 'zombie', distance: 2, visible: true }], weapon: 'stone_sword' }).mobs[0];
+  assert.equal(stone.swingsToKill, 5, 'five swings of a stone sword, not four');
+  assert.equal(stone.eachSwing, 4.9);
+  assert.equal(fightEstimate({ threats: [{ name: 'skeleton', distance: 2, visible: true, shoots: true }], weapon: 'stone_sword' }).mobs[0].swingsToKill, 4, 'a skeleton wears none');
+  // Healths set in createAttributes (the rest keep the default twenty).
+  assert.deepEqual(['zombie', 'skeleton', 'wither_skeleton', 'creeper', 'blaze', 'spider', 'bogged', 'parched', 'piglin', 'hoglin', 'enderman', 'witch'].map(n => MOBS[n].health), [20, 20, 20, 20, 20, 16, 16, 16, 16, 40, 40, 26]);
+  // A sword is one, plus three, plus its material's bonus (ToolMaterial;
+  // Items: sword(material, 3.0, -2.4)), at 1.6 swings a second.
+  assert.deepEqual(['wooden_sword', 'golden_sword', 'stone_sword', 'copper_sword', 'iron_sword', 'diamond_sword', 'netherite_sword'].map(w => WEAPONS[w]), [[4, 1.6], [4, 1.6], [5, 1.6], [5, 1.6], [6, 1.6], [7, 1.6], [8, 1.6]]);
+});
+
+test('the fight option says the pace and the closing with its figures (note 550)', () => {
+  const { Survival } = require('../src/survival');
+  const { Vec3 } = require('vec3');
+  const zombie = { id: 6, name: 'zombie', position: new Vec3(5.5, 64, 0.5), height: 1.95, isValid: true };
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, entities: { 6: zombie }, time: { timeOfDay: 18000 }, game: { dimension: 'overworld' },
+    world: { raycast: () => null }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }),
+    pathfinder: { movements: {} }, inventory: { items: () => [{ name: 'iron_sword' }], slots: [] }, on() {}, health: 20 };
+  const survival = new Survival(bot, {});
+  const fight = survival.stanceOptions({ check() {} }, {}, () => {}, [{ entity: zombie, distance: 5, visible: true }], false).fight.description;
+  assert.match(fight, /to kill them all, from 20 health; about [\d.]+ of it in the first fifteen seconds\. With the iron sword, about 4 swings that land: the zombie 4 \(20 health, 5\.9 a swing through its armor\)\. In the bot's own fights so far one came about every 0\.9 seconds/);
+  assert.match(fight, /Closing on the zombie 5 blocks off came first: about 2\.4 seconds before the first swing/);
 });
