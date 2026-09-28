@@ -178,9 +178,27 @@ function countNames(digs) {
   return Object.entries(by).map(([n, c]) => `${c} ${said(n)}`).join(', ');
 }
 
+// The water poured to ride down stays up on the top, and the ride said
+// "any water refills it" whatever water there was. mid-243-ae (note 594)
+// stood on the mold of the portal it was casting, 4 blocks up, the only
+// water bucket in hand and 3 of lava beside it. It poured the water to ride
+// down (0.54, against a 1-second dig of 1 block at 0.40). No other water
+// source was within 48 blocks. The cast then asked for a water bucket, and
+// 36 minutes of searching swam the ride's own runoff. It died there with the
+// 3 lava buckets. `water.nearest` is the nearest other source in view
+// ({ distance, at }), `water.searched` the radius looked over, and
+// `water.use` what the work in hand wants the bucket for.
+function waterSays(ride, water = {}) {
+  const left = ` The water stays up here on the top, ${ride.fall} blocks over where the ride lands: filling the bucket from it again means climbing back up to it.`;
+  const near = water.nearest ? ` The nearest other water source in view is ${water.nearest.distance} blocks off, at ${where(water.nearest.at)}, where the bucket can be filled again.`
+    : water.searched ? ` No other water source is in view within ${water.searched} blocks: to fill the bucket again, water has to be found first, and how far that is is not known.` : '';
+  const use = water.use ? ` The work in hand needs this water bucket: ${water.use}.` : '';
+  return left + near + use;
+}
+
 // Every way down from the top, each with its cost. `carried` is { item:
 // count }; `pickaxe` the best carried and `pickaxeUses` its uses left.
-function waysDown(view, perch, { health = 20, carried = {}, pickaxe = null, pickaxeUses = 0, nether = false } = {}) {
+function waysDown(view, perch, { health = 20, carried = {}, pickaxe = null, pickaxeUses = 0, nether = false, water = {} } = {}) {
   const { feet, cells, edges } = perch;
   const ways = {};
   // Where a ride or a step lands: somewhere a walk goes on, or another top
@@ -221,7 +239,7 @@ function waysDown(view, perch, { health = 20, carried = {}, pickaxe = null, pick
     rides.sort((a, b) => !!a.up - !!b.up || b.fall - a.fall || a.far - b.far);
     const ride = rides[0];
     if (ride) ways.ride_water = {
-      description: `${ride.wall.length ? `Dig out the ${ride.wall.map(w => said(w.name)).join(' and ')} of the wall on the ${ride.dir} side${stepOver(ride.from)}, then pour` : `Pour`} the water bucket at the feet${ride.wall.length ? '' : stepOver(ride.from)} and step off the ${ride.dir} side into the waterfall it makes: ${ride.fall} blocks down to the ${said(ride.landsOn)} at ${where(ride.bottom.plus(DOWN))}, with no fall damage in the water${landsSays(ride.up)}. The water takes about ${Math.ceil(ride.fall / 4) + 1} seconds to reach the bottom before the step; the bucket comes back empty and the water stays up here (any water refills it).`,
+      description: `${ride.wall.length ? `Dig out the ${ride.wall.map(w => said(w.name)).join(' and ')} of the wall on the ${ride.dir} side${stepOver(ride.from)}, then pour` : `Pour`} the water bucket at the feet${ride.wall.length ? '' : stepOver(ride.from)} and step off the ${ride.dir} side into the waterfall it makes: ${ride.fall} blocks down to the ${said(ride.landsOn)} at ${where(ride.bottom.plus(DOWN))}, with no fall damage in the water${landsSays(ride.up)}. The water takes about ${Math.ceil(ride.fall / 4) + 1} seconds to reach the bottom before the step, and the bucket comes back empty.${waterSays(ride, water)}`,
       plan: { kind: 'ride_water', from: ride.from, dir: ride.dir, side: ride.side, bottom: ride.bottom, fall: ride.fall, off: !ride.up, wall: ride.wall.map(w => w.cell) } };
   }
   // A side the bot survives stepping off: its fall said with its damage.
@@ -252,6 +270,37 @@ function liveView(bot) {
   const best = PICKS.find(n => picks.some(i => i.name === n)) || null;
   const uses = picks.reduce((n, i) => n + Math.max(0, (bot.registry?.itemsByName?.[i.name]?.maxDurability || 0) - (i.durabilityUsed || 0)), 0);
   return { name: p => bot.blockAt(p)?.name ?? null, block: p => bot.blockAt(p), carried, pickaxe: best, pickaxeUses: uses };
+}
+
+// The water sources in view other than the one a ride would pour, the
+// nearest said (note 594): findBlocks reads the loaded world out to the
+// radius, source blocks only (a flowing cell fills no bucket).
+const WATER_LOOK = 48;
+function waterInView(bot, radius = WATER_LOOK) {
+  try {
+    const id = bot.registry?.blocksByName?.water?.id;
+    if (id === undefined || typeof bot.findBlocks !== 'function') return {};
+    const { sourceWater } = require('./water');
+    const here = bot.entity.position;
+    const found = bot.findBlocks({ matching: id, maxDistance: radius, count: 64, useExtraInfo: sourceWater })
+      .map(p => new Vec3(p.x, p.y, p.z)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+    return { searched: radius, nearest: found[0] ? { distance: Math.round(found[0].distanceTo(here)), at: found[0] } : null };
+  } catch (_) { return {}; }
+}
+
+// What the work in hand wants a water bucket for, or null: a portal being
+// cast from lava and water sets each block with it; a planned step that
+// uses one says so.
+function waterBucketUse(bot, goal) {
+  const frame = goal?.portalFrame;
+  if (goal?.portalMethod?.kind === 'cast' || frame?.cast) {
+    const blocks = Array.isArray(frame?.blocks) ? frame.blocks : [];
+    const cast = blocks.filter(p => { try { return bot.blockAt(new Vec3(p.x, p.y, p.z))?.name === 'obsidian'; } catch (_) { return false; } }).length;
+    if (!blocks.length || cast < blocks.length) return `the portal is being cast from lava and water${frame?.origin ? ` (the frame at ${where(frame.origin)}, ${cast} of ${blocks.length} cast)` : ''}, and each block is set by water poured on its lava, so the cast waits until the bucket is filled again`;
+  }
+  const step = goal?.step;
+  if (step && (step.consumes?.water_bucket || step.requires?.water_bucket)) return `the step in hand (${said(step.action)}${step.item ? ` for ${said(step.item)}` : ''}) uses it`;
+  return null;
 }
 
 // The top the bot stands on, or null: on the ground, out of water, in the
@@ -430,7 +479,8 @@ async function comeDownFirst(bot, task, walkGoal, { client = task?.opportunityCl
 
 async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   const view = liveView(bot), health = bot.health ?? 20;
-  const ways = waysDown(view, perch, { health, carried: view.carried, pickaxe: view.pickaxe, pickaxeUses: view.pickaxeUses, nether: /nether/.test(String(bot.game?.dimension || '')) });
+  const water = view.carried.water_bucket ? { ...waterInView(bot), use: waterBucketUse(bot, goal) } : {};
+  const ways = waysDown(view, perch, { health, carried: view.carried, pickaxe: view.pickaxe, pickaxeUses: view.pickaxeUses, nether: /nether/.test(String(bot.game?.dimension || '')), water });
   if (!Object.keys(ways).length) { console.log(`[way down] none from ${where(perch.feet)}: ${perchSays(perch)}`); return false; }
   const now = Date.now();
   const tried = (bot._wayDownTried || []).filter(t => now - t.at < TRIED_MS);
@@ -463,4 +513,4 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   } finally { bot.clearControlStates?.(); }
 }
 
-module.exports = { perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, SAFE_FALL };
+module.exports = { perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };

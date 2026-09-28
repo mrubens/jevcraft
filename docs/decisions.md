@@ -406,8 +406,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `cross_now` | root | cross with what is carried | always |
-| `top_up_food` | root | gather food first, up to forty points | fewer than forty food points carried, monsters on; said with where it goes (the home chest, the plot, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (note 527) |
-| `top_up_food_near` | root | gather food at the known food whose trip on to the frame begun is shortest, then back to it | food short, a frame begun and no portal lit, and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame and about what it gives (note 527) |
+| `top_up_food` | root | gather food first, up to forty points | fewer than forty food points carried, monsters on; said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594) |
+| `top_up_food_near` | root | gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here | food short and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594) |
+| `top_up_cook` | root | cook the raw food carried first, at a furnace put down here | food short, raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, and the seconds (note 594) |
 | `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
 | `top_up_blocks` | root | mine stone first, up to two stacks of blocks | fewer than 128 building blocks carried |
 | `top_up_pickaxe` | root | make a stone pickaxe first, as the spare | no stone pickaxe or better, or the best has under 24 uses |

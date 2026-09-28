@@ -153,3 +153,52 @@ test('still on a top with no way down offered, the walk builds no tower, and the
   assert.deepEqual(movements.scafoldingBlocks, [1]);
   assert.equal(Object.hasOwn(movements, 'walkGoalY'), false);
 });
+
+// mid-243-ae (note 594): on the mold of the portal it was casting, 4 up,
+// the only water bucket carried and no other water within 48 blocks, the
+// ride said "any water refills it" and was chosen over a 1-second dig; the
+// cast then searched 36 minutes for water. The ride says where the water
+// stays, whether other water is in view, and what the work wants it for.
+test('the ride says the water stays up top, the nearest other water or none in view, and what the work in hand needs the bucket for', () => {
+  const view = tower(), perch = perchOf(view, new Vec3(0, 90, 0));
+  const none = waysDown(view, perch, { health: 20, carried: { water_bucket: 1 }, water: { searched: 48, nearest: null, use: 'the portal is being cast from lava and water' } }).ride_water.description;
+  assert.doesNotMatch(none, /any water refills it/);
+  assert.match(none, /The water stays up here on the top, 25 blocks over where the ride lands: filling the bucket from it again means climbing back up to it/);
+  assert.match(none, /No other water source is in view within 48 blocks: to fill the bucket again, water has to be found first/);
+  assert.match(none, /The work in hand needs this water bucket: the portal is being cast from lava and water\./);
+  const near = waysDown(view, perch, { health: 20, carried: { water_bucket: 1 }, water: { searched: 48, nearest: { distance: 12, at: new Vec3(8, 64, -9) }, use: null } }).ride_water.description;
+  assert.match(near, /The nearest other water source in view is 12 blocks off, at \(8, 64, -9\), where the bucket can be filled again\./);
+  assert.doesNotMatch(near, /work in hand/);
+});
+
+test('the water bucket is the cast\'s while a frame being cast has blocks left to set, and a planned step\'s that uses one', () => {
+  const { waterBucketUse } = require('../src/way-down');
+  const blocks = Array.from({ length: 10 }, (_, i) => ({ x: 50 + (i % 4), y: 109 + Math.floor(i / 4), z: -33 }));
+  const castSoFar = n => ({ blockAt: p => ({ name: blocks.findIndex(b => b.x === p.x && b.y === p.y && b.z === p.z) < n ? 'obsidian' : 'air' }) });
+  const goal = { portalMethod: { kind: 'cast' }, portalFrame: { origin: { x: 50, y: 109, z: -33 }, blocks, cast: true } };
+  assert.equal(waterBucketUse(castSoFar(3), goal), 'the portal is being cast from lava and water (the frame at (50, 109, -33), 3 of 10 cast), and each block is set by water poured on its lava, so the cast waits until the bucket is filled again');
+  assert.equal(waterBucketUse(castSoFar(10), goal), null, 'the frame is cast');
+  assert.equal(waterBucketUse(castSoFar(0), { portalMethod: { kind: 'build' }, portalFrame: { blocks } }), null, 'a frame of mined obsidian wants no water');
+  assert.match(waterBucketUse(castSoFar(0), { step: { action: 'cross_lava', consumes: { water_bucket: 1 } } }), /the step in hand \(cross lava\) uses it/);
+});
+
+test('live, the way down tells the ride what the cast needs the bucket for and that no other water is in view', async () => {
+  const { navigate, Task } = require('../src/skills');
+  const { goals } = require('mineflayer-pathfinder');
+  const { bot } = liveTower({ carried: [{ name: 'water_bucket', count: 1 }] });
+  bot.registry.blocksByName = { water: { id: 26 } };
+  const looked = [];
+  bot.findBlocks = options => { looked.push(options.maxDistance); return []; };
+  const frame = Array.from({ length: 10 }, (_, i) => ({ x: 30 + (i % 4), y: 65 + Math.floor(i / 4), z: 5 }));
+  bot._goal = { portalMethod: { kind: 'cast' }, portalFrame: { origin: { x: 30, y: 65, z: 5 }, blocks: frame, cast: true } };
+  bot.pathfinder = { movements: { allow1by1towers: true, scafoldingBlocks: [1] }, setGoal() {}, goto: async goal => { bot.entity.position = new Vec3(goal.x + .5, goal.y, goal.z + .5); } };
+  const asked = [];
+  const task = new Task('test', 'test');
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'dig_down', confidence: 0.9 } } }; } };
+  await navigate(bot, task, new goals.GoalBlock(40, 65, 0));
+  assert.equal(asked.length, 1);
+  const ride = JSON.stringify(asked[0].ride_water);
+  assert.match(ride, /No other water source is in view within 48 blocks/);
+  assert.match(ride, /The work in hand needs this water bucket: the portal is being cast from lava and water \(the frame at \(30, 65, 5\), 0 of 10 cast\)/);
+  assert.deepEqual(looked, [48]);
+});

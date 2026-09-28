@@ -304,4 +304,4 @@ async function forageChoices(bot, task, goal, save, actions, state) {
   return choices;
 }
 
-module.exports = { foodSupply, lastResortSupply, forageChoices, hunt };
+module.exports = { foodSupply, lastResortSupply, forageChoices, hunt, preyFood };

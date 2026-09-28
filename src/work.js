@@ -5335,7 +5335,7 @@ const KIT_HOLD_MS = 10 * 60000;
 // in turn, one worked on twenty minutes passed over unless none of it is
 // carried, then the crossing.
 const KIT_FALLBACK_MS = 20 * 60000;
-const KIT_ORDER = ['stash_valuables', 'top_up_food', 'top_up_health', 'top_up_blocks', 'top_up_pickaxe', 'top_up_gold', 'top_up_wood', 'cache_valuables'];
+const KIT_ORDER = ['stash_valuables', 'top_up_cook', 'top_up_food', 'top_up_health', 'top_up_blocks', 'top_up_pickaxe', 'top_up_gold', 'top_up_wood', 'cache_valuables'];
 const TOP_UP = {
   food: 'Gather food first, up to the forty points: the home chest, the farm plot if there is one, or hunting animals.',
   health: 'Wait here and heal first, to sixteen.',
@@ -5368,25 +5368,51 @@ const frameSays = pending => `the frame at (${pending.at.x}, ${pending.at.y}, ${
 // against what is short. Seconds are a walk at 4.3 blocks a second and about
 // fifteen seconds an animal to reach and kill; a chest a few seconds, a
 // plot's or a village's harvest and bread about a minute.
+// Meat is counted as the kill leaves it, raw (healing RAW_MEAT_POINTS), with
+// what cooking would make of it beside: mid-244-ah (note 594) was told a cow
+// in view brought 32 of the 40 points short, and its kills counted three a
+// beef.
 function foodTrips(bot, goal, pending, short) {
-  const { foodSources, MEAT_POINTS } = require('./healing');
+  const { foodSources, MEAT_POINTS, RAW_MEAT_POINTS } = require('./healing');
   const back = pending ? pending.at : bot.entity.position;
   const named = s => String(s).replaceAll('_', ' ');
   return foodSources(bot, goal).map(src => {
     const onward = src.at ? Math.round(Math.hypot(src.at.x - back.x, (src.at.y ?? back.y) - back.y, src.at.z - back.z)) : src.distance;
-    const gives = Math.min(short, src.points || 0);
-    const each = src.animal ? MEAT_POINTS[src.animal] || 6 : 0;
-    const animals = each ? Math.min(src.count || 1, Math.max(1, Math.ceil(gives / each))) : 0;
-    const gather = each ? animals * 15 : src.kind === 'home_chest' ? 10 : 60;
+    const raw = src.animal ? RAW_MEAT_POINTS[src.animal] ?? 3 : 0, cooked = src.animal ? MEAT_POINTS[src.animal] || 6 : 0;
+    const animals = raw ? Math.min(src.count || 1, Math.max(1, Math.ceil(short / raw))) : 0;
+    const gives = raw ? Math.min(short, Math.round(animals * raw)) : Math.min(short, src.points || 0);
+    const cookedGives = raw ? Math.min(short, animals * cooked) : 0;
+    const gather = raw ? animals * 15 : src.kind === 'home_chest' ? 10 : 60;
     const there = Math.round(src.distance / 4.3), on = Math.round(onward / 4.3);
-    const gatherSays = each ? `about ${duration(gather)} for ${animals} ${named(src.animal)}${animals === 1 || src.animal === 'sheep' ? '' : 's'}`
+    const gatherSays = raw ? `about ${duration(gather)} for ${animals} ${named(src.animal)}${animals === 1 || src.animal === 'sheep' ? '' : 's'}`
       : src.kind === 'home_chest' ? 'the chest emptied' : `about ${duration(gather)} for the harvest and the bread`;
-    const says = `${src.says}${pending ? `, ${onward} blocks from the frame` : ''}: about ${duration(there + gather + on)} in all (the walk there about ${duration(there)}, ${gatherSays}, and ${pending ? 'on to the frame' : 'back here'} about ${duration(on)}), for about ${gives} of the ${short} points short`;
-    return { ...src, onward, seconds: there + gather + on, gives, says };
+    const says = `${src.says}${pending ? `, ${onward} blocks from the frame` : ''}: about ${duration(there + gather + on)} in all (the walk there about ${duration(there)}, ${gatherSays}, and ${pending ? 'on to the frame' : 'back here'} about ${duration(on)}), for about ${gives} of the ${short} points short${raw ? ` as raw meat, about ${cookedGives} once cooked` : ''}`;
+    return { ...src, onward, seconds: there + gather + on, gives, cookedGives, says };
   });
 }
+// The raw food carried that cooking makes more of, with what it comes to and
+// whether a furnace and fuel are carried to cook it here. mid-244-ah (note
+// 594) carried 126 coal and two furnaces through forty minutes of hunting
+// for the crossing's food, and its raw kills were counted and eaten at three
+// a beef, where a steak is eight.
+const FUELS = /^(coal|charcoal|coal_block|.*_log|.*_planks|.*_stem|blaze_rod)$/;
+function cookable(bot) {
+  const foods = bot.registry?.foodsByName || {};
+  const { safeFood } = require('./vitals');
+  const items = Object.entries(RAW_FOOD).map(([raw, cooked]) => ({ raw, cooked, n: countOf(bot, raw) }))
+    .filter(i => i.n > 0 && foods[i.cooked])
+    .map(i => ({ ...i, now: safeFood(bot, { name: i.raw }) ? i.n * (foods[i.raw]?.foodPoints || 0) : 0, after: i.n * foods[i.cooked].foodPoints }))
+    .filter(i => i.after > i.now);
+  if (!items.length) return null;
+  const furnace = ['furnace', 'smoker'].find(n => countOf(bot, n) > 0) || null;
+  const stone = ['cobblestone', 'cobbled_deepslate', 'blackstone'].find(n => countOf(bot, n) >= 8) || null;
+  const fuel = bot.inventory.items().find(i => FUELS.test(i.name))?.name || null;
+  const n = items.reduce((s, i) => s + i.n, 0);
+  return { items, n, now: items.reduce((s, i) => s + i.now, 0), after: items.reduce((s, i) => s + i.after, 0), furnace, stone, fuel,
+    ready: !!fuel && !!(furnace || stone) };
+}
 // The known food whose trip, there and on to the frame, is shortest.
-const foodNearFrame = (bot, goal, pending, short) => foodTrips(bot, goal, pending, short).filter(t => t.at && t.gives > 0).sort((a, b) => a.seconds - b.seconds)[0] || null;
+const foodNearFrame =(bot, goal, pending, short) => foodTrips(bot, goal, pending, short).filter(t => t.at && t.gives > 0).sort((a, b) => a.seconds - b.seconds)[0] || null;
 // Where the plain food top-up goes (gatherNetherFood): the home chest, the
 // plot, then a search outward with no bound, said with its trip where one
 // is known and with the frame it leaves (note 527).
@@ -5396,7 +5422,7 @@ function foodTopUpSays(bot, goal, pending, item) {
   const first = trips.find(t => t.kind === 'home_chest') || trips.find(t => t.kind === 'home_plot');
   const others = trips.filter(t => t !== first).slice(0, 3);
   const route = first ? ` It goes to ${first.kind === 'home_chest' ? "home's chest" : 'the home plot'} first: ${first.says}.`
-    : ` With no home chest or plot of food to go to, it searches outward from here for animals, heading by heading, on foot, swimming or by boat, with no bound on how far: how far and how long is not known until animals are seen.${others.length ? ` The food known (the search does not go to it first): ${others.map(t => t.says).join('; ')}.` : ' No food is known nearby.'}`;
+    : ` With no home chest or plot of food to go to, it hunts a grown cow, sheep, rabbit or mooshroom within 32 blocks when one is in view, and otherwise searches outward from here for animals, heading by heading, on foot, swimming or by boat, with no bound on how far: how far and how long is not known until animals are seen.${others.length ? ` The food known (the search does not walk to what is out of view first): ${others.map(t => t.says).join('; ')}.` : ' No food is known nearby.'}`;
   const left = pending ? ` Meanwhile ${frameSays(pending)}, is left where it stands: nothing keeps the ${first ? 'trip' : 'search'} near it, and the ${pending.frame.cast ? 'cast' : 'frame'} is taken up again only when the bot has walked back to it.` : '';
   return route + left;
 }
@@ -5419,8 +5445,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   kit.lastAt = now;
   const stash = goal.survival?.home?.stash?.contents || {};
   const inChest = Object.entries(stash).reduce((sum, [name, n]) => sum + (safeFood(bot, { name }) ? n * (bot.registry.foodsByName[name]?.foodPoints || 0) : 0), 0);
-  const soFar = i => {
-    const s = kit.spent[i.key];
+  // Each way at food keeps its own minutes: mid-244-ah's twenty-two minutes
+  // were the open search's, not the known food's (note 594).
+  const soFar = (i, key = i.key) => {
+    const s = kit.spent[key];
     return s?.ms >= 60000 ? ` ${Math.round(s.ms / 60000)} working minutes have gone to it at this crossing, from ${s.from} to ${i.carried}.` : ' Nothing has gone to it yet at this crossing.';
   };
   // No portal lit yet: going on is finishing the frame first, and a
@@ -5433,9 +5461,22 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   };
   for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'food' && inChest ? ` The home chest holds ${inChest} food points.` : ''}${i.key === 'food' ? foodTopUpSays(bot, goal, pending, i) : ''} ${i.says}${soFar(i)}` };
   // Food at the known source nearest the frame, then back to it: the way
-  // to food that keeps the portal work in reach.
-  const nearFood = food && pending && foodNearFrame(bot, goal, pending, food.wants - food.carried);
-  if (nearFood) tree.top_up_food_near = { description: `Gather food at the known food whose trip on to the frame is shortest, then back to the ${pending.frame.cast ? 'cast' : 'frame'}: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then. ${food.says}${soFar(food)}` };
+  // to food that keeps the portal work in reach. With no frame begun, the
+  // nearest known food and back here: mid-244-ah (note 594) was offered only
+  // the open search with a cow in view ten blocks off ("the search does not
+  // go to it first"), chose it three times, and walked some six thousand
+  // blocks in forty minutes for 27 points.
+  const nearFood = food && foodNearFrame(bot, goal, pending, food.wants - food.carried);
+  if (nearFood) tree.top_up_food_near = { description: pending
+    ? `Gather food at the known food whose trip on to the frame is shortest, then back to the ${pending.frame.cast ? 'cast' : 'frame'}: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then. ${food.says}${soFar(food, 'food_near')}`
+    : `Gather food at the known food nearest by the trip there and back, then come back here: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then. ${food.says}${soFar(food, 'food_near')}` };
+  // The raw food carried, cooked here: the points it adds for the minutes
+  // at a furnace.
+  const cook = food && cookable(bot);
+  if (cook?.ready) {
+    const secs = cook.n * 10 + (cook.furnace ? 2 : 6);
+    tree.top_up_cook = { description: `Cook the raw food carried first: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried, about ${cook.after} once cooked (a steak or a cooked porkchop is eight, cooked mutton six, raw beef three). ${cook.furnace ? `The ${cook.furnace} carried is` : `A furnace is made from eight of the ${cook.stone.replaceAll('_', ' ')} carried and`} put down here, fuelled with the ${cook.fuel.replaceAll('_', ' ')} carried: about ten seconds an item, about ${duration(secs)} in all, with no walk. ${food.says}${soFar(food, 'food_cook')}` };
+  }
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
   const keys = Object.keys(tree).sort().join(',');
@@ -5451,15 +5492,22 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     pick = decision.path.at(-1);
     kit.choice = { pick, keys, at: kit.workedMs }; save();
   }
-  if (pick !== 'top_up_food' && pick !== 'top_up_food_near') delete goal.preparingNether;
+  if (!['top_up_food', 'top_up_food_near', 'top_up_cook'].includes(pick)) delete goal.preparingNether;
   if (pick === 'cross_now') return true;
-  const item = short.find(i => `top_up_${i.key}` === pick || (pick === 'top_up_food_near' && i.key === 'food'));
-  const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
+  const item = short.find(i => `top_up_${i.key}` === pick || (['top_up_food_near', 'top_up_cook'].includes(pick) && i.key === 'food'));
+  const spentKey = pick === 'top_up_food_near' ? 'food_near' : pick === 'top_up_cook' ? 'food_cook' : item?.key;
+  const spent = item && (kit.spent[spentKey] ||= { ms: 0, from: item.carried });
   const started = Date.now();
   try {
     if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
-    else if (pick === 'top_up_food_near') await gatherNetherFood(bot, task, goal, save, now, { near: framePending(bot, goal), short: item.wants - item.carried });
+    else if (pick === 'top_up_cook') {
+      // The most of one raw food first; the next pass cooks the next.
+      const first = cook.items.sort((a, b) => b.n - a.n)[0];
+      goal.step = { action: 'cook_for_nether', item: first.cooked, raw: first.n, foodPoints: item.carried, required: item.wants }; save();
+      await acquireStep(bot, task, first.cooked, countOf(bot, first.cooked) + first.n, goal, save);
+    }
+    else if (pick === 'top_up_food_near') await gatherNetherFood(bot, task, goal, save, now, { known: true, pending: framePending(bot, goal), short: item.wants - item.carried });
     else if (item.key === 'food') await gatherNetherFood(bot, task, goal, save, now);
     else if (item.key === 'health') {
       goal.step = { action: 'recover_before_nether', health: Math.round(bot.health), needed: item.wants, food: bot.food }; save();
@@ -5489,21 +5537,46 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
 // it used to return having done nothing whenever the chest would not open
 // and the animal search was resting, and the loop spun on it at twenty
 // passes a second.
-async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { near = null, short = 0 } = {}) {
+// A grown food animal in view within 32 blocks, hunted by the work itself
+// (foraging.js hunt). The crossing's food used to leave an animal in view to
+// the survival layer's stock hunt, and mid-244-ah's arbiter gave the turn to
+// the work (turn_priority "work", 0.89) whose "hunt" only walked (note 594).
+// One that could not be got to is kept as the survival layer keeps it
+// (failedPrey), so the next pass takes another or goes on.
+async function huntInView(bot, task, goal, save, kinds = null) {
+  const foraging = require('./foraging'), { preyFailed } = require('./healing');
+  const here = bot.entity.position;
+  const target = Object.values(bot.entities || {}).filter(e => e?.position && e.isValid !== false && (!kinds || kinds.includes(e.name)) &&
+    e.position.distanceTo(here) <= 32 && !preyFailed(goal, e) && foraging.preyFood(bot, e))
+    .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
+  if (!target) return false;
+  goal.step = { ...goal.step, hunting: target.name, huntingAt: { x: Math.floor(target.position.x), y: Math.floor(target.position.y), z: Math.floor(target.position.z) } }; save();
+  try { await foraging.hunt(bot, task, target, { navigate }, goal, save); }
+  catch (err) {
+    task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
+    const state = goal.survival ||= {};
+    state.failedPrey ||= {}; state.failedPrey[target.uuid || target.id] = Date.now(); save();
+    console.log(`[food] hunting the ${target.name}: ${err.message}`);
+  }
+  return true;
+}
+
+async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { known = false, pending = null, short = 0 } = {}) {
   const NETHER_FOOD = NETHER_FOOD_POINTS;
   goal.preparingNether = true; goal.stockFood = true;
-  // Jev chose the known food nearest the frame: that one, and nothing
-  // farther. Gone or spent, the option goes and the question comes back.
-  if (near) {
-    const src = foodNearFrame(bot, goal, near, Math.max(1, short));
+  // Jev chose the known food nearest the frame (or, with none begun, nearest
+  // here): that one, and nothing farther. Gone or spent, the option goes
+  // and the question comes back.
+  if (known) {
+    const src = foodNearFrame(bot, goal, pending, Math.max(1, short));
     if (!src) return;
-    goal.step = { action: 'food_near_frame', source: src.kind, at: src.at, distance: src.distance, fromFrame: src.onward, foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+    goal.step = { action: pending ? 'food_near_frame' : 'food_known', source: src.kind, at: src.at, distance: src.distance, ...(pending ? { fromFrame: src.onward } : {}), foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
     const home = require('./home-base').homeOf(bot, goal);
     if (src.kind === 'home_chest') await restockFromStash(bot, task, goal, save, home, homeActions(), []);
     else if (src.kind === 'home_plot') await require('./home-base').homeChores(bot, goal).harvest_and_bake?.run(bot, task, goal, save, homeActions());
     else if (src.kind === 'village') await require('./villages').eatFromVillage(bot, task, goal, save, src.village, homeActions());
     else if (src.kind === 'herd') await require('./sightings').walkToSighting(bot, task, goal, save, src.animal, src.sighting, navigate);
-    // In view: the hunt is the survival layer's, the reserve asked for.
+    else if (src.kind === 'in_view') await huntInView(bot, task, goal, save, [src.animal]);
     return;
   }
   const survivalState = goal.survival || {};
@@ -5535,6 +5608,10 @@ async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { near 
   // gathering was chosen, and resting it was the stall.
   if (attempts.resting('food_search', 'stock', now)) { attempts.clear('food_search', 'stock'); unwatch(goal, 'food_search', 'stock'); }
   goal.step = { action: 'hunt_food_for_nether', foodPoints: foodSupply(bot), required: NETHER_FOOD }; save();
+  // An animal in view is hunted; the search walks on only with none. It
+  // searched for "animals", a name no block has, so it saw none and walked
+  // past every cow (mid-244-ah, note 594).
+  if (await huntInView(bot, task, goal, save)) return;
   await explore(bot, task, goal, save, 'animals', { surfaceOnly: true });
 }
 

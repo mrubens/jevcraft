@@ -42,6 +42,17 @@ function foodCarried(bot) {
 // eight each, a sheep one or two mutton at six, a chicken one at six, a
 // rabbit one at five.
 const MEAT_POINTS = { cow: 16, mooshroom: 16, pig: 16, sheep: 9, chicken: 6, rabbit: 5, hoglin: 24 };
+// The same meat raw, as a kill leaves it and as it is counted until cooked:
+// beef and porkchop three a piece, mutton two, rabbit three (half the
+// rabbits drop one), a hoglin two to four porkchops. mid-244-ah (note 594)
+// was told a cow in view would bring 32 of the 40 points it was short; the
+// nine beef its hunts brought counted 27.
+const RAW_MEAT_POINTS = { cow: 6, mooshroom: 6, pig: 6, sheep: 3, chicken: 0, rabbit: 1.5, hoglin: 9 };
+// A kill the bot tried for in the last two minutes and could not make
+// (behind cover, no way to it), as the survival layer keeps it
+// (foraging.js failedPrey), is not food in view.
+const PREY_FAILED_MS = 120000;
+const preyFailed = (goal, e, now = Date.now()) => goal?.survival?.failedPrey?.[e.uuid || e.id] > now - PREY_FAILED_MS;
 function foodSources(bot, goal) {
   const here = bot.entity?.position;
   if (!here) return [];
@@ -50,7 +61,7 @@ function foodSources(bot, goal) {
   const overworld = /overworld/.test(String(bot.game?.dimension || 'overworld'));
   const prey = overworld ? ['cow', 'mooshroom', 'sheep', 'rabbit'] : ['hoglin'];
   guard(() => {
-    const seen = Object.values(bot.entities || {}).filter(e => prey.includes(e.name) && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32)
+    const seen = Object.values(bot.entities || {}).filter(e => prey.includes(e.name) && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32 && !preyFailed(goal, e))
       .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here));
     if (seen[0]) {
       const d = Math.round(seen[0].position.distanceTo(here)), kind = seen[0].name, count = seen.filter(e => e.name === kind).length;
@@ -141,4 +152,4 @@ function healingSays(bot, goal) {
   };
 }
 
-module.exports = { healingSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS };
+module.exports = { healingSays, foodCarried, nearestFood, foodSources, daylightSays, MEAT_POINTS, RAW_MEAT_POINTS, preyFailed };

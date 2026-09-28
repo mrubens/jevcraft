@@ -959,14 +959,17 @@ test('the crossing kit says where food lies against the frame begun, and offers 
   assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, client), true);
   assert.match(offered.top_up_food, /searches outward from here for animals, heading by heading, on foot, swimming or by boat, with no bound on how far/);
   assert.match(offered.top_up_food, /Meanwhile the frame at \(8, 64, 23\), 4 of ten cast, 201 blocks from here, is left where it stands: nothing keeps the search near it/);
-  assert.match(offered.top_up_food, /The food known \(the search does not go to it first\): 3 cow seen just now, \d+ blocks \w+ \(30, 40\), 28 blocks from the frame: about \d+ (seconds|minutes) in all/);
+  assert.match(offered.top_up_food, /The food known \(the search does not walk to what is out of view first\): 3 cow seen just now, \d+ blocks \w+ \(30, 40\), 28 blocks from the frame: about \d+ (seconds|minutes) in all/);
   assert.match(offered.top_up_food_near, /^Gather food at the known food whose trip on to the frame is shortest, then back to the cast: 3 cow seen just now/);
-  assert.match(offered.top_up_food_near, /the walk there about \d+ seconds, about 45 seconds for 3 cows, and on to the frame about 7 seconds\), for about 40 of the 40 points short/);
+  // Counted raw, as the kills leave it (note 594): three cows about six a cow.
+  assert.match(offered.top_up_food_near, /the walk there about \d+ seconds, about 45 seconds for 3 cows, and on to the frame about 7 seconds\), for about 18 of the 40 points short as raw meat, about 40 once cooked/);
   assert.match(offered.cross_now, /No portal is lit yet: going on is the frame at \(8, 64, 23\), 4 of ten cast, 201 blocks from here, finished first, then the crossing\. Now health 20, hunger 6; health comes back: health is full; at hunger 6 a point lost would not come back until the bot eats to eighteen\. Food carried: nothing to eat\. .*at zero it starves to one health/);
-  // With no frame begun, none of that is said.
+  // With no frame begun, none of the frame is said, and the known food is
+  // still offered, back here (note 594).
   delete goal.portalFrame; delete goal.crossingKit;
   assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, client), true);
-  assert.equal(offered.top_up_food_near, undefined);
+  assert.match(offered.top_up_food_near, /^Gather food at the known food nearest by the trip there and back, then come back here: 3 cow seen just now, \d+ blocks \w+ \(30, 40\): about \d+ (seconds|minutes) in all \(the walk there about \d+ seconds, about 45 seconds for 3 cows, and back here about \d+ seconds\)/);
+  assert.doesNotMatch(offered.top_up_food_near, /frame/);
   assert.doesNotMatch(offered.cross_now, /No portal is lit yet/);
 });
 
