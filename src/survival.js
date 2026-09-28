@@ -171,6 +171,10 @@ const PILLAR_SECONDS = 1.5;
 // passes in the flight records of 2026-09-23 to 26); eating a second and six
 // tenths; digging down a second a block more than the dig itself (below).
 const BLOCK_SECONDS = 0.6, EAT_SECONDS = 1.6, SHAFT_BLOCK_SECONDS = 1;
+// How far a creeper behind a block moves before the block is asked about
+// again: more than a standing one is nudged (a push, a knockback's slide),
+// about a quarter second of its walk.
+const CREEPER_WALKS = 0.75;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
 const SPRINT = 5.6, SCOUT_MS = 300;
@@ -2257,7 +2261,13 @@ class Survival {
         const blast = (estimate.mobs || []).find(m => m.name === 'creeper')?.fought?.blast;
         const count = creepers.length > 1 ? ` ${creepers.length} creepers are here (${creepers.map(t => Math.round(t.distance)).join(', ')} blocks off): the dance hits one at a time while the others come on.` : '';
         const blasts = blast ? ` Gone off where the dance backs to here, a blast is about ${blast} after the armour worn: ${Math.max(1, Math.ceil(bot.health / blast))} of them end${Math.ceil(bot.health / blast) === 1 ? 's' : ''} it.` : '';
-        return count + blasts; })()}${edge}`,
+        // Lit, with neither the swings nor the room behind fitting in its
+        // fuse, the dance does not answer it: mid-243-aa took the dance at
+        // 1.7 blocks from a lit creeper with its own blocks at the bot's
+        // back, and one blast took 20 (note 547).
+        const lit = (estimate.mobs || []).find(m => m.name === 'creeper' && m.fought?.litNowFuseLeft != null && !m.fought.diesBeforeItGoesOff && m.fought.blast > 0)?.fought;
+        const nothing = lit ? ` Nothing the dance does here stops it: the creeper is lit, about ${lit.litNowFuseLeft} seconds of its fuse left; the swings take about ${lit.secondsToKillIt} seconds to kill it, and ${lit.roomBehind != null && lit.roomBehind <= 0 ? `with no room behind the bot to back into it goes off about ${lit.goesOffAt} blocks off` : `${lit.roomBehind != null ? `the ${lit.roomBehind} block${lit.roomBehind === 1 ? '' : 's'} of room behind the bot back${lit.roomBehind === 1 ? 's' : ''} it` : 'backing at a walk in the fuse left takes it'} only to about ${lit.goesOffAt} blocks off, where it goes off`}: about ${lit.blast} after the armour worn${lit.blast >= bot.health ? ', more than the bot has' : ''}.` : '';
+        return count + nothing + blasts; })()}${edge}`,
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.
@@ -2521,7 +2531,11 @@ class Survival {
     const hid = held?.hidden;
     const offSpot = !!hid && hid.cell !== `${feet}`;
     const lineAgain = hid && !offSpot ? require('./bunker').seenFrom(bot, danger.filter(t => shooter(t.entity)).map(t => t.entity), feet).filter(e => !hid.seenBy.includes(e.id)) : [];
-    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince && !offSpot && !lineAgain.length;
+    // A block in a creeper's line is held while the line stays stopped and
+    // the creeper stands; the moment it walks, or has a line again, it is
+    // asked again (note 547).
+    const blockAgain = this.blockCreeperHeld(held);
+    const holding = held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && Date.now() - held.at < STANCE_HOLD_MS && (held.expects ? !overEstimate : bot.health > held.health - STANCE_HEALTH) && !hitSince && !offSpot && !lineAgain.length && !blockAgain;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
     // And when the stance held is no longer on offer, as that asks too:
@@ -2623,10 +2637,15 @@ class Survival {
         threats: danger.slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.
-        estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}), ...(ownCells.has(t.entity.id) ? { inCell: true } : {}) })),
+        // A creeper with its room to back into, its health and its fuse, as
+        // the options price it: without them mid-243-aa's state said the
+        // fight cost nothing, the creeper "going off 6 blocks off", while
+        // its creeper stood lit 1.7 blocks off with no room behind the bot
+        // and the fight and the dance each said a blast of 23 (note 547).
+        estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}), ...(ownCells.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + ownCells.size }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
-          ...(lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
+          ...(blockAgain ? { askedAgainFor: blockAgain } : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
             : following.length ? { askedAgainFor: `it is over, and ${following.length === 1 ? 'a mob it was chosen against is' : `${following.length} mobs it was chosen against are`} still coming at the bot` } : {}) } : null,
@@ -3763,6 +3782,27 @@ class Survival {
     return true;
   }
 
+  // Why a held block in a creeper's line is to be asked again, or null
+  // while it holds: the line open again (the creeper come round to one), or
+  // the creeper walking since the line was cut. Past three blocks it walks
+  // round the block toward the bot, making its way anew each second, seen
+  // or not (26.1.2 MeleeAttackGoal); held on "the line is stopped", mid-243-
+  // aa's stance put a block in each new line as it came round, four in six
+  // seconds, never asking, until it came in lit at 1.7 blocks with the bot
+  // walled in on three sides by its own blocks (note 547).
+  blockCreeperHeld(held) {
+    const hold = held?.choice === 'block_creeper' ? held.blockCreeper : null;
+    if (!hold) return null;
+    if (held.askAgain) return held.askAgain;
+    const bot = this.bot, e = bot.entities?.[hold.id];
+    if (!e?.position || e.isValid === false) return null;
+    const r1 = v => Math.round(v * 10) / 10, d = r1(e.position.distanceTo(bot.entity.position));
+    if (!require('./creeper-sight').sightLine(bot, e).stoppedBy) return `the creeper has come round the block to a line to the bot, ${d} blocks off${creeperSwelling(bot, e) ? ', lit' : ''}`;
+    const moved = Math.hypot(e.position.x - hold.creeperAt.x, e.position.z - hold.creeperAt.z) + Math.abs(e.position.y - hold.creeperAt.y);
+    if (moved >= CREEPER_WALKS) return `the creeper is walking: ${r1(moved)} blocks since its line was cut, from ${r1(hold.distance)} to ${d} blocks off the bot`;
+    return null;
+  }
+
   // A block in a creeper's line (creeper-sight.js): offered for the creeper
   // within seven blocks whose fuse ends first (a lit one before one not lit,
   // then the nearest), where a cell on the ray from its eyes to the bot's
@@ -3776,7 +3816,7 @@ class Survival {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function' || inWater(bot)) return null;
     const { FUSE_KEPT, FUSE, LIGHTS_AT, creeperBlocked, armourOf } = require('./combat-estimate');
-    const { blockPlan, whereSays } = require('./creeper-sight');
+    const { blockPlan, whereSays, creeperWalk } = require('./creeper-sight');
     const creepers = coming.filter(t => t.entity.name === 'creeper' && t.distance <= FUSE_KEPT && t.entity.position)
       .map(t => ({ t, litFor: creeperLitFor(bot, t.entity) }))
       .sort((a, b) => (Number.isFinite(b.litFor) - Number.isFinite(a.litFor)) || a.t.distance - b.t.distance);
@@ -3796,12 +3836,25 @@ class Survival {
       : ` It is not lit: at ${LIGHTS_AT} blocks in about ${b.lightsIn} seconds at its walk, and it goes off ${FUSE} seconds after that if it sees the bot.`;
     const verdict = behind ? '' : b.inTime ? ` The line is cut about ${b.margin} seconds before it would go off.`
       : ` That is about ${Math.round(-b.margin * 10) / 10} seconds too late: it goes off first, about ${b.goesOffAt} blocks off, about ${Math.round(b.blast)} after the armour worn${b.blast >= bot.health ? ', more than the bot has' : ''}.`;
-    const next = ` Behind it: within ${LIGHTS_AT} blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light.${c.distance > LIGHTS_AT && !lit ? ` More than ${LIGHTS_AT} off and not lit, it walks on meanwhile, round the block toward the bot, and stops where it comes within ${LIGHTS_AT}: out of sight there it stands, in sight it lights.` : ''} If the bot backs off past ${LIGHTS_AT} blocks from it, it walks round the block and lights again where it comes within ${LIGHTS_AT} in sight. Neither strikes the other through the block.`;
+    // Where it goes then, by its own way (creeper-sight.js creeperWalk):
+    // mid-243-aa's creeper was told to stand behind the first block; it
+    // walked round each block put in its line at three to four blocks and
+    // came in lit on the side left open, while the stance, held, put four
+    // two-high columns round the bot without asking again (note 547).
+    const walk = creeperWalk(bot, c.entity, { planned: behind ? [] : plan.cells });
+    const { BLAST_CLEAR, creeperBlast, afterArmour } = require('./combat-estimate');
+    const roundBlast = walk.sees && !walk.within ? Math.round(afterArmour(creeperBlast(walk.distance), worn) * 10) / 10 : 0;
+    const goesOffIn = walk.sees && !walk.within ? Math.round((walk.seconds + FUSE) * 10) / 10 : null;
+    const walkSays = walk.noWay ? ` It has no way to walk to the bot from where it is: it stays about there, and behind the block it does not see the bot.`
+      : walk.within ? (walk.sees ? '' : ` It is within ${LIGHTS_AT} blocks: it stands where it is while the bot stays, and its fuse ${lit ? 'burns back down' : 'does not light'}.`)
+      : walk.sees ? ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where it sees the bot past the block: it lights there with its whole fuse and goes off about ${goesOffIn} seconds from now, about ${Math.round(afterArmour(creeperBlast(walk.distance), worn))} after the armour worn, unless the bot is more than ${FUSE_KEPT} off or out of its sight by then. The block buys those seconds, not the end of it: they are for backing out past ${BLAST_CLEAR} blocks, where its blast does nothing, or for striking it; staying behind the block, the blast is the price, and the stance is asked again as soon as it walks.`
+      : ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where the block still stops its line: it stands there and does not light.`;
+    const next = ` Behind it: within ${LIGHTS_AT} blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light.${walkSays} Out of its sight three seconds on end, it forgets the bot and stops following it until it sees it again. If the bot backs off past ${LIGHTS_AT} blocks from it, it walks round the block and lights again where it comes within ${LIGHTS_AT} in sight. Neither strikes the other through the block.`;
     const others = creepers.slice(1);
     const othersSays = others.length ? ` ${others.length === 1 ? `The other creeper (${Math.round(others[0].t.distance)} blocks off) is` : `${others.length} other creepers (${others.map(o => Math.round(o.t.distance)).join(', ')} blocks off) are`} not in this line.` : '';
     const rest = mobs.filter(m => m.id !== c.entity.id);
     const cost = stanceCost({ mobs: rest, setup: total, reaches: () => true, shield: shielded });
-    const damage = Math.round((cost.damage + (b.inTime || behind ? 0 : b.blast)) * 10) / 10;
+    const damage = Math.round((cost.damage + (b.inTime || behind ? roundBlast : b.blast)) * 10) / 10;
     const what = `the creeper (${d} blocks off${lit ? ', lit' : ''})`;
     const description = behind
       ? `Stay behind the ${plan.stoppedBy.name.replaceAll('_', ' ')} at ${plan.stoppedBy.cell}, in the line from the eyes of ${what} to the bot's.${rule}${fuse}${next}${othersSays}` + costSays(cost, bot.health, rest, { done: 'Behind it' }) + edge
@@ -3810,23 +3863,36 @@ class Survival {
       run: async () => {
         const e = bot.entities?.[c.entity.id] || c.entity;
         if (e.isValid === false) return true;
+        const stance = this.state.stance?.choice === 'block_creeper' ? this.state.stance : null;
+        // Where the creeper was when its line was cut: what the hold
+        // watches (blockCreeperHeld).
+        const cut = () => { if (stance && !stance.blockCreeper) stance.blockCreeper = { id: e.id, creeperAt: e.position.clone(), distance: e.position.distanceTo(bot.entity.position), at: Date.now() }; };
         const now = blockPlan(bot, e);
         // The line stopped: the bot stays behind it, a moment at a time.
-        if (now.stoppedBy) { await sleep(250); return true; }
+        if (now.stoppedBy) { cut(); await sleep(250); return true; }
+        // A line open again once this stance had cut one is not closed
+        // again here: another block is another choice, asked with where the
+        // creeper has come to. Held, mid-243-aa's stance put four two-high
+        // columns round the bot as its creeper walked round them, until
+        // it came in lit on the side left open and there was no room to
+        // back out (note 547).
+        if (stance?.blockCreeper) { stance.askAgain = `the creeper has come round the block to a line to the bot, ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off${creeperSwelling(bot, e) ? ', lit' : ''}`; return true; }
         if (!now.cells.length) throw Object.assign(new Error(now.why || 'no cell in its line takes a block'), { name: 'StanceFailed' });
         const material = bot.inventory.items().find(i => shelter.buildingMaterials.has(i.name) && i.count >= now.cells.length)?.name;
         if (!material) throw Object.assign(new Error(`not ${now.cells.length} building blocks of one kind carried`), { name: 'StanceFailed' });
-        this.report(goal, save, { action: 'block_creeper', creeper: Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10, lit: creeperSwelling(bot, e), cells: now.cells.map(p => ({ ...p })) });
+        const r1 = v => Math.round(v * 10) / 10;
+        this.report(goal, save, { action: 'block_creeper', creeper: r1(e.position.distanceTo(bot.entity.position)), creeperAt: { x: r1(e.position.x), y: r1(e.position.y), z: r1(e.position.z) }, lit: creeperSwelling(bot, e), cells: now.cells.map(p => ({ ...p })) });
         for (const p of now.cells) {
           task.check();
           try { await this.actions.place(bot, task, p, material, { stay: true }); }
           catch (err) {
             task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
             // The line cut is the cover; the rest is the second of two high.
-            if (blockPlan(bot, e).stoppedBy) return true;
+            if (blockPlan(bot, e).stoppedBy) { cut(); return true; }
             throw Object.assign(new Error(String(err.message || err).slice(0, 160)), { name: 'StanceFailed' });
           }
         }
+        if (blockPlan(bot, e).stoppedBy) cut();
         return true;
       } };
   }

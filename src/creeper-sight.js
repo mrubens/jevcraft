@@ -130,4 +130,86 @@ function whereSays(bot, cell) {
   return `${d} blocks from the bot's eyes toward it, ${dy >= 0 ? `${dy} above` : `${-dy} below`} its feet`;
 }
 
-module.exports = { lineCells, sightLine, blockPlan, whereSays, eyeOf, EYE, REACH };
+// Where a creeper out past three blocks goes once a block is in its line.
+// Read from the 26.1.2 jar: its melee goal (MeleeAttackGoal, made with
+// followingTargetEvenIfNotSeen false) keeps to the path it has while it
+// does not see the bot, and a second after that path ends makes a new one
+// to the bot's cell (canUse: createPath, a twenty-tick cooldown, no sight
+// asked); the swell goal takes the move from it the tick the creeper comes
+// within three blocks (feet to feet, distanceToSqr under 9), sight or not,
+// and it stands there. So it walks round the block toward the bot and
+// stops at the first point of its way within three: in sight there it
+// lights with its whole fuse; out of sight it stands and does not. Out of
+// its sight sixty ticks on end, it forgets the bot (TargetGoal, mustSee,
+// unseenMemoryTicks 60) until it sees it again within sixteen. mid-243-aa's
+// creeper walked round each block put in its line at three to four blocks,
+// every second or two, and came in on the side left open (note 547).
+// `planned` cells count as solid. { within, at, blocks, seconds, distance,
+// sees } or { noWay: true }.
+function creeperWalk(bot, creeper, { planned = [], radius = 3, limit = 16 } = {}) {
+  const { blocksPerSecond } = require('./combat-estimate');
+  const here = bot.entity.position, goal = here.floored();
+  const solidAt = new Set(planned.map(p => `${p}`));
+  const collides = p => solidAt.has(`${p}`) || stops(bot.blockAt(p));
+  const clear = p => !collides(p) && !/lava/.test(bot.blockAt(p)?.name || '');
+  const tall = Math.max(1, Math.ceil((creeper.height ?? 1.7) - 1e-6));
+  const room = p => { for (let dy = 0; dy < tall; dy++) if (!clear(p.offset(0, dy, 0))) return false; return true; };
+  const stand = p => room(p) && collides(p.offset(0, -1, 0));
+  const eyeUp = eyeOf(creeper), botEye = here.offset(0, EYE.player, 0);
+  const seesFrom = at => !lineCells(at.offset(0, eyeUp, 0), botEye).some(c => collides(c.cell));
+  const speed = blocksPerSecond('creeper');
+  const r1 = n => Math.round(n * 10) / 10;
+  const now = creeper.position.distanceTo(here);
+  if (now < radius) return { within: true, at: creeper.position, blocks: 0, seconds: 0, distance: r1(now), sees: seesFrom(creeper.position) };
+  // A* to the bot's cell, the way the game's pathfinder goes (the same
+  // steps as bunker.js lineRegained: no corner cut, up one, down three).
+  const key = p => `${p.x},${p.y},${p.z}`;
+  const h = p => Math.hypot(p.x - goal.x, p.y - goal.y, p.z - goal.z);
+  const heap = [];
+  const push = node => { heap.push(node); for (let i = heap.length - 1; i > 0;) { const j = (i - 1) >> 1; if (heap[j].f <= heap[i].f) break; [heap[i], heap[j]] = [heap[j], heap[i]]; i = j; } };
+  const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; for (let i = 0; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l].f < heap[m].f) m = l; if (r < heap.length && heap[r].f < heap[m].f) m = r; if (m === i) break; [heap[i], heap[m]] = [heap[m], heap[i]]; i = m; } } return top; };
+  const start = creeper.position.floored();
+  push({ p: start, g: 0, f: h(start) });
+  const came = new Map([[key(start), null]]), best = new Map([[key(start), 0]]);
+  const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  let reached = null, n = 0;
+  while (heap.length && n++ < 3000) {
+    const { p, g } = pop();
+    if (g > (best.get(key(p)) ?? Infinity)) continue;
+    if (p.equals(goal)) { reached = p; break; }
+    for (const [dx, dz] of DIRS) {
+      if (dx && dz && !(room(p.offset(dx, 0, 0)) && room(p.offset(0, 0, dz)))) continue;
+      for (const dy of [0, 1, -1, -2, -3]) {
+        const to = p.offset(dx, dy, dz);
+        if (Math.abs(to.x - goal.x) > limit || Math.abs(to.z - goal.z) > limit || Math.abs(to.y - goal.y) > 6) break;
+        if (dy > 0 && !clear(p.offset(0, tall, 0))) continue;
+        if (dy < 0 && ![...Array(-dy).keys()].every(k => room(p.offset(dx, -k, dz)))) continue;
+        if (!(to.equals(goal) ? room(to) : stand(to))) continue;
+        const g2 = g + Math.hypot(dx, dz) + (dy > 0 ? 0.5 : 0), k = key(to);
+        if (g2 < (best.get(k) ?? Infinity)) { best.set(k, g2); came.set(k, p); push({ p: to, g: g2, f: g2 + h(to) }); }
+        break;
+      }
+    }
+  }
+  if (!reached) return { noWay: true };
+  // Along its way, from where it stands through the middles of the cells,
+  // to the first point within `radius` of the bot's feet.
+  const path = [];
+  for (let p = reached; p; p = came.get(key(p))) path.unshift(p);
+  const points = [creeper.position, ...path.slice(1, -1).map(p => p.offset(0.5, 0, 0.5)), here];
+  let walked = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i], len = a.distanceTo(b);
+    for (let s = 0; s <= len; s += 0.1) {
+      const at = a.plus(b.minus(a).scaled(len ? s / len : 0));
+      if (at.distanceTo(here) < radius) {
+        const blocks = walked + s;
+        return { within: false, at, blocks: r1(blocks), seconds: r1(blocks / speed), distance: r1(at.distanceTo(here)), sees: seesFrom(at) };
+      }
+    }
+    walked += len;
+  }
+  return { noWay: true };
+}
+
+module.exports = { lineCells, sightLine, blockPlan, whereSays, creeperWalk, eyeOf, EYE, REACH };

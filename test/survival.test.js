@@ -5141,7 +5141,11 @@ test('a block in a creeper\'s line is offered, priced by the seconds until the l
   assert.match(o.description, /^Put 2 blocks, two high, in the line from the eyes of the creeper \(4\.5 blocks off\) to the bot's, beside the bot at head height: about 1\.2 seconds until the line is cut \(the second block\), 1\.2 for both, and stay behind it\./);
   assert.match(o.description, /its sight is one line from its eyes to the bot's, which any block stops; out of its sight the fuse burns back down a tick at a time/);
   assert.match(o.description, /It is not lit: at 3 blocks in about 0\.5 seconds at its walk, and it goes off 1\.5 seconds after that if it sees the bot\. The line is cut about 0\.8 seconds before it would go off\./);
-  assert.match(o.description, /within 3 blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light\. More than 3 off and not lit, it walks on meanwhile, round the block toward the bot/);
+  assert.match(o.description, /within 3 blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light\. It is more than 3 off, so it walks on toward the bot round the block/);
+  // Its way round, against the wall at the bot's back, comes within three
+  // where the column still stops its line: there it stands (note 547).
+  assert.match(o.description, /Here that point is about [\d.]+ blocks' walk from it, about [\d.]+ seconds, [\d.]+ blocks from the bot, where the block still stops its line: it stands there and does not light\./);
+  assert.match(o.description, /Out of its sight three seconds on end, it forgets the bot/);
   assert.match(o.description, /If the bot backs off past 3 blocks from it, it walks round the block and lights again/);
   assert.equal(o.expects.damage, 0, 'nothing else here reaches it');
   assert(options.fight.expects.damage > 4.8, 'the fight still costs more than the bot has');
@@ -5192,6 +5196,89 @@ test('no block is offered for a creeper with no cell between it and the bot, or 
   bare.inventory.items = () => [{ name: 'iron_sword', count: 1 }];
   assert.equal(new Survival(bare, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
     .stanceOptions(new Task('x'), {}, () => {}, [{ entity: far, distance: 4.45, visible: true }], false).block_creeper, undefined);
+});
+
+// Note 547, mid-243-aa (25583, 2026-09-28 01:11:53 to 01:12:03): the block
+// went in, and the creeper walked round it at three to four blocks; held on
+// "the line is stopped", the stance put a block in each new line as it came
+// round, four two-high columns in six seconds, never asking, until it came
+// in lit at 1.7 blocks with the bot walled in by its own blocks, and one
+// blast took 20 health through full iron.
+test('a creeper past three is said to walk round the block to where it sees the bot, and the blast there is the price of staying (note 547)', () => {
+  // The column goes in diagonally beside the bot; its way in comes within
+  // three blocks with a line past it.
+  const creeper = { id: 9, name: 'creeper', position: new Vec3(-2.5, 64, 4.5), height: 1.7, width: 0.6 };
+  const bot = creeperBot({ wall: false, health: 20, creeper });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const o = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: creeper, distance: creeper.position.distanceTo(bot.entity.position), visible: true }], false).block_creeper;
+  assert(o);
+  const { creeperWalk, blockPlan } = require('../src/creeper-sight');
+  const walk = creeperWalk(bot, creeper, { planned: blockPlan(bot, creeper).cells });
+  assert.equal(walk.sees, true, JSON.stringify(walk));
+  assert(walk.distance <= 3 && walk.seconds > 0, JSON.stringify(walk));
+  assert.match(o.description, /It is more than 3 off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not/);
+  assert.match(o.description, /where it sees the bot past the block: it lights there with its whole fuse and goes off about [\d.]+ seconds from now, about 1\d after the armour worn/);
+  assert.match(o.description, /The block buys those seconds, not the end of it: they are for backing out past 6 blocks, where its blast does nothing, or for striking it; staying behind the block, the blast is the price/);
+  assert(o.expects.damage >= 10, `the blast where it comes round is counted: ${JSON.stringify(o.expects)}`);
+  // Within three and out of its sight behind a block, it stands: nothing counted.
+  const near = { id: 9, name: 'creeper', position: new Vec3(3.4, 64, 0.5), height: 1.7, width: 0.6 };
+  const walled = creeperBot({ wall: false, health: 20, creeper: near });
+  walled.blockAt = (inner => p => { const f = p.floored(); return f.x === 2 && (f.y === 64 || f.y === 65) && f.z === 0 ? { position: f, name: 'cobblestone', boundingBox: 'block' } : inner(p); })(walled.blockAt);
+  const still = creeperWalk(walled, near);
+  assert.equal(still.within, true);
+  assert.equal(still.sees, false);
+});
+
+test('a held block in a creeper\'s line is asked again the moment the creeper walks, or has a line again, and no block goes in unasked (note 547)', async () => {
+  const placed = [];
+  const creeper = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(4.95, 64, 0.5), height: 1.7, width: 0.6, isValid: true };
+  const bot = creeperBot({ health: 20, creeper });
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => { const f = p.floored(); return placed.includes(`${f}`) ? { position: f, name: 'cobblestone', boundingBox: 'block' } : blockAt(p); };
+  const survival = new Survival(bot, { place: async (b, t, p) => { placed.push(`${p.floored()}`); }, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const asked = [];
+  survival.decide = async (task, goal, save, question) => { asked.push(question); return { path: ['block_creeper'], stale: asked.length > 1 }; };
+  const danger = () => [{ entity: creeper, distance: creeper.position.distanceTo(bot.entity.position), visible: true }];
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
+  assert.equal(asked.length, 1);
+  assert.deepEqual(placed, ['(1, 64, 0)', '(1, 65, 0)']);
+  assert(survival.state.stance?.blockCreeper, 'the line cut, where the creeper stood is kept');
+  // It stands: held, not asked.
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
+  assert.equal(asked.length, 1, 'held while it stands behind the block');
+  // It walks, the line still stopped: asked again at once.
+  creeper.position = new Vec3(4.95, 64, 1.9);
+  assert(require('../src/creeper-sight').sightLine(bot, creeper).stoppedBy, 'still out of its sight');
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
+  assert.equal(asked.length, 2, 'asked again as it walks');
+  assert.match(asked[1].state.previousStance.askedAgainFor, /the creeper is walking: 1\.4 blocks since its line was cut, from 4\.5 to 4\.7 blocks off the bot/);
+  // Round the block to a line: asked, and nothing placed without the answer.
+  survival.state.stance = { ...survival.state.stance, askAgain: undefined, blockCreeper: { id: 9, creeperAt: creeper.position.clone(), distance: 4.7, at: Date.now() }, choice: 'block_creeper', at: Date.now(), ids: [9], health: 20 };
+  creeper.position = new Vec3(0.5, 64, 3.6);
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
+  assert.equal(asked.length, 3);
+  assert.match(asked[2].state.previousStance.askedAgainFor, /the creeper has come round the block to a line to the bot, 3\.1 blocks off/);
+  assert.equal(placed.length, 2, 'no block put in the new line unasked');
+});
+
+test('the state\'s fight estimate prices a creeper with its fuse and the room behind the bot, as the options do (note 547)', async () => {
+  const registry = require('minecraft-data')('26.1'), keys = registry.entitiesByName.creeper.metadataKeys;
+  const metadata = []; metadata[keys.indexOf('swell_dir')] = 1; metadata[keys.indexOf('health')] = 17;
+  const lit = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(2.2, 64, 0.5), height: 1.7, width: 0.6, metadata, isValid: true };
+  const bot = creeperBot({ health: 20, creeper: lit });
+  bot._creeperFuses = new Map([[9, Date.now() - 100]]);
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  let asked = null;
+  survival.decide = async (task, goal, save, question) => { asked = question; return { path: ['fight'], stale: true }; };
+  await survival.stanceStep(new Task('t'), {}, () => {}, [{ entity: lit, distance: 1.7, visible: true }], false);
+  assert(asked);
+  const fought = asked.state.estimate.mobs.find(m => m.name === 'creeper').fought;
+  assert(fought.blast >= 15, `lit 1.7 off with a wall behind: ${JSON.stringify(fought)}`);
+  assert(asked.state.estimate.fightHere.damageTaken >= 15, JSON.stringify(asked.state.estimate.fightHere));
+  // The dance says it does not stop it, and what the blast costs.
+  const dance = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: lit, distance: 1.7, visible: true }], false).creeper_dance;
+  assert(dance);
+  assert.match(dance.description, /Nothing the dance does here stops it: the creeper is lit, about [\d.]+ seconds of its fuse left; the swings take about [\d.]+ seconds to kill it, and with no room behind the bot to back into it goes off about 1\.7 blocks off: about 2\d(\.\d)? after the armour worn, more than the bot has/);
 });
 
 // mid-241-n (2026-09-28 00:11:37 to 46): two creepers, one 3.4 off on the
