@@ -564,8 +564,10 @@ test('a column that would not rise is not offered again there, and the climb goe
   assert.equal(goal.surfaceReturn.climb.method, 'staircase');
   // Out of that column, straight up is on offer again, and asked.
   await returnToSurface(bot, new Task('exit'), goal, () => {}, actions);
+  // The staircase, the one way left in that column, was taken and said,
+  // not asked (note 560).
   const asked = goal.decisions.filter(d => d.id === 'climb_out');
-  assert.deepEqual(asked.map(d => d.path[0]), ['straight_up', 'staircase', 'straight_up']);
+  assert.deepEqual(asked.map(d => d.path[0]), ['straight_up', 'straight_up']);
 });
 
 test('the climb is asked again when the pickaxes carried change', async () => {

@@ -5097,6 +5097,39 @@ test('walkers with no way up to the bot are said so and left out of every stance
   assert(damage(counted.take_cover) > 10, counted.take_cover.description);
 });
 
+// mid-244-ad-nether-2 (note 560): the bot on its own one-wide bridge over a valley twenty deep, a sword piglin on the
+// slope six blocks off and two below. Every stance priced it at the bot, the pillar was chosen every fifteen seconds
+// for minutes, and nothing said the crossing waited.
+function bridgeBot(bridgeFrom) {
+  const isSolid = f => f.y < 40 || (f.x >= 3 && f.x <= 14 && f.z >= 5 && f.z <= 14 && f.y <= 62) || (f.y === 64 && f.z === 0 && f.x >= bridgeFrom && f.x <= 0);
+  const iron = ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'].map(name => ({ name }));
+  return Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival' }, health: 20, food: 20, foodSaturation: 5, entities: {}, time: { timeOfDay: 6000 },
+    entity: { position: new Vec3(0.5, 65, 0.5), onGround: true }, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 64 }], slots: { 5: iron[0], 6: iron[1], 7: iron[2], 8: iron[3], 45: { name: 'shield' } } },
+    blockAt: p => { const f = p.floored(); return { position: f, name: isSolid(f) ? (f.y === 64 ? 'cobblestone' : 'netherrack') : 'air', boundingBox: isSolid(f) ? 'block' : 'empty', diggable: true }; },
+    world: { raycast: () => null }, findBlocks: () => [] });
+}
+const onSlope = (bot, held) => { const position = new Vec3(4.5, 63, 6.5); return [{ entity: { id: 7, name: 'piglin', position, height: 1.95, heldItem: { name: held } }, distance: position.distanceTo(bot.entity.position), visible: true }]; };
+
+test('a sword piglin on the slope with no way onto the bridge is said first where the work goes on, and every stance says the work waits', () => {
+  for (const [from, sure] of [[-6, true], [-30, false]]) {
+    const bot = bridgeBot(from);
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    const goal = { step: { action: 'cross_toward' } };
+    const options = survival.stanceOptions(new Task('x'), goal, () => {}, onSlope(bot, 'golden_sword'), false);
+    assert.ok(options.keep_working, 'carrying on is offered');
+    const says = sure ? /^The piglin \(holding golden sword, no crossbow: it hits at arm's length only\), 2 blocks below the bot's feet, has no way to the bot/
+      : /^The piglin 7\.5 blocks off, 2 below the bot's feet, \(holding golden sword, no crossbow: it hits at arm's length only\) has no way to the bot within 12 blocks of it: any way it has goes round, \d+ blocks of walking or more/;
+    assert.match(options.keep_working.description, says, `${from}: ${options.keep_working.description}`);
+    for (const [k, o] of Object.entries(options)) if (k !== 'keep_working') assert.match(o.description, /The work \(cross toward\) waits meanwhile/, k);
+  }
+  // With a crossbow it shoots: no walker, and nothing says it cannot get to the bot.
+  const bot = bridgeBot(-30);
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), { step: { action: 'cross_toward' } }, () => {}, onSlope(bot, 'crossbow'), false);
+  assert.doesNotMatch(Object.values(options).map(o => o.description).join(' '), /no way to the bot/);
+});
+
 test('a retreat that finds no way says why to the next question', async () => {
   const bot = columnBot();
   bot.pathfinder = { movements: {}, setGoal: () => {} };

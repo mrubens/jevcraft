@@ -46,6 +46,7 @@
 const { decideTree, announceFallback, firstOption } = require('./tree');
 const { checkAir } = require('../vitals');
 const { stage } = require('../typesafe');
+const repeats = require('./repeats');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -134,13 +135,14 @@ const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, w
 const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
 const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
 const HEALING = 'healing is the bot\'s health and hunger, whether health comes back, the food carried by kind (the last resort with what it may cost), the nearest food known, the time to daylight, and what standing still costs.';
+const AGAIN = 'sameAnswerAgain says what this question was answered last with these same facts, and that nothing came of it; answersThatCameToNothing, the answers held as failed in the last two minutes, and why. The same answer again seldom ends differently.';
 const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
-  const deaths = state?.recentDeaths ? ` ${DEATHS}` : '';
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.answersThatCameToNothing ? ` ${AGAIN}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '');
   return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
 }
@@ -220,6 +222,46 @@ function endsWhenStopped(asking, signal, trace, log = console.log) {
   });
 }
 
+// The one way through a tree, when every level has one option.
+function oneWay(tree) {
+  const path = [];
+  let children = tree;
+  for (;;) {
+    const keys = Object.keys(children);
+    if (keys.length !== 1) return null;
+    path.push(keys[0]);
+    const node = children[keys[0]];
+    if (!node?.children) return { path, action: node };
+    children = node.children;
+  }
+}
+// Said when it changes, and at most once a minute while it does not.
+const ONE_SAID_MS = 60000;
+function sayOnce(bot, id, path, now = Date.now()) {
+  const said = (bot ? (bot._oneWaySaid ||= {}) : {});
+  const key = path.join('/');
+  if (said[id]?.key === key && now - said[id].at < ONE_SAID_MS) return;
+  said[id] = { key, at: now };
+  console.log(`[one way] ${id}: ${path.join(' / ').replaceAll('_', ' ')}, the only way offered`);
+}
+// A wait chosen is not a loop: a shelter held for the night, a pillar held
+// up top, a stance holding (stillness.js HOLDS) come back to the same
+// answer with nothing new, and that is their point. Nor is an emergency
+// (the fire, the lava, a fight in reach, stillness.js EMERGENCIES), whose
+// questions (body_way, shield_policy, the stance) come at every turn of it:
+// a stall raised there would set the way out aside. Said, never held. And
+// the questions that are the routing and the stall path themselves
+// (turn_priority, stillness_detour) are said, never held: holding them
+// would raise a stall from inside the answer to one.
+const NEVER_HELD = new Set(['turn_priority', 'stillness_detour']);
+function waitingByChoice(goal, id, now = Date.now()) {
+  if (NEVER_HELD.has(id)) return true;
+  const { HOLDS, EMERGENCIES } = require('../stillness');
+  const recent = goal?.survivalAction;
+  if (recent?.action && now - Date.parse(recent.at || 0) < 8000 && (HOLDS.has(recent.action) || EMERGENCIES.has(recent.action))) return true;
+  return HOLDS.has(goal?.step?.action);
+}
+
 class NoSafeDefault extends Error {
   constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
 }
@@ -237,6 +279,18 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // while it is out, for the flight frames; on the decision's record after.
   const trace = { id, t0: performance.now(), at: new Date().toISOString(), stages: [{ stage: 'queued', ms: 0 }] };
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  // One way: taken and said, not asked. A question with one option was
+  // recorded as asked, took the turn and stood in the flight record as a
+  // decision: mid-242-aa's body_way "asked" burn_out forty times in fifteen
+  // minutes, alight in the Nether with nothing else to do (note 560).
+  const one = oneWay(tree);
+  if (one) {
+    sayOnce(bot, id, one.path);
+    const decision = { ...one, id, only: true };
+    if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
+    if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
+    return decision;
+  }
   // How the bot died lately, with every question about playing the game:
   // it walked back to the drowned that had just killed it, and chose to
   // search for food at five health three deaths running, told nothing of
@@ -273,6 +327,23 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.sculk) {
     let sculk = null; try { sculk = require('../sculk').sculkAbout(bot); } catch (_) { /* no world */ }
     if (sculk) state = { ...state, sculk: sculk.says };
+  }
+  // The same facts, the same answer, and nothing came of it (repeats.js):
+  // said in the facts; held as failed when it came back at once twice
+  // running, and the step's stall path takes it from here.
+  const tracked = !!bot && !!goal && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area);
+  const print = tracked ? repeats.fingerprint(state, tree) : null;
+  if (tracked) {
+    const again = repeats.before(bot, goal, id, print, { waiting: waitingByChoice(goal, id) });
+    if (again?.hold) {
+      const why = `${id.replaceAll('_', ' ')}: ${again.says}`;
+      repeats.held(bot, id, again.says);
+      console.log(`[repeat] ${why}`);
+      const { raiseFor, Stalled } = require('../stillness');
+      throw new Stalled(raiseFor(bot, goal, why));
+    }
+    const lately = repeats.heldSays(bot);
+    if (again || lately) state = { ...state, ...(again ? { sameAnswerAgain: again.says } : {}), ...(lately ? { answersThatCameToNothing: lately } : {}) };
   }
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
   // each question offers; test/decisions.test.js turns it back on).
@@ -334,6 +405,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (bot?._asking === trace) delete bot._asking;
   }
   decision.id = id;
+  if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'));
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');

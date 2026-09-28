@@ -49,7 +49,9 @@ The threshold depends on what a mistake would cost. A misheard "come here" waste
 
 ## Deciding what to do next
 
-Once a request is running, the bot loops: observe the world, work out the feasible next actions, do one, verify it. Jev is consulted only when there is a real choice. In the pumpkin run there was not: the plan was "take a pumpkin from the Creative inventory", one feasible action, so the decision was recorded as *only feasible option* and no call was made. The decision log keeps these apart so you can see how often the model was actually needed.
+Once a request is running, the bot loops: observe the world, work out the feasible next actions, do one, verify it. Jev is consulted only when there is a real choice. In the pumpkin run there was not: the plan was "take a pumpkin from the Creative inventory", one feasible action, so no call was made. A question with one option is not asked at all: the one way is taken and said in the log, and only real choices go in the decision log, so it shows how often the model was actually needed.
+
+Nor is a question asked again and again for nothing. When the same question comes back with the same facts, its last answer given and nothing measurable coming of it (no new ground, nothing gained, no block dug or placed), the next asking says so in its facts; and when that answer came back at once twice running, the question is not asked a third time: the answer is held as failed, said to the questions that follow, and the stuck step goes to the stall path, where Jev chooses a detour.
 
 When there is a choice, it is a semantic one. Gathering wood in Survival, code finds the reachable logs and groups them into *sources*: a source is a block type, how many of it are within reach, how far it is, and how much climbing. Jev is asked which source, with the request in front of it, and code picks the nearest block inside the source it chose. In the decision eval, asked to build a *birch* house with six oak logs four blocks away and six birch logs twenty-two blocks away, Jev chose birch at 0.96. Asked for a house with no species named, it chose three close logs over nine far ones at 0.95.
 

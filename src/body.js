@@ -113,9 +113,12 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   else if (decision.fallback || !client) by = 'fallback';
   const choice = decision.path?.[0] && ways[decision.path[0]] ? decision.path[0] : keys[0];
   const way = ways[choice];
-  // Held only as Jev's choice: the old order's burning left alone asked
-  // nothing and held nothing, the turn staying with the fire as it did.
-  if (way.hold && by === 'jev') bot._bodyHeld = { key, choice, at: Date.now(), until: Date.now() + way.hold * 1000, health: bot.health ?? 20 };
+  // Held as Jev's choice, or as the one way there is: the old order's
+  // burning left alone asked nothing and held nothing, the turn staying
+  // with the fire as it did. Burning out as the only way was not held, and
+  // mid-242-aa-nether-1-fortress-1, alight in the Nether with no apple, took
+  // it forty times in fifteen minutes, every step (note 560).
+  if (way.hold && (by === 'jev' || by === 'only')) bot._bodyHeld = { key, choice, at: Date.now(), until: Date.now() + way.hold * 1000, health: bot.health ?? 20 };
   else if (bot?._bodyHeld?.key === key) delete bot._bodyHeld;
   const acted = await way.run();
   return { key: choice, by, acted: acted !== false };

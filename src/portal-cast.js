@@ -453,6 +453,17 @@ async function castFrame(bot, task, goal, save, actions) {
         await place(bot, task, c, material); track(c, material); save();
       }
     }
+    // The slot's top is the one way in for the lava and the water: a block
+    // standing on it (a scaffold of the walk's, a stand's anchor) comes
+    // out. mid-242-ab had a cobblestone on its last slot; no stand could
+    // see into it, and "nowhere to stand to pour" came back 3,463 times
+    // (note 560).
+    const top = p.plus(UP);
+    if (w.solidAt(top) && !/obsidian|bedrock/.test(w.name(top) || '')) {
+      stepIs(p, 'clear_top', { block: w.name(top) });
+      await dig(bot, task, top, { requireDrops: false }); untrack(top); save();
+      return false;
+    }
     // Where to stand: beside the frame, where both pours can be made.
     const stands = standsFor(frame, p, w).sort((a, b) => a.feet.distanceTo(bot.entity.position) - b.feet.distanceTo(bot.entity.position));
     let stand = stands.find(s => s.feet.equals(bot.entity.position.floored()));
@@ -498,7 +509,7 @@ async function castFrame(bot, task, goal, save, actions) {
     if (!stand) {
       const material = portalSupports(bot).material;
       const make = material && standsFor(frame, p, w, { floorless: true })
-        .map(s => ({ s, chain: anchorPath(s.feet.plus(DOWN), w.solidAt, [p, s.feet, s.feet.plus(UP), ...frame.blocks.map(at)]) }))
+        .map(s => ({ s, chain: anchorPath(s.feet.plus(DOWN), w.solidAt, [p, top, s.feet, s.feet.plus(UP), ...frame.blocks.map(at)]) }))
         .filter(x => x.chain && x.chain.length <= 2)
         .sort((a, b) => a.chain.length - b.chain.length || a.s.feet.distanceTo(bot.entity.position) - b.s.feet.distanceTo(bot.entity.position))[0];
       if (make) {

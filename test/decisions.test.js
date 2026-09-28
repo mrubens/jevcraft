@@ -268,3 +268,64 @@ test('a question answered records the time of each stage, from queued through th
   assert.equal(decision.stages, entry.stages);
   assert.ok(entry.stages.every((s, i, all) => !i || s.ms >= all[i - 1].ms));
 });
+
+// Note 560: the progress audit found questions asked hundreds of times, the
+// same answer to the same facts, each answer ending at once.
+test('a question with one option is not asked: the one way is taken and said, not recorded as asked', async () => {
+  const { decide } = require('../src/decisions');
+  const bot = { entity: { position: { x: 0, y: 64, z: 0 } }, game: { dimension: 'the_nether' } };
+  const goal = {};
+  const client = { systemOne: () => assert.fail('one way needs no question') };
+  const r = await decide('portal_method', { client, bot, goal, tree: { cast_frame: { description: 'the only way' } }, state: {} });
+  assert.deepEqual(r.path, ['cast_frame']);
+  assert.equal(r.only, true);
+  assert.equal((goal.decisions || []).length, 0);
+  assert.equal(bot._turn, undefined, 'no turn taken for a question not asked');
+});
+
+test('the same answer to the same facts, come back at once with nothing measurable, is said and then held as failed', async () => {
+  // mid-242-ab: portal_method answered cast_frame 532 times in fifteen minutes, each pass ending at once
+  // ("Nowhere to stand to pour into the frame slot at (18, 75, 58)").
+  const { decide } = require('../src/decisions');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(16.5, 71, 60.5) }, game: { dimension: 'overworld' }, inventory: { items: () => [] } };
+  const goal = { kind: 'win', step: { action: 'enter_nether', phase: 'reach_nether' } };
+  const seen = [];
+  const client = { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.9 } } }; } };
+  const tree = n => ({ cast_frame: { description: `Cast in place. The frame has failed at its site ${n} times: "Nowhere to stand".` }, build_new: { description: 'Build from ten obsidian.' } });
+  const ask = n => decide('portal_method', { client, bot, goal, tree: tree(n), state: { obsidian: 0, minutesOnWay: 30 + n } });
+  await ask(1);
+  assert.equal(seen[0].sameAnswerAgain, undefined, 'the first asking says nothing of repeats');
+  goal.lastFailure = { why: 'Nowhere to stand to pour into the frame slot at (18, 75, 58)', at: Date.now() };
+  await ask(2);
+  assert.match(seen[1].sameAnswerAgain, /^cast frame was chosen 1 time in the last \d+ seconds? with these same facts, and nothing measurable came of it .*: Nowhere to stand to pour/);
+  await assert.rejects(ask(3), err => err.name === 'Stalled' && /portal method: cast frame was chosen 2 times .* each came back within a second: Nowhere to stand/.test(err.message));
+  assert.equal(seen.length, 2, 'not asked a third time');
+  assert.equal(bot._stalls.stall.key, 'step:enter_nether', 'the step\'s stall path takes it');
+  // Said to the questions that follow, the detour's among them.
+  delete bot._stalls.stall;
+  await decide('corpse_run', { client: { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'go_back' } } }; } }, bot, goal, tree: { go_back: { description: 'a' }, leave_them: { description: 'b' } }, state: {} });
+  assert.match(seen.at(-1).answersThatCameToNothing[0], /^portal method: cast frame was chosen 2 times/);
+});
+
+test('an answer that got somewhere, or new facts, starts afresh; a wait chosen is said, never held', async () => {
+  const { decide } = require('../src/decisions');
+  const { Vec3 } = require('vec3');
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, game: { dimension: 'overworld' }, inventory: { items: () => [] } };
+  const goal = { step: { action: 'mine' } };
+  const seen = [];
+  const client = { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'ore_0', confidence: 0.9 } } }; } };
+  const tree = { ore_0: { description: 'Iron ore 6 blocks off.' }, branch: { description: 'A branch tunnel.' } };
+  const ask = (state = {}) => decide('night_mine_target', { client, bot, goal, tree, state });
+  await ask(); bot.entity.position = new Vec3(5.5, 64, 0.5); await ask(); await ask();
+  assert.equal(seen[1].sameAnswerAgain, undefined, 'walked five blocks: something came of it');
+  assert.match(seen[2].sameAnswerAgain, /ore 0 was chosen 1 time/);
+  await ask({ ore: 'gold' });
+  assert.equal(seen[3].sameAnswerAgain, undefined, 'new facts');
+  // A pillar held up top: asked again with nothing new, and that is the point.
+  const stance = { pillar: { description: 'Two up.' }, fight: { description: 'Fight.' } };
+  const answering = { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'pillar', confidence: 0.6 } } }; } };
+  goal.survivalAction = { action: 'pillar_hold', at: new Date().toISOString() };
+  for (let i = 0; i < 4; i++) await decide('encounter_stance', { client: answering, bot, goal, tree: stance, state: { threats: [{ name: 'piglin', distance: 7.8 }] } });
+  assert.match(seen.at(-1).sameAnswerAgain, /^pillar was chosen 3 times/);
+});

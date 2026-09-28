@@ -220,7 +220,7 @@ function look(bot, goal, { now = Date.now(), dt = TICK_MS } = {}) {
     r.blocks[k] = now;
   }
   const waiting = permittedWait(bot, goal, now);
-  if (progress) r.idle = 0;
+  if (progress) { r.idle = 0; stalls.progressAt = now; }
   else if (!waiting) r.idle += dt;
   stalls.current = r;
   return { action, record: r, progress, waiting, idle: r.idle };
@@ -236,12 +236,15 @@ function watchStalls(bot, goalOf) {
   stalls.goalOf = goalOf;
   if (stalls.timer) return stalls;
   let last = Date.now();
-  bot.on?.('diggingCompleted', block => { if (block?.position) stalls.marks.push(block.position); });
+  // Counted as they come, too: a question asked again a fraction of a
+  // second after its answer reads them before the next look (decisions/
+  // repeats.js, note 560).
+  bot.on?.('diggingCompleted', block => { if (block?.position) { stalls.marks.push(block.position); stalls.marked = (stalls.marked || 0) + 1; } });
   if (typeof bot.placeBlock === 'function' && !bot.placeBlock._stallMarked) {
     const place = bot.placeBlock.bind(bot);
     bot.placeBlock = Object.assign(async (reference, face, ...rest) => {
       const result = await place(reference, face, ...rest);
-      if (reference?.position && face) stalls.marks.push(reference.position.plus(face));
+      if (reference?.position && face) { stalls.marks.push(reference.position.plus(face)); stalls.marked = (stalls.marked || 0) + 1; }
       return result;
     }, { _stallMarked: true });
   }
@@ -252,7 +255,7 @@ function watchStalls(bot, goalOf) {
     const activate = bot.activateBlock.bind(bot);
     bot.activateBlock = Object.assign(async (block, ...rest) => {
       const result = await activate(block, ...rest);
-      if (block?.position) stalls.marks.push(block.position);
+      if (block?.position) { stalls.marks.push(block.position); stalls.marked = (stalls.marked || 0) + 1; }
       return result;
     }, { _stallMarked: true });
   }
@@ -313,6 +316,17 @@ function raise(bot, goal, seen, now = Date.now(), because = null) {
   bot._stalls.stall = { key: action.key, layer: action.layer, name: action.name, why, strikes: r.strikes.length, at: now, ...(action.blocker ? { blocker: action.blocker } : {}) };
   console.log(`[stall] ${action.key}: strike ${r.strikes.length} (${why})`);
   return bot._stalls.stall;
+}
+
+// A stall raised from outside the watch, for the action in hand: a question
+// whose same answer to the same facts came back at once, again and again,
+// with nothing coming of it (decisions/repeats.js, note 560). Answered by the
+// loop as any stall is: another way, a detour, the rung left for later.
+function raiseFor(bot, goal, why, now = Date.now()) {
+  const stalls = bot._stalls ||= { records: {}, marks: [] };
+  const action = actionOf(goal, now);
+  const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
+  return raise(bot, goal, { record, action }, now, why);
 }
 
 // Two steps handing the turn back and forth is a stall however busy each
@@ -451,5 +465,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise,
+module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
   Stalled, checkStall, preempted, takeStall, refused, recordStill };

@@ -1426,14 +1426,17 @@ class Survival {
     const held = stanceHeld(bot);
     const state = { health: bot.health, armour: wornNames, shooters: each, shotsInTheAir: inAir, ...(held ? { stance: held.choice } : {}),
       biters: danger.filter(t => !shooter(t.entity)).slice(0, 4).map(t => ({ name: t.entity.name, distance: round(t.distance) })),
-      standsUntil: `a shooter not counted here comes into sight, health falls ${guard.POLICY_HEALTH} below ${round(bot.health ?? 20)}, or ${guard.POLICY_MS / 60000} minute` };
-    const ids = shooters.map(t => t.entity.id), health = bot.health ?? 20;
+      standsUntil: `a shooter of a kind not counted here, or more of a kind than are about now, comes into sight; with the shots taken, health falls ${guard.POLICY_HEALTH} below ${round(bot.health ?? 20)}; or ${guard.POLICY_MS / 60000} minute` };
+    // Every shooter about is counted, in sight or not (projectile-guard.js
+    // policy): one coming out from cover is not new.
+    const about = threats(bot, 48).filter(t => shooter(t.entity));
+    const ids = about.map(t => t.entity.id), kinds = guard.counted(about), health = bot.health ?? 20;
     // Only a cancellation stops the question: the task's own check throws
     // for the very shooters it is asked about.
     const only = { get cancelled() { return task?.cancelled; }, label: task?.label, check() { if (task?.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
     this._askingShield = true;
     return this.decide(only, goal, save, { id: 'shield_policy', state, tree })
-      .then(d => { if (d && !d.stale && d.path?.[0] && tree[d.path[0]]) bot._shieldPolicy = { choice: d.path[0], ids, at: Date.now(), health, by: d.fallback ? 'fallback' : 'jev' }; return d; })
+      .then(d => { if (d && !d.stale && d.path?.[0] && tree[d.path[0]]) bot._shieldPolicy = { choice: d.path[0], ids, kinds, at: Date.now(), health, by: d.fallback ? 'fallback' : 'jev' }; return d; })
       .catch(() => null)
       .finally(() => { this._askingShield = false; });
   }
@@ -2533,7 +2536,7 @@ class Survival {
       run: () => this.creeperDance(task, goal, save, danger, swung, { chosen: true }) };
     // Leave them be: the work goes on, and they are a threat again when one
     // comes within three blocks or lands a hit, or after fifteen seconds.
-    if (!coming.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
+    if (!coming.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work${(w => w ? ` (${w.replaceAll('_', ' ')})` : '')(goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action)} and leave these mobs be for fifteen seconds (nearest ${Math.round(danger[0].distance)} blocks). The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
       // When the work would stop, against when the creeper lights: the
       // work stops at three blocks, which is where the fuse starts (the
       // decision review, 2026-09-26).
@@ -2758,9 +2761,31 @@ class Survival {
           run: async () => { await this.shootAt(task, goal, save, t); return true; } };
       }
     }
+    // Said with every stance; first, where the work going on is the answer
+    // it bears on (note 525's fact leading, note 560).
     const kept = apartSays(bot, apart);
-    if (kept) for (const o of Object.values(options)) o.description += kept;
+    if (kept) for (const [k, o] of Object.entries(options)) o.description = k === 'keep_working' ? `${kept.trim()} ${o.description}` : o.description + kept;
+    // What each stance costs the work: it waits while the stance holds.
+    // mid-244-ad-nether-2 held a pillar on its own bridge against a sword
+    // piglin on the slope below every fifteen seconds for minutes, every
+    // stance priced at no damage and none at the crossing it stopped (note
+    // 560).
+    const waits = this.workWaits(goal, danger);
+    if (waits) for (const [k, o] of Object.entries(options)) if (k !== 'keep_working') o.description += ` ${waits}`;
     return options;
+  }
+
+  // The work the encounter stops, and how long it has stood for these mobs:
+  // from when the first of them was met, while any of them stays about.
+  workWaits(goal, danger, now = Date.now()) {
+    const ids = danger.map(t => t.entity?.id);
+    const was = this._encounterMet;
+    const same = was && now - was.seen < 30000 && ids.some(id => was.ids.includes(id));
+    this._encounterMet = { since: same ? was.since : now, seen: now, ids: [...new Set([...(same ? was.ids : []), ...ids])] };
+    const step = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
+    if (!step) return '';
+    const secs = Math.round((now - this._encounterMet.since) / 1000);
+    return `The work (${step.replaceAll('_', ' ')}) waits meanwhile${secs >= 5 ? `: it has waited ${secs} seconds for these mobs so far` : ''}.`;
   }
 
   async stanceStep(task, goal, save, danger, swung) {
@@ -2920,7 +2945,9 @@ class Survival {
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
       const ownCells = new Set(inOwnCells(bot, danger, feet).map(t => t.entity.id));
       const towardNow = comingAt(bot), following = held?.ids ? towardNow.filter(t => held.ids.includes(t.entity.id)) : [];
-      const state = { health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
+      // Which mobs about cannot get to the bot, first (note 525, note 560).
+      const kept = this.lastApart?.mobs.length || this.lastApart?.round?.length ? apartSays(bot, this.lastApart).trim() : null;
+      const state = { ...(kept ? { noWayToTheBot: kept } : {}), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropNear(bot, bot.entity.position.floored(), 3) || false,
         darkHere: darkHere(bot),
@@ -2952,7 +2979,7 @@ class Survival {
         ...(farther ? { shootersFartherInSight: farther.list } : {}),
         ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
         ...(ails ? { effectsNow: ails.trim() } : {}),
-        ...(this.lastApart?.mobs.length ? { noWayToTheBot: apartSays(bot, this.lastApart).trim() } : {}),
+
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       let decision;

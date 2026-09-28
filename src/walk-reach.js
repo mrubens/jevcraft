@@ -44,7 +44,7 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP } = {}) {
   const here = bot.entity.position, feet = here.floored();
   const key = c => `${c.x},${c.y},${c.z}`;
   const cache = new Map();
-  let unknown = false;
+  let unknown = false, outside = false;
   const block = c => { const k = key(c); if (!cache.has(k)) cache.set(k, bot.blockAt(c) || null); const b = cache.get(k); if (!b) unknown = true; return b; };
   const water = b => !!b && /water|bubble_column|kelp|seagrass/.test(b.name);
   const open = c => { const b = block(c); return !!b && b.boundingBox === 'empty' && !/lava/.test(b.name); };
@@ -79,8 +79,13 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP } = {}) {
       for (let dy = 0; dy <= DEPTH && open(b.offset(0, dy, 0)); dy++) from.push(b.offset(dx, dy, dz));
       for (const a of from) {
         if (seen.has(key(a)) || !standable(a)) continue;
-        // Out of bounds nothing is said: done looking.
-        if (!inside(a)) return none;
+        // Out of bounds the search goes no further, and what it did not
+        // reach inside them has no way there within them: any way goes
+        // round, farther than the bounds. It gave up here and said nothing,
+        // and mid-244-ad-nether-2's pillar on its own bridge, a sword
+        // piglin on the slope six blocks off and two below, was priced as
+        // at the bot in a second for minutes (note 560).
+        if (!inside(a)) { outside = true; continue; }
         add(a);
       }
     }
@@ -90,20 +95,43 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP } = {}) {
   }
   // A chunk not loaded: the walkers are not said to be kept off.
   if (unknown) return none;
-  const mobs = walkers.filter(t => { const cells = pending.get(t.entity.id); return cells.length && !cells.some(k => seen.has(k)); });
-  return { ids: new Set(mobs.map(t => t.entity.id)), mobs, radius };
+  const kept = walkers.filter(t => { const cells = pending.get(t.entity.id); return cells.length && !cells.some(k => seen.has(k)); });
+  if (!outside) return { ids: new Set(kept.map(t => t.entity.id)), mobs: kept, radius, round: [] };
+  // Not kept off for sure: said with the least walk a way round could be
+  // (out past the bounds from the mob, and back in to the bot), and left in
+  // the figures.
+  const cheb = p => Math.max(Math.abs(Math.floor(p.x) - feet.x), Math.abs(Math.floor(p.z) - feet.z));
+  const round = kept.map(t => ({ t, atLeast: Math.max(0, radius + 1 - cheb(t.entity.position)) + Math.max(0, radius - Math.ceil(SIDEWAYS)) }));
+  return { ids: new Set(), mobs: [], radius, round };
+}
+
+// A walker said by what it carries: a piglin with a crossbow shoots (and is
+// no walker here), one with a sword hits at arm's length only.
+function heldSays(t) {
+  const held = t.entity?.heldItem?.name;
+  if (!held || !/piglin/.test(t.entity.name)) return '';
+  return ` (holding ${held.replaceAll('_', ' ')}${held === 'crossbow' ? '' : ', no crossbow: it hits at arm\'s length only'})`;
 }
 
 // Said with every stance while it holds.
 function apartSays(bot, apart) {
-  if (!apart.mobs.length) return '';
+  const round = roundSays(bot, apart);
+  if (!apart.mobs.length) return round;
   const names = [...new Set(apart.mobs.map(t => t.entity.name))];
-  const list = names.map(n => { const k = apart.mobs.filter(t => t.entity.name === n).length; return k > 1 ? `${k} ${n.replaceAll('_', ' ')}s` : `the ${n.replaceAll('_', ' ')}`; });
+  const list = names.map(n => { const of = apart.mobs.filter(t => t.entity.name === n); return of.length > 1 ? `${of.length} ${n.replaceAll('_', ' ')}s` : `the ${n.replaceAll('_', ' ')}${heldSays(of[0])}`; });
   const who = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0];
   const drops = apart.mobs.map(t => bot.entity.position.y - t.entity.position.y);
   const lowest = Math.round(Math.min(...drops)), highest = Math.round(Math.max(...drops));
   const where = lowest >= 2 ? `, ${lowest === highest ? lowest : `${lowest} to ${highest}`} blocks below the bot's feet,` : '';
-  return ` ${who[0].toUpperCase()}${who.slice(1)}${where} ${apart.mobs.length === 1 ? 'has' : 'have'} no way to the bot: no ground ${apart.mobs.length === 1 ? 'it' : 'they'} can walk, step up or drop along within ${apart.radius} blocks comes within a walker's reach of it${names.includes('creeper') ? ', or within three blocks, where a creeper lights' : ''}. ${apart.mobs.length === 1 ? 'It is' : 'They are'} left out of the figures here while that holds; a block placed or dug, or the bot moving, can open a way.`;
+  return ` ${who[0].toUpperCase()}${who.slice(1)}${where} ${apart.mobs.length === 1 ? 'has' : 'have'} no way to the bot: no ground ${apart.mobs.length === 1 ? 'it' : 'they'} can walk, step up or drop along within ${apart.radius} blocks comes within a walker's reach of it${names.includes('creeper') ? ', or within three blocks, where a creeper lights' : ''}. ${apart.mobs.length === 1 ? 'It is' : 'They are'} left out of the figures here while that holds; a block placed or dug, or the bot moving, can open a way.${round}`;
+}
+// The walkers whose only way, if any, goes round past the bounds.
+function roundSays(bot, apart) {
+  if (!apart.round?.length) return '';
+  return apart.round.map(({ t, atLeast }) => {
+    const d = Math.round(t.entity.position.distanceTo(bot.entity.position) * 10) / 10, below = Math.round(bot.entity.position.y - t.entity.position.y);
+    return ` The ${t.entity.name.replaceAll('_', ' ')} ${d} blocks off${below >= 2 ? `, ${below} below the bot's feet,` : ''}${heldSays(t)} has no way to the bot within ${apart.radius} blocks of it: any way it has goes round, ${atLeast} blocks of walking or more, if there is one at all.`;
+  }).join('');
 }
 
-module.exports = { walkersApart, apartSays, WALKERS };
+module.exports = { walkersApart, apartSays, roundSays, heldSays, WALKERS };

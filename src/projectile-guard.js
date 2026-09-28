@@ -55,16 +55,34 @@ function incoming(bot, { reach = REACH } = {}) {
 // answer, so what to do about shots is chosen for the shooters about, not
 // for each shot. It stands until a shooter not counted in it comes into
 // sight, health falls four below where it was chosen, or a minute.
+// A shooter not counted is one of a kind not counted, or more of a kind in
+// sight than were about when it was chosen: every shooter within reach is
+// counted, seen or not. Counted by the ones in sight, a blaze coming out
+// from behind a pillar was "new", and so was each hit's four health for the
+// shield chosen against the shots: mid-208-k-nether-3-fortress-2 was asked
+// shield_policy five times in eight seconds, shield_at_shots each time, a
+// wither skeleton's blows taking the health (note 560). The health falling
+// asks again only where the choice was to take the shots.
 const POLICY_MS = 60000, POLICY_HEALTH = 4;
+function counted(mobs) {
+  const kinds = {};
+  for (const t of mobs) kinds[t.entity.name] = (kinds[t.entity.name] || 0) + 1;
+  return kinds;
+}
 function policy(bot, now = Date.now()) {
   const p = bot?._shieldPolicy;
   if (!p) return null;
   let newShooter = false;
   try {
     const { threats } = require('./danger'), { shooter } = require('./combat');
-    newShooter = threats(bot, 48).some(t => t.visible && shooter(t.entity) && !p.ids.includes(t.entity.id));
+    const shooters = threats(bot, 48).filter(t => shooter(t.entity));
+    const known = p.kinds || counted(shooters.filter(t => p.ids.includes(t.entity.id)));
+    const seen = counted(shooters.filter(t => t.visible && !p.ids.includes(t.entity.id)));
+    const seenAll = counted(shooters.filter(t => t.visible));
+    newShooter = Object.keys(seen).some(kind => (seenAll[kind] || 0) > (known[kind] || 0));
   } catch (_) { /* no mobs to read */ }
-  if (now - p.at > POLICY_MS || (bot.health ?? 20) <= p.health - POLICY_HEALTH || newShooter) { delete bot._shieldPolicy; return null; }
+  const hurt = p.choice === 'take_shots' && (bot.health ?? 20) <= p.health - POLICY_HEALTH;
+  if (now - p.at > POLICY_MS || hurt || newShooter) { delete bot._shieldPolicy; return null; }
   return p;
 }
 
@@ -126,4 +144,4 @@ async function deflect(bot, task, { holdMs = 700 } = {}) {
   return true;
 }
 
-module.exports = { deflect, incoming, meleeClose, policy, INCOMING, REACH, POLICY_MS, POLICY_HEALTH };
+module.exports = { counted, deflect, incoming, meleeClose, policy, INCOMING, REACH, POLICY_MS, POLICY_HEALTH };

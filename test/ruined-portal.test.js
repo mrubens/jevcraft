@@ -263,6 +263,26 @@ test('a fetch for lava is named once, not once a pass: the fill\'s stairs, a blo
   assert.equal(named.filter(n => n === 'cast_portal:fetch_lava').length, 1, named.join(' '));
 });
 
+test('a block over the slot, where the lava goes in, is dug out: the cast does not end at once with nowhere to stand', async () => {
+  // mid-242-ab (note 560): nine of ten cast, a cobblestone on top of the last slot (18, 75, 58) closed the one
+  // way in for the lava; no stand could see into it, "Nowhere to stand to pour" 3,463 times, and portal_method
+  // was answered cast_frame 532 times in fifteen minutes, each pass ending at once.
+  const { Task } = require('../src/skills');
+  const { bot, w, calls, actions, add } = castingBot({ water_bucket: 1, lava_bucket: 9, cobblestone: 64 });
+  const goal = { portalFrame: newFrame('x') };
+  const obsidian = () => goal.portalFrame.blocks.filter(p => w.nameAt(new Vec3(p.x, p.y, p.z)) === 'obsidian').length;
+  for (let pass = 0; pass < 6 && obsidian() < 9; pass++) await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
+  assert.equal(obsidian(), 9);
+  const last = cast.castOrder(goal.portalFrame).at(-1), top = last.offset(0, 1, 0);
+  w.set(top, 'cobblestone'); w.set(top.offset(0, 1, 0), 'dirt');
+  add('lava_bucket', 1); calls.length = 0;
+  let done = false;
+  for (let pass = 0; pass < 4 && !done; pass++) done = await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
+  assert(done, 'cast');
+  assert.equal(obsidian(), 10);
+  assert.equal(w.nameAt(top), 'air', 'the cell over the slot was cleared');
+});
+
 test('carried obsidian is placed in a cast frame, not cast', async () => {
   const { Task } = require('../src/skills');
   const { bot, w, log, actions } = castingBot({ obsidian: 10, cobblestone: 8 });

@@ -85,6 +85,9 @@ const faces = [new Vec3(0, -1, 0), new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Ve
 const reportedBugs = new Set();
 function noteError(goal, err) {
   goal.lastError = err.message;
+  // When, for a question asked again after its answer ended this way
+  // (decisions/repeats.js, note 560).
+  goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now() };
   const frames = String(err.stack || '').split('\n').filter(line => /\/src\//.test(line)).map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(src/'));
   // Where a failure came from, past the shared primitives: "navigation
   // ended" five times over said nothing about which walk it was.
@@ -4306,6 +4309,9 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
       throw err;
     }
     frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message;
+    // Swallowed here, the pass ends at once: said to the next question
+    // (decisions/repeats.js). mid-242-ab's "Nowhere to stand" 3,463 times.
+    goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now() };
     const castIn = frame.blocks.filter(q => bot.blockAt(pos(q))?.name === 'obsidian').length;
     // The failures since the last block went in, each said with its reason.
     if (!frame.siteFailed || frame.siteFailed.cast !== castIn) frame.siteFailed = { cast: castIn, n: 0, whys: {} };

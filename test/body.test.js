@@ -50,6 +50,20 @@ test('body_way: no answer within a second takes the old order\'s way, and holds 
   assert.equal(body.held(bot, 'fire'), null);
 });
 
+test('burning out as the one way is taken without asking and held, not taken again at every step', async () => {
+  // mid-242-aa-nether-1-fortress-1 (note 560): alight in the Nether, no apple, burn_out the only way, "asked" forty
+  // times in fifteen minutes.
+  const bot = { health: 16, entity: { position: new Vec3(0, 64, 0) } };
+  const ran = [];
+  const ways = { burn_out: { description: 'leave it', hold: 15, run: async () => { ran.push('burn'); return false; } } };
+  const goal = {};
+  const r = await body.answer(bot, new Task('t'), 'fire', ways, { client: { systemOne: () => assert.fail('one way is not asked') }, goal, facts: { inFire: false }, log: () => {} });
+  assert.equal(r.by, 'only');
+  assert.deepEqual(ran, ['burn']);
+  assert.ok(body.held(bot, 'fire'), 'held: the survival step and the reflex leave it be');
+  assert.equal((goal.decisions || []).length, 0, 'not recorded as a question asked');
+});
+
 test('a burn-out Jev chose is not a reflex while it holds; in the fire it still is', () => {
   const bot = { health: 15, oxygenLevel: 20, entities: {}, entity: { position: new Vec3(0.5, 64, 0.5), metadata: [1] }, game: { dimension: 'overworld' },
     inventory: { items: () => [{ name: 'water_bucket', count: 1 }] },
@@ -103,6 +117,22 @@ test('the shield stays down at a shot while Jev\'s take_shots stands, and rises 
   bot._shieldPolicy = { choice: 'take_shots', ids: [5], at: Date.now(), health: 18 };
   bot.health = 13;
   assert.equal(guard.policy(bot), null, 'four health gone: the choice no longer stands');
+});
+
+test('the shield chosen against the shots holds through the hits; one shooter more than were about asks again', () => {
+  // mid-208-k-nether-3-fortress-2 (note 560): shield_policy asked five times in eight seconds, shield_at_shots each
+  // time, a wither skeleton's blows taking four health a hit and the blazes going in and out of sight.
+  const blaze = (id, visible) => ({ id, name: 'blaze', type: 'hostile', position: new Vec3(14.5, 66, 0.5), height: 1.8, width: 0.6, isValid: true, _visible: visible });
+  const mobs = { 1: blaze(1, false), 2: blaze(2, true) };
+  const bot = { health: 20, entities: mobs, entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 }, game: { dimension: 'the_nether' },
+    blockAt: p => (p.y < 64 ? { position: p, name: 'netherrack', boundingBox: 'block' } : air(p)), world: { raycast: () => null } };
+  const kinds = { blaze: 2 };
+  bot._shieldPolicy = { choice: 'shield_at_shots', ids: [1, 2], kinds, at: Date.now(), health: 20 };
+  bot.health = 10;
+  assert.ok(guard.policy(bot), 'ten health gone to blows: the shield at the shots still stands');
+  // A third blaze in sight is more than were about: asked again.
+  mobs[3] = { ...blaze(3, true), position: new Vec3(10.5, 66, 3.5) };
+  assert.equal(guard.policy(bot), null, 'a shooter not counted');
 });
 
 // A one-wide netherrack span over lava, as the span tests build it.
