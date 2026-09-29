@@ -1952,7 +1952,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // 687).
   const bs = require('./block-stock');
   const lead = bs.pickaxeLead(bot, PICKAXE_WAYS.filter(k => options[k]), blocked.filter(b => /no pickaxe|no hand digs/.test(b)).map(b => b.split(':')[0]));
-  const tree = Object.fromEntries(Object.entries(lead ? bs.pickaxeFirstOrder(options) : options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }]));
+  const tree = Object.fromEntries(Object.entries(lead ? bs.pickaxeFirstOrder(options) : options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.waits ? { waits: o.waits } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
   const facts = { ...(lead ? { withoutAPickaxe: lead } : {}), ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
@@ -2906,6 +2906,8 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
       facts.spawner = `a spawner seen ${d} blocks off at (${spawner.x}, ${spawner.y}, ${spawner.z})`;
       others.wait_at_spawner = { description: `Wait by the spawner seen at (${spawner.x}, ${spawner.y}, ${spawner.z}), ${d} blocks off, for ${SPAWNER_WAIT_MS / 60000} minutes: a fortress's spawners are blaze spawners, and while a player is within sixteen blocks of one it makes up to four blazes within four blocks of itself every ten to forty seconds, and the hunt takes each one as it comes into view. ${way} ${capital(seen)}${known.s.lastThereAt ? `; ${known.s.kills || 0} killed and ${known.s.rods || 0} rods taken within 16 of it` : ''}. The legs are asked again after.${state.spawnerWaitEnded ? ` The last wait here ended: ${state.spawnerWaitEnded}.` : ''}`,
         spawner: { x: spawner.x, y: spawner.y, z: spawner.z },
+        // The spawner's next blazes, by its clock where a try was seen (waits.js, note 698).
+        waits: require('./waits').spawnerTry(bot, spawner),
         run: () => { state.spawnerWait = { x: spawner.x, y: spawner.y, z: spawner.z, until: Date.now() + SPAWNER_WAIT_MS }; delete state.spawnerWaitEnded; save(); return 'wait'; } };
     }
     // Floors seen that no floor seen joins to here, nearest first: the way

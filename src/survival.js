@@ -8182,6 +8182,12 @@ class Survival {
         // five minutes at full health in a pocket beside its fortress's
         // corridor, the three blazes outside told only by distance.
         (blazesOut.length ? ` Staying does not send the blaze${blazesOut.length === 1 ? '' : 's'} away: blazes keep about the fortress they spawn in, and no daylight comes in the Nether to end them.${this.state.watchedSince ? ` Watched in this pocket for ${Math.max(1, Math.round((Date.now() - this.state.watchedSince) / 60000))} minute${Math.round((Date.now() - this.state.watchedSince) / 60000) > 1 ? 's' : ''} so far.` : ''}` : '') + farSays + lidSays + wardenSays(bot) + placeSays + (waitSays?.stay || ''),
+        // What the stay waits for (waits.js, note 698): daylight by night, else
+        // health where it comes back, else the mobs outside moving off; with
+        // nothing coming (note 679) it is not offered.
+        waits: waitSays?.waits || (night ? require('./waits').daylight(bot, { night: true }) : hp < 20 && (bot.food ?? 20) >= 18 ? require('./waits').heal(bot)
+          : threats(bot, 24).length ? require('./waits').mobsMoveOff('the mobs outside')
+          : require('./waits').mobsMoveOff('the mobs outside', { gone: true, why: `none is within 24 blocks, it is day, and ${hp >= 20 ? 'health is full' : `health does not come back at hunger ${bot.food}`}` })),
         run: async () => { await this.wait(task, goal, save, watcher
           ? `${watcher.entity.name} at ${watcher.distance.toFixed(1)} is watching (claim ${hunt ? `${hunt.name}, ${Math.round((hunt.until - Date.now()) / 1000)}s left` : 'none'}, hp ${Math.round(bot.health)}, food ${bot.food})`
           : night ? 'Waiting for daylight inside the verified shelter' : 'Waiting in the sealed pocket'); return true; } };
@@ -8209,6 +8215,8 @@ class Survival {
       const { exit: doorOut } = this.leaveExit(refuge, { past: true });
       const ce_ = require('./combat-estimate');
       if (quietSays && options.stay) options.stay.description += quietSays;
+      // By day, what the stay waits for and when, said (note 698); by night the minutes to daylight are said already.
+      if (options.stay && !night && options.stay.waits?.comes) options.stay.description += ` ${options.stay.waits.says}`;
       // What a way out costs, by where it opens: the leave's door, or a
       // passage's far end (tunnel_out).
       const priceOut = exit => {
@@ -8426,7 +8434,7 @@ class Survival {
         || (this.state.sealedWait?.until > Date.now() && (bot.food ?? 20) < 18 && options.stay ? 'stay' : null)
         || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside ? 'sleep_beside' : null);
       if (!choice) {
-        const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.children ? { children: Object.fromEntries(Object.entries(o.children).map(([ck, c]) => [ck, { description: c.description }])) } : {}) }]));
+        const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.waits ? { waits: o.waits } : {}), ...(o.children ? { children: Object.fromEntries(Object.entries(o.children).map(([ck, c]) => [ck, { description: c.description }])) } : {}) }]));
         const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
           // The day's fields where there is a day (note 677).
           state: { ...(offWorld ? {} : { timeOfDay: bot.time?.timeOfDay, night, daylight: night ? ((bot.time?.timeOfDay ?? 0) < DAY.DARK ? 'dusk: the sun is going down, and the night is counted from here' : 'night') : (bot.time?.timeOfDay ?? 0) >= 22000 ? 'dawn: zombies and skeletons in the open burn once the sun is up' : 'day' }),
@@ -8548,6 +8556,7 @@ class Survival {
       } }]));
       if (home?.completedAt && !home.plotWide) tree.grow_plot = { description: 'Mark the home plot to grow by a column tomorrow: more wheat, more bread.', run: async () => { home.plotWide = true; save(); this.report(goal, save, { action: 'grow_plot' }); } };
       tree.wait_for_bedtime = { description: `Wait by the bed for bedtime, ${Math.max(0, SLEEP_FROM - bot.time.timeOfDay)} ticks off (about ${Math.round(Math.max(0, SLEEP_FROM - bot.time.timeOfDay) / 20)} seconds).`,
+        waits: require('./waits').timer('bedtime', Math.max(0, SLEEP_FROM - bot.time.timeOfDay) * 50),
         run: async () => { this.report(goal, save, { action: 'wait_for_bedtime', ticks: SLEEP_FROM - bot.time.timeOfDay }); for (let i = 0; i < 10; i++) { task.check(); await sleep(100); } } };
       const keys = Object.keys(tree);
       // Waiting chosen is held until bedtime or a new chore appears.
@@ -8793,6 +8802,8 @@ class Survival {
     const sealedWait = sealedWaitSays(bot);
     if (sealedWait && !tree.secure_shelter && !isSetAside(this, 'refuge', 'anywhere'))
       tree.wait_for_day_sealed = { description: `${sealedWait.says}${underground ? ' Underground the dark is the same at any hour.' : ''}${nowAbout || ' Nothing hostile is within twenty-four blocks now.'}${comingNow}${creeperRaceSays}`,
+        // By day, daylight is what it has: not offered (waits.js, note 698).
+        waits: require('./waits').daylight(bot),
         run: async () => {
           this.state.sealedWait = { until: Date.now() + sealedWait.ticks * 50, at: new Date().toISOString() };
           this.report(goal, save, { action: 'wait_for_day_sealed', health: bot.health, food: bot.food, minutes: sealedWait.minutes });
@@ -8805,6 +8816,7 @@ class Survival {
     if ((bot.health ?? 20) < 20 && (bot.food ?? 0) >= 18) {
       const seconds = Math.round((20 - bot.health) * 4);
       tree.rest_to_heal = { description: `Stay where it is, still, and let health come back: ${Math.round(bot.health * 10) / 10} health now, hunger ${bot.food}, about one health each four seconds while hunger stays at eighteen or more, so about ${seconds} seconds to twenty; the healing uses up hunger meanwhile.${nowAbout || ' Nothing hostile is within twenty-four blocks now.'}${comingNow} Asked again after half a minute.`,
+        waits: require('./waits').heal(bot),
         run: async () => {
           this.report(goal, save, { action: 'rest_to_heal', health: bot.health, food: bot.food });
           for (const until = Date.now() + 30000; Date.now() < until && bot.health < 20 && (bot.food ?? 0) >= 18;) { task.check(); checkThreats(bot); await sleep(250); }

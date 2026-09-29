@@ -320,7 +320,7 @@ function watchStalls(bot, goalOf) {
     try {
       const seen = look(bot, goal, { now, dt });
       if (seen && seen.idle >= STALL_MS) raise(bot, goal, seen, now);
-      else flipWatch(bot, goal, now);
+      else if (!flipWatch(bot, goal, now)) require('./intention').yieldWatch(bot, goal, now);
     } catch (err) { console.log(`[stall] look failed: ${err.message}`); }
   }, TICK_MS);
   stalls.timer.unref?.();
@@ -401,6 +401,53 @@ const countKey = step => step ? `${step.action}:${step.drops || step.item || ''}
 // crimson stem failed at once and went to persist fifteen times in eighty
 // seconds, raised besides as "turning between mine and persist" (note 603).
 const workName = goal => RETRY_STEPS.has(goal.step?.action) && goal.lastStruggleStep?.action ? goal.lastStruggleStep.action : goal.step?.action;
+// The rung's measure (rung-measure.js) at a change of the game's work step:
+// what a flip is judged by (note 699). Blocks dug or placed were getting
+// somewhere by the look's rule, and a cast that walled and poured the same
+// slot of a frame with no lava carried traded names with enter_nether for
+// three minutes on 25594, "8 standing, 2 to cast" at every asking, until
+// the audit ended the trial. Only on the game's ladder, whose rungs the
+// measure was made for; a build places what it carries, and its own count
+// goes down as it gets somewhere.
+function rungMeasure(bot, goal, now = Date.now()) {
+  if (goal?.kind !== 'win') return null;
+  try {
+    const tried = require('./tried'), rung = tried.rungOf(goal, now);
+    const parts = rung ? tried.measureOf(bot, goal, rung) : null;
+    return parts && Object.keys(parts).length ? { rung, parts, v: require('./rung-measure').values(parts) } : null;
+  } catch (_) { return null; }
+}
+// Whether any part of the rung got better over the changes: each part from
+// the first change that has it to its best at a later one or now. A step's
+// own target is named by one step of the two and not the other, so the
+// first and last look alone would not see a staircase that climbs toward it.
+function rungGain(changes, now) {
+  const RM = require('./rung-measure');
+  const first = {}, best = {};
+  const looks = [...changes.map(c => c.m), now].filter(m => m && m.rung === now?.rung);
+  for (const m of looks) {
+    for (const [key, v] of Object.entries(m.v)) {
+      if (first[key] === undefined) { first[key] = v; continue; }
+      const distance = RM.kindOf(key) === 'distance';
+      best[key] = best[key] === undefined ? v : distance ? Math.min(best[key], v) : Math.max(best[key], v);
+    }
+  }
+  return RM.changed(first, best);
+}
+// What did not change, in the measure's words, for the question above.
+function rungNothing(changes, now, moved) {
+  const m0 = changes.find(c => c.m && c.m.rung === now?.rung)?.m;
+  if (!m0 || !now) return null;
+  const RM = require('./rung-measure');
+  return RM.says(RM.judge({ before: m0.v, parts: now.parts, store: null }).nothing, moved);
+}
+// A pair's rest from here is kept whatever the question above answers; the
+// two trading again there is raised at the first trade (flip-pairs.js).
+function pairExtra(goal, e, now) {
+  const says = require('./flip-pairs').says(e, now, { again: !!e.again });
+  return { flip: { pair: e.pair, trades: e.trades, times: e.times, where: e.where, until: e.until, says },
+    escalated: { from: 'flip', to: 'rung_progress', says }, until: e.until };
+}
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
   const here = bot.entity?.position;
@@ -414,8 +461,25 @@ function flipWatch(bot, goal, now = Date.now()) {
   for (const [layer, a] of [['work', workName(goal)], ['survival', recent]]) {
     if (!a) continue;
     const changes = (stalls.changes ||= {})[layer] ||= [];
-    if (changes.at(-1)?.a !== a) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step) });
+    const changed = changes.at(-1)?.a !== a;
+    if (changed) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step), ...(layer === 'work' ? { m: rungMeasure(bot, goal, now) } : {}) });
     while (changes.length > FLIP_CHANGES) changes.shift();
+    // A pair resting together from here (note 699): the two trading again
+    // within its reach is raised at the first trade, with the count, and
+    // goes to the question above as the first raise did.
+    if (layer === 'work' && changed && changes.length >= 2 && !stalls.stall) {
+      const prev = changes.at(-2).a;
+      const pairs = require('./flip-pairs'), e = prev !== a ? pairs.resting(goal, [prev, a], here, now) : null;
+      if (e) {
+        const action = actionOf({ ...goal, survivalAction: null }, now);
+        const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
+        stalls.changes = {};
+        const noted = pairs.note(goal, { names: e.pair, trades: 1, seconds: Math.round((now - changes.at(-2).t) / 1000), where: e.where, rungSays: e.rungSays, now });
+        const why = `turning between ${pairs.pairSays(noted)} again within ${pairs.REACH} blocks of where they rested together, ${noted.trades} times in all here in ${require('./game-progress').agoSays(now - noted.first)}`;
+        flipFailed(bot, goal, action, why, now);
+        return raise(bot, goal, { record, action }, now, why, pairExtra(goal, { ...noted, again: true }, now));
+      }
+    }
     if (changes.length < FLIP_CHANGES) continue;
     const first = changes[0], names = new Set(changes.map(c => c.a));
     const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
@@ -424,14 +488,22 @@ function flipWatch(bot, goal, now = Date.now()) {
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
     if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) continue;
     if (worth(bot) > first.worth) continue;
-    // A block dug or placed in a cell not worked lately is getting
-    // somewhere, as the stall watch counts it (look): the ladder names the
-    // rung's step each pass and the step under it names its own, and
-    // mid-244-bd's staircase to its frame, a new step dug every few seconds,
-    // was raised three times as "turning between tunnel and enter nether",
-    // each answered by a detour that dropped the shaft (note 603). A block
-    // put back where one was dug (markCell) is not.
-    if ((stalls.marked || 0) > (first.blocks || 0)) continue;
+    // On the game's ladder the rung's measure says whether the two got
+    // anywhere (note 699): more of what the rung or the step is for, a
+    // portal frame block standing, a new nearest to the step's target or
+    // the rung's. A block dug or placed is not, by itself.
+    const measure = layer === 'work' ? rungMeasure(bot, goal, now) : null;
+    const byRung = measure && changes.some(c => c.m?.rung === measure.rung);
+    if (byRung && rungGain(changes, measure)) continue;
+    // Off the ladder, a block dug or placed in a cell not worked lately is
+    // getting somewhere, as the stall watch counts it (look): the ladder
+    // names the rung's step each pass and the step under it names its own,
+    // and mid-244-bd's staircase to its frame, a new step dug every few
+    // seconds, was raised three times as "turning between tunnel and enter
+    // nether", each answered by a detour that dropped the shaft (note 603;
+    // on the ladder its step's target coming nearer is what counts now). A
+    // block put back where one was dug (markCell) is not.
+    if (!byRung && (stalls.marked || 0) > (first.blocks || 0)) continue;
     // The step's own count going down is progress, filler or not (the
     // audit's rule too): a mine for cobblestone and its pickups trade names.
     if (Number.isFinite(goal.step?.count) && changes.some(c => c.countKey === countKey(goal.step) && Number.isFinite(c.count) && goal.step.count < c.count)) continue;
@@ -444,14 +516,22 @@ function flipWatch(bot, goal, now = Date.now()) {
     const action = layer === 'work' ? actionOf({ ...goal, survivalAction: null }, now) : actionOf(goal, now);
     const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
     stalls.changes = {};
-    const why = `turning between ${pair} ${FLIP_CHANGES - 1} times in ${Math.round((now - first.t) / 1000)} seconds without getting anywhere`;
+    const seconds = Math.round((now - first.t) / 1000);
+    const nothing = byRung ? rungNothing(changes, measure, dist(here, first.p)) : null;
+    const why = `turning between ${pair} ${FLIP_CHANGES - 1} times in ${seconds} seconds ${nothing ? `with ${nothing}` : 'without getting anywhere'}`;
     // Both sides of a survival flip rest, not only the one in hand: the one
     // in hand may be reported where no refusal is looked at (the way back
     // to the surface is set by the work step's climb), and mid-235-b's
     // return to the surface and sealed shelter traded turns through eight
     // strikes (2026-09-26).
     if (layer === 'survival') { const { setAside } = require('./progress'); for (const n of names) if (!EMERGENCIES.has(n)) setAside(goal, 'flip', `survival:${n}`, why, FLIP_REST_MS); }
-    if (layer === 'work') flipFailed(bot, goal, action, why, now);
+    if (layer === 'work') {
+      flipFailed(bot, goal, action, why, now);
+      // The work's pair rests together from here, counted with its trades
+      // here in the last ten minutes, and is said to the question above.
+      const e = require('./flip-pairs').note(goal, { names, trades: FLIP_CHANGES - 1, seconds, where: first.p, rungSays: nothing, now });
+      return raise(bot, goal, { record, action }, now, why, pairExtra(goal, e, now));
+    }
     return raise(bot, goal, { record, action }, now, why);
   }
   return null;

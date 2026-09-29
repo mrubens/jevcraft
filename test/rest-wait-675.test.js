@@ -78,14 +78,16 @@ test('25598: every way resting, the rung\'s question says the work the hold has 
   assert.match(asked[0].options.block_reserve || '', /^Mine netherrack for building blocks now: 2 carried\. .* The obtain blaze rods is taken up again after it; the rest runs on meanwhile\.$/);
 });
 
-test('25598 with the blocks carried: nothing is on offer, and the wait is said as standing idle, why, and until when (note 675)', async t => {
+test('25598 with the blocks carried: nothing is on offer, and the idle wait for ways that came to nothing is not offered, said as a fact (notes 675, 698)', async t => {
   const w = win('mid-242-bb-nether-1-fortress-9');
   const T0 = Date.parse(w.at);
   t.mock.timers.enable({ apis: ['Date'], now: T0 });
   const { bot, goal } = recorded(w, { extra: { netherrack: 32 } });
   const asked = await rungQuestion(bot, goal, T0 + 67000, 'keep_at_it');
-  assert.equal(asked[0].options.until_rest_ends,
-    "Wait here for the 2 minutes until the first of the fortress leg's ways comes off its rest here. Nothing else is on offer from here meanwhile (the Nether, where the day work of the Overworld is not on offer; no ore within 16 blocks that a carried tool takes; 34 building blocks and a pickaxe carried): chosen, this is standing here idle about 2 minutes, until about 00:27Z. The obtain blaze rods stays the work in hand and is taken up again then; waiting does not end the rest sooner, and ground eight blocks off (another way) leaves these rests behind.");
+  // The ways rest for coming to nothing: standing here idle changes none of
+  // that, so the rest's end brings the same (waits.js, note 698).
+  assert.equal(asked[0].options.until_rest_ends, undefined);
+  assert.match(asked[0].state.waitsForNothing[0], /^until rest ends: not offered\. Nothing it waits for comes: the fortress leg's ways' rest here ends in about 67 seconds, but it rests for this: .*came to nothing.*; standing here changes none of that, so the work meets the same when it ends\.$/);
 });
 
 test('25598: the hold chosen, it offers the blocks as work while the rest runs; that work run out, the hold ends and the question above is asked again, not a silent wait (note 675)', async t => {
@@ -149,12 +151,14 @@ test('25585 mid-242-ca-nether-1: leave_nether\'s wait_here says what the hold ha
   for (const [extra, idle] of [[{}, false], [{ iron_pickaxe: 1, stone_pickaxe: 1, crimson_stem: 8, netherrack: 32 }, true]]) {
     const { bot, goal } = recorded(w, { extra });
     const asked = [], holds = [];
-    const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'wait_here', confidence: 0.87 } } }; } };
+    const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: questions.branch_0.criteria.wait_here ? 'wait_here' : Object.keys(questions.branch_0.criteria)[0], confidence: 0.87 } } }; } };
     const actions = { client, rest_work: gameHandlers(bot, client).rest_work, hold_for_rest: async (b, tk, g, sv, opts) => { holds.push(opts); return false; } };
     await leaveNetherStep(bot, new Task('rods'), goal, () => {}, stage, actions, T0);
+    // Idle, for a rest set at the rung's question that standing here does
+    // not change: not offered (note 698); the question goes without it.
+    if (idle) { assert.equal(asked[0]?.wait_here, undefined); assert.equal(holds.length, 0); continue; }
     const said = asked[0].wait_here;
-    if (idle) assert.equal(said, 'Wait here until the rods step\'s rest ends, taken up again in 27 minutes, then the rods again. Nothing else is on offer from here meanwhile (the Nether, where the day work of the Overworld is not on offer; no ore within 16 blocks that a carried tool takes; 33 building blocks and a pickaxe carried): chosen, this is standing here idle about 27 minutes, until about 01:58Z.');
-    else assert.match(said, /^Other work in the Nether, chosen a piece at a time, until the rods step's rest ends, taken up again in 27 minutes, then the rods again\. Work on offer meanwhile from here: Fetch \d+ stems/);
+    assert.match(said, /^Other work in the Nether, chosen a piece at a time, until the rods step's rest ends, taken up again in 27 minutes, then the rods again\. Work on offer meanwhile from here: Fetch \d+ stems/);
     assert.equal(holds[0].idle, idle);
     // The hold came back early (its work run out): the answer is not kept, so the question comes again.
     assert.equal(goal.leaveNether, undefined);

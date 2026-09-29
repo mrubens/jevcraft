@@ -72,8 +72,21 @@ test('a staircase digging a new step under the rung\'s own step is getting somew
     const goal = { kind: 'win', rungTime: { phase: 'reach_nether' } };
     const cells = [[81, 44, 121], [80, 45, 124], [79, 46, 124], [78, 47, 124], [77, 48, 124]].map(c => new Vec3(...c));
     let i = 0;
-    const raised = flips(bot, goal, ['enter_nether', 'tunnel', 'enter_nether', 'tunnel', 'enter_nether'], { between: () => { if (goal.step.action === 'tunnel') dig(bot, cells[i++]); } });
+    // On the game's ladder the rung's measure judges it (note 699): the staircase's tunnel toward the frame at
+    // (70, 60, 124) coming nearer a step at a time is getting somewhere; the blocks dug are the means.
+    const frame = new Vec3(70, 60, 124);
+    const raised = flips(bot, goal, ['enter_nether', 'tunnel', 'enter_nether', 'tunnel', 'enter_nether'], { between: () => {
+      if (goal.step.action !== 'tunnel') return;
+      goal.step.target = frame; dig(bot, cells[i]); bot.entity.position = cells[i++].offset(0.5, 0, 0.5);
+    } });
     assert.equal(raised, null, raised?.why);
+    // Blocks dug with nothing coming nearer are the flip, said with what did not change.
+    const dug = watchedBot(new Vec3(82, 43, 121));
+    try {
+      let j = 0;
+      const again = flips(dug.bot, { kind: 'win', rungTime: { phase: 'reach_nether' } }, ['enter_nether', 'tunnel', 'enter_nether', 'tunnel', 'enter_nether'], { between: () => { dig(dug.bot, cells[j++ % cells.length]); } });
+      assert.match(again?.why || '', /turning between enter nether and tunnel 4 times in 10 seconds with nothing gained on the rung: no obsidian or flint and steel/);
+    } finally { dug.stop(); }
     // The same names with nothing dug are the flip they always were.
     const still = watchedBot(new Vec3(82, 43, 121));
     try { assert.match(flips(still.bot, { kind: 'win', rungTime: { phase: 'reach_nether' } }, ['enter_nether', 'tunnel', 'enter_nether', 'tunnel', 'enter_nether'])?.why || '', /turning between enter nether and tunnel/); }
@@ -123,7 +136,8 @@ test('an answer undone at once by the work under it is marked come to nothing, a
       tried.settle(bot, goal, { q: 'leave_nether', now: t0 });
       tried.begin(bot, goal, { q: 'leave_nether', method: 'search_on', now: t0 });
       const raised = flips(bot, goal, ['rods_waiting', 'find_fortress', 'rods_waiting', 'find_fortress', 'rods_waiting'], { t0, gap: 250 });
-      assert.match(raised?.why || '', /turning between rods waiting and find fortress/, `round ${round}`);
+      // The second round is the pair trading again where it rests (note 699): raised at the first trade.
+      assert.match(raised?.why || '', round === 1 ? /turning between rods waiting and find fortress 4 times/ : /turning between find fortress and rods waiting again within 5 blocks of where they rested together, 5 times in all here/, `round ${round}`);
       require('../src/stillness').takeStall(bot);
       t0 += 20000;
     }
@@ -133,7 +147,7 @@ test('an answer undone at once by the work under it is marked come to nothing, a
     assert(tried.owed(goal, 'leave_nether'), 'owed to leave_nether, said when it is next asked');
     const read = tried.read(bot, goal, 'leave_nether', tree);
     assert.deepEqual(Object.keys(read.tree).sort(), ['go_back', 'wait_here'], 'search_on rests');
-    assert.match(read.resting[0], /^search on: Tried 2 times from here .* came to nothing: the work was turning between rods waiting and find fortress/);
+    assert.match(read.resting[0], /^search on: Tried 2 times from here .* came to nothing: the work was turning between find fortress and rods waiting again/);
     // A go_back held for food is asked again once the way back fails below it (25589 and 25592's staircase back).
     goal.leaveNether = { reason: 'food', pick: 'go_back', at: Date.now() - 1000, until: 0 };
     assert.equal(netherLeaveHeld(goal, 'food'), false, 'owed: asked again, not held');

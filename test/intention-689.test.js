@@ -48,7 +48,7 @@ test('go_in holds: the way in is asked without leaving it, said as under way and
   const way = await decide('fortress_approach', { client, bot, goal, tree: approachTree(), state: { health: 20 } });
   assert.deepEqual(offered[1].filter(k => k !== 'none_good'), ['walk_route', 'cross_level']);
   assert.deepEqual(way.path, ['walk_route']);
-  assert.match(states[1].underWay, /^go in \(fortress visit, to \(-108, 77, 155\)\), chosen \d+ seconds? ago; it holds until it arrives, is done or fails; not offered while it holds: keep searching$/);
+  assert.match(states[1].underWay, /^go in \(fortress visit, to \(-108, 77, 155\)\), chosen \d+ seconds? ago; it holds until it arrives, is done or fails, or walks 3 minutes with nothing gained; not offered while it holds: keep searching$/);
   // Still the one intention, its way noted.
   assert.equal(goal.intention.choice, 'go_in');
   assert.equal(goal.intention.way, 'fortress_approach/walk_route');

@@ -192,14 +192,19 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
     return (t ? t.distance : e.position.distanceTo(bot.entity.position)) <= GONE_BEYOND || !!t?.visible;
   });
   const noGain = starving || (!night && hp >= 20);
-  const waitsForNothing = noDay && noGain && againstGone && !spawner;
+  // Or nothing about at all: no mob within sixteen and none in sight, the
+  // pocket's own record of what it was sealed against or not (note 698: in
+  // the Nether, stays with nothing within twenty blocks and nothing to gain).
+  const noneAbout = !near.some(t => t.distance <= GONE_BEYOND || t.visible);
+  const waitsForNothing = noDay && noGain && (againstGone || noneAbout) && !spawner;
   const goneKinds = [...new Set((w.against?.mobs || []).map(m => name(m.name)).filter(Boolean))];
+  const goneSays = againstGone ? `the ${goneKinds.length === 1 ? goneKinds[0] : 'mobs'} it was sealed against ${goneKinds.length === 1 && w.against.mobs.length === 1 ? 'is' : 'are'} gone` : 'no mob is within 16 blocks or in sight';
   const nothingComes = waitsForNothing
-    ? ` Nothing this wait could wait for is coming: the ${goneKinds.length === 1 ? goneKinds[0] : 'mobs'} it was sealed against ${goneKinds.length === 1 && w.against.mobs.length === 1 ? 'is' : 'are'} gone, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}. Staying is standing idle.`
+    ? ` Nothing this wait could wait for is coming: ${goneSays}, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}. Staying is standing idle.`
     : noDay && starving
       ? (spawner ? ` Neither daylight nor health comes to this wait, and the mobs outside do not move off: the ${spawnerKind} ${spawner.distance} blocks off makes more of them while the bot is within its 16 blocks.` : ` Neither daylight nor health comes to this wait: the bot goes out at ${Math.round(hp * 10) / 10} health whenever it goes, so a stay buys only the chance that the mobs outside move off${near.some(t => t.entity?.name === 'blaze') ? ', and blazes keep about the fortress they spawn in' : ''}, and each minute of it is a minute of the run.`) : '';
   if (nothingComes && spawner) facts.waitingFor = `nothing: no daylight, no health without food, and the ${spawnerKind} ${spawner.distance} blocks off makes more while the bot is within 16`;
-  if (waitsForNothing) facts.waitingFor = `nothing: what it was sealed against is gone, no daylight, and ${starving ? 'no health without food' : 'health full'}`;
+  if (waitsForNothing) facts.waitingFor = `nothing: ${againstGone ? 'what it was sealed against is gone' : 'no mob within 16 or in sight'}, no daylight, and ${starving ? 'no health without food' : 'health full'}`;
   // The rung, and how long since it last got anywhere.
   const { rungOf, rungSays } = require('./tried');
   const r = goal?.tried?.rung, rung = rungOf(goal);
@@ -212,8 +217,12 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   const p = bot.entity?.position;
   const stays = p ? about(goal, { q: 'pocket_next', method: 'stay', here: { x: p.x, y: p.y, z: p.z }, now }).filter(e => e.outcome === 'blocked' && e.at >= w.since).length : 0;
   if (waitsForNothing && stays) facts.staysForNothing = stays;
+  // What a stay waits for (waits.js, note 698): with nothing coming, it is
+  // not offered, and this is said in the facts instead.
+  const waitFor = require('./waits');
+  const stayWaits = waitsForNothing ? waitFor.event('the mobs outside to go', { comes: false, why: `${goneSays}, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}` }) : null;
   return {
-    facts, heldOff, minutes, waitsForNothing, stays,
+    facts, heldOff, minutes, waitsForNothing, stays, waits: stayWaits,
     stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${nothingComes}${rungLine}`,
     leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}${countSays}`,
     claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}), ...(waitsForNothing ? { waitingFor: facts.waitingFor, staysForNothing: stays } : {}) },

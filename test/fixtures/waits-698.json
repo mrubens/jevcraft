@@ -1,0 +1,115 @@
+{
+ "source": "flight record 127_0_0_1-25591-Jev-2026-09-29T22-39-26-692Z.jsonl (mid-242-jb), leave_nether at 22:43:07Z and the idle wait_here said at 22:19:54Z",
+ "windows": [
+  {
+   "trial": "mid-242-jb",
+   "port": 25591,
+   "at": "2026-09-29T22:19:54.709Z",
+   "position": {
+    "x": 102.41343505157829,
+    "y": 52,
+    "z": 218.08442260965344
+   },
+   "health": 20,
+   "food": 20,
+   "inventory": {
+    "glowstone_dust": 6,
+    "bone": 1,
+    "stone_axe": 1,
+    "mutton": 9,
+    "coal": 128,
+    "light_gray_wool": 1,
+    "gray_wool": 2,
+    "leaf_litter": 30,
+    "furnace": 1,
+    "lapis_lazuli": 9,
+    "flint": 7,
+    "beef": 11,
+    "crafting_table": 2,
+    "gravel": 21,
+    "water_bucket": 1,
+    "oak_fence": 15,
+    "azure_bluet": 1,
+    "wooden_hoe": 1,
+    "leather": 3,
+    "raw_copper": 7,
+    "blackstone": 12,
+    "basalt": 11,
+    "netherrack": 124,
+    "soul_sand": 1,
+    "bucket": 1,
+    "white_wool": 4,
+    "iron_sword": 1,
+    "flint_and_steel": 1
+   },
+   "step": {
+    "action": "rods_waiting",
+    "phase": "obtain_blaze_rods",
+    "why": "Jev chose to go on without the stone pickaxe this crimson stem is for, wanted for the stair to the portal, which ends here for now",
+    "until": 1790722194525
+   },
+   "answered": "wait_here",
+   "probabilities": {
+    "wait_here": 0.51,
+    "none_good": 0.19,
+    "go_back": 0.3
+   },
+   "waitHereSaid": "Wait here until the rods step's rest ends, taken up again in 30 minutes, then the rods again. Nothing else is on offer from here meanwhile (the Nether, where the day work of the Overworld is not on offer; no ore within 16 blocks that a carried tool takes; 147 building blocks and no pickaxe carried): chosen, this is standing here idle about 30 minutes, until about 22:49Z.",
+   "why": "Jev chose to go on without the stone pickaxe this crimson stem is for, wanted for the stair to the portal, which ends here for now"
+  },
+  {
+   "trial": "mid-242-jb",
+   "port": 25591,
+   "at": "2026-09-29T22:43:07.679Z",
+   "position": {
+    "x": 143.47379753387722,
+    "y": 60,
+    "z": 319.5
+   },
+   "health": 20,
+   "food": 19,
+   "inventory": {
+    "glowstone_dust": 6,
+    "bone": 1,
+    "stone_axe": 1,
+    "mutton": 9,
+    "coal": 128,
+    "light_gray_wool": 1,
+    "gray_wool": 2,
+    "leaf_litter": 30,
+    "furnace": 1,
+    "lapis_lazuli": 9,
+    "flint": 7,
+    "beef": 11,
+    "crafting_table": 2,
+    "gravel": 21,
+    "water_bucket": 1,
+    "oak_fence": 15,
+    "azure_bluet": 1,
+    "wooden_hoe": 1,
+    "leather": 3,
+    "raw_copper": 7,
+    "soul_sand": 1,
+    "bucket": 1,
+    "white_wool": 4,
+    "iron_sword": 1,
+    "flint_and_steel": 1,
+    "netherrack": 32
+   },
+   "step": {
+    "action": "rods_waiting",
+    "phase": "obtain_blaze_rods",
+    "why": "Jev chose to go on without the warped stem for now",
+    "until": 1790723587448
+   },
+   "answered": "wait_here",
+   "probabilities": {
+    "none_good": 0.08,
+    "go_back": 0.09,
+    "wait_here": 0.83
+   },
+   "waitHereSaid": "Other work in the Nether, chosen a piece at a time, until the rods step's rest ends, taken up again in 30 minutes, then the rods again. Work on offer meanwhile from here: Fetch 2 stems of the Nether's forests now: Wanted in wood: 8 planks' worth for the pickaxe to make now (woo.... Tried once from here in the last 21 seconds, and it came to nothing (no new ground, nothing gained, no block dug or placed).",
+   "why": "Jev chose to go on without the warped stem for now"
+  }
+ ]
+}

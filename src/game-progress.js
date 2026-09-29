@@ -622,7 +622,10 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
     return false;
   };
   const held = goal.leaveNether;
-  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until) return otherWork(held.idle !== false);
+  // An idle wait held for a rest whose cause standing does not change waits
+  // for nothing (waits.js, note 698): not held, asked again.
+  const heldForNothing = held?.pick === 'wait_here' && held.idle === true && require('./waits').restEnds(bot, { what: 'the rods step\'s rest', until: stage.until, cause: stage.why, idle: true, now }).comes === false;
+  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until && !heldForNothing) return otherWork(held.idle !== false);
   const search = goal.fortressSearch;
   const searched = search ? ` The fortress search so far: ${search.legs || 0} leg${search.legs === 1 ? '' : 's'} in ${search.since ? Math.round((now - search.since) / 60000) : 0} minutes${search.lastLegError ? `; the last ended: ${search.lastLegError}` : ''}.` : '';
   const tree = {
@@ -641,7 +644,11 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   const idle = offer ? offer.idle : undefined;
   if (stage.until) tree.wait_here = { description: offer
     ? `${idle ? 'Wait here' : 'Other work in the Nether, chosen a piece at a time,'} until the rods step's rest ends${rest}, then the rods again. ${offer.says}`
-    : `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.` };
+    : `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.`,
+    // Idle, for a rest whose cause standing here does not change, it waits
+    // for nothing and is not offered (waits.js, note 698): 25591 chose it 32
+    // times of 32 for "go on without the warped stem" (mid-242-jb).
+    waits: require('./waits').restEnds(bot, { what: 'the rods step\'s rest', until: stage.until, cause: stage.why, idle: !!idle, now }) };
   const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
     state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, rodsTheGoalWants: require('./eye-need').says(bot, goal), ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
   if (decision.stale) return false;

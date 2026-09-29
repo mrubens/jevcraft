@@ -492,6 +492,18 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
     if (fight.still) state = { ...(state || {}), fightOn: `${fight.still}: this question waited ${Math.round(fight.waitedMs / 1000)} seconds for the fight to end and is asked with it still on` };
   }
+  // A wait whose event cannot come, or whose coming changes nothing, is not
+  // offered: said in the facts instead (waits.js, note 698). 25591 answered
+  // leave_nether wait_here 32 times of 32 for a rest whose cause standing
+  // there did not change.
+  {
+    const w = require('../waits').gate(id, tree, { sayOnly: SAY_ONLY.has(id), declaredWait: key => spec.options?.some(o => o.key === key && o.wait) });
+    tree = w.tree;
+    if (w.facts.length) {
+      console.log(`[waits] ${id}: ${w.facts.join(' | ')}`);
+      if (state && typeof state === 'object') state = { ...state, waitsForNothing: w.facts };
+    }
+  }
   const original = tree;
   // One way: taken and said, not asked. A question with one option was
   // recorded as asked, took the turn and stood in the flight record as a

@@ -435,7 +435,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     // The ways below resting from here (an escalation): they rest by place,
     // and the rung stays the one in hand. The rung's question offered only
     // keeping at it, another way or thirty minutes set aside (note 600).
-    const below = stall.escalated ? String(stall.escalated.from || 'the question below').replaceAll('_', ' ') : null;
+    const below = stall.escalated && !stall.flip ? String(stall.escalated.from || 'the question below').replaceAll('_', ' ') : null;
     // What the hold has on offer from here, said before it is chosen: with
     // nothing, the answer is the bot standing idle until the rest ends, and
     // said as that. On 25598 (mid-242-bb-nether-1-fortress-9) "other work
@@ -456,19 +456,34 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       : below
       ? `Other work for the ${mins} until the first of the ${below}'s ways comes off its rest here, chosen a piece at a time; the ${thing} stays the work in hand and is taken up again when that rest ends. ${offerSays} Ground eight blocks off (another way) leaves these rests behind; waiting here does not end them sooner.`
       : `Leave the ${thing} for the ${mins} until its rest ends and do other work meanwhile, chosen a piece at a time; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. ${offerSays} Nothing done here ends the rest sooner.`,
+      // What it waits for (waits.js, note 698): idle, for a rest whose cause
+      // standing still does not change, it waits for nothing and is not
+      // offered (decide), said in the facts.
+      waits: require('./waits').restEnds(bot, { what: below ? `the ${below}'s ways' rest here` : `the ${thing}'s rest`, until: restUntil, cause: stall.escalated?.says || stall.error || stall.rung?.says || '', idle: idleWait, now }),
       run: async () => {
         goal.restHeld = { until: restUntil, reason: stall.key, at: now, ...(idleWait ? { idle: true } : {}) }; save();
         await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error || stall.escalated?.says, above, idle: idleWait });
       } };
     // The other answers' walks meet the same rest, said: a rest until a
     // time wherever the bot is (WaysResting), not the ways below by place.
-    if (answers.differently && !below) answers.differently.description += ` The way rests ${minutes} more minute${minutes === 1 ? '' : 's'} whatever is done: come at it again from fresh ground, it meets the same rest until then.`;
+    // A pair's rest holds within reach of where it traded (note 699):
+    // fresh ground leaves it, and the two may go on there.
+    if (stall.flip) {
+      const pair = require('./flip-pairs').pairSays(stall.flip);
+      answers.until_rest_ends.description = idleWait
+        ? `Wait here for the ${mins} until the ${pair} come off their rest here. ${offerSays} The ${thing} stays the work in hand and is taken up again then.`
+        : `Other work for the ${mins} until the ${pair} come off their rest here, chosen a piece at a time; the ${thing} stays the work in hand and is taken up again then. ${offerSays}`;
+    }
+    else if (answers.differently && !below) answers.differently.description += ` The way rests ${minutes} more minute${minutes === 1 ? '' : 's'} whatever is done: come at it again from fresh ground, it meets the same rest until then.`;
   }
   Object.assign(answers, nether);
   // The failed step again as it was: only this answer puts it back in hand
   // (persist), and not while it rests from here in the ledger.
   let againRests = null;
-  if (failed?.action && !idle) {
+  // Two steps resting together from here (note 699): neither as it was.
+  const pairHere = stall.flip ? require('./flip-pairs').resting(goal, stall.flip.pair, bot.entity.position, now) : null;
+  if (failed?.action && !idle && pairHere?.pair.includes(failed.action)) againRests = `the ${String(failed.action).replaceAll('_', ' ')} step as it was: it and the ${pairHere.pair.filter(n => n !== failed.action).map(n => n.replaceAll('_', ' ')).join(' and ')} rest together from here.`;
+  else if (failed?.action && !idle) {
     const here = bot.entity.position, target = stepTarget(failed);
     const list = tried.about(goal, { q: 'step', method: failed.action, target, here, now });
     const until = tried.restsUntil(list, now);
@@ -495,12 +510,19 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const triedSaid = tried.summary(goal, { work, now });
   // With every way below resting from here, keeping at it here meets those
   // rests at the next pass, and this question comes again: said.
-  const keepMeets = restUntil && stall.escalated ? ` Every way the ${String(stall.escalated.from || 'question below').replaceAll('_', ' ')} had from here rests ${agoSays(restUntil - now)} more: kept at from here now, the next pass meets the same rests and this question comes again.` : '';
+  const keepMeets = restUntil && stall.escalated && !stall.flip ? ` Every way the ${String(stall.escalated.from || 'question below').replaceAll('_', ' ')} had from here rests ${agoSays(restUntil - now)} more: kept at from here now, the next pass meets the same rests and this question comes again.` : '';
   // With ways untried below, keeping at it sends the work back to that
   // question, owed (tried.sendBack): the fortress search ends its walk and
   // asks its leg's question with them.
   const sendsBack = untriedBelow ? ` The ${untriedBelow.map(o => o.q.replaceAll('_', ' ')).join(' and the ')} question${untriedBelow.length === 1 ? ' is' : 's are'} asked next, with the ways not yet tried from here: ${untriedSays}.` : '';
-  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing}, with the ways not yet tried or resting from here; the next ten minutes are measured again.${droppedSays}${sendsBack}${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
+  // Kept at from here, the work's next step is one of the two resting
+  // together, and they trade again at once (note 699): not offered while
+  // they rest, unless it sends the work back to a question below with ways
+  // not tried, which is a way other than the two.
+  const keepNotOffered = rungQuestion && pairHere && !untriedBelow
+    ? `keeping at the ${thing} from here is not offered: its steps here are the ${require('./flip-pairs').pairSays(pairHere)}, which rest together ${agoSays(pairHere.until - now)} more`
+    : null;
+  if (rungQuestion && !keepNotOffered) answers.keep_at_it = { description: `Keep at the ${thing}, with the ways not yet tried or resting from here; the next ten minutes are measured again.${droppedSays}${sendsBack}${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
     run: async () => {
       if (goal.tried?.rung) goal.tried.rung.idleMs = 0;
       for (const o of untriedBelow || []) tried.sendBack(goal, o.q, `the rung's question sent the work back here: ${stall.escalated?.says || 'a failure below'}`, now);
@@ -515,7 +537,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const failure = stall.error || (stairs && `the staircase is set aside: ${stairs.why}`);
   const castWait = castWaterWait(bot, goal);
   const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.activeMs ? { minutesOnRung: Math.round(goal.rungTime.activeMs / 60000) } : {}),
-    ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
+    ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says && !stall.flip ? { whatFailedBelow: stall.escalated.says } : {}),
+    ...(stall.flip?.says ? { flipPair: stall.flip.says } : {}), ...(keepNotOffered ? { keepAtItNotOffered: keepNotOffered } : {}),
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
     ...(pearlsNotOffered ? { pearlRoutesNotOffered: pearlsNotOffered } : {}), ...(takeUpNotOffered.length ? { takeUpNotOffered } : {}), ...(setAsideNotOffered ? { setAsideNotOffered } : {}),
@@ -2317,7 +2340,7 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   const far = walkTarget(), fits = far && far.distanceTo(bot.entity.position) * 2 / 4.3 * 1000 + 4000 <= cooking ? far : null;
   if (fits) tree.mine_nearby = { description: `Walk to the ${String(bot.blockAt(fits)?.name || 'block').replaceAll('_', ' ')} ${Math.round(fits.distanceTo(bot.entity.position))} blocks off and dig it and the next nearest, back before the batch is done; the walks dig their way through rock where no way is open.${wear}` };
   if (countOf(bot, 'cobblestone') < 128) tree.dig_stone = { description: `Dig the stone around the furnace (${countOf(bot, 'cobblestone')} cobblestone carried): tools, a furnace and walls want it.${wear}` };
-  tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile${budget ? ', and wears no pickaxe' : ''}.` };
+  tree.wait_here = { description: `Stand by the furnace for the ${seconds} seconds the ${count} ${what} take. The furnace cooks on its own whether or not the bot stands by it; standing gains nothing meanwhile${budget ? ', and wears no pickaxe' : ''}.`, waits: require('./waits').timer(`the furnace to finish the ${count} ${what}`, cooking) };
   // A batch saved earlier, finished first by whatever work came next: the
   // work in hand need not wait for it. A player leaves the furnace to cook
   // and comes back for it (the user, 2026-09-29: mid-243-ga's climb for the
@@ -3959,7 +3982,9 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   // round and waiting, none good 0.38 (note 580).
   const short = where === 'nether' ? blocksShortSays(bot, goal, target) : null;
   if (short) tree.blocks_then_cross = { description: short.says };
-  if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.` };
+  if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.`,
+    // Not idle: the work is asked then (the stall's until_rest_ends says whether any is on offer, note 698).
+    waits: require('./waits').restEnds(bot, { what: 'the staircase\'s rest', until, cause: stairsWhy, idle: false, now }) };
   const triedSays = Object.entries(tried).map(([k, t]) => `${k.replaceAll('_', ' ')}: ended ${t.moved} block${t.moved === 1 ? '' : 's'} from here and no nearer, ${Math.max(1, Math.round((now - t.at) / 1000))} seconds ago${t.why ? ` (${t.why})` : ''}`);
   for (const k of Object.keys(tried)) delete tree[k];
   if (again && tree[again.pick]) tree[again.pick].description += ' Chosen from here before in this rest, and the bot is back here.';
@@ -5688,9 +5713,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     portals: goal.portals, villages: goal.villages, blueprint: goal.blueprint };
   const attempts = attemptsFor(goal);
   const tree = {};
-  const offer = (key, description, run, target = null) => {
+  const offer = (key, description, run, target = null, waits = null) => {
     if (attempts.resting('detour', key, now)) return;
-    tree[key] = { description, ...(target ? { target } : {}), run: async () => {
+    tree[key] = { description, ...(target ? { target } : {}), ...(waits ? { waits } : {}), run: async () => {
       goal.step = { action: 'detour', choice: key, from: reason }; save(); narrate(bot, goal);
       try { await run(); }
       catch (err) {
@@ -5702,7 +5727,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   };
   // The stalled work's own answers (answerStall): done differently, or its
   // rung left for later. They run on the player's goal, not the scratch one.
-  for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target);
+  for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
   // The work on offer from here (restWork), each run bounded as above.
   for (const w of await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) })) offer(w.key, w.description, w.run);
   // A walk to water is what the portal frame's cast is waiting for when it
@@ -5743,7 +5768,10 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   if (!options.length) return false;
   const step = goal.step;
   const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
-  const context = { situation: id === 'rung_progress'
+  const flipSays = stalled?.flipPair ? `${stalled.flipPair[0].toUpperCase()}${stalled.flipPair.slice(1)}` : null;
+  const context = { situation: flipSays
+    ? `${flipSays} Choose a way other than those two: ${id === 'rung_progress' ? 'another way to the rung, other work until their rest ends, or the rung set aside for now' : 'another way from fresh ground, something useful from here for a few minutes, or the work left for later'}.`
+    : id === 'rung_progress'
     ? `${pickaxeLeads ? `${pickaxeLeads} ` : ''}${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : stalled?.whatFailedBelow ? `The ${what} could not go on below this question: ${stalled.whatFailedBelow.replace(/\.$/, '')}.${stalled.workedOnRung ? ` Worked on this rung ${stalled.workedOnRung}.` : ''}` : `The ${what} is brought to the rung's question.`}${stalled?.setAsideNotOffered ? ' Choose: keep at it with the ways left below, or change the plan; setting the rung aside is not offered here, and why is said.' : ' Choose: keep at it with the ways left, change the plan, or set the rung aside for now.'}`
     : holding
     ? `The ${what} rests ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}${holding.why ? ` (${holding.why})` : ''}, and Jev chose other work until then. Choose the work for now; it has until the rest ends.`

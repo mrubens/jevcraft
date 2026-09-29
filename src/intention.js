@@ -68,6 +68,17 @@ const ARRIVED = 4;
 const MAX_MS = 10 * 60000;
 const HURT = 4;           // health lost since it began: a real change
 const SAID_MS = 60000;
+// Its yield (note 699): the rung's measure (rung-measure.js: what the rung is
+// for, new columns of the Nether looked over, a new nearest to the fortress,
+// blazes, a cage, the portal) and its own target, read at every look. A walk
+// three minutes without a new best on any of them ends there, said as that,
+// and the answer is marked come to nothing so its question is asked again
+// with it said. 25583 walked 2,532 blocks in 77 minutes and ended 32 from
+// where it began; nothing it was under measured what the walking brought.
+// Only the walks: a wait by a spawner, a heal or a cook yields nothing by
+// this measure while it does what it is for.
+const YIELD_MS = 3 * 60000;
+const WALKS = /^(leg_\w+|floor_\w+|back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|walk_route|cross_level|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|go_in|go_back|return_for_\w+|portal_trip|explore|cross_toward|floor_toward|back_to_ground)$/;
 
 const P = v => v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? { x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z) } : null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -140,6 +151,48 @@ function startSays(bot, goal, i, state) {
   return `${what}${at}${why ? `: ${why}` : ''}.`;
 }
 
+// What the intention has brought: the rung's parts, and the distance to its
+// own target, as rung-measure.js parts ({ key: { v, what } }).
+function yieldParts(bot, goal, i) {
+  let parts = {};
+  try {
+    const tried = require('./tried'), rung = tried.rungOf(goal);
+    parts = (rung && tried.measureOf(bot, goal, rung)) || {};
+  } catch (_) { parts = {}; }
+  // The step's own target is the step's, which changes under a walk: the
+  // intention's target stands for it.
+  parts = Object.fromEntries(Object.entries(parts).filter(([k]) => !/^step:/.test(k)));
+  const here = bot?.entity?.position;
+  if (i.target && here) parts.target = { v: Math.round(dist(here, i.target) * 10) / 10, what: 'its target' };
+  return parts;
+}
+const valuesOf = parts => Object.fromEntries(Object.entries(parts).map(([k, x]) => [k, x.v]));
+// Brought up to date at each look: a part better than its best so far (by
+// the measure's own tolerances) is a gain, and the clock starts again.
+function yieldLook(bot, goal, i, now) {
+  if (!bot?.entity?.position) return i.yield || null;
+  const RM = require('./rung-measure');
+  const parts = yieldParts(bot, goal, i), v = valuesOf(parts), here = P(bot.entity.position);
+  const y = i.yield ||= { best: v, from: here, gainAt: now, gains: 0 };
+  const gain = RM.changed(y.best, v);
+  for (const [k, x] of Object.entries(v)) {
+    const b = y.best[k];
+    y.best[k] = b === undefined ? x : RM.kindOf(k) === 'distance' ? Math.min(b, x) : Math.max(b, x);
+  }
+  if (gain) { y.gainAt = now; y.gains += 1; y.lastGain = gain; }
+  y.net = y.from && here ? Math.round(dist(y.from, here)) : null;
+  y.lookedAt = now;
+  y.parts = parts;
+  return y;
+}
+// What it has brought, in words, once a minute has passed without a gain:
+// "nothing gained for 2 minutes, 4 blocks from where it began".
+function yieldSays(i, now = Date.now()) {
+  const y = i?.yield;
+  if (!y || now - y.gainAt < 60000) return null;
+  return `nothing gained for ${ago(now - y.gainAt)}${Number.isFinite(y.net) ? `, ${y.net} blocks from where it began` : ''}`;
+}
+
 // The intention in force, or null; one whose end has come is ended here and
 // kept as goal.intentionEnded.
 function holding(bot, goal, now = Date.now()) {
@@ -166,6 +219,13 @@ function endOf(bot, goal, i, now) {
   // there: escalated.
   const up = (t?.escalations || []).find(e => e.at > i.at);
   if (up) return `failed: ${String(up.why || 'its ways came to nothing').slice(0, 160)}`;
+  // A walk that has brought nothing for YIELD_MS (note 699).
+  const y = yieldLook(bot, goal, i, now);
+  if (y && WALKS.test(i.choice) && now - y.gainAt >= YIELD_MS) {
+    const RM = require('./rung-measure');
+    const nothing = RM.says(RM.judge({ before: y.best, parts: y.parts || {}, store: null }).nothing, y.net);
+    return `no yield: ${ago(now - y.gainAt)} with ${nothing || 'nothing gained on the rung'}`;
+  }
   return null;
 }
 function end(goal, why, now = Date.now()) {
@@ -177,7 +237,9 @@ function end(goal, why, now = Date.now()) {
 
 // As the facts say it, for a question asked while it holds.
 function says(i, now = Date.now()) {
-  return `${words(i.choice)} (${words(i.q)}${i.target ? `, to (${i.target.x}, ${i.target.y}, ${i.target.z})` : ''}), chosen ${ago(now - i.at)} ago; it holds until it arrives, is done or fails`;
+  const y = yieldSays(i, now);
+  const walk = WALKS.test(i.choice) ? `, or walks ${Math.round(YIELD_MS / 60000)} minutes with nothing gained` : '';
+  return `${words(i.choice)} (${words(i.q)}${i.target ? `, to (${i.target.x}, ${i.target.y}, ${i.target.z})` : ''}), chosen ${ago(now - i.at)} ago; it holds until it arrives, is done or fails${walk}${y ? `; ${y}` : ''}`;
 }
 const endedSays = (e, now = Date.now()) => e && now - e.endedAt < 2 * 60000 ? `${words(e.choice)} (${words(e.q)}) ended ${ago(now - e.endedAt)} ago: ${e.why}` : null;
 
@@ -235,6 +297,7 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   const to = P(target) || (THROUGH_PORTAL.test(choice) ? portalBack(bot, goal) : null);
   const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null };
   goal.intention = next;
+  yieldLook(bot, goal, next, now);
   const line = startSays(bot, goal, next, state);
   const said = bot ? (bot._intentionSaid ||= {}) : {};
   if (line && typeof bot?.chat === 'function' && !(said.line === line && now - said.at < SAID_MS)) { said.line = line; said.at = now; try { bot.chat(line); } catch (_) { /* said in the record */ } }
@@ -242,4 +305,24 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   return next;
 }
 
-module.exports = { wayOf, DROP, committing, holding, gate, after, end, serves, says, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };
+// The watch's look (stillness.js, every few seconds): a walk that ended for
+// want of yield is not left running until a question comes; its answer is
+// marked come to nothing and its question asked again, the stall thrown to
+// the work so the walk stops. -> the stall raised, or null
+const WATCH_MS = 5000;
+function yieldWatch(bot, goal, now = Date.now()) {
+  const i = goal?.intention;
+  if (off() || !i || !WALKS.test(i.choice) || now - (i.yield?.lookedAt || 0) < WATCH_MS) return null;
+  if (holding(bot, goal, now)) return null;
+  const e = goal.intentionEnded;
+  if (!e || e.endedAt !== now || !/^no yield/.test(e.why)) return null;
+  const why = `${words(e.choice)} (${words(e.q)}) ended, ${e.why}`;
+  try {
+    const tried = require('./tried'), own = (goal.tried?.entries || []).filter(x => x.q === e.q && x.at >= e.at - 1000).at(-1) || tried.latestOf(goal, e.q, now);
+    if (own) { if (own.outcome === 'pending') own.outcome = 'blocked'; tried.markBlocked(own, why, now); }
+  } catch (_) { /* the ledger has none */ }
+  console.log(`[intention] ${why}`);
+  try { return require('./stillness').raiseFor(bot, goal, why, now, { escalated: { from: 'intention', to: e.q, says: why } }); } catch (_) { return null; }
+}
+
+module.exports = { yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };
