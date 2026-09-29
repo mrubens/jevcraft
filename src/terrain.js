@@ -424,7 +424,18 @@ function lavaShore(bot, landing, radius = LAVA_SHORE_RADIUS) {
 // none within reach, or more health than the bot has, is death. Fire
 // resistance, or an enchanted golden apple to eat in it, takes the lava's
 // harm away.
-const LAVA_HIT = 4, LAVA_HITS_A_SECOND = 2, LAVA_SWIM_BLOCKS_A_SECOND = 1;
+// The pace is the game's lava drag, the same 0.4 a second survival.js
+// lavaWays says (the jar: 0.02 of the keys a tick, the motion halved every
+// tick), and it was measured (note 662): of 88 stretches of three seconds or
+// more in lava in the flight records of 2026-09-27 to 2026-09-29, the body
+// made 0.39 blocks a second over the ground (median; 0.59 nine in ten, 0.96
+// the most), 62 ended in death and the 26 that lived came out within about
+// a block and a quarter of where they went in. Here it was one block a
+// second, "not measured": every fall into lava with ground three blocks off
+// was priced at 12.6 health in it and 27.6 with the fire, and was in fact
+// seven and a half seconds in it, 31 and more.
+const LAVA_HIT = 4, LAVA_HITS_A_SECOND = 2, LAVA_SWIM_BLOCKS_A_SECOND = 0.4;
+const LAVA_SWIM_RECORD = { stretches: 88, died: 62, lived: 26, medianBlocksASecond: 0.39, p90: 0.59, most: 0.96, livedWithin: 1.2 };
 function lavaFate(bot, drop, health = bot?.health ?? 20) {
   if (!drop || drop.into !== 'lava' || !drop.cell || typeof bot?.blockAt !== 'function') return null;
   const round = n => Math.round(n * 10) / 10;
@@ -456,7 +467,7 @@ function lavaFateSays(fate, fall, health = 20) {
   if (fate.fireResistance) return `into lava ${fall} blocks down, where fire resistance on the body keeps the lava from hurting while it lasts`;
   const after = fate.burn ? `, then the fire it sets burns on ${fate.fireSeconds} seconds out of it at a point a second that armour does not stop${fate.nether ? ' (no water to put it out in the Nether)' : ' (no water carried to put it out)'}: about ${fate.takes} in all` : fate.water ? ', then the fire it sets is put out with the water bucket carried' : '';
   const out = fate.shoreBlocks != null
-    ? `the nearest ground out of it from where the body comes up is about ${fate.shoreBlocks} block${fate.shoreBlocks === 1 ? '' : 's'} off, about ${fate.seconds} seconds swimming (not measured), about ${fate.inIt ?? fate.takes} health in it${after}${fate.takes >= health ? `, more than the ${hp} the bot has` : ` of the ${hp} the bot has`}`
+    ? `the nearest ground out of it from where the body comes up is about ${fate.shoreBlocks} block${fate.shoreBlocks === 1 ? '' : 's'} off, about ${fate.seconds} seconds swimming (${LAVA_SWIM_BLOCKS_A_SECOND} blocks a second, measured: of ${LAVA_SWIM_RECORD.stretches} stretches in lava ${LAVA_SWIM_RECORD.died} ended in death, and those that lived were out within about ${LAVA_SWIM_RECORD.livedWithin} blocks), about ${fate.inIt ?? fate.takes} health in it${after}${fate.takes >= health ? `, more than the ${hp} the bot has` : ` of the ${hp} the bot has`}`
     : `no ground out of it stands within ${LAVA_SHORE_RADIUS} blocks of where the body comes up`;
   const end = fate.enchantedGoldenApple ? ': the enchanted golden apple carried, eaten in the lava, is the one way to live through it' : fate.deadly ? ': death' : '';
   return `into lava ${fall ? `${fall} block${fall === 1 ? '' : 's'} down` : 'level with the feet'}; ${burns}, and ${out}${end}`;
@@ -533,4 +544,4 @@ function bodyInLava(bot) {
   return false;
 }
 
-module.exports = { feetCell, fallFrom, digExposes, hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };
+module.exports = { LAVA_SWIM_BLOCKS_A_SECOND, LAVA_SWIM_RECORD, feetCell, fallFrom, digExposes, hangingFloor, floorDrops, floorDropDeadly, floorDropSays, atOf, standsInLava, lavaTouch, lavaTouchSays, hotFloor, hotUnderfoot, HOT_FLOOR, onSpan, holdOffEdge, edgeHeld, EDGE_REACH, dropNear, dropNote, dropFacts, lavaFate, lavaFateSays, lavaShore, LAVA_SHORE_RADIUS, bodyInLava, besideDrop, dropWithin, KNOCKBACK, dropAt, dryPassable, dryLeaf, dryBodySpace, supportCell, restingCell, damagingTerrain, swimmingBlocks, swimmableWater, waterLevel };

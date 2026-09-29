@@ -178,7 +178,10 @@ function held(bot, key, now = Date.now()) {
 async function answer(bot, task, key, ways, { client = null, goal = null, save = () => {}, facts = {}, context = {}, log = console.log, decide = null } = {}) {
   const keys = Object.keys(ways || {});
   if (!keys.length) return { key: null, by: 'none', acted: false };
-  const tree = Object.fromEntries(keys.map(k => [k, { description: ways[k].description, run: ways[k].run }]));
+  // In a fight with blazes each way says what followed it in the played fights
+  // (blaze-record.js waySays, note 661).
+  const said = k => { try { return require('./blaze-record').waySays(bot, k); } catch (_) { return ''; } };
+  const tree = Object.fromEntries(keys.map(k => [k, { description: ways[k].description + said(k), run: ways[k].run }]));
   // Only a cancellation stops the question: the task's own check throws for
   // the very lava or breath it is asked about, and the watchers' stops
   // (a threat, a preemption) are what this answers first.

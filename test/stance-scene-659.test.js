@@ -187,9 +187,10 @@ test('after a rod picked up in the Nether the stance and the hunt are told what 
   assert.equal(afterRod.noteRods(bot, 5000).lastGainAt, 5000);
   const says = afterRod.says(bot, 35000);
   assert.match(says, /^The last blaze rod was picked up 30 seconds ago, 1 carried now\./);
-  assert.match(says, /stayed at the blazes \(its first answer a strike, a fight, cover or the work\) \(53\): 22 died before another rod or leaving the Nether \(42%; 15 within three minutes of the rod, median 86 seconds after it\), 17 took another rod first \(32%\)/);
-  assert.match(says, /went away to heal or ran \(leave_and_heal, eat, retreat, leave_reach\) \(20\): 5 died before another rod or leaving the Nether \(25%; 2 within three minutes of the rod, median 224 seconds after it\), 8 took another rod first \(40%\)/);
-  assert.match(says, /By the health at the rod, 8 to 16 as now \(12\): those rods \(52\)/);
+  assert.match(says, /stayed at the blazes \(its first answer a strike, a fight, cover or the work\) \(157\): 54 died before another rod or leaving the Nether \(34%; 31 within three minutes of the rod, median 129 seconds after it\), 89 took another rod first \(57%\)/);
+  assert.match(says, /went away to heal or ran \(leave_and_heal, eat, retreat, leave_reach\) \(63\): 29 died before another rod or leaving the Nether \(46%; 18 within three minutes of the rod, median 40 seconds after it\), 27 took another rod first \(43%\)/);
+  assert.match(says, /By the health at the rod, 8 to 16 as now \(12\): those rods \(93\)/);
+  assert.match(says, /Within that health: stayed at the blazes 48 rods, 15 died \(31%\); went away first 22 rods, 11 died \(50%\); no answer in the minute 22 rods, 6 died \(27%\)\./);
   assert.match(says, /These are what followed, not what the answer caused/);
   // The rods gone (a death): nothing said until the next.
   rods = 0; afterRod.noteRods(bot, 40000);

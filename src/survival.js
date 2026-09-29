@@ -358,8 +358,17 @@ const SPRINT = 5.6, SCOUT_MS = 300;
 // blocks of open sea in 14.3 seconds on its way to a ruined portal (the
 // flight frames of 2026-09-27, note 501).
 const SWIM = 2;
-// Walkers that still get at a player two blocks up.
-const CLIMBERS = new Set(['spider', 'cave_spider', 'enderman', 'wither_skeleton', 'ravager', 'iron_golem', 'warden']);
+// Walkers that still get at a player two blocks up. A magma cube and a slime
+// are here because they jump: the pillar's text said "two up does not stop a
+// magma cube (jumps higher than two blocks, and its hit throws)" (REACH_UP)
+// while its price left them out, "about 0 damage from the mobs here", so the
+// pillar was the cheapest stance every time cubes came: taken with 13 of
+// them 8 blocks off over a drop of 21 into lava (25593 mid-243-eh, 11:06:42Z
+// on 2026-09-29, pillar 0.71 with hold_on_span priced 35.6), and in 25581
+// mid-243-ff (0.77, y 58), 25583 mid-243-eg and 25598 mid-243-da-nether-1;
+// each cube's hit threw the bot off the one-wide top into the lava sea
+// (note 662).
+const CLIMBERS = new Set(['spider', 'cave_spider', 'enderman', 'wither_skeleton', 'ravager', 'iron_golem', 'warden', 'magma_cube', 'slime']);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // "the spider, the zombie and 3 skeletons": the mobs of these kinds in `mobs`.
 function mobList(names, mobs) {
@@ -483,7 +492,8 @@ function shotOverEdge(bot, feet, health = bot.health ?? 20) {
   const pushers = shotPushers(bot);
   if (!pushers.length) return null;
   const terrain = require('./terrain');
-  const drop = terrain.dropNear(bot, feet, 3);
+  // As far as the throw of the kinds that can push it (knock-record.js).
+  const drop = terrain.dropNear(bot, feet, require('./knock-record').reachFor(pushers.map(t => t.entity.name)));
   const floor = blastFloor(bot, feet, pushers, health);
   const dropKills = !!drop && (drop.into === 'lava' || drop.damage >= health / 2);
   if (!dropKills && !floor) return null;
@@ -674,7 +684,10 @@ function wallPlan(bot, feet, { onward = null } = {}) {
 // a one-wide netherrack path at y 46 over the lava sea with a ghast 55
 // blocks off in sight; its fireball threw the bot 4 blocks west and 1.2
 // north, over the path's edge, 18 blocks into the lava.
-const BLAST_THROW = 4, BLAST_SPREAD = 15;
+// Five: nine in ten of 33 landed fireballs threw the body within 4.3 blocks
+// and one 6.1 (knock-record.js, note 662); the four here was under the four
+// throws of 4.1 to 4.5 that ended in the lava overnight.
+const BLAST_THROW = require('./knock-record').BLAST_THROW, BLAST_SPREAD = 15;
 const COMPASS8 = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
 const bearing = (dx, dz) => COMPASS8[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8];
 // Where a push from `from` (a position) carries a body standing in `cell`
@@ -3202,9 +3215,13 @@ class Survival {
     // knockback is three), said with the toss (note 587).
     const tosser = coming.map(t => t.entity.name).find(n => require('./combat-estimate').MOBS[n]?.toss);
     const tossReach = tosser ? require('./combat-estimate').MOBS[tosser].toss : 3;
-    const dropHere = require('./terrain').dropNear(bot, feet, tossReach);
+    // And the ground a ghast's or a cube's throw covers (knock-record.js),
+    // with what it measured said beside the drop.
+    const knockKinds = danger.map(t => t.entity.name);
+    const dropHere = require('./terrain').dropNear(bot, feet, Math.max(tossReach, require('./knock-record').reachFor(knockKinds)));
     const tossSays = tosser && dropHere ? ` A ${tosser}'s blow throws the bot up and back, up to about ${tossReach} blocks back and three up, not a step.` : '';
-    const edge = require('./terrain').dropNote(dropHere, bot.health, bot) + tossSays + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
+    const knockRecord = dropHere && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20) / 2) ? require('./knock-record').knockSays(knockKinds) : '';
+    const edge = require('./terrain').dropNote(dropHere, bot.health, bot) + tossSays + knockRecord + (blazeAbout ? require('./blaze-stand').knockSays(bot, feet) : '');
     // A ghast in sight whose fireball's push carries the bot over a drop
     // that kills from here, and the footing where it cannot (note 612).
     const blastOver = blastOverSays(bot);
@@ -4515,6 +4532,11 @@ class Survival {
     if (danger.some(t => t.entity.name === 'blaze')) {
       const record = require('./blaze-record'), situation = record.situationOf(bot);
       for (const [k, o] of Object.entries(options)) if (!standKeys.has(k)) o.description += record.optionSays(bot, k, situation);
+    }
+    // What followed each stance chosen so, over a drop that kills with a
+    // ghast or magma cubes about (knock-record.js, note 662).
+    if (dropHere && dropHere.into === 'lava' && knockKinds.some(n => n === 'ghast' || n === 'magma_cube')) {
+      for (const [k, o] of Object.entries(options)) if (k !== 'none_good' && !k.startsWith('shoot_')) o.description += require('./knock-record').optionSays(k, knockKinds);
     }
     // The hardest blow that can get to the bot, first on every stance
     // (blowsSay, note 576): each says after it whether that mob still
@@ -6343,7 +6365,7 @@ class Survival {
     const flank = sideFire + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
-      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}` + costSays(price, bot.health, others),
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
       run: async () => {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }

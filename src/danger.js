@@ -646,9 +646,9 @@ function atReach(bot, list = null) {
 }
 // A drop beside the bot a push can put it over to its death: into lava or
 // half its health and more (immediateThreat's edge, note 476).
-function deadlyDropBeside(bot) {
+function deadlyDropBeside(bot, radius = 3) {
   if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return null;
-  const drop = require('./terrain').dropNear(bot, bot.entity.position.floored(), 3);
+  const drop = require('./terrain').dropNear(bot, bot.entity.position.floored(), radius);
   return drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2) ? drop : null;
 }
 // Something that can push the bot (pushersAbout) with such a drop beside
@@ -665,7 +665,11 @@ function pushOverDrop(bot) {
   const now = Date.now(), waved = !(bot?._recentHurtAt > now - 4000) && bot?._wavedOff?.until > now ? bot._wavedOff.ids : [];
   const pushers = pushersAbout(bot).filter(t => !waved.includes(t.entity?.id));
   if (!pushers.length) return null;
-  const drop = deadlyDropBeside(bot);
+  // As far as the throw of the kinds about (knock-record.js): a ghast's
+  // fireball carried the bot 4.1 to 4.5 blocks before it went over, past the
+  // three blocks looked at, and the work went on with the ghast in sight
+  // until the fireball (25593 mid-243-fc, 04:31Z on 2026-09-29, note 662).
+  const drop = deadlyDropBeside(bot, require('./knock-record').reachFor(pushers.map(t => t.entity?.name)));
   return drop ? { pushers, drop } : null;
 }
 

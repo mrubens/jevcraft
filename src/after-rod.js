@@ -5,24 +5,39 @@
 // a first rod, 10 to a third, 9 of those dead within 158 seconds of their last)
 // said the bottleneck is living through what comes after a rod, not the rod.
 // scripts/after-rod.js read the flight records from 2026-09-28T00:00Z to the
-// last rod at 2026-09-29T04:11Z: every rod gained in the Nether, what came
+// last rod at 2026-09-29T04:11Z (the first table; see below): every rod gained in the Nether, what came
 // first after it (the bot's death, another rod, out of the Nether, or the
 // record's end, a restart mostly), and what the bot did first (its first
 // answer to the stance or the hunt within the minute). Counts, with N; they
 // are what followed each rod, not what the answer caused: the bots that went
 // away to heal were not in the same fights as those that stayed.
-const OF = { from: '2026-09-28T00:00Z', to: '2026-09-29T04:11Z' };
+// Refreshed for note 661 (the whole record to the last rod, 2026-09-29T11:39Z,
+// 284 rods): the first table, of 109 rods, had those that went away at 5 deaths
+// of 20, safer than those that stayed (42%), and that was said to Jev after
+// every rod; the overnight rods that followed it (185) had those that went away
+// at 24 of 43 dead and those that stayed at 33 of 107. The small first row had
+// the wrong sign, so the rows are the whole record and each answer is also
+// compared within its own health (BY_BAND).
+const OF = { from: '2026-09-28T00:00Z', to: '2026-09-29T11:39Z' };
 // [rods, died before another rod or leaving, of those within three minutes,
 // median seconds to the death, another rod, left the Nether, record ended]
 const ROWS = {
-  all: [109, 43, 20, 224, 34, 3, 29],
-  stayed: [53, 22, 15, 86, 17, 2, 12],
-  away: [20, 5, 2, 224, 8, 0, 7],
-  unasked: [34, 15, 3, 326, 8, 1, 10],
-  stayedWithThreeOrMore: [11, 5, 3, 98, 6, 0, 0],
-  underEight: [7, 5, 5, 2, 0, 0, 2],
-  eightToSixteen: [52, 20, 6, 237, 16, 2, 14],
-  overSixteen: [50, 18, 9, 253, 18, 1, 13],
+  all: [284, 101, 59, 108, 146, 5, 32],
+  stayed: [157, 54, 31, 129, 89, 3, 11],
+  away: [63, 29, 18, 40, 27, 0, 7],
+  unasked: [62, 17, 10, 136, 29, 2, 14],
+  stayedWithThreeOrMore: [55, 19, 10, 151, 35, 1, 0],
+  underEight: [22, 18, 16, 13, 2, 0, 2],
+  eightToSixteen: [93, 33, 15, 195, 43, 2, 15],
+  overSixteen: [169, 50, 28, 129, 101, 3, 15],
+};
+// What the bot did first, within each health band (scripts/after-rod.js:
+// byHealthAndWhatItDidFirst): the same rods, so the answer is compared with
+// the others of its own health, not with a fitter or a weaker bot's.
+const BY_BAND = {
+  overSixteen: { stayed: [101, 33, 20, 99, 62, 2, 4], away: [33, 12, 6, 187, 17, 0, 4], unasked: [34, 5, 2, 253, 21, 1, 7] },
+  eightToSixteen: { stayed: [48, 15, 6, 226, 26, 1, 6], away: [22, 11, 7, 29, 9, 0, 2], unasked: [22, 6, 2, 306, 8, 1, 7] },
+  underEight: { stayed: [8, 6, 5, 60, 1, 0, 1], away: [8, 6, 5, 34, 1, 0, 1], unasked: [6, 6, 6, 1, 0, 0, 0] },
 };
 const row = r => ({ rods: r[0], died: r[1], diedWithin3: r[2], medianToDeath: r[3], anotherRod: r[4], left: r[5], ended: r[6] });
 const pct = (k, n) => Math.round(100 * k / n);
@@ -50,7 +65,9 @@ function says(bot, now = Date.now()) {
   const h = bot.health ?? 20;
   const band = h > 16 ? ROWS.overSixteen : h > 8 ? ROWS.eightToSixteen : ROWS.underEight;
   const bandWord = h > 16 ? 'over 16' : h > 8 ? '8 to 16' : 'under 8';
-  return `The last blaze rod was picked up ${secs} seconds ago, ${seen.n} carried now. What came first after each rod the bots picked up in the Nether from ${OF.from} to ${OF.to} (from the flight records): ${rowSays(ROWS.all, 'all rods')}. By what the bot did first in the minute after the rod: ${rowSays(ROWS.stayed, 'stayed at the blazes (its first answer a strike, a fight, cover or the work)')}; ${rowSays(ROWS.away, 'went away to heal or ran (leave_and_heal, eat, retreat, leave_reach)')}; ${rowSays(ROWS.unasked, 'no stance or hunt answer in that minute')}. Staying with three or more rods carried: ${rowSays(ROWS.stayedWithThreeOrMore, 'those rods')}. By the health at the rod, ${bandWord} as now (${Math.round(h * 10) / 10}): ${rowSays(band, 'those rods')}. These are what followed, not what the answer caused: the bots that went away were not in the same fights as those that stayed.`;
+  const inBand = h > 16 ? BY_BAND.overSixteen : h > 8 ? BY_BAND.eightToSixteen : BY_BAND.underEight;
+  const within = ['stayed', 'away', 'unasked'].map(k => { const x = row(inBand[k]); return `${{ stayed: 'stayed at the blazes', away: 'went away first', unasked: 'no answer in the minute' }[k]} ${x.rods} rods, ${x.died} died (${pct(x.died, x.rods)}%)`; }).join('; ');
+  return `The last blaze rod was picked up ${secs} seconds ago, ${seen.n} carried now. What came first after each rod the bots picked up in the Nether from ${OF.from} to ${OF.to} (from the flight records): ${rowSays(ROWS.all, 'all rods')}. By what the bot did first in the minute after the rod: ${rowSays(ROWS.stayed, 'stayed at the blazes (its first answer a strike, a fight, cover or the work)')}; ${rowSays(ROWS.away, 'went away to heal or ran (leave_and_heal, eat, retreat, leave_reach)')}; ${rowSays(ROWS.unasked, 'no stance or hunt answer in that minute')}. Staying with three or more rods carried: ${rowSays(ROWS.stayedWithThreeOrMore, 'those rods')}. By the health at the rod, ${bandWord} as now (${Math.round(h * 10) / 10}): ${rowSays(band, 'those rods')}. Within that health: ${within}. These are what followed, not what the answer caused: the bots that went away were not in the same fights as those that stayed.`;
 }
 
-module.exports = { says, noteRods, ROWS, OF };
+module.exports = { says, noteRods, ROWS, BY_BAND, OF };

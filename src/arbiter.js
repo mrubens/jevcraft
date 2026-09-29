@@ -111,6 +111,29 @@ function pressing(bot, look = probe) {
   return { reach, push };
 }
 
+// What one blow of a mob at arm's length costs this body through the armour
+// worn, 0 for one that does not strike at arm's length (a shooter, a creeper)
+// or a blaze still farther than its two blocks (it shoots from there). The
+// figures are the questions' own (combat-estimate MOBS, FIREBALL.melee).
+function blowOf(bot, t, { held = false } = {}) {
+  const ce = require('./combat-estimate');
+  const name = t?.entity?.name, m = ce.MOBS[name];
+  if (!m || name === 'creeper') return 0;
+  if (name === 'blaze') { if (t.distance > ce.FIREBALL.meleeReach + (held ? HYSTERESIS : 0)) return 0; }
+  else if (m.shoots) return 0;
+  const hit = name === 'blaze' ? ce.FIREBALL.melee : (m.most ?? m.hit);
+  const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot?.inventory?.slots?.[slot]?.name).filter(Boolean));
+  return m.ignoresArmour ? hit : ce.afterArmour(hit, worn);
+}
+// How many blows of the hardest at arm's length end the bot before Jev is
+// asked again: the alert does not wait for the last six health but for the
+// last BLOWS_LEFT blows. 25594 (mid-242-dd-fortress-16, 05:05:37Z) at 20
+// health between four blazes took 4.8 a second at 33.5, 34.5, 35.5 and 36.5
+// and was first preempted at 1.6 (the alert stood at six health, one blow
+// from the bot's end); a wither skeleton's 6.7 took 20 to none in three
+// blows a second and a half apart (25591, 09:36:05Z).
+const BLOWS_LEFT = 3, STRUCK_MS = 4000;
+
 // The reflexes that hold now, as { key, layer, action, facts }. `held` is
 // the set that held last time: one of them lasts to its line plus two.
 function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe) {
@@ -132,9 +155,20 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
     .sort((a, b) => a.distance - b.distance)[0];
   if (creeper) add('creeper', { creeper: Math.round(creeper.distance * 10) / 10, seen: !!creeper.visible, lightsAt: LIGHTS_AT, blocksASecond: APPROACH, fuse: FUSE });
   const armLine = ARM + (was.has('arm') ? HYSTERESIS : 0);
-  const close = (bot.health ?? 20) <= STANCE_HEALTH && mobs.filter(t => t.entity && t.distance <= armLine && (t.visible || t.distance <= 2))
-    .sort((a, b) => a.distance - b.distance)[0];
-  if (close) add('arm', { mob: close.entity.name, distance: Math.round(close.distance * 10) / 10, health: bot.health });
+  // At the stance's six health or under, or with no more than BLOWS_LEFT of
+  // the blows that mob strikes at arm's length between the bot and its end.
+  // A blow taken within the last STRUCK_MS: the mob is at its work, not just
+  // near (first contact is the reach rule's, below).
+  const health = bot.health ?? 20, struck = Date.now() - (bot._recentHurtAt || 0) < STRUCK_MS;
+  const arm = mobs.filter(t => t.entity && t.distance <= armLine && (t.visible || t.distance <= 2))
+    .map(t => ({ t, blow: blowOf(bot, t, { held: was.has('arm') }) }))
+    .filter(({ blow }) => health <= STANCE_HEALTH || (struck && blow > 0 && health <= BLOWS_LEFT * blow))
+    .sort((a, b) => a.t.distance - b.t.distance)[0];
+  if (arm) {
+    const { t: close, blow } = arm;
+    add('arm', { mob: close.entity.name, distance: Math.round(close.distance * 10) / 10, health: bot.health,
+      ...(blow > 0 ? { blowThroughArmour: Math.round(blow * 10) / 10, blowsThatEndIt: Math.ceil(health / blow) } : {}) });
+  }
   return out;
 }
 
@@ -707,4 +741,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };

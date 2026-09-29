@@ -92,19 +92,22 @@ test('a price that leaves less than one landing is said as a coin toss over a la
 
 test('the record of the bot\'s fights is said with the row it is in: its health, its hunger, the blazes about', () => {
   const hurt = record.says({ health: 3, food: 16, entity: { position: new Vec3(0, 60, 0) }, entities: {} });
-  assert.match(hurt, /^In the trials of 2026-09-28, 415 fights with blazes \(a run of blazes in sight, or hurting the bot, ending after thirty seconds without\): 19% ended in the bot's death and 10% in a blaze rod \(54 rods, 79 deaths\)\./);
-  assert.match(hurt, /Begun at the health this bot has, 3, the row is under 8 health: 26 fights, 58% died, none brought a rod;/);
-  assert.match(hurt, /over 16 health 14% died and 12% brought a rod, 8 to 16 24% and 6%, under 8 58% and none/);
-  assert.match(hurt, /With hunger under 18, as here \(16\), where health does not come back: 160 fights, 24% died and 6% brought a rod, against 16% and 13% at 18 or more\./);
-  assert.match(hurt, /Iron armour made no difference: four pieces 18% died, two or three 20%\./);
-  assert.match(hurt, /of the 63 with a fireball landing in their last fifteen seconds, 48 took it at 6\.5 health or less/);
+  assert.match(hurt, /^In the trials of 2026-09-28 to 2026-09-29T11:40Z, 624 fights with blazes \(a run of blazes in sight, or hurting the bot, ending after thirty seconds without\): 26% ended in the bot's death and 30% in a blaze rod \(261 rods, 162 deaths\)\./);
+  assert.match(hurt, /Begun at the health this bot has, 3, the row is under 8 health: 29 fights, 62% died, 3% brought a rod;/);
+  assert.match(hurt, /over 16 health 22% died and 34% brought a rod, 8 to 16 40% and 11%, under 8 62% and 3%/);
+  assert.match(hurt, /With hunger under 18, as here \(16\), where health does not come back: 162 fights, 33% died and 16% brought a rod, against 23% and 35% at 18 or more\./);
+  assert.match(hurt, /Iron armour: the deaths barely moved \(four pieces 24% died, two or three 26%\), but what a fight took did: a fireball's 5 before armour is 3\.9 through a helmet and chestplate and 2\.5 through all four iron pieces, and the fire it sets \(a health a second for five seconds\) is not reduced at all; fights begun over 16 health took 17\.1 health with a helmet and chestplate \(380 fights of 2026-09-28 and 2026-09-29\) and 11\.5 with three or four iron pieces \(105 fights\)\./);
+  // The newest trials' rows (note 661): a spawner's fights against the rest, with the rods each death cost.
+  assert.match(hurt, /In the newest trials \(2026-09-29T04:49Z to 2026-09-29T11:37Z, 248 fights on the current code, each begun in an iron helmet and chestplate and nothing more iron\): at a live spawner with four or more blazes within sixteen, 114 fights, 49% died and 45% brought a rod \(79 rods, 56 deaths: 1\.4 rods for each death; 24\.2 health lost a fight\); every other fight, 134, 13% died and 50% brought a rod \(98 rods, 17 deaths: 5\.8 rods for each death; 12\.2 health lost a fight\)\./);
+  assert.match(hurt, /A fight brought a rod as often among four or more blazes as among fewer; what changed with their number is the deaths\./);
+  assert.match(hurt, /of the 128 with a fireball landing in their last fifteen seconds, 83 took it at 6\.5 health or less/);
   const fit = record.says({ health: 20, food: 20, entity: { position: new Vec3(0, 60, 0) }, entities: {} });
-  assert.match(fit, /the row is over 16 health: 307 fights, 14% died, 12% brought a rod;/);
+  assert.match(fit, /the row is over 16 health: 523 fights, 22% died, 34% brought a rod;/);
   assert.doesNotMatch(fit, /With hunger under 18/);
   // Three or more blazes within sixteen: the spawner's row, and how many are about.
   const near = record.says({ health: 12, food: 20, entity: { position: new Vec3(0, 60, 0) }, entities: Object.fromEntries([1, 2, 3].map(i => [i, { name: 'blaze', position: new Vec3(i * 3, 60, 0), isValid: true }])) });
-  assert.match(near, /the row is 8 to 16 health: 82 fights, 24% died, 6% brought a rod;/);
-  assert.match(near, /with three or more within sixteen blocks \(a spawner's\) 198 fights, 21% died and 9% brought a rod; with one or none 141 fights, 13% and 11%; 3 are within sixteen now\./);
+  assert.match(near, /the row is 8 to 16 health: 72 fights, 40% died, 11% brought a rod;/);
+  assert.match(near, /with three or more within sixteen blocks \(a spawner's\) 357 fights, 34% died and 30% brought a rod; with one or none 171 fights, 15% and 25%; 3 are within sixteen now\./);
 });
 
 test('the stance\'s state carries the record when a blaze is among the threats', async () => {
@@ -119,7 +122,7 @@ test('the stance\'s state carries the record when a blaze is among the threats',
   };
   const state = await run(5);
   assert(state, 'the stance was asked');
-  assert.match(state.playedRecord, /the row is under 8 health: 26 fights, 58% died, none brought a rod/);
+  assert.match(state.playedRecord, /the row is under 8 health: 29 fights, 62% died, 3% brought a rod/);
   assert.match(state.playedRecord, /With hunger under 18, as here \(16\)/);
 });
 
@@ -214,16 +217,19 @@ test('a death by a blaze is read from the game\'s own line, its last minute\'s d
 test('each option of a kind ends with what followed answers of that kind in a situation like this one, with its count', () => {
   const rows = record.ANSWERS['none|2-3|>16'];
   const options = stance(20);
-  const said = (kind, k) => new RegExp(`In the fights of 2026-09-28 after an answer of this kind \\(${kind}\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${rows[k][0]} fights, ${rows[k][1]} took a rod after it \\(${Math.round(100 * rows[k][1] / rows[k][0])}%\\), ${rows[k][2]} died after it \\(${Math.round(100 * rows[k][2] / rows[k][0])}%\\)\\.`);
+  const said = (kind, k) => new RegExp(`In the fights of 2026-09-28 to 2026-09-29T11:38Z after an answer of this kind \\(${kind}\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${rows[k][0]} fights, ${rows[k][1]} took a rod after it \\(${Math.round(100 * rows[k][1] / rows[k][0])}%\\), ${rows[k][2]} died after it \\(${Math.round(100 * rows[k][2] / rows[k][0])}%\\)\\.`);
   assert.match(options.close_in.description, said('a strike', 'strike'));
   assert.match(options.take_cover.description, said('cover', 'cover'));
   assert.match(options.retreat.description, said('a retreat', 'retreat'));
   // A kind with under five fights at this health says the row at any health, and says so.
-  assert.match(options.fight.description, /\(a fight from a stand\) in a situation like this \(no spawner within 16, two or three blazes within 16\): 7 fights, 0 took a rod after it \(0%\), 1 died after it \(14%\) \(at any health: the sample is under 5 at over 16 health\)\./);
+  const wideRow = record.ANSWERS['none|2-3|*'].fight;
+  assert.match(options.fight.description, new RegExp(`\\(a fight from a stand\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${wideRow[0]} fights, ${wideRow[1]} took a rod after it \\(${Math.round(100 * wideRow[1] / wideRow[0])}%\\), ${wideRow[2]} died after it \\(${Math.round(100 * wideRow[2] / wideRow[0])}%\\) \\(at any health: the sample is under 5 at over 16 health\\)\\.`));
   // Hurt (5 health) the strike row at this health has under five fights: the row at any health is said, and says so; the cover row is at 5 health.
   const hurt = stance(5);
-  assert.match(hurt.close_in.description, /\(a strike\) in a situation like this \(no spawner within 16, two or three blazes within 16\): 18 fights, 10 took a rod after it \(56%\), 3 died after it \(17%\) \(at any health: the sample is under 5 at under 8 health\)\./);
-  assert.match(hurt.take_cover.description, /\(cover\) in a situation like this \(no spawner within 16, two or three blazes within 16\): 15 fights, 0 took a rod after it \(0%\), 8 died after it \(53%\)\.$/);
+  const wideStrike = record.ANSWERS['none|2-3|*'].strike, hurtCover = record.ANSWERS['none|2-3|<8'].cover;
+  assert.equal(record.ANSWERS['none|2-3|<8'].strike, undefined, 'the strike row at under 8 health has under five fights');
+  assert.match(hurt.close_in.description, new RegExp(`\\(a strike\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${wideStrike[0]} fights, ${wideStrike[1]} took a rod after it \\(${Math.round(100 * wideStrike[1] / wideStrike[0])}%\\), ${wideStrike[2]} died after it \\(${Math.round(100 * wideStrike[2] / wideStrike[0])}%\\) \\(at any health: the sample is under 5 at under 8 health\\)\\.`));
+  assert.match(hurt.take_cover.description, new RegExp(`\\(cover\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${hurtCover[0]} fights, ${hurtCover[1]} took a rod after it \\(${Math.round(100 * hurtCover[1] / hurtCover[0])}%\\), ${hurtCover[2]} died after it \\(${Math.round(100 * hurtCover[2] / hurtCover[0])}%\\)\\.$`));
 });
 
 test('the stance\'s state carries playedAnswers with the rows for the situation, the rate of no kind under five fights, and how the rods came', async () => {
@@ -235,8 +241,9 @@ test('the stance\'s state carries playedAnswers with the rows for the situation,
   await new Promise(resolve => setTimeout(resolve, 200));
   assert(state, 'the stance was asked');
   assert.match(state.playedAnswers, /^In this situation \(no spawner within 16, two or three blazes within 16, health 20\), what followed each kind of answer/);
-  assert.match(state.playedAnswers, /a strike \(close_in or charge_nearest: walking in on the blazes with the sword\): 11 fights, 5 took a rod after it \(45%\), 2 died after it \(18%\)/);
-  assert.match(state.playedAnswers, /How the rods came, of the 61 fights that ended with a rod: 56 had a strike in them/);
+  const strike = record.ANSWERS['none|2-3|>16'].strike;
+  assert.match(state.playedAnswers, new RegExp(`a strike \\(close_in or charge_nearest: walking in on the blazes with the sword\\): ${strike[0]} fights, ${strike[1]} took a rod after it \\(${Math.round(100 * strike[1] / strike[0])}%\\), ${strike[2]} died after it \\(${Math.round(100 * strike[2] / strike[0])}%\\)`));
+  assert.match(state.playedAnswers, /How the rods came in the fights of 2026-09-28 \(511 fights\), of the 61 that ended with a rod: 56 had a strike in them/);
   const { question } = require('../src/decisions');
   assert.match(question('encounter_stance').instructions.guidance, /playedAnswers, and the sentence ending an option that has one, say what came after each kind of answer/);
   assert.match(question('hunt_target').instructions.guidance, /playedAnswers, and the sentence ending a stand that has one/);

@@ -75,6 +75,7 @@ test('the water bucket is a waterfall off an open side to the ground, not in the
   assert.equal(ways.ride_water.plan.off, true);
   assert.match(ways.ride_water.description, /25 blocks down to the grass block at \(-1, 64, 0\), with no fall damage in the water; a walk goes on from there/);
   assert.match(ways.ride_water.description, /the bucket comes back empty/);
+  assert.match(ways.ride_water.description, /Rides so far: 11 of 11 from 4 to 17 blocks came down; the 2 of 53 and 55 blocks each ended in a fall to death.*the ride keeps the turn/, 'the record of the rides (note 662)');
   assert.equal(waysDown(view, perch, { health: 20, carried: { water_bucket: 1 }, nether: true }).ride_water, undefined, 'water boils away in the Nether');
   assert.equal(ways.step_off, undefined, 'twenty-five down costs twenty-two health');
   // Sealed in for the night on the top, walls on every side: the water

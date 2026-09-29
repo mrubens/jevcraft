@@ -65,6 +65,7 @@ function tally(list) {
 function table(list) {
   const groups = (key) => Object.fromEntries([...new Set(list.map(key))].sort().map(k => [k, tally(list.filter(r => key(r) === k))]));
   return { all: tally(list), byWhatItDidFirst: groups(r => r.did), byHealthAtTheRod: groups(r => band(r.health)), byHungerAtTheRod: groups(r => (r.food ?? 20) >= 18 ? '18 or more' : 'under 18'), byRodsCarried: groups(r => r.rods >= 3 ? '3 or more' : String(r.rods)),
+    byHealthAndWhatItDidFirst: Object.fromEntries(['over 16', '8 to 16', 'under 8'].map(b => [b, Object.fromEntries(['stayed', 'away', 'no answer in the minute'].map(d => [d, tally(list.filter(r => band(r.health) === b && r.did === d))]))])),
     stayedByRodsCarried: Object.fromEntries(['1', '2', '3 or more'].map(k => [k, tally(list.filter(r => r.did === 'stayed' && (r.rods >= 3 ? '3 or more' : String(r.rods)) === k))])) };
 }
 

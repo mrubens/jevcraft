@@ -622,3 +622,42 @@ test('with a turn_priority question out and a newcomer waiting, the watch still 
     assert.equal(bot._preempt.by, 'lava'); assert.equal(bot._preempt.id, 77);
   } finally { arbiter.unwatch(bot); }
 });
+
+// Note 663: the alert for a mob at arm's length stood at the stance's six
+// health, one blow from the end where a blow is 4.8 to 6.7.
+test('a mob at arm\'s length is an alert with three blows of it left, not six health (note 663)', () => {
+  const armour = { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } };
+  const bot = fakeBot({ inventory: { slots: armour }, _recentHurtAt: Date.now() });
+  const keys = (held, probe) => arbiter.observeReflexes(bot, held, probe).map(r => r.key);
+  // mid-242-dd-fortress-16 (25594, 2026-09-29 05:05:33 to 37Z): four blazes,
+  // a blow of 4.8 a second each through iron helmet and chestplate, the
+  // alert first held at 1.6 health.
+  assert.equal(Math.round(arbiter.blowOf(bot, mob('blaze', 0.6)) * 10) / 10, 4.8);
+  bot.health = 20;
+  assert.deepEqual(keys([], look({ mobs: [mob('blaze', 0.6)] })), [], 'four blows from the end: not yet');
+  bot.health = 15.2;
+  assert.deepEqual(keys([], look({ mobs: [mob('blaze', 0.6)] })), [], 'after the first blow, still more than three');
+  bot.health = 10.8;
+  const r = arbiter.observeReflexes(bot, [], look({ mobs: [mob('blaze', 0.6)] }));
+  assert.deepEqual(r.map(x => x.key), ['arm'], 'after the second, three end it');
+  assert.equal(r[0].facts.blowsThatEndIt, 3);
+  assert.equal(r[0].facts.blowThroughArmour, 4.8);
+  // A blaze past its two blocks shoots: no blow to count until six health.
+  assert.deepEqual(keys([], look({ mobs: [mob('blaze', 2.6)] })), []);
+  bot.health = 5;
+  assert.deepEqual(keys([], look({ mobs: [mob('blaze', 2.6)] })), ['arm']);
+  // mid-242-ee-fortress-3 (25591, 09:36:02Z): a wither skeleton's 6.7 a blow
+  // through the same armour is three blows from 20: the alert at once.
+  bot.health = 20;
+  assert.deepEqual(keys([], look({ mobs: [mob('wither_skeleton', 2.9)] })), ['arm']);
+  // A shooter or a creeper strikes no blow at arm's length here.
+  assert.equal(arbiter.blowOf(bot, mob('skeleton', 1)), 0);
+  assert.equal(arbiter.blowOf(bot, mob('creeper', 1)), 0);
+  // Held two blocks past a blaze's reach, as the others are.
+  bot.health = 10.8;
+  assert.deepEqual(keys(['arm'], look({ mobs: [mob('blaze', 3.5)] })), ['arm']);
+  assert.deepEqual(keys([], look({ mobs: [mob('blaze', 3.5)] })), []);
+  // No blow taken for four seconds: a mob that is only near is the reach rule's.
+  bot._recentHurtAt = Date.now() - arbiter.STRUCK_MS - 1;
+  assert.deepEqual(keys([], look({ mobs: [mob('blaze', 0.6)] })), []);
+});

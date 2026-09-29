@@ -14,6 +14,10 @@
 // FIRE_TICKS. With --deaths: the deaths by a blaze or its fire: the damage of
 // their last sixty seconds (fireball, fire, blaze blows, other) and the
 // health the bot had before its last landing.
+// With --recent: the rows of src/blaze-record.js RECENT (a spawner's fights against
+// the rest, by blazes at once, with the rods each death cost) and IRON_LOST.
+// With --ways: what followed each body_way answer in a fight with blazes, by the
+// blazes within 16 (rows for src/blaze-record.js WAYS).
 // With --by-commit: the fights table's headline row for each commit the bot
 // ran (the connection frame's commit, src/recorder/commit.js; records
 // without one are 'unknown'), not split by a clock time.
@@ -155,8 +159,12 @@ function deaths(frames) {
 // are heavy).
 function eachFile(dir, from, needle, each, slim = null) {
   for (const f of fs.readdirSync(dir)) {
-    if (!f.endsWith('.jsonl') || fs.statSync(path.join(dir, f)).mtimeMs < from) continue;
-    const text = fs.readFileSync(path.join(dir, f), 'utf8');
+    // A record the janitor archived while this read is gone: skipped, not an error.
+    let text;
+    try {
+      if (!f.endsWith('.jsonl') || fs.statSync(path.join(dir, f)).mtimeMs < from) continue;
+      text = fs.readFileSync(path.join(dir, f), 'utf8');
+    } catch (err) { if (err.code === 'ENOENT') continue; throw err; }
     if (needle && !text.includes(needle)) continue;
     const frames = [];
     for (const line of text.split('\n')) { if (!line) continue; try { const r = JSON.parse(line); const frame = { at: Date.parse(r.at), kind: r.kind, detail: r.detail, label: r.label, snapshot: r.snapshot }; frames.push(slim ? slim(frame) : frame); } catch (_) { /* a torn line */ } }
@@ -266,7 +274,7 @@ function slimFrame(f) {
   return { ...f, snapshot: { health: s.health, food: s.food, dimension: s.dimension, position: s.position && { x: s.position.x, y: s.position.y, z: s.position.z },
     mobs: s.mobs && s.mobs.filter(m => m.name === 'blaze').map(m => ({ name: m.name, id: m.id, d: m.d, at: m.at, seen: m.seen })),
     inventory: s.inventory, equipment: s.equipment,
-    decision: d && { id: d.id, path: d.path, state: st && { spawner: st.spawner, dropWithinThreeBlocks: st.dropWithinThreeBlocks, weapon: st.weapon } } } };
+    decision: d && { id: d.id, path: d.path, options: d.options && Object.keys(d.options), state: st && { spawner: st.spawner, dropWithinThreeBlocks: st.dropWithinThreeBlocks, weapon: st.weapon } } } };
 }
 // Every fight described, with the commit its run loaded.
 function describedFights(dir, from, to) {
@@ -329,6 +337,60 @@ function sequenceTable(list, key) {
   return Object.entries(by).map(([k, v]) => ({ sequence: k, ...row(v.map(f => ({ died: f.died, rodsGain: f.rods }))), medianLost: round1(median(v.map(f => f.lost))) })).sort((a, b) => b.fights - a.fights);
 }
 
+// What came of each way out of fire in a fight with blazes (note 661): every
+// body_way answer in the Nether with a blaze within 24 blocks in the frames of
+// the last five seconds, by the way chosen and the blazes within 16 at the
+// answer (0 to 3, or 4 and more), with whether the bot died within thirty
+// seconds of it and the health it lost in those thirty seconds (the deepest
+// point below the health at the answer). Rows for src/blaze-record.js WAYS.
+const WAY_WINDOW_MS = 30000, WAY_LOOK_MS = 5000;
+function wayRows(frames, { from = -Infinity, to = Infinity } = {}) {
+  const out = [];
+  let hp = null;
+  frames.forEach((x, i) => {
+    const h = x.snapshot?.health;
+    if (typeof h === 'number') hp = h;
+    const d = x.kind === 'decision' && x.snapshot?.decision;
+    if (!d || d.id !== 'body_way' || !d.path?.length || (d.options && d.options.filter(k => k !== 'none_good').length < 2) || x.snapshot.dimension !== 'the_nether' || !(x.at >= from && x.at <= to) || !(hp > 0)) return;
+    let blazes = null;
+    for (let j = i; j >= 0 && frames[j].at >= x.at - WAY_LOOK_MS; j--) if (frames[j].snapshot?.mobs) { blazes = frames[j].snapshot.mobs.filter(m => m.name === 'blaze'); break; }
+    if (!blazes || !blazes.some(m => m.d <= 24)) return;
+    let died = false, low = hp;
+    for (let j = i; j < frames.length && frames[j].at <= x.at + WAY_WINDOW_MS; j++) {
+      const v = frames[j].snapshot?.health;
+      if (typeof v !== 'number') continue;
+      low = Math.min(low, v);
+      if (v === 0) died = true;
+    }
+    out.push({ way: d.path[0], blazes: blazes.filter(m => m.d <= 16).length >= 4 ? '4+' : '0-3', died, lost: hp - low });
+  });
+  return out;
+}
+// The rows: { '0-3': { way: [asked, died, mean health lost in tenths] } }, only
+// where MIN_WAY answers are in the row.
+const MIN_WAY = 8;
+function waysTable(list) {
+  const cells = {};
+  for (const r of list) {
+    const c = ((cells[r.blazes] ||= {})[r.way] ||= [0, 0, 0]);
+    c[0]++; if (r.died) c[1]++; c[2] += r.lost;
+  }
+  return Object.fromEntries(Object.entries(cells).map(([b, ways]) => [b, Object.fromEntries(Object.entries(ways).filter(([, c]) => c[0] >= MIN_WAY).sort().map(([w, c]) => [w, [c[0], c[1], Math.round(c[2] / c[0] * 10)]]))]));
+}
+
+// The rows src/blaze-record.js RECENT and IRON_LOST say (note 661): a spawner's
+// fights (a live spawner within 16 and four or more blazes within 16 at most)
+// against the rest, the fights by the most blazes within 16 at once, and the
+// health lost per fight by the iron worn among fights begun over 16 health.
+function recentTable(list) {
+  const stat = a => ({ fights: a.length, died: a.filter(f => f.died).length, rod: a.filter(f => f.rod).length, rods: a.reduce((n, f) => n + (f.rods || 0), 0), lost: round1(a.reduce((n, f) => n + (f.lost || 0), 0) / Math.max(1, a.length)) });
+  const spawner = f => f.spawnerNear === true && f.peak16 >= 4, fit = list.filter(f => f.hp0 > 16);
+  const lostBy = pieces => { const a = fit.filter(f => pieces(f.iron)); return { fights: a.length, lost: stat(a).lost }; };
+  return { fights: list.length, spawner: stat(list.filter(spawner)), elsewhere: stat(list.filter(f => !spawner(f))),
+    few: stat(list.filter(f => f.peak16 <= 1)), some: stat(list.filter(f => f.peak16 >= 2 && f.peak16 <= 3)),
+    ironLost: { two: lostBy(n => n === 2), more: lostBy(n => n >= 3), none: lostBy(n => n === 0) } };
+}
+
 // Lives in one connection's frames (sorted by time): { start, end, inNether,
 // died, startRods, maxRods, gained, lastRodAt, secondsFromLastRodToDeath }.
 // The rods counted are those carried (powder made of them counting half a rod
@@ -387,6 +449,14 @@ if (require.main === module) {
     const list = describedFights(dir, from, to);
     fs.writeFileSync(args.records, list.map(f => JSON.stringify(f)).join('\n') + '\n');
     console.log(list.length + ' fights described to ' + args.records);
+  } else if (args.ways) {
+    const list = [];
+    eachFile(dir, from, '"body_way"', frames => list.push(...wayRows(frames, { from, to })), slimFrame);
+    console.log(JSON.stringify({ answers: list.length, rows: waysTable(list) }, null, 1));
+  } else if (args.recent) {
+    // --recent: the rows RECENT and IRON_LOST hold, for the window; --records-in reads a file --records wrote.
+    const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
+    console.log(JSON.stringify(recentTable(list), null, 1));
   } else if (args.answers) {
     const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
     const cells = answerRows(list), min = require('../src/blaze-record').MIN_FIGHTS;
@@ -423,4 +493,4 @@ if (require.main === module) {
     console.log(JSON.stringify(Object.fromEntries(Object.entries(by).map(([c, list]) => [c, row(list)])), null, 1));
   } else console.log(JSON.stringify(tables(readFights(dir, from, to)), null, 1));
 }
-module.exports = { runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };
+module.exports = { wayRows, waysTable, MIN_WAY, recentTable, runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };

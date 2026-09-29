@@ -1692,7 +1692,7 @@ test('the ways to a fortress say the mobs at its bricks, seen or not', async () 
   for (const [key, text] of Object.entries(options)) assert.match(text, /Within sixteen blocks of the bricks, seen or not: .*wither skeleton/, key);
   // With a blaze at the bricks the state carries what the bot's fights with blazes came to (note 631); a landing's cost is
   // its hit and four ticks of fire, not five (no armour here: 5 and 4, 9), said with how many end it from separate volleys and within one.
-  assert.match(state.playedRecord, /^In the trials of 2026-09-28, 415 fights with blazes/);
+  assert.match(state.playedRecord, /^In the trials of 2026-09-28 to 2026-09-29T11:40Z, 624 fights with blazes/);
   assert.match(options.tunnel, /about 5 hit and 4 burn over the next five seconds \(four ticks of fire; 9 for one landing\)/);
   assert.match(options.tunnel, /Health 20, coming back about one each four seconds at hunger 20: about 3 fireballs end it, each from its own volley; 4 within one volley, whose fire is one fire\./);
 });
@@ -2148,7 +2148,7 @@ test('a fight near a live spawner is priced with the blazes it puts in over the 
     await huntObserved(f.bot, f.task, f.goal, () => {}, {}, client);
     assert(asked?.hunt_7, Object.keys(asked || {}).join(','));
     // What the bot's own fights with blazes came to, in the state (blaze-record.js).
-    assert.match(state.playedRecord, /^In the trials of 2026-09-28, 415 fights with blazes/);
+    assert.match(state.playedRecord, /^In the trials of 2026-09-28 to 2026-09-29T11:40Z, 624 fights with blazes/);
     return asked.hunt_7;
   };
   const says = await ask(scene(true));

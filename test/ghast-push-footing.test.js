@@ -54,7 +54,7 @@ const ghastOnly = () => [{ id: 1749, name: 'ghast', at: new Vec3(-51, 42.1, 156.
 test('the push goes away from the ghast, two to four blocks and sliding along a wall it meets side-on, as the seven pushes of the day went', () => {
   // A floor at y 63 for x -4..4 and z -3..3, the lava 20 down round it.
   const floor = new Set();
-  for (let x = -4; x <= 4; x++) for (let z = -3; z <= 3; z++) floor.add(`${x},63,${z}`);
+  for (let x = -5; x <= 5; x++) for (let z = -3; z <= 3; z++) floor.add(`${x},63,${z}`);
   const scene = (extra = {}) => {
     const bot = { health: 20, entity: { position: new Vec3(0.5, 64, 0.5) },
       blockAt: p => { const k = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`, position = p.floored();
@@ -62,11 +62,11 @@ test('the push goes away from the ghast, two to four blocks and sliding along a 
         return Math.floor(p.y) <= 43 ? { name: 'lava', boundingBox: 'empty', position } : { name: 'air', boundingBox: 'empty', position }; } };
     return bot;
   };
-  // Four blocks of floor west of the feet: a push from the east lands on it, the four seen at the most; with
+  // Five blocks of floor west of the feet: a push from the east lands on it, the throw that covers nine in ten (4.3, note 662); with
   // the edge two blocks off, it goes over.
-  assert.equal(pushCarries(scene(), new Vec3(0, 64, 0), new Vec3(40, 70, 0.5)), null, 'four blocks of floor west: the push stays on it');
+  assert.equal(pushCarries(scene(), new Vec3(0, 64, 0), new Vec3(40, 70, 0.5)), null, 'five blocks of floor west: the push stays on it');
   const near = scene();
-  for (let z = -3; z <= 3; z++) for (const x of [-4, -3, -2]) floor.delete(`${x},63,${z}`);
+  for (let z = -3; z <= 3; z++) for (const x of [-5, -4, -3, -2]) floor.delete(`${x},63,${z}`);
   const over = pushCarries(near, new Vec3(0, 64, 0), new Vec3(40, 70, 0.5));
   assert.equal(over?.toward, 'west'); assert.equal(over.into, 'lava'); assert.equal(over.blocksAway, 2);
   // The drop on the ghast's own side is not the push's: the push goes away from it.
@@ -76,7 +76,7 @@ test('the push goes away from the ghast, two to four blocks and sliding along a 
   assert.equal(pushCarries(scene({ '-1,65,0': 'netherrack' }), new Vec3(0, 64, 0), new Vec3(40, 70, 0.5)), null, 'a block at the head beside the feet stops it');
   const slide = pushCarries(scene({ '0,64,-1': 'netherrack', '0,65,-1': 'netherrack' }), new Vec3(0, 64, 0), new Vec3(12, 70, 30), { at: new Vec3(0.3, 64, 0.5) });
   assert.equal(slide?.into, 'lava', 'walled north only, a push north-west slides west along the wall and over');
-  for (let z = -3; z <= 3; z++) for (const x of [-4, -3, -2]) floor.add(`${x},63,${z}`);
+  for (let z = -3; z <= 3; z++) for (const x of [-5, -4, -3, -2]) floor.add(`${x},63,${z}`);
 });
 
 test('on its netherrack path over the lava sea with a ghast 55 blocks off in sight, the step back to footing its push cannot carry the bot over is offered, and every stance says where it is (mid-242-bb-fortress-2, 15:05:04.5)', () => {
@@ -214,9 +214,9 @@ test('lava level with the feet beside the span is priced with the fire it sets, 
   const feet = bot.entity.position.floored();
   const facts = terrain.dropFacts(bot, feet, 3);
   assert.equal(facts.fallBlocks, 0); assert.equal(facts.into, 'lava');
-  assert.equal(facts.lava.inIt, 6.1); assert.equal(facts.lava.burn, 15);
+  assert.equal(facts.lava.inIt, 15.3); assert.equal(facts.lava.burn, 15);
   assert.equal(facts.damage, 'death', JSON.stringify(facts));
-  assert.match(terrain.dropNote(terrain.dropNear(bot, feet, 3), 20, bot), /^ Lava level with the feet is 1 block off: a hit's knockback or a step back over it is into lava level with the feet; the lava breaks the fall and burns about 6\.1 health a second through the armour worn, and the nearest ground out of it from where the body comes up is about 1 block off, about 1 seconds swimming \(not measured\), about 6\.1 health in it, then the fire it sets burns on 15 seconds out of it at a point a second that armour does not stop \(no water to put it out in the Nether\): about 21\.1 in all, more than the 20 the bot has: death\./);
+  assert.match(terrain.dropNote(terrain.dropNear(bot, feet, 3), 20, bot), /^ Lava level with the feet is 1 block off: a hit's knockback or a step back over it is into lava level with the feet; the lava breaks the fall and burns about 6\.1 health a second through the armour worn, and the nearest ground out of it from where the body comes up is about 1 block off, about 2\.5 seconds swimming \(0\.4 blocks a second, measured: of 88 stretches in lava 62 ended in death, and those that lived were out within about 1\.2 blocks\), about 15\.3 health in it, then the fire it sets burns on 15 seconds out of it at a point a second that armour does not stop \(no water to put it out in the Nether\): about 30\.3 in all, more than the 20 the bot has: death\./);
   const said = blastOverSays(bot);
   assert.match(said.says, /carries it over the drop 1 block north-west, into lava level with the feet: the bot's death/);
 });

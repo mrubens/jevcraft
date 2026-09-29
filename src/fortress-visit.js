@@ -74,7 +74,7 @@ function facts(bot, goal, ctx = {}) {
     blazesInSightNow: blazesInSight(bot),
     fireResistance: require('./fire-resistance').says(bot),
     playedRecord: recordSays(bot),
-    aboutTheRecord: `One day's record (${DAY}'s trials, note 631). The health rows and the hunger rows were counted separately: there is no row for both. Each is what happened to bots that began a fight there, not what getting to a better row first would do; a bot that began healthy may differ in other ways.`,
+    aboutTheRecord: `The record of the trials of ${DAY} (note 631, counted again in note 661). The health rows and the hunger rows were counted separately: there is no row for both. Each is what happened to bots that began a fight there, not what getting to a better row first would do; a bot that began healthy may differ in other ways.`,
   };
   return { state, f };
 }
@@ -98,7 +98,7 @@ function options(bot, task, goal, save, actions, ctx = {}) {
   const nether = dimensionOf(bot) === 'nether';
   const tree = {};
   const row = rowSays(f.health, f.hunger);
-  tree.go_in = { description: `Go in now, at health ${round(f.health)} and hunger ${f.hunger}${f.carried.length ? ` with ${f.carried.map(c => c.says).join('; ')} carried` : ' with nothing to eat'}: ${ctx.fortress ? 'the way in is asked next (fortress_approach), and each blaze fight after it as it comes' : 'the fights are asked as they come'}. What the bot's own fights with blazes came to, ${row}. That is a day's record of fights begun in that row, not a forecast for this fortress. ${f.health < 20 ? (f.healable ? `Health does come back on the way (${f.hunger >= 18 ? `hunger ${f.hunger}` : 'after eating'}), at about a point each four seconds, half a second with saturation at full hunger.` : `Health does not come back: hunger ${f.hunger} is under eighteen and ${f.points ? `eating all that is carried brings it only to ${f.eatenTo}` : 'nothing carried is food'}, so every point lost in the fight stays lost.`) : ''}`.replace(/\s+$/, '') };
+  tree.go_in = { description: `Go in now, at health ${round(f.health)} and hunger ${f.hunger}${f.carried.length ? ` with ${f.carried.map(c => c.says).join('; ')} carried` : ' with nothing to eat'}: ${ctx.fortress ? 'the way in is asked next (fortress_approach), and each blaze fight after it as it comes' : 'the fights are asked as they come'}. What the bot's own fights with blazes came to, ${row}. That is the record of fights begun in that row (two days of trials), not a forecast for this fortress. ${f.health < 20 ? (f.healable ? `Health does come back on the way (${f.hunger >= 18 ? `hunger ${f.hunger}` : 'after eating'}), at about a point each four seconds, half a second with saturation at full hunger.` : `Health does not come back: hunger ${f.hunger} is under eighteen and ${f.points ? `eating all that is carried brings it only to ${f.eatenTo}` : 'nothing carried is food'}, so every point lost in the fight stays lost.`) : ''}`.replace(/\s+$/, '') };
 
   // Eat what is carried and wait here: where it is possible.
   const canFeed = f.hunger < 18 && f.points > 0;

@@ -315,3 +315,18 @@ test('the guard faces a biter out of sight within five, as the stance was offere
   assert.equal(r.ended, 'time', `held its time facing it, not ${r.ended}`);
   assert.ok(shield.some(([s]) => s === 'up'), 'the shield up facing it');
 });
+
+// Note 663: the arena's rows (wither skeletons, a rock corner, no deaths)
+// were the whole record the guard was offered with; the overnight trials of
+// 2026-09-29 ran it 107 times against wither skeletons (4 deaths) and five
+// against a piglin brute (every run took a blow, 2 deaths).
+test('the guard is said with what the bot\'s own runs of it came to, by the kind faced (note 663)', () => {
+  const wg = require('../src/wither-guard');
+  const brute = wg.recordSays('piglin_brute');
+  assert.match(brute, /5 runs, every one took a blow \(7 blows in all, 58 health lost/);
+  assert.match(brute, /2 ended in death/);
+  assert.match(brute, /golden axe, not a sword/);
+  assert.match(wg.recordSays('wither_skeleton'), /107 runs, 14 of them took a blow \(17 blows in all, 188 health lost in those runs\), 4 ended in death/);
+  assert.match(wg.recordSays('hoglin'), /none ended in death/);
+  assert.equal(wg.recordSays('spider'), '');
+});

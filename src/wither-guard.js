@@ -176,6 +176,29 @@ function measuredSays(kind, count = 1, { also = [] } = {}) {
   return ` Measured in the arena with the kit of the death it is built from (full iron, an iron sword, a shield, no pickaxe): ${rows.join('; ')}.`;
 }
 
+// What the bot's own runs of this stance came to, from the flight records of
+// the overnight trials (2026-09-29 04:49Z to 11:38Z, note 663; a run is one
+// choosing of shield_guard, kept to its end; a blow is a frame "hurt: mob
+// attack by" the faced kind within three seconds of it; health lost is from
+// the run's start to its lowest; a death is health reaching none inside it).
+// The arena's rows above were made against wither skeletons in a rock corner;
+// here the guard met a piglin brute five times and every run took a blow,
+// two ending the bot within twenty seconds in all.
+const RECORD = {
+  wither_skeleton: { runs: 107, blowRuns: 14, blows: 17, lost: 188, deaths: 4 },
+  piglin_brute: { runs: 5, blowRuns: 5, blows: 7, lost: 58, deaths: 2, seconds: 20 },
+  piglin: { runs: 108, blowRuns: 5, blows: 6, lost: 56, deaths: 1 },
+  hoglin: { runs: 45, blowRuns: 10, blows: 13, lost: 56, deaths: 0 },
+  zombie: { runs: 144, blowRuns: 6, blows: 7, lost: 23, deaths: 0 },
+};
+function recordSays(name) {
+  const r = RECORD[name];
+  if (!r) return '';
+  const said = name.replaceAll('_', ' ');
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  return ` The bot's own runs of this stance against a ${said} (the overnight trials of 2026-09-29): ${r.runs} run${r.runs === 1 ? '' : 's'}, ${r.blowRuns === r.runs ? 'every one' : `${r.blowRuns} of them`} took a blow (${n(r.blows, 'blow', 'blows')} in all, ${r.lost} health lost in those runs), ${r.deaths ? n(r.deaths, 'ended in death', 'ended in death') : 'none ended in death'}${r.seconds ? `, in about ${r.seconds} seconds altogether` : ''}.${name === 'piglin_brute' ? ' It carries a golden axe, not a sword, and the arena rows above were not made against one.' : ''}`;
+}
+
 // The biters the guard answers: those that strike at arm's length, not a
 // creeper (struck and backed from), a shooter or a spear holder (whose
 // charge shield_the_charge meets).
@@ -247,4 +270,4 @@ async function guard(bot, task, { until, radius = 8, stop = () => false, focus =
   return { swings, hurt: Math.round(Math.max(0, start - bot.health) * 10) / 10, ended };
 }
 
-module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, guardable, inGuard, UNSEEN_WITHIN, guard };
+module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };

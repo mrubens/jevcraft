@@ -239,7 +239,7 @@ function waysDown(view, perch, { health = 20, carried = {}, pickaxe = null, pick
     rides.sort((a, b) => !!a.up - !!b.up || b.fall - a.fall || a.far - b.far);
     const ride = rides[0];
     if (ride) ways.ride_water = {
-      description: `${ride.wall.length ? `Dig out the ${ride.wall.map(w => said(w.name)).join(' and ')} of the wall on the ${ride.dir} side${stepOver(ride.from)}, then pour` : `Pour`} the water bucket at the feet${ride.wall.length ? '' : stepOver(ride.from)} and step off the ${ride.dir} side into the waterfall it makes: ${ride.fall} blocks down to the ${said(ride.landsOn)} at ${where(ride.bottom.plus(DOWN))}, with no fall damage in the water${landsSays(ride.up)}. The water takes about ${Math.ceil(ride.fall / 4) + 1} seconds to reach the bottom before the step, and the bucket comes back empty.${waterSays(ride, water)}`,
+      description: `${ride.wall.length ? `Dig out the ${ride.wall.map(w => said(w.name)).join(' and ')} of the wall on the ${ride.dir} side${stepOver(ride.from)}, then pour` : `Pour`} the water bucket at the feet${ride.wall.length ? '' : stepOver(ride.from)} and step off the ${ride.dir} side into the waterfall it makes: ${ride.fall} blocks down to the ${said(ride.landsOn)} at ${where(ride.bottom.plus(DOWN))}, with no fall damage in the water${landsSays(ride.up)}. The water takes about ${Math.ceil(ride.fall / 4) + 1} seconds to reach the bottom before the step, and the bucket comes back empty.${RIDE_RECORD}${waterSays(ride, water)}`,
       plan: { kind: 'ride_water', from: ride.from, dir: ride.dir, side: ride.side, bottom: ride.bottom, fall: ride.fall, off: !ride.up, wall: ride.wall.map(w => w.cell) } };
   }
   // A side the bot survives stepping off: its fall said with its damage.
@@ -401,6 +401,49 @@ async function digWall(bot, task, cells = []) {
   }
 }
 
+// What the rides came to (flight records 2026-09-26 to 2026-09-29, note 662):
+// 11 of 11 of 4 to 17 blocks came down; the two of 53 and 55 blocks (25595
+// mid-244-eb at 05:54Z, mid-244-dg at 10:51Z on 2026-09-29) were both fatal
+// falls: the step off the top was made, the survival watch took the turn
+// from the ride a second or two down (a push about, then the air) and
+// stood the bot to a stance or a swim up in the falling water, and the body
+// left the one-wide stream and fell the rest of the way, 20 health to none.
+// From the step until the ground the ride now keeps the turn (a cancel still
+// lands) and steers the body back to the middle of the stream.
+const RIDE_RECORD = ' Rides so far: 11 of 11 from 4 to 17 blocks came down; the 2 of 53 and 55 blocks each ended in a fall to death, the body out of the stream a second or two down (the turn was taken from the ride by a stance and a swim up, and nothing steered it). From the step off the top until the ground the ride keeps the turn, and steers back to the middle of the stream when the water carries it off; mobs and the air wait until it is down.';
+
+// From the step off the top until the ground under it, nothing takes the turn
+// from the ride but a cancel, and the body is steered to the stream's middle
+// when the current has carried it off (its width 0.6 in a stream one block
+// wide): control states toward the middle, released once it is within a
+// quarter block or out of the water.
+async function sinkDown(bot, task, side, bottom, ms) {
+  const outerInterrupt = task.interruptCheck, outerStall = task.stallCheck;
+  task.interruptCheck = null; task.stallCheck = null;
+  const deadline = Date.now() + ms, mx = side.x + 0.5, mz = side.z + 0.5;
+  let since = 0, steered = false;
+  try {
+    while (Date.now() < deadline) {
+      if (task.cancelled) task.check();
+      const p = bot.entity.position, dx = mx - p.x, dz = mz - p.z, off = Math.hypot(dx, dz);
+      const wet = bot.entity.isInWater !== false;
+      if (wet && off > 0.3 && p.y > bottom.y + 0.6) {
+        try { await bot.look(Math.atan2(-dx, -dz), 0, true); } catch (_) { /* look failed */ }
+        bot.setControlState?.('forward', true); steered = true;
+      } else if (steered) { bot.setControlState?.('forward', false); steered = false; }
+      if (bot.entity.onGround && p.y < bottom.y + 0.6 && Math.abs(bot.entity.velocity?.y ?? 0) < .1) {
+        since ||= Date.now();
+        if (Date.now() - since >= 200) return true;
+      } else since = 0;
+      await sleep(50);
+    }
+    return false;
+  } finally {
+    bot.setControlState?.('forward', false);
+    task.interruptCheck = outerInterrupt; task.stallCheck = outerStall;
+  }
+}
+
 async function rideWater(bot, task, plan) {
   const { move } = require('./motion');
   const from = new Vec3(plan.from.x, plan.from.y, plan.from.z), side = new Vec3(plan.side.x, plan.side.y, plan.side.z);
@@ -429,7 +472,7 @@ async function rideWater(bot, task, plan) {
   await move(bot, task, { label: 'way_down_waterfall', sneak: false, why: 'stepping off the top into the waterfall poured to ride down', look: centre(side).offset(0, 0.5, 0), maxMs: 2500,
     until: () => { const f = bot.entity.position.floored(); return f.x === side.x && f.z === side.z; } });
   bot.clearControlStates?.();
-  if (!await landed(bot, task, bottom.y + .6, (plan.fall * 0.6 + 6) * 1000, { inWater: false })) throw new Error('Did not come down the waterfall');
+  if (!await sinkDown(bot, task, side, bottom, (plan.fall * 0.6 + 6) * 1000)) throw new Error('Did not come down the waterfall');
   if ((bot.health ?? 20) < health - 1) console.log(`[way down] the waterfall ride cost ${Math.round(health - bot.health)} health`);
   return true;
 }
@@ -550,4 +593,4 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   } finally { bot.clearControlStates?.(); }
 }
 
-module.exports = { endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };
+module.exports = { sinkDown, RIDE_RECORD, endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };

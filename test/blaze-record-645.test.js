@@ -81,16 +81,18 @@ test('a kind of answer is said in a situation only where at least five fights ar
   assert.deepEqual([row.n, row.rods, row.died], record.ANSWERS['spawner|4+|>16'].strike);
   for (const cells of Object.values(record.ANSWERS)) for (const c of Object.values(cells)) assert(c[0] >= 5, 'no row under five fights');
   // Under 8 health at a spawner with four or more blazes there are too few strikes: the row at any health is said, and says so.
-  const hurt = { spawner: true, blazes: 6, health: 5 };
+  // (spawner, two or three blazes, under 8 health: the cover, fight and heal rows have five or more, the strike row does not)
+  const hurt = { spawner: true, blazes: 3, health: 5 };
+  assert.equal(record.ANSWERS['spawner|2-3|<8'].strike, undefined);
   const wide = record.rowOf(hurt, 'strike');
   assert.equal(wide.any, true);
-  assert.deepEqual([wide.n, wide.rods, wide.died], record.ANSWERS['spawner|4+|*'].strike);
+  assert.deepEqual([wide.n, wide.rods, wide.died], record.ANSWERS['spawner|2-3|*'].strike);
   // None anywhere: no sentence, and the paragraph names it as too few.
   const bot = { health: 5, food: 20, entity: { position: new Vec3(0, 60, 0) }, entities: {}, inventory: { slots: {} } };
   assert.equal(record.optionSays(bot, 'nothing_of_the_sort', { spawner: true }), '');
   const none = { spawner: false, blazes: 6, health: 20 };
-  assert.equal(record.rowOf(none, 'strike'), null);
-  assert.equal(record.optionSays({ ...bot, health: 20, entities: Object.fromEntries([1, 2, 3, 4].map(i => [i, { name: 'blaze', position: new Vec3(i, 60, 0), isValid: true }])) }, 'close_in', { spawner: false }), '');
+  assert.equal(record.rowOf(none, 'fight'), null);
+  assert.equal(record.optionSays({ ...bot, health: 20, entities: Object.fromEntries([1, 2, 3, 4].map(i => [i, { name: 'blaze', position: new Vec3(i, 60, 0), isValid: true }])) }, 'fight', { spawner: false }), '');
 });
 
 test('the paragraph says the rows in this situation, that they are not a trial, and how the rods came', () => {
@@ -102,7 +104,7 @@ test('the paragraph says the rows in this situation, that they are not a trial, 
   assert(says.includes(`a strike (close_in or charge_nearest: walking in on the blazes with the sword): ${s.strike[0]} fights, ${s.strike[1]} took a rod after it`));
   assert(says.includes(`cover (take_cover, back_to_wall, out_of_sight, corner_ambush, box_here, seal, shield_guard, dig_down, nook): ${s.cover[0]} fights`));
   assert.match(says, /not what an answer caused/);
-  assert.match(says, /How the rods came, of the 61 fights that ended with a rod: 56 had a strike in them/);
+  assert.match(says, /How the rods came in the fights of 2026-09-28 \(511 fights\), of the 61 that ended with a rod: 56 had a strike in them/);
   assert.match(says, /Fights with no strike took a rod in 5 of 360, and 60 of the 96 deaths with no rod were in them\./);
   assert.match(says, /this bot carries no shield/);
   const shielded = record.answersSay({ ...bot, inventory: { slots: { 45: { name: 'shield' } } } }, { spawner: true });

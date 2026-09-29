@@ -31,8 +31,8 @@ test('at 20 health fed the visit has two answers: go in, or leave the fortress; 
   const tree = visit.options(b, null, goalOf(), () => {}, { navigate: async () => {} }, { fortress, leave: () => {} });
   assert.deepEqual(Object.keys(tree).sort(), ['go_in', 'leave_fortress']);
   assert.match(tree.go_in.description, /^Go in now, at health 20 and hunger 20 with nothing to eat:/);
-  assert.match(tree.go_in.description, /at health 20: over 16 health, 307 fights begun there, 14% died, 12% brought a rod; at hunger 20: 18 or more, 255 fights begun there, 16% died, 13% brought a rod/);
-  assert.match(tree.go_in.description, /a day's record of fights begun in that row, not a forecast for this fortress/);
+  assert.match(tree.go_in.description, /at health 20: over 16 health, 523 fights begun there, 22% died, 34% brought a rod; at hunger 20: 18 or more, 462 fights begun there, 23% died, 35% brought a rod/);
+  assert.match(tree.go_in.description, /the record of fights begun in that row \(two days of trials\), not a forecast for this fortress/);
   assert.match(tree.leave_fortress.description, /gains no rod|It gains no rod/);
 });
 
@@ -41,7 +41,7 @@ test('at 5 health, hunger 14 and nothing to eat: no wait is offered (nothing wou
   const calls = [];
   const tree = visit.options(b, null, goalOf(), () => {}, { navigate: async () => {}, returnOverworld: async () => calls.push('back') }, { fortress, leave: () => {} });
   assert.deepEqual(Object.keys(tree).sort(), ['go_back', 'go_in', 'hoglin_hunt', 'leave_fortress']);
-  assert.match(tree.go_in.description, /under 8 health, 26 fights begun there, 58% died, none brought a rod; at hunger 14: under 18, 160 fights begun there, 24% died, 6% brought a rod/);
+  assert.match(tree.go_in.description, /under 8 health, 29 fights begun there, 62% died, 3% brought a rod; at hunger 14: under 18, 162 fights begun there, 33% died, 16% brought a rod/);
   assert.match(tree.go_in.description, /Health does not come back: hunger 14 is under eighteen and nothing carried is food, so every point lost in the fight stays lost/);
   assert.doesNotMatch(tree.go_in.description, /Health does come back/);
   // Going back: the walk is minutes at the measured pace, from note 626, and its record.
@@ -76,7 +76,7 @@ test('at 12 health and hunger 18 with food carried: eating and waiting is offere
   assert.deepEqual(Object.keys(tree).sort(), ['go_in', 'heal_first', 'leave_fortress']);
   assert.match(tree.heal_first.description, /^Do not go in yet: eat what is carried \(4 cooked beef, 8 hunger each\), which brings hunger to 20, and wait where the bot stands until the health is full: from 12, about \d+(\.\d)? seconds/);
   assert.match(tree.heal_first.description, /standing still spends no hunger; at most three minutes, then the visit is asked again/);
-  assert.match(tree.heal_first.description, /the health row moves from 8 to 16 health \(24% died, 6% brought a rod\) to over 16 health \(14% died, 12% brought a rod\)/);
+  assert.match(tree.heal_first.description, /the health row moves from 8 to 16 health \(40% died, 11% brought a rod\) to over 16 health \(22% died, 34% brought a rod\)/);
   assert.match(tree.heal_first.description, /fights begun in that row, not a trial of waiting/);
   assert.match(tree.go_in.description, /Health does come back on the way/);
 });
@@ -106,8 +106,8 @@ test('the state says whether health can come back at this hunger and which row t
   const { state } = visit.facts(bot({ health: 5, food: 14 }), goalOf(), { fortress });
   assert.match(state.healthComesBack, /^no: at hunger 14 with nothing to eat, under eighteen, none of it comes back$/);
   assert.match(state.visit, /about to approach a Nether fortress 40 blocks off/);
-  assert.match(state.playedRecord, /the row is under 8 health: 26 fights, 58% died, none brought a rod/);
-  assert.match(state.aboutTheRecord, /One day's record .*counted separately: there is no row for both/);
+  assert.match(state.playedRecord, /the row is under 8 health: 29 fights, 62% died, 3% brought a rod/);
+  assert.match(state.aboutTheRecord, /The record of the trials of 2026-09-28 to 2026-09-29T11:40Z .*counted separately: there is no row for both/);
   const ok = visit.facts(bot({ health: 12, food: 18, items: [['cooked_beef', 2]] }), goalOf(), {}).state;
   assert.match(ok.healthComesBack, /^yes: at hunger 18, about \d+(\.\d)? seconds to full$/);
 });

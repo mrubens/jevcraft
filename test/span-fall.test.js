@@ -55,12 +55,12 @@ test('a drop into the lava sea is priced by the lava from where the body comes u
   const near = spanBot({ items: [], ghast: ghastAt(190.5, 60, 160.5), shore: (x, y, z) => y === 31 && x === 194 && z === 118 }).bot;
   const out = terrain.dropFacts(near, feet, 3);
   assert.equal(out.lava.shoreBlocks, 3, JSON.stringify(out));
-  assert.equal(out.lava.inIt, 12.6);
+  assert.equal(out.lava.inIt, 31.5, 'three blocks at the measured 0.4 a second: 7.5 seconds in it');
   assert.equal(out.lava.burn, 15);
-  assert.equal(out.lava.takes, 27.6);
+  assert.equal(out.lava.takes, 46.5);
   assert.equal(out.damage, 'death');
   assert.ok(out.deadly);
-  assert.match(terrain.dropNote(terrain.dropNear(near, feet, 3), 20, near), /about 3 seconds swimming \(not measured\), about 12\.6 health in it, then the fire it sets burns on 15 seconds out of it at a point a second that armour does not stop \(no water to put it out in the Nether\): about 27\.6 in all, more than the 20 the bot has: death/);
+  assert.match(terrain.dropNote(terrain.dropNear(near, feet, 3), 20, near), /about 7\.5 seconds swimming \(0\.4 blocks a second, measured: of 88 stretches in lava 62 ended in death, and those that lived were out within about 1\.2 blocks\), about 31\.5 health in it, then the fire it sets burns on 15 seconds out of it at a point a second that armour does not stop \(no water to put it out in the Nether\): about 46\.5 in all, more than the 20 the bot has: death/);
 });
 
 test('on a span over the lava sea with a ghast out of sight within its reach, every stance that leaves the bot open says one fireball is the fall into the lava, death; the walls do not', () => {
