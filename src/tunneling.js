@@ -235,6 +235,52 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   return sorted;
 }
 
+// Seconds a block takes to dig with the best tool carried, by hand where
+// none serves (netherrack by hand: 2 seconds; a wooden pickaxe: 0.3).
+function digSeconds(bot, block) {
+  if (!block || typeof block.digTime !== 'function') return null;
+  let tool = null;
+  try { tool = require('./skills').cheapestTool(bot, block); } catch (_) { tool = null; }
+  return block.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000;
+}
+
+// The staircase toward `target`, looked at from here before it is begun:
+// whether a step from here gains ground with what is carried (a block under
+// hardness one is dug without its tool, netherrack among them), and roughly
+// what the stair takes: a step for each block of height or across, whichever
+// is more, each dug as the first one is. mid-242-ch-fortress-10 (25591,
+// note 678) stood on netherrack 10 blocks straight above its portal with no
+// pickaxe, and the way back went for wood for one it did not need.
+// Said and offered only for a target this near across: farther, the stair
+// is one way among the crossing's and the walk's, not the way to it.
+const STAIR_ACROSS = 16;
+function stairFromHere(bot, goal, target) {
+  if (typeof bot?.blockAt !== 'function' || !bot.entity?.position || !target) return null;
+  const feet = bot.entity.position.floored(), here = feet.distanceTo(target);
+  let choices;
+  try { choices = stairChoices(bot, goal, target, { hostiles: false }); } catch (_) { return null; }
+  const step = choices.find(c => c.destination.distanceTo(target) < here - 0.1);
+  if (!step) return { gains: false, blocked: blockedSays(choices.blocked) };
+  const dug = step.clear.map(p => bot.blockAt(p)).filter(b => b && b.boundingBox === 'block');
+  // Each step as the first one digs, or at least two cells of the rock
+  // underfoot where the first step is open (a stair digs its way).
+  const under = bot.blockAt(feet.offset(0, -1, 0)), rock = under?.boundingBox === 'block' ? digSeconds(bot, under) ?? 0 : 0;
+  const perStep = Math.max(dug.reduce((s, b) => s + (digSeconds(bot, b) ?? 0), 0), 2 * rock) + 0.25;
+  const steps = Math.max(Math.abs(target.y - feet.y), Math.round(Math.hypot(target.x - feet.x, target.z - feet.z)));
+  const byHand = dug.filter(b => b.harvestTools && !(bot.inventory?.items?.() || []).some(i => b.harvestTools[i.type])).map(b => b.name);
+  return { gains: true, steps, seconds: Math.max(1, Math.round(steps * perStep)), byHand: [...new Set(byHand)] };
+}
+
+// The stair said in a few words, for an option or a fact.
+function stairSays(bot, stair, target) {
+  if (!stair) return '';
+  const dy = Math.round(target.y - bot.entity.position.y);
+  const which = dy < 0 ? 'down' : dy > 0 ? 'up' : 'across';
+  if (!stair.gains) return `A stair dug ${which} to it gains no ground from here (${stair.blocked}).`;
+  const hand = stair.byHand.length ? `, ${stair.byHand.map(n => n.replaceAll('_', ' ')).join(' and ')} dug by hand (no drops)` : '';
+  return `A stair dug ${which} to it: about ${stair.steps} steps, about ${stair.seconds} seconds${hand}.`;
+}
+
 // Every step toward the target was filtered out, and what is left only goes
 // sideways or back: for a dig at a fixed target that is not progress, and
 // taking it is how the night mine paced under an ore behind water.
@@ -685,4 +731,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

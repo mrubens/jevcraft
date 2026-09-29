@@ -78,7 +78,17 @@ function biomeNear(bot, name, { reach = 128, step = 16 } = {}) {
 // plains and meadows, not deserts), so the questions carry it. Sampled on a
 // thirty-two block grid, looked at once every ten seconds.
 const COMPASS = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
-const biomeName = (bot, b) => b?.biome ? String(bot.registry?.biomes?.[b.biome.id]?.name || b.biome.name || '').replace('minecraft:', '') || null : null;
+// A biome of another dimension is not where the bot is (note 677): a block
+// read with biome id 0 in the Nether was said as badlands, "mineshafts at
+// the surface with gold ore high up", to a bot in a basalt delta.
+const dimensionOfBot = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
+const biomeName = (bot, b) => {
+  if (!b?.biome) return null;
+  const entry = bot.registry?.biomes?.[b.biome.id];
+  const here = dimensionOfBot(bot);
+  if (entry?.dimension && here && entry.dimension !== here) return null;
+  return String(entry?.name || b.biome.name || '').replace('minecraft:', '') || null;
+};
 const biomeViews = new WeakMap();
 function biomeView(bot, { reach = 128, step = 32, now = Date.now() } = {}) {
   const cached = biomeViews.get(bot);

@@ -333,9 +333,9 @@ test('before dark, food enough to heal on and the base bed near are offered with
   const goal = { ...w.goal, kind: 'win', step: { action: 'mine', block: 'iron_ore' } };
   await upkeepStep(w.bot, { check() {} }, goal, () => {}, client);
   assert(offered?.food_reserve, Object.keys(offered || {}).join(','));
-  assert.match(offered.food_reserve, /Find food before dark: 0 food points carried, hunger 16, dusk in about \d+ seconds/);
+  assert.match(offered.food_reserve, /Find food before dusk: 0 food points carried, hunger 16, dusk \(when the bot stops work for the evening; the dark comes about two minutes after\) in about \d+ seconds/);
   assert(offered.take_bed, 'the base bed, a short walk away');
-  assert.match(offered.take_bed, /any night passes in seconds wherever it comes/);
+  assert.match(offered.take_bed, /a night on the Overworld passes in seconds wherever it comes/);
 });
 
 test('short of blocks in the Nether, the upkeep says they are the crossings', async () => {

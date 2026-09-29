@@ -116,3 +116,13 @@ test('Jev says things more than one way, picked at random, and never the line it
   assert.notEqual(pick(SURVIVAL.sleep, first), first, 'not the same words twice in a row');
   assert.match(pick(SURVIVAL.out_of_fire, null), /fire/i);
 });
+
+test('the work\'s step is not said while the breath is short: the step is stopped then (note 680)', () => {
+  // mid-242-hb (25595) said "Crafting a bread." with its head in gravel, the craft stopped for the air.
+  const said = [], bot = { chat: line => said.push(line), oxygenLevel: 6 };
+  const goal = { kind: 'obtain', step: { action: 'craft', item: 'bread', count: 1 } };
+  assert.equal(narrate(bot, goal, { now: 1000 }), null);
+  bot.oxygenLevel = 20;
+  assert.equal(narrate(bot, goal, { now: 1000 + MIN_GAP_MS }), "I'll make a bread.");
+  assert.equal(said.length, 1);
+});

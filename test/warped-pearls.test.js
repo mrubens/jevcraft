@@ -147,3 +147,16 @@ test('the sweep from a ledge where every walk and every staircase comes to nothi
   await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 16 });
   assert.equal(goal.warpedSearch.spent, undefined);
 });
+
+test('a forest remembered past the walk\'s reach is not a leg found: the sweep counts ground, not a far memory (note 680)', async () => {
+  // mid-242-gb (25593): eight legs "found" in under a second, and "Looking for a warped forest" and "No warped forest found" three times in a second each.
+  const { bot, goal } = fixture('the_nether');
+  goal.landmarks = [{ kind: 'warped_forest', x: 2000, y: 70, z: 40, dimension: 'nether' }];
+  const said = [];
+  bot.chat = m => said.push(m);
+  const actions = { navigate: async () => {}, tunnel: async () => {}, acquireStep: async () => assert.fail('no hunt'), notice: () => {} };
+  for (let i = 0; i < 10; i++) await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
+  assert.equal(goal.warpedSearch.legs, 0, 'standing still, no leg is counted');
+  assert.equal(said.filter(m => /Looking for a warped forest/.test(m)).length, 1);
+  assert.equal(said.filter(m => /No warped forest found/.test(m)).length, 0);
+});

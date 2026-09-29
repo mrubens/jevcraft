@@ -663,7 +663,9 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
 }
 
 // The moves as Jev is shown them: one option each, with its facts.
-function describeMove(m) {
+// Off the Overworld there is no sky and no surface (note 677): an open
+// column is said as what it is.
+function describeMove(m, { offWorld = false } = {}) {
   const facts = [];
   if (m.effects?.length) facts.push(m.effects.join('; '));
   if (m.to) {
@@ -674,8 +676,8 @@ function describeMove(m) {
     else if (m.breathes === false) facts.push('the head is still under water there');
     if (m.airUp != null) facts.push(`air ${m.airUp} blocks straight up from there`);
     else if (m.ceilingUp != null) facts.push(`water up to a ceiling ${m.ceilingUp} blocks up from there: no air that way`);
-    if (m.atSurface) facts.push('ends at the surface');
-    else if (m.openSkyAbove) facts.push('ends under open sky, in a hole');
+    if (m.atSurface) facts.push(offWorld ? 'ends in the open, nothing overhead for forty blocks there and beside it' : 'ends at the surface');
+    else if (m.openSkyAbove) facts.push(offWorld ? 'ends with nothing overhead for forty blocks, in a hole' : 'ends under open sky, in a hole');
     if (m.timesStoodThere) facts.push(`stood there ${m.timesStoodThere} time${m.timesStoodThere > 1 ? 's' : ''} already`);
     if (m.blocksToTarget != null) facts.push(`${m.blocksToTarget} blocks from the target after`);
     if (m.blocksFromStart != null) facts.push(`${m.blocksFromStart} blocks from where it got stuck`);
@@ -893,7 +895,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     // off in sight and in none of this, and its fireball threw the body
     // off the ledge, 32 down (note 621).
     const push = pushFacts(bot, feet, moves);
-    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }) + (push.moves.get(m.key) || '') }]));
+    const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }, { offWorld: !/overworld/.test(String(bot.game?.dimension || 'overworld')) }) + (push.moves.get(m.key) || '') }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
       state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,

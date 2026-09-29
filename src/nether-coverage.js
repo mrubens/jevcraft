@@ -121,7 +121,11 @@ function watch(bot, goal, now = Date.now()) {
   w.installed = true;
   bot.on('physicsTick', () => {
     const state = w.goal?.fortressSearch;
-    if (!state || !(w.at > Date.now() - 60000) || dimOf(bot) !== 'nether') return;
+    if (!state || dimOf(bot) !== 'nether') return;
+    // Ground walked is kept however long the step that walks it runs: a
+    // crossing of ninety blocks outlasts the minute the looks are kept to.
+    stand(bot, state);
+    if (!(w.at > Date.now() - 60000)) return;
     look(bot, state, { rays: RAYS_A_TICK });
   });
 }
@@ -176,10 +180,15 @@ function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REV
     unseen++;
     if (inView(along, across)) unseenInView++;
   }
+  // Stood on within a block to either side of the line: a span walked
+  // runs a block off the line from its far end as often as not, and read
+  // on the line alone mid-242-gb's own span of ninety blocks was "stood on
+  // 6 of 96" from one end and 92 from the other (note 680).
   let stood = 0, seenLine = 0;
   for (let n = 1; n <= length; n++) {
-    const cx = Math.floor((here.x + dx * n) / CELL), cz = Math.floor((here.z + dz * n) / CELL);
-    if (has(cov.stood, cx, cz)) stood++;
+    const lx = here.x + dx * n, lz = here.z + dz * n;
+    const cx = Math.floor(lx / CELL), cz = Math.floor(lz / CELL);
+    if ([-1, 0, 1].some(o => has(cov.stood, Math.floor((lx + dz * o) / CELL), Math.floor((lz + dx * o) / CELL)))) stood++;
     if (has(cov.seen, cx, cz)) seenLine++;
   }
   return { cells, unseen, unseenInView: upTo ? unseenInView : null, openCells: upTo ? upTo[length] : null, stood, seenLine, length, reveal };

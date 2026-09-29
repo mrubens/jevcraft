@@ -1157,6 +1157,10 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   const biting = danger.filter(t => !shooter(t.entity)).map(t => t.entity);
   const hp = bot.health ?? 20;
   const fire = ce.fireballSays(nearest.distance);
+  // How long a stand chosen here runs before it is asked again: the hunt's
+  // forty-five seconds, the encounter's fifteen (takeStand). The encounter
+  // had said "It runs 45 seconds" of a close-in it ran fifteen (note 677).
+  const runs = hunted ? CLOSE_SECONDS : ENCOUNTER_SECONDS;
   const oneHit = m => Math.max(0, ...m.filter(x => x.name !== 'creeper').map(x => x.hitsBot || 0));
   const options = {};
   // Every blaze within its forty-eight, and how many see a stand's cell:
@@ -1207,7 +1211,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     const sum = closeInCost(bot, withinSixteen(bot, danger), { breakFirst: { steps: breaking.steps, digSeconds: breaking.digMs / 1000, at: breaking.cell } });
     options.break_spawner = { kind: 'break', site: breaking, cost: sum, expects: { damage: sum.damage, seconds: Math.max(1, sum.seconds), oneHit: oneHit(standCost(bot, danger, {}).mobs) },
       description: `Break the blaze spawner: walk ${breaking.steps} block${breaking.steps === 1 ? '' : 's'} (about ${seconds(walk)}, behind the shield for each volley as it comes) to within reach of its cage and break it with the ${words(breaking.pick)} (about ${seconds(round(breaking.digMs / 1000))} of digging), then go at the blazes left with the sword as close_in does. Broken, it makes no more, ever: the ${aboutAll.length} about now stay, and after them the rods come only from the blazes a fortress makes on its own, one at a time in its corridors; left standing, it makes up to four more every ten to forty seconds while the bot is within sixteen of it, until six are about.` +
-        fire + closeInSays(sum, hp, { breaking: true }) + rowsSays(m) + ` It runs ${CLOSE_SECONDS} seconds, or until six health is gone, and is asked again then.` };
+        fire + closeInSays(sum, hp, { breaking: true }) + rowsSays(m) + ` It runs ${runs} seconds, or until six health is gone, and is asked again then.` };
   }
   const spawner = spawnerSite(bot, undefined, { avoid: biting });
   if (spawner) {
@@ -1256,7 +1260,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     const shieldSays = shield ? ` A blaze glows for three seconds before its three shots and rests five seconds after; a shield raised and facing it as the glow ends takes all three whole, the fire with them, where one not raised lets about a third to a half land at five blocks, each 2.5 through iron and five seconds alight. The shield covers the half in front of the bot, so blazes on two sides at once are not all covered.` : '';
     options.close_in = { kind: 'close', site: { target: first.entity.id }, expects: { damage: sum.damage, seconds: Math.max(1, sum.seconds), oneHit: oneHit(standCost(bot, danger, {}).mobs) }, cost: sum,
       description: `Go at them with the sword: ${how}; ${reachable.length === 1 ? 'that one is' : `${reachable.length} of the ${blazes.length} are`} over ground the bot can stand on within a sword's reach of ${reachable.length === 1 ? 'it' : 'them'}${over ? `, ${over} over lava or a drop, fought only if it comes over ground` : ''}.${backSays}${shieldSays}` +
-        fire + closeInSays(sum, hp) + rowsSays(m) + ` It runs ${CLOSE_SECONDS} seconds, or until a rod is carried or six health is gone, and is asked again then; it ends sooner, said why, if a volley's cycle passes without a step nearer a blaze or a swing.` };
+        fire + closeInSays(sum, hp) + rowsSays(m) + ` It runs ${runs} seconds, or until a rod is carried or six health is gone, and is asked again then; it ends sooner, said why, if a volley's cycle passes without a step nearer a blaze or a swing.` };
     // The nearest alone, as its own option: with several about, the close-in
     // is priced over all of them, and a player takes the one at hand and
     // looks again. Priced by the same sum, up to its one kill (upTo).
@@ -1264,10 +1268,10 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
       const one = closeInCost(bot, priced, { upTo: 1 });
       options.charge_nearest = { kind: 'charge', site: { target: first.entity.id }, expects: { damage: one.damage, seconds: Math.max(1, one.seconds), oneHit: oneHit(standCost(bot, danger, {}).mobs) }, cost: one,
         description: `Charge the nearest blaze alone: ${round(first.distance)} blocks off, over ground the bot can stand on within a sword's reach of it; ${shield ? 'walk in on it while the volleys rest, behind the shield for each as it comes' : 'no shield carried: walk straight in on it'}, strike it until it dies, pick up its rod if it drops one, and be asked again then with what is left; the other ${aboutAll.length - 1} about are not gone at.${backSays}` +
-          closeInSays(one, hp) + ` It ends at the kill, after ${CLOSE_SECONDS} seconds, or once six health is gone.` };
+          closeInSays(one, hp) + ` It ends at the kill, after ${runs} seconds, or once six health is gone.` };
     }
   }
-  Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig }));
+  Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs }));
   // The box and the corner are holds as the stands are: what the holds made
   // from about here came to, said on them in the hunt and the stance alike
   // (note 620).
@@ -1295,7 +1299,8 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
 // the bot there) and what the arena measured of it, fight by fight.
 const TACTICS = new Set(['box', 'light', 'corner', 'heal', 'far']);
 const PLACE_SECONDS = 0.45, TORCH_SECONDS = 0.45;
-function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig }) {
+function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs = CLOSE_SECONDS }) {
+  const again = runs < CLOSE_SECONDS ? `, ${runs} seconds at a time and asked again between` : '';
   const T = require('./blaze-tactics');
   const options = {};
   if (pocket) return options;
@@ -1363,7 +1368,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const where = box.steps ? `Walk ${n(box.steps, 'block')} (about ${round(walk)} seconds) to a cell${cageOff != null ? ` ${cageOff} blocks from the spawner's cage` : ''}` : `Where the bot stands${cageOff != null ? `, ${cageOff} blocks from the spawner's cage` : ''}`;
     options[key] = { kind: 'box', site: box, sees: inLine.length, about: about.length, expects: { damage: round(setup.damage + hold), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
       description: `${where}, wall it in at feet and head on all four sides and roof it (${n(box.blocks, 'block')} to place of the ${T.blocksCarried(bot)} carried${box.dig ? ', and the window dug' : ''}), leaving one block open at head height ${cageNear ? 'toward the spawner' : 'toward the blazes'}, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front${shield ? ', where the shield faces each volley' : ' (no shield carried to meet it)'}; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window.${byCage ? ' Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come.' : cageNear ? ' The spawner puts its blazes within four of its cage, not beside this box: those that see in through the window shoot from there.' : ' No spawner puts any beside this box: the blazes about now stay where they hover.'}${crowd ? ` ${crowd === 1 ? 'A blaze is' : `${crowd} blazes are`} within four blocks of that cell now: one in a cell to be walled holds that block out until it moves or is struck.` : ''} Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back.${spawnSays}` +
-        ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); in it, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : `none of the ${about.length} about is in line with the window now`}. Food can be eaten in it. It is held up to 45 seconds, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight.` + m.says };
+        ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); in it, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : `none of the ${about.length} about is in line with the window now`}. Food can be eaten in it. It is held up to ${Math.min(45, runs)} seconds${again ? ' at a time, and asked again then' : ''}, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight.` + m.says };
   }
 
   // Lighting the spawner.
@@ -1387,7 +1392,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const setup = underFire(corner.steps / WALK + built * PLACE_SECONDS);
     const m = measuredSays('corner', bot);
     options.corner_ambush = { kind: 'corner', site: corner, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
-      description: `${built ? `No rock to go round within ten blocks of walking: make a corner where the bot stands, a wall two high and three wide a step toward the blazes' middle (${n(built, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire), and wait behind it` : corner.steps ? `Walk ${n(corner.steps, 'block')} (about ${setup.time} in their fire) round` : 'Stay at'}${built ? ` at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})` : ` the corner at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})`}, where none of the ${n(about.length, 'blaze')} about has a line to the bot and the cell beside it has one, and wait there facing the corner${shield ? ', the shield up' : ''}, striking what comes within reach: the nearest is ${corner.nearest} blocks from it. What comes: a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering. Out of their sight the bot takes nothing from them (about ${setup.hurt} ${built ? 'while building' : 'on the way'}, the burning on the body burning on).${spawnSays} Held up to thirty seconds, or until a rod is carried or six health is gone.` + m.says };
+      description: `${built ? `No rock to go round within ten blocks of walking: make a corner where the bot stands, a wall two high and three wide a step toward the blazes' middle (${n(built, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire), and wait behind it` : corner.steps ? `Walk ${n(corner.steps, 'block')} (about ${setup.time} in their fire) round` : 'Stay at'}${built ? ` at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})` : ` the corner at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})`}, where none of the ${n(about.length, 'blaze')} about has a line to the bot and the cell beside it has one, and wait there facing the corner${shield ? ', the shield up' : ''}, striking what comes within reach: the nearest is ${corner.nearest} blocks from it. What comes: a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering. Out of their sight the bot takes nothing from them (about ${setup.hurt} ${built ? 'while building' : 'on the way'}, the burning on the body burning on).${spawnSays} Held up to ${Math.min(30, runs)} seconds${again ? ' at a time, and asked again then' : ''}, or until a rod is carried or six health is gone.` + m.says };
   }
 
   // Away to heal. Offered whenever a blaze fight is on and a cell out of
@@ -1417,7 +1422,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
       const holds = healable ? ` The health it heals to holds only while hunger stays at 18 or more: fights spent ${clock.rate} hunger a minute (note 664), so from hunger ${hunger} that is about ${clock.noEating} minutes of fighting${points ? ` and at most ${clock.withFood} with all ${points} carried points eaten` : ' with nothing carried to eat'}.` : '';
       const stays = `The blazes stay where they are${cageNear ? ', and the spawner makes more meanwhile while the bot is within sixteen of it' : ''}; the fight after is asked again${healable ? ' with the health back' : ' at the health it has now'}${walled ? ', the side toward them opened first' : ''}.${holds}`;
       const what = healable
-        ? `${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}.`
+        ? `${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full${again}: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}.`
         : `${food ? `eat the ${words(food.name)} (it brings hunger only to ${eatenTo}) and ` : ''}stay only until the fire on the body is out: at hunger ${hunger}, under eighteen, no health comes back (${food ? `eating all that is carried leaves hunger at ${eatenTo}` : 'nothing carried is food'}), so healing there would take never. It gets the bot out of the fire and the volleys and no health back${setup.damage >= hp ? '; and the health runs out before it is out of their sight' : `: it stays at about ${round(after)} health`}, and each point lost from here on stays lost until the bot has eaten to eighteen.`;
       options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
         description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}` + m.says };
@@ -1444,6 +1449,8 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
 const shieldCarried = bot => bot.inventory?.slots?.[45]?.name === 'shield';
 // How long a close-in runs before the question is asked again.
 const CLOSE_SECONDS = 45;
+// A stand's run in an encounter (takeStand), then the stance is asked again.
+const ENCOUNTER_SECONDS = 15;
 
 // What the arena measured for each stand, with the fortress stage's kit
 // (an iron sword, a shield, iron armour, an iron pickaxe, blocks), each

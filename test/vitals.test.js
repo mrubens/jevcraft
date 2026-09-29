@@ -948,3 +948,22 @@ test('in a flame on a risen column with nowhere to walk and no block to rise on,
   assert.equal(await ways.put_out_flames.run(), true, 'out of the fire once the flame is punched');
   assert.deepEqual(dug, ['(-197, 44, -152)']);
 });
+
+test('the step aside from under gravel walks on until the head is clear of the block, not to the edge of the cell beside (note 680)', async () => {
+  // mid-242-hb (25595): stopped as its feet crossed into the cell beside, its head still in the gravel, hurt four times more.
+  const motion = require('../src/motion');
+  const { headWays } = require('../src/vitals');
+  const bot = { entity: { position: new Vec3(3.9, 48, 53.5), width: 0.6, eyeHeight: 1.62 }, _recentHurtAt: Date.now(),
+    blockAt: p => { const q = p.floored(); const name = q.x === 3 && q.y === 49 ? 'gravel' : q.y < 48 ? 'stone' : 'air'; return { name, position: q, boundingBox: name === 'air' ? 'empty' : 'block' }; } };
+  const original = motion.move;
+  let stoppedAt = null;
+  motion.move = async (b, task, { until }) => {
+    for (let x = 3.9; x < 5; x += 0.05) { b.entity.position = new Vec3(x, 48, 53.5); if (until()) { stoppedAt = x; return; } }
+  };
+  try {
+    const ways = headWays(bot, new Task('head'));
+    assert(ways.step_aside, 'the open cell east is offered');
+    assert.equal(await ways.step_aside.run(), true);
+    assert(stoppedAt >= 4.24, `walked until the head's box left x 3: stopped at ${stoppedAt}`);
+  } finally { motion.move = original; }
+});

@@ -99,7 +99,22 @@ async function crossToward(bot, task, goal, save, target, { what = 'the target',
 // the leg is Jev's to choose (mob-hunt.js chooseLeg), with these facts.
 const WALK_SPEED = 4.3;
 // Measured on mid-205-m: two blocks dug a cell, about six seconds a cell.
+// Only where the blocks' own dig times are not known (note 677): that one
+// trial's netherrack by hand was said of every leg, basalt at twelve and a
+// half seconds a cell by hand and netherrack at a third of a second with a
+// pickaxe alike.
 const ROCK_CELL_SECONDS = 6;
+// A cell's dig by the blocks in it and the cheapest tool carried for each.
+function cellDigSeconds(bot, blocks) {
+  let s = 0;
+  for (const b of blocks) {
+    if (!b || passable(b)) continue;
+    if (typeof b.digTime !== 'function') { s += ROCK_CELL_SECONDS / 2; continue; }
+    let tool = null; try { tool = require('./skills').cheapestTool?.(bot, b) || null; } catch (_) { tool = null; }
+    try { s += b.digTime(tool?.type ?? null, false, false, false, [], {}) / 1000; } catch (_) { s += ROCK_CELL_SECONDS / 2; }
+  }
+  return s;
+}
 // Open air over a drop this deep is a cavern or the lava sea's edge, where a
 // fortress is seen from afar (its bricks are found within 128 blocks).
 const CAVERN_DROP = 4;
@@ -127,14 +142,47 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
   if (typeof bot.blockAt !== 'function' || !bot.entity?.position) return null;
   const [dx, dz] = heading;
   const carried = blocks ?? blocksCarried(bot);
-  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot), runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null, first: [] };
+  const out = { cells: 0, open: 0, rock: 0, cavern: 0, lay: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot), runsOut: null, reach: 0, reachSeconds: null, stoppedBy: null, stoppedAt: null, first: [], stepped: 0, laid: 0 };
   let here = from || bot.entity.position.floored(), seconds = 0;
+  const y0 = here.y;
   // The first cells as runs of what they are (rock, floor, no floor):
   // what the leg meets before anything else, said with it (legSays).
   const note = kind => { if (out.cells >= FIRST_CELLS) return; const last = out.first.at(-1); if (last?.kind === kind) last.n++; else out.first.push({ kind, n: 1 }); };
+  const solid = b => !!b && b.boundingBox === 'block' && !/lava|fire/.test(b.name || '');
+  const clear = b => !!b && passable(b) && !/lava|fire|water/.test(b.name || '');
+  // A floor the bot laid itself (a span, a pillar's top): its own way.
+  let laidAt = null;
+  try { laidAt = require('./own-blocks').laidAt; } catch (_) { laidAt = null; }
+  const own = p => { try { return !!laidAt?.(bot, p); } catch (_) { return false; } };
+  // The walk takes a step of one block up or down where the ground does,
+  // and the leg is walked (the pathfinder first): its line follows the
+  // ground within a block of the height it starts at. Read at that height
+  // alone, mid-242-gb's own span a block below or above its feet was "rock
+  // to dig" or "no floor, 90 blocks to lay", and it walked the one span
+  // four times, its blocks spent (note 680).
+  const stepTo = next => {
+    // Up: the cell ahead solid, the one over it open with room for the
+    // head, and room over the head where the bot stands.
+    if (here.y + 1 <= y0 + 1 && solid(bot.blockAt(next)) && clear(bot.blockAt(next.offset(0, 1, 0))) && clear(bot.blockAt(next.offset(0, 2, 0))) && clear(bot.blockAt(here.offset(0, 2, 0)))) return next.offset(0, 1, 0);
+    // Down: the cell ahead open with no floor, the one under it open and
+    // floored.
+    const under = next.offset(0, -1, 0);
+    if (here.y - 1 >= y0 - 1 && clear(bot.blockAt(next)) && clear(bot.blockAt(next.offset(0, 1, 0))) && clear(bot.blockAt(under)) && solid(bot.blockAt(under.offset(0, -1, 0)))) return under;
+    return null;
+  };
   for (let n = 0; n < cells; n++) {
     const next = here.offset(dx, 0, dz);
-    const body = [next, next.offset(0, 1, 0)].map(p => bot.blockAt(p));
+    const level = [next, next.offset(0, 1, 0)].map(p => bot.blockAt(p));
+    const levelWalks = level.every(b => b && passable(b) && !/lava|fire/.test(b.name || '')) && solid(bot.blockAt(next.offset(0, -1, 0)));
+    const step = levelWalks || level.some(b => !b) ? null : stepTo(next);
+    if (step) {
+      note('floor'); out.open++; out.stepped++; seconds += 1 / WALK_SPEED;
+      if (own(step.offset(0, -1, 0))) out.laid++;
+      if (out.runsOut === null) out.reach++;
+      out.cells++; here = step;
+      continue;
+    }
+    const body = level;
     if (body.some(b => !b)) { out.stoppedBy = 'unloaded ground'; out.stoppedAt = out.cells; break; }
     if (body.some(b => /lava|fire/.test(b.name || ''))) { out.stoppedBy = 'lava in the way'; out.stoppedAt = out.cells; break; }
     // Rock with lava or water behind it is not dug, by the rule every dig
@@ -144,11 +192,11 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
     // or water behind the netherrack" (note 572).
     const walled = [next, next.offset(0, 1, 0)].find((p, k) => !passable(body[k]) && !safeDig(bot, p));
     if (walled) { out.stoppedBy = `${String(bot.blockAt(walled)?.name || 'rock').replaceAll('_', ' ')} with lava or water behind it (not dug)`; out.stoppedAt = out.cells; break; }
-    if (body.some(b => !passable(b))) { note('rock'); out.rock++; seconds += ROCK_CELL_SECONDS; }
+    if (body.some(b => !passable(b))) { note('rock'); out.rock++; const dig = cellDigSeconds(bot, body); out.rockSeconds = (out.rockSeconds || 0) + dig; seconds += dig; }
     else {
       out.open++;
       const floor = bot.blockAt(next.offset(0, -1, 0));
-      if (floor && floor.boundingBox === 'block') { note('floor'); seconds += 1 / WALK_SPEED; }
+      if (floor && floor.boundingBox === 'block') { note('floor'); seconds += 1 / WALK_SPEED; if (own(next.offset(0, -1, 0))) out.laid++; }
       else {
         note(floor && /lava/.test(floor.name || '') ? 'lava' : 'gap');
         // The first cell needing a block past those carried: the leg ends there.
@@ -173,12 +221,14 @@ function legSays(survey, { direction, length, y }) {
   if (!survey) return `Go ${direction} ${length} blocks at y ${y}. Not surveyed from here.`;
   const parts = [];
   if (survey.open) parts.push(`${survey.open} of open air${survey.cavern ? ` (${survey.cavern} of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar)` : ''}`);
-  if (survey.rock) parts.push(`${survey.rock} of rock to dig (about ${ROCK_CELL_SECONDS} seconds a cell, and nothing is seen from inside it)`);
+  if (survey.rock) parts.push(`${survey.rock} of rock to dig (about ${Math.round((survey.rockSeconds ?? survey.rock * ROCK_CELL_SECONDS) / survey.rock * 10) / 10} seconds a cell with the tools carried, and nothing is seen from inside it)`);
   const stop = survey.stoppedBy ? ` ${survey.stoppedBy[0].toUpperCase()}${survey.stoppedBy.slice(1)} stops it at cell ${survey.stoppedAt}.` : '';
   const lay = survey.lay || 0, carried = survey.carried ?? 0, short = Number.isInteger(survey.runsOut);
   const blocks = !lay ? '' : ` ${lay} of the open cells have no floor: it needs ${lay} block${lay === 1 ? '' : 's'} laid, crouched, about ${Math.round(LAY_CELL_SECONDS * 10) / 10} seconds a cell, ${carried} carried: ` +
     (short ? `the blocks run out at cell ${survey.runsOut}, about ${survey.reachSeconds} seconds in, where the leg stops with none to lay.` : `${carried - lay} left after.`) + blockStock.afterSays({ noPickaxe: survey.noPickaxe, left: short ? 0 : carried - lay });
-  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${firstSays(survey)}`;
+  const steps = survey.stepped ? ` It steps a block up or down ${survey.stepped} time${survey.stepped === 1 ? '' : 's'} where the ground does.` : '';
+  const laid = survey.laid ? ` ${survey.laid} of its cells are on blocks the bot laid itself: its own span, walked before.` : '';
+  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${steps}${laid}${firstSays(survey)}`;
 }
 
 // The floor below: going down to the ground and walking it, where the

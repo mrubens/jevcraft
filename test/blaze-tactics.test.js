@@ -204,7 +204,7 @@ test('away to heal: offered hurt with food, the walk out of every line and the h
   const o = stand.blazeStands(bot, near(bot)).leave_and_heal;
   assert(o, 'offered');
   assert.match(o.description, /^Go out of their sight to heal and come back: walk \d+ blocks? \(about [\d.]+ seconds in their fire, about [\d.]+ damage\) to \(\d, 64, 0\), where none of the 1 blaze about has a line to the bot/);
-  assert.match(o.description, /eat the cooked beef \(about 1\.6 seconds\) and stay until the health is full: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds/);
+  assert.match(o.description, /eat the cooked beef \(about 1\.6 seconds\) and stay until the health is full, 15 seconds at a time and asked again between: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds/);
   const full = floorWorld({ spawner: null, solid: pillar, at: new Vec3(6.5, 64, 0.5) });
   blazeAt(full, 1, 12.5, 64.5, 0.5);
   assert.equal(stand.blazeStands(full, near(full)).leave_and_heal, undefined);

@@ -74,7 +74,7 @@ test('from the recorded span the stem search is the Nether\'s: the wood within r
   // No crossing is offered with nothing to lay, nor the portal the bot cannot reach.
   assert.deepEqual(Object.keys(options).filter(k => /^cross_to_/.test(k)), []);
   assert.equal(options.portal_trip, undefined);
-  assert.match(state.portal, /^The nether portal at \(17, 58, 1\), 66 blocks off\. On foot: the pathfinder finds no route there.*where oak planks in the way stops it\. Neither the walk nor the crossing with the blocks carried reaches it from here, so going back through it is not offered\.$/);
+  assert.match(state.portal, /^The nether portal at \(17, 58, 1\), 66 blocks across and 14 below\. On foot: the pathfinder finds no route there.*where oak planks in the way stops it\. Neither the walk nor the crossing with the blocks carried reaches it from here, so going back through it is not offered\.$/);
   // Every leg needs a block laid within its first cells, and none is carried.
   assert.equal(state.legsClosed.length, 4, state.legsClosed.join('\n'));
   assert.deepEqual(Object.keys(options).filter(k => /^leg_/.test(k)), []);

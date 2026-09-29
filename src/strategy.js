@@ -278,7 +278,7 @@ function carryBedOption(bot, goal, planFor = null) {
     : rung.action === 'home' ? ' The chest at home holds what it takes.' : '';
   const inHand = ` In hand: ${wool.total} wool (${wool.dyed ? `mixed colours, dyed white with the bone or bone meal carried: the bed is a craft` : wool.count >= 3 ? `three ${wool.colour.replaceAll('_', ' ')}: the bed is a craft` : 'three of one colour make the bed; wool of mixed colours is dyed white, a bone\'s bone meal for three'}), ${string} string, ${planks} planks and ${logs} logs; ${sheep ? `${sheep} sheep in view` : flocks.length ? flocks[0].says : 'no sheep in view or remembered'}.`;
   return {
-    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night, anywhere: put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${woolTrip(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
+    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night on the Overworld, anywhere there (in the Nether or the End a bed set down explodes): put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${woolTrip(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
     says: 'I\'ll make a second bed to carry', rung,
   };
 }
@@ -430,7 +430,8 @@ function strategyState(bot, goal, stage) {
     situation: 'On the way to beating the game (Nether, blaze rods, ender pearls, the stronghold, the dragon). Several things are open; choose which to do next.',
     workingOn: label(stage.phase), minutesWorkedOn: clock ? Math.round(clock.activeMs / 60000) : 0,
     note: 'minutesWorkedOn is how long the step being worked on has gone without finishing; this is asked again every twenty of them. Nothing skipped here is skipped for good.',
-    timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10,
+    // The day where there is one (note 677).
+    ...(/overworld/.test(String(bot.game?.dimension || 'overworld')) ? { timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10 } : {}),
     ...(require('./exploration').biomeView(bot) || {}),
     // What the Nether truly waits on, said: the note had told Jev "every
     // step is done before the Nether", with the Nether-first option beside

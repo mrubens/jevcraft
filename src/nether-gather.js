@@ -305,13 +305,22 @@ function withoutOption(bot, goal, save, { forItem, resource }) {
   try { const probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', phase, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe); }
   catch (_) { next = null; }
   const errand = phase === 'errand' && goal.errand ? ` (the trip to the ${goal.errand.dimension}${goal.errand.items?.length ? ` for ${goal.errand.items.map(i => words(i.item)).join(', ')}` : ''}${goal.errand.for ? `, for ${goal.errand.for}` : ''})` : '';
-  const wants = forItem ? `the ${words(forItem)} this ${words(resource)} is for` : `the ${words(resource)}`;
+  const wantedFor = forItem && bot._wantedFor?.item === forItem ? `, wanted for ${bot._wantedFor.what}, which ends here` : '';
+  const wants = forItem ? `the ${words(forItem)} this ${words(resource)} is for${wantedFor}` : `the ${words(resource)}`;
   const items = next?.item ? ` (${next.count > 1 ? `${next.count} ${words(next.item)}${/s$/.test(next.item) ? '' : 's'}` : words(next.item)})` : '';
   const goOn = next?.phase && next.phase !== phase ? `go on with the ${words(next.phase)}${items}` : 'the ladder\'s next step is looked for (none other is open now)';
   return { description: `Go on without ${wants}: leave the ${words(phase)}${errand} for thirty minutes and ${goOn}. It comes back after, and this with it.`,
     run: async () => {
       setAside(goal, 'rung', phase, `Jev chose to go on without ${wants} for now`, RUNG_WAIT_MS);
       delete goal.rungTime;
+      // What it was set aside for and from where, as the rung's question
+      // keeps it (work.js set_aside_rung): taking it up again from here
+      // meets the same want. 25584 chose this and, a second later,
+      // leave_nether's search_on took the rods up again, round and round
+      // every few seconds (note 678).
+      const at = bot.entity?.position, now = Date.now();
+      if (at) goal.rungAside = { phase, at: now, where: { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, until: now + require('./tried').REST_MS,
+        why: `Jev chose to go on without ${wants}: none within reach here`.slice(0, 300) };
       goal.step = { action: 'go_without', phase, need: resource }; save();
     } };
 }
@@ -379,20 +388,36 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   // The portal back to the Overworld's trees.
   if (wood && returnOverworld) {
     const portal = portalsKnown(bot, goal)[0];
-    if (portal) {
+    // The wood wanted for the way back to this portal itself (a pickaxe for
+    // the stair to it): going back through it for wood is that same trip,
+    // not a way to the wood. 25591 was offered it under its own go_back and
+    // took it, over and over (note 678).
+    const wantedFor = bot._wantedFor;
+    const circular = portal && wantedFor?.target && Math.hypot(wantedFor.target.x - portal.x, wantedFor.target.y - portal.y, wantedFor.target.z - portal.z) <= 3;
+    if (circular) facts.portal = `The ${words(wantedFor.item)} this wood is for is for ${wantedFor.what} at ${at3(portal)}: going back through it for wood is the trip that wants it, so it is not offered.`;
+    else if (portal) {
       const way = await wayTo(bot, task, portal);
-      const says = `The nether portal at ${at3(portal)}, ${Math.round(flat(portal, here))} blocks off. ${walkSays(way, bot)} ${crossSays(bot, way)}`;
-      const reaches = way.walk?.found || (way.cross.now.cells && flat(way.cross.now.end, portal) <= THERE && way.cross.now.gain >= 1);
-      if (reaches && !isSetAside(goal, 'gather_way', wayKey(bot, portal, 'portal'))) {
-        options.portal_trip = { description: `Go back through the portal to the Overworld for wood, ${way.walk?.found ? 'on foot' : 'straight across at this height'}. ${says} ${overworldWoodSays(goal, portal)} The work here waits till the bot comes back through.`,
+      // Where it is across and up or down: the crossing at this height ends
+      // beside it only when it is at this height (25591 was told its portal
+      // 10 blocks straight below was reached by the crossing, note 678).
+      const dy = Math.round(portal.y - here.y), height = Math.abs(dy) > 2 ? ` and ${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}` : '';
+      const t = require('./tunneling');
+      const stair = height && !way.walk?.found && flat(portal, here) <= t.STAIR_ACROSS ? t.stairFromHere(bot, goal, portal) : null;
+      const says = `The nether portal at ${at3(portal)}, ${Math.round(flat(portal, here))} blocks ${height ? `across${height}` : 'off'}. ${walkSays(way, bot)} ${crossSays(bot, way)}${stair ? ` ${t.stairSays(bot, stair, portal)}` : ''}`;
+      const crossReaches = way.cross.now.cells && flat(way.cross.now.end, portal) <= THERE && !height && way.cross.now.gain >= 1;
+      const method = way.walk?.found ? 'walk' : crossReaches ? 'cross' : stair?.gains ? 'stair' : null;
+      if (method && !isSetAside(goal, 'gather_way', wayKey(bot, portal, 'portal'))) {
+        options.portal_trip = { description: `Go back through the portal to the Overworld for wood, ${method === 'walk' ? 'on foot' : method === 'cross' ? 'straight across at this height' : `by a stair dug ${dy < 0 ? 'down' : 'up'} to it`}. ${says} ${overworldWoodSays(goal, portal)} The work here waits till the bot comes back through.`,
           target: portal,
           run: async () => {
-            const method = way.walk?.found ? 'walk' : 'cross';
-            try { await runWay(bot, task, goal, save, way, method, `the portal at ${at3(portal)}`, navigate); }
-            catch (err) { if (!retryable(err)) throw err; setAside(goal, 'gather_way', wayKey(bot, portal, 'portal'), err.message.slice(0, 300), WAY_REST_MS); save(); throw err; }
+            // The stair is the way back's own (work.js returnFromNether).
+            if (method !== 'stair') {
+              try { await runWay(bot, task, goal, save, way, method, `the portal at ${at3(portal)}`, navigate); }
+              catch (err) { if (!retryable(err)) throw err; setAside(goal, 'gather_way', wayKey(bot, portal, 'portal'), err.message.slice(0, 300), WAY_REST_MS); save(); throw err; }
+            }
             await returnOverworld(bot, task, goal, save);
           } };
-      } else facts.portal = `${says} Neither the walk nor the crossing with the blocks carried reaches it from here, so going back through it is not offered.`;
+      } else facts.portal = `${says} Neither the walk${stair ? ', the stair' : ''} nor the crossing with the blocks carried reaches it from here, so going back through it is not offered.`;
     } else facts.portal = 'no nether portal known in the Nether';
   }
 

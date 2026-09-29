@@ -112,3 +112,26 @@ test('from a pocket over the lava sea, a leg closed at its first cell is said, n
   await assert.rejects(chooseLeg(shut, new Task('hunt'), { fortressSearch: { legs: 9 } }, () => {}, { client, navigate: async () => {} }, { legs: 9 }),
     /No leg from here can be walked, dug or bridged: leg east: closed at the first cell at y 32, lava in the way; leg south: .*; leg west: closed at the first cell at y 32, lava in the way; leg north: closed at the first cell at y 32, netherrack with lava or water behind it \(not dug\)/);
 });
+
+test('the bot\'s own span a block off the line is ground stood on, and a leg follows it a block up or down (note 680)', () => {
+  // mid-242-gb (25593) walked one span of ninety blocks four times: from one end the leg read the span a block below as "no floor, 90 to lay" and "stood on 6 of 96".
+  const { surveyLeg, legSays } = require('../src/nether-travel');
+  // Open air over a void, a span at y 52 (feet at 53) from x 0 to 90 at z 0; the bot at the east end standing a block up, on a step at y 53 (feet 54).
+  const open = p => !(p.z === 0 && p.y === 52 && p.x >= 0 && p.x <= 90) && !(p.z === 0 && p.y === 53 && p.x >= 91 && p.x <= 93) && p.y > 20;
+  const bot = world(new Vec3(92.5, 54, 0.5), open);
+  bot.inventory = { items: () => [{ name: 'netherrack', count: 9, type: 1 }] };
+  const west = surveyLeg(bot, [-1, 0], { cells: 96 });
+  assert.equal(west.stepped, 1, 'one step down onto the span');
+  assert(west.open - west.lay >= 90, `the span is floor to walk: ${JSON.stringify(west)}`);
+  assert.equal(west.runsOut, null, 'nothing to lay on the span itself');
+  assert.match(legSays(west, { direction: 'west', length: 96, y: 54 }), /steps a block up or down 1 time where the ground does/);
+  // From the west end at feet 53, one below a ledge at the far end: the span, not rock to dig.
+  bot.entity.position = new Vec3(0.5, 53, 0.5);
+  const east = surveyLeg(bot, [1, 0], { cells: 90 });
+  assert.equal(east.rock, 0, JSON.stringify(east));
+  // Stood on a line a block to the side: counted from either end.
+  const state = {};
+  for (let x = 0; x <= 90; x++) { bot.entity.position = new Vec3(x + 0.5, 53, 3.5); coverage.stand(bot, state); }
+  const h = coverage.headingCoverage(state, 'nether', new Vec3(92.5, 54, 4.5), [-1, 0], { length: 96 });
+  assert(h.stood >= 88, `stood on ${h.stood} of 96, the span a block beside the line`);
+});

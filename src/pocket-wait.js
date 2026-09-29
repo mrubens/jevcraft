@@ -23,6 +23,8 @@ const HELD_MS = 60000;
 const NEARER = 2;
 // Forgotten when not heard again within this.
 const GONE_MS = 60000;
+// What a pocket was sealed against is gone past this, out of sight.
+const GONE_BEYOND = 16;
 // The stances that shut the bot in where it stands.
 const SEALING = new Set(['seal', 'dig_down']);
 
@@ -175,21 +177,47 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   // the bot is within its sixteen, and "only the mobs outside moving off
   // would change it" was said there as if they might (note 597).
   const spawnerKind = spawner ? `${spawner.mob ? `${name(spawner.mob)} ` : 'mob '}spawner` : '';
-  const nothingComes = noDay && starving
-    ? (spawner ? ` Neither daylight nor health comes to this wait, and the mobs outside do not move off: the ${spawnerKind} ${spawner.distance} blocks off makes more of them while the bot is within its 16 blocks.` : ' Neither daylight nor health comes to this wait: only the mobs outside moving off would change it.') : '';
+  // And what it was sealed against gone as well (not about, or more than
+  // sixteen blocks off and out of sight): the wait waits for nothing, said
+  // plainly. mid-242-dc-fortress-22 sat sealed at 12 health with nothing to
+  // eat, the skeleton it sealed against 32 blocks off and then gone, and
+  // chose stay three times, nothing changing in any (note 679).
+  // Nor another of its kind in its place within sixteen: the blazes of a
+  // fortress drift in and out, and one gone is not the kind gone.
+  const sealedKinds = new Set(w.against?.mobs?.map(m => m.name).filter(Boolean) || []);
+  const againstGone = !!w.against?.mobs?.length && !near.some(t => sealedKinds.has(t.entity?.name) && t.distance <= GONE_BEYOND) && !(w.against.ids || []).some(id => {
+    const e = bot.entities?.[id];
+    if (!e || e.isValid === false || !e.position) return false;
+    const t = near.find(x => x.entity?.id === id);
+    return (t ? t.distance : e.position.distanceTo(bot.entity.position)) <= GONE_BEYOND || !!t?.visible;
+  });
+  const noGain = starving || (!night && hp >= 20);
+  const waitsForNothing = noDay && noGain && againstGone && !spawner;
+  const goneKinds = [...new Set((w.against?.mobs || []).map(m => name(m.name)).filter(Boolean))];
+  const nothingComes = waitsForNothing
+    ? ` Nothing this wait could wait for is coming: the ${goneKinds.length === 1 ? goneKinds[0] : 'mobs'} it was sealed against ${goneKinds.length === 1 && w.against.mobs.length === 1 ? 'is' : 'are'} gone, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}. Staying is standing idle.`
+    : noDay && starving
+      ? (spawner ? ` Neither daylight nor health comes to this wait, and the mobs outside do not move off: the ${spawnerKind} ${spawner.distance} blocks off makes more of them while the bot is within its 16 blocks.` : ` Neither daylight nor health comes to this wait: the bot goes out at ${Math.round(hp * 10) / 10} health whenever it goes, so a stay buys only the chance that the mobs outside move off${near.some(t => t.entity?.name === 'blaze') ? ', and blazes keep about the fortress they spawn in' : ''}, and each minute of it is a minute of the run.`) : '';
   if (nothingComes && spawner) facts.waitingFor = `nothing: no daylight, no health without food, and the ${spawnerKind} ${spawner.distance} blocks off makes more while the bot is within 16`;
+  if (waitsForNothing) facts.waitingFor = `nothing: what it was sealed against is gone, no daylight, and ${starving ? 'no health without food' : 'health full'}`;
   // The rung, and how long since it last got anywhere.
   const { rungOf, rungSays } = require('./tried');
   const r = goal?.tried?.rung, rung = rungOf(goal);
   const idle = r && r.rung === rung && r.bestAt ? now - r.bestAt : 0;
   const rungLine = idle >= 5 * 60000 ? ` The ${rungSays(rung)} has had no new best for ${minutesSays(idle)}${r.lastBest ? ` (the last: ${r.lastBest})` : ''}.` : '';
   if (rungLine) facts.rung = rungLine.trim();
+  // Stays in this pocket that came to nothing (tried.js judges a wait by what
+  // changed while it lasted), for the question that sends the turn here.
+  const { about } = require('./tried');
+  const p = bot.entity?.position;
+  const stays = p ? about(goal, { q: 'pocket_next', method: 'stay', here: { x: p.x, y: p.y, z: p.z }, now }).filter(e => e.outcome === 'blocked' && e.at >= w.since).length : 0;
+  if (waitsForNothing && stays) facts.staysForNothing = stays;
   return {
-    facts, heldOff, minutes,
+    facts, heldOff, minutes, waitsForNothing, stays,
     stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${nothingComes}${rungLine}`,
     leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}${countSays}`,
-    claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}) },
+    claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}), ...(waitsForNothing ? { waitingFor: facts.waitingFor, staysForNothing: stays } : {}) },
   };
 }
 
-module.exports = { watchPocket, leftPocket, pocketWaitSays, mobWait, HELD_MS, SEALING };
+module.exports = { watchPocket, leftPocket, pocketWaitSays, mobWait, HELD_MS, SEALING, GONE_BEYOND };

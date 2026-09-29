@@ -34,6 +34,7 @@ function render() {
         `- Bar: ${cell(bar)}`,
         `- Jev unreachable: ${cell(unreachable)}`,
         `- Options built in: ${cell(q.source)}`,
+        ...(q.overworldOnly ? ['- Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)'] : []),
         ...(Object.hasOwn(q, 'parent') ? [`- Nothing left to try: ${q.parent ? `asks \`${q.parent}\` next up, with this one's failure said` : 'the stall\'s question, as before (nothing above it)'}`] : []), '');
       if (q.tree) {
         lines.push('| Option | Level | What it is | Offered when |', '| --- | --- | --- | --- |');

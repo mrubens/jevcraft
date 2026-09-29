@@ -156,14 +156,69 @@ const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFo
 const AGAIN = 'sameAnswerAgain, lastAnswersCameToNothing and answersThatCameToNothing are this question\'s recent answers that came to nothing; the same answer again seldom ends differently.';
 const LEDGER = 'An option tried from about here lately says how it ended; waysResting are options left out after coming to nothing here, and when they come back; whatFailedBelow is what the question below tried and why it ended.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
-function withRealTime(spec, state = {}) {
-  if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
-  const { task, guidance = '' } = spec.instructions;
+// Off the Overworld the clock is only minutes (note 677): no day comes to
+// end a wait, nothing burns off, and a wait in a sealed pocket ends only when
+// the bot opens it. A Nether pocket at hunger 16 with nothing to eat was
+// asked with the Overworld's "a night is about eleven minutes" and chose to
+// stay (0.48 against going for food 0.25), where health could never come back.
+const elsewhereTime = place => `The player counts real time. In ${place} no day or night comes: no mob burns off or leaves with the light, a wait ends only when the bot ends it, and health comes back only while hunger is eighteen or more. A death ends this attempt and loses what is carried; after that, minutes spent waiting, hiding or going back are the cost.`;
+// The dark's rule for spawning is the Overworld's: most of the Nether's mobs
+// spawn at any light (checkGhastSpawnRules, the zombified piglin's, the
+// piglin's, the hoglin's and the magma cube's own rules look at no light).
+const NETHER_DARK = 'In the Nether ghasts, zombified piglins, piglins, hoglins and magma cubes spawn at any light; only skeletons, wither skeletons and endermen need the dark.';
+const { offOverworld, placeName, norm: normDimension, withoutDayFields } = require('./prompt-audit');
+// A question's own words: `guidance` on the Overworld (or where the
+// dimension is not known), word for word as it was; off it,
+// `elsewhereGuidance` in its place where there is one, else `guidance` with
+// each `offOverworld` [from, to] said the way it is true there. `overworld`
+// is added on the Overworld only, `elsewhere` off it only.
+function ownInstructions(spec, dimension) {
+  if (!spec.instructions) return spec.instructions;
+  const { overworld, elsewhere, elsewhereGuidance, offOverworld: swaps, ...own } = spec.instructions;
+  const off = offOverworld(dimension);
+  const place = placeName(dimension);
+  const rest = !off ? own : elsewhereGuidance ? { ...own, guidance: typeof elsewhereGuidance === 'function' ? elsewhereGuidance(place) : elsewhereGuidance }
+    : swaps ? { ...own, guidance: swaps.reduce((g, [from, to]) => g.split(from).join(to), own.guidance || '') } : own;
+  const extra = off ? (typeof elsewhere === 'function' ? elsewhere(place) : elsewhere) : overworld;
+  if (!extra) return rest;
+  return { ...rest, guidance: `${rest.guidance || ''}${rest.guidance ? ' ' : ''}${extra}` };
+}
+function withRealTime(spec, state = {}, dimension = state?.dimension) {
+  const own = ownInstructions(spec, dimension);
+  if (!GAMEPLAY_AREAS.has(spec.area) || !own) return own;
+  const { task, guidance = '' } = own;
+  const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = state?.recentPositions ? ` ${TRAIL}` : '';
   const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
-  return { ...spec.instructions, task, guidance: `${guidance}${guidance ? ' ' : ''}${REAL_TIME}${clock}${risk}${trail}${deaths}` };
+  const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
+  return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
+}
+// The state as it goes out off the Overworld: the day's fields left out at
+// any depth (a clock that means nothing there), and where the bot is said.
+// The builders leave them out themselves where they were found (pocket_next,
+// survival_priority, the work's observation, the strategy); this is the net.
+function stateFor(state, dimension) {
+  if (!state || typeof state !== 'object' || Array.isArray(state) || !offOverworld(dimension)) return state;
+  const out = withoutDayFields(state);
+  if (!out.dimension) out.dimension = normDimension(dimension);
+  return out;
+}
+// Under the test runner every question built is read for what is false
+// where it is asked (prompt-audit.js): a finding fails the test that built it.
+const offWorldSaid = new Set();
+function auditAsked(id, { instructions, state, tree, dimension }) {
+  if (process.env.JEV_PROMPT_AUDIT === '0') return;
+  const spec = QUESTIONS.get(id);
+  const misplaced = spec?.overworldOnly && offOverworld(dimension);
+  if (!process.env.NODE_TEST_CONTEXT) {
+    if (misplaced && !offWorldSaid.has(id)) { offWorldSaid.add(id); console.error('[bug]', `${id} is defined as asked only on the Overworld and was asked in ${dimension}`); }
+    return;
+  }
+  const found = require('./prompt-audit').audit({ id, dimension, instructions, state, tree });
+  if (misplaced) found.push({ rule: 'overworld-only-question-asked-off-it', at: 'definition', clause: `asked in ${dimension}` });
+  if (found.length) throw new Error(`${id} tells Jev what is false where it is asked (${dimension || 'dimension unknown'}): ${found.map(f => `${f.rule} at ${f.at}: "${f.clause.slice(0, 160)}"`).join('; ')}`);
 }
 
 // The deaths of the last two hours, newest first: how, where from here,
@@ -461,6 +516,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     let sculk = null; try { sculk = require('../sculk').sculkAbout(bot); } catch (_) { /* no world */ }
     if (sculk) state = { ...state, sculk: sculk.says };
   }
+  // Where it is asked (note 677): off the Overworld the day's fields go
+  // (timeOfDay, night, daylight...), and where the bot is is said.
+  const dimension = normDimension(bot?.game?.dimension) || normDimension(state?.dimension);
+  state = stateFor(state, dimension);
   // The same facts, the same answer, and nothing came of it (repeats.js):
   // said in the facts; held as failed when it came back at once twice
   // running, and the step's stall path takes it from here.
@@ -521,6 +580,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   const listed = tree;
   if (offerNoneGood) tree = { ...tree, [NONE_GOOD_KEY]: { description: NONE_GOOD } };
   checkOptions(spec, tree);
+  const rootInstructions = withRealTime(spec, state, dimension);
+  auditAsked(id, { instructions: rootInstructions, state, tree: listed, dimension });
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
@@ -545,7 +606,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const stopThinking = spec.thinking && bot ? require('../speech').thinking(bot) : () => {};
     try {
       decision = await endsWhenStopped(decideTree(client, { state, tree, signal: controller.signal, fallback, kind: spec.kind,
-        rootInstructions: withRealTime(spec, state), isFresh, trace }), controller.signal, trace);
+        rootInstructions, isFresh, trace }), controller.signal, trace);
     } catch (err) {
       if (!fallback && !controller.signal.aborted && err.name === 'TypeSafeError') throw new NoSafeDefault(id, err.message);
       throw err;
@@ -601,7 +662,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (client) decision.stages = trace.stages;
   if (goal) {
     goal.decisions ||= [];
-    goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, state, options: JSON.parse(JSON.stringify(tree)),
+    goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, ...(dimension ? { dimension } : {}), state, options: JSON.parse(JSON.stringify(tree)),
       ...(client ? { stages: trace.stages } : {}),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
       stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}) });
@@ -643,7 +704,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

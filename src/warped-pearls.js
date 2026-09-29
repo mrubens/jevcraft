@@ -14,7 +14,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { setAside, isSetAside } = require('./progress');
 
-const LEG = 64, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000;
+const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = l => /nether/.test(String(l.dimension || ''));
@@ -38,7 +38,14 @@ function warpedOpen(goal, now = Date.now()) {
 async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.now } = {}) {
   const exploration = require('./exploration');
   actions.notice?.(bot, goal, save);
-  const known = exploration.knownLandmarks(bot, goal, 'warped_forest', 512).find(k => tripOpen(goal, k.landmark, now()));
+  // The forest this step walks to: one in this dimension within 512 blocks
+  // whose walk does not rest. The sweep's legs counted any forest
+  // remembered, farther or resting too, as found: mid-242-gb (25593) had a
+  // leg "found" each tenth of a second, eight in under a second, and said
+  // "Looking for a warped forest" and "No warped forest found" three times
+  // in a second each (note 680).
+  const toWalk = () => exploration.knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).find(k => tripOpen(goal, k.landmark, now())) || null;
+  const known = toWalk();
   if (known) {
     const arrived = await exploration.goToLandmark(bot, task, goal, save, ['warped_forest'], { navigate: actions.navigate, reach: 512, arrive: 16 });
     // A walk that came no nearer sets the trip aside: said as the step's own
@@ -81,7 +88,7 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   goal.step = { action: 'warped_search', leg: search.legs + 1, target: { x: leg.x, y: leg.y, z: leg.z } }; save();
   if (search.legs === 0 && !search.said) { search.said = true; bot.chat?.('Looking for a warped forest: endermen, and their pearls.'); }
   const before = Math.hypot(leg.x - here.x, leg.z - here.z);
-  const seen = () => { actions.notice?.(bot, goal, save); return warpedKnown(goal).length > 0; };
+  const seen = () => { actions.notice?.(bot, goal, save); return !!toWalk(); };
   const start = bot.entity.position.clone();
   let walkWhy = null, stairWhy = null;
   try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 8), { timeoutMs: 45000, stallMs: 8000, stopWhen: seen, passing: true }); }
@@ -91,14 +98,14 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // in turn with 'warped_search', the two traded names every pass and the
   // flip watch called it two steps handing the turn back and forth (note
   // 588), as it had obsidian's tunnel (tunneling.js).
-  if (bot.entity.position.distanceTo(start) < 2 && actions.tunnel && !warpedKnown(goal).length) {
+  if (bot.entity.position.distanceTo(start) < 2 && actions.tunnel && !toWalk()) {
     try { await actions.tunnel(bot, task, goal, save, leg, { within: goal.step }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; stairWhy = String(err.message || err).slice(0, 160); }
   }
   search.lastError = `the walk ${walkWhy ? `failed (${walkWhy})` : bot.entity.position.distanceTo(start) < 2 ? 'came no nearer' : 'went on'}${actions.tunnel ? `, the staircase ${stairWhy ? `failed (${stairWhy})` : 'came no nearer'}` : ''}`;
   const after = Math.hypot(leg.x - bot.entity.position.x, leg.z - bot.entity.position.z);
   search.tries = (search.tries || 0) + 1;
-  if (after < before - 16 || warpedKnown(goal).length) { search.legs++; search.fails = 0; delete search.spent; }
+  if (after < before - 16 || toWalk()) { search.legs++; search.fails = 0; delete search.spent; }
   else if (after < before - 1) search.fails = 0;
   else if (++search.fails >= 3) {
     // A heading that came to nothing three times is kept with where it was

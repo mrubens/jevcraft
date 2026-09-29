@@ -255,6 +255,20 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // are dropped (the leg's target among them): nether-travel.js.
   const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere, returnOverworld: returnFromNether, acquire: acquireStep, client,
       mineOne: (p, block) => mine(bot, task, { action: 'mine', block, sources: [block], drops: block, count: 1 }, goal, save, p) } });
+  // What the stall drops whatever the answer, said on the answers that
+  // read as carrying on (note 677): "as it is going" had been said with the
+  // found fortress already set aside ten minutes and the shaft dropped.
+  const droppedSays = (() => {
+    const d = [];
+    if (goal.fortressSearch?.found) d.push('the fortress found is set aside ten minutes');
+    else if (goal.fortressSearch?.target) d.push('the search\'s target is dropped');
+    if (goal.tunnel) d.push('the shaft it was digging is dropped');
+    if (goal.surfaceReturn) d.push('the climb out is dropped');
+    if (goal.miningSites && Object.values(goal.miningSites).some(s => s.workPosition)) d.push('the mining sites are not rejoined for ten minutes');
+    if (goal.mobHunt?.stalking) d.push('the hunt\'s mark is dropped');
+    if (goal.search) d.push('the search turns to a heading not tried');
+    return d.length ? ` Whatever is answered, the stall has already set aside what sent it back here: ${d.join(', ')}.` : '';
+  })();
   looseEnds(goal, now);
   const answers = {};
   const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
@@ -478,7 +492,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // question, owed (tried.sendBack): the fortress search ends its walk and
   // asks its leg's question with them.
   const sendsBack = untriedBelow ? ` The ${untriedBelow.map(o => o.q.replaceAll('_', ' ')).join(' and the ')} question${untriedBelow.length === 1 ? ' is' : 's are'} asked next, with the ways not yet tried from here: ${untriedSays}.` : '';
-  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing} as it is going, with the ways not yet tried or resting from here; the next ten minutes are measured again.${sendsBack}${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
+  if (rungQuestion) answers.keep_at_it = { description: `Keep at the ${thing}, with the ways not yet tried or resting from here; the next ten minutes are measured again.${droppedSays}${sendsBack}${keepMeets}${triedSaid ? ` Tried lately: ${triedSaid.slice(0, 4).join('; ')}.` : ' Nothing tried lately is in the ledger.'}`,
     run: async () => {
       if (goal.tried?.rung) goal.tried.rung.idleMs = 0;
       for (const o of untriedBelow || []) tried.sendBack(goal, o.q, `the rung's question sent the work back here: ${stall.escalated?.says || 'a failure below'}`, now);
@@ -492,7 +506,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const stairs = goal.staircaseStalled && now - goal.staircaseStalled.at < require('./tunneling').STAIRCASE_REST_MS ? goal.staircaseStalled : null;
   const failure = stall.error || (stairs && `the staircase is set aside: ${stairs.why}`);
   const castWait = castWaterWait(bot, goal);
-  const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.ms ? { minutesOnRung: Math.round(goal.rungTime.ms / 60000) } : {}),
+  const stalled = { what: thing, strikes: stall.strikes, ...(failure ? { failure } : {}), ...(shortSays ? { lastWayOff: shortSays } : {}), ...(blocker ? { blocker } : {}), ...(rung && goal.rungTime?.activeMs ? { minutesOnRung: Math.round(goal.rungTime.activeMs / 60000) } : {}),
     ...(stall.rung?.says ? { rung: stall.rung.says } : {}), ...(triedSaid ? { tried: triedSaid } : {}), ...(stall.escalated?.says ? { whatFailedBelow: stall.escalated.says } : {}),
     ...(noDifferently ? { notOffered: noDifferently } : {}), ...(againRests ? { resting: againRests } : {}),
     ...(worked ? { workedOnRung: worked.says } : {}), ...(instead ? { setAsideGoesOnWith: instead } : {}), ...(stall.escalated?.passed?.length ? { passedOver: stall.escalated.passed } : {}),
@@ -603,7 +617,7 @@ const pickaxeNeeded = bot => bot.game?.gameMode !== 'creative' && !bot.inventory
 function makePickaxeSays(bot, made) {
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const uses = bot.registry?.itemsByName?.[made.item]?.maxDurability;
-  return `Make ${made.name} now from what is carried (${made.from}), a few seconds at a crafting table: ${uses ? `${uses} uses` : 'a pickaxe'}. No pickaxe is carried: rock dug by hand takes about two seconds a block for ${nether ? 'netherrack' : 'dirt and gravel'} and six to seven and a half for ${nether ? 'basalt and blackstone' : 'stone'}, and drops nothing${nether ? ', so no block comes back to lay over a gap or lava, and every leg, staircase, tunnel or crossing through rock is dug by hand' : ', and ore and stone need a pickaxe to drop at all'}.`;
+  return `Make ${made.name} now from what is carried (${made.from}), a few seconds at a crafting table: ${uses ? `${uses} uses` : 'a pickaxe'}. No pickaxe is carried: ${nether ? 'rock dug by hand takes about two seconds a block for netherrack and six to seven and a half for basalt and blackstone, and drops nothing' : 'dirt and gravel dig by hand in about a second and drop, but stone takes about seven and a half seconds a block by hand and drops nothing'}${nether ? ', so no block comes back to lay over a gap or lava, and every leg, staircase, tunnel or crossing through rock is dug by hand' : ', and ore and stone need a pickaxe to drop at all'}.`;
 }
 // The pickaxe made from the pockets, one craft at a time (acquireStep
 // takes one step a call), until one is carried.
@@ -746,7 +760,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (!client) return options[['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems'].find(k => due.includes(k)) || due[0]].run();
   // The route to the stems surveyed only for a question asked.
   if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
-  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
+  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes, or sooner if what is due here changes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
   const step = goal.step;
   let chosen = null;
@@ -832,12 +846,12 @@ async function upkeepOffers(bot, task, goal, save) {
     const standing = home?.bed ? hb.bedStatus(bot, home) : null;
     if (home?.bed?.claimedAt && standing?.placed && !standing.carried && !hb.bedCarried(bot) && !home.bed.carriedAt) {
       const foot = hb.layout(home).bed.foot, far = Math.round(new Vec3(foot.x, foot.y, foot.z).distanceTo(bot.entity.position));
-      if (far <= NEAR_BED) options.take_bed = { description: `Take the base's bed along now, ${far} blocks away, before going on: then any night passes in seconds wherever it comes, instead of about eleven real minutes in a pocket or a night mine. The spawn point goes wherever the bot last slept, and a death drops the bed with everything else.${tripTime(bot, far)}`,
+      if (far <= NEAR_BED) options.take_bed = { description: `Take the base's bed along now, ${far} blocks away, before going on: then a night on the Overworld passes in seconds wherever it comes, instead of about eleven real minutes in a pocket or a night mine. Sleep is refused with a monster within about eight blocks of the bed, and in the Nether or the End a bed set down explodes. The spawn point goes wherever the bot last slept, and a death drops the bed with everything else.${tripTime(bot, far)}`,
         run: async () => { for (let i = 0; i < 4; i++) if (await hb.takeHomeBed(bot, task, goal, save, { navigate, dig, collectNearbyDrops })) return; } };
     }
     const { foodSupply } = require('./foraging'), { KIT_FOOD_POINTS } = require('./home-stash');
     const carried = foodSupply(bot), t = bot.time?.timeOfDay ?? 0, toDusk = Math.round(Math.max(0, DAY.DUSK - t) / 20);
-    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood) options.food_reserve = { description: `Find food before dark: ${carried} food points carried, hunger ${bot.food}, dusk in about ${toDusk} seconds. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing.`,
+    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood) options.food_reserve = { description: `Find food before dusk: ${carried} food points carried, hunger ${bot.food}, dusk (when the bot stops work for the evening; the dark comes about two minutes after) in about ${toDusk} seconds; chosen, the food is looked for as survival's need when it next has the turn. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing.`,
       run: async () => { goal.stockFood = true; save(); } };
   }
   return { options, budget };
@@ -2936,7 +2950,8 @@ function decisionObservation(bot, goal) {
     survivalFacts: { healthMaximum: 20, hungerMaximum: 20, hungerNeedsAttention: bot.food <= 16,
       injured: bot.health < 20, hungerAllowsNaturalHealing: bot.food >= 18, safeFoodCarried: !!chooseFood(bot) },
     dimension: bot.game.dimension, position: { ...bot.entity.position.floored() },
-    daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn',
+    // The day where there is one (note 677): 'day' was sent in the Nether.
+    ...(/overworld/.test(String(bot.game?.dimension || 'overworld')) ? { daylight: bot.time?.timeOfDay < DAY.DARK ? 'day' : bot.time?.timeOfDay < DAY.DAWN ? 'night' : 'dawn' } : {}),
     ...(require('./exploration').biomeView(bot) || {}),
     ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal) } : {}),
     recentPositions: require('./stillness').recentPositions(bot),
@@ -3836,7 +3851,8 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   const between = lineSays(bot, target);
   // Why it rests as its rest said it, by the target's area or from here.
   const stairsWhy = require('./tunneling').restingWay(goal, target, here, now)?.why || staircaseWhy(goal, target);
-  const says = `The ${where} portal at (${p.x}, ${p.y}, ${p.z}) is ${distance} blocks off and cannot be reached from here: ${walk || 'the walk made no ground'}${boat ? `; ${boat}` : ''}; and the staircase toward it is set aside (${stairsWhy})${minutes ? `, taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}` : ''}.${between ? ` ${between}` : ''}`;
+  const rise = Math.round(p.y - here.y), height = Math.abs(rise) > 2 ? ` across and ${Math.abs(rise)} ${rise < 0 ? 'below' : 'above'}` : ' off';
+  const says = `The ${where} portal at (${p.x}, ${p.y}, ${p.z}) is ${distance} blocks${height} and cannot be reached from here: ${walk || 'the walk made no ground'}${boat ? `; ${boat}` : ''}; and the staircase toward it is set aside (${stairsWhy})${minutes ? `, taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}` : ''}.${between ? ` ${between}` : ''}`;
   // The place asked from is its height too: a pillar up is somewhere else.
   const key = `${p.x},${p.y},${p.z}`, from = `${Math.floor(here.x / 8)},${Math.floor(here.y / 8)},${Math.floor(here.z / 8)}`;
   // Met again from the same place in the same rest: "other work" chosen is
@@ -4029,7 +4045,24 @@ async function portalHere(bot, task, goal, save) {
 // one. The bot stood by its broken pickaxe with eight logs and a stack of
 // cobblestone, so make the tool first.
 async function tunnelToward(bot, task, goal, save, target, key) {
-  if (pickaxeTier(bot) < 1 && bot.game?.gameMode !== 'creative') { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
+  // No pickaxe: the stair digs by hand what a hand digs (a block under
+  // hardness one: netherrack, 2 seconds a block, no drops), and the pickaxe
+  // is made only where no step from here gains without one. 25591 stood 10
+  // blocks above its portal in netherrack and went for wood for a pickaxe
+  // it did not need, the trip back never made (note 678). A short stair,
+  // the target within sixteen across as the pillar's is (STAIR_ACROSS):
+  // farther, the pickaxe first (a stair of a hundred and fifty blocks by
+  // hand is twenty minutes' digging; with a wooden pickaxe, three). What
+  // the pickaxe is wanted for is kept while it is got (wantedFor), so a
+  // question asked on the way does not offer the very trip that wants it.
+  const tunneling = require('./tunneling');
+  const byHand = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) <= tunneling.STAIR_ACROSS && tunneling.stairFromHere(bot, goal, target)?.gains;
+  if (pickaxeTier(bot) < 1 && bot.game?.gameMode !== 'creative' && !byHand()) {
+    const before = bot._wantedFor;
+    bot._wantedFor = { item: 'stone_pickaxe', what: /^portal_/.test(key) ? 'the stair to the portal' : `the stair to the ${String(key).replaceAll('_', ' ')}`, target: { x: target.x, y: target.y, z: target.z } };
+    try { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); } finally { bot._wantedFor = before; }
+    return;
+  }
   // Straight overhead and out of the stairs' reach: up by a pillar first.
   // The pathfinder builds towers too, but a thirty-block one never came out
   // of its search in time, and the staircase went round a lava pool below
@@ -5316,7 +5349,7 @@ function sideTrips(bot, goal, client) {
   const standing = home?.bed ? hb.bedStatus(bot, home) : null;
   if (home?.bed?.claimedAt && standing && (standing.placed || !standing.loaded) && !hb.bedCarried(bot) && !home.bed.carriedAt && /overworld/.test(String(bot.game?.dimension || ''))) {
     const foot = hb.layout(home).bed.foot, far = Math.round(new Vec3(foot.x, foot.y, foot.z).distanceTo(bot.entity.position));
-    trips.take_home_bed = { description: `Take the base's bed along: walk ${far} blocks to it, pick it up and carry it. Then any night passes in seconds wherever it comes: put down in a nook or on open ground, slept in, picked back up. Sleep is refused with a monster within about eight blocks of the bed. The spawn point is wherever the bot last slept: a death sends it there, not to the base, and a death drops the bed with everything else.${tripTime(bot, far)}`,
+    trips.take_home_bed = { description: `Take the base's bed along: walk ${far} blocks to it, pick it up and carry it. Then a night on the Overworld passes in seconds wherever it comes: put down in a nook or on open ground, slept in, picked back up. Sleep is refused with a monster within about eight blocks of the bed, and in the Nether or the End a bed set down explodes. The spawn point is wherever the bot last slept: a death sends it there, not to the base, and a death drops the bed with everything else.${tripTime(bot, far)}`,
       says: 'I\'ll take my bed along', walkBlocks: far,
       run: async (b, t, g, sv) => { for (let i = 0; i < 4; i++) if (await hb.takeHomeBed(b, t, g, sv, { navigate, dig, collectNearbyDrops })) return; } };
   }
@@ -6435,6 +6468,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       turnShadow?.gave(vitalsActed ? 'vitals' : 'work');
       require('./turn').takeTurn(bot, 'work', goal.step?.action || 'step');
+      // Air is the body's, before any step: every step stops at the check
+      // while the head is in a block or the breath is short, a craft at the
+      // table or a wait on a window as a dig or a walk does. The work's
+      // check was the threats alone, and only digs and walks looked at the
+      // air (note 680).
+      task.interruptCheck = bot.game.gameMode === 'creative' || endTask ? undefined : () => { checkAir(bot); checkThreats(bot); };
       if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       bot._goal = goal; bot._goalSave = save;
       if (!endTask && await sculkStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
@@ -6486,7 +6525,9 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       }
       const unchanged = before === JSON.stringify(inventory(bot)) && location.distanceTo(bot.entity.position) < 1 &&
         constructionBefore === constructionObservation(bot, goal);
-      goal.stalls = unchanged && goal.kind !== 'follow' ? (goal.stalls || 0) + 1 : 0;
+      // A wait the step holds by choice (by a spawner, health coming back:
+      // stillness.js stepWait) is not a pass that changed nothing (note 681).
+      goal.stalls = !unchanged || goal.kind === 'follow' ? 0 : (goal.stalls || 0) + (require('./stillness').stepWait(bot, goal) ? 0 : 1);
       // A struggle ends on progress against the goal (tried.js watchRung, a
       // new best on the rung), not on any movement: an eight-block walk off
       // and back set it to nothing, and "attempt 1" came round again and

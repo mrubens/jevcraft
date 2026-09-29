@@ -1,7 +1,7 @@
 'use strict';
 // What a trial's bot did in its last minutes, compact enough to read in one
-// sitting: each question Jev was asked (its id, the answer, the confidence
-// and the runner-up), each hurt with health before and after, each chat
+// sitting: each question Jev was asked (its id, the answer and its probability,
+// the confidence, and the runner-up), each hurt with health before and after, each chat
 // line, and where the bot stood. Read-only; for a person or an agent
 // looking for the dumb thing a trial is doing (the live critic,
 // scripts/trials/critic.sh).
@@ -44,9 +44,18 @@ for (const file of files) {
     if (e.kind === 'decision') {
       const q = asked(e), j = q.judgments?.[0];
       const probs = j?.probabilities ? Object.entries(j.probabilities).sort((a, b) => b[1] - a[1]) : [];
+      // The answer's probability beside the runner-up's, the same measure
+      // (the confidence is the service's own and runs lower: 25595's
+      // step_aside printed 0.27 against dig_out's 0.43 when the
+      // distribution had them 0.51 and 0.43, note 678). An answer the
+      // distribution does not put first (none good, a fallback) is marked.
+      const mine = j?.probabilities?.[e.label];
       const runner = probs.find(([k]) => k !== e.label);
-      console.log(`${t(e.at)} ${pos(s)} hp ${r(s.health ?? 0)} food ${s.food ?? '?'}  ${q.id || e.source || ''} -> ${e.label}${j?.confidence != null ? ` (${j.confidence})` : ''}${runner ? `, next ${runner[0]} ${runner[1]}` : ''}`);
-      if (withOptions && q.options) for (const [k, v] of Object.entries(q.options)) console.log(`      ${k}: ${(typeof v === 'string' ? v : v?.description || v?.label || JSON.stringify(v)).slice(0, 400)}`);
+      const top = probs[0] && probs[0][0] !== e.label ? ` [top ${probs[0][0]} ${probs[0][1]}]` : '';
+      const conf = j?.confidence != null ? ` conf ${j.confidence}` : '';
+      console.log(`${t(e.at)} ${pos(s)} hp ${r(s.health ?? 0)} food ${s.food ?? '?'}  ${q.id || e.source || ''} -> ${e.label}${mine != null ? ` ${mine}` : ''}${conf ? ` (${conf.trim()})` : ''}${runner ? `, next ${runner[0]} ${runner[1]}` : ''}${top}`);
+      const text = v => typeof v === 'string' ? v : typeof v?.description === 'string' ? v.description : v?.description?.does || v?.label || JSON.stringify(v?.description ?? v);
+      if (withOptions && q.options) for (const [k, v] of Object.entries(q.options)) console.log(`      ${k}: ${String(text(v)).slice(0, 400)}`);
     } else if (e.kind === 'chat') {
       const m = said(e); if (m) console.log(`${t(e.at)} chat: ${m.slice(0, 160)}`);
     } else if (['error', 'no_route', 'navigation_stall'].includes(e.kind)) {

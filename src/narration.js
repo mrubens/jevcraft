@@ -90,6 +90,38 @@ const SURVIVAL = {
   surface: ['I need air! Swimming up.', 'Air! Up, up, up!', 'Running out of breath. Heading up.'],
 };
 
+// Off the Overworld no sun rises and no night falls: a pocket left in the
+// Nether said "Sun's up. Let's go!" (the live critic, note 677). The lines
+// said there, where the Overworld's speak of the day; and the actions only
+// the Overworld has (a bed, the dusk, the surface), never said elsewhere.
+const SURVIVAL_ELSEWHERE = {
+  seal_shelter: ['Walling myself in.', 'Sealing up my little hideout.', 'Closing myself in for now.'],
+  sheltered: ["Safe in here for now.", "Nothing's getting in here.", 'Walled in. Time to think.'],
+  leave_shelter: [(goal, action) => action.reason || 'Out I go. Back to it.', (goal, action) => action.reason || "Right, let's go!", (goal, action) => action.reason || 'Opening up. Where was I?'],
+  return_to_surface: ["I'm climbing back up.", 'Up I go.'],
+};
+// Morning only where it is morning: a pocket left at night on the Overworld
+// said "Good morning!" too.
+const SURVIVAL_BY_NIGHT = {
+  leave_shelter: [(goal, action) => action.reason || 'Out I go. Back to it.', (goal, action) => action.reason || "Right, let's go!", (goal, action) => action.reason || 'Opening up. Where was I?'],
+};
+const OVERWORLD_ONLY = new Set(['gather_shelter_materials', 'sleep', 'go_home_for_night', 'wait_for_bedtime', 'evening_chore', 'grow_plot', 'sleep_failed', 'stay_up']);
+const isMorning = bot => { const t = bot?.time?.timeOfDay; return !Number.isFinite(t) || t >= 23000 || t < 9500; };
+function survivalLines(action, { dimension = 'overworld', morning = true } = {}) {
+  const off = !/overworld/.test(String(dimension || 'overworld'));
+  if (off) return OVERWORLD_ONLY.has(action) ? null : SURVIVAL_ELSEWHERE[action] || SURVIVAL[action];
+  return !morning && SURVIVAL_BY_NIGHT[action] ? SURVIVAL_BY_NIGHT[action] : SURVIVAL[action];
+}
+// Every line an action can say where it is said, for the prompt audit
+// (scripts/audit-prompts.js): null where the action is the Overworld's only.
+function linesFor(action, where = {}) {
+  const phrase = survivalLines(action, where);
+  if (phrase == null) return null;
+  const variants = Array.isArray(phrase) ? phrase : [phrase];
+  const sample = { threats: ['zombified_piglin'], reason: null, item: 'porkchop', what: 'fortress', distance: 40, chore: 'stock_stash', target: 'blaze' };
+  return variants.map(v => typeof v === 'function' ? v({}, sample) : v).filter(Boolean);
+}
+
 // What the source Jev chose looks like, from the recorded decision tree.
 function sourceDescription(decision, key) {
   if (!decision?.options || !key) return null;
@@ -212,7 +244,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     return null;
   }
   if (action?.at && action.at !== state.survival) {
-    const phrase = SURVIVAL[action.action];
+    const phrase = survivalLines(action.action, { dimension: bot.game?.dimension, morning: isMorning(bot) });
     let line = pick(phrase, state.line, goal, action);
     if (action.action === 'escape_threat') {
       const names = [...new Set((action.threats || []).map(t => name(t.name || t)))].sort().join(',');
@@ -229,6 +261,12 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     if (!phrase || !line || speak(line)) { state.survival = action.at; if (line) state.lastSurvivalLine = { news, at: now }; return line || null; }
     return null;
   }
+  // The work's step is not said while the body is out of air or its head
+  // in a block: the step is stopped then, and "Crafting a bread." as the
+  // head sat in gravel read as work going on through it (note 680).
+  let breathless = false;
+  try { breathless = require('./vitals').needsAir(bot); } catch (_) { breathless = false; }
+  if (breathless) return null;
   const decision = goal.decisions?.at(-1);
   const key = stepKey(goal, goal.step, decision);
   if (!key || key === state.step) return null;
@@ -240,4 +278,4 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
   return null;
 }
 
-module.exports = { narrate, stepLine, stepKey, SURVIVAL, MIN_GAP_MS, setRandom, pick };
+module.exports = { narrate, stepLine, stepKey, SURVIVAL, SURVIVAL_ELSEWHERE, OVERWORLD_ONLY, linesFor, survivalLines, MIN_GAP_MS, setRandom, pick };

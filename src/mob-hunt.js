@@ -269,7 +269,7 @@ const KIT_WORDS = { head: 'iron or better helmet worn', torso: 'iron or better c
 function fitnessSays(bot, f = fitness(bot)) {
   const parts = [`Health ${f.health}${f.health < f.floor ? ` (under the ${f.floor} the code once required to start a fight)` : ''}`,
     `hunger ${f.food}: ${f.healing ? 'health comes back while it stays at eighteen or more' : `health does not come back under eighteen${f.foodCarried ? ', and food is carried to eat first' : ', and nothing is carried to eat: every point lost is gone for good'}`}`];
-  if (f.burning) parts.push(`alight now: fire takes half a heart a second${dimension(bot) === 'nether' ? ', and in the Nether there is no water to put it out; only waiting burns it off' : ''}`);
+  if (f.burning) parts.push(`alight now: fire takes half a heart a second${dimension(bot) === 'nether' ? `, and in the Nether there is no water to put it out${(() => { try { const items = bot.inventory.items(); return (items.some(i => i.name === 'cauldron') && items.some(i => i.name === 'water_bucket')) || require('./fire-resistance').carried(bot).length > 0; } catch (_) { return false; } })() ? ': a cauldron of water or a fire resistance potion carried can, and otherwise only waiting burns it off' : '; only waiting burns it off'}` : ''}`);
   // Each piece by what the kit asks of it, iron or better (mob-policy
   // combatGear): "no sword or axe carried" was said of a bot with a stone
   // sword in hand, beside a fight option that struck with it (note 614).
@@ -815,6 +815,13 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   if (!handler.passive && !await prepareCombatGear(bot, task, goal, save, actions)) return;
   if (handler.dimension && dimension(bot) !== handler.dimension) { await actions.enterNether(bot, task, goal, save); return; }
   if (dimension(bot) === 'nether' && await stayKit(bot, task, goal, save, actions)) return;
+  // A spawner known here and no blaze near: the ways at an empty spawner
+  // room are Jev's (empty-spawner.js), before the unfit branch or the
+  // search. mid-242-dc-fortress-22 stood two blocks from a cage at 3.8
+  // health with nothing to eat, and the search walked it 42 blocks off the
+  // spawner unasked (note 681).
+  if (step.entity === 'blaze' && dimension(bot) === 'nether' &&
+      await require('./empty-spawner').atSpawner(bot, task, goal, save, { ...actions, waitAtSpawner: () => findFortressStep(bot, task, goal, save, actions) })) return;
   // Fit in every way but where it stands (a slab, a fence top, a ceiling at
   // the head): waiting was the answer to all of canBegin, and waiting does
   // not change the footing. It stood recovering at full health on a
@@ -1376,7 +1383,7 @@ function mineThenCrossSays(bot, cross, where) {
   return `Mine netherrack for blocks here first, then go straight at the fortress with them, ${where}. ${pick.says}` +
     `The crossing to its end lays ${all.bridge} block${all.bridge === 1 ? '' : 's'} (${all.overLava} over lava) and digs ${all.dig} of rock in ${all.cells} cells; ${withMined.carried - plan.want} carried${all.bridge > withMined.carried ? `, ${withMined.carried} after the mining (${plan.want < plan.need ? `only ${plan.want} to be had here` : `a stack of ${CROSS_STACK} at most`}), so it stops short` : ''}. ` +
     `Mined first: ${plan.want} from the ${plan.found.sources.length} that can be dug from ground walked to from here (${kindsSaid(plan.found.reachable)}), the nearest ${Math.round(plan.first.p.distanceTo(here))} blocks off, dug from ${whereFrom}${plan.seconds === null ? '' : `, about ${plan.seconds} seconds`}. ` +
-    `Then, with them: ${crossingSays(withMined, 'the fortress')}${endSays}${shot} About ${minutes} minute${minutes === 1 ? '' : 's'} in all.`;
+    `Then, with them: ${crossingSays(withMined, 'the fortress')}${endSays}${shot} About ${minutes} minute${minutes === 1 ? '' : 's'} in all. Should the mining gain little or the pickaxe not be made, the crossing still goes on with what is carried, its rock dug by hand (note 677).`;
 }
 // Mined, then crossed: the blocks gathered as the restock gathers them
 // (restockStep), then the crossing to its end. Returns why it ended short,
@@ -1936,7 +1943,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   if (flatTo(nearest, here) <= 12 && nearest.y < here.y - 2) {
     const column = columnBelow(bot);
     const under = !column ? '' : column.lava ? ` Lava is ${column.depth} blocks under the bot's feet.` : column.open ? ' Nothing solid within sixteen blocks under the bot\'s feet.' : ` The first floor under the bot's feet is ${column.name.replaceAll('_', ' ')}, ${column.depth} blocks down.`;
-    options.descend = { description: `Dig straight down where the bot stands toward the bricks, ${Math.round(here.y - nearest.y - 1)} blocks below and ${flat} across, a block at a time.${under} A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is.`,
+    options.descend = { description: `Dig straight down where the bot stands toward the bricks, ${Math.round(here.y - nearest.y - 1)} blocks below and ${flat} across, a block at a time.${under} A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is; under 12 health it goes no lower at all (${Math.round((bot.health ?? 20) * 10) / 10} now), and it stops after 24 steps (note 677).`,
       run: async () => { const dropped = await descendTo(bot, task, nearest); return dropped >= 1 ? null : 'dropped no lower'; } };
   }
   if (typeof bot.blockAt === 'function') {
@@ -2036,7 +2043,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const searching = state.since ? Math.round((Date.now() - state.since) / 60000) : null;
   const restingHere = HEADING_NAMES.map(n => [n, legResting(state, n, here)]).filter(([, r]) => r);
   const onFrom = restingHere.length ? ` From here ${restingHere.length === HEADING_NAMES.length ? 'every leg' : `the leg${restingHere.length === 1 ? '' : 's'} ${restingHere.map(([n]) => n).join(', ')}`} ended at once and rest${restingHere.length === 1 || restingHere.length === HEADING_NAMES.length ? 's' : ''} a few minutes (${[...new Set(restingHere.map(([, r]) => r.why))].slice(0, 2).join('; ')}).` : '';
-  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}${searching ? `, ${searching} minutes searching` : ''}): the sweep goes on along its heading, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.${onFrom}${require('./block-stock').pickaxeCarried(bot) ? '' : ` The sweep's legs over open air and lava lay a block a cell, and with no pickaxe carried none comes back or can be dug: the ${blocksCarried(bot)} carried are all there will be.`}`,
+  options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}${searching ? `, ${searching} minutes searching` : ''}): the next leg of the search is asked from here, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest.${onFrom}${require('./block-stock').pickaxeCarried(bot) ? '' : ` The sweep's legs over open air and lava lay a block a cell, and with no pickaxe carried none comes back or can be dug: the ${blocksCarried(bot)} carried are all there will be.`}`,
     run: async () => {
       // From where, kept with it: going back from the same spot asks the
       // same ways again (fortressInView). mid-235-q-nether-2 left its
@@ -2500,7 +2507,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   const owedLeg = require('./tried').owed(goal, 'fortress_leg');
   if (owedLeg) {
     const why = owedLeg.at(-1).slice(0, 200), at = Date.now();
-    if (state.spawnerWait) { state.spawnerWaitEnded = why; delete state.spawnerWait; }
+    if (state.spawnerWait) { state.spawnerWaitEnded = why; state.spawnerWaitEndedAt = at; delete state.spawnerWait; }
     if (state.goTo) { const g = state.goTo; (state.goToEnded ||= {})[g.key ? `${g.kind}:${g.key}` : g.kind] = { why, at }; delete state.goTo; }
     if (state.target) { delete state.target; delete state.rememberedTarget; }
     delete state.patrolUntil; delete state.restock; save();
@@ -2510,9 +2517,23 @@ async function findFortressStep(bot, task, goal, save, actions) {
   if (state.spawnerWait) {
     const w = state.spawnerWait, cage = new Vec3(w.x, w.y, w.z);
     const off = cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position);
-    if (!(w.until > Date.now())) { state.spawnerWaitEnded = 'waited its minutes'; delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+    // How it ended, with what came: a stand at an empty spawner (empty-
+    // spawner.js) is asked again with it (note 681).
+    const came = w.came?.length ? `${w.came.length} blaze${w.came.length === 1 ? '' : 's'} came` : 'no blaze came';
+    if (!(w.until > Date.now())) { state.spawnerWaitEnded = w.startedAt ? `waited ${Math.round((Date.now() - w.startedAt) / 1000)} seconds, ${came}` : 'waited its minutes'; state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
     else {
-      goal.step = { action: 'wait_at_spawner', spawner: { x: w.x, y: w.y, z: w.z }, off: Math.round(off), secondsLeft: Math.round((w.until - Date.now()) / 1000), legs: state.legs || 0 }; save();
+      // The spawner is the step's target: the rung's measure and the stall
+      // watch read it (stillness.js actionOf), not the search's (note 681).
+      goal.step = { action: 'wait_at_spawner', spawner: { x: w.x, y: w.y, z: w.z }, target: { x: w.x, y: w.y, z: w.z }, off: Math.round(off), secondsLeft: Math.round((w.until - Date.now()) / 1000), legs: state.legs || 0 }; save();
+      // The stand's own cell (a ceiling over it or rock at its back), walked
+      // to once; otherwise within eight of the cage is the wait.
+      const cell = w.cell && new Vec3(w.cell.x, w.cell.y, w.cell.z);
+      if (cell && !w.cellTried && bot.entity.position.floored().distanceTo(cell) >= 1 && actions.navigate) {
+        w.cellTried = true; save();
+        try { await actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 20000, stallMs: 4000, onFoot: true }); }
+        catch (err) { task.check(); if (!retryable(err)) throw err; }
+        return;
+      }
       if (off <= 8) { await sleep(1000); task.check(); return; }
       let why = null;
       if (actions.navigate) {
@@ -2528,7 +2549,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
         if (ended) why = ended;
         if (!far()) return;
       }
-      if (far()) { state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+      if (far()) { state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
       return;
     }
   }

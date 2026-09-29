@@ -157,7 +157,7 @@ test('a Nether pocket with nothing to eat says its wait from the seal across a r
   assert.match(stay, /the blaze 9 blocks off, about for 12 minutes of the wait, come from 2\d to 9 blocks off, from 5 to 2\d over it, never with the bot in sight/);
   assert.match(stay, /the blaze 11 blocks off, about for 12 minutes of the wait, come from 2\d to 11 blocks off, from 5 to 2\d over it, never with the bot in sight/);
   assert.match(stay, /None of them has had the bot in sight while it waited, and a mob takes the bot as its target only once it has seen it\./);
-  assert.match(stay, /Nothing carried is food: hunger 16 does not rise in here, so health does not come back in this pocket however long it waits\. Neither daylight nor health comes to this wait: only the mobs outside moving off would change it\./);
+  assert.match(stay, /Nothing carried is food: hunger 16 does not rise in here, so health does not come back in this pocket however long it waits\. Neither daylight nor health comes to this wait: the bot goes out at [\d.]+ health whenever it goes, so a stay buys only the chance that the mobs outside move off(, and blazes keep about the fortress they spawn in)?, and each minute of it is a minute of the run\./);
   assert.match(stay, /The obtain blaze rods has had no new best for 30 minutes/);
   // Held off unseen: the fight is what it costs should they all come.
   assert.match(leave, /Should they all come at the bot at once, fighting them is estimated at about/);

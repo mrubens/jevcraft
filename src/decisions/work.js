@@ -184,11 +184,11 @@ define({
 });
 define({
   id: 'idle_work', area: 'idle', parent: null, kind: 'idle', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'With no request and shelter and food sufficient, how should the bot spend spare daylight?',
+  question: 'With no request and shelter and food sufficient, how should the bot spend the spare time?',
   trigger: 'Between player requests, by day, with health fourteen or more, hunger twelve or more and no threat.',
   source: 'src/work.js (idleOptions), src/home-base.js (homeChores)',
   options: IDLE_OPTIONS.map(o => ({ ...o, level: 'root' })),
-  instructions: workInstructions('Between player requests, with shelter and food already sufficient: how should the bot spend spare daylight?'),
+  instructions: workInstructions('Between player requests, with shelter and food already sufficient: how should the bot spend the spare time?'),
   fallback: firstOption,
 });
 // Strategy on the way to the dragon (src/strategy.js): the ladder's order
@@ -327,6 +327,7 @@ define({
 
 // Where the home base goes.
 define({
+  overworldOnly: true,
   id: 'home_site', area: 'home', parent: null, kind: 'home', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Of the sites found for the home base, which should it be?',
   trigger: 'The home rung\'s site step, when two or more sites fit the layout (up to four, eight blocks apart, the level ones first).',
@@ -368,7 +369,7 @@ define({
     { key: 'wait_here', label: 'stand by the furnace', when: 'always', level: 'root' },
     { key: 'leave_cooking', label: 'leave the batch to cook and go on with the work in hand, taking it out when back by the furnace once it is done, or in twenty minutes', when: 'a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch\'s own', level: 'root' },
   ],
-  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. With a pickaxe carried, the ways that dig say the uses it has left against the way home to open sky and whether another can be made from the pockets (`pickaxeBudget`), and after a walk, what the walks so far wore (`walksSoFar`); `workInHand` is the work waiting on the batch when it may be left to cook.'),
+  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. With a pickaxe carried, the ways that dig say the uses it has left against the way back out of the mine and whether another can be made from the pockets (`pickaxeBudget`), and after a walk, what the walks so far wore (`walksSoFar`); `workInHand` is the work waiting on the batch when it may be left to cook.'),
   fallback: children => ['dig_in_reach', 'mine_nearby', 'dig_stone'].find(k => children[k]) || 'wait_here',
 });
 
@@ -389,6 +390,7 @@ define({
 
 // Where to look for sheep, for a bed.
 define({
+  overworldOnly: true,
   id: 'sheep_search', area: 'resources', parent: 'rung_progress', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
   question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, or craft wool from string carried?',
   trigger: 'Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.',

@@ -1269,6 +1269,12 @@ function asideCell(bot) {
     .find(c => open(bot.blockAt(c)) && open(bot.blockAt(c.offset(0, 1, 0))) && bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' &&
       !/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(bot.blockAt(c.offset(0, 2, 0))?.name || '')) || null;
 }
+// The step aside walks on until the head's box (the game's test,
+// suffocatingBlock) is out of the block, not until the feet cross into the
+// cell beside: stopped at the cell's edge, mid-242-hb (25595) stood with
+// its head still in the gravel and was hurt four times more (note 680).
+// Nor until the last hurt is two seconds old (headInBlock): between hurts
+// the head is in the block all the same.
 function headWays(bot, task, onAction = () => {}) {
   const ways = {};
   const block = suffocatingBlock(bot) || bot.blockAt(bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored());
@@ -1281,9 +1287,9 @@ function headWays(bot, task, onAction = () => {}) {
         // at the first creeper in view.
         const only = { get cancelled() { return task.cancelled; }, label: task.label, check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
         await require('./motion').move(bot, only, { label: 'out_from_under', keys: ['forward'], sneak: false, why: 'stepping out from under a block over the head',
-          look: aside.offset(0.5, 1.6, 0.5), maxMs: 1200, tick: 50, until: () => !headInBlock(bot) || bot.entity.position.floored().equals(aside) });
+          look: aside.offset(0.5, 1.6, 0.5), maxMs: 1200, tick: 50, until: () => !suffocatingBlock(bot) });
       } catch (err) { if (err.name === 'Cancelled') throw err; }
-      return !headInBlock(bot);
+      return !suffocatingBlock(bot);
     } };
   const secs = block ? digSeconds(bot, block) : null;
   ways.dig_out = { description: `Dig the ${block ? block.name.replaceAll('_', ' ') : 'block'} the head is in${secs != null ? `, about ${round(secs)} seconds with the best tool carried` : ''}, and whatever falls after it${block && /sand|gravel/.test(block.name) ? ' (a falling column keeps coming, a dig each block)' : ''}.`,

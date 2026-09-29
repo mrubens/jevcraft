@@ -1,0 +1,13 @@
+{
+  "note": "mid-242-dc-fortress-22 (25589), 2026-09-29: the frames of the flight record 127_0_0_1-25589-Jev-2026-09-29T18-43-29-371Z.jsonl and the goal saved in .bot-state (note 681). close_in at 19:04:32 from 11.7 health, lit, 3.8 by 19:04:38; the close-in ended at 19:04:43 with kills 0 beside the cage, and the hunt fell to find_fortress, which walked the fortress's floors 42 blocks off (19:05:50 No measurable progress on find_fortress, then restock_food).",
+  "fightEnd": { "at": "2026-09-29T19:04:43.000Z", "position": { "x": -108.12353780386664, "y": 77, "z": 154.44388036294052 }, "health": 3.7600135803222656, "food": 15, "step": { "action": "find_fortress", "found": { "x": -108, "y": 76, "z": 154 }, "exploring": { "x": -114, "y": 75, "z": 158 }, "steps": 10, "walked": 998, "seen": 2017, "legs": 3 } },
+  "walkedOff": { "at": "2026-09-29T19:05:52.000Z", "position": { "x": -67.66770881824918, "y": 74, "z": 141.49967912460846 }, "health": 3.7600135803222656, "food": 15 },
+  "spawner": { "x": -108, "y": 77, "z": 155, "seenAt": 1790708687321 },
+  "inventory": { "oak_log": 2, "bone": 5, "white_wool": 3, "flint_and_steel": 1, "coal": 103, "flint": 1, "light_gray_wool": 1, "gray_wool": 1, "leaf_litter": 22, "water_bucket": 1, "lapis_lazuli": 9, "wooden_hoe": 1, "raw_iron": 4, "iron_ingot": 2, "leather": 3, "gravel": 15, "gold_ingot": 3, "oak_fence": 15, "bucket": 1, "blaze_rod": 5, "crafting_table": 1, "white_bed": 1, "raw_copper": 13, "stick": 2, "obsidian": 2, "nether_bricks": 3, "iron_pickaxe": 1, "nether_brick_fence": 1, "stone_pickaxe": 1, "netherrack": 46, "iron_sword": 1, "furnace": 1, "cobblestone": 25 },
+  "worn": ["iron_helmet", "iron_chestplate"],
+  "shield": true,
+  "mobHunt": { "item": "blaze_rod", "entity": "blaze", "targetCount": 7, "sightings": [{ "x": -113, "y": 74, "z": 156, "dimension": "the_nether", "at": 1790707757427, "seen": 27, "inSight": 20, "triedAt": 1790707815443, "tries": 3 }] },
+  "leaveNether": { "reason": "food", "pick": "keep_on", "until": 0, "at": 1790707944148 },
+  "hoglinSeen": { "x": -166, "y": 74, "z": 74, "count": 1, "minutesAgo": 8, "dimension": "the_nether", "note": "said at 19:05:52 as '1 hoglin seen 8 minutes ago, 119 blocks north-west (-166, 74)'; its y is not in the frame" },
+  "portals": [{ "x": -16, "y": 73, "z": 44, "dimension": "overworld" }]
+}

@@ -96,7 +96,7 @@ function waitEnds(bot, goal, now = Date.now()) {
   const recent = goal?.survivalAction;
   const current = recent && now - Date.parse(recent.at || 0) < 8000 ? recent.action : null;
   const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
-  if ((['recover_before_combat', 'recover_before_nether'].includes(action) || current === 'rest_to_heal') && (bot?.health ?? 20) < 20 && (bot?.food ?? 20) >= 18) return 'health coming back';
+  if ((['recover_before_combat', 'recover_before_nether', 'heal_at_spawner'].includes(action) || current === 'rest_to_heal') && (bot?.health ?? 20) < 20 && (bot?.food ?? 20) >= 18) return 'health coming back';
   const t = bot?.time?.timeOfDay;
   if (['wait_in_shelter', 'wait_for_bedtime', 'sleep'].includes(current) && /overworld/.test(String(bot?.game?.dimension || '')) && Number.isFinite(t) && t >= 12542 && t < 23460) return 'daylight coming';
   return null;
@@ -135,10 +135,18 @@ function permittedWait(bot, goal, now = Date.now()) {
   // seconds, the answer was more smelting, and that was called stalled too.
   const batch = goal?.smelting;
   if (batch?.startedAt && now < batch.startedAt + (batch.count || 1) * 10000 + 20000) return 'a batch cooking';
-  // Waiting for health, hurt and fed: fine while it is coming back.
-  if (['recover_before_combat', 'recover_before_nether'].includes(action) && (bot.health ?? 20) < 20 && (bot.food ?? 20) >= 18) return 'recovering';
-  // By a spawner for the minutes Jev chose to wait there (mob-hunt.js
-  // wait_at_spawner): it makes the blazes, the bot need not move.
+  return stepWait(bot, goal, now);
+}
+// A wait the work step holds, chosen and bounded where it was chosen:
+// health coming back, hurt and fed; by a spawner for the time Jev chose to
+// wait there (mob-hunt.js wait_at_spawner, empty-spawner.js): it makes the
+// blazes, the bot need not move. The work loop's count of unchanged passes
+// (work.js) leaves these out too: it would call a stand at a spawner "No
+// measurable progress" after thirty one-second passes (note 681).
+const RECOVERING = new Set(['recover_before_combat', 'recover_before_nether', 'heal_at_spawner']);
+function stepWait(bot, goal, now = Date.now()) {
+  const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
+  if (RECOVERING.has(action) && (bot?.health ?? 20) < 20 && (bot?.food ?? 20) >= 18) return 'recovering';
   if (action === 'wait_at_spawner' && goal?.fortressSearch?.spawnerWait?.until > now && goal.step.off <= 8) return 'waiting by a spawner';
   return null;
 }
@@ -575,5 +583,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, waitEnds, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
+module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, stepWait, waitEnds, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
   Stalled, checkStall, preempted, takeStall, deferStall, refused, recordStill };

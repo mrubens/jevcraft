@@ -5095,7 +5095,7 @@ test('sealed with blazes about, the window chosen is dug once and the pocket ask
   assert.equal(survival.state.pocketPlan, undefined, 'the window is not held as the plan for ninety seconds');
   assert.match(asked[0].stay.description, /Beyond, 1 blaze 25 blocks off, within the reach they fire from at what they see \(a blaze 48 blocks\): the pocket's rock stops them/);
   // At 7 health one landing is 2.5 and four ticks of fire, 6.5: it takes two (note 631; 1 when the fire was counted as five).
-  assert.match(asked[0].leave.description, /or 2 blaze fireballs that land \(about [\d.]+ each after armour, and the 5 seconds of fire the first sets, about 4 more health: 6\.5 for one landing\)/);
+  assert.match(asked[0].leave.description, /(about|or) 2 blaze fireballs that land \(about [\d.]+ each after armour, and the 5 seconds of fire the first sets, about 4 more health: 6\.5 for one landing\)/);
   await survival.step(new Task('p'), { kind: 'win' }, () => {});
   assert.equal(asked.length, 2, 'sealed again, the pocket is a new question');
 });

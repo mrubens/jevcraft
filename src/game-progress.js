@@ -438,7 +438,22 @@ function portalTrip(bot, goal = {}) {
   const nearest = known.slice().sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
   const d = Math.round(Math.hypot(nearest.x - here.x, nearest.z - here.z));
   const pace = netherPaceSays(bot, d);
-  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk${where === 'nether' && pace.says ? ' if nothing stops it' : ''}, and back through one after.${pace.says}${where === 'overworld' ? '' : arrivalSays(bot, pace.seconds)}${where === 'nether' ? wayBackSays(bot, nearest) : ''}`;
+  // Up or down as well as across: the walk's seconds are the flat walk's,
+  // and a portal ten blocks straight below is not two seconds off. 25591
+  // was told "10 blocks off, about 2 seconds at a walk" of its portal 8
+  // across and 10 below, with no pickaxe and no blocks (note 678).
+  const dy = Math.round((nearest.y ?? here.y) - here.y);
+  const stair = Math.abs(dy) > 2 && where === 'nether' && d <= require('./tunneling').STAIR_ACROSS ? stairWay(bot, goal, nearest) : '';
+  const height = Math.abs(dy) > 2 ? ` It lies ${Math.abs(dy)} blocks ${dy < 0 ? 'below' : 'above'} as well: the seconds are the walk across, and a way ${dy < 0 ? 'down' : 'up'} is its own.${stair ? ` ${stair}` : ''}` : '';
+  return `The nearest portal remembered is ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk${where === 'nether' && pace.says ? ' if nothing stops it' : ''}, and back through one after.${height}${pace.says}${where === 'overworld' ? '' : arrivalSays(bot, pace.seconds)}${where === 'nether' ? wayBackSays(bot, nearest) : ''}`;
+}
+
+// The stair to a portal up or down from here, said (tunneling.js).
+function stairWay(bot, goal, portal) {
+  try {
+    const t = require('./tunneling'), at = new (require('vec3').Vec3)(portal.x, portal.y, portal.z);
+    return t.stairSays(bot, t.stairFromHere(bot, goal, at), at);
+  } catch (_) { return ''; }
 }
 
 // What the walk back to a Nether portal crosses, and what it can cost at
