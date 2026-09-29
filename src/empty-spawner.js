@@ -231,7 +231,8 @@ function outOfRange(bot, cage) {
 // failure; then held as the hunt holds a stand.
 async function buildAndHold(bot, task, goal, save, actions, option, secs) {
   bot._buildCommit = { until: Date.now() + (secs + 10) * 1000, kinds: ['blaze'], what: option.key };
-  goal.emptySpawner = { ...(goal.emptySpawner || {}), built: { key: option.key, at: Date.now() } }; save?.();
+  const p = bot.entity.position.floored();
+  goal.emptySpawner = { ...(goal.emptySpawner || {}), built: { key: option.key, at: Date.now(), from: { x: p.x, y: p.y, z: p.z } } }; save?.();
   try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, option, { item: 'blaze_rod', want: require('./skills').countOf(bot, 'blaze_rod') + 1 }); }
   finally { delete bot._buildCommit; }
 }

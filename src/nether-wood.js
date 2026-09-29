@@ -156,13 +156,16 @@ async function fetchStemsOffer(bot, task, goal) {
     const pick = wanted.picked ? '' : stranded
       ? ' No pickaxe is carried and none can be made from what is carried: rock and netherrack dug by hand drop nothing, so no block comes back to lay, and every leg through rock is dug by hand.'
       : ' No pickaxe is carried.';
-    const later = ' Wood carried is sticks for the next pickaxe wherever one wears out (two a pickaxe) and a crafting table wherever the bot is; with any pickaxe, blackstone (basalt deltas, bastions) makes a stone one, three of it and two sticks.';
+    const later = LATER;
     const makes = wanted.picked ? '' : ' The pickaxe is made as soon as the wood for it is carried.';
     return `Fetch ${plural(wanted.stems, 'stem')} of the Nether's forests now: ${wanted.says}${pick} ${where} ${capital(stemSeconds(bot))}.${makes}${later}`;
   };
   return { wanted, place, stranded, description: say(''), describe: async () => say(place ? await routeSays(bot, task, place.at) : '') };
 }
 const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
+// What the wood does later, said last: left out where the pickaxe is not
+// what the work needs now (work.js upkeepStep at the cage, note 700).
+const LATER = ' Wood carried is sticks for the next pickaxe wherever one wears out (two a pickaxe) and a crafting table wherever the bot is; with any pickaxe, blackstone (basalt deltas, bastions) makes a stone one, three of it and two sticks.';
 
 // The fetch: the stems of the nearest kind known, asked for as a mine step
 // (acquireStep), which digs those in reach and otherwise asks the way there
@@ -172,9 +175,19 @@ const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 // gained nothing rests ten minutes and says why.
 async function fetchStems(bot, task, goal, save, { acquireStep, count = (b, n) => sum(b, new RegExp(`^${n}$`)) } = {}) {
   const wanted = woodWanted(bot);
-  const start = woodCarried(bot).planks, target = start + wanted.stems * 4;
+  const start = woodCarried(bot).planks;
   const began = Date.now();
   goal.step = { action: 'fetch_stems', want: wanted.stems, have: start }; save();
+  // What the gathering's questions are asked for meanwhile: going on without
+  // is going without these stems and the pickaxe they make, not the rung
+  // (nether-gather.js withoutOption, note 700).
+  const errandWas = bot._errand;
+  bot._errand = { key: 'fetch_stems', stems: wanted.stems, for: wanted.picked ? 'a spare pickaxe and sticks' : 'a pickaxe' };
+  try { return await fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted, start, began }); }
+  finally { bot._errand = errandWas; }
+}
+async function fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted, start, began }) {
+  const target = start + wanted.stems * 4;
   let idle = 0, why = null, stepped = 0;
   const near = () => { const p = stemPlaces(bot, goal, { fresh: true })[0]; return p ? p.at.distanceTo(bot.entity.position) : null; };
   for (let n = 0; n < FETCH_STEPS && woodCarried(bot).planks < target && Date.now() - began < FETCH_MS && idle < IDLE_STEPS; n++) {
@@ -186,7 +199,7 @@ async function fetchStems(bot, task, goal, save, { acquireStep, count = (b, n) =
     try { await acquireStep(bot, task, stem, count(bot, stem) + left, goal, save); stepped++; }
     catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 200); }
     // Jev chose to go on without the wood (nether_gather's without).
-    if (goal.step?.action === 'go_without') return { gained: woodCarried(bot).planks - start, without: true };
+    if (goal.step?.action === 'go_without' || goal.stemsWithout?.at >= began) return { gained: woodCarried(bot).planks - start, without: true };
     const now = near();
     idle = woodCarried(bot).planks > before || (was !== null && now !== null && was - now >= 4) ? 0 : idle + 1;
   }
@@ -211,4 +224,4 @@ async function fetchStems(bot, task, goal, save, { acquireStep, count = (b, n) =
   return { gained };
 }
 
-module.exports = { woodCarried, woodWanted, fetchStemsOffer, fetchStems, stemPlaces, FOREST_SAYS, NEAR, REST_MS };
+module.exports = { LATER, woodCarried, woodWanted, fetchStemsOffer, fetchStems, stemPlaces, FOREST_SAYS, NEAR, REST_MS };

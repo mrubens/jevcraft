@@ -483,7 +483,7 @@ function spellRests(goal, feet, now = Date.now()) {
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
 // by default).
-function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, stuckAt = [], breathS = 13, last = null } = {}) {
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, stuckAt = [], breathS = 13, last = null, toward = null } = {}) {
   let moves = [];
   const notOffered = [];
   const inWater = isWater(view.name(feet));
@@ -728,6 +728,19 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     });
   }
   for (const m of moves) m.from = feet;
+  // Where each move leaves the bot against what the work is there for (a
+  // spawner's cage at the fight for its rods, note 700): a move away from it
+  // says so. 25585 dug down about thirty times from its box by the cage, each
+  // move said only as "past it is more nether bricks".
+  if (toward?.at) {
+    const t = new Vec3(toward.at.x, toward.at.y, toward.at.z), now = feet.offset(0.5, 0, 0.5).distanceTo(t);
+    for (const m of moves) {
+      const end = m.to || (m.key === 'dig_down' ? feet.plus(DOWN) : null);
+      if (!end) continue;
+      const after = end.offset(0.5, 0, 0.5).distanceTo(t);
+      m.toward = { after: Math.round(after), now: Math.round(now), away: after - now >= 0.5, nearer: now - after >= 0.5, what: toward.what };
+    }
+  }
   // A dig that lets water in says where that water's air is. And none that
   // fills the pocket over the head with the air farther than the breath
   // there is: air is physical safety (mid-244-y, note 477). With the head
@@ -768,6 +781,7 @@ function describeMove(m, { offWorld = false } = {}) {
   // mid-72-e chose to climb south out of a pool ten times in ten minutes,
   // told only in recentMoves that each ended where it began (2026-09-26).
   if (m.failedHere) facts.push(`tried from here ${m.failedHere} time${m.failedHere > 1 ? 's' : ''} already and it did not get there`);
+  if (m.toward) facts.push(`${m.toward.after} blocks from ${m.toward.what} after, ${m.toward.now} now${m.toward.away ? ': away from it' : m.toward.nearer ? ': nearer it' : ''}`);
   return `${m.does}${facts.length ? ` ${facts.join('; ')}.` : ''}`;
 }
 
@@ -985,6 +999,10 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   if (spellRests(goal, startFeet)) record.windowFrom = Date.now();
   if (!Number.isFinite(record.startMeasure)) record.startMeasure = measureOf(aim, startFeet);
   bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
+  // At the fight for the rods by a spawner, the cage is what the work is
+  // there for: each move says where it leaves the bot against it (note 700).
+  const fight = (() => { try { return require('./cage-hold').cageFight(bot, goal); } catch (_) { return null; } })();
+  const toward = aim.toward || (fight ? { at: { x: fight.cage.x + 0.5, y: fight.cage.y + 0.5, z: fight.cage.z + 0.5 }, what: fight.where } : null);
   let still = 0;
   const { checkThreats } = require('./danger');
   for (let n = 0; n < maxMoves; n++) {
@@ -996,7 +1014,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
-    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null });
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null, toward });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; delete record.escalated; save(); return true; }
     if (!moves.length) return false;
@@ -1020,7 +1038,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }, { offWorld: !/overworld/.test(String(bot.game?.dimension || 'overworld')) }) + (push.moves.get(m.key) || '') }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
-      state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6).map(({ at, measure, fresh, ...r }) => r), ...(minute.says ? { lastMinute: minute.says } : {}), health: bot.health, food: bot.food,
+      state: { aim: aim.aim, ...(fight ? { theWorkHere: `the blaze rods at ${fight.where}, ${fight.off} blocks off: ${fight.need} still needed` } : {}), here, carried: view.carried, recentMoves: record.moves.slice(-6).map(({ at, measure, fresh, ...r }) => r), ...(minute.says ? { lastMinute: minute.says } : {}), health: bot.health, food: bot.food,
         ...(view.corrections ? { serverCorrections: view.corrections } : {}),
         // The mobs about while it works free, seen or not (the decision
         // audit), and the shooters farther off whose fire reaches the bot.

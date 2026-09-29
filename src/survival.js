@@ -4858,6 +4858,9 @@ class Survival {
       if (ails) o.description += ails;
       if (witchAbout && k === 'retreat') o.description += ' A witch walks after a player it has seen and throws within about ten blocks; a run that stays in its sight stays in its reach.';
     }
+    // A quiet scene (stance-scene.js quietOf, note 700): the answer holds the
+    // fifteen seconds it was priced over, said to the question.
+    const quiet = scenes.quietOf(bot, danger, options);
     let choice = holding && options[held.choice] ? held.choice : null;
     // One stance possible is no choice: it is taken without asking.
     if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
@@ -4941,6 +4944,7 @@ class Survival {
         // far (note 659). What followed the trials' rods is no longer said:
         // re-asked without it, no answer of 8 moved (note 672).
         ...((s => s ? { sameSceneSoFar: s } : {})(scenes.says(book))),
+        ...(quiet ? { quietScene: quiet.says } : {}),
         ...(blazePlace ? { hereSoFar: scenes.exposureSays(blazePlace) } : {}),
 
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
@@ -5036,6 +5040,13 @@ class Survival {
     finally { stance.running = false; stance.ranAt = Date.now(); }
     if (!done && !why && this.state.failWhy) why = this.state.failWhy;
     delete this.state.failWhy;
+    // Chosen in a quiet scene: the same mobs leave the work be for the rest
+    // of the fifteen seconds, beyond eight blocks and with no hit (note 700).
+    // keep_working's run sets its own.
+    if (quiet && choice !== 'keep_working' && !(bot._wavedOff?.until > quiet.until)) {
+      bot._wavedOff = { ids: quiet.ids, until: quiet.until, beyond: scenes.NEAR, quiet: true };
+      console.log(`[scene hold] quiet: ${choice.replaceAll('_', ' ')} answered with every way under a point of damage in fifteen seconds; ${danger.slice(0, 3).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)}`).join(', ')} left to the work until ${new Date(quiet.until).toISOString().slice(11, 19)}Z unless one comes within ${scenes.NEAR}, a hit lands, or another comes`);
+    }
     // A stance that could not be carried out is not offered again for a
     // while, and Jev chooses again at the next tick from what is left.
     why ||= this.state.stanceWhy || null; delete this.state.stanceWhy;

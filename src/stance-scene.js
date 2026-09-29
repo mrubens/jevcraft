@@ -167,6 +167,30 @@ function says(book, now = Date.now()) {
   return parts.length ? parts.join(' ') : null;
 }
 
+// A quiet scene (note 700): no mob within NEAR, no hit in the last ten
+// seconds, and every way on offer priced under a point of damage in the next
+// fifteen seconds. 25581 (mid-242-dh-fortress-24, 23:03:59 to 23:05:12Z)
+// changed stance about every second against crossbow piglins 11 to 16
+// blocks off, nearly every way "about 0 damage": each stance ran and ended
+// (a nook with no route, a fight with nothing in reach), the work went on,
+// and the push rule took the turn back for the same piglins at once. The
+// scene hold never held, for the piglins crossing sight and sixteen blocks
+// and the blocks carried going 16, 17, 18, 19 changed its key each time, and
+// most answers came to nothing. In a quiet scene the answer given holds for
+// the fifteen seconds it was priced over: the same mobs do not take the turn
+// again meanwhile unless one comes within NEAR, a hit lands, or another comes.
+// -> { ids, says } or null
+const QUIET_MS = 15000, QUIET_DAMAGE = 1, QUIET_HURT_MS = 10000;
+function quietOf(bot, danger = [], options = {}, now = Date.now()) {
+  const mobs = (danger || []).filter(t => t?.entity);
+  if (!mobs.length || mobs.some(t => t.distance <= NEAR)) return null;
+  if (bot?._recentHurtAt > now - QUIET_HURT_MS) return null;
+  const priced = Object.values(options || {}).map(o => o?.expects?.damage).filter(Number.isFinite);
+  if (priced.length < 2 || priced.some(d => d >= QUIET_DAMAGE)) return null;
+  return { ids: mobs.map(t => t.entity.id), until: now + QUIET_MS,
+    says: `Every way here is priced under ${QUIET_DAMAGE} damage in the next fifteen seconds and no mob is within ${NEAR} blocks: whatever is chosen holds those fifteen seconds, and these mobs do not take the turn from the work again meanwhile unless one comes within ${NEAR}, a hit lands, or another comes.` };
+}
+
 // Where the blaze fight has been, in this life: the place (the first stance
 // with a blaze about, within 24 blocks of it the same place), since when, the
 // rods and health gained and lost there, and each stance taken there with the
@@ -207,4 +231,4 @@ function exposureSays(x, now = Date.now()) {
   return `At this place (the blaze fight first met at ${x.at.x}, ${x.at.y}, ${x.at.z}, within ${PLACE} blocks of it) for ${secs(now - x.since)} in this life: ${plural(x.gained, 'blaze rod')} gained here (${plural(x.rods, 'rod')} carried now), ${r1(x.lost)} health lost here in all.${list.length ? ` The stances taken here: ${list.join('; ')}.` : ''}`;
 }
 
-module.exports = { sceneOf, observe, answered, ran, nothingHere, holdFor, capped, says, changed, tally, cameToNothing, exposure, exposureAnswered, exposureSays, ONCE, NEAR, ABOUT, PLACE };
+module.exports = { quietOf, QUIET_MS, sceneOf, observe, answered, ran, nothingHere, holdFor, capped, says, changed, tally, cameToNothing, exposure, exposureAnswered, exposureSays, ONCE, NEAR, ABOUT, PLACE };

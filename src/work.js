@@ -339,8 +339,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const rising = terrain ? (() => { try { const u = require('./unstuck'); return u.risePlan(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
   const risingSays = rising?.move ? ` One of its moves is a rise straight up through the rock over the head, ${rising.move.rise} blocks to open space at y ${rising.move.top}, about ${rising.move.seconds} seconds, with the blocks it lays taken from the pack and then the rock dug on the way.` : '';
   const spellSays = terrain ? (() => { try { const r = require('./unstuck').spellRests(goal, bot.entity.position.floored()); return r ? ` The last: ${r}.` : ''; } catch (_) { return ''; } })() : '';
-  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${risingSays}${spellSays}`,
+  // At the cage with the rods in hand (cage-hold.js, note 700): the fight
+  // there is the plan. Working free is said as leading away from it, and a
+  // slit opened toward the cage and a stay to fight are offered beside it.
+  const cage = !idle ? require('./cage-hold').cageFight(bot, goal) : null;
+  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${cage ? require('./cage-hold').workFreeSays(cage) : ''}${risingSays}${spellSays}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
+  if (cage) Object.assign(answers, require('./cage-hold').stallAnswers(bot, task, goal, save, cage, { dig, now }));
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the
   // decision audit, 2026-09-25).
@@ -813,11 +818,20 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // the wear the carry-on goes on with (note 687).
   const wearNow = !noPick && inNetherNow(bot) && goal.kind === 'win' && (options.spare_pickaxe || options.fetch_stems) ? require('./pickaxe-budget').wearSays(bot, goal) : '';
   const ended = goal.upkeepHoldEnded && Date.now() - goal.upkeepHoldEnded.at < 15 * 60000 ? goal.upkeepHoldEnded : null;
-  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes, or sooner if what is due here changes${noPick ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPick ? bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000) : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
+  // At the fight by a spawner with a sword carried, the rods in hand need the
+  // sword, not a pickaxe: said on the ways to one, and they are not put
+  // first (cage-hold.js, note 700). 25591 was sent for stems 396 blocks off
+  // from beside a live cage with a stone sword.
+  const atCage = noPick ? require('./cage-hold').swordNotPickaxe(bot, goal) : null;
+  if (atCage && options.fetch_stems) options.fetch_stems.description = `${options.fetch_stems.description.replace(require('./nether-wood').LATER, '')} ${atCage.leaves}`;
+  if (atCage && options.make_pickaxe) options.make_pickaxe.description += ` ${atCage.makes}`;
+  options.carry_on = { description: `${atCage ? atCage.carryOn : `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later;`} asked again in five minutes, or sooner if what is due here changes${noPick ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPick ? bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000) : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS, ...(noPick ? { noPickaxe: true, since: Date.now() } : {}) }; delete goal.upkeepHoldEnded; save(); } };
   // The lead short: carry_on says what going on without one costs.
   const ways = ['make_pickaxe', 'fetch_stems'].filter(k => options[k]);
-  const lead = noPick ? `No pickaxe is carried: ${ways.join(' or ')} gets one first.` : null;
+  const lead = atCage ? atCage.lead : noPick ? `No pickaxe is carried: ${ways.join(' or ')} gets one first.` : null;
+  // Carrying on is first at the cage.
+  if (atCage) { const first = { carry_on: options.carry_on, ...options }; for (const k of Object.keys(options)) delete options[k]; Object.assign(options, first); }
   const step = goal.step;
   let chosen = null;
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
@@ -5743,7 +5757,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // tried under it lately came to nothing for want of one: the question
   // leads with getting one, the ways to it first (note 687).
   let pickaxeLeads = null;
-  if (id === 'rung_progress' && goal.kind === 'win' && pickaxeNeeded(bot)) {
+  // Not at the fight by a spawner with a sword carried: the rods need the
+  // sword there, not a pickaxe (cage-hold.js, note 700).
+  if (id === 'rung_progress' && goal.kind === 'win' && pickaxeNeeded(bot) && !require('./cage-hold').swordNotPickaxe(bot, goal)) {
     const bs = require('./block-stock');
     const wanted = (goal.tried?.entries || []).filter(e => e.outcome === 'blocked' && now - (e.settledAt || e.at) < 10 * 60000 && bs.WANTS_PICKAXE.test(e.why || ''));
     if (wanted.length) {

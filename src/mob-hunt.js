@@ -1951,7 +1951,11 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // and fetch_stems stayed second here while every way in dug or laid (note
   // 687).
   const bs = require('./block-stock');
-  const lead = bs.pickaxeLead(bot, PICKAXE_WAYS.filter(k => options[k]), blocked.filter(b => /no pickaxe|no hand digs/.test(b)).map(b => b.split(':')[0]));
+  // At the fight by a spawner with a sword carried, the pickaxe is not what
+  // the rods need now: said, not put first (cage-hold.js, note 700).
+  const swordThere = require('./cage-hold').swordNotPickaxe(bot, goal);
+  const lead = swordThere ? null : bs.pickaxeLead(bot, PICKAXE_WAYS.filter(k => options[k]), blocked.filter(b => /no pickaxe|no hand digs/.test(b)).map(b => b.split(':')[0]));
+  if (swordThere) { if (options.fetch_stems) options.fetch_stems.description += ` ${swordThere.leaves}`; if (options.make_pickaxe) options.make_pickaxe.description += ` ${swordThere.makes}`; }
   const tree = Object.fromEntries(Object.entries(lead ? bs.pickaxeFirstOrder(options) : options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.waits ? { waits: o.waits } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
   const facts = { ...(lead ? { withoutAPickaxe: lead } : {}), ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
@@ -3059,6 +3063,20 @@ async function goToWay(bot, task, goal, save, actions, state) {
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   if (await stayKit(bot, task, goal, save, actions)) return;
+  // At a live spawner's cage with the rods wanted, the bot is where the
+  // search is for: no fortress visit, approach or leg is asked from there
+  // (cage-hold.js, note 700). 25589 (mid-242-hd-fortress-2) was asked
+  // fortress_approach two blocks from the cage at (-108, 77, 155) and chose
+  // keep_searching, "Leaving this fortress for now" (23:24:46Z); 25585 said
+  // "I'm looking for a fortress (leg 4)" from beside its cage. The step
+  // names the cage; the stall's question comes with the stay, the slit and
+  // the ways off. A wait or a walk to a spawner Jev chose runs as it does.
+  const atCage = !state.spawnerWait && !state.goTo ? require('./cage-hold').cageFight(bot, goal) : null;
+  if (atCage && atCage.off <= GO_TO_NEAR) {
+    if (goal.step?.action !== 'at_spawner') console.log(`[fortress] at the spawner at (${atCage.cage.x}, ${atCage.cage.y}, ${atCage.cage.z}), ${atCage.off} blocks off, ${atCage.need} rods wanted: no visit, approach or leg asked from here`);
+    goal.step = { action: 'at_spawner', target: { x: atCage.cage.x, y: atCage.cage.y, z: atCage.cage.z }, off: atCage.off, legs: state.legs || 0 }; save();
+    await sleep(1000); task.check(); return;
+  }
   // The hunt's work while no blaze is near is this search, whatever branch
   // of it runs: a tick that only asked Jev left the hunt's own step named,
   // and the step "turned between find fortress and hunt mob" twice a

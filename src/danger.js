@@ -380,6 +380,9 @@ function immediateThreat(bot) {
   // the time it gave them, unless one comes within three blocks or a hit
   // lands.
   const waved = !hurt && bot._wavedOff?.until > Date.now() ? bot._wavedOff.ids : null;
+  // Left be beyond a distance of its own where one was set: a quiet scene's
+  // mobs are left only while none comes within eight (note 700).
+  const wavedBeyond = bot._wavedOff?.beyond || 3;
   // And mobs a charge could not reach (survival.js charge), while they
   // land nothing: they cannot reach the bot either.
   const unreachable = !hurt && bot._unreachable?.until > Date.now() ? bot._unreachable.ids : [];
@@ -391,7 +394,7 @@ function immediateThreat(bot) {
   // no stance asked, and was blown up (2026-09-27).
   const { LIGHTS_AT, APPROACH } = require('./combat-estimate');
   const creeperFar = LIGHTS_AT + APPROACH * 1.5;
-  const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? creeperFar : 3)) ||
+  const leftBe = t => (!!waved && waved.includes(t.entity.id) && t.distance > (t.entity.name === 'creeper' ? Math.max(creeperFar, wavedBeyond) : wavedBeyond)) ||
     // Not a shooter: out of a charge's reach is not out of its bow's. mid-230-p's
     // skeleton, marked unreachable after a charge, shot it every three to
     // six seconds from eight blocks, each gap longer than the four seconds
@@ -663,7 +666,8 @@ function deadlyDropBeside(bot, radius = 3) {
 // seconds and on until the ghast's fireball put it in the lava at 05:37:30.
 function pushOverDrop(bot) {
   const now = Date.now(), waved = !(bot?._recentHurtAt > now - 4000) && bot?._wavedOff?.until > now ? bot._wavedOff.ids : [];
-  const pushers = pushersAbout(bot).filter(t => !waved.includes(t.entity?.id));
+  const beyond = bot?._wavedOff?.beyond || 0;
+  const pushers = pushersAbout(bot).filter(t => !(waved.includes(t.entity?.id) && t.distance > beyond));
   if (!pushers.length) return null;
   // As far as the throw of the kinds about (knock-record.js): a ghast's
   // fireball carried the bot 4.1 to 4.5 blocks before it went over, past the

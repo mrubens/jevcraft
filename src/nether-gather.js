@@ -342,6 +342,21 @@ function overworldWoodSays(goal, portal) {
 // does (work.js surfaceTrip).
 function withoutOption(bot, goal, save, { forItem, resource }) {
   const phase = goal.rungTime?.phase || goal.gameProgress?.phase;
+  // Stems fetched for a pickaxe (nether-wood.js fetchStems, upkeep's
+  // fetch_stems): going on without them is going without the stems and the
+  // pickaxe, the work in hand going on as it is, not the rung left. 25591's
+  // "leave the obtain blaze rods for thirty minutes" read as giving up the
+  // rods at a live spawner, where the stems were only for a pickaxe (note 700).
+  const stems = bot._errand?.key === 'fetch_stems' && STEM.test(String(resource)) ? bot._errand : null;
+  if (stems) {
+    const rest = Math.round(require('./nether-wood').REST_MS / 60000);
+    return { description: `Go on without the stems and ${stems.for}: the fetch ends here and is not offered again for ${rest} minutes; the ${phase ? words(phase) : 'work'} goes on as it is${stems.for === 'a pickaxe' ? ', with no pickaxe' : ''}.`,
+      run: async () => {
+        setAside(goal, 'fetch_stems', 'nether', 'Jev chose to go on without the stems', require('./nether-wood').REST_MS);
+        goal.stemsWithout = { at: Date.now() }; save();
+        throw new Error('Going on without the stems, as Jev chose');
+      } };
+  }
   if (!phase || goal.kind !== 'win') return null;
   const { nextGameStage, RUNG_WAIT_MS } = require('./game-progress');
   let next = null;
@@ -537,4 +552,4 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   return true;
 }
 
-module.exports = { noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
+module.exports = { withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };

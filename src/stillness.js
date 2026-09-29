@@ -148,6 +148,10 @@ function stepWait(bot, goal, now = Date.now()) {
   const action = goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action;
   if (RECOVERING.has(action) && (bot?.health ?? 20) < 20 && (bot?.food ?? 20) >= 18) return 'recovering';
   if (action === 'wait_at_spawner' && goal?.fortressSearch?.spawnerWait?.until > now && goal.step.off <= 8) return 'waiting by a spawner';
+  // A stay at the cage Jev chose at a stall (cage-hold.js, note 700): the
+  // fight at the spawner for its minute, whatever the hunt's step is named
+  // meanwhile (a stalk, a door, cover), while the bot stays about the spot.
+  try { if (require('./cage-hold').holding(bot, goal, now)) return 'staying at the spawner'; } catch (_) { /* no hold */ }
   return null;
 }
 
@@ -458,8 +462,12 @@ function flipWatch(bot, goal, now = Date.now()) {
   // every two seconds for twenty seconds before it opened the pocket to a
   // creeper.
   const recent = goal.survivalAction?.action && now - Date.parse(goal.survivalAction.at || 0) < 8000 ? goal.survivalAction.action : null;
+  // A wait the step holds by choice (a stay at the cage, a wait by a
+  // spawner) is not the work trading turns: the hunt's stalk and its cover
+  // at the cage are that fight (note 700).
+  const waitingByChoice = !!stepWait(bot, goal, now);
   for (const [layer, a] of [['work', workName(goal)], ['survival', recent]]) {
-    if (!a) continue;
+    if (!a || (layer === 'work' && waitingByChoice)) continue;
     const changes = (stalls.changes ||= {})[layer] ||= [];
     const changed = changes.at(-1)?.a !== a;
     if (changed) changes.push({ a, t: now, p: here.clone ? here.clone() : { ...here }, worth: worth(bot), blocks: stalls.marked || 0, count: goal.step?.count, countKey: countKey(goal.step), ...(layer === 'work' ? { m: rungMeasure(bot, goal, now) } : {}) });

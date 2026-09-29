@@ -621,6 +621,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `spare_pickaxe` | root | make a spare stone pickaxe | while a rest is held, and beside until_rest_ends, the pickaxes carried nearly worn (upkeep's, note 675) |
 | `wood_reserve` | root | gather wood for sticks and a table | while a rest is held in the Overworld, and beside until_rest_ends, under six logs' worth carried (upkeep's, note 675) |
 | `work_free` | root | work free of the terrain one move at a time | the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev's (unstuck_move) |
+| `open_slit` | root | open a slit toward the spawner's cage, then stay a minute and fight | the blaze rods the work, a live spawner known within sixteen blocks, and one to three blocks that come away on the line from the eyes to the cage; each dig goes through the dig guard (src/cage-hold.js, note 700) |
+| `stay_and_fight` | root | stay at the spawner a minute and fight what comes | the blaze rods the work and a live spawner known within sixteen blocks: the stay is a wait by choice, not a stall, while the bot stays within four blocks of where it was chosen (src/cage-hold.js, note 700) |
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
 | `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |
@@ -1148,6 +1150,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `spare_pickaxe` | root | make a spare stone pickaxe | while a rest is held, and beside until_rest_ends, the pickaxes carried nearly worn (upkeep's, note 675) |
 | `wood_reserve` | root | gather wood for sticks and a table | while a rest is held in the Overworld, and beside until_rest_ends, under six logs' worth carried (upkeep's, note 675) |
 | `work_free` | root | work free of the terrain one move at a time | the bot is in water, under cover on the way up, or where every walk has failed (src/unstuck.js); each move is then Jev's (unstuck_move) |
+| `open_slit` | root | open a slit toward the spawner's cage, then stay a minute and fight | the blaze rods the work, a live spawner known within sixteen blocks, and one to three blocks that come away on the line from the eyes to the cage; each dig goes through the dig guard (src/cage-hold.js, note 700) |
+| `stay_and_fight` | root | stay at the spawner a minute and fight what comes | the blaze rods the work and a live spawner known within sixteen blocks: the stay is a wait by choice, not a stall, while the bot stays within four blocks of where it was chosen (src/cage-hold.js, note 700) |
 | `night_mine` | root | dig a mine from here for the night | night in the Overworld, a pickaxe and nothing watching |
 | `mine_nearby` | root | dig a useful ore in view | an ore within sixteen blocks with no lava beside it |
 | `look_around` | root | walk twenty-four blocks somewhere new | by day in the Overworld, or when nothing else is on offer |

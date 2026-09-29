@@ -681,7 +681,13 @@ function walledHeal(bot, blazes) {
   const build = [...fit.walls.slice(0, -1), fit.window, fit.walls.at(-1)].filter(c => !solid(bot.blockAt(c)));
   if (build.length > blocksCarried(bot)) return null;
   const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
-  return { cell, steps: 0, score: 0, nearest: round(near), build, open: [fit.window.offset(0, -1, 0), fit.window] };
+  // A blaze whose body stands in a cell to be walled, or in the bot's own:
+  // no block goes in where a body is, and the box is not shut while it stays.
+  // 25589 (mid-242-hd-fortress-2, 23:25:51Z) was told none of 16 blazes had
+  // a line to it there, one 1.1 blocks off, and was hit a second later (note 700).
+  const { bodyIn } = require('./work');
+  const inCells = blazes.filter(e => [...build, cell, cell.offset(0, 1, 0)].some(c => bodyIn(e, c))).length;
+  return { cell, steps: 0, score: 0, nearest: round(near), build, open: [fit.window.offset(0, -1, 0), fit.window], ...(inCells ? { inCells } : {}) };
 }
 // How long a bot with nothing to heal on waits for its fire to burn out.
 const FIRE_WAIT_MS = 8000;
