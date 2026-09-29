@@ -180,3 +180,12 @@ test('the trials running now are read from each listening trial server\'s level-
   assert.deepEqual(stage.runningSources(root, { listening: p => up.has(p) }), { '243-fg': 1, '242-ee': 2 });
   assert.deepEqual(stage.runningSources(root, { exceptPort: 25585, listening: p => up.has(p) }), { '243-fg': 1, '242-ee': 1 });
 });
+
+test('a fortress save without a pickaxe or blocks to lay is not a start (the crossing kit, note 673)', () => {
+  assert.deepEqual(stage.kitOf([{ id: 'minecraft:iron_pickaxe', count: 1 }, { id: 'minecraft:cobblestone', count: 40 }, { id: 'minecraft:cooked_beef', count: 8 }]), { pickaxes: 1, blocks: 40 });
+  const v = { health: 20, hunger: 20, foodPoints: 80 };
+  assert.match(stage.shortfalls({ ...v, pickaxes: 0, blocks: 64 }).join(';'), /0 pickaxes \(under 1\)/);
+  assert.match(stage.shortfalls({ ...v, pickaxes: 1, blocks: 6 }).join(';'), /6 blocks to lay \(under 32\)/);
+  assert.deepEqual(stage.shortfalls({ ...v, pickaxes: 2, blocks: 64 }), []);
+  assert.deepEqual(stage.shortfalls(v), [], 'a save read before the kit was recorded is judged without it');
+});
