@@ -1233,19 +1233,48 @@ function restockSays(bot, plan, last, pick = pickaxeFirst(bot)) {
 // Its restock was offered as "about 65 seconds" dug by hand, and the last
 // one had gained nothing (note 591). `tool` is what the digging is priced
 // with.
+// The pickaxe made is the best whose head is carried: 25581 (mid-243-ch)
+// stood 31 blocks from its fortress with 12 iron ingots, four planks and two
+// logs, its iron pickaxe worn out on the legs, and was offered "a wooden
+// pickaxe is made first" by restock_blocks and blocks_then_cross; neither
+// made one, the digging was done by hand, and each ended "three blocks in a
+// row gave nothing (Missing harvest tool for netherrack)" for forty minutes
+// (note 654). `item` is the pickaxe made.
+const PICK_HEADS = [
+  ['iron_pickaxe', 'iron ingots', /^iron_ingot$/],
+  ['stone_pickaxe', 'cobblestone or blackstone', /^(cobblestone|cobbled_deepslate|blackstone)$/],
+];
 function pickaxeFirst(bot) {
   if (!bot.inventory?.items) return { carried: false, none: true, tool: null, says: '' };
   if (pickaxeTier(bot) >= 1) return { carried: true, says: '' };
   const items = bot.inventory?.items?.() || [];
-  const logs = items.filter(i => /_log$|_stem$/.test(i.name)).reduce((n, i) => n + i.count, 0);
-  const planks = items.filter(i => /_planks$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const sum = re => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const logs = sum(/_log$|_stem$/), planks = sum(/_planks$/), sticks = sum(/^stick$/);
   const table = countOf(bot, 'crafting_table') > 0;
-  // Three planks and two sticks (a plank's worth), and four more for a table.
-  const enough = logs * 4 + planks >= (table ? 5 : 9);
-  const wood = [logs && `${logs} log${logs === 1 ? '' : 's'}`, planks && `${planks} planks`, table && 'a crafting table'].filter(Boolean).join(', ');
-  if (!enough) return { carried: false, none: true, tool: null, says: 'No pickaxe is carried and none can be made from what is carried: netherrack dug by hand drops nothing. ' };
-  return { carried: false, tool: bot.registry?.itemsByName?.wooden_pickaxe?.id ?? null,
-    says: `No pickaxe is carried, and netherrack dug by hand drops nothing: a wooden pickaxe is made first from what is carried (${wood}), a few seconds, and the rock is dug with it. ` };
+  // Four planks for a table unless one is carried, two for sticks (four of
+  // them) unless two are carried, and three more for a wooden head.
+  const wood = logs * 4 + planks, frame = (table ? 0 : 4) + (sticks >= 2 ? 0 : 2);
+  const head = PICK_HEADS.map(([item, said, re]) => ({ item, said, n: sum(re) })).find(h => h.n >= 3 && wood >= frame) ||
+    (wood >= frame + 3 ? { item: 'wooden_pickaxe', said: 'planks', n: 0 } : null);
+  const woodSaid = [logs && `${logs} log${logs === 1 ? '' : 's'}`, planks && `${planks} planks`, sticks && `${sticks} stick${sticks === 1 ? '' : 's'}`, table && 'a crafting table'].filter(Boolean).join(', ');
+  if (!head) return { carried: false, none: true, tool: null, says: 'No pickaxe is carried and none can be made from what is carried: netherrack dug by hand drops nothing. ' };
+  const name = head.item.replace('_', ' '), a = /^iron/.test(head.item) ? 'an' : 'a';
+  const from = head.n ? `3 of the ${head.n} ${head.said}${woodSaid ? `; ${woodSaid}` : ''}` : woodSaid;
+  return { carried: false, item: head.item, tool: bot.registry?.itemsByName?.[head.item]?.id ?? null, name: `${a} ${name}`,
+    from, says: `No pickaxe is carried, and netherrack dug by hand drops nothing: ${a} ${name} is made first from what is carried (${from}), a few seconds, and the rock is dug with it. ` };
+}
+// The pickaxe pickaxeFirst said, made from what is carried: the craft
+// steps one at a time (planks, the table, sticks, the pickaxe). Null when it
+// is carried after, or why not.
+async function makePickaxe(bot, task, goal, save, actions, pick = pickaxeFirst(bot)) {
+  if (pick.carried) return null;
+  if (pick.none || !pick.item) return 'none can be made from what is carried';
+  if (!actions.acquireStep) return 'no way to craft here';
+  const want = countOf(bot, pick.item) + 1;
+  try {
+    for (let i = 0; i < 8 && pickaxeTier(bot) < 1; i++) if (await actions.acquireStep(bot, task, pick.item, want, goal, save)) break;
+  } catch (err) { task.check(); if (!retryable(err)) throw err; return `${pick.name} was not made: ${err.message}`; }
+  return pickaxeTier(bot) >= 1 ? null : `${pick.name} was not made`;
 }
 
 // Straight at the fortress with the blocks for it mined here first: the
@@ -1592,6 +1621,19 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
         run: async () => { state.restock = { want: blocksCarried(bot) + plan.want, since: Date.now(), said: plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) } }; save(); await restockStep(bot, task, goal, save, actions, state); return 'restock'; } };
     }
   }
+  // With no pickaxe, making one is a way of its own: every leg through rock,
+  // the staircase and the blocks for a span wait on it. 25581 was told what
+  // a pickaxe takes and that it carried it (blockStock.makingAPickaxe), was
+  // never offered making one, and answered none_good (note 654).
+  const pick = pickaxeFirst(bot);
+  if (!pick.carried && !pick.none && actions.acquireStep) {
+    options.make_pickaxe = { description: `Make ${pick.name} here from what is carried (${pick.from}), a few seconds at a crafting table: with it rock is dug and the netherrack dug comes back as blocks to lay, so the legs through rock, the staircase toward the fortress heights and the blocks for a span open again. Without it rock and netherrack dug by hand drop nothing and ${blocksCarried(bot)} block${blocksCarried(bot) === 1 ? '' : 's'} can be laid. The leg is chosen again after.`,
+      run: async () => {
+        const unmade = await makePickaxe(bot, task, goal, save, actions, pick);
+        if (unmade) throw new Error(`The pickaxe was not made: ${unmade}`);
+        return 'pickaxe';
+      } };
+  }
   if (short && actions.returnOverworld) {
     const portal = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
     options.return_for_blocks = { description: `Go back through the portal to the Overworld${portal ? `, the nearest known ${Math.round(Math.hypot(portal.x - here.x, portal.z - here.z))} blocks off at ${portal.x}, ${portal.y}, ${portal.z}` : ', none known in the Nether: the way is found from what is loaded'}, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.`,
@@ -1644,6 +1686,18 @@ async function restockStep(bot, task, goal, save, actions, state) {
   const r = state.restock;
   if (blocksCarried(bot) >= r.want || !actions.mineAt || !actions.navigate) { delete state.restock; save(); return false; }
   const have = blocksCarried(bot);
+  // The pickaxe the offer said is made first, made first: dug by hand,
+  // netherrack drops nothing (note 654).
+  const pick = pickaxeFirst(bot);
+  if (!pick.carried && !pick.none) {
+    goal.step = { action: 'make_pickaxe', item: pick.item, for: 'restock_blocks' }; save();
+    const unmade = await makePickaxe(bot, task, goal, save, actions, pick);
+    if (unmade) {
+      state.lastRestock = { at: Date.now(), from: r.from || { x: Math.round(bot.entity.position.x), z: Math.round(bot.entity.position.z) }, gained: 0, why: `no pickaxe to dig with: ${unmade}` };
+      delete state.restock; save();
+      return true;
+    }
+  }
   goal.step = { action: 'restock_blocks', want: r.want, have }; save();
   const deadline = r.said === null || r.said === undefined ? null : r.since + Math.max(60, r.said * 2) * 1000;
   let result = { gained: 0, why: null };
@@ -2626,4 +2680,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress };
+module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst };

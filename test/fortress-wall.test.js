@@ -117,7 +117,7 @@ test('from the recorded spot, fortress_approach offers mining the blocks and cro
   const d = options.blocks_then_cross;
   assert(d, `offered: ${Object.keys(options)}`);
   assert.match(d, /^Mine netherrack for blocks here first, then go straight at the fortress with them, 98 blocks off and 11 blocks up\./);
-  assert.match(d, /No pickaxe is carried, and netherrack dug by hand drops nothing: a wooden pickaxe is made first from what is carried \(4 logs, a crafting table\)/);
+  assert.match(d, /No pickaxe is carried, and netherrack dug by hand drops nothing: an iron pickaxe is made first from what is carried \(3 of the 11 iron ingots; 4 logs, 1 stick, a crafting table\)/);
   assert.match(d, /The crossing to its end lays 54 blocks \(12 over lava\) and digs 158 of rock in 135 cells; 5 carried\./);
   assert.match(d, /Mined first: 49 from the \d+ that can be dug from ground walked to from here \(\d+ netherrack\)/);
   assert.match(d, /Then, with them: Go straight at the fortress at the height the bot stands, 135 blocks, digging 158 blocks of rock and laying 54 blocks/);
@@ -145,7 +145,7 @@ test('left from the recorded spot over its ways in, the fortress is offered to t
   const { options } = client.asked[0];
   assert.equal(options.back_to_fortress, undefined, 'going back from here asks the ways left again');
   assert.match(options.blocks_then_cross || '', /^Mine netherrack for blocks here first, then go straight at the fortress with them, 98 blocks off and 11 blocks up\..*The fortress is set aside 0 minutes ago, for 10 minutes more; taken, it is no longer set aside\.$/);
-  assert.match(options.restock_blocks, /No pickaxe is carried, and netherrack dug by hand drops nothing: a wooden pickaxe is made first/);
+  assert.match(options.restock_blocks, /No pickaxe is carried, and netherrack dug by hand drops nothing: an iron pickaxe is made first/);
   // Left over the crossing itself from here, it is still the leg's to take (taken, it is carried out, not the ways in asked
   // again), and that is said.
   goal.fortressSearch.shunned[0].left.push('blocks then cross');
@@ -173,4 +173,74 @@ test('chosen, the blocks are mined first and the crossing laid with them, throug
   const at = bot.entity.position;
   assert(Math.hypot(at.x - 142.5, at.z - -562.5) <= 2, `under the fortress's floor: ${at}`);
   assert.equal(goal.fortressSearch.approach.failed.length, 0, 'it came nearer');
+});
+
+// 25581 (mid-243-ch, note 654): its iron pickaxe worn out on the legs, 31
+// blocks from the fortress at (-82, 61, 505) with 12 iron ingots, four
+// planks and two logs, restock_blocks and blocks_then_cross were offered
+// with "a wooden pickaxe is made first" and each dug by hand: "three blocks
+// in a row gave nothing (the last: Missing harvest tool for netherrack)".
+const pickaxeMade = inv => async (b, t, item, count, g) => {
+  const i = inv.find(x => x.name === item);
+  if (i) i.count++; else inv.push({ name: item, count: 1, type: registry.itemsByName[item].id, durabilityUsed: 0 });
+  g.made = [...(g.made || []), item];
+  return true;
+};
+test('chosen with no pickaxe carried, the crossing\'s mining makes the pickaxe it said first, then digs (25581, note 654)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot, dug, inv } = wallBot();
+  const client = jevStub(['blocks_then_cross']);
+  const goal = { fortressSearch: { axis: 1, legs: 22 } };
+  const mined = [];
+  const mineAt = async (b, t, g, sv, p) => {
+    // Dug by hand, netherrack drops nothing (work.js dig).
+    if (!inv.some(i => /_pickaxe$/.test(i.name))) throw new Error('Missing harvest tool for netherrack');
+    mined.push(`${p}`); dug.add(`${p}`); const n = inv.find(i => i.name === 'netherrack'); if (n) n.count++; else inv.push({ name: 'netherrack', count: 1, type: registry.itemsByName.netherrack.id });
+  };
+  const navigate = async (b, t, g) => { if (g.x !== undefined && g.y !== undefined) bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate, mineAt, acquireStep: pickaxeMade(inv), tunnel: async () => { throw new Error('the staircase was not chosen'); } });
+  assert.deepEqual(goal.made, ['iron_pickaxe'], 'the pickaxe the offer said, made first');
+  assert.equal(mined.length, 49, 'then the crossing\'s blocks dug with it');
+  assert.equal(goal.fortressSearch.approach.failed.length, 0, 'it came nearer');
+});
+
+test('the pickaxe not made, the restock digs nothing by hand and says why (note 654)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = wallBot();
+  const client = jevStub(['blocks_then_cross']);
+  const goal = { fortressSearch: { axis: 1, legs: 22 } };
+  let dugByHand = 0;
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, mineAt: async () => { dugByHand++; },
+    acquireStep: async () => { throw new Error('No crafting table in reach'); }, tunnel: async () => {} });
+  assert.equal(dugByHand, 0);
+  assert.match(goal.fortressSearch.lastRestock.why, /^no pickaxe to dig with: an iron pickaxe was not made: No crafting table in reach$/);
+});
+
+test('with no pickaxe and one to be made, the legs offer making it, said with which and from what (25581, note 654)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  // What 25581 carried at 03:00Z: no table, four planks, two logs, twelve ingots.
+  const { bot, inv } = wallBot({ items: [['oak_log', 2], ['oak_planks', 4], ['iron_ingot', 12], ['gravel', 16], ['iron_sword', 1]] });
+  const client = jevStub(['make_pickaxe']);
+  const now = Date.now(), from = { x: 203, y: 47, z: -486 };
+  const rest = { from, until: now + 240000, at: now - 60000, made: 1, why: 'out of blocks (0 carried)' };
+  const goal = { fortressSearch: { axis: 1, legs: 36, since: now - 55 * 60000,
+    shunned: [{ x: 135, z: -563, radius: 64, until: now + 600000, at: now, why: 'Jev chose to leave it and search on', from, left: ['walk route', 'tunnel'] }],
+    legRests: { east: rest, south: rest, west: rest, north: rest } } };
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {}, returnOverworld: async () => {}, acquireStep: pickaxeMade(inv) });
+  assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
+  const { options } = client.asked[0];
+  assert.match(options.make_pickaxe, /^Make an iron pickaxe here from what is carried \(3 of the 12 iron ingots; 2 logs, 4 planks\), a few seconds at a crafting table: with it rock is dug and the netherrack dug comes back as blocks to lay/);
+  assert.match(options.make_pickaxe, /Without it rock and netherrack dug by hand drop nothing and 0 blocks can be laid\./);
+  assert.match(options.restock_blocks || '', /an iron pickaxe is made first/);
+  assert.deepEqual(goal.made, ['iron_pickaxe'], 'chosen, it is made');
+});
+
+test('with no head carried and too little wood, no pickaxe is offered or promised; otherwise the best head carried', () => {
+  const { pickaxeFirst } = require('../src/mob-hunt');
+  assert.equal(pickaxeFirst(wallBot({ items: [['oak_planks', 4], ['iron_ingot', 2]] }).bot).none, true);
+  // Nine planks' worth makes a wooden one: four for the table, two for sticks, three for its head.
+  const wood = pickaxeFirst(wallBot({ items: [['oak_log', 2], ['oak_planks', 1]] }).bot);
+  assert.equal(wood.item, 'wooden_pickaxe');
+  assert.match(wood.says, /a wooden pickaxe is made first from what is carried \(2 logs, 1 planks\)/);
+  assert.equal(pickaxeFirst(wallBot({ items: [['oak_log', 2], ['blackstone', 5]] }).bot).item, 'stone_pickaxe');
 });
