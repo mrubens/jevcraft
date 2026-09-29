@@ -88,17 +88,24 @@ test('a leg that ends at the same place twice rests fifteen minutes from anywher
     landmarks: [{ kind: 'warped_forest', x: 677, y: 39, z: -100, biome: true, dimension: 'nether', firstAt: Date.now(), seenAt: Date.now() }] };
   // The leg east walks to the basalt past x 943 and ends there, nearer each time.
   const navigate = async () => { bot.entity.position = new Vec3(943.5, 41, 73.5); };
-  const ask = async picks => { const client = jevStub(picks); await netherGather(bot, new Task('work'), goal, () => {}, 'warped_stem', { navigate, client, forItem: 'wooden_pickaxe' }).catch(() => {}); return client.asked.at(-1); };
+  // With no other step of the game open, going on without is said, not
+  // offered (note 695): the leg east is here the one way, taken unasked.
+  let failed = null;
+  const ask = async picks => { const client = jevStub(picks); failed = null; await netherGather(bot, new Task('work'), goal, () => {}, 'warped_stem', { navigate, client, forItem: 'wooden_pickaxe' }).catch(e => { failed = e; }); return client.asked.at(-1); };
+  // A leg of 46 blocks takes its seconds: the stub walks it at once, so the
+  // answer is aged as walked (an answer ended within two seconds rests, note 695).
+  const walked = () => { const e = goal.tried?.entries?.at(-1); if (e) e.at -= 15000; };
   for (let i = 0; i < 2; i++) {
     bot.entity.position = new Vec3(897.5, 41, 73.5);
-    const asked = await ask(['leg_east']);
-    assert(asked.options.leg_east, `leg east offered the ${i ? 'second' : 'first'} time`);
+    const asked = await ask(['leg_east']); walked();
+    assert(!asked || asked.options.leg_east, `leg east offered the ${i ? 'second' : 'first'} time`);
   }
   assert.equal(goal.gatherEnds.filter(e => e.key === 'leg_east').length, 2);
   bot.entity.position = new Vec3(912.5, 41, 73.5);
   const asked = await ask(['without']);
-  assert.equal(asked.options.leg_east, undefined, 'short of the place it ends, the leg east is not offered');
-  assert(asked.state.legsClosed.some(l => /^leg east: ended at the same place, \(944, 41, 74\), 2 times in the last 1 minute \(.+\); it goes no further from here, so it rests 15 more minutes$/.test(l)), asked.state.legsClosed.join('\n'));
+  assert.equal(asked?.options?.leg_east, undefined, 'short of the place it ends, the leg east is not offered');
+  const closed = asked ? asked.state.legsClosed.join('\n') : String(failed?.message);
+  assert.match(closed, /leg east: ended at the same place, \(944, 41, 74\), 2 times in the last 1 minute \(.+\); it goes no further from here, so it rests 15 more minutes/);
   // Past it, or a quarter hour on, it is offered again.
   const { sameEnd, END_REST_MS } = require('../src/nether-gather');
   const ahead = e => e.x >= 912;

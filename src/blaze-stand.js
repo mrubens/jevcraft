@@ -258,7 +258,14 @@ function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = In
   const base = danger.slice(0, pinned ? 12 : 8);
   const shooting = base.filter(t => shooter(t.entity)).map(t => t.entity);
   const seeing = at ? new Set(bunker.seenFrom(bot, shooting, at, { open }).map(e => e.id)) : null;
-  const settling = pinned && at ? new Set(shooting.filter(e => e.name === 'blaze' && !seeing.has(e.id) && settlesInto(bot, e, at, open)).map(e => e.id)) : new Set();
+  // At an open stand as in a hole: a blaze after the bot keeps its eyes
+  // about the bot's, so one out of its line now above or below it comes
+  // into it. Counted only in a hole's mouth, a wall at the bot's back was
+  // priced at nothing with blazes 1.6 to 4.7 blocks off out of sight, "Back
+  // to the wall, none of them reaches it", while the hole beside it was
+  // priced at 60 for the same blazes; 25592 chose the wall and went 20 to
+  // 0.9 in four seconds (note 696).
+  const settling = at ? new Set(shooting.filter(e => e.name === 'blaze' && !seeing.has(e.id) && settlesInto(bot, e, at, open)).map(e => e.id)) : new Set();
   const sees = t => !seeing || seeing.has(t.entity.id) || settling.has(t.entity.id);
   const burning = ce.burnLeft(bot);
   // Fire resistance on the body: the blazes' fire counts from when it ends
@@ -1508,6 +1515,14 @@ function sceneNow(bot) {
 function measuredSays(kind, bot = null) {
   const rows = MEASURED[kind];
   if (!rows || !Object.keys(rows).length) return { says: '', damage: null };
+  // Measured with a kit this bot does not have, the runs are not its price
+  // and are not said as one: the kit and what the difference does are
+  // (note 696). 25592 (mid-242-aa-fortress-17), a stone sword, no armour and
+  // no shield, chose back_to_wall twice at a spawner beside rows measured
+  // with an iron sword, a shield and iron armour, and went 20 to 0.9 in
+  // four seconds.
+  const gap = kitGap(bot);
+  if (gap) return { damage: null, says: gap };
   const scene = bot ? sceneNow(bot) : null;
   const rank = r => (r === scene ? 0 : (SCENE_NEAR[scene] || []).includes(r) ? 1 : 2);
   const order = Object.keys(rows).sort((a, b) => rank(a) - rank(b));
@@ -1518,15 +1533,39 @@ function measuredSays(kind, bot = null) {
 // mid-242-aa-fortress-5 with a stone sword, no armour and no shield, of
 // runs made with an iron sword, a shield and iron armour (note 614).
 const IRON_UP = /^(iron|diamond|netherite)_/;
-function kitSays(bot) {
-  if (!bot?.inventory) return 'with the same kit';
+function kitOf(bot) {
   const { defenseWeapon } = require('./combat');
   const weapon = defenseWeapon(bot)?.name || null, shield = shieldCarried(bot);
   const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
   const iron = worn.filter(n => IRON_UP.test(n)).length;
-  if (IRON_UP.test(weapon || '') && /_sword$/.test(weapon) && shield && iron >= 2) return 'with the same kit';
-  const armour = !worn.length ? 'no armour' : iron === worn.length ? `${iron} piece${iron === 1 ? '' : 's'} of iron or better armour` : `${worn.length} piece${worn.length === 1 ? '' : 's'} of armour, ${iron} of it iron or better`;
-  return `with an iron sword, a shield and iron armour unless a run says otherwise, not this bot's kit (${weapon ? `${/^[aeiou]/.test(weapon) ? 'an' : 'a'} ${words(weapon)}` : 'no sword or axe'}, ${armour}, ${shield ? 'a shield' : 'no shield'})`;
+  return { weapon, shield, worn, iron, same: IRON_UP.test(weapon || '') && /_sword$/.test(weapon) && shield && iron >= 2 };
+}
+function kitSays(bot) {
+  if (!bot?.inventory) return 'with the same kit';
+  return kitOf(bot).same ? 'with the same kit' : 'with another kit';
+}
+// What the arena's kit had that this bot's has not, in the game's own
+// numbers, said in place of the runs; null for the same kit.
+function kitGap(bot) {
+  if (!bot?.inventory) return null;
+  const k = kitOf(bot);
+  if (k.same) return null;
+  const armour = !k.worn.length ? 'no armour' : k.iron === k.worn.length ? `${k.iron} piece${k.iron === 1 ? '' : 's'} of iron or better armour` : `${k.worn.length} piece${k.worn.length === 1 ? '' : 's'} of armour, ${k.iron} of it iron or better`;
+  const kit = `${k.weapon ? `${/^[aeiou]/.test(k.weapon) ? 'an' : 'a'} ${words(k.weapon)}` : 'no sword or axe'}, ${armour}, ${k.shield ? 'a shield' : 'no shield'}`;
+  const diff = [];
+  if (!k.shield) diff.push(`without a shield every fireball that lands is taken, where the arena's shield faced to each volley let about one in ${Math.round(1 / SHIELD_LEAK)} through`);
+  try {
+    const through = names => Math.round(ce.afterArmour(ce.MOBS.blaze.hit, ce.armourOf(names)) * 10) / 10;
+    const here = through(k.worn), there = through(['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots']);
+    if (here > there) diff.push(`a fireball's hit is about ${here} through what this bot wears, ${there} through the arena's full iron`);
+  } catch (_) { /* said without it */ }
+  // Swings to kill a blaze (20 health) with this blade and the arena's, at
+  // their own pace (combat-estimate WEAPONS: damage and swings a second).
+  const swings = w => { const d = ce.WEAPONS?.[w]; return d ? { n: Math.ceil(ce.MOBS.blaze.health / d[0]), s: Math.round(Math.ceil(ce.MOBS.blaze.health / d[0]) / d[1] * 10) / 10 } : null; };
+  const mine = swings(k.weapon), iron = swings('iron_sword');
+  if (!k.weapon) diff.push('with no sword or axe a blaze is not killed at all');
+  else if (mine && iron && mine.s > iron.s) diff.push(`a blaze takes ${mine.n} swings with the ${words(k.weapon)} (about ${mine.s} seconds), ${iron.n} with the arena's iron sword (about ${iron.s})`);
+  return ` The arena measured this only with an iron sword, a shield and iron armour, not this bot's kit (${kit}), so its runs are not this bot's price and are not said here${diff.length ? `: ${diff.join('; ')}` : ''}.`;
 }
 
 // What holding a stand for the hunt is (huntFromStand, bunker.holdBunker),

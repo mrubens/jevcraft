@@ -135,9 +135,10 @@ test('without a shield the blaze in reach is still charged, as close_in and as t
   assert.match(close.description, /^Go at them with the sword: no shield carried: walk straight in on the nearest blaze ground reaches \(4\.3 blocks off/);
   assert.match(close.description, /No shield is carried: every fireball from those that see the bot lands at its chance by distance/);
   assert.doesNotMatch(close.description, /behind the shield|the lulls|with the shield down/);
-  // The arena's runs are said with their own kit, not "the same kit".
-  assert.match(close.description, /The arena's runs of it with an iron sword, a shield and iron armour unless a run says otherwise, not this bot's kit \(a stone sword, no armour, no shield\), fight by fight:/);
-  assert.doesNotMatch(close.description, /same kit/);
+  // The arena's runs, measured with another kit, are not said as this
+  // bot's price: the kit is, and what the difference does (note 696).
+  assert.match(close.description, /The arena measured this only with an iron sword, a shield and iron armour, not this bot's kit \(a stone sword, no armour, no shield\), so its runs are not this bot's price and are not said here: without a shield every fireball that lands is taken, where the arena's shield faced to each volley let about one in 30 through; a fireball's hit is about 5 through what this bot wears, 2\.5 through the arena's full iron\./);
+  assert.doesNotMatch(close.description, /same kit|fight by fight|runs: \d+ killed/);
   // The nearest alone: one kill, then asked again.
   assert.equal(charge.cost.kills, 1);
   // Those behind the walls count for the charge only with a line to where

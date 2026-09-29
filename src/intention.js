@@ -29,7 +29,7 @@
 
 // The answers that start an action that takes time, by question.
 const TIMED = {
-  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
+  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
   fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|portal_trip)$/,
@@ -103,7 +103,8 @@ const SAYS = [
   [/^(fortress_leg|fortress_approach)\/(restock_blocks|blocks_then_cross)$/, 'Digging netherrack for blocks to build with', 'blocks'],
   [/\/blocks_then_pillar$/, 'Digging blocks to pillar up to the fortress', 'blocks'],
   [/^(fortress_leg|stillness_detour|rung_progress)\/pillar_up$/, 'Pillaring up to the fortress floor', 'rods'],
-  [/^(fortress_leg|fortress_approach)\/return_for_blocks$/, 'Going back through the portal for a pickaxe and blocks', 'kit'],
+  [/^(fortress_leg|fortress_approach)\/return_for_blocks$/, 'Going back through the portal for', 'kit'],
+  [/^fortress_leg\/back_to_ground$/, 'Walking back to the rock last stood on for blocks', 'blocks'],
   [/\/fetch_stems$/, 'Fetching stems for a pickaxe', 'pickaxe'],
   [/^fortress_visit\/go_in$/, 'Going into the fortress', 'rods'],
   [/^fortress_visit\/heal_first$/, 'Healing before going into the fortress', 'health'],
@@ -126,11 +127,15 @@ function whySays(bot, goal, kind, state) {
   } catch (_) { /* said without why */ }
   return null;
 }
+// What the trip home is for, as its option says it (block-stock.js kitLacks).
+function kitSays(bot) {
+  try { const bs = require('./block-stock'); return bs.listSays(bs.kitLacks(bot)); } catch (_) { return 'a pickaxe and blocks'; }
+}
 function startSays(bot, goal, i, state) {
   const row = SAYS.find(([re]) => re.test(`${i.q}/${i.choice}`));
   if (!row) return null;
   const at = i.target ? ` at (${i.target.x}, ${i.target.y}, ${i.target.z})` : '';
-  const what = row[2] === 'for' ? `${row[1]} ${state?.for ? `what a ${words(state.for)} needs` : 'what is needed'}` : row[1];
+  const what = row[2] === 'for' ? `${row[1]} ${state?.for ? `what a ${words(state.for)} needs` : 'what is needed'}` : row[2] === 'kit' ? `${row[1]} ${kitSays(bot)}` : row[1];
   const why = row[2] === 'for' ? null : whySays(bot, goal, row[2], state);
   return `${what}${at}${why ? `: ${why}` : ''}.`;
 }

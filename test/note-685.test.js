@@ -35,7 +35,7 @@ test('the way back for blocks is offered only by a portal there is to go back by
   assert.match(none.state.portalBack, /no portal is known in the Nether/);
   // The one it came through, worked out from its Overworld side, is a way back.
   const came = await run({ portals: [{ dimension: 'overworld', x: 40, y: 70, z: 1200 }], fortressSearch: search() });
-  assert.match(came.options.return_for_blocks, /the one it came through, not seen since, worked out from its Overworld side as near 5, 150/);
+  assert.match(came.options.return_for_blocks, /the one it came through, not seen since, worked out from its Overworld side as near \(5, 150\), 169 blocks off/);
   // One remembered far off is offered with its distance, as the walk back goes to it (no cap in the Nether).
   const far = await run({ portals: [{ dimension: 'nether', x: 800, y: 40, z: 150 }], fortressSearch: search() });
   assert.match(far.options.return_for_blocks, /the nearest known 964 blocks off at 800, 40, 150/);

@@ -14,8 +14,8 @@ const { surveyRoute, countOf, pickaxeTier } = require('./skills');
 const { collectNearbyDrops } = require('./drop-collection');
 const { decide } = require('./decisions');
 const { descendTo } = require('./descent');
-const { setAside, isSetAside, watch, unwatch } = require('./progress');
-const { bridgeTo, surveyCrossing, underFire, blocksCarried, stepOntoFooting, spanBlockSources, gatherSpanBlocks } = require('./bridging');
+const { setAside, isSetAside, watch, unwatch, attemptsFor } = require('./progress');
+const { bridgeTo, surveyCrossing, blocksCarried, stepOntoFooting, spanBlockSources, gatherSpanBlocks } = require('./bridging');
 const { crossToward, crossingSays, crossingSeconds, nearer, surveyLeg, legSays, WALK_SPEED, floorWay, walkFloor, headingColumns, wayDownSays, floorWalkSays, goDown, FLOOR_WALKABLE } = require('./nether-travel');
 const coverage = require('./nether-coverage'), regions = require('./nether-regions');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
@@ -1882,6 +1882,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       options.restock_blocks = { description: restockSays(bot, plan, state.lastRestock),
         run: async () => { state.restock = { want: blocksCarried(bot) + plan.want, since: Date.now(), said: plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, ...(plan.far ? { far: true } : {}) }; save(); await restockStep(bot, task, goal, save, actions, state); return 'restock'; } };
     }
+    // Fewer than the leg needs to be had here: back to the rock last stood
+    // on, the way it came, as a player walks back along the bridge (note
+    // 695). Offered by the pathfinder's own route there, the walk its run
+    // makes first; with none, said.
+    if (plan.want < plan.need) {
+      const back = await backToGround(bot, task, goal, state, plan);
+      if (back?.option) options.back_to_ground = back.option(actions, save);
+      else if (back?.says) blocked.push(back.says);
+    }
   }
   // With no pickaxe, making one is a way of its own: every leg through rock,
   // the staircase and the blocks for a span wait on it. 25581 was told what
@@ -1916,7 +1925,9 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // (the one it knew then lay past the walk back's reach), chose it, and
   // the code answered "No loaded return portal observed" (note 685).
   const homeBy = short && actions.returnOverworld ? portalBack(bot, goal, here) : null;
-  if (homeBy) {
+  const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
+  if (homeBy && !homeStart.ok) blocked.push(`back through the portal (${homeBy.says}): ${homeStart.why}`);
+  if (homeBy && homeStart.ok) {
     options.return_for_blocks = { description: returnForKitSays(bot, homeBy),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
@@ -1975,8 +1986,43 @@ function portalBack(bot, goal, here) {
   const known = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => off(a) - off(b))[0];
   if (known) return { portal: known, says: `the nearest known ${off(known)} blocks off at ${known.x}, ${known.y}, ${known.z}` };
   const came = require('./game-progress').cameThrough(goal, here);
-  if (came) return { portal: came, says: `the one it came through, not seen since, worked out from its Overworld side as near ${came.x}, ${came.z}, ${off(came)} blocks off` };
+  if (came) return { portal: came, says: `the one it came through, not seen since, worked out from its Overworld side as near (${came.x}, ${came.z}), ${off(came)} blocks off` };
   return null;
+}
+// Whether the way back to that portal can make its first move from here,
+// read from what the walk back reads as it goes (work.js walkToKnownPortal
+// and tunnelToward): one in view is walked into; within 48 blocks it is
+// walked to; farther, a leg of 32 on foot toward it (resting two minutes
+// once one made no ground), a crossing straight at it (resting once it
+// came no nearer, refused while a shooter can see the bot), then a stair,
+// which digs with a pickaxe carried or made from what is carried, or by
+// hand where a first step gains. With none of those, the trip ends in its
+// first second or becomes a hunt for wood: 25591 (mid-242-jb, 22:19:54Z on
+// 2026-09-29) chose return_for_blocks with its legs resting and no wood,
+// and nether_gather was asked for stems half a second later (note 695).
+// -> { ok } or { ok: false, why }.
+function portalTripStart(bot, goal, homeBy) {
+  if (!homeBy?.portal) return { ok: false, why: 'no portal is known to go back by' };
+  if (/^the one in view/.test(homeBy.says) || bot.game?.gameMode === 'creative' || typeof bot.blockAt !== 'function') return { ok: true };
+  const here = bot.entity.position, p = new Vec3(homeBy.portal.x, homeBy.portal.y, homeBy.portal.z);
+  if (here.distanceTo(p) <= 48) return { ok: true };
+  if (!isSetAside(goal, 'portal_leg', p)) return { ok: true };
+  const closed = ['a leg of 32 blocks on foot toward it made no ground a moment ago (resting)'];
+  if (/nether/.test(String(bot.game?.dimension || ''))) {
+    const nt = require('./nether-travel');
+    if (nt.crossingResting(bot, goal, p)) closed.push('the crossing straight at it came no nearer (resting)');
+    else {
+      const survey = surveyCrossing(bot, p, { cells: nt.CROSS_STRETCH });
+      const refused = require('./bridging').spanRefused(bot);
+      if (survey.cells && survey.gain >= 1 && !refused) return { ok: true };
+      closed.push(refused ? `no crossing now: ${refused.says}` : `a crossing straight at it goes nowhere (${survey.stoppedBy || 'no ground made'})`);
+    }
+  }
+  if (pickaxeTier(bot) >= 1 || !pickaxeFirst(bot).none) return { ok: true };
+  const t = require('./tunneling');
+  if (Math.hypot(p.x - here.x, p.z - here.z) <= t.STAIR_ACROSS && t.stairFromHere(bot, goal, p)?.gains) return { ok: true };
+  closed.push('a stair to it needs a pickaxe, and none is carried or can be made from what is carried');
+  return { ok: false, why: `the way back to it cannot begin from here: ${closed.join('; ')}` };
 }
 // How far a search on from here goes with what is carried, each heading at
 // this height (nether-travel.js surveyLeg): what searching on can reach
@@ -2006,6 +2052,40 @@ function leftBeforeSays(state, here, now = Date.now()) {
   const first = Math.max(1, Math.round((now - Math.min(...before.map(l => l.at))) / 60000));
   return ` Chosen from within 16 blocks of here ${before.length === 1 ? 'once' : `${before.length} times`} in the last ${first} minute${first === 1 ? '' : 's'}, and the search brought the bot back here each time.`;
 }
+// The rock the bot last stood on (nether-coverage.js lastGround), farther
+// than the restock's looks reach, and the pathfinder's route back to it from
+// here: the offer and the walk it begins with are the same route.
+const BACK_REST_MS = 5 * 60000;
+async function backToGround(bot, task, goal, state, plan) {
+  const g = coverage.lastGround(state, bot);
+  if (!g) return null;
+  const here = bot.entity.position, at = new Vec3(g.x, g.y, g.z), off = Math.round(at.distanceTo(here));
+  if (flatTo(at, here) <= RESTOCK_REACH) return null;
+  const where = `the ${g.name.replaceAll('_', ' ')} last stood on at (${g.x}, ${g.y}, ${g.z}), ${off} blocks back`;
+  if (isSetAside(goal, 'back_to_ground', at)) return { says: `back to ${where}: it came to nothing from here a few minutes ago (${attemptsFor(goal).why('back_to_ground', at) || 'no nearer'}), resting` };
+  const route = await routeSurvey(bot, task, new goals.GoalNear(g.x, g.y, g.z, 2), at);
+  if (!route) return null;
+  if (route.status !== 'success') return { says: `back to ${where}: the pathfinder finds no route there from here${route.cells ? ` (its nearest ends ${Math.max(0, off - route.gain)} blocks short)` : ''}, so it is not offered` };
+  const work = [route.dig && `digging ${route.dig}`, route.place && `laying ${route.place}`].filter(Boolean).join(' and ');
+  const seconds = Math.round(route.cells / WALK_SPEED + route.dig * 1.5);
+  return { option: (actions, save) => ({ target: { x: g.x, y: g.y, z: g.z },
+    description: `Walk back to ${where} the way the pathfinder finds (${route.cells} steps${work ? `, ${work} blocks` : ''}, about ${seconds} seconds${route.besideLava ? `, ${route.besideLava} of them beside lava` : ''}), and dig blocks to lay there: here only ${plan.want} can be had and the longest leg short of blocks needs ${plan.need + plan.carried}. The leg is chosen again from there.`,
+    run: async () => {
+      goal.step = { action: 'back_to_ground', target: { x: g.x, y: g.y, z: g.z } }; save();
+      const before = bot.entity.position.distanceTo(at);
+      let why = null;
+      try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, 2), { timeoutMs: Math.max(30000, route.cells * 700), stallMs: 8000 }); }
+      catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 160); }
+      if (bot.entity.position.distanceTo(at) > 4) {
+        const said = `The walk back to ${where} ended ${Math.round(bot.entity.position.distanceTo(at))} blocks from it${why ? `: ${why}` : ''}`;
+        if (before - bot.entity.position.distanceTo(at) < 2) { setAside(goal, 'back_to_ground', at, said.slice(0, 200), BACK_REST_MS); save(); }
+        throw new Error(said);
+      }
+      state.restock = { want: blocksCarried(bot) + plan.need, since: Date.now(), said: null, from: { x: g.x, y: g.y, z: g.z } }; save();
+      await restockStep(bot, task, goal, save, actions, state);
+      return 'restock';
+    } }) };
+}
 // The trip home said as what it fixes. With a pickaxe it is stone for the
 // spans. With none, every way on here wants a pickaxe, blocks or wood, and
 // the trip is for those: 25585 (mid-242-gf-fortress-1) walked one 47-block
@@ -2022,13 +2102,13 @@ function returnForKitSays(bot, homeBy, { hand = null } = {}) {
   }
   const wood = (bot.inventory.items() || []).some(i => /_(log|stem|hyphae|wood|planks)$/.test(i.name));
   const laid = blocksCarried(bot);
-  const lacks = ['a pickaxe', ...(laid < 16 ? ['blocks'] : []), ...(wood ? [] : ['wood'])];
+  const lacks = bs.kitLacks(bot);
   if (!hand) try { hand = bs.handGather(bot); } catch (_) { hand = null; }
   const got = !hand ? '' : hand.n ? `Here a hand gets only ${kindsSaid(hand.found.reachable)}: ` : 'Here a hand gets no block: ';
-  const needs = ['netherrack dug by hand drops nothing', ...(laid < 16 ? [`a span or pillar needs blocks (${laid} carried)`] : []), wood ? null : 'a pickaxe needs wood (none carried)'].filter(Boolean);
+  const needs = ['netherrack dug by hand drops nothing', ...(laid < bs.KIT_BLOCKS ? [`a span or pillar needs blocks (${laid} carried)`] : []), wood ? null : 'a pickaxe needs wood (none carried)'].filter(Boolean);
   const t = gp.NETHER_TRIPS, r = n => Math.max(1, Math.round(n));
   const record = dimension(bot) === 'nether' && d >= t.over ? ` Walks back like this made ${t.slow} to ${t.fast} blocks a minute (about ${r(d / t.fast)} to ${r(d / t.slow)} minutes); of ${t.trips} over ${t.over} blocks, ${t.arrived} came out, ${t.died} died, the rest were given up or stalled.` : '';
-  return `Go back through the portal (${homeBy.says}) for ${lacks.join(', ').replace(/, ([^,]*)$/, ' and $1')}: every way on here needs one of them. ${got}${needs.join('; ')}. Back through the same portal after.${record}`;
+  return `Go back through the portal (${homeBy.says}) for ${bs.listSays(lacks)}: every way on here needs one of them. ${got}${needs.join('; ')}. Back through the same portal after.${record}`;
 }
 // And how far the search has come from it: the nearest known in the Nether.
 const compass = (dx, dz) => { const ns = dz < -0.38 * Math.hypot(dx, dz) ? 'north' : dz > 0.38 * Math.hypot(dx, dz) ? 'south' : '', ew = dx > 0.38 * Math.hypot(dx, dz) ? 'east' : dx < -0.38 * Math.hypot(dx, dz) ? 'west' : ''; return ns && ew ? `${ns}-${ew}` : ns || ew || 'here'; };
@@ -2409,13 +2489,17 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     options.descend = { description: `Dig straight down where the bot stands toward the bricks, ${Math.round(here.y - nearest.y - 1)} blocks below and ${flat} across, a block at a time.${under} A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is; under 12 health it goes no lower at all (${Math.round((bot.health ?? 20) * 10) / 10} now), and it stops after 24 steps (note 677).`,
       run: async () => { const dropped = await descendTo(bot, task, nearest); return dropped >= 1 ? null : 'dropped no lower'; } };
   }
+  let crossNotNow = null;
   if (typeof bot.blockAt === 'function') {
     const survey = surveyCrossing(bot, nearest, { cells: APPROACH_CROSS });
-    if (survey.cells && survey.gain >= 1) {
-      const fire = underFire(bot);
+    // The span's own check, as it runs before its first cell: with a
+    // shooter in sight the crossing stops at once, and is said, not offered
+    // (note 695; bridging.js spanRefused).
+    const refused = survey.cells && survey.gain >= 1 ? require('./bridging').spanRefused(bot) : null;
+    if (refused) crossNotNow = `straight across at this height (${survey.cells} cells): not now, ${refused.says}`;
+    else if (survey.cells && survey.gain >= 1) {
       const open = survey.overLava ? 'lava' : 'open air';
       const risk = survey.bridge ? `${inView.length ? ` In sight: ${mobsSaid(inView)}; a hit on a one-wide span over ${open} is the fall.` : ''} On the span no mob is swung at or turned to: the bot holds still, crouched, until it is off.` : '';
-      const shot = fire ? ` A ${fire.entity.name.replaceAll('_', ' ')} ${Math.round(fire.distance)} blocks off can see the bot now: no block is laid while something that shoots can, so the span stops at once.` : '';
       // The crossing is level: the "N from it" of its text is across, and a
       // fortress standing well above ends the span under it, out of blocks
       // and over the lava it was laid across (mid-242-bb-nether-1-fortress-*:
@@ -2427,7 +2511,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       // Rock dug by hand is most of a crossing's time: said beside what a
       // pickaxe makes of it, and the ways to one are offered (pickaxeWays).
       if (survey.noPickaxe && survey.dig) handDig = handDigOf(bot, nearest, survey);
-      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${handDig?.says || ''}${require('./pickaxe-budget').lastPickaxeSays(bot, survey.dig)}${risk}${shot}`,
+      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${handDig?.says || ''}${require('./pickaxe-budget').lastPickaxeSays(bot, survey.dig)}${risk}`,
         run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
     }
   }
@@ -2456,7 +2540,9 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const hand = require('./block-stock').handGather(bot);
     byHand = hand.says;
     const homeBy = actions.returnOverworld ? portalBack(bot, goal, here) : null;
-    if (homeBy) options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { hand }),
+    const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
+    if (homeBy && !homeStart.ok) byHand = `${byHand} Back through the portal (${homeBy.says}) is not offered: ${homeStart.why}.`;
+    if (homeBy && homeStart.ok) options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { hand }),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   // With no pickaxe, the staircase only where a step toward it can be dug
@@ -2522,7 +2608,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const tries = (record?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
-  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), ...(byHand ? { byHand } : {}), ...(noPillar ? { pillar: noPillar } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
+  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), ...(byHand ? { byHand } : {}), ...(noPillar ? { pillar: noPillar } : {}), ...(crossNotNow ? { crossLevel: crossNotNow } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
     ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot, goal) } : {}),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
@@ -3181,6 +3267,13 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // Nothing left to walk to from here: staying, crossing to what is
       // seen unwalked, a spawner seen, the blazes, or a leg away are Jev's
       // (fortress_leg), with what the map comes to.
+      // Not while a fight is on (note 696): 25592 said "Walked what I can
+      // reach" and took leg_west with blazes 1.9 to 4.7 blocks off round the
+      // bricks, a second after leaving them for now. The fight's turn comes
+      // first; with it still on at the wait's end, nothing is decided here
+      // and the next pass looks again.
+      const fight = await require('./danger').waitOutFight(bot, task);
+      if (fight.still) { console.log(`[fortress] walked what it can reach, the leg not asked: a fight is on (${fight.still})`); return; }
       state.patrols = (state.patrols || 0) + 1;
       state.walkedAll = { at: Date.now(), walked: planned.walked };
       require('./rung-measure').watchKills(bot);
@@ -3340,4 +3433,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView };
+module.exports = { climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };

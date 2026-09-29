@@ -673,4 +673,53 @@ function pushOverDrop(bot) {
   return drop ? { pushers, drop } : null;
 }
 
-module.exports = { blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+// A fight on (note 696): a threat by immediateThreat's counts, a stance
+// Jev chose still holding, a mob that hurt the bot in the last ten seconds
+// with one of its kind still about, or a blaze within six blocks seen or
+// not (it flies, and one that loses sight of the bot flies toward it: a
+// wall between at six is a second of its flight). A question about the plan
+// (the legs, the upkeep, the detours) waits while one is on: survival's
+// turn comes first. 25592 (mid-242-aa-fortress-17, 22:21:52Z) was asked
+// fortress_leg with blazes 1.9, 4.6 and 4.7 blocks off round the bricks and
+// took leg_west; seventeen seconds later, at 3 health with a blaze five
+// blocks off, upkeep asked for a spare pickaxe and one was made there.
+// -> what makes it one, in words, or null
+const FIGHT_HURT_MS = 10000, FIGHT_FLIER_NEAR = STANCE_NEWCOMER;
+const FIGHT_FLIERS = new Set(['blaze', 'ghast', 'phantom', 'vex', 'breeze']);
+function fightOn(bot, now = Date.now()) {
+  if (!bot?.entity?.position || !bot.entities || bot.game?.gameMode === 'creative') return null;
+  const name = s => String(s).replaceAll('_', ' ');
+  const at = t => `${Math.round(t.distance * 10) / 10} blocks off${t.visible === false ? ' (out of sight)' : ''}`;
+  try {
+    const t = immediateThreat(bot);
+    if (t) return t.projectile ? 'a shot on its way at the bot' : `the ${name(t.entity.name)} ${at(t)}`;
+  } catch (_) { /* no world */ }
+  const s = stanceHeld(bot, now);
+  if (s && s.choice && s.choice !== 'keep_working') return `the ${name(s.choice)} stance chosen ${Math.round((now - s.at) / 1000)} seconds ago holds`;
+  let about = [];
+  try { about = threats(bot, 24); } catch (_) { about = []; }
+  const hurt = Object.entries(bot._hurtBy || {}).filter(([kind, t]) => now - t < FIGHT_HURT_MS && about.some(m => m.entity.name === kind)).sort((a, b) => b[1] - a[1])[0];
+  if (hurt) return `a ${name(hurt[0])} hit the bot ${Math.max(1, Math.round((now - hurt[1]) / 1000))} seconds ago and one is ${at(about.find(m => m.entity.name === hurt[0]))}`;
+  const flier = about.find(t => FIGHT_FLIERS.has(t.entity.name) && t.distance <= FIGHT_FLIER_NEAR);
+  if (flier) return `a ${name(flier.entity.name)} ${at(flier)}`;
+  return null;
+}
+// Waits while a fight is on, up to `ms`, looking four times a second; the
+// task's check throws meanwhile (a threat for survival, a preemption). ->
+// { first, waitedMs, still }: what made it one at first, how long it waited,
+// and what makes it one still at the end (null once it is over).
+const FIGHT_WAIT_MS = 15000;
+async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_MS) || FIGHT_WAIT_MS, every = 250, now = () => Date.now() } = {}) {
+  const first = fightOn(bot, now());
+  if (!first || process.env.JEV_FIGHT_WAIT === '0') return { first: null, waitedMs: 0, still: first || null };
+  const start = now();
+  let still = first;
+  while (still && now() - start < ms) {
+    task?.check?.();
+    await new Promise(r => setTimeout(r, every));
+    still = fightOn(bot, now());
+  }
+  return { first, waitedMs: now() - start, still };
+}
+
+module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

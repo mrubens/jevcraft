@@ -170,6 +170,20 @@ function underFire(bot) {
   const { threats } = require('./danger'), { shooter } = require('./mob-policy'), { RANGE } = require('./combat-estimate');
   return threats(bot, 64).find(t => t.visible && shooter(t.entity) && t.distance <= Math.max(SHOOTER_RANGE, RANGE[t.entity.name] || 0));
 }
+// The span's own check, the one it runs before each cell: offered by the
+// same words it would stop with. 25591 (mid-242-jb, 22:19:52Z on
+// 2026-09-29) was offered two crossings to crimson stems with a piglin in
+// sight, chose each, and each stopped in its first second, "Not bridging
+// with a piglin 17 blocks off able to see me" (note 695). A way that lays
+// or digs its way across is not offered while this holds; it is said.
+// -> null, or { fire, says }.
+function spanRefused(bot) {
+  let fire = null;
+  try { fire = underFire(bot); } catch (_) { fire = null; }
+  if (!fire) return null;
+  const name = String(fire.entity?.name || 'mob').replaceAll('_', ' ');
+  return { fire, says: `a ${name} ${Math.round(fire.distance)} blocks off can see the bot, and no span is laid while something that shoots can` };
+}
 // `maxSteps` cells at most: a crossing laid a stretch at a time, as far as
 // its survey saw.
 // While it is laid the bot is on the span (terrain.js onSpan): no reflex
@@ -193,8 +207,8 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {
   let placed = 0;
   for (let steps = 0; steps < maxSteps; steps++) {
     task.check();
-    const fire = underFire(bot);
-    if (fire) throw new Error(`Not bridging with a ${fire.entity.name} ${Math.round(fire.distance)} blocks off able to see me`);
+    const refused = spanRefused(bot);
+    if (refused) throw new Error(`Not bridging with a ${refused.fire.entity.name} ${Math.round(refused.fire.distance)} blocks off able to see me`);
     const here = bot.entity.position.floored();
     const step = stepToward(here, target);
     if (!step) return placed;
@@ -264,8 +278,8 @@ async function crossAlong(bot, task, crossing, { navigate = null, scoop = false 
   try {
     for (const q of crossing.cells) {
       task.check();
-      const fire = underFire(bot);
-      if (fire) throw new Error(`Not crossing with a ${fire.entity.name} ${Math.round(fire.distance)} blocks off able to see me`);
+      const refused = spanRefused(bot);
+      if (refused) throw new Error(`Not crossing with a ${refused.fire.entity.name} ${Math.round(refused.fire.distance)} blocks off able to see me`);
       const here = bot.entity.position.floored(), cell = new Vec3(q.x, q.y, q.z), bed = cell.offset(0, -1, 0);
       const step = cell.minus(here);
       if (Math.abs(step.x) + Math.abs(step.z) !== 1 || Math.abs(step.y) > 1) throw new Error(`Off the crossing at ${here}, the next cell ${cell}`);
@@ -439,4 +453,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

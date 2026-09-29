@@ -101,6 +101,8 @@ const probe = {
   // ruling and the holder's turn were given against (note 586).
   atReach: bot => require('./danger').atReach(bot),
   pushOver: bot => require('./danger').pushOverDrop(bot),
+  // The walkers about with no way to the bot (danger.js noWayIds).
+  noWay: (bot, list) => require('./danger').noWayIds(bot, list),
 };
 // Whether a mob is at its reach of the bot, or a push can put it over a
 // deadly drop, now: { reach, push }, false where a look fails.
@@ -149,10 +151,20 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   if (air <= AIR + (was.has('air') ? HYSTERESIS : 0)) add('air', { air });
   const mobs = look.mobs(bot, CREEPER_REACH + HYSTERESIS + 1) || [];
   // In sight, or within four unseen: it comes round the corner already at
-  // its fuse's distance (danger.js immediateThreat, mid-79-b).
+  // its fuse's distance (danger.js immediateThreat, mid-79-b). Not one out of
+  // sight past four, once alerted (the sight is the rule's, danger.js keeps a
+  // creeper seen close a moment ago in sight for three seconds), and not one
+  // with no way to the bot (walk-reach.js): the step answers the creepers
+  // it sees or that are within four with a way, and an alert it does not
+  // answer is a promise the claim does not keep. 25593 (mid-242-ig, 22:20:20
+  // to 22:22Z), sealed 27 blocks under the sky, was asked turn_priority
+  // about ten times, once every ten seconds, "the stance is asked next", for
+  // a creeper 6 to 9 blocks off through the rock; no stance came (note 696).
   const creeperLine = CREEPER_REACH + (was.has('creeper') ? HYSTERESIS : 0);
-  const creeper = mobs.filter(t => t.entity?.name === 'creeper' && t.distance <= creeperLine && (t.visible || t.distance <= 4 || was.has('creeper')))
-    .sort((a, b) => a.distance - b.distance)[0];
+  const creepers = mobs.filter(t => t.entity?.name === 'creeper' && t.distance <= creeperLine && (t.visible || t.distance <= 4));
+  let apart = new Set();
+  if (creepers.length) { try { apart = look.noWay?.(bot, mobs) || new Set(); } catch (_) { apart = new Set(); } }
+  const creeper = creepers.filter(t => !apart.has(t.entity.id)).sort((a, b) => a.distance - b.distance)[0];
   if (creeper) add('creeper', { creeper: Math.round(creeper.distance * 10) / 10, seen: !!creeper.visible, lightsAt: LIGHTS_AT, blocksASecond: APPROACH, fuse: FUSE });
   const armLine = ARM + (was.has('arm') ? HYSTERESIS : 0);
   // At the stance's six health or under, or with no more than BLOWS_LEFT of
@@ -316,8 +328,12 @@ function stoppedSays(bot, state, layer, now = Date.now()) {
 // given the turn at 4 health beside "a piglin 9.8 blocks off" (in sight, no
 // gold worn), and a ghast 60 blocks off, past the sixteen then said, ended
 // it eighteen seconds later (note 607).
-function mobWouldSays(t) {
+function mobWouldSays(t, { noWay = false } = {}) {
   const ce = require('./combat-estimate'), name = t.entity.name;
+  // A walker with no way to the bot (walk-reach.js) is about, not coming:
+  // 25593's creeper through the rock read "once it sees the bot it comes at
+  // it, about 2 seconds at its walk" (note 696).
+  if (noWay) return `it has no way to the bot from where it is (none found through the ground between)${name === 'creeper' ? ', and goes off only within about three blocks' : ''}`;
   const reach = ce.RANGE[name] || (ce.MOBS[name]?.shoots ? 15 : null);
   if (reach) return t.visible ? `it has the bot in sight and fires at it from as far as ${reach} blocks` : `it fires once it has the bot in sight, from as far as ${reach} blocks`;
   const secs = Math.max(1, Math.round(t.distance / ce.blocksPerSecond(name)));
@@ -335,9 +351,11 @@ function workBodySays(bot, mobs) {
   // reaches the bot are among the mobs about too (combat-estimate RANGE).
   const far = heals || hp >= 20 ? [] : (() => { try { return probe.mobs(bot, 64).filter(t => t.distance > 16 && t.distance <= (ce.RANGE[t.entity.name] || 0)); } catch (_) { return []; } })();
   const said = [...(mobs || []), ...far].filter(t => t.entity?.name);
+  let apart = new Set();
+  try { apart = probe.noWay(bot, said.filter(t => !t.visible)) || new Set(); } catch (_) { apart = new Set(); }
   const line = t => {
-    const h = hit(t.entity.name);
-    return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn${h >= hp ? ' (as much as the health left)' : ''}` : ''}${heals ? '' : `; ${mobWouldSays(t)}`}`;
+    const h = hit(t.entity.name), noWay = !t.visible && apart.has(t.entity.id);
+    return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn${h >= hp && !noWay ? ' (as much as the health left)' : ''}` : ''}${heals && !noWay ? '' : `; ${mobWouldSays(t, { noWay })}`}`;
   };
   // Each mob its own sentence where what it would do is said.
   const near = said.slice(0, 5).map(line).map(l => heals ? l : `${l[0].toUpperCase()}${l.slice(1)}`);
@@ -383,7 +401,7 @@ function claimSays(c) {
     // A stance chosen and holding goes on (note 535): said so, not as a
     // question to come.
     case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.edge ? ` ${f.edge}` : ''}${f.push ? ` ${f.push}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
-    case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; the stance is asked next. The work waits.`;
+    case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on` : 'the stance is asked next'}. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     // Said with the biters walking up while it eats, standing still (note 552).
     case 'eat': return `Eat ${f.item ? (f.item === 'chicken' ? 'raw chicken' : String(f.item).replaceAll('_', ' ')) : 'food'} now, about ${c.cost?.seconds || 1.6} seconds standing still.${hp} Hunger ${f.food}${f.foodPoints ? ` to ${Math.min(20, f.food + f.foodPoints)}` : ''}.${heals}${f.effect ? ` It is the last resort: ${f.effect}.` : ''}${(f.comingAtTheBot || []).map(m => ` ${mob(m)[0].toUpperCase()}${mob(m).slice(1)} is coming at about ${m.blocksASecond} blocks a second, at the bot in about ${m.atBotInSeconds} seconds${m.atBotInSeconds <= (c.cost?.seconds || 1.6) ? ', before the meal is done' : ''}${m.hitsFor ? `; each hit about ${m.hitsFor} through the armour worn${f.health !== undefined && m.hitsFor >= f.health ? ' (as much as the health left)' : ''}` : ''}${m.note ? ` (${m.note})` : ''}.`).join('')}`;

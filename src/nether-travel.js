@@ -71,6 +71,9 @@ async function crossToward(bot, task, goal, save, target, { what = 'the target',
   if (crossingResting(bot, goal, target)) return { tried: false, resting: true };
   const survey = surveyCrossing(bot, target, { cells: CROSS_STRETCH });
   if (!survey.cells || survey.gain < 1) return { tried: false, survey };
+  // The span's own check before its first cell, as its offers read it.
+  const refused = require('./bridging').spanRefused(bot);
+  if (refused) return { tried: false, survey, madeAlready: `a crossing straight at ${what} is not begun: ${refused.says}` };
   if (Number.isFinite(beat) && flat(target, survey.end) >= beat - 1) {
     return { tried: false, survey, madeAlready: `a crossing straight at ${what} would go ${survey.cells} blocks and end ${Math.round(flat(target, survey.end))} blocks from it, no nearer than the ${Math.round(beat)} the bot has already come` };
   }
@@ -551,20 +554,47 @@ function floorWay(bot) {
 // way's deepest, the rock of the steps down let dug, and the cells of the
 // way walked though an edge is beside them (the choice was Jev's, said
 // with the drops). Reached when the feet are within two of the floor.
-async function goDown(bot, task, down, navigate) {
-  const m = bot.pathfinder?.movements, end = down.end || down.way?.end || down, floorY = down.floorY ?? down.y;
-  const cells = new Set((down.path || down.way?.path || []).map(p => `${p.x},${p.y},${p.z}`));
+// The pathfinder as the way down walks it: its drops allowed as deep as the
+// way's deepest and the rock of its steps let dug, for `fn`'s while. The
+// walk down and its survey before it is offered (downRoute) share it.
+async function withDownMovements(bot, down, fn) {
+  const m = bot.pathfinder?.movements;
   const kept = m ? { maxDropDown: m.maxDropDown } : null, freed = [];
   if (m) {
     m.maxDropDown = Math.max(m.maxDropDown ?? 3, down.maxDrop ?? down.way?.maxDrop ?? 0);
     if ((down.dug ?? down.way?.dug) && m.blocksCantBreak?.delete) for (const [name, b] of Object.entries(bot.registry?.blocksByName || {})) if (NATURAL_ROCK.test(name) && m.blocksCantBreak.has(b.id)) { m.blocksCantBreak.delete(b.id); freed.push(b.id); }
   }
-  let why = null;
-  try {
-    const { goals } = require('mineflayer-pathfinder');
-    await navigate(bot, task, new goals.GoalNear(end.x, end.y, end.z, 1), { timeoutMs: 60000, stallMs: 8000, passing: true, besideLava: n => cells.has(`${n.x},${n.y},${n.z}`) });
-  } catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+  try { return await fn(m); }
   finally { if (m) { m.maxDropDown = kept.maxDropDown; for (const id of freed) m.blocksCantBreak.add(id); } }
+}
+const downEnd = down => down.end || down.way?.end || down;
+// Whether the pathfinder finds the way down's walk from here, as goDown
+// will ask it: the check the floor way is offered by (note 695). 25591's
+// floor_to_2 was offered from the survey of the ground alone and ended
+// "no route" in its first 30 ms. -> { found, why } (found null: not
+// surveyed, no pathfinder).
+async function downRoute(bot, task, down, timeoutMs = 1500) {
+  if (!bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return { found: null };
+  const end = downEnd(down);
+  const { goals } = require('mineflayer-pathfinder');
+  let route = null;
+  try { route = await withDownMovements(bot, down, m => require('./skills').surveyRoute(bot, task, m, new goals.GoalNear(end.x, end.y, end.z, 1), timeoutMs)); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; return { found: null }; }
+  if (route?.status === 'success') return { found: true };
+  // Out of time is not no route: the walk itself has a minute.
+  if (route?.status !== 'noPath') return { found: null };
+  return { found: false, why: `the pathfinder finds no route to the foot of the way down at (${Math.round(end.x)}, ${Math.round(end.y)}, ${Math.round(end.z)})` };
+}
+async function goDown(bot, task, down, navigate) {
+  const end = downEnd(down), floorY = down.floorY ?? down.y;
+  const cells = new Set((down.path || down.way?.path || []).map(p => `${p.x},${p.y},${p.z}`));
+  let why = null;
+  await withDownMovements(bot, down, async () => {
+    try {
+      const { goals } = require('mineflayer-pathfinder');
+      await navigate(bot, task, new goals.GoalNear(end.x, end.y, end.z, 1), { timeoutMs: 60000, stallMs: 8000, passing: true, besideLava: n => cells.has(`${n.x},${n.y},${n.z}`) });
+    } catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+  });
   const y = Math.floor(bot.entity.position.y);
   return y <= floorY + 2 ? { reached: true } : { reached: false, why: `${why ? `${why}; ` : ''}it ended at y ${y}, the floor at y ${floorY}` };
 }
@@ -853,4 +883,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, downRoute, withDownMovements, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };

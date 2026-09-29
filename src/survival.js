@@ -8887,7 +8887,10 @@ function claim(bot, goal = {}, survival = null) {
   const pocket = sealing ? { pocket: sealing.says } : {};
   // An alert (a creeper in reach, a mob at arm's length) is pressing, and
   // who answers it is Jev's (arbiter.js ALERTS); the body's physics is a reflex.
-  if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'survival', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: { ...reflex.facts, ...pocket } };
+  // A stance Jev chose that still holds goes on, and is said so, not a
+  // stance asked next: the step asks none while one holds (flee, note 696).
+  const heldStance = (() => { const s = require('./danger').stanceHeld(bot, now); return s?.choice && s.choice !== 'keep_working' ? { stance: { choice: s.choice, secondsAgo: Math.round((now - s.at) / 1000) } } : {}; })();
+  if (reflex && require('./arbiter').ALERTS.has(reflex.key)) return { layer: 'survival', action: reflex.action, urgency: 'pressing', alert: reflex.key, facts: { ...reflex.facts, ...pocket, ...(reflex.key === 'creeper' ? heldStance : {}) } };
   if (reflex) return { layer: 'survival', action: reflex.action, urgency: 'body', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   // What rests, and why: the facts a failed plan leaves. Read straight from
   // the record (progress.js), which attemptsFor would create on a first look.

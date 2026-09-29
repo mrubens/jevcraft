@@ -162,7 +162,9 @@ async function wayTo(bot, task, target) {
   out.cross = { whole, now: whole.bridge <= carried ? whole : surveyCrossing(bot, target, { cells: CROSS_CELLS }), carried };
   const down = travel.floorWay(bot);
   const floor = down && travel.floorToward(bot, down, target);
-  if (floor && floor.floor >= travel.FLOOR_WALKABLE) out.floor = { down, floor };
+  // The walk to the foot of the way down, as goDown will ask the pathfinder
+  // for it: the floor is offered by the check its run makes first (note 695).
+  if (floor && floor.floor >= travel.FLOOR_WALKABLE) out.floor = { down, floor, route: await travel.downRoute(bot, task, down) };
   return out;
 }
 // Which of those make ground, each as an option: the walk all the way or
@@ -171,7 +173,7 @@ function waysOffered(way) {
   const o = {};
   if (way.walk?.found || way.walk?.nearer >= PART_WAY) o.walk = true;
   if (way.cross.now.cells && way.cross.now.gain >= 4) o.cross = true;
-  if (way.floor) o.floor = true;
+  if (way.floor && way.floor.route?.found !== false) o.floor = true;
   return o;
 }
 // No pickaxe: rock is dug by hand, slowly, and netherrack gives nothing.
@@ -225,12 +227,15 @@ function reachSays(bot, target) {
 }
 function floorSays(way) {
   if (!way.floor) return '';
-  const { down, floor } = way.floor;
+  const { down, floor, route } = way.floor;
+  if (route?.found === false) return ` Down to the floor: ${route.why}, so it is not offered.`;
   return ` Down to the floor and along it: ${travel.wayDownSays(down)} ${travel.floorWalkSays(floor, { along: 'on the straight line toward it' })}`;
 }
 // Where the way from here to a place rests, and the key it rests by.
 const wayKey = (bot, target, method) => { const h = bot.entity.position; return `${Math.floor(h.x / 8)},${Math.floor(h.y / 8)},${Math.floor(h.z / 8)}>${Math.round(target.x)},${Math.round(target.z)}:${method}`; };
 const wayResting = (bot, goal, target, method) => isSetAside(goal, 'gather_way', wayKey(bot, target, method));
+// Why it rests, as its run said it: the reason goes with the rest.
+const wayRestWhy = (bot, goal, target, method) => { try { return String(require('./progress').attemptsFor(goal).why('gather_way', wayKey(bot, target, method)) || '').replace(/^The way [^:]*came no nearer: /, '').replace(/; it rests from here$/, '').slice(0, 160); } catch (_) { return ''; } };
 const WAY_SAYS = { walk: 'on foot', cross: 'straight across', floor: 'down to the floor and along it' };
 
 // A way that ends at the same place again. 25585 (mid-242-gf-fortress-1,
@@ -346,7 +351,12 @@ function withoutOption(bot, goal, save, { forItem, resource }) {
   const wantedFor = forItem && bot._wantedFor?.item === forItem ? `, wanted for ${bot._wantedFor.what}, which ends here` : '';
   const wants = forItem ? `the ${words(forItem)} this ${words(resource)} is for${wantedFor}` : `the ${words(resource)}`;
   const items = next?.item ? ` (${next.count > 1 ? `${next.count} ${words(next.item)}${/s$/.test(next.item) ? '' : 's'}` : words(next.item)})` : '';
-  const goOn = next?.phase && next.phase !== phase ? `go on with the ${words(next.phase)}${items}` : 'the ladder\'s next step is looked for (none other is open now)';
+  // With no other step open, going on without it is thirty minutes of
+  // standing idle or the same step taken up again at once: 25591 chose it
+  // and was asked leave_nether's search_on the same second, round and
+  // round (note 695). Said as the fact it is, not offered as a way.
+  if (!(next?.phase && next.phase !== phase)) return { none: `Going on without ${wants} is not offered: no other step of the game is open now${errand}, so leaving the ${words(phase)} would only be waiting for it to come back.` };
+  const goOn = `go on with the ${words(next.phase)}${items}`;
   return { description: `Go on without ${wants}: leave the ${words(phase)}${errand} for thirty minutes and ${goOn}. It comes back after, and this with it.`,
     run: async () => {
       setAside(goal, 'rung', phase, `Jev chose to go on without ${wants} for now`, RUNG_WAIT_MS);
@@ -395,7 +405,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     else if (Object.keys(found.unreachable).length) facts.woodOutOfReach = `within ${WOOD_REACH} blocks but not to be dug from ground walked to from here: ${talliedSays(found.unreachable)}`;
   }
 
-  // Each place it is known, and the ways there.
+  // Each place it is known, and the ways there. A crossing is not offered
+  // while the span's own check refuses it (bridging.js spanRefused): said.
+  const refused = require('./bridging').spanRefused(bot);
   const places = knownPlaces(bot, goal, names);
   const placesSaid = [];
   for (const [i, place] of places.entries()) {
@@ -410,7 +422,8 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const keys = [];
     for (const method of ['walk', 'cross', 'floor']) {
       if (!offered[method]) continue;
-      if (wayResting(bot, goal, place.at, method)) { notOffered.push(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}: came to nothing from here a few minutes ago, resting`); continue; }
+      if (method === 'cross' && refused) { notOffered.push(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}: not now, ${refused.says}`); continue; }
+      if (wayResting(bot, goal, place.at, method)) { const why = wayRestWhy(bot, goal, place.at, method); notOffered.push(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}: came to nothing from here a few minutes ago${why ? ` (${why})` : ''}, resting`); continue; }
       const endsAt = method === 'walk' ? (way.walk.found ? null : way.walk.end) : method === 'cross' ? way.cross.now.end : null;
       const same = endsAt ? sameEnd(goal, wayEndKey(place.at, method), e => nearEnd(e, endsAt)) : null;
       if (same) { notOffered.push(sameEndSays(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}`, same)); continue; }
@@ -445,7 +458,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
       const t = require('./tunneling');
       const stair = height && !way.walk?.found && flat(portal, here) <= t.STAIR_ACROSS ? t.stairFromHere(bot, goal, portal) : null;
       const says = `The nether portal at ${at3(portal)}, ${Math.round(flat(portal, here))} blocks ${height ? `across${height}` : 'off'}. ${walkSays(way, bot)} ${crossSays(bot, way)}${stair ? ` ${t.stairSays(bot, stair, portal)}` : ''}`;
-      const crossReaches = way.cross.now.cells && flat(way.cross.now.end, portal) <= THERE && !height && way.cross.now.gain >= 1;
+      const crossReaches = !refused && way.cross.now.cells && flat(way.cross.now.end, portal) <= THERE && !height && way.cross.now.gain >= 1;
       const method = way.walk?.found ? 'walk' : crossReaches ? 'cross' : stair?.gains ? 'stair' : null;
       if (method && !isSetAside(goal, 'gather_way', wayKey(bot, portal, 'portal'))) {
         options.portal_trip = { description: `Go back through the portal to the Overworld for wood, ${method === 'walk' ? 'on foot' : method === 'cross' ? 'straight across at this height' : `by a stair dug ${dy < 0 ? 'down' : 'up'} to it`}. ${says} ${overworldWoodSays(goal, portal)} The work here waits till the bot comes back through.`,
@@ -458,7 +471,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
             }
             await returnOverworld(bot, task, goal, save);
           } };
-      } else facts.portal = `${says} Neither the walk${stair ? ', the stair' : ''} nor the crossing with the blocks carried reaches it from here, so going back through it is not offered.`;
+      } else facts.portal = `${says} Neither the walk${stair ? ', the stair' : ''} nor the crossing with the blocks carried reaches it from here${refused ? ` (and no crossing now: ${refused.says})` : ''}, so going back through it is not offered.`;
     } else facts.portal = 'no nether portal known in the Nether';
   }
 
@@ -506,8 +519,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   if (notOffered.length) facts.waysResting = notOffered;
 
   const without = withoutOption(bot, goal, save, { forItem, resource });
-  if (without) options.without = without;
-  if (!Object.keys(options).length) throw new Error(`No way to ${words(resource)} from here: ${[...(Array.isArray(facts.knownPlaces) ? facts.knownPlaces : [facts.knownPlaces]), facts.portal, ...legsClosed].filter(Boolean).join('; ')}`.slice(0, 600));
+  if (without?.none) facts.without = without.none;
+  else if (without) options.without = without;
+  if (!Object.keys(options).length) throw new Error(`No way to ${words(resource)} from here: ${[...(Array.isArray(facts.knownPlaces) ? facts.knownPlaces : [facts.knownPlaces]), ...notOffered, facts.portal, ...legsClosed, facts.without].filter(Boolean).join('; ')}`.slice(0, 600));
 
   facts.blocksCarried = blocksCarried(bot);
   facts.pickaxe = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => words(i.name)).join(', ') || 'none: rock is dug by hand, slowly, and netherrack dug by hand drops nothing';

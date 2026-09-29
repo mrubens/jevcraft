@@ -107,7 +107,31 @@ function stand(bot, state) {
   const here = bot.entity?.position;
   if (!here) return;
   mark(coverageOf(state, dimOf(bot)).stood, here.x, here.z);
+  try { groundStood(bot, state); } catch (_) { /* nothing loaded to read */ }
 }
+// The rock the bot last stood on: ground a pickaxe digs for blocks, wider
+// than a span (five of the eight cells round the one under the feet solid).
+// A bot out on its own spans with none left to lay goes back to it, as a
+// player walks back along the bridge. 25588 (mid-243-he, 22:13 to 22:22Z on
+// 2026-09-29) stood on a basalt span at y 39 over the lava sea with an iron
+// pickaxe and no block: it had come 60 blocks along a lower span and up a
+// pillar of its own, and the restock's look back along the floor steps a
+// block up or down at a time within 64 blocks, so the netherrack it came
+// from, 70 blocks off and five down the pillar, was never seen (note 695).
+const GROUND = /^(netherrack|basalt|smooth_basalt|blackstone|soul_soil|crimson_nylium|warped_nylium)$/;
+function groundStood(bot, state) {
+  if (typeof bot.blockAt !== 'function') return;
+  const feet = bot.entity.position.floored(), key = `${feet.x},${feet.y},${feet.z}`;
+  const g = state.lastGround ||= {}, dim = dimOf(bot);
+  if (g[dim]?.key === key) return;
+  const under = bot.blockAt(feet.offset(0, -1, 0));
+  if (!under || !GROUND.test(under.name)) return;
+  let wide = 0;
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) if (bot.blockAt(feet.offset(dx, -1, dz))?.boundingBox === 'block') wide++;
+  if (wide < 5) return;
+  g[dim] = { key, x: feet.x, y: feet.y, z: feet.z, name: under.name, at: Date.now() };
+}
+const lastGround = (state, bot) => state?.lastGround?.[dimOf(bot)] || null;
 
 // While the fortress search runs in the Nether, a few lines a tick: a leg
 // walked in one go is looked along its length, not only at its ends. The
@@ -272,4 +296,4 @@ function coverageSays(state, dim, here, radius = LEG) {
   return `seen at fortress heights (y ${BAND_LOW} to ${BAND_HIGH - 1}) through open air: about ${chunks(count(cov.seen))} chunks' worth of ground in all, and of the ground within ${radius} blocks of here about ${chunks(seen)} of ${chunks(cells)} chunks; stood on: ${count(cov.stood)} columns of 4 by 4 blocks`;
 }
 
-module.exports = { look, stand, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };
+module.exports = { look, stand, lastGround, groundStood, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };

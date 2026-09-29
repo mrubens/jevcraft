@@ -119,7 +119,7 @@ test('with blocks carried the ways there are offered and priced, and a way that 
     await gather.netherGather(bot, task, goal, () => {}, 'crimson_stem', { navigate: digger(bot).navigate, mineAt: digger(bot).mineAt, client: again });
     assert.equal(again.asked[0].options.cross_to_2, undefined);
     assert(again.asked[0].options.cross_to_3, 'the other ways are still offered');
-    assert.match(again.asked[0].state.waysResting.join('\n'), /straight across to the warped stems at \(-77, 65, 26\): came to nothing from here a few minutes ago, resting/);
+    assert.match(again.asked[0].state.waysResting.join('\n'), /straight across to the warped stems at \(-77, 65, 26\): came to nothing from here a few minutes ago \(Not bridging with a ghast 30 blocks off able to see me\), resting/);
   } finally { bridging.bridgeTo = bridgeTo; delete require.cache[require.resolve('../src/nether-gather')]; }
 });
 

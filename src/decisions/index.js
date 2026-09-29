@@ -157,6 +157,7 @@ const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFo
 const AGAIN = 'sameAnswerAgain, lastAnswersCameToNothing and answersThatCameToNothing are this question\'s recent answers that came to nothing; the same answer again seldom ends differently.';
 const LEDGER = 'An option tried from about here lately says how it ended; waysResting are options left out after coming to nothing here, and when they come back; whatFailedBelow is what the question below tried and why it ended.';
 const LEAST_BAD = 'leastBadLast: at this question\'s last asking Jev said none of its options was good; it says what was taken as the least bad and what came of it.';
+const AT_ONCE = 'failedAtOnce: answers chosen a moment ago whose action ended within two seconds, and why; each rests from where it was chosen.';
 const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet arrived, done or failed; lastIntention is how the last one ended.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 // Off the Overworld the clock is only minutes (note 677): no day comes to
@@ -193,7 +194,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -417,6 +418,11 @@ const UNLEDGERED = new Set(['turn_priority', 'shot_answer']);
 // body's way out of the lava or the fire, the shield (note 521: a failed
 // stance stays on offer with its failure said; Jev weighs it).
 const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged_response']);
+// The questions about the plan, which wait while a fight is on (danger.js
+// fightOn, note 696): the legs, the fortress's questions, the detours, the
+// upkeep and the stage. Survival's turn comes first; asked at the end of the
+// wait with the fight still on, the fight is said in the facts.
+const FIGHT_WAITS = (() => { const i = require('../intention'); return new Set([...i.GATED, ...i.AT_A_CHANGE, 'upkeep', 'win_strategy']); })();
 // The tree as offered, less what the ledger left out, without its words.
 function plainOf(tree, original) { return Object.fromEntries(Object.keys(tree).map(k => [k, original[k] || tree[k]])); }
 // To the question above (define's `parent`), with this one's failure said:
@@ -474,6 +480,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // while it is out, for the flight frames; on the decision's record after.
   const trace = { id, t0: performance.now(), at: new Date().toISOString(), stages: [{ stage: 'queued', ms: 0 }] };
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  // A question about the plan waits while a fight is on (note 696); the
+  // options it was built with are asked only if still fresh after a wait.
+  if (bot && goal && FIGHT_WAITS.has(id)) {
+    const fight = await require('../danger').waitOutFight(bot, task);
+    if (fight.first) {
+      console.log(`[fight] ${id} waited ${(fight.waitedMs / 1000).toFixed(1)}s for the fight (${fight.first})${fight.still ? `; still on (${fight.still}), asked with it said` : ''}`);
+      if (fight.waitedMs > 0 && !isFresh()) return { id, stale: true, fightWaited: fight };
+    }
+    if (fight.still) state = { ...(state || {}), fightOn: `${fight.still}: this question waited ${Math.round(fight.waitedMs / 1000)} seconds for the fight to end and is asked with it still on` };
+  }
   const original = tree;
   // One way: taken and said, not asked. A question with one option was
   // recorded as asked, took the turn and stood in the flight record as a
@@ -492,6 +508,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // asked again: the least bad is held from here and the question above is
   // asked with the none good said. Else it is said, in the facts and on it.
   let lastLeastBad = null;
+  // The answer given last, whatever its question, if it ended in its first
+  // second: rested from where it was chosen, and said below (at-once.js,
+  // note 695).
+  if (ledgered) require('../at-once').check(bot, goal, id);
   if (ledgered) {
     tried.settle(bot, goal, { q: id });
     lastLeastBad = leastBad.before(bot, goal, id, original);
@@ -659,6 +679,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (lastLeastBad) {
     if (state && typeof state === 'object') state = { ...state, leastBadLast: lastLeastBad.says };
     if (tried.leafAt(tree, lastLeastBad.key)) tree = leastBad.sayOn(tree, lastLeastBad.key, lastLeastBad.optionSays);
+  }
+  if (ledgered && state && typeof state === 'object' && !state.failedAtOnce) {
+    const atOnce = require('../at-once').says(goal);
+    if (atOnce) state = { ...state, failedAtOnce: atOnce };
   }
   if (state && typeof state === 'object' && (underWay || intentionEnded)) state = { ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options

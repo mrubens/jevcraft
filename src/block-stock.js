@@ -42,6 +42,20 @@ function makingSays(bot) {
       : `The table and the sticks need ${needPlanks} planks' worth of wood${Object.values(heads).some(n => n >= 3) ? '' : ' beside the three planks for a wooden head'}, and ${woodPlanks} is carried: wood is what is missing.`);
 }
 
+// What the trip home is for, from what is carried: with a pickaxe, stone
+// for the spans; with none, the pickaxe and whichever of blocks (fewer than
+// 16) and wood is missing. Said the same on the option and in chat as it
+// starts: 25591's chat said "for a pickaxe and blocks" with 146 blocks
+// carried, its option "for a pickaxe and wood" (note 695).
+const KIT_BLOCKS = 16;
+function kitLacks(bot) {
+  if (!bot?.inventory?.items || pickaxeCarried(bot)) return ['stone to lay spans with'];
+  const laid = require('./bridging').blocksCarried(bot);
+  const wood = carriedOf(bot, /_(log|stem|hyphae|wood|planks)$/) > 0;
+  return ['a pickaxe', ...(laid < KIT_BLOCKS ? ['blocks'] : []), ...(wood ? [] : ['wood'])];
+}
+const listSays = xs => xs.join(', ').replace(/, ([^,]*)$/, ' and $1');
+
 // The standing fact, in the Nether with no pickaxe: how many blocks can be
 // laid, that none comes back, and what would make a pickaxe. Null where
 // there is a pickaxe (blocks are dug, restock_blocks prices it), and out of
@@ -186,4 +200,4 @@ function handGather(bot, { reach = 16, walk = 32 } = {}) {
   return { n, sources: found.sources, found, says };
 }
 
-module.exports = { HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };
+module.exports = { kitLacks, listSays, KIT_BLOCKS, HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };
