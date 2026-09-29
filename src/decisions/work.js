@@ -354,15 +354,16 @@ define({
 define({
   id: 'while_cooking', area: 'resources', parent: null, kind: 'smelting', primitive: 'choice', stakes: 'low', tree: true,
   question: 'A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?',
-  trigger: 'Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible.',
+  trigger: 'Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, and after a walk to ore that wore the pickaxes.',
   source: 'src/work.js (smelt, whileCooking)',
   options: [
-    { key: 'dig_in_reach', label: 'dig the ore within arm\'s reach', when: 'an ore within reach of where the bot stands', level: 'root' },
-    { key: 'mine_nearby', label: 'walk to an ore or tree nearby and dig', when: 'an ore within sixteen blocks, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking', level: 'root' },
-    { key: 'dig_stone', label: 'dig the stone around the furnace', when: 'fewer than sixty-four cobblestone carried', level: 'root' },
+    { key: 'dig_in_reach', label: 'dig the ore within arm\'s reach', when: 'an ore within reach of where the bot stands that a tool carried takes a drop from', level: 'root' },
+    { key: 'mine_nearby', label: 'walk to an ore or tree nearby and dig', when: 'an ore within sixteen blocks (thirty-two with a minute or more of cooking) that a tool carried takes a drop from, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking', level: 'root' },
+    { key: 'dig_stone', label: 'dig the stone around the furnace', when: 'fewer than 128 cobblestone carried, and a pickaxe to take the cobblestone', level: 'root' },
     { key: 'wait_here', label: 'stand by the furnace', when: 'always', level: 'root' },
+    { key: 'leave_cooking', label: 'leave the batch to cook and go on with the work in hand, taking it out when back by the furnace once it is done, or in twenty minutes', when: 'a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch\'s own', level: 'root' },
   ],
-  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes.'),
+  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. With a pickaxe carried, the ways that dig say the uses it has left against the way home to open sky and whether another can be made from the pockets (`pickaxeBudget`), and after a walk, what the walks so far wore (`walksSoFar`); `workInHand` is the work waiting on the batch when it may be left to cook.'),
   fallback: children => ['dig_in_reach', 'mine_nearby', 'dig_stone'].find(k => children[k]) || 'wait_here',
 });
 

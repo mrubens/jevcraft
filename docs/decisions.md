@@ -158,7 +158,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?**
 
-- When: A stall while the bot is in water, or under cover on the way up (the survival layer's stall, or the work stall's work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing.
+- When: A stall while the bot is in water, or under cover on the way up (the survival layer's stall, or the work stall's work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing. No move is offered that takes back the move before from the same cell (a block put there dug up again, a cell just dug filled again: note 671); said in here.notOffered.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -167,7 +167,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `(step\|climb\|place\|bridge\|take_floor)_(north\|east\|south\|west)` (pattern) | root | walk, climb, place a block, bridge a gap in the floor that way, or take up a block of the floor the bot laid itself there | the cells that way allow it; a bridge is laid with a block that holds (rock, wart block, nether wood, wool), or else a fence or the crafting table, and says how many cells of gap lie between this floor and the nearest ground the bot is not on by way of it, against the blocks carried, and, for a fence, what walking it is; a block taken up is offered only where the block dug has a floor to land on, not over lava or a fall (it drops out of its cell and burns), and the line for it says so in here.notOffered |
+| `(step\|climb\|place\|bridge\|take_floor)_(north\|east\|south\|west)` (pattern) | root | walk, climb, place a block, bridge a gap in the floor that way, or take up a block of the floor the bot laid itself there | the cells that way allow it; a block at the feet out of the water only where the bot can climb onto it (room over the head to jump and two open cells over the block, note 671); a bridge is laid with a block that holds (rock, wart block, nether wood, wool), or else a fence or the crafting table, and says how many cells of gap lie between this floor and the nearest ground the bot is not on by way of it, against the blocks carried, and, for a fence, what walking it is; a block taken up is offered only where the block dug has a floor to land on, not over lava or a fall (it drops out of its cell and burns), and the line for it says so in here.notOffered |
 | `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
 | `dig_up\|dig_down\|swim_up\|pillar\|rise_through` (pattern) | root | dig over the head or underfoot, swim up, pillar, or rise straight up through the rock over the head | what is over the head or underfoot allows it; the rise says the air, the rock and the open space above it, the blocks it lays and where they come from (the pack, then the rock dug on the way), and how long it takes |
 | `walk_off` | root | walk off the spot over the ground as it stands, to the nearest dry ground eight blocks from where it got stuck with no lava round it | the aim is off a spot every walk failed from and such ground lies more than a step away within sixteen blocks; said with its cells, the height it goes up or down, and how many of its cells have lava beside them (walked crouched, with what a touch of lava costs this body), since the walks the bot makes on its own take no cell beside lava in the Nether (note 655) |
@@ -774,7 +774,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?**
 
-- When: Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible.
+- When: Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, and after a walk to ore that wore the pickaxes.
 - Decision tree, choice; stakes low; ledger kind `smelting`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -783,10 +783,11 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `dig_in_reach` | root | dig the ore within arm's reach | an ore within reach of where the bot stands |
-| `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking |
-| `dig_stone` | root | dig the stone around the furnace | fewer than sixty-four cobblestone carried |
+| `dig_in_reach` | root | dig the ore within arm's reach | an ore within reach of where the bot stands that a tool carried takes a drop from |
+| `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks (thirty-two with a minute or more of cooking) that a tool carried takes a drop from, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking |
+| `dig_stone` | root | dig the stone around the furnace | fewer than 128 cobblestone carried, and a pickaxe to take the cobblestone |
 | `wait_here` | root | stand by the furnace | always |
+| `leave_cooking` | root | leave the batch to cook and go on with the work in hand, taking it out when back by the furnace once it is done, or in twenty minutes | a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch's own |
 
 ### `dug_into_liquid`
 

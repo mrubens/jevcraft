@@ -409,7 +409,7 @@ function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OF
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
 // by default).
-function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, breathS = 13 } = {}) {
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, breathS = 13, last = null } = {}) {
   let moves = [];
   const notOffered = [];
   const inWater = isWater(view.name(feet));
@@ -501,6 +501,13 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       // a granite lid with nine seconds of breath, and drowned (2026-09-26).
       const over = view.name(level.plus(UP)), overThat = view.name(level.offset(0, 2, 0));
       const stepOut = !inWater || (open(over) && !isWater(over) && open(overThat) && !isWater(overThat));
+      // Out of the water the block is for climbing onto: where the jump
+      // cannot be made (no room over the head, or none over the block to
+      // stand in), it is a wall, and taking it back up is the next move.
+      // mid-243-ga, in a two-high tunnel 70 blocks under the sky, put dirt
+      // at its feet and dug it up again six times in fifteen seconds, each
+      // offered as "a step up" (note 671).
+      if (!inWater && !(headroom && standable(level.plus(UP)))) { notOffered.push(`place ${dir}: no step it could climb onto (${!headroom ? 'no room over the head to jump' : 'no room to stand over the block'})`); continue; }
       moves.push({ key: `place_${dir}`, does: `Put a ${block.replaceAll('_', ' ')} into the ${isWater(view.name(level)) ? 'water' : 'space'} ${dir}, at the feet: ${stepOut ? `a step up${inWater ? ' out of the water' : ''}` : 'a block to stand on, with water over it: still under water there'}.`, kind: 'place', cell: level, block });
     }
   }
@@ -627,6 +634,17 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     if (hangs && terrain.floorDropDeadly(hangs, view.health ?? 20)) { notOffered.push(`${m.key.replaceAll('_', ' ')}: ${terrain.floorDropSays(hangs, m.to.plus(DOWN)).replace('underfoot', 'it would end on')}`); return false; }
     return true;
   });
+  // No move that takes back the move before, from the same cell: a block
+  // put there dug up again, or a cell just dug filled again, is where the
+  // bot was two moves ago (mid-243-ga placed and dug the same cell three
+  // times running, note 671).
+  if (last?.cell && last.from === `${feet}` && ['place', 'dig'].includes(last.kind)) {
+    moves = moves.filter(m => {
+      if (!m.cell || `${m.cell}` !== last.cell || m.kind === last.kind || !['place', 'dig'].includes(m.kind)) return true;
+      notOffered.push(`${m.key.replaceAll('_', ' ')}: it takes back the move before (${last.move.replaceAll('_', ' ')}), back where the bot was`);
+      return false;
+    });
+  }
   for (const m of moves) m.from = feet;
   // A dig that lets water in says where that water's air is. And none that
   // fills the pocket over the head with the air farther than the breath
@@ -733,7 +751,15 @@ function aimFor(bot, { walksFailing = false } = {}) {
   // the bottom of an open shaft the sky is in view and the bot is still in
   // a hole.
   const surface = require('./surface');
-  if (surface.hasSurface(bot) && !surface.surfaceObserver(bot)(bot.entity.position) && !atSurface(view, feet)) return { goal: 'sky', aim: 'up to dry ground at the surface' };
+  // How far that is, said beside the aim: one move at a time from 70 blocks
+  // under the rock with no pickaxe is not a way out (mid-243-ga chose it
+  // twice there, and every move offered came to nothing, note 671).
+  if (surface.hasSurface(bot) && !surface.surfaceObserver(bot)(bot.entity.position) && !atSurface(view, feet)) {
+    let up = null;
+    try { up = surface.climbToSurface(bot, feet); } catch (_) { up = null; }
+    const says = Number.isFinite(up) && up >= 8 ? `open sky is ${up} blocks over the head${view.pickaxe ? '' : ', and no pickaxe is carried: rock comes away by hand at about 7.5 seconds a block and drops nothing'}; the climb out digs its way up, and single moves are for a trap a few blocks across` : null;
+    return { goal: 'sky', aim: 'up to dry ground at the surface', ...(says ? { says } : {}) };
+  }
   // On the surface with every walk failing from here: trial 34 stood six
   // minutes in an alcove on a mountainside, a cliff on the open side, every
   // route out needing a dig or a climb a walk will not make.
@@ -855,7 +881,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
-    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, breathS: require('./vitals').breathSeconds(bot) });
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; save(); return true; }
     if (!moves.length) return false;
@@ -905,7 +931,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     // minutes, each recorded as got there, and each offered again as
     // "rises 1" with nothing said of the failures (2026-09-26).
     const reached = moveReached(m, feet, after, { failure, changed });
-    record.moves.push({ move: m.key, from: `${feet}`, reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
+    record.moves.push({ move: m.key, from: `${feet}`, ...(m.cell ? { cell: `${m.cell}`, kind: m.kind } : {}), reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
     save();
     if (still >= 4) return false;
   }

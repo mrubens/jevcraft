@@ -241,11 +241,14 @@ function rungOption(rung, first, bot, goal, planFor = null) {
 // "stone pickaxe", mid-220-h's rung read as the first pickaxe while its
 // iron one had twelve uses 66 blocks down (note 543). What those uses
 // cover, and what the pockets make, said with it.
+// With none carried, the same facts: what the pockets make, the wood short
+// and where wood is (mid-243-ga's rung said only the steps, note 671).
 function spareSays(bot, goal, rung) {
-  if (!bot?.inventory?.items || !/_pickaxe$/.test(rung.phase || '') || !bot.inventory.items().some(i => /_pickaxe$/.test(i.name))) return '';
+  if (!bot?.inventory?.items || !/_pickaxe$/.test(rung.phase || '')) return '';
   let budget = null;
   try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal || {}); } catch (_) { budget = null; }
-  return budget ? ` A spare: the ladder counts a pickaxe under a fifth of its uses (or 64) as worn. ${budget.says}` : '';
+  if (!budget) return '';
+  return budget.picks.length ? ` A spare: the ladder counts a pickaxe under a fifth of its uses (or 64) as worn. ${budget.says}` : ` ${budget.says}`;
 }
 
 // A second bed to carry, once the base's is claimed and none is in the

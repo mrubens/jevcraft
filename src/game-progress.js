@@ -251,7 +251,13 @@ function ladderRung(bot, goal, waiting) {
   // took a 97-minute climb that wore out both pickaxes (note 511). With none
   // that works, nothing after it can start, and it cannot wait.
   const spare = (item, tier) => waiting.has(item) && carried.some(n => n.endsWith('_pickaxe') && tierOf(n) >= tier);
-  if (best('pickaxe') < 2 && !spare('stone_pickaxe', 2)) return another('stone_pickaxe');
+  // The pickaxe made is the best the heads carried make: the sticks and the
+  // table are the same for either, and three iron ingots carried make one
+  // with nearly twice the uses of stone that also mines the diamonds.
+  // mid-243-ga, its iron pickaxe worn out 72 blocks down with 69 ingots
+  // carried, was sent after "another stone pickaxe" (note 671).
+  const ingots = bot.inventory.items().filter(i => i.name === 'iron_ingot').reduce((n, i) => n + i.count, 0);
+  if (best('pickaxe') < 2 && !spare('stone_pickaxe', 2)) return ingots >= 3 && !waiting.has('iron_pickaxe') ? another('iron_pickaxe') : another('stone_pickaxe');
   if (best('sword') < 2) return another('stone_sword');
   // A bed before the mine. Walled in and waiting was the largest share of
   // the run's standing still, and a night slept passes in seconds; the bed

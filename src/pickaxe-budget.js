@@ -36,9 +36,13 @@ function makeable(bot) {
   const heads = Object.fromEntries(Object.entries(HEADS).map(([k, re]) => [k, Math.floor(sum(re) / 3)]));
   const kinds = Object.keys(HEADS).filter(k => heads[k] > 0);
   const count = Math.min(stickPairs, heads.iron_pickaxe + heads.stone_pickaxe);
-  const lacks = !stickPairs ? `no sticks can be made (${logs} logs, ${planks} planks, ${sticks} sticks${table || plankUnits >= 0 ? '' : ', and no table or wood for one'})`
+  // The wood short of the first one, in planks: a table (four) unless one
+  // is carried, and two for the sticks unless two are (mid-243-ga was one
+  // plank short, 72 blocks under the nearest tree, note 671).
+  const plankShort = Math.max(0, (table ? 0 : 4) + (sticks >= 2 ? 0 : 2) - planks - logs * 4);
+  const lacks = !stickPairs ? `no sticks can be made (${logs} logs, ${planks} planks, ${sticks} sticks${table || plankUnits >= 0 ? '' : ', and no table or wood for one'})${plankShort ? `: ${plankShort} plank${plankShort === 1 ? '' : 's'} short of ${table ? 'two sticks' : 'a crafting table and two sticks'}, ${Math.ceil(plankShort / 4)} log${plankShort > 4 ? 's' : ''} of any wood` : ''}`
     : !kinds.length ? 'no head can be made (3 iron ingots or 3 cobblestone)' : '';
-  return { count, kinds, logs, planks, sticks, table, lacks, wood: Math.floor((logs + planks / 4 + sticks / 8) * 10) / 10 };
+  return { count, kinds, logs, planks, sticks, table, lacks, plankShort, wood: Math.floor((logs + planks / 4 + sticks / 8) * 10) / 10 };
 }
 
 // Blocks a step would dig from here to its target, if all of it is rock:

@@ -47,9 +47,12 @@ test('with the feet dug and the head still its planks, the head is offered, not 
   // 25587's flip: place east, dig east feet, place east, for an hour.
   const { cells, own } = box();
   cells[`${FEET.x + 1},${FEET.y},${FEET.z}`] = 'air';
-  const { moves } = localMoves(view(cells, own), FEET, { goal: 'away', from: FEET });
+  const { moves, here } = localMoves(view(cells, own), FEET, { goal: 'away', from: FEET });
   const keys = moves.map(m => m.key);
-  assert(keys.includes('place_east'));
+  // The cobblestone put back is no step: the planks over it leave no room to
+  // stand there, and it is the flip itself (note 671).
+  assert(!keys.includes('place_east'));
+  assert(here.notOffered.some(s => /^place east: no step it could climb onto/.test(s)));
   assert(keys.includes('dig_east_head'), 'the planks at the head east, its own, can be dug');
   cells[`${FEET.x + 1},${FEET.y + 1},${FEET.z}`] = 'air';
   const out = localMoves(view(cells, own), FEET, { goal: 'away', from: FEET }).moves.find(m => m.key === 'step_east');
