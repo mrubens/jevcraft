@@ -39,8 +39,11 @@ function alightBot() {
   return bot;
 }
 
-test('alight with a blaze at arm\'s length behind it, the body is told of its blows and offered to turn and strike it (mid-243-ch, note 657)', () => {
+test('alight with a blaze at arm\'s length behind it, the body is told of its blows and offered to turn and strike it (mid-243-ch, note 657)', t => {
   const vitals = require('../src/vitals');
+  // The fire left is read against the clock: held still, so a loaded
+  // machine's lost half second does not turn five seconds into four.
+  const at = Date.now(); t.mock.method(Date, 'now', () => at);
   const bot = alightBot();
   const blows = vitals.blowsAtBody(bot);
   assert.ok(blows, 'the blaze 2.3 off is at arm\'s length');

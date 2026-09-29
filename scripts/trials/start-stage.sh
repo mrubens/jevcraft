@@ -16,7 +16,7 @@ if [ "$1" = "--list" ]; then shift; exec node "$ROOT/scripts/trials/stage-pick.j
 PORT=$1; STAGE=$2
 [ -n "$PORT" ] && [ -n "$STAGE" ] || { echo "usage: start-stage.sh <port> <nether|fortress> | --list [stage]"; exit 1; }
 [ -d "$ROOT/.trial-checkpoints/stages/$STAGE" ] || { echo "no $STAGE snapshots yet"; exit 1; }
-PICK=$(node "$ROOT/scripts/trials/stage-pick.js" "$STAGE") || { echo "no usable $STAGE snapshot"; exit 1; }
+PICK=$(STAGE_PORT=$PORT node "$ROOT/scripts/trials/stage-pick.js" "$STAGE") || { echo "no usable $STAGE snapshot"; exit 1; }
 # A fortress start with too few good saves is a nether start: the pick says which.
 STAGE=$(printf '%s' "$PICK" | cut -f1); BEST=$(printf '%s' "$PICK" | cut -f2)
 BESTN=$(cat "$BEST/started" 2>/dev/null || echo 0)

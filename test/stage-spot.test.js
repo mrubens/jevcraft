@@ -158,3 +158,25 @@ test('note 641: the starts of the last hour come from the log beside the saves, 
   assert.match(stage.allShortfalls(s).join('; '), /span one block wide over lava/);
   assert.deepEqual(fs.readdirSync(dir, { recursive: true }).sort(), before);
 });
+
+test('a fortress start goes to the source world with the fewest trials running now, before the fewest starts ever', () => {
+  const stages = { fortress: [snap('mid-242-ee-125002', { started: 8 }), snap('mid-242-dh-100822', { started: 16 }), snap('mid-242-bb-100000', { started: 20 })], nether: [] };
+  assert.equal(stage.choose(stages, 'fortress').snapshot.name, 'mid-242-ee-125002');
+  const pick = stage.choose(stages, 'fortress', { running: { '242-ee': 3, '242-dh': 1 } });
+  assert.equal(pick.snapshot.name, 'mid-242-bb-100000');
+  assert.match(pick.why, /0 running now/);
+  assert.equal(stage.choose(stages, 'fortress', { running: { '242-ee': 1, '242-dh': 1, '242-bb': 1 } }).snapshot.name, 'mid-242-ee-125002');
+});
+
+test('the trials running now are read from each listening trial server\'s level-name, the port being started left out', () => {
+  const root = tmp('running');
+  const serve = (dir, port, level) => { fs.mkdirSync(path.join(root, dir), { recursive: true }); fs.writeFileSync(path.join(root, dir, 'server.properties'), `server-port=${port}\nlevel-name=${level}\n`); };
+  serve('.clean-run', 25581, 'mid-243-fg');
+  serve('.clean-run-25584', 25584, 'mid-242-ee-fortress-9');
+  serve('.clean-run-25585', 25585, 'mid-242-ee-fortress-10');
+  serve('.clean-run-25586', 25586, 'mid-242-ee-fortress-3');
+  serve('.clean-run-25601', 25601, 'retry-214-a-182443-1');
+  const up = new Set([25581, 25584, 25585, 25601]);
+  assert.deepEqual(stage.runningSources(root, { listening: p => up.has(p) }), { '243-fg': 1, '242-ee': 2 });
+  assert.deepEqual(stage.runningSources(root, { exceptPort: 25585, listening: p => up.has(p) }), { '243-fg': 1, '242-ee': 1 });
+});

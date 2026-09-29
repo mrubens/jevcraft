@@ -18,7 +18,8 @@
 //      only at 18 or more) carrying at least MIN_FOOD food points (fortress
 //      stage only: the nether stage is kept on arrival, before a fortress
 //      stay's stock is wanted),
-//   2. of those, take the source world with the fewest starts so far (a save's
+//   2. of those, take the source world with the fewest trials running now,
+//      then the fewest starts so far (a save's
 //      source world is the world it came from, whatever nether or fortress
 //      trial it was kept in), then within it the save least started from,
 //      so every source world starts once before one repeats;
@@ -151,20 +152,49 @@ function worldStarts(snaps) {
   return by;
 }
 
-// The rotation over a set of saves: the source world with the fewest starts
-// (the one started longest ago on a tie), then its save least started from
-// (the one carrying most food, then the later save, on a tie).
-function rotate(pool, all = pool) {
+// The source worlds of the trials running now, a count each: the world each
+// listening trial server holds, by its level-name (a trial name such as
+// mid-242-ee-fortress-9 has the source world 242-ee). Lifetime starts alone
+// sent four of seven fortress starts made in a row to one world
+// (2026-09-29, 242-ee was the least started), and nine of ten blaze blows
+// that killed overnight came in one spawner room: one world's room measured,
+// not the bot.
+function runningSources(root, { exceptPort = null, listening = portListening } = {}) {
+  const by = {};
+  let dirs = [];
+  try { dirs = fs.readdirSync(root).filter(d => /^\.clean-run(-\d+)?$/.test(d)); } catch (_) { return by; }
+  for (const d of dirs) {
+    let props = '';
+    try { props = fs.readFileSync(path.join(root, d, 'server.properties'), 'utf8'); } catch (_) { continue; }
+    const port = Number((props.match(/^server-port=(\d+)/m) || [])[1]);
+    const level = (props.match(/^level-name=(.+)$/m) || [])[1];
+    if (!port || !level || !/^mid-/.test(level) || port === Number(exceptPort) || !listening(port)) continue;
+    const src = sourceWorld(level);
+    by[src] = (by[src] || 0) + 1;
+  }
+  return by;
+}
+function portListening(port) {
+  const r = require('node:child_process').spawnSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN'], { encoding: 'utf8', timeout: 10000 });
+  return r.status === 0 && !!String(r.stdout || '').trim();
+}
+
+// The rotation over a set of saves: the source world with the fewest trials
+// running now, then the fewest starts (the one started longest ago on a tie),
+// then its save least started from (the one carrying most food, then the
+// later save, on a tie).
+function rotate(pool, all = pool, running = {}) {
   const starts = worldStarts(all), lastBy = {};
   for (const s of all) lastBy[s.source] = Math.max(lastBy[s.source] || 0, s.last);
-  const worlds = [...new Set(pool.map(s => s.source))].sort((a, b) => starts[a] - starts[b] || lastBy[a] - lastBy[b] || (a < b ? -1 : 1));
+  const now = w => running[w] || 0;
+  const worlds = [...new Set(pool.map(s => s.source))].sort((a, b) => now(a) - now(b) || starts[a] - starts[b] || lastBy[a] - lastBy[b] || (a < b ? -1 : 1));
   const inWorld = pool.filter(s => s.source === worlds[0]).sort((a, b) => a.started - b.started || (b.vitals.foodPoints || 0) - (a.vitals.foodPoints || 0) || (a.name < b.name ? 1 : -1));
   return inWorld[0];
 }
 
 // The pick for a stage: { snapshot, stage, rule, why } or { error }.
 // `stages` maps a stage name to its snapshots (fortress needs nether too).
-function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, minFood = MIN_FOOD, maxPerHour = MAX_PER_HOUR } = {}) {
+function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, minFood = MIN_FOOD, maxPerHour = MAX_PER_HOUR, running = {} } = {}) {
   const own = stages[stage] || [];
   if (any) {
     const best = [...own].sort((a, b) => a.started - b.started || (a.name < b.name ? -1 : 1))[0];
@@ -182,20 +212,20 @@ function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, mi
   // Where no save qualifies the start is still made, but from a save that is
   // not on a span or resting when there is one.
   const off = pool => { const ok = pool.filter(s => !placeShortfalls(s, { maxPerHour }).length); return ok.length ? ok : pool; };
-  const describe = (s, pool) => `${s.name} from world ${s.source}, ${worldStarts(pool)[s.source]} starts in it so far: health ${s.vitals.health}, hunger ${s.vitals.hunger}, ${s.vitals.foodPoints} food points; ${new Set(pool.map(x => x.source)).size} source worlds in the pool`;
+  const describe = (s, pool) => `${s.name} from world ${s.source}, ${running[s.source] || 0} running now, ${worldStarts(pool)[s.source]} starts in it so far: health ${s.vitals.health}, hunger ${s.vitals.hunger}, ${s.vitals.foodPoints} food points; ${new Set(pool.map(x => x.source)).size} source worlds in the pool`;
   if (good.length >= (stage === 'fortress' ? minQualifying : 1)) {
-    const pick = rotate(good, own);
-    return { snapshot: pick, stage, rule: 'qualifying', why: `${good.length} of ${own.length} ${stage} saves were saved at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more${stage === 'fortress' ? ` and ${minFood}+ food points` : ''}; took the source world started least (${describe(pick, good)})${kept(own)}` };
+    const pick = rotate(good, own, running);
+    return { snapshot: pick, stage, rule: 'qualifying', why: `${good.length} of ${own.length} ${stage} saves were saved at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more${stage === 'fortress' ? ` and ${minFood}+ food points` : ''}; took the source world with the fewest trials running, then started least (${describe(pick, good)})${kept(own)}` };
   }
   if (stage === 'fortress') {
     const nether = stages.nether || [], ng = qualifying(nether);
     const why = `only ${good.length} of ${own.length} fortress saves qualify (needs ${minQualifying}); fell back to the nether stage${kept(own)}`;
-    if (ng.length) { const pick = rotate(ng, nether); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether', why: `${why}: ${ng.length} of ${nether.length} nether saves at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more; took the source world started least (${describe(pick, ng)})${kept(nether, 'nether')}` }; }
-    if (nether.length) { const pick = rotate(off(nether), nether); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether-any', why: `${why}, and no nether save qualifies either: took the source world started least (${describe(pick, nether)})` }; }
-    if (own.length) { const pick = rotate(off(own), own); return { snapshot: pick, stage, rule: 'none-qualify', why: `${why}, and there are no nether saves: took the source world started least among all fortress saves (${describe(pick, own)})` }; }
+    if (ng.length) { const pick = rotate(ng, nether, running); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether', why: `${why}: ${ng.length} of ${nether.length} nether saves at health ${MIN_HEALTH}, hunger ${MIN_HUNGER} or more; took the source world with the fewest trials running, then started least (${describe(pick, ng)})${kept(nether, 'nether')}` }; }
+    if (nether.length) { const pick = rotate(off(nether), nether, running); return { snapshot: pick, stage: 'nether', rule: 'fallback-nether-any', why: `${why}, and no nether save qualifies either: took the source world with the fewest trials running, then started least (${describe(pick, nether)})` }; }
+    if (own.length) { const pick = rotate(off(own), own, running); return { snapshot: pick, stage, rule: 'none-qualify', why: `${why}, and there are no nether saves: took the source world with the fewest trials running, then started least among all fortress saves (${describe(pick, own)})` }; }
     return { error: 'no usable fortress snapshot' };
   }
-  if (own.length) { const pick = rotate(off(own), own); return { snapshot: pick, stage, rule: 'none-qualify', why: `no ${stage} save at health ${MIN_HEALTH} and hunger ${MIN_HUNGER} or more: took the source world started least (${describe(pick, own)})` }; }
+  if (own.length) { const pick = rotate(off(own), own, running); return { snapshot: pick, stage, rule: 'none-qualify', why: `no ${stage} save at health ${MIN_HEALTH} and hunger ${MIN_HUNGER} or more: took the source world with the fewest trials running, then started least (${describe(pick, own)})` }; }
   return { error: `no usable ${stage} snapshot` };
 }
 
@@ -219,4 +249,4 @@ function listing(stages, stage, opts = {}) {
   return lines.join('\n');
 }
 
-module.exports = { sourceWorld, foodPoints, vitalsOf, shortfalls, placeShortfalls, allShortfalls, recentStarts, readStage, worldStarts, rotate, choose, listing, MIN_HEALTH, MIN_HUNGER, MIN_FOOD, MIN_QUALIFYING, MAX_PER_HOUR };
+module.exports = { runningSources, sourceWorld, foodPoints, vitalsOf, shortfalls, placeShortfalls, allShortfalls, recentStarts, readStage, worldStarts, rotate, choose, listing, MIN_HEALTH, MIN_HUNGER, MIN_FOOD, MIN_QUALIFYING, MAX_PER_HOUR };
