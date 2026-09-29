@@ -148,6 +148,25 @@ function sealed(bot, shelter) {
   return !missingShell(bot, shelter).length && floorSolid(bot.blockAt(o.offset(0, -1, 0))) &&
     replaceable(bot.blockAt(o)) && replaceable(bot.blockAt(o.offset(0, 1, 0)));
 }
+// A pocket shut but not whole: the bot at its cell, the cells a walker
+// comes in by or strikes from (the four sides at the feet and the head, and
+// the one over the head) closed, and every cell of the shell still open
+// holding lava or water, which no block is placed into (work.js place).
+// mid-242-jb (25591, 22:37Z on 2026-09-29) sealed against a skeleton at a
+// fortress's edge, a lava cell at a corner of its shell: never sealed by the
+// shell's count, pocket_next was never asked, and the bot stood eleven
+// minutes walled in by its own netherrack, every plan question asked as if
+// it stood in the open (note 697). -> the open cells, or null.
+function closedIn(bot, shelter) {
+  if (!shelter || shelter.kind === 'house' || !inside(bot, shelter)) return null;
+  const o = position(shelter.origin);
+  if (!floorSolid(bot.blockAt(o.offset(0, -1, 0))) || !replaceable(bot.blockAt(o)) || !replaceable(bot.blockAt(o.offset(0, 1, 0)))) return null;
+  const walkers = [...directions.flatMap(d => [o.plus(d), o.plus(d).offset(0, 1, 0)]), o.offset(0, 2, 0)];
+  if (!walkers.every(p => solid(bot.blockAt(p)) || fixed(bot.blockAt(p)))) return null;
+  const open = missingShell(bot, shelter);
+  if (!open.length || !open.every(p => /^(lava|water|bubble_column)$/.test(bot.blockAt(p)?.name || ''))) return null;
+  return open.map(p => ({ x: p.x, y: p.y, z: p.z, name: bot.blockAt(p).name }));
+}
 function materialStock(bot) {
   return bot.inventory.items().filter(i => buildingMaterials.has(i.name)).reduce((total, i) => total + i.count, 0);
 }
@@ -220,4 +239,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable, fixed };
+module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, closedIn, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable, fixed };

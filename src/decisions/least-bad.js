@@ -123,6 +123,47 @@ function after(bot, goal, id, tree, decision, last, { now = Date.now() } = {}) {
   memo[id] = { key, at: now, runs, p, set: leafKeys(tree), place: here ? { x: here.x, y: here.y, z: here.z } : null, health: Number.isFinite(bot.health) ? bot.health : null, mark: mark(bot, goal, id) };
 }
 
+// And an answer Jev chose, not a least bad: chosen again with the same options
+// from about here after it came to nothing, it is not offered a third time
+// from here (note 697). 25591's leave_nether answered wait_here fifteen times
+// in six minutes on the same three options, walled in by its own netherrack,
+// the option saying "Tried once from here ... came to nothing"; the ledger's
+// two tries were never counted, its entries pushed out by the stall's own
+// records, 110 in 0.6 seconds (tried.js KEEP). Kept here per question, as
+// the least bad is: the plan's questions (intention.js GATED) and the ones
+// asked at a real change (AT_A_CHANGE).
+const CHOSEN_RUN = 2;
+let chosenQs = null;
+const chosenApplies = id => (chosenQs ||= (() => { const i = require('../intention'); return new Set([...i.GATED, ...i.AT_A_CHANGE]); })()).has(id);
+
+// Before asking: the answer chosen at this question's last asking.
+// -> null or { key, unchanged, runs, hold, says }
+function chosenBefore(bot, goal, id, tree, { now = Date.now() } = {}) {
+  if (!bot || !chosenApplies(id)) return null;
+  const m = bot._chosenLast?.[id];
+  if (!m) return null;
+  if (now - m.at > KEPT_MS) { delete bot._chosenLast[id]; return null; }
+  const came = cameSince(bot, goal, id, m, now);
+  const here = bot.entity?.position;
+  const near = !m.place || !here || Math.hypot(here.x - m.place.x, here.y - m.place.y, here.z - m.place.z) <= NEAR;
+  const unchanged = !came && near && leafKeys(tree).join(',') === m.set.join(',');
+  if (!unchanged) return { key: m.key, unchanged: false, runs: m.runs, hold: false };
+  const says = `${words(m.key)} was chosen ${plural(m.runs, 'time')} running from here with these same options, the last ${ago(now - m.at)} ago, and ${nothingSays(bot, goal, id, m)}`;
+  return { key: m.key, unchanged: true, runs: m.runs, hold: m.runs >= CHOSEN_RUN, says };
+}
+
+// After the answer: an option Jev chose is remembered; a none good (the
+// least bad's own) or no answer forgets it.
+function chosenAfter(bot, goal, id, tree, decision, last, { now = Date.now() } = {}) {
+  if (!bot || !chosenApplies(id)) return;
+  const memo = bot._chosenLast ||= {};
+  if (!decision?.path?.length || decision.noneGood || decision.stale) { delete memo[id]; return; }
+  const key = decision.path.join('/');
+  const runs = last?.unchanged && last.key === key ? last.runs + 1 : 1;
+  const here = bot.entity?.position;
+  memo[id] = { key, at: now, runs, set: leafKeys(tree), place: here ? { x: here.x, y: here.y, z: here.z } : null, health: Number.isFinite(bot.health) ? bot.health : null, mark: mark(bot, goal, id) };
+}
+
 // The option at `key` ('a/b') with its words added.
 function sayOn(tree, key, said) {
   const parts = String(key).split('/');
@@ -137,4 +178,4 @@ function sayOn(tree, key, said) {
   return step(tree, 0);
 }
 
-module.exports = { before, after, choose, sayOn, leafKeys, isPassive, applies, PASSIVE_RUN, KEPT_MS, NEAR, HURT };
+module.exports = { before, after, choose, sayOn, leafKeys, isPassive, applies, chosenBefore, chosenAfter, chosenApplies, PASSIVE_RUN, CHOSEN_RUN, KEPT_MS, NEAR, HURT };

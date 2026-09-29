@@ -131,14 +131,31 @@ function floorFacts(view, feet, island) {
     : '; no ground that is not part of it within 24 cells of open air of any of its cells'}`;
 }
 // Stone and ore take a pickaxe; the rest comes away in the hand.
-function digSeconds(name, view, inWater) {
-  const stony = /stone|deepslate|granite|diorite|andesite|tuff|calcite|terracotta|basalt|netherrack/.test(name) || ORE.test(name);
-  if (stony && !view.pickaxe) return null;
+// By hand a block that wants a pickaxe takes the game's five times its
+// hardness and drops nothing: offered so for the bot's own blocks, for
+// netherrack (two seconds) and for the fortress's bricks (ten). mid-242-jb
+// (25591, 22:37Z on 2026-09-29) stood walled in by its own netherrack with no
+// pickaxe, offered only the fortress's bricks "about 0.5 s" each (ten by
+// hand), and never its own netherrack (note 697).
+const HAND_HARDNESS = { netherrack: 0.4, nether_bricks: 2, red_nether_bricks: 2, nether_brick_fence: 2, nether_brick_stairs: 2, nether_brick_slab: 2, nether_brick_wall: 2,
+  basalt: 1.25, polished_basalt: 1.25, smooth_basalt: 1.25, blackstone: 1.5, stone: 1.5, cobblestone: 2, andesite: 1.5, diorite: 1.5, granite: 1.5, tuff: 1.5, deepslate: 3, cobbled_deepslate: 3.5, end_stone: 3 };
+const needsPickaxe = name => /stone|deepslate|granite|diorite|andesite|tuff|calcite|terracotta|basalt|netherrack|^(red_)?nether_brick/.test(name) || ORE.test(name);
+function digSeconds(name, view, inWater, cell = null) {
+  const stony = needsPickaxe(name);
+  if (stony && !view.pickaxe) {
+    const own = !!cell && !!laidOf(view, cell);
+    if (!own && !/^netherrack$|^(red_)?nether_brick/.test(name)) return null;
+    const h = cell && Number.isFinite(view.block?.(cell)?.hardness) ? view.block(cell).hardness : HAND_HARDNESS[name];
+    if (!Number.isFinite(h)) return null;
+    return Math.round(h * 5 * (inWater ? 5 : 1) * 10) / 10;
+  }
   // Wood by hand is slow: a plank is three seconds without an axe (note 615).
   const woody = /_planks$|_log$|_wood$|_stem$|_hyphae$|_fence$|_slab$|_stairs$/.test(name) && !/^nether_brick/.test(name);
   const s = stony ? (view.pickaxe === 'wooden_pickaxe' ? 1.2 : 0.6) : woody ? (view.axe ? 0.6 : 3) : 0.5;
   return Math.round(s * (inWater ? 5 : 1) * 10) / 10;
 }
+// Said beside the seconds of a dig by hand that drops nothing.
+const handSays = (name, view) => needsPickaxe(name) && !view.pickaxe ? ' by hand, and it drops nothing' : '';
 
 // Open sky over a cell: nothing but open blocks up to the top of the view.
 function skyAbove(view, p, reach = 40) {
@@ -270,7 +287,6 @@ const laidOf = (view, p) => (typeof view.laid === 'function' ? view.laid(p) : nu
 const diggable = (view, p, name) => solid(name) && (natural.test(name) || !!laidOf(view, p));
 const hhmm = at => new Date(at).toISOString().slice(11, 16);
 function ownSays(view, p) {
-  if (natural.test(view.name(p) || '')) return '';
   const laid = laidOf(view, p);
   return laid ? `, a block the bot laid itself${Number.isFinite(laid.at) ? ` at ${hhmm(laid.at)}Z` : ''}` : '';
 }
@@ -537,10 +553,10 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     for (const [part, cell] of [['feet', level], ['head', level.plus(UP)], ['over', level.offset(0, 2, 0)]]) {
       const name = view.name(cell);
       if (!diggable(view, cell, name)) continue;
-      const seconds = digSeconds(name, view, inWater);
+      const seconds = digSeconds(name, view, inWater, cell);
       if (seconds == null) continue;
       const drop = part !== 'over' && (part === 'feet' || open(view.name(level))) ? dropBelow(view, level) : null;
-      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`}${ownSays(view, cell)} (about ${seconds} s).`, kind: 'dig', cell, seconds, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
+      moves.push({ key: `dig_${dir}_${part}`, does: `Dig the ${name.replaceAll('_', ' ')} ${dir}, at ${part === 'over' ? 'the level over the head' : `${part} height`}${ownSays(view, cell)} (about ${seconds} s${handSays(name, view)}).`, kind: 'dig', cell, seconds, effects: [opensOnto(view, cell.plus(d)), ...(drop ? [drop] : []), ...digEffects(view, cell, feet)] });
     }
     // A block placed into water or air beside, at the feet: a step at the
     // waterline, or a wall.
@@ -606,7 +622,8 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     // opensPit) every time in 25598 while it was offered, 228 in a day (note
     // 650).
     if (!stock && diggable(view, gap, view.name(gap)) && !!laidOf(view, gap) && solid(view.name(feet.plus(DOWN))) && open(view.name(feet.plus(d)))) {
-      const seconds = digSeconds(view.name(gap), view, false);
+      // Only where it drops: a block that wants a pickaxe dug by hand gives nothing to pick up.
+      const seconds = handSays(view.name(gap), view) ? null : digSeconds(view.name(gap), view, false, gap);
       const lands = dropInto(view, gap);
       if (seconds != null && lands.n > 0 && lands.into !== 'ground') { lostTakes.push([dir, lands.into]); continue; }
       if (seconds != null) moves.push({ key: `take_floor_${dir}`, does: `Dig up the ${view.name(gap).replaceAll('_', ' ')} in the floor ${dir}, a block the bot laid itself${Number.isFinite(laidOf(view, gap).at) ? ` at ${hhmm(laidOf(view, gap).at)}Z` : ''} (about ${seconds} s) and pick it up, to put down somewhere else: the floor stood on stays; that cell of the floor is gone, ${dropBelow(view, gap) ? `a drop there: ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'dig', cell: gap, seconds, effects: [] });
@@ -623,8 +640,8 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // Straight up: dig what is over the head, swim up, or pillar.
   const over = feet.offset(0, 2, 0), overName = view.name(over);
   if (diggable(view, over, overName)) {
-    const seconds = digSeconds(overName, view, inWater);
-    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head${ownSays(view, over)} (about ${seconds} s).`, kind: 'dig', cell: over, seconds, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
+    const seconds = digSeconds(overName, view, inWater, over);
+    if (seconds != null) moves.push({ key: 'dig_up', does: `Dig the ${overName.replaceAll('_', ' ')} over the head${ownSays(view, over)} (about ${seconds} s${handSays(overName, view)}).`, kind: 'dig', cell: over, seconds, effects: [opensOnto(view, over.plus(UP)), ...digEffects(view, over, feet)] });
   }
   if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
   const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
@@ -635,9 +652,9 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // Down: dig the floor, when not over water or lava.
   const floor = feet.plus(DOWN), floorName = view.name(floor);
   if (!inWater && diggable(view, floor, floorName) && !isWater(view.name(floor.plus(DOWN))) && !isLava(view.name(floor.plus(DOWN)))) {
-    const seconds = digSeconds(floorName, view, false);
+    const seconds = digSeconds(floorName, view, false, floor);
     const drop = dropBelow(view, floor, { extra: 1 });
-    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot${ownSays(view, floor)} and drop a block (about ${seconds} s).`, kind: 'dig', cell: floor, seconds, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
+    if (seconds != null) moves.push({ key: 'dig_down', does: `Dig the ${floorName.replaceAll('_', ' ')} underfoot${ownSays(view, floor)} and drop a block (about ${seconds} s${handSays(floorName, view)}).`, kind: 'dig', cell: floor, seconds, effects: [opensOnto(view, floor.plus(DOWN)), ...(drop ? [drop] : []), ...digEffects(view, floor)] });
   }
   // The server keeps putting the body back here: what this client sees may
   // not be what the server has. The moves above are read from the view; this
@@ -798,15 +815,23 @@ function liveView(bot) {
 // and how much of it is the bot's own: said on the offer to work free, so
 // the question says the walls are its own planks and not only that every
 // walk failed (note 615). Null when a side is open.
-function walledSays(view, feet) {
+// walledOf: the same, as a record: { round, own, names, at } (the cells round
+// it that are solid, those of them its own, their kinds, when the first was
+// laid), or null when a side is open.
+function walledOf(view, feet) {
   const sides = Object.values(DIRS).map(d => [feet.plus(d), feet.plus(d).plus(UP)]);
   if (!sides.every(cells => cells.some(c => !open(view.name(c))))) return null;
   const round = [...sides.flat(), feet.offset(0, 2, 0)].filter(c => solid(view.name(c)));
   const own = round.filter(c => laidOf(view, c));
-  if (!own.length) return 'walled in where it stands: every side is closed at the feet or the head';
-  const names = [...new Set(own.map(c => view.name(c).replaceAll('_', ' ')))].join(', ');
-  const at = Math.min(...own.map(c => laidOf(view, c).at).filter(Number.isFinite));
-  return `walled in where it stands: every side is closed at the feet or the head, ${own.length} of the ${round.length} blocks round it its own (${names}${Number.isFinite(at) ? `, laid from ${hhmm(at)}Z` : ''}), which it can dig through`;
+  const names = [...new Set(own.map(c => view.name(c)))];
+  const at = own.length ? Math.min(...own.map(c => laidOf(view, c).at).filter(Number.isFinite)) : NaN;
+  return { round, own, names, at: Number.isFinite(at) ? at : null };
+}
+function walledSays(view, feet) {
+  const w = walledOf(view, feet);
+  if (!w) return null;
+  if (!w.own.length) return 'walled in where it stands: every side is closed at the feet or the head';
+  return `walled in where it stands: every side is closed at the feet or the head, ${w.own.length} of the ${w.round.length} blocks round it its own (${w.names.map(n => n.replaceAll('_', ' ')).join(', ')}${w.at ? `, laid from ${hhmm(w.at)}Z` : ''}), which it can dig through`;
 }
 
 // Where the bot has to get: out of water onto dry ground, or up to the
@@ -1042,4 +1067,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { changeOf, measureOf, judgeMinute, spellRests, JUDGE_MS, JUDGE_MOVES, walkOffPlan, lavaBeside, islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { changeOf, measureOf, judgeMinute, spellRests, JUDGE_MS, JUDGE_MOVES, walkOffPlan, lavaBeside, islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, walledOf, digSeconds, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

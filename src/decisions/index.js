@@ -423,6 +423,8 @@ const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged
 // upkeep and the stage. Survival's turn comes first; asked at the end of the
 // wait with the fight still on, the fight is said in the facts.
 const FIGHT_WAITS = (() => { const i = require('../intention'); return new Set([...i.GATED, ...i.AT_A_CHANGE, 'upkeep', 'win_strategy']); })();
+// The questions that say the walls round the bot themselves (note 697).
+const WALLED_OWN = new Set(['pocket_next', 'unstuck_move']);
 // The tree as offered, less what the ledger left out, without its words.
 function plainOf(tree, original) { return Object.fromEntries(Object.keys(tree).map(k => [k, original[k] || tree[k]])); }
 // To the question above (define's `parent`), with this one's failure said:
@@ -507,7 +509,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // options from about here and nothing come of it, the same set is not
   // asked again: the least bad is held from here and the question above is
   // asked with the none good said. Else it is said, in the facts and on it.
-  let lastLeastBad = null;
+  let lastLeastBad = null, lastChosen = null;
   // The answer given last, whatever its question, if it ended in its first
   // second: rested from where it was chosen, and said below (at-once.js,
   // note 695).
@@ -515,6 +517,17 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (ledgered) {
     tried.settle(bot, goal, { q: id });
     lastLeastBad = leastBad.before(bot, goal, id, original);
+    // And an answer Jev chose twice running from here with these same
+    // options, nothing come of it: held from here, said as its rest (note 697).
+    lastChosen = leastBad.chosenBefore(bot, goal, id, original);
+    // Where the ledger rests it already (its own two tries), that rest says it.
+    const ledgerRests = lastChosen?.hold && (tried.read(bot, goal, id, original, { target }).resting || []).some(r => r.startsWith(`${String(lastChosen.key).replaceAll('_', ' ')}:`));
+    if (lastChosen?.hold && !ledgerRests) {
+      const why = `${lastChosen.says}; not offered again from here`;
+      delete bot._chosenLast[id];
+      tried.hold(bot, goal, id, [lastChosen.key], why, { target, targets: { [lastChosen.key]: tried.leafAt(original, lastChosen.key)?.target } });
+      console.log(`[chosen again] ${id}: ${why}`);
+    }
     if (lastLeastBad?.unchanged && spec.parent && !SAY_ONLY.has(id)) {
       const why = `${lastLeastBad.says}; the same options from here are not asked again`;
       delete bot._leastBad[id];
@@ -609,6 +622,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.craftingFailed) {
     let failed = null; try { failed = require('../craft-failures').craftFailuresSay(bot); } catch (_) { /* no body */ }
     if (failed) state = { ...state, craftingFailed: failed };
+  }
+  // Walled in by its own blocks, with every such question but the pocket's
+  // and working free's own, which say it themselves: 25591's leave_nether
+  // and rung_progress were asked round and round in its netherrack pocket,
+  // told nothing of it (walled-in.js, note 697).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !WALLED_OWN.has(id) && !state.walledIn) {
+    let walled = null; try { walled = require('../walled-in').walledInSays(bot, { survival: goal?.survival }); } catch (_) { /* no body */ }
+    if (walled) state = { ...state, walledIn: walled.says };
   }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.
@@ -752,6 +773,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
   if (bot && client && !decision.stale && decision.path && GAMEPLAY_AREAS.has(spec.area)) leastBad.after(bot, goal, id, original, decision, lastLeastBad);
+  if (bot && client && ledgered) leastBad.chosenAfter(bot, goal, id, original, decision, lastChosen);
   // "None of these is good", sure, twice running to the same situation:
   // the question is spent here, and escalates as a resting way does (note
   // 599). The best listed is still carried out meanwhile, so the stall is

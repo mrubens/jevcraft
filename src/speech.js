@@ -62,11 +62,24 @@ function thinking(bot, intervalMs = 1500) {
 // exact repeat within the window, except when a player spoke a moment ago,
 // because "Jev status" asked twice deserves the same answer twice.
 const CHAT_BURST = 5, CHAT_EVERY_MS = 1200;
+// The chat packet's sender is the bot itself: by its uuid, else its name.
+const plainName = n => typeof n === 'string' ? n.replace(/§./g, '') : n?.toString?.() || JSON.stringify(n ?? '');
+function ownLine(bot, data) {
+  const uuid = bot._client?.uuid || bot.player?.uuid;
+  const norm = u => String(u || '').replaceAll('-', '').toLowerCase();
+  if (data?.sender && uuid) return norm(data.sender) === norm(uuid);
+  return !!bot.username && plainName(data?.senderName).includes(bot.username);
+}
 function quietRepeats(bot, { windowMs = 120000, replyMs = 15000 } = {}) {
   if (typeof bot?.chat !== 'function' || bot._quietRepeats) return bot;
   const original = bot.chat.bind(bot), said = new Map();
   bot._quietRepeats = { dropped: 0 };
-  bot._client?.on?.('playerChat', () => { bot._lastPlayerChatAt = Date.now(); });
+  // A player's, not the bot's own line coming back from the server: that
+  // echo counted as a player speaking, so every line the bot said let the
+  // next fifteen seconds of repeats through. 25591 said "I'm getting nowhere
+  // with the rods waiting. Trying another way." four times in 1.3 seconds
+  // (note 697).
+  bot._client?.on?.('playerChat', data => { if (!ownLine(bot, data)) bot._lastPlayerChatAt = Date.now(); });
   // And no faster than the server allows: vanilla counts twenty a message
   // against a limit of two hundred, less one a tick, and kicks for spam
   // past it. mid-229-b, its wool search spinning twenty times a second and

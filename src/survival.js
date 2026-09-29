@@ -1972,6 +1972,8 @@ function shaftCap(bot, refuge) {
   if (/^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$|concrete_powder|water|lava/.test(over)) return null;
   return cap;
 }
+// A pocket shut to walkers but not whole (shelter.js closedIn), said.
+const pocketOpenSays = open => `shut to walkers, but ${open.length} cell${open.length === 1 ? '' : 's'} of its shell ${open.length === 1 ? 'holds' : 'hold'} ${[...new Set(open.map(c => c.name))].join(' and ')}, which no block goes into (${open.slice(0, 3).map(c => `${c.x}, ${c.y}, ${c.z}`).join('; ')})`;
 // A pocket being sealed where the bot stands, as its last pass left it: the
 // blocks of it in place, and a mob standing in a cell of it, which no block
 // goes into while it stands there. Said on the claim and the stance, not
@@ -7941,7 +7943,10 @@ class Survival {
     const atArm = threats(bot).filter(t => t.distance <= 3 && !shooter(t.entity) && (t.visible || canStrike(bot, t.entity)) && !nightHunted(bot, t.entity));
     if (atArm.length && !claimed(bot, atArm[0].entity)) { await this.flee(task, goal, save); onStep(goal); return true; }
     const refuge = this.currentShelter();
-    const sealedIn = refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge);
+    // Or shut to walkers with only lava or water left open in its shell,
+    // which no block goes into: the pocket as far as it closes (note 697).
+    const shutOpen = refuge && shelter.inside(bot, refuge) && !shelter.sealed(bot, refuge) ? shelter.closedIn(bot, refuge) : null;
+    const sealedIn = refuge && shelter.inside(bot, refuge) && (shelter.sealed(bot, refuge) || !!shutOpen);
     // The wait's own record goes with the pocket (pocket-wait.js, note 584).
     if (!sealedIn) require('./pocket-wait').leftPocket(this.state);
     if (sealedIn) {
@@ -8429,7 +8434,7 @@ class Survival {
             ...(night ? { underground: below, minutesToDawn: minutesToDawn(bot) } : {}), ...(mineOff ? { nightMineOff: mineOff } : {}), ...(Object.keys(notNow).length ? { notNow } : {}),
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
-            ...(waitSays ? { pocketSoFar: waitSays.facts } : {}),
+            ...(waitSays ? { pocketSoFar: waitSays.facts } : {}), ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : {}),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity), ...(onLid.some(o => o.entity === t.entity) ? { onLid: true, inReach: false, canReachBot: false } : {}) })) } });
@@ -8923,7 +8928,8 @@ function claim(bot, goal = {}, survival = null) {
   const refuge = survival?.currentShelter?.();
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
-  if (refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
+  const shutOpen = refuge && shelter.inside(bot, refuge) && !shelter.sealed(bot, refuge) ? shelter.closedIn(bot, refuge) : null;
+  if (refuge && shelter.inside(bot, refuge) && (shelter.sealed(bot, refuge) || shutOpen)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot), ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : {}),
     ...(require('./pocket-wait').pocketWaitSays(bot, state, goal, { near: threats(bot, 64), night: shelterNeeded(bot),
       // Whether the wait waits for nothing, as the pocket's own question
       // reads it (note 679): nothing to eat, and no spawner in reach.

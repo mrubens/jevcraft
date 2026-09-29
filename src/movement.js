@@ -24,6 +24,8 @@ const BURNS = /lava|fire|magma_block|campfire/;
 // A cell with lava round it costs this much more than open ground, so a
 // route takes as few as the ground allows (note 660).
 const LAVA_SIDE_COST = 6;
+// The bot's own blocks (SurvivalMovements.safeToBreak), read lazily.
+let ownLaid = null;
 // The lava round a standing cell (note 516's set): the eight cells round it
 // at the floor, the feet and the head. `sides` counts those a block to a
 // side, not corner to corner: the ones the body's own width meets when it
@@ -129,6 +131,27 @@ class SurvivalMovements extends Movements {
     const move = new Move(target.x, target.y, target.z, node.remainingBlocks, cost + interactions.length, [], interactions);
     if (isDoor(there.name)) move.doorway = { ...target };
     neighbors.push(move);
+  }
+
+  // A block the bot laid itself, of the kinds it walls and pillars with
+  // (shelter.js buildingMaterials), is its own to dig through on a walk,
+  // whatever the rule for that kind where the world put it: note 615 let
+  // working free dig it, and the walks never could. mid-242-jb (25591,
+  // 22:37 to 22:49Z on 2026-09-29) sealed against a skeleton with the
+  // netherrack it carried, the pocket's lava corner never closing, and every
+  // walk from inside it failed "No route" for eleven minutes: go to the
+  // blazes 28 blocks off, the warped forest, each step off (note 697). A
+  // house or a portal keeps its exclusion (exclusionBreak), and what is not
+  // a building block (a chest, a bed, obsidian) is not dug this way.
+  safeToBreak(block) {
+    if (super.safeToBreak(block)) return true;
+    if (!this.canDig || !block?.type || !block.position || !this.blocksCantBreak.has(block.type)) return false;
+    ownLaid ||= { materials: require('./shelter').buildingMaterials, laidAt: require('./own-blocks').laidAt };
+    let own = null;
+    try { if (ownLaid.materials.has(block.name)) own = ownLaid.laidAt(this.bot, block.position); } catch (_) { own = null; }
+    if (!own) return false;
+    this.blocksCantBreak.delete(block.type);
+    try { return super.safeToBreak(block); } finally { this.blocksCantBreak.add(block.type); }
   }
 
   getNeighbors(node) {

@@ -80,7 +80,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Sealed in a pocket: stay, leave, go out for food, go to the bed, sleep in the carried bed in a nook dug out of the wall, open the wall on a watcher, dig a passage out away from a spawner, a creeper, the mob at the wall or the blazes about, mine the night away, hunt mobs for their drops, or take the valuables to the chest?**
 
-- When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night.
+- When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night. A pocket shut to walkers (its four sides at the feet and the head and the cell over the head closed) whose only open cells hold lava or water, which no block goes into, is the pocket too, said not whole (pocketNotWhole, note 697).
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
