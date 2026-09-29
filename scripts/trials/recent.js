@@ -39,7 +39,8 @@ for (const file of files) {
     if (!line) continue;
     let e; try { e = JSON.parse(line); } catch (_) { continue; }
     const s = e.snapshot || {};
-    if (e.at < since) { if (s.health != null) lastHealth = s.health; continue; }
+    const at = typeof e.at === 'number' ? e.at : Date.parse(e.at);
+    if (!(at >= since)) { if (s.health != null) lastHealth = s.health; continue; }
     if (s.dimension && s.dimension !== lastDim) { console.log(`${t(e.at)} -- in ${s.dimension}`); lastDim = s.dimension; }
     if (e.kind === 'decision') {
       const q = asked(e), j = q.judgments?.[0];
@@ -54,7 +55,7 @@ for (const file of files) {
       const top = probs[0] && probs[0][0] !== e.label ? ` [top ${probs[0][0]} ${probs[0][1]}]` : '';
       const conf = j?.confidence != null ? ` conf ${j.confidence}` : '';
       console.log(`${t(e.at)} ${pos(s)} hp ${r(s.health ?? 0)} food ${s.food ?? '?'}  ${q.id || e.source || ''} -> ${e.label}${mine != null ? ` ${mine}` : ''}${conf ? ` (${conf.trim()})` : ''}${runner ? `, next ${runner[0]} ${runner[1]}` : ''}${top}`);
-      const text = v => typeof v === 'string' ? v : typeof v?.description === 'string' ? v.description : v?.description?.does || v?.label || JSON.stringify(v?.description ?? v);
+      const text = v => typeof v === 'string' ? v : typeof v?.description === 'string' ? v.description : v?.description?.does || v?.label || JSON.stringify(v?.description ?? v) || String(v);
       if (withOptions && q.options) for (const [k, v] of Object.entries(q.options)) console.log(`      ${k}: ${String(text(v)).slice(0, 400)}`);
     } else if (e.kind === 'chat') {
       const m = said(e); if (m) console.log(`${t(e.at)} chat: ${m.slice(0, 160)}`);
