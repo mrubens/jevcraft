@@ -10,10 +10,12 @@
 // Chickens and pigs are never food (protected-animals.js), so not noted.
 // And hoglins, the Nether's meat, for when food is short there
 // (nether-travel.js).
+// And wild wolves, for the bones carried (wolves.js, note 644): a tamed one
+// beside the bot, or a pup, is not one to walk back to.
 // Rabbits too: the food of snowy and desert ground, hunted there when no
 // cow is about (mid-231-r ate one a minute before sealing in, and its
 // pocket was told of no food for an hour; note 538).
-const KINDS = ['sheep', 'cow', 'rabbit', 'hoglin'];
+const KINDS = ['sheep', 'cow', 'rabbit', 'hoglin', 'wolf'];
 const FLOCK = 24;
 const KEEP_MS = 30 * 60000;
 const EVERY_MS = 15000;
@@ -26,7 +28,7 @@ function noteSightings(bot, goal, now = Date.now()) {
   const seen = goal.sightings ||= {};
   for (const kind of KINDS) {
     const list = (seen[kind] || []).filter(s => now - s.at < KEEP_MS);
-    const here = Object.values(bot.entities || {}).filter(e => e.name === kind && e.isValid !== false && e.position);
+    const here = Object.values(bot.entities || {}).filter(e => e.name === kind && e.isValid !== false && e.position && (kind !== 'wolf' || require('./wolves').wild(bot, e)));
     for (const e of here) {
       const p = e.position;
       const flock = list.find(s => s.dimension === dimension && Math.hypot(s.x - p.x, s.z - p.z) <= FLOCK);

@@ -118,6 +118,43 @@ function searchSoFar(bot, goal, rung) {
   const others = flocks.length ? '' : ` Without sheep: ${string} string carried of the twelve a bed's wool takes (spiders drop up to two each and come out at night; cobwebs cut with a sword drop one)${igloo ? `, and an igloo with a bed ${igloo.distance} blocks away` : ''}.`;
   return ` Searching for sheep for ${minutes} minute${minutes === 1 ? '' : 's'}, ${blocks} blocks from where the search began, ${flocks.length ? `and ${flocks.slice(0, 2).map(s => s.says).join('; ')}` : 'none seen yet'}.${others}`;
 }
+// The way to the wool, said with the bed rung whether or not a search has
+// begun (note 644). Six of the 23 deaths before the Nether in 2026-09-28's
+// fresh worlds (62 midgame trials from first-days saves) were inside the bed
+// rung's wool hunt, five of them hunts begun below y 40: the saves that had no
+// bed put the bot 60 blocks under a dawn surface, and "get bed" said what a
+// bed is worth, not that the sheep were at the top of a climb through the
+// caves, how far off they were, or that none had been seen. The 29 hunts
+// begun below y 40 ended in a death five times and took 8.4 minutes on
+// average; the 20 begun higher, once and 3.6 minutes (the ladder's bed step
+// in the flight records, a stretch each). Said as it stands, beside
+// nether_first, which goes without the bed and says what that costs; the
+// probe of the recorded question (mid-244-aa, 72 blocks down at dawn) kept
+// choosing the bed with it said, five of five: the facts are Jev's to weigh.
+const WOOL_HUNTS = { day: '2026-09-28', worlds: 62, below: 40, deep: { n: 29, died: 5, minutes: 8.4 }, shallow: { n: 20, died: 1, minutes: 3.6 } };
+function woolTrip(bot, goal, rung) {
+  if (rung?.action !== 'gather_wool' || !bot?.entity?.position || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return '';
+  const here = bot.entity.position;
+  let depth = null;
+  try { if (typeof bot.blockAt === 'function' && bot.registry) depth = require('./surface').climbToSurface(bot, here); } catch (_) { depth = null; }
+  const inView = Object.values(bot.entities || {}).filter(e => e.name === 'sheep' && e.isValid !== false && e.position?.distanceTo?.(here) < 64)
+    .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
+  let flocks = [];
+  try { flocks = require('./sightings').sighted(bot, goal || {}, 'sheep'); } catch (_) { flocks = []; }
+  const climb = depth >= 8 ? require('./surface').climbMinutes(depth) : 0;
+  const walkTo = blocks => `about ${Math.max(1, Math.round(blocks / WALK_BLOCKS_PER_S))} seconds at a walk`;
+  const sheep = inView ? `Sheep are in view, ${Math.round(inView.position.distanceTo(here))} blocks off (${walkTo(inView.position.distanceTo(here))}).`
+    : flocks[0] ? `Nearest sheep known: ${flocks[0].says} (${walkTo(flocks[0].distance)}${climb ? ', after the climb' : ''}).`
+      : 'No sheep are in view or remembered: the hunt is a search over ground not yet seen.';
+  const under = depth >= 8 ? ` The bot is about ${depth} blocks under open sky: the climb out is about ${climb} minute${climb === 1 ? '' : 's'} before any walk to sheep, through what the caves hold.` : '';
+  let dark = '';
+  const t = bot.time?.timeOfDay;
+  if (Number.isFinite(t) && t >= DAY.DARK && t < DAY.DAWN) dark = ` It is night on the surface, about ${Math.round((DAY.DAWN - t) / 1200)} real minutes to dawn: sheep stand on open ground, where zombies, skeletons, spiders and creepers spawn until then.`;
+  const { deep, shallow } = WOOL_HUNTS, y = Math.round(here.y), low = y < WOOL_HUNTS.below;
+  const mine = low ? deep : shallow, other = low ? shallow : deep;
+  const record = ` Wool hunts begun ${low ? 'below' : 'at or above'} y ${WOOL_HUNTS.below}, as this one is: ${mine.n} in ${WOOL_HUNTS.day}'s ${WOOL_HUNTS.worlds} fresh worlds, ${mine.died} ended in a death, ${mine.minutes} minutes each on average; begun ${low ? 'at or above' : 'below'} it: ${other.n}, ${other.died} ended in a death, ${other.minutes} minutes.`;
+  return ` The way to the wool: ${sheep}${under}${dark}${record}`;
+}
 // What the step takes from the pockets as they are, when a planner is
 // given: trial 43 carried sixty-one raw iron and two hundred coal, was
 // offered the armour as "get 4 iron helmet" with nothing said of what it
@@ -197,7 +234,7 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // Said alike whichever rung is first: "the ladder's next step" beside
   // "ahead of the ladder's order" was a thumb on the scale (the critical
   // review, 2026-09-26). The first is still the fallback.
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
@@ -230,7 +267,7 @@ function carryBedOption(bot, goal, planFor = null) {
     : rung.action === 'home' ? ' The chest at home holds what it takes.' : '';
   const inHand = ` In hand: ${wool.total} wool (${wool.dyed ? `mixed colours, dyed white with the bone or bone meal carried: the bed is a craft` : wool.count >= 3 ? `three ${wool.colour.replaceAll('_', ' ')}: the bed is a craft` : 'three of one colour make the bed; wool of mixed colours is dyed white, a bone\'s bone meal for three'}), ${string} string, ${planks} planks and ${logs} logs; ${sheep ? `${sheep} sheep in view` : flocks.length ? flocks[0].says : 'no sheep in view or remembered'}.`;
   return {
-    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night, anywhere: put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
+    description: `Make a second bed to carry, the base's staying where it is (three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed). It buys any night, anywhere: put down where the night comes, slept in and picked back up, the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after. A carried bed does not keep the spawn point; the base's does.${inHand}${where}${searchSoFar(bot, goal, rung)}${woolTrip(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}`,
     says: 'I\'ll make a second bed to carry', rung,
   };
 }
@@ -446,4 +483,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };

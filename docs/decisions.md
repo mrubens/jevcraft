@@ -556,7 +556,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `fetch_cache` | side_trip | fetch the things left in a field cache | a chest left before an earlier trip, full, between 48 and 512 blocks away |
 | `cache_valuables` | side_trip | leave the valuables in a chest here | by day and fit, home's chest out of reach, valuables carried, and a chest or the wood for one |
 | `travel_[a-z_]+` (pattern) | side_trip | walk to a nearby biome | by day and fit, another biome twenty-four or more blocks off in the Overworld (the nearest four), said with what it holds, and the walk there and back fits in the daylight left |
-| `tame_wolf` | side_trip | tame a wolf | a wild adult wolf in view, bones carried, fewer than two tamed, in the Overworld |
+| `tame_wolf` | side_trip | tame a wolf | a wild adult wolf in view or seen within sixty-four blocks (remembered thirty minutes, out of view walked to and forgotten if gone), bones carried, fewer than two tamed, in the Overworld; said with where it is, the odds the bones carried give (one in three a bone), what a tamed wolf does and does not do, and what the Overworld's mobs cost the fresh worlds of 2026-09-28 |
 | `breed_cows_here` | side_trip | breed two cows in the field | two adult cows within sixteen blocks, two wheat carried, none bred in five minutes |
 | `breed_sheep` | side_trip | breed two sheep | two adult sheep within sixteen blocks, two wheat carried, none bred in five minutes |
 | `breed_chickens` | side_trip | breed two chickens | two adult chickens within sixteen blocks, two seeds carried, none bred in five minutes |
@@ -605,7 +605,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `earn_xp` | root | smelt raw ore for experience | by day in the Overworld, and eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty |
 | `enchant` | root | enchant gear at the enchanting table | by day in the Overworld, and a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `trial_chambers` | root | an expedition to the trial chambers | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed |
-| `tame_wolf` | root | tame a wolf | by day in the Overworld, and a wild adult wolf in view and bones carried, fewer than two tamed |
+| `tame_wolf` | root | tame a wolf | by day in the Overworld, and a wild adult wolf in view or seen within sixty-four blocks and remembered, and bones carried, fewer than two tamed |
 | `breed_cows_here` | root | breed two cows in the field | by day in the Overworld, and two adult cows near and two wheat carried |
 | `breed_sheep` | root | breed two sheep | by day in the Overworld, and two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | by day in the Overworld, and two adult chickens near and two seeds carried |
@@ -1053,7 +1053,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `earn_xp` | root | smelt raw ore for experience | eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty |
 | `enchant` | root | enchant gear at the enchanting table | a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `trial_chambers` | root | an expedition to the trial chambers | in the Overworld with an iron pickaxe or better, healthy and fed |
-| `tame_wolf` | root | tame a wolf | a wild adult wolf in view and bones carried, fewer than two tamed |
+| `tame_wolf` | root | tame a wolf | a wild adult wolf in view or seen within sixty-four blocks and remembered, and bones carried, fewer than two tamed |
 | `breed_cows_here` | root | breed two cows in the field | two adult cows near and two wheat carried |
 | `breed_sheep` | root | breed two sheep | two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | two adult chickens near and two seeds carried |
@@ -1111,7 +1111,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `earn_xp` | root | smelt raw ore for experience | by day in the Overworld, and eight or more of a raw ore are carried, gear is still unenchanted and the experience level is under thirty |
 | `enchant` | root | enchant gear at the enchanting table | by day in the Overworld, and a table is carried, in view or remembered, lapis is carried, the experience level is five or more, and gear is unenchanted |
 | `trial_chambers` | root | an expedition to the trial chambers | by day in the Overworld, and in the Overworld with an iron pickaxe or better, healthy and fed |
-| `tame_wolf` | root | tame a wolf | by day in the Overworld, and a wild adult wolf in view and bones carried, fewer than two tamed |
+| `tame_wolf` | root | tame a wolf | by day in the Overworld, and a wild adult wolf in view or seen within sixty-four blocks and remembered, and bones carried, fewer than two tamed |
 | `breed_cows_here` | root | breed two cows in the field | by day in the Overworld, and two adult cows near and two wheat carried |
 | `breed_sheep` | root | breed two sheep | by day in the Overworld, and two adult sheep near and two wheat carried |
 | `breed_chickens` | root | breed two chickens | by day in the Overworld, and two adult chickens near and two seeds carried |
