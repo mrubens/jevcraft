@@ -5503,7 +5503,7 @@ test('a block in a creeper\'s line is offered, priced by the seconds until the l
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
   const o = options.block_creeper;
   assert(o, Object.keys(options).join(','));
-  assert.match(o.description, /^Put 2 blocks, two high, in the line from the eyes of the creeper \(4\.5 blocks off\) to the bot's, beside the bot at head height: about 1\.2 seconds until the line is cut \(the second block\), 1\.2 for both, and stay behind it\./);
+  assert.match(o.description, /^The creeper 4\.5 blocks off goes off 1\.5 seconds after it lights, within 3 blocks in sight of the bot: about [\d.]+ through the armour worn two blocks off, as much as the [\d.]+ health the bot has, [^]*?\. Put 2 blocks, two high, in the line from the eyes of the creeper \(4\.5 blocks off\) to the bot's, beside the bot at head height: about 1\.2 seconds until the line is cut \(the second block\), 1\.2 for both, and stay behind it\./);
   assert.match(o.description, /its sight is one line from its eyes to the bot's, which any block stops; out of its sight the fuse burns back down a tick at a time/);
   assert.match(o.description, /It is not lit: at 3 blocks in about 0\.5 seconds at its walk, and it goes off 1\.5 seconds after that if it sees the bot\. The line is cut about 0\.8 seconds before it would go off\./);
   assert.match(o.description, /within 3 blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light\. It is more than 3 off, so it walks on toward the bot round the block/);
@@ -5519,7 +5519,7 @@ test('a block in a creeper\'s line is offered, priced by the seconds until the l
   // Held, the line stopped: staying behind the block, nothing placed.
   survival.state.stance = { choice: 'block_creeper', at: Date.now() };
   const held = survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false);
-  assert.match(held.block_creeper?.description || '', /^Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
+  assert.match(held.block_creeper?.description || '', /^The creeper [^]*?\. Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
   assert.equal(await held.block_creeper.run(), true);
   assert.equal(placed.length, 2);
   // Not held, a line already stopped is the same stance, staying behind that
@@ -5527,7 +5527,7 @@ test('a block in a creeper\'s line is offered, priced by the seconds until the l
   // creeper's sight, was offered no way to stay there, and ran down into it
   // (note 604).
   delete survival.state.stance;
-  assert.match(survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false).block_creeper?.description || '', /^Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
+  assert.match(survival.stanceOptions(new Task('x'), {}, () => {}, [creeper], false).block_creeper?.description || '', /^The creeper [^]*?\. Stay behind the cobblestone at \(1, 65, 0\), in the line from the eyes of the creeper/);
 });
 
 test('a creeper lit with too little fuse left for the block is said as too late, with its blast; one on a ledge above is cut over the head', () => {
@@ -5551,7 +5551,7 @@ test('a creeper lit with too little fuse left for the block is said as too late,
   shaft.blockAt = p => { const f = p.floored(); const solid = f.y < 64 || f.z < 0 || (f.y >= 64 && f.y < 68 && f.z >= 2); return { position: f, name: solid ? 'deepslate' : 'air', boundingBox: solid ? 'block' : 'empty' }; };
   const overhead = new Survival(shaft, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } })
     .stanceOptions(new Task('x'), {}, () => {}, [{ entity: above, distance: 4.4, visible: true }], false).block_creeper;
-  assert.match(overhead?.description || '', /^Put a block in the line from the eyes of the creeper \(4\.4 blocks off\) to the bot's, over the bot's head: about 0\.6 seconds until the line is cut/);
+  assert.match(overhead?.description || '', /^The creeper [^]*?\. Put a block in the line from the eyes of the creeper \(4\.4 blocks off\) to the bot's, over the bot's head: about 0\.6 seconds until the line is cut/);
 });
 
 test('no block is offered for a creeper with no cell between it and the bot, or none carried', () => {
@@ -5597,7 +5597,7 @@ test('a creeper past three is said to walk round the block to where it sees the 
   assert.equal(still.sees, false);
 });
 
-test('a held block in a creeper\'s line is asked again the moment the creeper walks, or has a line again, and no block goes in unasked (note 547)', async () => {
+test('a held block in a creeper\'s line is asked again the moment the creeper comes nearer, or has a line again, and no block goes in unasked; walking round or off out of its line is not asked (notes 547, 685)', async () => {
   const placed = [];
   const creeper = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(4.95, 64, 0.5), height: 1.7, width: 0.6, isValid: true };
   const bot = creeperBot({ health: 20, creeper });
@@ -5614,12 +5614,18 @@ test('a held block in a creeper\'s line is asked again the moment the creeper wa
   // It stands: held, not asked.
   await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
   assert.equal(asked.length, 1, 'held while it stands behind the block');
-  // It walks, the line still stopped: asked again at once.
+  // It walks round, no nearer, the line still stopped: held, not asked
+  // (25594 was asked ten times in fourteen seconds so, note 685).
   creeper.position = new Vec3(4.95, 64, 1.9);
   assert(require('../src/creeper-sight').sightLine(bot, creeper).stoppedBy, 'still out of its sight');
   await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
-  assert.equal(asked.length, 2, 'asked again as it walks');
-  assert.match(asked[1].state.previousStance.askedAgainFor, /the creeper is walking: 1\.4 blocks since its line was cut, from 4\.5 to 4\.7 blocks off the bot/);
+  assert.equal(asked.length, 1, 'held while it walks round no nearer');
+  // It comes nearer, the line still stopped: asked again at once.
+  creeper.position = new Vec3(3.95, 64, 0.9);
+  assert(require('../src/creeper-sight').sightLine(bot, creeper).stoppedBy, 'still out of its sight');
+  await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
+  assert.equal(asked.length, 2, 'asked again as it comes nearer');
+  assert.match(asked[1].state.previousStance.askedAgainFor, /the creeper is coming nearer: [\d.]+ blocks since its line was cut, from 4\.5 to 3\.5 blocks off the bot/);
   // Round the block to a line: asked, and nothing placed without the answer.
   survival.state.stance = { ...survival.state.stance, askAgain: undefined, blockCreeper: { id: 9, creeperAt: creeper.position.clone(), distance: 4.7, at: Date.now() }, choice: 'block_creeper', at: Date.now(), ids: [9], health: 20 };
   creeper.position = new Vec3(0.5, 64, 3.6);

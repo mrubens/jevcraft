@@ -137,7 +137,7 @@ test('left from the recorded spot over its ways in, the fortress is offered to t
   const client = jevStub(['return_for_blocks']);
   const now = Date.now(), from = { x: 203, y: 47, z: -486 };
   const rest = { from, until: now + 240000, at: now - 60000, made: 1, why: 'out of blocks (0 carried)' };
-  const goal = { fortressSearch: { axis: 1, legs: 22, since: now - 146 * 60000,
+  const goal = { portals: [{ dimension: 'nether', x: 150, y: 47, z: -400 }], fortressSearch: { axis: 1, legs: 22, since: now - 146 * 60000,
     // keep_searching at 05:42:04.8, over walk_route and tunnel.
     shunned: [{ x: 135, z: -563, radius: 64, until: now + 600000, at: now, why: 'Jev chose to leave it and search on', from, left: ['walk route', 'tunnel'] }],
     legRests: { east: rest, south: rest, west: rest, north: rest } } };

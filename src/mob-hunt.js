@@ -1729,9 +1729,14 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
         return 'pickaxe';
       } };
   }
-  if (short && actions.returnOverworld) {
-    const portal = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
-    options.return_for_blocks = { description: `Go back through the portal to the Overworld${portal ? `, the nearest known ${Math.round(Math.hypot(portal.x - here.x, portal.z - here.z))} blocks off at ${portal.x}, ${portal.y}, ${portal.z}` : ', none known in the Nether: the way is found from what is loaded'}, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.`,
+  // Offered only by a portal there is to go back by: one remembered here,
+  // the one the bot came through worked out from its Overworld side, or
+  // one in view. 25597 (mid-242-gf) was offered it with none of those
+  // (the one it knew then lay past the walk back's reach), chose it, and
+  // the code answered "No loaded return portal observed" (note 685).
+  const homeBy = short && actions.returnOverworld ? portalBack(bot, goal, here) : null;
+  if (homeBy) {
+    options.return_for_blocks = { description: `Go back through the portal to the Overworld, ${homeBy.says}, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.`,
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   // Every way from here rests or is gone: nothing to ask. The step says so
@@ -1761,12 +1766,26 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   if (decision.stale) return false;
   return options[decision.path.at(-1)].run();
 }
-// The portal the search can go home by, and how far the search has come
-// from it: the nearest known in the Nether.
+// The portal the search can go home by, as the way back (work.js
+// returnFromNether) finds it: one in view, the nearest remembered in the
+// Nether, or the one the bot came through, worked out from its Overworld
+// side. -> { portal, says } or null.
+function portalBack(bot, goal, here) {
+  const off = p => Math.round(Math.hypot(p.x - here.x, p.z - here.z));
+  let seen = null;
+  try { seen = bot.findBlock?.({ matching: b => b?.name === 'nether_portal', maxDistance: 64 }) || null; } catch (_) { seen = null; }
+  if (seen) return { portal: seen.position, says: `the one in view ${off(seen.position)} blocks off at ${seen.position.x}, ${seen.position.y}, ${seen.position.z}` };
+  const known = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => off(a) - off(b))[0];
+  if (known) return { portal: known, says: `the nearest known ${off(known)} blocks off at ${known.x}, ${known.y}, ${known.z}` };
+  const came = require('./game-progress').cameThrough(goal, here);
+  if (came) return { portal: came, says: `the one it came through, not seen since, worked out from its Overworld side as near ${came.x}, ${came.z}, ${off(came)} blocks off` };
+  return null;
+}
+// And how far the search has come from it: the nearest known in the Nether.
 const compass = (dx, dz) => { const ns = dz < -0.38 * Math.hypot(dx, dz) ? 'north' : dz > 0.38 * Math.hypot(dx, dz) ? 'south' : '', ew = dx > 0.38 * Math.hypot(dx, dz) ? 'east' : dx < -0.38 * Math.hypot(dx, dz) ? 'west' : ''; return ns && ew ? `${ns}-${ew}` : ns || ew || 'here'; };
 function portalBackFact(goal, here) {
   const portal = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
-  if (!portal) return {};
+  if (!portal) return { portalBack: require('./game-progress').cameThrough(goal, here) ? 'no portal has been seen in the Nether since the crossing; the one the bot came through is worked out from its Overworld side' : 'no portal is known in the Nether: there is no way back to the Overworld known from here' };
   const off = Math.round(Math.hypot(portal.x - here.x, portal.z - here.z));
   return { portalBack: `the nearest portal known in the Nether is at (${portal.x}, ${portal.y}, ${portal.z}), ${off} blocks ${compass(portal.x - here.x, portal.z - here.z)} of here` };
 }

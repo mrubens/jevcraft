@@ -358,7 +358,11 @@ function risePlan(view, feet, { reach = 48 } = {}) {
 // north (note 655). The cells beside lava are said and walked crouched,
 // one at a time; a drop of two or more onto one, or a jump up onto one, is
 // not taken (movement.js, notes 514 and 220-e: the body carries on past
-// the cell it was aimed at). -> { path: [Vec3], lavaSide, to } or null.
+// the cell it was aimed at). The walk ends eight blocks from every spot
+// the spell was stuck at (`stuckAt`), not only this one: 25597 (mid-242-gf)
+// walked off eight blocks east, stuck again there, walked off eight back
+// west, and did so three times on one strip seven blocks long (note 685).
+// -> { path: [Vec3], lavaSide, to } or null.
 const WALK_OFF_REACH = 16, WALK_OFF_NODES = 4000, LAVA_SIDE_COST = 100;
 function lavaBeside(view, c) {
   for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) {
@@ -367,7 +371,8 @@ function lavaBeside(view, c) {
   }
   return false;
 }
-function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OFF_NODES, away = 8 } = {}) {
+const offStuck = (p, from, stuckAt = []) => Math.min(...[from, ...stuckAt].filter(Boolean).map(f => Math.hypot(p.x - f.x, p.z - f.z)));
+function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OFF_NODES, away = 8, stuckAt = [] } = {}) {
   if (!from || isWater(view.name(feet))) return null;
   const empty = c => { const n = view.name(c); return n != null && open(n) && !isWater(n) && !isLava(n); };
   const stand = c => empty(c) && empty(c.plus(UP)) && solid(view.name(c.plus(DOWN))) && !/magma|campfire|fire/.test(view.name(c.plus(DOWN)) || '');
@@ -381,7 +386,7 @@ function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OF
     const cur = frontier.splice(k, 1)[0];
     if (cur.stale) continue;
     const c = cur.c;
-    if (cur.prev && Math.hypot(c.x - from.x, c.z - from.z) >= away && !lavaBeside(view, c)) { found = cur; break; }
+    if (cur.prev && offStuck(c, from, stuckAt) >= away && !lavaBeside(view, c)) { found = cur; break; }
     for (const d of Object.values(DIRS)) for (const dy of [0, 1, -1, -2, -3]) {
       const q = c.plus(d).offset(0, dy, 0);
       if (Math.abs(q.x - feet.x) > reach || Math.abs(q.z - feet.z) > reach || !stand(q)) continue;
@@ -409,7 +414,7 @@ function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OF
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
 // by default).
-function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, breathS = 13, last = null } = {}) {
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, stuckAt = [], breathS = 13, last = null } = {}) {
   let moves = [];
   const notOffered = [];
   const inWater = isWater(view.name(feet));
@@ -434,7 +439,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     // only (note 655).
     if (!inWater && lavaBeside(view, p)) facts.lavaBeside = true;
     if (target) facts.blocksToTarget = Math.round(p.distanceTo(target));
-    if (from) facts.blocksFromStart = Math.round(Math.hypot(p.x - from.x, p.z - from.z));
+    if (from) facts.blocksFromStart = Math.round(offStuck(p, from, stuckAt));
     return facts;
   };
   // The floor stood on, and the cells joined to it: a small island or none
@@ -591,18 +596,18 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // The whole walk off, where single steps are what is offered: more than
   // one cell, so not a step already listed.
   if (goal === 'away' && from && !inWater) {
-    const walk = walkOffPlan(view, feet, from);
+    const walk = walkOffPlan(view, feet, from, { stuckAt });
     if (walk && walk.path.length > 1) {
-      const rise = walk.to.y - feet.y, off = Math.round(Math.hypot(walk.to.x - from.x, walk.to.z - from.z));
+      const rise = walk.to.y - feet.y, off = Math.round(offStuck(walk.to, from, stuckAt));
       const side = walk.lavaSide;
       moves.push({ key: 'walk_off', kind: 'walk', path: walk.path, to: walk.to, lavaSide: side,
-        does: `Walk off this spot to (${walk.to.x}, ${walk.to.y}, ${walk.to.z}), ${walk.path.length} cells over the ground as it stands (nothing dug or laid${rise ? `, ${rise > 0 ? `${rise} up` : `${-rise} down`} in all` : ''}), onto dry ground with no lava in the eight cells round it, ${off} blocks from where it got stuck. ${side ? `${side} of its cells ${side === 1 ? 'has' : 'have'} lava beside it (level with the feet or the floor, a block to the side or corner to corner), walked crouched one cell at a time; a misstep or a push there is into the lava${view.lavaTouch ? ` (${view.lavaTouch})` : ''}. The walks the bot makes on its own in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot.` : 'None of its cells has lava beside it.'}`,
+        does: `Walk off this spot to (${walk.to.x}, ${walk.to.y}, ${walk.to.z}), ${walk.path.length} cells over the ground as it stands (nothing dug or laid${rise ? `, ${rise > 0 ? `${rise} up` : `${-rise} down`} in all` : ''}), onto dry ground with no lava in the eight cells round it, ${off} blocks from where it got stuck${stuckAt.length ? ` and from the ${stuckAt.length === 1 ? 'spot' : `${stuckAt.length} spots`} it was stuck at before in this spell` : ''}. ${side ? `${side} of its cells ${side === 1 ? 'has' : 'have'} lava beside it (level with the feet or the floor, a block to the side or corner to corner), walked crouched one cell at a time; a misstep or a push there is into the lava${view.lavaTouch ? ` (${view.lavaTouch})` : ''}. The walks the bot makes on its own in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot.` : 'None of its cells has lava beside it.'}`,
         effects: [], ...where(walk.to) });
     }
   }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
-    : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, (feet.y - from.y) || 0, feet.z - from.z) >= 8
+    : goal === 'away' ? dryFooting(view, feet) && !!from && [from, ...stuckAt].every(f => Math.hypot(feet.x - f.x, (feet.y - f.y) || 0, feet.z - f.z) >= 8)
       : dryFooting(view, feet) && atSurface(view, feet);
   // No dig that lets lava in beside the body: it runs into the bot's cells
   // in a second. mid-92-s, working up out of a night mine, dug the rock
@@ -871,6 +876,10 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   // moves and visits are kept, so what failed is still known.
   const prior = goal.unstuck?.aim === aim.aim && Date.now() - Date.parse(goal.unstuck.since) < 600000 ? goal.unstuck : null;
   const record = goal.unstuck = prior ? { ...prior, moves: (prior.moves || []).slice(-24), visits: prior.visits || {} } : { aim: aim.aim, since: new Date().toISOString(), moves: [], visits: {} };
+  // Off a spot: the spots this spell was stuck at before are the stuck
+  // area too, and the walk off leaves them all (walkOffPlan, note 685).
+  const here0 = aim.from, stuckAt = (prior?.stuckAt || []).filter(p => !here0 || p.x !== here0.x || p.y !== here0.y || p.z !== here0.z).map(p => new Vec3(p.x, p.y, p.z));
+  if (aim.goal === 'away' && here0) record.stuckAt = [...stuckAt.map(p => ({ x: p.x, y: p.y, z: p.z })), { x: here0.x, y: here0.y, z: here0.z }].slice(-6);
   bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
   let still = 0;
   const { checkThreats } = require('./danger');
@@ -883,7 +892,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
-    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null });
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; save(); return true; }
     if (!moves.length) return false;

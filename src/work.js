@@ -3716,12 +3716,17 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   const here = bot.entity.position;
   // One Jev chose to pass over for a portal made here (portal_way) is not
   // made for while that holds.
-  const known = (goal.portals || []).filter(p => p.dimension === where && Math.hypot(p.x - here.x, p.z - here.z) <= 600 && !isSetAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }))
+  // In the Overworld a portal past 600 blocks is not walked to (one is made
+  // nearer). In the Nether a known portal is the only way home, however
+  // far: 25597 (mid-242-gf) was offered the return to one 937 blocks off,
+  // the distance said, chose it, and was answered "No loaded return portal
+  // observed" (note 685).
+  const known = (goal.portals || []).filter(p => p.dimension === where && (where === 'nether' || Math.hypot(p.x - here.x, p.z - here.z) <= 600) && !isSetAside(goal, 'portal_passed', { x: p.x, y: p.y, z: p.z }))
     .sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z));
   // None seen here since the crossing: where the game put the one the bot
   // came through, from its Overworld side (note 607). The portal is seen
   // and remembered on the way, and walked into from there.
-  if (!known.length && where === 'nether') { const came = require('./game-progress').cameThrough(goal, here); if (came && Math.hypot(came.x - here.x, came.z - here.z) <= 600) known.push(came); }
+  if (!known.length && where === 'nether') { const came = require('./game-progress').cameThrough(goal, here); if (came) known.push(came); }
   if (!known.length) return false;
   const p = known[0];
   // At the place worked out and still none in view: it is not there.

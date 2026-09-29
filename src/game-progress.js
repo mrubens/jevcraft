@@ -434,7 +434,7 @@ function portalTrip(bot, goal = {}) {
     const pace = netherPaceSays(bot, d);
     return `No portal here has been seen since the crossing, but the one the bot came through from the Overworld portal at (${came.from.x}, ${came.from.z}) comes out near (${came.x}, ${came.z}) here, ${d} blocks off, about ${Math.round(d / 4.3)} seconds at a walk once the way is found and nothing stops it, and back through it after.${pace.says}${arrivalSays(bot, pace.seconds)}${wayBackSays(bot, { x: came.x, y: here.y, z: came.z })}`;
   }
-  if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is looked for first.`;
+  if (!known.length) return where === 'overworld' ? 'No portal is remembered here: one is found or built first (ten obsidian, or a bucket and a lava pool).' : `No portal is remembered in the ${where}: the way back is open only once one comes into view.`;
   const nearest = known.slice().sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
   const d = Math.round(Math.hypot(nearest.x - here.x, nearest.z - here.z));
   const pace = netherPaceSays(bot, d);
@@ -707,7 +707,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // Pearls from the warped forest while here: one known, or a sweep for one
   // (warped-pearls.js), before the walk back.
   const warped = require('./warped-pearls');
-  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal))
+  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal, Date.now(), { bot }))
     return { phase: 'obtain_ender_pearls', action: 'warped_pearls', item: 'ender_pearl', count: target - eyes };
   // Short of rods here only when that step waits (asideStage): the way back
   // is said as that, not as rods carried home.

@@ -195,12 +195,34 @@ function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runS
 // brute's blows (12.2 each through an iron helmet and chestplate) were the
 // bot's twenty. The rail was chosen at 0.66; the brute came from 6.9 blocks
 // to 1.7 in about a second and struck twice (note 576).
+// Led by the one that can end the bot soonest at its own pace, a creeper's
+// blast among them: 25594 (mid-242-he), asked about a creeper 6 blocks off
+// in sight, had every option lead with "The zombie 16 blocks off, out of
+// sight, hits for about 2.2", the creeper left out as no biter (note 685).
 function blowsSay(mobs, health) {
-  const biters = (mobs || []).filter(m => !m.apart && !m.shoots && m.name !== 'creeper' && m.hitsBot > 0 && !m.bornOf);
-  if (!biters.length) return '';
-  const m = biters.slice().sort((a, b) => b.hitsBot - a.hitsBot || a.distance - b.distance)[0];
-  const { MOBS } = require('./combat-estimate');
+  const { MOBS, LIGHTS_AT, FUSE } = require('./combat-estimate');
   const h = Math.round((health ?? 20) * 10) / 10;
+  const biters = (mobs || []).filter(m => !m.apart && !m.shoots && m.name !== 'creeper' && m.hitsBot > 0 && !m.bornOf);
+  const creepers = (mobs || []).filter(m => !m.apart && m.name === 'creeper' && m.hitsBot > 0);
+  if (!biters.length && !creepers.length) return '';
+  const endsIn = m => {
+    const v = blocksPerSecond(m.name);
+    if (m.name === 'creeper') return m.hitsBot >= h ? Math.max(0, (m.distance || 0) - LIGHTS_AT) / v + FUSE : Infinity;
+    const blows = Math.max(1, Math.ceil(h / m.hitsBot));
+    return Math.max(0, (m.distance || 0) - (m.reach || 1.5)) / v + (blows - 1) * (MOBS[m.name]?.blowEvery || 1);
+  };
+  const hardestBiter = biters.slice().sort((a, b) => b.hitsBot - a.hitsBot || a.distance - b.distance)[0];
+  const creeper = creepers.slice().sort((a, b) => endsIn(a) - endsIn(b) || a.distance - b.distance)[0];
+  // Or, its blast not the bot's end, the harder of the two that comes first.
+  const arrives = m => Math.max(0, (m.distance || 0) - (m.name === 'creeper' ? LIGHTS_AT : m.reach || 1.5)) / blocksPerSecond(m.name) + (m.name === 'creeper' ? FUSE : 0);
+  if (creeper && (!hardestBiter || endsIn(creeper) < endsIn(hardestBiter) || (arrives(creeper) < arrives(hardestBiter) && creeper.hitsBot > hardestBiter.hitsBot))) {
+    const v = blocksPerSecond('creeper'), soon = Math.round(Math.max(0, (creeper.distance || 0) - LIGHTS_AT) / v * 10) / 10;
+    const unseen = creeper.visible === false ? ', out of sight,' : '';
+    const ends = creeper.hitsBot >= h ? `as much as the ${h} health the bot has` : `not all of the ${h} health the bot has`;
+    const when = soon <= 0.1 ? `it is within ${LIGHTS_AT} blocks now` : `at its walk (about ${Math.round(v * 10) / 10} blocks a second) it can be within ${LIGHTS_AT} blocks in about ${soon} second${soon === 1 ? '' : 's'}`;
+    return `The creeper ${Math.round((creeper.distance || 0) * 10) / 10} blocks off${unseen} goes off ${FUSE} seconds after it lights, within ${LIGHTS_AT} blocks in sight of the bot: about ${creeper.hitsBot} through the armour worn two blocks off, ${ends}, and ${when}.`;
+  }
+  const m = hardestBiter;
   const blows = Math.max(1, Math.ceil(h / m.hitsBot));
   const bare = m.bornOf ? null : MOBS[m.name]?.hit;
   const v = blocksPerSecond(m.name), soon = Math.round(Math.max(0, (m.distance || 0) - (m.reach || 1.5)) / v * 10) / 10;
@@ -6471,7 +6493,12 @@ class Survival {
 
   // Why a held block in a creeper's line is to be asked again, or null
   // while it holds: the line open again (the creeper come round to one), or
-  // the creeper walking since the line was cut. Past three blocks it walks
+  // the creeper coming nearer since the line was cut (or moving at all
+  // within its lighting range). A creeper walking off or round at the
+  // same distance, out of its line, changes nothing the block turns on:
+  // asked at each such step, 25594 (mid-242-he) answered block_creeper ten
+  // times in fourteen seconds, the creeper going from 7 to 9.7 blocks off
+  // (note 685). Past three blocks it walks
   // round the block toward the bot, making its way anew each second, seen
   // or not (26.1.2 MeleeAttackGoal); held on "the line is stopped", mid-243-
   // aa's stance put a block in each new line as it came round, four in six
@@ -6486,7 +6513,8 @@ class Survival {
     const r1 = v => Math.round(v * 10) / 10, d = r1(e.position.distanceTo(bot.entity.position));
     if (!require('./creeper-sight').sightLine(bot, e).stoppedBy) return `the creeper has come round the block to a line to the bot, ${d} blocks off${creeperSwelling(bot, e) ? ', lit' : ''}`;
     const moved = Math.hypot(e.position.x - hold.creeperAt.x, e.position.z - hold.creeperAt.z) + Math.abs(e.position.y - hold.creeperAt.y);
-    if (moved >= CREEPER_WALKS) return `the creeper is walking: ${r1(moved)} blocks since its line was cut, from ${r1(hold.distance)} to ${d} blocks off the bot`;
+    const { LIGHTS_AT } = require('./combat-estimate');
+    if (moved >= CREEPER_WALKS && (d <= hold.distance - CREEPER_WALKS || d <= LIGHTS_AT)) return `the creeper is ${d <= hold.distance - CREEPER_WALKS ? 'coming nearer' : `moving within ${LIGHTS_AT} blocks`}: ${r1(moved)} blocks since its line was cut, from ${r1(hold.distance)} to ${d} blocks off the bot`;
     return null;
   }
 
@@ -6541,7 +6569,7 @@ class Survival {
     const goesOffIn = walk.sees && !walk.within ? Math.round((walk.seconds + FUSE) * 10) / 10 : null;
     const walkSays = walk.noWay ? ` It has no way to walk to the bot from where it is: it stays about there, and behind the block it does not see the bot.`
       : walk.within ? (walk.sees ? '' : ` It is within ${LIGHTS_AT} blocks: it stands where it is while the bot stays, and its fuse ${lit ? 'burns back down' : 'does not light'}.`)
-      : walk.sees ? ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where it sees the bot past the block: it lights there with its whole fuse and goes off about ${goesOffIn} seconds from now, about ${Math.round(afterArmour(creeperBlast(walk.distance), worn))} after the armour worn, unless the bot is more than ${FUSE_KEPT} off or out of its sight by then. The block buys those seconds, not the end of it: they are for backing out past ${BLAST_CLEAR} blocks, where its blast does nothing, or for striking it; staying behind the block, the blast is the price, and the stance is asked again as soon as it walks.`
+      : walk.sees ? ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where it sees the bot past the block: it lights there with its whole fuse and goes off about ${goesOffIn} seconds from now, about ${Math.round(afterArmour(creeperBlast(walk.distance), worn))} after the armour worn, unless the bot is more than ${FUSE_KEPT} off or out of its sight by then. The block buys those seconds, not the end of it: they are for backing out past ${BLAST_CLEAR} blocks, where its blast does nothing, or for striking it; staying behind the block, the blast is the price, and the stance is asked again as soon as it comes nearer.`
       : ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where the block still stops its line: it stands there and does not light.`;
     const next = ` Behind it: within ${LIGHTS_AT} blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light.${walkSays} Out of its sight three seconds on end, it forgets the bot and stops following it until it sees it again. If the bot backs off past ${LIGHTS_AT} blocks from it, it walks round the block and lights again where it comes within ${LIGHTS_AT} in sight. Neither strikes the other through the block.`;
     const others = creepers.slice(1);

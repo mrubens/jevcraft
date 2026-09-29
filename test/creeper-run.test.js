@@ -270,7 +270,7 @@ test('on the bridge over the creeper, out of its sight, staying behind the bridg
   const survival = new Survival(bot, { navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
   const stay = survival.stanceOptions(new Task('x'), {}, () => {}, threats(bot, 24), false).block_creeper;
   assert.ok(stay, 'offered');
-  assert.match(stay.description, /^Stay behind the netherrack at \(-40, 13, -5\), in the line from the eyes of the creeper \(3\.1 blocks off\) to the bot's\./);
+  assert.match(stay.description, /^The creeper [^]*?\. Stay behind the netherrack at \(-40, 13, -5\), in the line from the eyes of the creeper \(3\.1 blocks off\) to the bot's\./);
   assert.match(stay.description, /within 3 blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light/);
   assert.equal(stay.expects.damage, 0);
 });
@@ -279,7 +279,7 @@ test('a creeper 7.1 blocks off walking in: the block in its line is offered, and
   const bot = caveBot();
   const survival = new Survival(bot, { navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, threats(bot, 24), false);
-  assert.match(options.block_creeper?.description || '', /^Put \d blocks?(, two high,)? in the line from the eyes of the creeper \(7\.1 blocks off\) to the bot's/);
+  assert.match(options.block_creeper?.description || '', /^The creeper [^]*?\. Put \d blocks?(, two high,)? in the line from the eyes of the creeper \(7\.1 blocks off\) to the bot's/);
   assert.match(options.block_creeper.description, /The line is cut about [\d.]+ seconds before it would go off\./);
   assert.match(options.eat.description, /While it eats, the creeper 7 blocks off, coming on at about 2\.7 blocks a second, is within three about 1\.\d seconds in and lights there: done eating, about 1\.\d seconds of its fuse are left, and with the bot still there it goes off [\d.]+ blocks from it, about \d+ after the armour worn, more than the bot has, unless the bot is more than 7 blocks from it or out of its sight by then\./);
 });

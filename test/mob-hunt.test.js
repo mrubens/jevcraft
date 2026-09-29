@@ -721,7 +721,7 @@ test('a fortress leg over a void is priced by the blocks carried, its failure ke
   for (let x = -3; x <= 3; x++) for (let z = -3; z <= 1; z++) for (let y = 60; y <= 64; y++) near.push(new Vec3(x, y, z));
   bot.findBlocks = ({ maxDistance }) => near.filter(p => p.distanceTo(bot.entity.position) <= maxDistance);
   // The last leg went south from the ledge's edge and failed: the staircase found no way over the void.
-  const goal = { fortressSearch: { axis: 1, legs: 3, heading: 1, lastHeading: 1, legMode: 'level', target: { x: 1, y: 65, z: 97 }, legFrom: { x: 0, z: 1 }, legSince: Date.now() - 30000, legFails: 3 } };
+  const goal = { portals: [{ dimension: 'nether', x: -40, y: 65, z: 1 }], fortressSearch: { axis: 1, legs: 3, heading: 1, lastHeading: 1, legMode: 'level', target: { x: 1, y: 65, z: 97 }, legFrom: { x: 0, z: 1 }, legSince: Date.now() - 30000, legFails: 3 } };
   const mined = [];
   const actions = { navigate: async () => {}, tunnel: async () => { throw new Error('No safe way toward (1, 65, 97): open air'); },
     mineAt: async (b, t, g, sv, p, name, drops) => { mined.push(name); dug.add(`${p}`); carried.push({ name: drops, count: 1 }); }, returnOverworld: async () => {} };

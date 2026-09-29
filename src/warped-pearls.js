@@ -30,9 +30,16 @@ const warpedKnown = (goal, now = Date.now()) => (goal.landmarks || []).filter(l 
 // planned every pass and returned at once, twenty passes a second, until
 // the progress watch failed it over and over (mid-242-ae-nether-3-fortress-1,
 // note 583).
-function warpedOpen(goal, now = Date.now()) {
+// In the Nether (`bot` given there), a forest counts only as the step
+// counts one, within its reach: 25597 (mid-242-gf) remembered one 1,020
+// blocks off, the sweep's rest was no rest while it did, and the sweep
+// started again the second it rested, "Looking for a warped forest" and
+// "No warped forest found" four times in sixteen seconds (note 685).
+function warpedOpen(goal, now = Date.now(), { bot = null } = {}) {
   if (isSetAside(goal, 'rung', 'warped_pearls', now)) return false;
-  return warpedKnown(goal, now).length > 0 || !isSetAside(goal, 'rung', 'warped_search', now);
+  const here = bot?.entity?.position && /nether/.test(String(bot.game?.dimension || ''));
+  const known = here ? require('./exploration').knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).filter(k => tripOpen(goal, k.landmark, now)) : warpedKnown(goal, now);
+  return known.length > 0 || !isSetAside(goal, 'rung', 'warped_search', now);
 }
 
 async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.now } = {}) {

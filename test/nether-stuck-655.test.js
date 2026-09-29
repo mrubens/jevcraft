@@ -106,7 +106,7 @@ test('with no pickaxe carried and none to be made, no restock is offered: rock d
   const client = jevStub(['none_good']);
   const now = Date.now(), from = { x: -137, y: 38, z: 155 };
   const rest = { from, until: now + 240000, at: now - 30000, made: 1, why: 'out of blocks (0 carried)' };
-  const goal = { fortressSearch: { axis: 1, legs: 95, since: now - 165 * 60000, legRests: { east: rest, south: rest, west: rest, north: rest } } };
+  const goal = { portals: [{ dimension: 'nether', x: 3, y: 42, z: 8 }], fortressSearch: { axis: 1, legs: 95, since: now - 165 * 60000, legRests: { east: rest, south: rest, west: rest, north: rest } } };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {}, returnOverworld: async () => {} }).catch(() => {});
   assert(client.asked.length > 0);
   for (const a of client.asked) assert.equal(a.options.restock_blocks, undefined, Object.keys(a.options).join(', '));
