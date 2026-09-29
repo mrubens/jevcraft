@@ -217,6 +217,34 @@ function observe(bot, ctx) {
     ...(ctx.pressing || pressing(bot, ctx.look || probe)) };
 }
 
+// The same scene, answered lately: its answer is given again, not asked
+// again (note 672). turn_priority was a fifth of all asks on 2026-09-28
+// and 29 (21,507 of 108,743, a question a minute a bot); 39% came with no
+// ruling standing (one dropped by a reflex or a single claim between) and
+// a fifth more with the claims gone and come back, and of those asked
+// within thirty seconds of an answer to the same scene, 94% were answered
+// the same. The scene is what the answer is weighed on: each claim's layer,
+// alert and action, the kinds of mob within sixteen blocks, and the food
+// band; health fallen SCENE_HEALTH since, a newcomer, a stopped or idle
+// winner, a minute passed or a mob at reach are asked as before (broken).
+const SCENE_MS = 30000, SCENE_HEALTH = 4;
+const SCENE_WHY = /^(no ruling|its winner no longer claims|the claims changed)$/;
+function sceneOf(bot, claims, seen, ctx = {}) {
+  let about = ctx.mobs;
+  if (!about) { try { about = probe.mobs(bot, 16); } catch (_) { about = []; } }
+  const kinds = [...new Set((about || []).filter(t => !(t.distance > 16)).map(t => t.entity?.name).filter(Boolean))].sort();
+  return `${claims.map(c => `${keyOf(c)}:${c.action}`).sort().join('|')}#${kinds.join(',')}#${seen.band}`;
+}
+function sameScene(state, scene, why, seen, now) {
+  const was = state.scenes?.[scene];
+  if (!was || !SCENE_WHY.test(why) || now - was.at >= SCENE_MS || seen.health <= was.health - SCENE_HEALTH) return null;
+  return was;
+}
+function answeredScene(state, scene, winner, health, now) {
+  const kept = Object.entries(state.scenes || {}).filter(([, s]) => now - s.at < SCENE_MS);
+  state.scenes = Object.fromEntries([...kept, [scene, { winner, at: now, health }]]);
+}
+
 // Why a held ruling no longer holds, or null while it does.
 function broken(ruling, claims, seen, now, print = fingerprintOf(claims)) {
   if (!ruling) return 'no ruling';
@@ -417,6 +445,8 @@ async function arbitrate(bot, claims, ctx = {}) {
     const winner = (!out.cut && live.find(c => c.layer === decision?.path?.[0])) || rulesPick(live);
     // Cut short, the rules' pick holds only until Jev can be asked again.
     state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + (out.cut ? IDLE_MS : RULING_MS), ...seen };
+    // Jev's answer to this scene, given again to it for a while (sameScene).
+    if (!out.cut && decision?.path && !decision.fallback && result.pending.scene) answeredScene(state, result.pending.scene, winner.layer, seen.health, now);
     // Said with how far the question had got (decisions/index.js), the
     // stages a question that never came back could not show (note 540).
     const got = bot?._asking?.id === 'turn_priority' ? `; the question had got to ${bot._asking.stages.map(s => `${s.stage} ${s.ms}`).join(', ')}` : '';
@@ -501,7 +531,14 @@ function rule(bot, claims, ctx = {}) {
   const why = broken(ruling, live, seen, now, [...live.map(keyOf), ...kept].sort().join('|'));
   if (!why) return { winner: live.find(c => c.layer === ruling.winner), by: 'held', ask: false, ruling };
   if (live.length === 1) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
-  if (!ctx.dry) return { winner: null, ask: true, why, pending: { live, seen, now, why } };
+  const scene = sceneOf(bot, live, seen, ctx);
+  const same = sameScene(state, scene, why, seen, now);
+  if (same) {
+    const winner = live.find(c => c.layer === same.winner);
+    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: same.at + RULING_MS, ...seen };
+    return { winner, by: 'scene', ask: false, why: `${why}; this same scene was answered ${Math.round((now - same.at) / 1000)} seconds ago`, ruling: state.ruling };
+  }
+  if (!ctx.dry) return { winner: null, ask: true, why, pending: { live, seen, now, why, scene } };
   const winner = rulesPick(live);
   state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
   return { winner, by: 'rules', ask: true, why, ruling: state.ruling };
@@ -581,7 +618,7 @@ async function take(bot, claims, ctx = {}) {
   };
   const w = r.winner;
   holding(w.layer, w.action, { urgency: w.urgency, ...(w.reflex ? { reflex: w.reflex } : {}) });
-  said(bot, `[arbiter] gave ${w.layer} ${w.action} (${r.by}${r.why && r.by === 'jev' ? `: ${r.why}` : ''})`, now);
+  said(bot, `[arbiter] gave ${w.layer} ${w.action} (${r.by}${r.why && (r.by === 'jev' || r.by === 'scene') ? `: ${r.why}` : ''})`, now);
   if (ctx.backstop && w.urgency !== 'body' && (ctx.backstopFor || ['vitals', 'work']).includes(w.layer) && unclaimed) {
     const given = state.holder;
     holding('survival', 'step');

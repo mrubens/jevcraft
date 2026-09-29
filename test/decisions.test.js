@@ -198,7 +198,7 @@ test('the stance and the turn are told whether health comes back, the food carri
     assert.match(h.nearestFood[0], /a cow in view, 12 blocks off/);
     assert.match(h.daylight, /^night: dawn in about 8 real minutes/);
     assert.match(h.standingStill, /standing still spends no hunger/);
-    assert.match(said, /healing is the bot's health and hunger/);
+    assert.match(said, /healing is health, hunger, whether health comes back/);
   }
 });
 

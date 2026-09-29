@@ -660,9 +660,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const snapshot = { request: goal.request, resource: state.item, need: huntTarget(bot, goal) - countOf(bot, state.item),
     ...(state.entity === 'blaze' && ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal) } : {}),
     ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot), blazeCounts: (() => { try { return require('./blaze-record').entryFacts(bot, { cage: require('./blaze-stand').spawnerAt(bot) }).says; } catch (_) { return undefined; } })() } : {}),
-    // After a rod, whether to stay for the next or go away to heal: what
-    // followed the trials' rods (after-rod.js, note 659).
-    ...((a => state.entity === 'blaze' && a ? { afterTheLastRod: a } : {})(require('./after-rod').says(bot))),
+    // What followed the trials' rods (after-rod.js, note 659) is no longer
+    // said: re-asked without it, no answer of 8 moved (note 672).
     health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
     fitness: { ...fit, said: fitSaid },
     // A blaze whose every way to fight it in the open ends within a push of

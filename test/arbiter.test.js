@@ -84,10 +84,41 @@ test('a ruling is held by its fingerprint until a newcomer, health, a food band 
   // A reflex ends the ruling.
   await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 70000 });
   assert.equal(state.ruling, undefined);
-  // A winner that is not preemptible keeps its hold.
+  // A winner that is not preemptible keeps its hold (asked past the time a
+  // scene's answer is given again, note 672).
   const pinned = [claim('survival', 'pressing', { preemptible: false, minHoldMs: 10000 }), claim('work')];
-  await arbiter.arbitrate(bot, pinned, { state, decide: async () => ({ path: ['survival'] }), now: 80000, mobs: [] });
-  assert.equal((await arbiter.arbitrate(bot, [...pinned, claim('vitals')], { state, decide, now: 85000, mobs: [mob('zombie', 2, 5)] })).by, 'held');
+  await arbiter.arbitrate(bot, pinned, { state, decide: async () => ({ path: ['survival'] }), now: 110000, mobs: [] });
+  assert.equal((await arbiter.arbitrate(bot, [...pinned, claim('vitals')], { state, decide, now: 115000, mobs: [mob('zombie', 2, 5)] })).by, 'held');
+});
+
+test('the same scene answered within thirty seconds is given the same answer, not asked again; a fall in health, a new kind of mob or a newcomer is asked (note 672)', async () => {
+  let asked = 0;
+  const decide = async () => { asked++; return { path: ['work'] }; };
+  const state = {}, claims = () => [claim('survival', 'pressing'), claim('work')];
+  const bot = fakeBot({ health: 18, food: 18 });
+  const at = (now, extra = {}) => arbiter.arbitrate(bot, claims(), { state, decide, now, mobs: [mob('zombie', 10, 1)], ...extra });
+  assert.equal((await at(0)).by, 'jev'); assert.equal(asked, 1);
+  // A reflex between drops the ruling; the same scene after it is given the
+  // same answer.
+  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 2000 });
+  assert.equal(state.ruling, undefined);
+  const again = await at(4000);
+  assert.equal(again.by, 'scene'); assert.equal(again.winner.layer, 'work'); assert.equal(asked, 1);
+  assert.match(again.why, /^no ruling; this same scene was answered 4 seconds ago$/);
+  // The ruling it made holds as a ruling does.
+  assert.equal((await at(5000)).by, 'held');
+  // Another kind of mob about is another scene.
+  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 6000 });
+  assert.equal((await at(7000, { mobs: [mob('zombie', 10, 1), mob('skeleton', 14, 2)] })).by, 'jev'); assert.equal(asked, 2);
+  // Health fallen four since the answer: asked.
+  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 8000 });
+  bot.health = 14;
+  assert.equal((await at(9000)).by, 'jev'); assert.equal(asked, 3);
+  // Thirty seconds after its answer the scene is asked again.
+  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 40000 });
+  assert.equal((await at(41000)).by, 'jev'); assert.equal(asked, 4);
+  // A newcomer is asked whatever the scene.
+  assert.equal((await at(42000, { mobs: [mob('zombie', 10, 1), mob('zombie', 4, 7)] })).why, 'a newcomer within six blocks'); assert.equal(asked, 5);
 });
 
 test('the reflexes have hysteresis: in at the line, out two past it', () => {

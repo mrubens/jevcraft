@@ -4910,10 +4910,10 @@ class Survival {
         ...((g => g ? { piglinsAndGold: g } : {})(piglinGoldSays(bot, [...danger, ...(this.lastFar || [])]))),
         // The scene unchanged and what each answer in it came to, or what
         // changed since the last one's answers; at a blaze fight, the place so
-        // far; after a rod, what followed the trials' rods (note 659).
+        // far (note 659). What followed the trials' rods is no longer said:
+        // re-asked without it, no answer of 8 moved (note 672).
         ...((s => s ? { sameSceneSoFar: s } : {})(scenes.says(book))),
         ...(blazePlace ? { hereSoFar: scenes.exposureSays(blazePlace) } : {}),
-        ...((a => a ? { afterTheLastRod: a } : {})(require('./after-rod').says(bot))),
 
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));

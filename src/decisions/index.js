@@ -134,25 +134,28 @@ function walk(tree, fallback) {
 // real minutes. A night hidden in a pocket was weighed as safe and free,
 // and it cost seven minutes of a run with nothing to show.
 const GAMEPLAY_AREAS = new Set(['combat', 'endgame', 'home', 'idle', 'resources', 'strategy', 'survival', 'travel', 'work']);
+// Each gloss in a line (note 672): they go with every such question, and
+// re-asked with the shorter ones 12 of 248 recorded answers moved (5 between
+// two asks of the same question), no replay case lost.
 // The run's own scoring, said plainly: a death fails it. The line had said
 // a death mattered less than a night idled, a thumb on the scale toward the
 // risky answer at low health (the decision review, 2026-09-26). A night is
 // eleven real minutes from dusk to dawn, eight and a half from bedtime.
-const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes, and a night about eleven from dusk to dawn. A death ends this attempt and loses what is carried; after that, minutes spent waiting, hiding or going back are the cost that counts.';
-const RISK = 'riskNow is how likely a death is now (the mobs about, what fighting them all here would cost, whether more spawn around, whether health comes back); deathWouldCost is what a death now would lose.';
-const DEATHS = 'recentDeaths are the bot\'s deaths of the last two hours: how, where, what was about, and what was chosen last before each; the same answer in the same place seldom ends differently.';
+const REAL_TIME = 'The player counts real time: a Minecraft day is twenty real minutes, a night about eleven. A death ends this attempt and loses what is carried; after that, minutes spent waiting, hiding or going back are the cost.';
+const RISK = 'riskNow is how likely a death is now; deathWouldCost, what a death now would lose.';
+const DEATHS = 'recentDeaths are the deaths of the last two hours and what was chosen last before each; the same answer in the same place seldom ends differently.';
 // A sense of pace said as a fact, not a limit: what the minutes played
 // compare with.
-const CLOCK = 'runClock is the run so far: minutes played toward the goal, when each milestone was reached, what it is on now, and where the minutes went, all told and in the last half hour. For pace, a practiced player from a settled start with iron reaches the Nether within the first hour and has the blaze rods and ender pearls within the next two; minutes already spent on a way are spent, and what counts is the minutes each option still costs.';
-const STOCK = 'blockStock is what can be laid and that, with no pickaxe carried, none comes back or can be dug: what is carried is all there will be until a pickaxe is made (makingAPickaxe says what that takes and what is carried toward it); with none carried every way that lays a block is closed.';
-const SCULK = 'sculk says the sculk sensors and shriekers near, what hears the bot and what a shrieker calls.';
-const HEALING = 'healing is the bot\'s health and hunger, whether health comes back, the food carried by kind (the last resort with what it may cost), the nearest food known, the time to daylight, and what standing still costs.';
+const CLOCK = 'runClock is the run so far. A practiced player with iron reaches the Nether within the first hour and has the rods and pearls within the next two; minutes spent are spent, and what counts is what each option still costs.';
+const STOCK = 'blockStock is what can be laid: with no pickaxe carried none comes back, and what is carried is all there will be until one is made (makingAPickaxe).';
+const SCULK = 'sculk is the sculk sensors and shriekers near and what a shrieker calls.';
+const HEALING = 'healing is health, hunger, whether health comes back, the food carried and nearest; standing still spends no hunger.';
 // Off the Overworld, hurt with nothing that brings hunger to eighteen: the
 // ways health could come back, each with its cost (healing.js, note 607).
-const WITHOUT_FOOD = 'withoutFood says health does not come back where the bot is; tripBackForFood is the way back through the portal for food with its walk, what it crosses and the food known on the other side; hoglinHunt is the one food of the Nether with whether a hoglin can be fought at this health.';
-const AGAIN = 'sameAnswerAgain says what this question was answered last with these same facts, and that nothing came of it; lastAnswersCameToNothing, the last answers to it in a row that each came back within seconds with nothing coming of them, whatever the facts said between; answersThatCameToNothing, the answers held as failed in the last two minutes, and why. The same answer again seldom ends differently.';
-const LEDGER = 'An option tried from about here lately says so, how often and how it ended; waysResting are the options left out because each was tried from here and came to nothing twice (or was held), and when they come back; whatFailedBelow is what the question below this one tried and why it ended, which brought this question. The same way again seldom ends differently.';
-const TRAIL = 'recentPositions is where the bot has been over the last few minutes, fifteen seconds apart, and what it was doing: the same few places over and over is a loop, and the same answer again seldom breaks it.';
+const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFood is the way back through the portal for food; hoglinHunt, the one food of the Nether.';
+const AGAIN = 'sameAnswerAgain, lastAnswersCameToNothing and answersThatCameToNothing are this question\'s recent answers that came to nothing; the same answer again seldom ends differently.';
+const LEDGER = 'An option tried from about here lately says how it ended; waysResting are options left out after coming to nothing here, and when they come back; whatFailedBelow is what the question below tried and why it ended.';
+const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 function withRealTime(spec, state = {}) {
   if (!GAMEPLAY_AREAS.has(spec.area) || !spec.instructions) return spec.instructions;
   const { task, guidance = '' } = spec.instructions;

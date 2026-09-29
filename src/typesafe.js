@@ -8,6 +8,8 @@
 const BASE_URL = process.env.TYPESAFE_BASE_URL || 'https://api.typesafe.ai';
 const MODEL = process.env.TYPESAFE_DEFAULT_MODEL || 'jev-latest';
 
+const { leanRequest } = require('./decisions/lean');
+
 const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
 
 class TypeSafeError extends Error {
@@ -117,6 +119,8 @@ class TypeSafe {
   }
 
   async exchange({ state, questions, model = this.model, signal, trace }) {
+    // The same facts in fewer words (decisions/lean.js, note 672).
+    ({ state, questions } = leanRequest({ state, questions }));
     // OpenRouter accepts omitted optional criteria, but rejects explicit null
     // for Noul questions. Preserve the caller's native questions unchanged.
     const wireQuestions = this.provider === 'openrouter' ? Object.fromEntries(Object.entries(questions).map(([id, question]) => {
@@ -138,7 +142,7 @@ class TypeSafe {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeout);
       try {
-        stage(trace, 'sent', attempt ? { attempt } : null);
+        stage(trace, 'sent', attempt ? { attempt } : { chars: body.length });
         const res = await fetch(this.endpoint, {
           method: 'POST',
           headers: {
