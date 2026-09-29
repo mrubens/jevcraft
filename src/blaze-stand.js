@@ -1157,6 +1157,10 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     const cage = spawnerAt(bot), live = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
     for (const o of Object.values(options)) o.description += towardRods(need, gainOf(o), { spawner: live });
   }
+  // What followed the answers of this kind in the played fights, in this
+  // situation (blaze-record.js, note 645).
+  const record = require('./blaze-record'), situation = record.situationOf(bot);
+  for (const [k, o] of Object.entries(options)) o.description += record.optionSays(bot, k, situation);
   return options;
 }
 

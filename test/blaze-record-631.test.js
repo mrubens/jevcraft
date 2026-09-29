@@ -208,3 +208,36 @@ test('a death by a blaze is read from the game\'s own line, its last minute\'s d
   assert.equal(d.sums.on_fire, 5);
   assert.equal(d.lastLandingSecondsBefore, 4.1);
 });
+
+// Note 645: what followed each kind of answer in the played fights, in the bot's situation (blaze-record.js
+// answersSay, optionSays), on the state and on each option of that kind; only where five fights are in the row.
+test('each option of a kind ends with what followed answers of that kind in a situation like this one, with its count', () => {
+  const rows = record.ANSWERS['none|2-3|>16'];
+  const options = stance(20);
+  const said = (kind, k) => new RegExp(`In the fights of 2026-09-28 after an answer of this kind \\(${kind}\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${rows[k][0]} fights, ${rows[k][1]} took a rod after it \\(${Math.round(100 * rows[k][1] / rows[k][0])}%\\), ${rows[k][2]} died after it \\(${Math.round(100 * rows[k][2] / rows[k][0])}%\\)\\.`);
+  assert.match(options.close_in.description, said('a strike', 'strike'));
+  assert.match(options.take_cover.description, said('cover', 'cover'));
+  assert.match(options.retreat.description, said('a retreat', 'retreat'));
+  // A kind with under five fights at this health says the row at any health, and says so.
+  assert.match(options.fight.description, /\(a fight from a stand\) in a situation like this \(no spawner within 16, two or three blazes within 16\): 7 fights, 0 took a rod after it \(0%\), 1 died after it \(14%\) \(at any health: the sample is under 5 at over 16 health\)\./);
+  // Hurt (5 health) the strike row at this health has under five fights: the row at any health is said, and says so; the cover row is at 5 health.
+  const hurt = stance(5);
+  assert.match(hurt.close_in.description, /\(a strike\) in a situation like this \(no spawner within 16, two or three blazes within 16\): 18 fights, 10 took a rod after it \(56%\), 3 died after it \(17%\) \(at any health: the sample is under 5 at under 8 health\)\./);
+  assert.match(hurt.take_cover.description, /\(cover\) in a situation like this \(no spawner within 16, two or three blazes within 16\): 15 fights, 0 took a rod after it \(0%\), 8 died after it \(53%\)\.$/);
+});
+
+test('the stance\'s state carries playedAnswers with the rows for the situation, the rate of no kind under five fights, and how the rods came', async () => {
+  const bot = sceneBot(20);
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  let state = null;
+  survival.decide = async (task, goal, save, q) => { state = q.state; return { path: ['take_cover'] }; };
+  survival.stanceStep(new Task('x'), {}, () => {}, Object.values(bot.entities).map(e => threat(bot, e)), false).catch(() => {});
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert(state, 'the stance was asked');
+  assert.match(state.playedAnswers, /^In this situation \(no spawner within 16, two or three blazes within 16, health 20\), what followed each kind of answer/);
+  assert.match(state.playedAnswers, /a strike \(close_in or charge_nearest: walking in on the blazes with the sword\): 11 fights, 5 took a rod after it \(45%\), 2 died after it \(18%\)/);
+  assert.match(state.playedAnswers, /How the rods came, of the 61 fights that ended with a rod: 56 had a strike in them/);
+  const { question } = require('../src/decisions');
+  assert.match(question('encounter_stance').instructions.guidance, /playedAnswers, and the sentence ending an option that has one, say what came after each kind of answer/);
+  assert.match(question('hunt_target').instructions.guidance, /playedAnswers, and the sentence ending a stand that has one/);
+});

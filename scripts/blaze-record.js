@@ -17,7 +17,10 @@
 // With --by-commit: the fights table's headline row for each commit the bot
 // ran (the connection frame's commit, src/recorder/commit.js; records
 // without one are 'unknown'), not split by a clock time.
-//   node scripts/blaze-record.js [--from 2026-09-28T00:00:00Z] [--to ISO] [--landings | --deaths | --by-commit] [--dir <flight dir>]
+// With --records <file>: every fight described (setting, gear, stance chain, kills,
+// damage, sight, the rod's timing; see describe) one JSON line each; with --wins
+// and --sequence: the rod fights against the deaths, and the stance chains.
+//   node scripts/blaze-record.js [--from 2026-09-28T00:00:00Z] [--to ISO] [--landings | --deaths | --by-commit | --records <file> | --wins | --sequence [--records-in <file>]] [--dir <flight dir>]
 const fs = require('fs');
 const path = require('path');
 
@@ -29,9 +32,10 @@ const IRON = /^(iron|diamond|netherite)_/;
 // kind, detail, snapshot: { health, food, dimension, mobs, inventory, equipment } }.
 function fights(frames, { from = -Infinity, to = Infinity } = {}) {
   const out = [];
-  let rods = null, hp = null, food = null, equip = null, prevHp = null, ep = null;
-  const close = (t, died) => { if (ep) { ep.end = t; ep.died = died; ep.rodsGain = Math.max(0, (rods ?? ep.rods0) - ep.rods0); out.push(ep); ep = null; } };
-  for (const x of frames) {
+  let cur = 0, rods = null, hp = null, food = null, equip = null, prevHp = null, ep = null;
+  const close = (t, died) => { if (ep) { ep.iEnd = died ? cur : ep.i1; ep.end = t; ep.died = died; ep.rodsGain = Math.max(0, (rods ?? ep.rods0) - ep.rods0); out.push(ep); ep = null; } };
+  for (let idx = 0; idx < frames.length; idx++) {
+    const x = frames[idx]; cur = idx;
     const t = typeof x.at === 'number' ? x.at : Date.parse(x.at), s = x.snapshot || {};
     if (!(t >= from && t <= to)) continue;
     if (s.inventory) rods = s.inventory.blaze_rod || 0;
@@ -42,9 +46,9 @@ function fights(frames, { from = -Infinity, to = Infinity } = {}) {
     const hurt = x.kind === 'damage' && isBlazeHurt(x.detail);
     if (s.dimension === 'the_nether' && (hurt || blazes.some(m => m.seen && m.d <= RANGE))) {
       if (ep && t - ep.last > GAP_MS) close(ep.last, false);
-      ep ||= { start: t, hp0: hp, hunger0: food, rods0: rods ?? 0, max16: 0, landings: 0, last: t,
+      ep ||= { i0: idx, start: t, hp0: hp, hunger0: food, rods0: rods ?? 0, max16: 0, landings: 0, last: t,
         iron: equip ? ['head', 'torso', 'legs', 'feet'].filter(k => IRON.test(equip[k] || '')).length : null };
-      ep.last = t;
+      ep.last = t; ep.i1 = idx;
     }
     if (ep) {
       if (t - ep.last > GAP_MS) close(ep.last, false);
@@ -157,11 +161,185 @@ function readFights(dir, from, to) {
   return list;
 }
 
+// How each fight went (note 645): the setting, the gear, the stances chosen
+// in order with their timing, the kills, the damage, whether the blazes were
+// in sight, and how a rod came. `describe(frames, fight)` reads the frames a
+// fight (from fights(), which keeps their indices) covers. A kill is a blaze
+// that was within 5 blocks in one frame carrying the mobs and gone from the
+// next within 4 seconds (an estimate: the record has no kill frame; about
+// half of a blaze's kills drop a rod, and `rodNearKill` checks the two agree).
+const STANCE_IDS = new Set(['encounter_stance', 'hunt_target', 'fortress_visit', 'body_way']);
+const SWORD = ['wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword', 'netherite_sword'];
+const median = a => { const b = a.filter(v => v != null).sort((x, y) => x - y); return b.length ? b[b.length >> 1] : null; };
+const round1 = v => v == null ? null : Math.round(v * 10) / 10;
+function describe(frames, e) {
+  const after = [];
+  for (let i = e.i0; i < frames.length && frames[i].at <= e.end + 30000; i++) after.push(frames[i]);
+  const W = after.filter(x => x.at >= e.start - 1 && x.at <= e.end + 2000);
+  const first = W[0]?.snapshot || {};
+  const mobFrames = W.filter(x => x.snapshot?.mobs);
+  const blazesOf = x => (x.snapshot.mobs || []).filter(m => m.name === 'blaze');
+  const at = x => (x.at - e.start) / 1000;
+  // Blazes: at the start (distinct ones within 24 in the first six seconds), at the peak, within 16 and within 8.
+  const startIds = new Set(); let peak24 = 0, peak16 = 0, peak8 = 0;
+  for (const x of mobFrames) {
+    const b = blazesOf(x);
+    if (x.at - e.start <= 6000) b.filter(m => m.d <= 24).forEach(m => startIds.add(m.id));
+    peak24 = Math.max(peak24, b.filter(m => m.d <= 24).length); peak16 = Math.max(peak16, b.filter(m => m.d <= 16).length); peak8 = Math.max(peak8, b.filter(m => m.d <= 8).length);
+  }
+  // Time with one blaze within 16 against several (of the frames with a blaze within 16), and sight: frames with a blaze seen within 24, the breaks of 3 seconds or more.
+  let solo = 0, multi = 0, seenT = 0, unseenT = 0, breaks = 0, lostSince = null, counted = false, sawAny = false;
+  for (let i = 0; i < mobFrames.length; i++) {
+    const x = mobFrames[i], b = blazesOf(x), dt = i + 1 < mobFrames.length ? Math.min(5000, mobFrames[i + 1].at - x.at) : 0;
+    const n16 = b.filter(m => m.d <= 16).length;
+    if (n16 === 1) solo += dt; else if (n16 > 1) multi += dt;
+    const seen = b.some(m => m.seen && m.d <= 24);
+    if (seen) { seenT += dt; sawAny = true; lostSince = null; counted = false; }
+    else if (sawAny) { unseenT += dt; lostSince ??= x.at; if (!counted && x.at - lostSince >= 3000) { breaks++; counted = true; } }
+  }
+  // Setting: a live blaze spawner within 16 in a decision's state, the drop at the bot's feet, height against the blazes, how far the bot moved.
+  const decisions = W.filter(x => x.kind === 'decision' && x.snapshot?.decision);
+  const states = decisions.map(x => x.snapshot.decision.state).filter(Boolean);
+  const stanceStates = decisions.filter(x => x.snapshot.decision.id === 'encounter_stance').map(x => x.snapshot.decision.state).filter(Boolean);
+  const spawnerNear = states.length ? states.some(s => s.spawner && s.spawner.makes === 'blaze' && s.spawner.blocksAway <= 16) : null;
+  const drops = stanceStates.map(s => s.dropWithinThreeBlocks);
+  const labels = W.map(x => `${x.kind}|${x.label}`);
+  const spanFrames = labels.filter(l => /hold on span|cross toward|cross_level/.test(l)).length;
+  const dropNear = drops.some(d => d && d.deadly && d.blocksAway <= 1), dropClose = drops.some(d => d && d.deadly);
+  const terrain = spanFrames || dropNear ? 'span' : dropClose ? 'near a drop' : stanceStates.length ? 'ground' : 'unknown';
+  const dy = [];
+  for (const x of mobFrames) { const y = x.snapshot.position?.y; if (y == null) continue; for (const m of blazesOf(x)) if (m.d <= 16 && m.at) dy.push(m.at.y - y); }
+  const height = median(dy);
+  const pos = W.map(x => x.snapshot?.position).filter(Boolean);
+  const moved = pos.length ? Math.max(...pos.map(p => Math.hypot(p.x - pos[0].x, p.z - pos[0].z))) : null;
+  // Gear.
+  const inv = W.find(x => x.snapshot?.inventory)?.snapshot.inventory || {};
+  const weapon = SWORD.slice().reverse().find(s => inv[s]) || states.find(s => s.weapon)?.weapon || null;
+  const shield = W.some(x => x.snapshot?.equipment?.offhand === 'shield');
+  // Stances in order (a decision's first pick), and the actions the bot began.
+  const stances = decisions.filter(x => STANCE_IDS.has(x.snapshot.decision.id)).map(x => ({ t: Math.round(at(x)), id: x.snapshot.decision.id, choice: (x.snapshot.decision.path || [])[0] || null, hp: round1(x.snapshot.health),
+    n16: blazesOf(x).filter(m => m.d <= 16).length, sp: (st => st ? (st.spawner && st.spawner.makes === 'blaze' && st.spawner.blocksAway <= 16 ? 1 : 0) : null)(x.snapshot.decision.state),
+    shield: x.snapshot.equipment ? x.snapshot.equipment.offhand === 'shield' : null })).filter(s => s.choice);
+  const chain = []; for (const s of stances) if (s.id !== 'fortress_visit' && chain[chain.length - 1] !== s.choice) chain.push(s.choice);
+  const acts = []; for (const x of W) if (x.kind === 'action' && x.label && acts[acts.length - 1] !== x.label) acts.push(x.label);
+  const shieldFrames = labels.filter(l => /shield/.test(l)).length;
+  // Kills.
+  const kills = [];
+  for (let i = 1; i < mobFrames.length; i++) {
+    const p = mobFrames[i - 1], n = mobFrames[i];
+    if (n.at - p.at > 10000) continue;
+    const ids = new Set(blazesOf(n).map(m => m.id));
+    for (const m of blazesOf(p)) if (m.d <= 6 && !ids.has(m.id)) kills.push({ t: at(n), id: m.id, d: m.d, others: blazesOf(n).filter(o => o.d <= 16).length });
+  }
+  // Damage: health lost in the fight by the game's hurts, by kind; and the rod: when it came, what stood behind it.
+  const hs = hurts(W), lost = hs.reduce((n, h) => n + h.drop, 0), by = {};
+  for (const h of hs) by[h.cat] = Math.round(((by[h.cat] || 0) + h.drop) * 10) / 10;
+  let rodT = null, rodPrev = null;
+  for (const x of after) { const r = x.snapshot?.inventory?.blaze_rod; if (r != null && r > e.rods0) { rodT = at(x); break; } }
+  if (rodT != null) rodPrev = kills.filter(k => k.t <= rodT + 1).pop() || null;
+  const minHp = Math.min(...W.map(x => x.snapshot?.health).filter(v => typeof v === 'number' && v > 0), e.hp0 ?? 20);
+  const firstStance = stances[0] || null;
+  return { start: e.start, secs: Math.round((e.end - e.start) / 1000), died: !!e.died, rod: e.rodsGain > 0, rods: e.rodsGain,
+    hp0: round1(e.hp0), hunger0: e.hunger0, minHp: round1(minHp), iron: e.iron, shield, weapon,
+    n24start: startIds.size, peak24, peak16, peak8, spawnerNear, terrain, height: round1(height), moved: round1(moved),
+    soloPct: pct(solo, solo + multi), seenPct: pct(seenT, seenT + unseenT), breaks,
+    chain, seq: stances.filter(x => x.id !== 'fortress_visit').map(x => [x.t, x.choice, x.hp, x.n16, x.sp, x.shield, x.id]), first: firstStance && firstStance.choice, stances: stances.length, acts: acts.slice(0, 12), shieldFrames,
+    kills: kills.length, killTimes: kills.map(k => Math.round(k.t)), lost: round1(lost), lostBy: by,
+    lostPerKill: kills.length ? round1(lost / kills.length) : null, landings: e.landings,
+    rodT: rodT == null ? null : Math.round(rodT), rodKill: rodPrev && { after: round1(rodT - rodPrev.t), d: round1(rodPrev.d), others: rodPrev.others },
+    firstKillT: kills[0] ? Math.round(kills[0].t) : null };
+}
+
+// The frame a description needs, and no more (a day's records are gigabytes).
+function slimFrame(f) {
+  const s = f.snapshot; if (!s) return f;
+  const d = s.decision, st = d?.state;
+  return { ...f, snapshot: { health: s.health, food: s.food, dimension: s.dimension, position: s.position && { x: s.position.x, y: s.position.y, z: s.position.z },
+    mobs: s.mobs && s.mobs.filter(m => m.name === 'blaze').map(m => ({ name: m.name, id: m.id, d: m.d, at: m.at, seen: m.seen })),
+    inventory: s.inventory, equipment: s.equipment,
+    decision: d && { id: d.id, path: d.path, state: st && { spawner: st.spawner, dropWithinThreeBlocks: st.dropWithinThreeBlocks, weapon: st.weapon } } } };
+}
+// Every fight described, with the commit its run loaded.
+function describedFights(dir, from, to) {
+  const { commitsByRun, runKey } = require('./lib/flight-commit');
+  const commits = commitsByRun(dir), out = [];
+  eachFile(dir, from, '"blaze"', (frames, file) => {
+    for (const e of fights(frames, { from, to })) out.push({ file, commit: commits.get(runKey(file)) || 'unknown', ...describe(frames, e) });
+  }, slimFrame);
+  return out;
+}
+// The answers' rows (src/blaze-record.js ANSWERS): for each stance answer of
+// encounter_stance in a fight, the situation it was given in and what followed
+// it in that fight (a rod at or after it, the death). `list` is describedFights.
+function answerRows(list) {
+  const { CLASS_OF, cellKeys } = require('../src/blaze-record');
+  const cells = {};
+  for (const f of list) {
+    const seen = new Set();
+    for (const [t, choice, hp, n16, sp, , id] of f.seq || []) {
+      const cls = CLASS_OF[choice];
+      if (!cls || id !== 'encounter_stance' || sp == null || hp == null) continue;
+      const rodAfter = f.rod && (f.rodT == null || f.rodT >= t);
+      for (const k of cellKeys({ spawner: sp === 1, blazes: n16, health: hp })) {
+        const key = k + '|' + cls;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const c = cells[key] ||= [0, 0, 0];
+        c[0]++; if (rodAfter) c[1]++; if (f.died) c[2]++;
+      }
+    }
+  }
+  return cells;
+}
+// A rate said with its count and Wilson 95% interval (n small: say so).
+function wilson(k, n) {
+  if (!n) return [0, 0];
+  const z = 1.96, p = k / n, d = 1 + z * z / n, c = p + z * z / (2 * n), m = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n));
+  return [Math.round(100 * (c - m) / d), Math.round(100 * (c + m) / d)];
+}
+const rate = (list, f) => { const k = list.filter(f).length; const [lo, hi] = wilson(k, list.length); return `${k}/${list.length} ${pct(k, list.length)}% (${lo}-${hi})`; };
+// Winning fights (a rod, alive) against the deaths: each feature's spread.
+function winsTable(list) {
+  const groups = { rod: list.filter(f => f.rod && !f.died), died: list.filter(f => f.died && !f.rod), neither: list.filter(f => !f.rod && !f.died) };
+  const feats = {
+    hp0: f => f.hp0, hunger0: f => f.hunger0, secs: f => f.secs, n24start: f => f.n24start, peak24: f => f.peak24, peak16: f => f.peak16, peak8: f => f.peak8,
+    height: f => f.height, soloPct: f => f.soloPct, seenPct: f => f.seenPct, breaks: f => f.breaks, stances: f => f.stances,
+    kills: f => f.kills, lost: f => f.lost, lostPerKill: f => f.lostPerKill, firstKillT: f => f.firstKillT, rodT: f => f.rodT, iron: f => f.iron,
+  };
+  const share = { spawnerNear: f => f.spawnerNear === true, shield: f => f.shield, ironSword: f => /iron|diamond|netherite/.test(f.weapon || ''), 'terrain span': f => f.terrain === 'span', 'terrain ground': f => f.terrain === 'ground',
+    'blazes above (height>=2)': f => f.height != null && f.height >= 2, 'a kill': f => f.kills > 0, 'ever 2+ kills': f => f.kills >= 2, 'a break in sight': f => f.breaks > 0, 'hp0>16': f => f.hp0 > 16, 'hunger0>=18': f => f.hunger0 >= 18 };
+  const out = { groups: Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.length])), median: {}, share: {} };
+  for (const [name, f] of Object.entries(feats)) out.median[name] = Object.fromEntries(Object.entries(groups).map(([k, v]) => { const a = v.map(f).filter(x => x != null && !Number.isNaN(x)); return [k, a.length ? `${round1(median(a))} (n${a.length})` : '-']; }));
+  for (const [name, f] of Object.entries(share)) out.share[name] = Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, `${pct(v.filter(f).length, v.length)}%`]));
+  return out;
+}
+// The stance chains (consecutive repeats collapsed) with what they came to.
+function sequenceTable(list, key) {
+  const by = {};
+  for (const f of list) { const k = key(f); (by[k] ||= []).push(f); }
+  return Object.entries(by).map(([k, v]) => ({ sequence: k, ...row(v.map(f => ({ died: f.died, rodsGain: f.rods }))), medianLost: round1(median(v.map(f => f.lost))) })).sort((a, b) => b.fights - a.fights);
+}
+
 if (require.main === module) {
   const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) => (a.startsWith('--') ? [...out, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : out), []));
   const dir = args.dir || path.join(__dirname, '..', '.bot-state', 'flight');
   const from = Date.parse(args.from || '2026-09-28T00:00:00Z'), to = args.to ? Date.parse(args.to) : Date.parse('2026-09-29T00:00:00Z');
-  if (args.landings) {
+  if (args.records) {
+    const list = describedFights(dir, from, to);
+    fs.writeFileSync(args.records, list.map(f => JSON.stringify(f)).join('\n') + '\n');
+    console.log(list.length + ' fights described to ' + args.records);
+  } else if (args.answers) {
+    const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
+    const cells = answerRows(list), min = require('../src/blaze-record').MIN_FIGHTS;
+    const last = new Date(Math.max(...list.map(f => f.start))).toISOString();
+    console.log(JSON.stringify({ fights: list.length, lastFightStart: last, rows: Object.fromEntries(Object.entries(cells).filter(([, c]) => c[0] >= min).sort()) }, null, 1));
+  } else if (args.wins || args.sequence) {
+    // --wins: the fights that brought a rod (alive) against the deaths, each
+    // feature side by side; --sequence: the stance chains and the first stance
+    // with their counts. --records-in reads a file --records wrote.
+    const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
+    console.log(JSON.stringify(args.wins ? winsTable(list) : { byChain: sequenceTable(list, f => f.chain.join(' > ') || '(no stance asked)').filter(r => r.fights >= 3), byFirstStance: sequenceTable(list, f => f.first || '(none)') }, null, 1));
+  } else if (args.landings) {
     const all = [];
     eachFile(dir, from, '"fireball"', frames => all.push(...landings(frames.filter(f => f.at >= from && f.at <= to))));
     const clean = all.filter(l => l.isolated && l.ended === 'gap'), dist = a => a.reduce((m, x) => ({ ...m, [x]: (m[x] || 0) + 1 }), {});
@@ -182,4 +360,4 @@ if (require.main === module) {
     console.log(JSON.stringify(Object.fromEntries(Object.entries(by).map(([c, list]) => [c, row(list)])), null, 1));
   } else console.log(JSON.stringify(tables(readFights(dir, from, to)), null, 1));
 }
-module.exports = { fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };
+module.exports = { answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };

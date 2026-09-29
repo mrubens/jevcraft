@@ -4937,7 +4937,7 @@ test('the stands against a blaze are priced with a biter out of sight that has a
   };
   const alone = make(false), round = make(true);
   assert(alone.back_to_wall && round.back_to_wall, Object.keys(round).join(','));
-  assert.match(alone.back_to_wall.description, /Back to the wall, the blaze still reaches it\.$/);
+  assert.match(alone.back_to_wall.description, /Back to the wall, the blaze still reaches it\./);
   assert.match(round.back_to_wall.description, /Back to the wall, the wither skeleton and the blaze still reach it\./);
   assert(round.back_to_wall.expects.damage > alone.back_to_wall.expects.damage + 5, `${round.back_to_wall.expects.damage} vs ${alone.back_to_wall.expects.damage}`);
 });

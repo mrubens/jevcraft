@@ -651,7 +651,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     save();
   } };
   const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item),
-    ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot) } : {}),
+    ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot) } : {}),
     health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
     fitness: { ...fit, said: fitSaid },
     // A blaze whose every way to fight it in the open ends within a push of

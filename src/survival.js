@@ -4444,6 +4444,13 @@ class Survival {
         o.description += require('./blaze-stand').towardRods(rodsNeed, gain, { spawner: live });
       }
     }
+    // What followed each kind of answer in the played fights, in this
+    // situation, on the options of that kind (blaze-record.js, note 645);
+    // the blaze stands say their own where they are built.
+    if (danger.some(t => t.entity.name === 'blaze')) {
+      const record = require('./blaze-record'), situation = record.situationOf(bot);
+      for (const [k, o] of Object.entries(options)) if (!standKeys.has(k)) o.description += record.optionSays(bot, k, situation);
+    }
     // The hardest blow that can get to the bot, first on every stance
     // (blowsSay, note 576): each says after it whether that mob still
     // reaches the bot its way.
@@ -4772,7 +4779,7 @@ class Survival {
         ...(ails ? { effectsNow: ails.trim() } : {}),
         // What fights with blazes came to in the trials, by the health and hunger
         // begun at (blaze-record.js, note 631).
-        ...(danger.some(t => t.entity.name === 'blaze') ? { playedRecord: require('./blaze-record').says(bot) } : {}),
+        ...(danger.some(t => t.entity.name === 'blaze') ? { playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot) } : {}),
         // Up on the pillar: how the hold has gone (pillar-wait.js, note 590).
         ...(this.lastPillarHold ? { pillarSoFar: this.lastPillarHold.facts } : {}),
         // Gold, where piglins are about and none is worn (note 581).
