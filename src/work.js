@@ -611,7 +611,8 @@ async function maintainPickaxe(bot, task, goal, save, budget = null) {
 // hundred and twenty minutes climbing to the surface for wood, some of it
 // by hand (2026-09-25).
 const WOOD_RESERVE = 6;
-const woodUnits = bot => bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
+const inNetherNow = bot => /nether/.test(String(bot.game?.dimension || ''));
+const woodUnits = bot => bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$|_hyphae$|_wood$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
 const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater && !(bot.game?.dimension === 'overworld' && shelterNeeded(bot));
 // Wood too, three logs' worth: the sticks for a pickaxe and a table. Worn
 // pickaxes and no wood had the bot climbing out of its night mine by hand,
@@ -735,6 +736,19 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const pick = pickaxeNeeded(bot) ? require('./mob-hunt').pickaxeFirst(bot) : null;
   const makeable = pick && !pick.carried && !pick.none && pick.item ? pick : null;
   if (makeable && reserveWeather(bot)) options.make_pickaxe = { description: makePickaxeSays(bot, makeable), run: () => makePickaxe(bot, task, goal, save, makeable.item) };
+  // Wood in the Nether is its forests' stems: the planks' worth wanted for
+  // the pickaxe to make now and a spare after it, against what is carried,
+  // the nearest stems known and the way there. 25583 stood with thirty
+  // ingots, no pickaxe and no wood, warped stems eleven blocks off, and
+  // nothing offered them (nether-wood.js, note 658).
+  if (inNetherNow(bot) && reserveWeather(bot) && (goal.kind === 'win' || pickaxeNeeded(bot))) {
+    const nw = require('./nether-wood');
+    const fetch = await nw.fetchStemsOffer(bot, task, goal);
+    if (fetch) options.fetch_stems = { description: fetch.description, describe: fetch.describe, run: async () => {
+      const done = await nw.fetchStems(bot, task, goal, save, { acquireStep });
+      if (done.unmade) throw new Error(done.unmade);
+    } };
+  }
   if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
@@ -792,7 +806,9 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // was carried on from before.
   const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
-  if (!client) return options[due.includes('make_pickaxe') ? 'make_pickaxe' : due.includes('spare_pickaxe') ? 'spare_pickaxe' : due.includes('wood_reserve') ? 'wood_reserve' : due[0]].run();
+  if (!client) return options[['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems'].find(k => due.includes(k)) || due[0]].run();
+  // The route to the stems surveyed only for a question asked.
+  if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
   options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
   const step = goal.step;

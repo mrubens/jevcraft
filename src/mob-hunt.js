@@ -1265,7 +1265,7 @@ function pickaxeFirst(bot) {
   if (pickaxeTier(bot) >= 1) return { carried: true, says: '' };
   const items = bot.inventory?.items?.() || [];
   const sum = re => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
-  const logs = sum(/_log$|_stem$/), planks = sum(/_planks$/), sticks = sum(/^stick$/);
+  const logs = sum(/_log$|_stem$|_hyphae$|_wood$/), planks = sum(/_planks$/), sticks = sum(/^stick$/);
   const table = countOf(bot, 'crafting_table') > 0;
   // Four planks for a table unless one is carried, two for sticks (four of
   // them) unless two are carried, and three more for a wooden head.
@@ -1656,6 +1656,20 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       run: async () => {
         const unmade = await makePickaxe(bot, task, goal, save, actions, pick);
         if (unmade) throw new Error(`The pickaxe was not made: ${unmade}`);
+        return 'pickaxe';
+      } };
+  }
+  // No pickaxe and none to be made for want of wood: the stems of the
+  // Nether's forests, the nearest known and the way there (nether-wood.js).
+  // 25583 had thirty ingots and warped stems eleven blocks off, and 25585
+  // tunnelled its legs by hand with one plank (notes 655, 658).
+  if (pick.none && actions.acquireStep) {
+    const nw = require('./nether-wood');
+    const fetch = await nw.fetchStemsOffer(bot, task, goal);
+    if (fetch) options.fetch_stems = { description: `${await fetch.describe()} The leg is chosen again after.`,
+      run: async () => {
+        const done = await nw.fetchStems(bot, task, goal, save, { acquireStep: actions.acquireStep });
+        if (done.unmade) throw new Error(done.unmade);
         return 'pickaxe';
       } };
   }
