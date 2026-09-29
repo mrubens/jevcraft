@@ -10,7 +10,7 @@ EVERY=${1:-20}
 mkdir -p artifacts/critic
 while [ ! -f artifacts/critic/stop ]; do
   out=artifacts/critic/critic-$(date -u +%Y%m%dT%H%MZ).md
-  claude -p --model claude-opus-5-5 --allowedTools "Read" "Grep" "Glob" "Bash(node scripts/*)" "Bash(ls:*)" < scripts/trials/critic-prompt.md > "$out.tmp" 2>&1
+  "${CLAUDE_BIN:-/Users/matt/.local/bin/claude}" -p --model claude-opus-5-5 --allowedTools "Read" "Grep" "Glob" "Bash(node scripts/*)" "Bash(ls:*)" < scripts/trials/critic-prompt.md > "$out.tmp" 2>&1
   mv "$out.tmp" "$out"
   sleep $((EVERY * 60))
 done
