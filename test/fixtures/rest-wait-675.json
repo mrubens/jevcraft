@@ -1,0 +1,191 @@
+{
+ "note": "675: three windows of the wasted-minutes ledger pattern \"waiting out a rest\" (note 667), each the question that chose the hold, read from its flight record: the bot, its pockets and what it was offered and answered",
+ "windows": [
+  {
+   "port": "25598",
+   "trial": "mid-242-bb-nether-1-fortress-9",
+   "flight": "127_0_0_1-25598-Jev-2026-09-29T00-20-11-834Z",
+   "at": "2026-09-29T00:26:05.844Z",
+   "position": {
+    "x": -110.5,
+    "y": 52,
+    "z": 141.5
+   },
+   "health": 20,
+   "food": 20,
+   "inventory": {
+    "gold_nugget": 20,
+    "bone": 1,
+    "coal": 119,
+    "stick": 3,
+    "flint": 10,
+    "mutton": 8,
+    "crafting_table": 1,
+    "lapis_lazuli": 9,
+    "raw_iron": 1,
+    "iron_sword": 1,
+    "leaf_litter": 19,
+    "oak_fence": 15,
+    "string": 2,
+    "white_bed": 1,
+    "wooden_hoe": 1,
+    "rotten_flesh": 2,
+    "raw_copper": 9,
+    "beef": 14,
+    "leather": 5,
+    "egg": 1,
+    "iron_pickaxe": 1,
+    "stone_axe": 1,
+    "water_bucket": 1,
+    "oak_planks": 2,
+    "bucket": 1,
+    "cooked_mutton": 4,
+    "flint_and_steel": 1,
+    "quartz": 3
+   },
+   "equipment": {
+    "head": "iron_helmet",
+    "torso": "iron_chestplate",
+    "legs": null,
+    "feet": null,
+    "offhand": "shield"
+   },
+   "asked": "rung_progress",
+   "offered": [
+    "differently",
+    "until_rest_ends",
+    "none_good"
+   ],
+   "answer": [
+    "until_rest_ends"
+   ],
+   "judgment": {
+    "differently": 0.25,
+    "until_rest_ends": 0.35,
+    "none_good": 0.4
+   },
+   "situation": "The obtain blaze rods could not go on below this question: fortress leg: every way it had from here rests: go to blazes about: Tried 2 times toward the same place from about here in the last 2 seconds, and it came to nothing (no new ground, nothing gained, no block dug or placed). It rests 5 minutes more from here.; return for blocks: Tried 2 times from here in the last 8 minutes, and it came to nothing: fortress approach: every way it had from here rests: tunnel: Tried 2 times toward the same place from about here in the last 3 seconds, and it came to nothing (no new ground, nothing gained, n",
+   "untilSaid": "Other work for the 2 minutes until the first of the fortress leg's ways comes off its rest here, chosen here a piece at a time, each piece given the time that is left; the obtain blaze rods stays the work in hand, is not set aside, and is taken up again when that rest ends. Ground eight blocks off (another way) leaves these rests behind; waiting here does not end them sooner. Chosen for this same stall 6 times in the last 30 minutes, and the work stood still again after each. Tried 4 times from here in the last 8 minutes, and it came to nothing: fortress leg: every way it had from here rests: return for blocks: Tried 2 times from here in the last 6 minutes, and it came to nothing: fortress approach: every way it had from here rests: walk rout."
+  },
+  {
+   "port": "25583",
+   "trial": "mid-243-cg",
+   "flight": "127_0_0_1-25583-Jev-2026-09-29T02-53-12-672Z",
+   "at": "2026-09-29T02:58:53.161Z",
+   "position": {
+    "x": -20.7,
+    "y": 101,
+    "z": -18.5
+   },
+   "health": 1.84,
+   "food": 13,
+   "inventory": {
+    "water_bucket": 1,
+    "bucket": 9,
+    "leaf_litter": 32,
+    "coal": 128,
+    "flint_and_steel": 1,
+    "white_bed": 1,
+    "raw_copper": 16,
+    "leather": 2,
+    "raw_gold": 5,
+    "iron_ingot": 30,
+    "iron_boots": 1,
+    "raw_iron": 30,
+    "cauldron": 1,
+    "magma_cream": 1,
+    "flint": 1,
+    "gravel": 14,
+    "iron_sword": 1,
+    "stone_axe": 1
+   },
+   "equipment": {
+    "head": "iron_helmet",
+    "torso": "iron_chestplate",
+    "legs": "iron_leggings",
+    "feet": "golden_boots",
+    "offhand": "shield"
+   },
+   "asked": "rung_progress",
+   "offered": [
+    "differently",
+    "work_free",
+    "until_rest_ends",
+    "none_good"
+   ],
+   "answer": [
+    "until_rest_ends"
+   ],
+   "judgment": {
+    "differently": 0.09,
+    "work_free": 0.07,
+    "until_rest_ends": 0.29,
+    "none_good": 0.55
+   },
+   "situation": "The obtain blaze rods could not go on below this question: fortress leg: every way it had from here rests: restock blocks: Tried 2 times from here in the last 8 minutes, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new ground looked over, ended where it began. It rests 4 minutes more from here.; return for blocks: Tried 2 times from here in the last 8 minutes, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new ground looked over, ended where it began. It rests 4 minutes more from here. Worked on this rung in 99 minutes on it: 10",
+   "untilSaid": "Other work for the 5 minutes until the first of the fortress leg's ways comes off its rest here, chosen here a piece at a time, each piece given the time that is left; the obtain blaze rods stays the work in hand, is not set aside, and is taken up again when that rest ends. Ground eight blocks off (another way) leaves these rests behind; waiting here does not end them sooner. Health 1.8 does not come back at hunger 13: nothing carried is food, and in the Nether only a hoglin, a mushroom stew or what the bastions hold is, so whatever this costs in health stays lost. Chosen for this same stall 4 times in the last 30 minutes, and the work stood still again after each. Tried 9 times from here in the last 10 minutes, and it came to nothing: stillness detour: every way it had from here rests: differently: Tried 2 times from here in the last 7 minutes, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new groun. It rests 5 minutes more from here."
+  },
+  {
+   "port": "25585",
+   "trial": "mid-242-ca-nether-1",
+   "flight": "127_0_0_1-25585-Jev-2026-09-29T01-32-11-244Z",
+   "at": "2026-09-29T01:32:27.718Z",
+   "position": {
+    "x": 117.5,
+    "y": 43,
+    "z": -360.1
+   },
+   "health": 20,
+   "food": 20,
+   "inventory": {
+    "crimson_roots": 1,
+    "bone": 1,
+    "oak_planks": 1,
+    "quartz": 4,
+    "coal": 108,
+    "leaf_litter": 24,
+    "cooked_mutton": 5,
+    "lapis_lazuli": 9,
+    "bucket": 1,
+    "white_bed": 1,
+    "flint": 2,
+    "oak_fence": 15,
+    "gold_nugget": 29,
+    "leather": 2,
+    "raw_copper": 7,
+    "water_bucket": 1,
+    "iron_sword": 1,
+    "gravel": 6,
+    "crafting_table": 1,
+    "flint_and_steel": 1,
+    "wooden_hoe": 1,
+    "furnace": 1,
+    "stone_axe": 1,
+    "cooked_beef": 1
+   },
+   "equipment": {
+    "head": "iron_helmet",
+    "torso": "iron_chestplate",
+    "legs": null,
+    "feet": null,
+    "offhand": "shield"
+   },
+   "asked": "leave_nether",
+   "offered": [
+    "go_back",
+    "wait_here",
+    "none_good"
+   ],
+   "answer": [
+    "wait_here"
+   ],
+   "judgment": {
+    "wait_here": 0.87,
+    "none_good": 0.06,
+    "go_back": 0.07
+   },
+   "situation": "",
+   "waitHereSaid": "Other work in the Nether until the rods step's rest ends, taken up again in 27 minutes, then the rods again; what the work is, is asked then."
+  }
+ ]
+}

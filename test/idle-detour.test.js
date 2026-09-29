@@ -20,7 +20,8 @@ const { setAside } = require('../src/progress');
 const tried = require('../src/tried');
 
 const HERE = new Vec3(-111.5, 41, -237.4);
-const DETOURS = ['differently', 'work_free', 'until_rest_ends', 'hoglin_food', 'return_for_food', 'mine_nearby', 'look_around', 'again', 'keep_on', 'restock_food', ...[1, 2, 3, 4, 5, 6].map(n => `recover_${n}`)];
+// Upkeep's work beside the wait (note 675) among them.
+const DETOURS = ['differently', 'work_free', 'until_rest_ends', 'hoglin_food', 'return_for_food', 'mine_nearby', 'look_around', 'again', 'keep_on', 'restock_food', 'fetch_stems', 'block_reserve', 'make_pickaxe', 'spare_pickaxe', 'wood_reserve', ...[1, 2, 3, 4, 5, 6].map(n => `recover_${n}`)];
 function recorded({ kind = 'win' } = {}) {
   const items = [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 20 }];
   const bot = { registry, game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 7.6, food: 12, isAlive: true, chat() {}, emit() {},

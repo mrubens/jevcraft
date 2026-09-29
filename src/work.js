@@ -414,12 +414,29 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     // and the rung stays the one in hand. The rung's question offered only
     // keeping at it, another way or thirty minutes set aside (note 600).
     const below = stall.escalated ? String(stall.escalated.from || 'the question below').replaceAll('_', ' ') : null;
-    answers.until_rest_ends = { description: below
-      ? `Other work for the ${minutes} minute${minutes === 1 ? '' : 's'} until the first of the ${below}'s ways comes off its rest here, chosen here a piece at a time, each piece given the time that is left; the ${thing} stays the work in hand, is not set aside, and is taken up again when that rest ends. Ground eight blocks off (another way) leaves these rests behind; waiting here does not end them sooner.`
-      : `Leave the ${thing} for the ${minutes} minute${minutes === 1 ? '' : 's'} until its rest ends and do other work meanwhile, chosen here a piece at a time, each piece given the time that is left; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. Nothing done here ends the rest sooner.`,
+    // What the hold has on offer from here, said before it is chosen: with
+    // nothing, the answer is the bot standing idle until the rest ends, and
+    // said as that. On 25598 (mid-242-bb-nether-1-fortress-9) "other work
+    // ... chosen here a piece at a time" was chosen twelve times in half an
+    // hour in the Nether, where the hold had nothing to offer, and each was
+    // 45 seconds of standing (note 675).
+    const work = await restWork(bot, task, goal, save, { survival, now });
+    const idleWait = !work.length;
+    const mins = `${minutes} minute${minutes === 1 ? '' : 's'}`;
+    const offerSays = restWorkSays(bot, work, { until: restUntil, now });
+    // What upkeep has on offer is a real way beside the wait, offered here
+    // as its own answer: asked with the gather only inside the hold, the
+    // 25598 question was answered none good six times in six; with the
+    // gather beside it, eight in eight took it (note 675).
+    for (const w of work.filter(w => UPKEEP_WORK.includes(w.key))) answers[w.key] = { description: `${w.description} The ${thing} is taken up again after it; the rest runs on meanwhile.`, run: w.run };
+    answers.until_rest_ends = { description: idleWait
+      ? `Wait here for the ${mins} until ${below ? `the first of the ${below}'s ways comes off its rest here` : 'its rest ends'}. ${offerSays} The ${thing} stays the work in hand and is taken up again then; waiting does not end the rest sooner${below ? ', and ground eight blocks off (another way) leaves these rests behind' : ''}.`
+      : below
+      ? `Other work for the ${mins} until the first of the ${below}'s ways comes off its rest here, chosen a piece at a time; the ${thing} stays the work in hand and is taken up again when that rest ends. ${offerSays} Ground eight blocks off (another way) leaves these rests behind; waiting here does not end them sooner.`
+      : `Leave the ${thing} for the ${mins} until its rest ends and do other work meanwhile, chosen a piece at a time; the ${thing} is taken up again when the rest ends, and the rest met again before then goes back to that work, not to this question. ${offerSays} Nothing done here ends the rest sooner.`,
       run: async () => {
-        goal.restHeld = { until: restUntil, reason: stall.key, at: now }; save();
-        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error || stall.escalated?.says, above });
+        goal.restHeld = { until: restUntil, reason: stall.key, at: now, ...(idleWait ? { idle: true } : {}) }; save();
+        await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: stall.key, until: restUntil, why: stall.error || stall.escalated?.says, above, idle: idleWait });
       } };
     // The other answers' walks meet the same rest, said: a rest until a
     // time wherever the bot is (WaysResting), not the ways below by place.
@@ -719,6 +736,29 @@ const UPKEEP_HOLD_MS = 5 * 60 * 1000;
 // dark within the last few minutes of day.
 const NEAR_BED = 64, FOOD_BEFORE_DUSK_S = 180;
 async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
+  const { options, budget } = await upkeepOffers(bot, task, goal, save);
+  const due = Object.keys(options);
+  if (!due.length) return false;
+  // Falling short of the step and the way home is asked anew, whatever
+  // was carried on from before.
+  const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
+  if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
+  if (!client) return options[['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems'].find(k => due.includes(k)) || due[0]].run();
+  // The route to the stems surveyed only for a question asked.
+  if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
+  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
+    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
+  const step = goal.step;
+  let chosen = null;
+  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
+  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.' }, 'upkeep'); }
+  finally { if (chosen === 'carry_on') goal.step = step; }
+  return chosen !== null && chosen !== 'carry_on';
+}
+// What upkeep has on offer from here, each with what it does and its run:
+// asked at upkeep, and offered as work while a rest is waited out
+// (holdForRest, note 675), where "carry on" had held it five minutes.
+async function upkeepOffers(bot, task, goal, save) {
   const { blockStock, BLOCK_RESERVE } = require('./inventory-tidy');
   const options = {};
   const worn = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name.replaceAll('_', ' ')} (${remainingUses(bot, i)} uses left)`);
@@ -800,23 +840,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
     if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood) options.food_reserve = { description: `Find food before dark: ${carried} food points carried, hunger ${bot.food}, dusk in about ${toDusk} seconds. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing.`,
       run: async () => { goal.stockFood = true; save(); } };
   }
-  const due = Object.keys(options);
-  if (!due.length) return false;
-  // Falling short of the step and the way home is asked anew, whatever
-  // was carried on from before.
-  const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
-  if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
-  if (!client) return options[['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems'].find(k => due.includes(k)) || due[0]].run();
-  // The route to the stems surveyed only for a question asked.
-  if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
-  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
-    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
-  const step = goal.step;
-  let chosen = null;
-  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
-  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.' }, 'upkeep'); }
-  finally { if (chosen === 'carry_on') goal.step = step; }
-  return chosen !== null && chosen !== 'carry_on';
+  return { options, budget };
 }
 
 // Work within a sculk sensor's hearing or beside a shrieker that calls a
@@ -5074,7 +5098,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
       return;
     }
     const rungAsk = up?.to === 'rung_progress' ? { escalated: { from: owner.q, to: 'rung_progress', says: up.says, passed: up.passed } } : {};
-    if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message, above: stallAbove(goal) });
+    if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message, above: stallAbove(goal), idle: held.idle === true });
     else await answerStall(bot, task, goal, save, { key, work, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
   }
   finally {
@@ -5458,6 +5482,95 @@ const DETOUR_MS = 180000, DETOUR_REST_MS = 300000;
 const USEFUL_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'redstone_ore', 'lapis_ore', 'diamond_ore', 'emerald_ore',
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_redstone_ore', 'deepslate_lapis_ore', 'deepslate_diamond_ore',
   'nether_quartz_ore', 'nether_gold_ore', 'ancient_debris'];
+// The work that can be done from here while a stall or a rest is waited
+// out: the night mine, the Overworld's day work, ore a carried tool takes,
+// a look around by day, and, while a rest is held, what upkeep has on
+// offer (blocks, stems, a pickaxe). With `preview` nothing is run or kept:
+// what the hold would offer, said on the question that chooses it (note
+// 675). `resting` leaves out a detour resting.
+const UPKEEP_WORK = ['make_pickaxe', 'fetch_stems', 'spare_pickaxe', 'wood_reserve', 'block_reserve'];
+async function detourWork(bot, task, goal, save, { survival = null, bounded = task, scratch = null, holding = false, preview = false, resting = () => false } = {}) {
+  scratch ||= { kind: 'survive', request: 'Something useful meanwhile', survival: goal.survival, portals: goal.portals, villages: goal.villages, blueprint: goal.blueprint };
+  const out = [];
+  const add = (key, description, run) => { if (!resting(key) && !out.some(w => w.key === key)) out.push({ key, description, run }); };
+  const overworld = dimension(bot) === 'overworld';
+  const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
+  if (survival?.canNightMine?.(goal)) add('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
+    // A step a pass, yielding between: a failed step returns at once, and
+    // this loop without a pause spun the event loop until the bot, unable
+    // to move or surface for air, drowned in its own mine.
+    // A mine that goes nowhere is the stall rule's to end (stillness.js).
+    async () => {
+      while (await survival.nightMine(bounded, scratch, save)) {
+        bounded.check();
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    });
+  if (!dark && overworld) for (const [key, option] of Object.entries(idleOptions(bot, scratch))) {
+    if (key === 'long_game') continue;
+    add(key, option.description, () => option.run ? option.run(bot, bounded, scratch, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, scratch, save));
+  }
+  // Ore only where nothing flows beside it: in the Nether the quartz is in
+  // the walls of the lava sea.
+  // And only ore the bot carries a tool to harvest: dig() refuses it
+  // otherwise ("Missing harvest tool"), the way offered comes to nothing and
+  // rests five minutes. mid-243-bc, with no pickaxe, was offered the quartz
+  // in the wall it stood by at every stall (note 624).
+  const harvestable = p => { const b = bot.blockAt(p); return !b?.harvestTools || bot.inventory.items().some(i => b.harvestTools[i.type]); };
+  const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name }))
+    .filter(o => o.name && harvestable(o.p) && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')))[0];
+  // Where the ore is and what is beside it, and what a walk meets (the
+  // decision audit, 2026-09-25).
+  const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]];
+  const oreDy = ore ? ore.p.y - bot.entity.position.floored().y : 0;
+  const oreBeside = ore ? `${Math.abs(oreDy) >= 2 ? ` It is ${Math.abs(oreDy)} blocks ${oreDy > 0 ? 'up' : 'down'}.` : ''}${SIDES.some(([x, y, z]) => /^(air|cave_air)$/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' It is in the wall of an open space: reaching it opens onto whatever is in there.' : ''}${SIDES.some(([x, y, z]) => /water/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' Water is beside it.' : ''}` : '';
+  const sky = bot.blockAt(bot.entity.position.floored())?.skyLight;
+  const walkRisk = dark ? ' It is dusk or night: mobs spawn on open ground along the way.' : Number.isFinite(sky) && sky < 8 ? ' Underground: mobs spawn wherever it is dark along the way.' : '';
+  if (ore) add('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.${oreBeside}`,
+    () => dig(bot, bounded, ore.p, {}));
+  // A walk to see what is there is an Overworld thing by day; in the Nether
+  // twenty-four blocks in a straight line is a walk to the lava sea.
+  if (!dark && overworld) {
+    // Kept with the world's survival state, not written onto the player's goal.
+    const turn = goal.survival || scratch;
+    const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; if (!preview) turn.detourHeading = heading;
+    const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
+    const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
+    add('look_around', `Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.${walkRisk}`,
+      () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
+  }
+  // Nothing else on offer: a walk to new ground, dusk or not, rather than
+  // standing where the work stalled. Trial 17, a desert at dusk with no wood
+  // and so no tools, had no detour at all and stood a minute (2026-09-24).
+  if (!out.length && overworld) {
+    const turn = goal.survival || scratch;
+    const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; if (!preview) turn.detourHeading = heading;
+    const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
+    const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
+    add('look_around', `Walk about twenty-four blocks in a direction not tried lately: nothing else can be done from here.${walkRisk}`,
+      () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
+  }
+  // While a rest is held, what upkeep has on offer from here: in the Nether
+  // the hold had nothing else, and 25598 (mid-242-bb-nether-1-fortress-9)
+  // stood on a ledge with a pickaxe and no block while every leg of the
+  // fortress search had ended "out of blocks (0 carried)", its upkeep
+  // answered "carry on" and held five minutes (note 675).
+  if (holding && goal.kind === 'win') {
+    let offers = {};
+    try { offers = (await upkeepOffers(bot, bounded, goal, save)).options; }
+    catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; offers = {}; }
+    for (const key of UPKEEP_WORK) {
+      const o = offers[key];
+      if (!o) continue;
+      // Netherrack dug by hand drops nothing: with no pickaxe and none to
+      // make now, a gather of it is no work (the pickaxe's own ways are).
+      if (key === 'block_reserve' && inNetherNow(bot) && pickaxeNeeded(bot) && !offers.make_pickaxe) continue;
+      const description = !preview && o.describe ? await o.describe() : o.description;
+      add(key, description, o.run);
+    }
+  }
+  return out;
+}
 async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null, id = 'stillness_detour', above = undefined } = {}) {
   const ms = STALL_MS;
   // Held until a rest ends (holdForRest), the work has that long.
@@ -5491,63 +5604,8 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // The stalled work's own answers (answerStall): done differently, or its
   // rung left for later. They run on the player's goal, not the scratch one.
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target);
-  const overworld = dimension(bot) === 'overworld';
-  const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
-  if (survival?.canNightMine?.(goal)) offer('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
-    // A step a pass, yielding between: a failed step returns at once, and
-    // this loop without a pause spun the event loop until the bot, unable
-    // to move or surface for air, drowned in its own mine.
-    // A mine that goes nowhere is the stall rule's to end (stillness.js).
-    async () => {
-      while (await survival.nightMine(bounded, scratch, save)) {
-        bounded.check();
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-    });
-  if (!dark && overworld) for (const [key, option] of Object.entries(idleOptions(bot, scratch))) {
-    if (key === 'long_game') continue;
-    offer(key, option.description, () => option.run ? option.run(bot, bounded, scratch, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, scratch, save));
-  }
-  // Ore only where nothing flows beside it: in the Nether the quartz is in
-  // the walls of the lava sea.
-  // And only ore the bot carries a tool to harvest: dig() refuses it
-  // otherwise ("Missing harvest tool"), the way offered comes to nothing and
-  // rests five minutes. mid-243-bc, with no pickaxe, was offered the quartz
-  // in the wall it stood by at every stall (note 624).
-  const harvestable = p => { const b = bot.blockAt(p); return !b?.harvestTools || bot.inventory.items().some(i => b.harvestTools[i.type]); };
-  const ore = find(bot, USEFUL_ORES, 16, 8).map(p => ({ p, name: bot.blockAt(p)?.name }))
-    .filter(o => o.name && harvestable(o.p) && ![[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /lava/.test(bot.blockAt(o.p.offset(x, y, z))?.name || '')))[0];
-  // Where the ore is and what is beside it, and what a walk meets (the
-  // decision audit, 2026-09-25).
-  const SIDES = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]];
-  const oreDy = ore ? ore.p.y - bot.entity.position.floored().y : 0;
-  const oreBeside = ore ? `${Math.abs(oreDy) >= 2 ? ` It is ${Math.abs(oreDy)} blocks ${oreDy > 0 ? 'up' : 'down'}.` : ''}${SIDES.some(([x, y, z]) => /^(air|cave_air)$/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' It is in the wall of an open space: reaching it opens onto whatever is in there.' : ''}${SIDES.some(([x, y, z]) => /water/.test(bot.blockAt(ore.p.offset(x, y, z))?.name || '')) ? ' Water is beside it.' : ''}` : '';
-  const sky = bot.blockAt(bot.entity.position.floored())?.skyLight;
-  const walkRisk = dark ? ' It is dusk or night: mobs spawn on open ground along the way.' : Number.isFinite(sky) && sky < 8 ? ' Underground: mobs spawn wherever it is dark along the way.' : '';
-  if (ore) offer('mine_nearby', `Dig the ${ore.name.replaceAll('_', ' ')} ${Math.round(ore.p.distanceTo(bot.entity.position))} blocks away.${oreBeside}`,
-    () => dig(bot, bounded, ore.p, {}));
-  // A walk to see what is there is an Overworld thing by day; in the Nether
-  // twenty-four blocks in a straight line is a walk to the lava sea.
-  if (!dark && overworld) {
-    // Kept with the world's survival state, not written onto the player's goal.
-    const turn = goal.survival || scratch;
-    const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
-    const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
-    const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
-    offer('look_around', `Walk about twenty-four blocks in a direction not tried lately and see what is there: animals, trees, ore in a cliff, a better way on.${walkRisk}`,
-      () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
-  }
-  // Nothing else on offer: a walk to new ground, dusk or not, rather than
-  // standing where the work stalled. Trial 17, a desert at dusk with no wood
-  // and so no tools, had no detour at all and stood a minute (2026-09-24).
-  if (!Object.keys(tree).some(key => !answers[key]) && overworld) {
-    const turn = goal.survival || scratch;
-    const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; turn.detourHeading = heading;
-    const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
-    const target = here.offset(Math.round(Math.cos(angle) * 24), 0, Math.round(Math.sin(angle) * 24));
-    offer('look_around', `Walk about twenty-four blocks in a direction not tried lately: nothing else can be done from here.${walkRisk}`,
-      () => navigate(bot, bounded, new goals.GoalNear(target.x, target.y, target.z, 4), { timeoutMs: 45000, stallMs: 8000 }));
-  }
+  // The work on offer from here (restWork), each run bounded as above.
+  for (const w of await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) })) offer(w.key, w.description, w.run);
   // A walk to water is what the portal frame's cast is waiting for when it
   // has none: said on the travel to a biome that has some (the walk is built
   // from the scratch goal, which does not know the rung; note 630).
@@ -5610,15 +5668,49 @@ function restWaitSays(reason, until, why, now = Date.now()) {
   const what = String(reason || 'the work').replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
   return `the ${what}'s rest to end, ${Math.max(1, Math.round((until - now) / 1000))} seconds more (at ${new Date(until).toISOString().slice(11, 19)}Z)${why ? `, set for: ${String(why).slice(0, 160)}` : ''}; nothing else is on offer from here meanwhile`;
 }
-async function holdForRest(bot, task, goal, save, { client, survival, onStep = () => {}, reason, until, why = null, above = undefined }) {
+// What a hold for a rest would have on offer from here (detourWork, as the
+// hold builds it), read before the question that chooses the hold: the
+// option says the work, or that choosing it is standing idle (note 675).
+async function restWork(bot, task, goal, save, { survival = null, now = Date.now() } = {}) {
+  const attempts = attemptsFor(goal);
+  try { return await detourWork(bot, task, goal, save, { survival, holding: true, preview: true, resting: key => attempts.resting('detour', key, now) }); }
+  catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return []; }
+}
+// The first clause of an option's words, for a list of what is on offer.
+const clauseOf = d => { const c = String(d || '').split(/(?<=\.)\s/)[0].replace(/\.$/, ''); return c.length > 110 ? `${c.slice(0, 107)}...` : c; };
+// Why nothing is on offer, from what the catalog reads: where the bot is,
+// the blocks and the pickaxe carried.
+function idleWhy(bot) {
+  const { blockStock } = require('./inventory-tidy');
+  const where = dimension(bot) === 'overworld' ? (bot.time?.timeOfDay >= DAY.DUSK ? 'night in the Overworld' : 'the Overworld') : 'the Nether, where the day work of the Overworld is not on offer';
+  const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+  return `${where}; no ore within 16 blocks that a carried tool takes; ${blockStock(bot)} building blocks and ${pick ? 'a pickaxe' : 'no pickaxe'} carried`;
+}
+// The hold's offer in words: the work on offer, or the idle wait and its
+// minutes.
+function restWorkSays(bot, work, { until, now = Date.now() } = {}) {
+  const minutes = Math.max(1, Math.ceil((until - now) / 60000));
+  if (work.length) return `Work on offer meanwhile from here: ${work.map(w => clauseOf(w.description)).join('; ')}.`;
+  return `Nothing else is on offer from here meanwhile (${idleWhy(bot)}): chosen, this is standing here idle about ${minutes} minute${minutes === 1 ? '' : 's'}, until about ${new Date(until).toISOString().slice(11, 16)}Z.`;
+}
+// `idle`: the hold was chosen said as standing idle. Chosen as other work
+// and the work on offer run out, the hold ends and the question above is
+// asked again with that said, not a silent wait in the work's name.
+async function holdForRest(bot, task, goal, save, { client, survival, onStep = () => {}, reason, until, why = null, above = undefined, idle = true }) {
   let waitSaid = false;
   try {
     while (Date.now() < until) {
       task.check();
       const started = Date.now(), minutes = Math.max(1, Math.ceil((until - started) / 60000));
-      let worked = false;
-      try { worked = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why }, above }); }
+      // `none`: nothing was on offer (a detour tried and failed is not that).
+      let worked = false, none = false;
+      try { worked = await breakStillness(bot, task, goal, save, { client, survival, onStep, reason, now: started, until, holding: { minutes, why }, above }); none = !worked; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+      if (none && !idle) {
+        console.log(`[wait] the work on offer while ${String(reason).replace(/^\w+:/, '').replaceAll('_', ' ')} rests has run out; the question above is asked again`);
+        if (goal.restHeld?.until === until) { delete goal.restHeld; save(); }
+        return false;
+      }
       if (!worked && !waitSaid) {
         waitSaid = true;
         const says = restWaitSays(reason, until, why);
@@ -5632,6 +5724,7 @@ async function holdForRest(bot, task, goal, save, { client, survival, onStep = (
       if (!worked || Date.now() - started < 5000) for (const end = Date.now() + Math.max(0, Math.min(5000, until - Date.now())); Date.now() < end;) { await sleep(Math.min(250, end - Date.now())); task.check(); }
     }
   } finally { if (goal.restHeld?.until === until && Date.now() >= until) { delete goal.restHeld; save(); } }
+  return true;
 }
 
 // What the home base needs from the executor: travel, placing, digging,
@@ -6012,7 +6105,9 @@ function gameHandlers(bot, decisionClient) {
         acquireStep, acquireSetStep, return_overworld: returnFromNether, client: decisionClient,
         // Other work until a rung's rest ends, Jev's leave_nether wait_here:
         // the waiting stage's own work (note 605).
-        hold_for_rest: (b, t, g, sv, { reason, until, why }) => holdForRest(b, t, g, sv, { client: decisionClient, reason, until, why }),
+        hold_for_rest: (b, t, g, sv, { reason, until, why, idle }) => holdForRest(b, t, g, sv, { client: decisionClient, reason, until, why, idle }),
+        // What that hold would have on offer from here, said on wait_here (note 675).
+        rest_work: async (b, t, g, sv, { until }) => { const work = await restWork(b, t, g, sv, {}); return { idle: !work.length, says: restWorkSays(b, work, { until }) }; },
         planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g),
         enter_nether: (bot, task, goal, save) => netherStep(bot, task, goal, save, decisionClient || task.opportunityClient),
         enter_end: (bot, task, goal, save) => enterEnd(bot, task, goal, save, { navigate }),
@@ -6515,4 +6610,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };

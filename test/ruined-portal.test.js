@@ -971,7 +971,8 @@ test('a kept resting way, answered with other work until the rest ends, is not m
   assert.equal(asked.portal, 1, 'the way is asked once and kept');
   assert.equal(resting, 1, `the rest met once, not every pass: ${resting} times`);
   assert.equal(asked.stall, 1, 'the stall question asked once');
-  assert.match(offered.stall.until_rest_ends, /Leave the .* for the 1 minute until its rest ends and do other work meanwhile/);
+  // Said with the work the hold has on offer from here (note 675).
+  assert.match(offered.stall.until_rest_ends, /Leave the .* for the 1 minute until its rest ends and do other work meanwhile.* Work on offer meanwhile from here: /);
   assert.match(offered.stall.differently || '', /meets the same rest until then/);
   assert(Date.now() >= until, 'held until the rest ended');
   assert.equal(goal.restHeld, undefined, 'the hold ends with the rest');

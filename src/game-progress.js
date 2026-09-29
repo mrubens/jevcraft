@@ -583,13 +583,16 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   // leave_nether had just answered, and every pass after met the throw
   // again: 25590 threw it every forty-five seconds for six minutes, each
   // round a stall of the set-aside rung and working free (note 605).
-  const otherWork = async () => {
+  // Chosen as other work and the work on offer run out, the hold ends and
+  // this question is asked again, the wait said as idle (note 675).
+  const otherWork = async (idle = true) => {
     if (!actions.hold_for_rest) throw new WaysResting(`${waits} Jev chose other work in the Nether until then.`, stage.until);
-    await actions.hold_for_rest(bot, task, goal, save, { reason: 'step:rods_waiting', until: stage.until, why: `${waits} Jev chose other work in the Nether until then.` });
+    const done = await actions.hold_for_rest(bot, task, goal, save, { reason: 'step:rods_waiting', until: stage.until, why: `${waits} Jev chose ${idle ? 'to wait here' : 'other work in the Nether'} until then.`, idle });
+    if (done === false && goal.leaveNether?.pick === 'wait_here') { delete goal.leaveNether; save(); }
     return false;
   };
   const held = goal.leaveNether;
-  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until) return otherWork();
+  if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until) return otherWork(held.idle !== false);
   const search = goal.fortressSearch;
   const searched = search ? ` The fortress search so far: ${search.legs || 0} leg${search.legs === 1 ? '' : 's'} in ${search.since ? Math.round((now - search.since) / 60000) : 0} minutes${search.lastLegError ? `; the last ended: ${search.lastLegError}` : ''}.` : '';
   const tree = {
@@ -600,14 +603,22 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   // took them up here in the same second, three times (note 600). Said.
   const standing = asideStands(bot, goal, stage.phase, now);
   if (!standing) tree.search_on = { description: `Take the rods step up again now, its rest lifted: the fortress search goes on from here.${searched}` };
-  if (stage.until) tree.wait_here = { description: `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.` };
+  // What the hold has on offer from here, said: with nothing, waiting here
+  // is standing idle, and said as that. mid-242-ca-nether-1 (25585) chose
+  // "other work in the Nether" at 0.87 at 01:32:27 on 2026-09-29 and stood
+  // twenty minutes on its span with nothing on offer (note 675).
+  const offer = stage.until && actions.rest_work ? await actions.rest_work(bot, task, goal, save, { until: stage.until }) : null;
+  const idle = offer ? offer.idle : undefined;
+  if (stage.until) tree.wait_here = { description: offer
+    ? `${idle ? 'Wait here' : 'Other work in the Nether, chosen a piece at a time,'} until the rods step's rest ends${rest}, then the rods again. ${offer.says}`
+    : `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.` };
   const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
     state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, rodsTheGoalWants: require('./eye-need').says(bot, goal), ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
-  goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now }; save();
+  goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now, ...(pick === 'wait_here' && idle !== undefined ? { idle } : {}) }; save();
   if (pick === 'search_on') { attemptsFor(goal).clear('rung', stage.phase); delete goal.elsewhere; save(); return false; }
-  if (pick === 'wait_here') return otherWork();
+  if (pick === 'wait_here') return otherWork(idle !== false);
   if (actions.return_overworld) await actions.return_overworld(bot, task, goal, save);
   return false;
 }

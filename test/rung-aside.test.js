@@ -58,7 +58,7 @@ test('every way below resting until a time, the rung\'s question offers other wo
   const asked = await ask(bot, goal, stall, 'set_aside_rung');
   assert.equal(asked.length, 1);
   const { options } = asked[0];
-  assert.match(options.until_rest_ends || '', /^Other work for the 5 minutes until the first of the fortress leg's ways comes off its rest here, .*the obtain blaze rods stays the work in hand, is not set aside/);
+  assert.match(options.until_rest_ends || '', /^Other work for the 5 minutes until the first of the fortress leg's ways comes off its rest here, .*the obtain blaze rods stays the work in hand and is taken up again when that rest ends\. Work on offer meanwhile from here: .*Mine netherrack for building blocks now: 0 carried/);
   assert.match(options.keep_at_it || '', /Every way the fortress leg had from here rests 5 minutes more: kept at from here now, the next pass meets the same rests and this question comes again\./);
   assert(isSetAside(goal, 'rung', 'obtain_blaze_rods', T0), 'set aside as Jev chose');
   assert.deepEqual(goal.rungAside, { phase: 'obtain_blaze_rods', at: T0, where: { x: -104, y: 41, z: 108 }, until, why: BELOW.slice(0, 300) });
