@@ -40,12 +40,27 @@ function shotTargets(bot, danger, { minimum = 4, maximum = 20, any = false } = {
 // The shield goes up after a shot so the answer lands on it while the bot
 // looks again, and comes down before anything that needs the hands: a swing,
 // the next draw, a walk (a raised shield is sneaking speed).
+// Raised by the server's word, not only this flag: any use of the main hand
+// (a meal, a bow's draw, a bucket) ends the shield's use on the server
+// while the flag stays up, and 410 of the 700 shots that landed with the
+// flag up in the trials of 2026-09-28 and 29 came with the bot facing them
+// (note 676). The bot's own living entity flags say whether the off hand is
+// in use (shot-reflex.js shieldActive); a raise half a second old that the
+// server does not show is made again. Not sooner: a raise made again starts
+// the quarter second to block over.
 function raiseShield(bot) {
-  if (bot._shieldRaised || bot.inventory.slots?.[45]?.name !== 'shield') return false;
-  bot.activateItem(true); bot._shieldRaised = true; return true;
+  if (bot.inventory.slots?.[45]?.name !== 'shield') return false;
+  if (bot._shieldRaised) {
+    const active = require('./shot-reflex').shieldActive(bot);
+    if (active !== false || Date.now() - (bot._shieldRaisedAt || 0) < 500) return false;
+  }
+  bot.activateItem(true); bot._shieldRaised = true; bot._shieldRaisedAt = Date.now(); return true;
 }
 function lowerShield(bot) {
   if (!bot._shieldRaised) return;
+  // Not while the reflex holds it up to a shot on its way (shot-reflex.js):
+  // a swing's lowering there is the shot landing.
+  if (bot._shotHold && bot._shotHold.last > Date.now() - 300) return;
   bot.deactivateItem(); bot._shieldRaised = false;
 }
 

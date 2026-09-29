@@ -200,20 +200,22 @@ In the replay suite Jev picks the apple or the retreat; either is accepted, sinc
 <details>
 <summary>How a question is defined in code</summary>
 
-Questions are declared in [src/decisions/](src/decisions/index.js). This is the shield question in full:
+Questions are declared in [src/decisions/](src/decisions/index.js). This is the question about a shooter's warning, in outline:
 
 ```js
 define({
-  id: 'shield_policy', area: 'combat', parent: 'encounter_stance', kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Shooters can hit the bot and a shield is carried: raise the shield at each shot on its way, or leave it down and keep on?',
-  trigger: 'In an encounter, a shield in the off hand and a shooter in sight or a shot on its way ...; held until a shooter not counted comes, health falls four, or a minute.',
-  source: 'src/survival.js (shieldPolicy), src/projectile-guard.js (deflect)',
+  id: 'shot_answer', area: 'combat', parent: null, kind: 'combat', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'A shooter is about to shoot at the bot: raise the shield toward it, step out of its line, strike it first, or keep on?',
+  trigger: 'As a shooter in sight begins its warning (a blaze glows, a ghast opens its mouth, a skeleton draws), a shield carried, whatever the bot is doing ...',
+  source: 'src/shot-reflex.js (shotOptions, ask, tick)',
   options: [
-    { key: 'shield_at_shots', label: 'raise the shield at each shot on its way', when: 'always; said with each shooter\'s shot flight time ...', level: 'root' },
-    { key: 'take_shots', label: 'leave the shield down and keep on with the stance or the step', when: 'always; said with what each shooter\'s shot does to the bot ...', level: 'root' },
+    { key: 'shield_up', label: 'face the shooters and hold the shield up while the shots come', when: 'a shield carried; said with how long the step stops ...', level: 'root' },
+    { key: 'behind_cover', label: 'step out of the shooters\' line behind a block and stay there while the shots come', when: 'a cell one or two steps off ...', level: 'root' },
+    { key: 'strike_first', label: 'strike the shooter at arm\'s length before it shoots', when: 'a warned shooter the sword reaches now ...', level: 'root' },
+    { key: 'keep_on', label: 'leave the shield down and keep on with what the bot is doing', when: 'always; said with what each shot that lands costs ...', level: 'root' },
   ],
-  instructions: { task: 'Shooters can hit the bot and it carries a shield. Choose what the bot does about their shots for the next while.', guidance: 'A shot cannot be answered one by one: it lands in well under a second, and the shield takes a quarter second to rise. ...' },
-  fallback: () => 'shield_at_shots',
+  instructions: { task: 'A shooter in sight is about to shoot at the bot. Choose what the bot does about these shots.', guidance: 'The shield blocks what comes from the half the bot faces, a quarter second after it rises ...' },
+  fallback: children => children.shield_up ? 'shield_up' : ...,
 });
 ```
 
@@ -226,7 +228,7 @@ define({
 Jev only chooses among options, so some things are not questions:
 
 - Physical safety. The pathfinder refuses moves onto gravel over lava, and a guard on every dig refuses one that would let lava in or drop the bot into it.
-- Anything faster than an answer. A shot lands in less time than a question takes, so Jev sets a standing policy (`shield_policy`) and code raises the shield at each shot.
+- Anything faster than an answer. A shooter's warning (a blaze's three-second glow, a skeleton's draw) is asked about as it begins (`shot_answer`), but a shot already in the air with no answer about it lands before a question could come back, so code raises the shield toward it, whatever step is running.
 - Checking the answer. A pick that was not offered is rejected.
 - The fallback when the service is down.
 

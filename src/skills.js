@@ -619,6 +619,9 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
           if (Math.hypot(n.x - at.x, n.z - at.z) <= 0.8 && Math.abs(n.y - at.y) <= 1.5) { routeLength = Math.min(routeLength ?? Infinity, routeNodes.length - 1 - i); break; }
         }
       }
+      // Stood behind the shield for a shot on its way (shot-reflex.js): the
+      // walk waits, and a wait there is not a stall (note 676).
+      if (bot._shotHold) lastProgress = Date.now();
       if (routeLength !== null && (bestRoute === null || routeLength < bestRoute)) { bestRoute = routeLength; lastProgress = Date.now(); }
       if (near !== null && (bestNear === null || near <= bestNear - 1)) { bestNear = near; lastProgress = Date.now(); }
       if (bot.entity.position.distanceTo(previous) >= 1) {

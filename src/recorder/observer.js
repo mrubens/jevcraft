@@ -23,6 +23,11 @@ function terrain(bot, radius = 12) {
   return { origin: position(origin), radius, minY: -5, maxY: 12, palette, blocks, known };
 }
 
+function shieldUp(bot) {
+  const f = bot.entity?.metadata?.[8];
+  return typeof f === 'number' ? (f & 3) === 3 && bot.inventory?.slots?.[45]?.name === 'shield' : !!bot._shieldRaised;
+}
+
 function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, controls = {}, server = '', commit = loadedCommit(), arm = process.env.JEV_ARM || null } = {}) {
   let alive = true, world = null, worldAt = 0, route = [], previousDecision, previousAction;
   const epoch = ++trace.epoch;
@@ -53,7 +58,13 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // over the edge into the lava with its route east, and the record
       // could not say what moved it (note 320).
       velocity: bot.entity?.velocity ? position(bot.entity.velocity) : undefined, onGround: bot.entity?.onGround,
-      keys: bot.controlState ? [...Object.keys(bot.controlState).filter(k => bot.controlState[k]), ...(bot._shieldRaised ? ['shield'] : [])] : undefined,
+      // The shield by the server's word where it has said (the bot's own
+      // living entity flags): the code's flag stayed up through meals and
+      // draws that had ended the shield's use (note 676).
+      keys: bot.controlState ? [...Object.keys(bot.controlState).filter(k => bot.controlState[k]), ...(shieldUp(bot) ? ['shield'] : [])] : undefined,
+      // Held behind the shield for a shot on its way (shot-reflex.js), and
+      // why; or why a hold was refused a moment ago.
+      ...(bot._shotHold ? { shotHold: bot._shotHold.why } : bot._shotRefused && Date.now() - bot._shotRefused.at < 1000 ? { shotRefused: bot._shotRefused.why } : {}),
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
@@ -129,7 +140,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('flight_route', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });
   on('path_reset', () => { route = []; });
-  for (const kind of ['health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'view_resync', 'dig_unconfirmed', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
+  for (const kind of ['shot', 'health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'view_resync', 'dig_unconfirmed', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
   // Every answer from Jev, at the moment it came (decisions/index.js decide).
   on('jev_decision', goal => sample('decision', undefined, goal));

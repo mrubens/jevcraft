@@ -322,7 +322,7 @@ function sayOnce(bot, id, path, now = Date.now(), why = null) {
 // up top, a stance holding (stillness.js HOLDS) come back to the same
 // answer with nothing new, and that is their point. Nor is an emergency
 // (the fire, the lava, a fight in reach, stillness.js EMERGENCIES), whose
-// questions (body_way, shield_policy, the stance) come at every turn of it:
+// questions (body_way, shot_answer, the stance) come at every turn of it:
 // a stall raised there would set the way out aside. Said, never held. And
 // the questions that are the routing and the stall path themselves
 // (turn_priority, stillness_detour) are said, never held: holding them
@@ -332,7 +332,9 @@ function sayOnce(bot, id, path, now = Date.now(), why = null) {
 // came to nothing are said (note 570: mid-244-ad's out_of_sight forty-one
 // times in eleven seconds, under a crossbow piglin, each walk ending where
 // it began), and the stance's own failures say why (failedHereJustNow).
-const NEVER_HELD = new Set(['turn_priority', 'stillness_detour', 'encounter_stance']);
+// Nor a shooter's warning (shot_answer): the same blazes glow again and
+// again, and each glow is its own question.
+const NEVER_HELD = new Set(['turn_priority', 'stillness_detour', 'encounter_stance', 'shot_answer']);
 function waitingByChoice(goal, id, now = Date.now()) {
   if (NEVER_HELD.has(id)) return true;
   const { HOLDS, EMERGENCIES } = require('../stillness');
@@ -371,11 +373,13 @@ const WAIT_ANSWERS = new Set(['stay', 'back_to_wall', 'dig_in_and_fight', 'dig_i
 // A nested option by its path, as the ledger records it (note 611).
 const offeredOf = (tree, target = null) => tried.leavesOf(tree).map(({ key, node }) => ({ key, target: node?.target || target || null }));
 // Not in the ledger: the routing between the layers, asked every turn.
-const UNLEDGERED = new Set(['turn_priority']);
+// Nor the answer to a shooter's warning (shot_answer), asked at each one,
+// beside the step, and over within seconds.
+const UNLEDGERED = new Set(['turn_priority', 'shot_answer']);
 // Said, never left out nor escalated: a stance against mobs about, the
 // body's way out of the lava or the fire, the shield (note 521: a failed
 // stance stays on offer with its failure said; Jev weighs it).
-const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shield_policy', 'ranged_response']);
+const SAY_ONLY = new Set(['encounter_stance', 'body_way', 'shot_answer', 'ranged_response']);
 // The tree as offered, less what the ledger left out, without its words.
 function plainOf(tree, original) { return Object.fromEntries(Object.keys(tree).map(k => [k, original[k] || tree[k]])); }
 // To the question above (define's `parent`), with this one's failure said:
@@ -412,7 +416,7 @@ class NoSafeDefault extends Error {
 // state's fingerprint changes with what the answer does not turn on (the
 // stance's scene, stance-scene.js, note 659); with it a none-good answer is
 // counted whatever its weight.
-async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined, situation = undefined }) {
+async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined, situation = undefined, aside = false }) {
   // The question above this one, where the caller knows it will not be
   // asked here (`above`: { parent: null, says }): the stall's question with
   // its rung set aside, or between requests, escalated to the rung's
@@ -585,9 +589,12 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
-  const turnBefore = takeTurn(bot, 'decision', `asking Jev: ${id}`), mark = bot?._turn;
+  // Asked aside (`aside`: shot_answer, asked beside whatever holds the
+  // turn, which goes on meanwhile): the turn is not taken, and the question
+  // out in the record stays the one that holds it.
+  const turnBefore = aside ? null : takeTurn(bot, 'decision', `asking Jev: ${id}`), mark = aside ? undefined : bot?._turn;
   stage(trace, 'asked');
-  if (bot) bot._asking = trace;
+  if (bot && !aside) bot._asking = trace;
   // When the question went out, beside `at`, when its answer came back.
   const askedAt = new Date().toISOString();
   let decision;
@@ -632,7 +639,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // aside by its caller (arbiter.js answerOrCut) ends after the layer given
   // the turn has marked it, and must not put "asking Jev" back over it.
   } finally {
-    if (!bot || bot._turn === mark) giveBack(bot, turnBefore);
+    if (!aside && (!bot || bot._turn === mark)) giveBack(bot, turnBefore);
     if (bot?._asking === trace) delete bot._asking;
   }
   decision.id = id;

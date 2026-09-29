@@ -28,7 +28,10 @@ function incoming(bot, { reach = REACH } = {}) {
     if (!INCOMING.has(entity.name) || !entity.position || entity.isValid === false) return false;
     const distance = entity.position.distanceTo(eye);
     if (distance > reach) return false;
-    const velocity = entity.velocity;
+    // The velocity the server sent (shot-reflex.js watchShots): mineflayer's
+    // own is divided by 8000 as the older protocol wanted, and read so every
+    // shot stood still (note 676).
+    const velocity = bot._shots?.get?.(entity.id)?.v || entity.velocity;
     // A projectile whose velocity has not arrived yet still counts when it
     // is already in the bot's lap, for its first second in view. After
     // that a still arrow is one stuck in the ground, and it stays a minute:
@@ -48,42 +51,6 @@ function incoming(bot, { reach = REACH } = {}) {
     }
     return entity.position.plus(velocity).distanceTo(eye) < distance;
   }).sort((a, b) => a.position.distanceTo(eye) - b.position.distanceTo(eye));
-}
-
-// The standing choice about shots (shield_policy, asked by survival.js
-// shieldPolicy): a shot is in the air a fraction of a second, less than an
-// answer, so what to do about shots is chosen for the shooters about, not
-// for each shot. It stands until a shooter not counted in it comes into
-// sight, health falls four below where it was chosen, or a minute.
-// A shooter not counted is one of a kind not counted, or more of a kind in
-// sight than were about when it was chosen: every shooter within reach is
-// counted, seen or not. Counted by the ones in sight, a blaze coming out
-// from behind a pillar was "new", and so was each hit's four health for the
-// shield chosen against the shots: mid-208-k-nether-3-fortress-2 was asked
-// shield_policy five times in eight seconds, shield_at_shots each time, a
-// wither skeleton's blows taking the health (note 560). The health falling
-// asks again only where the choice was to take the shots.
-const POLICY_MS = 60000, POLICY_HEALTH = 4;
-function counted(mobs) {
-  const kinds = {};
-  for (const t of mobs) kinds[t.entity.name] = (kinds[t.entity.name] || 0) + 1;
-  return kinds;
-}
-function policy(bot, now = Date.now()) {
-  const p = bot?._shieldPolicy;
-  if (!p) return null;
-  let newShooter = false;
-  try {
-    const { threats } = require('./danger'), { shooter } = require('./combat');
-    const shooters = threats(bot, 48).filter(t => shooter(t.entity));
-    const known = p.kinds || counted(shooters.filter(t => p.ids.includes(t.entity.id)));
-    const seen = counted(shooters.filter(t => t.visible && !p.ids.includes(t.entity.id)));
-    const seenAll = counted(shooters.filter(t => t.visible));
-    newShooter = Object.keys(seen).some(kind => (seenAll[kind] || 0) > (known[kind] || 0));
-  } catch (_) { /* no mobs to read */ }
-  const hurt = p.choice === 'take_shots' && (bot.health ?? 20) <= p.health - POLICY_HEALTH;
-  if (now - p.at > POLICY_MS || hurt || newShooter) { delete bot._shieldPolicy; return null; }
-  return p;
 }
 
 // Hold the block until the shot has landed or gone by, then hand movement
@@ -118,11 +85,12 @@ function meleeClose(bot, { holdMs = 700 } = {}) {
 // shield in hand (2026-09-27).
 async function deflect(bot, task, { holdMs = 700 } = {}) {
   if (!shielded(bot) || meleeClose(bot, { holdMs })) return false;
-  // Left down by Jev's choice (shield_policy): the shots land and what the
-  // bot is doing goes on.
-  if (policy(bot)?.choice === 'take_shots') return false;
   const shot = incoming(bot)[0];
   if (!shot) return false;
+  // Answered otherwise at its shooter's warning (shot-reflex.js
+  // shot_answer): out of its line, struck first or taken, as Jev chose.
+  const reflex = require('./shot-reflex'), fired = bot._shots?.get?.(shot.id);
+  if (fired && reflex.answeredOtherwise(bot, fired.owner)) return false;
   const deadline = Date.now() + holdMs;
   bot.pathfinder?.setGoal?.(null);
   bot.clearControlStates?.();
@@ -144,4 +112,4 @@ async function deflect(bot, task, { holdMs = 700 } = {}) {
   return true;
 }
 
-module.exports = { counted, deflect, incoming, meleeClose, policy, INCOMING, REACH, POLICY_MS, POLICY_HEALTH };
+module.exports = { deflect, incoming, meleeClose, INCOMING, REACH };

@@ -38,7 +38,7 @@ function slim(frame) {
   const s = frame.snapshot || {};
   return { ...frame, snapshot: { position: s.position, dimension: s.dimension, health: s.health, food: s.food, oxygen: s.oxygen,
     held: s.held, controller: s.controller, pathing: s.pathing, velocity: s.velocity, onGround: s.onGround, keys: s.keys,
-    step: s.goal?.step, survivalAction: s.goal?.survivalAction } };
+    ...(s.shotHold ? { shotHold: s.shotHold } : {}), ...(s.shotRefused ? { shotRefused: s.shotRefused } : {}), step: s.goal?.step, survivalAction: s.goal?.survivalAction } };
 }
 
 function flightRecorder(directory, label = 'jev', { now = () => new Date(), partBytes = PART_BYTES, keep = KEEP, keepMs = KEEP_MS, keepBytes = KEEP_BYTES } = {}) {

@@ -102,37 +102,23 @@ test('maintainVitals asks body_way with the client it is given (a head in a bloc
   assert.ok(seen[0].includes('step_aside') && seen[0].includes('dig_out'), `offered: ${seen[0]}`);
 });
 
-test('the shield stays down at a shot while Jev\'s take_shots stands, and rises under shield_at_shots', async () => {
+test('the shield stays down at a shot whose shooter\'s warning Jev answered keep_on, and rises at one not answered (note 676)', async () => {
   const skeleton = { id: 5, name: 'skeleton', type: 'hostile', position: new Vec3(10.5, 64, 0.5), height: 1.99, width: 0.6, isValid: true };
   const arrow = { id: 9, name: 'arrow', position: new Vec3(4, 65.5, 0.5), velocity: new Vec3(-1.5, 0, 0), isValid: true };
   let raised = 0;
   const bot = { health: 18, entities: { 5: skeleton, 9: arrow }, entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 },
     inventory: { slots: { 45: { name: 'shield' } } }, blockAt: p => (p.y < 64 ? { position: p, name: 'stone', boundingBox: 'block' } : air(p)),
     world: { raycast: () => null }, game: { dimension: 'overworld' }, activateItem() { raised++; }, deactivateItem() {}, clearControlStates() {}, setControlState() {}, lookAt: async () => {} };
-  bot._shieldPolicy = { choice: 'take_shots', ids: [5], at: Date.now(), health: 18 };
-  assert.equal(await guard.deflect(bot, new Task('t'), { holdMs: 50 }), false, 'left down, as chosen');
+  // The arrow's own spawn named its owner (shot-reflex.js watchShots).
+  bot._shots = new Map([[9, { id: 9, name: 'arrow', at: Date.now(), from: new Vec3(10, 65.5, 0.5), v: new Vec3(-1.5, 0, 0), owner: 5 }]]);
+  skeleton._shotWarn = { key: '5:1', at: Date.now() - 800, kind: 'bow' };
+  bot._shotAnswers = new Map([[5, { key: '5:1', choice: 'keep_on', at: Date.now() }]]);
+  assert.equal(await guard.deflect(bot, new Task('t'), { holdMs: 50 }), false, 'left down, as chosen for this draw');
   assert.equal(raised, 0);
-  bot._shieldPolicy = { choice: 'shield_at_shots', ids: [5], at: Date.now(), health: 18 };
+  // The next draw is not answered yet: the shot in the air meets the shield.
+  skeleton._shotWarn = { key: '5:2', at: Date.now() - 800, kind: 'bow' };
   assert.equal(await guard.deflect(bot, new Task('t'), { holdMs: 50 }), true);
-  bot._shieldPolicy = { choice: 'take_shots', ids: [5], at: Date.now(), health: 18 };
-  bot.health = 13;
-  assert.equal(guard.policy(bot), null, 'four health gone: the choice no longer stands');
-});
-
-test('the shield chosen against the shots holds through the hits; one shooter more than were about asks again', () => {
-  // mid-208-k-nether-3-fortress-2 (note 560): shield_policy asked five times in eight seconds, shield_at_shots each
-  // time, a wither skeleton's blows taking four health a hit and the blazes going in and out of sight.
-  const blaze = (id, visible) => ({ id, name: 'blaze', type: 'hostile', position: new Vec3(14.5, 66, 0.5), height: 1.8, width: 0.6, isValid: true, _visible: visible });
-  const mobs = { 1: blaze(1, false), 2: blaze(2, true) };
-  const bot = { health: 20, entities: mobs, entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8 }, game: { dimension: 'the_nether' },
-    blockAt: p => (p.y < 64 ? { position: p, name: 'netherrack', boundingBox: 'block' } : air(p)), world: { raycast: () => null } };
-  const kinds = { blaze: 2 };
-  bot._shieldPolicy = { choice: 'shield_at_shots', ids: [1, 2], kinds, at: Date.now(), health: 20 };
-  bot.health = 10;
-  assert.ok(guard.policy(bot), 'ten health gone to blows: the shield at the shots still stands');
-  // A third blaze in sight is more than were about: asked again.
-  mobs[3] = { ...blaze(3, true), position: new Vec3(10.5, 66, 3.5) };
-  assert.equal(guard.policy(bot), null, 'a shooter not counted');
+  assert.equal(raised, 1);
 });
 
 // A one-wide netherrack span over lava, as the span tests build it.
@@ -188,21 +174,6 @@ test('beside a deadly drop with Jev reachable, no step off the edge and no swing
   assert.equal(events[0], 'ask:encounter_stance', `first: ${events.join(',')}`);
   assert.notEqual(goal.survivalAction?.action, 'off_the_edge');
   assert.ok(tree?.fight_from_footing, `the step to firm ground is an option: ${Object.keys(tree || {})}`);
-});
-
-test('shield_policy is asked beside the stance when shooters are about and a shield is carried', async () => {
-  const skeleton = { id: 5, name: 'skeleton', type: 'hostile', position: new Vec3(8.5, 65, 0.5), height: 1.99, width: 0.6, isValid: true, heldItem: { name: 'bow' } };
-  const { bot } = spanBot(skeleton, { inventory: { items: () => [{ name: 'iron_sword', type: 1 }], slots: { 45: { name: 'shield' } } },
-    blockAt: p => (p.y < 65 ? { position: p, name: 'stone', boundingBox: 'block' } : air(p)), game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' } });
-  const survival = new Survival(bot, { navigate: async () => {}, place: async () => {}, dig: async () => {} }, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
-  const asked = {};
-  survival.decide = async (task, goal, save, q) => { asked[q.id] = q; return { path: [q.id === 'shield_policy' ? 'take_shots' : Object.keys(q.tree)[0]], stale: false }; };
-  await survival.flee(new Task('shots'), {}, () => {}).catch(() => {});
-  await new Promise(r => setTimeout(r, 20));
-  assert.ok(asked.shield_policy, `asked: ${Object.keys(asked)}`);
-  assert.match(asked.shield_policy.tree.shield_at_shots.description, /the skeleton 8 blocks off, its shot about 0\.3 seconds in the air/);
-  assert.match(asked.shield_policy.tree.take_shots.description, /the skeleton's about 3 health a shot/);
-  assert.equal(bot._shieldPolicy?.choice, 'take_shots');
 });
 
 test('the survival step hands its client to the vitals: a head in a block is asked of Jev there too', async () => {

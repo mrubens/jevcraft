@@ -1609,9 +1609,6 @@ function routeOf(routes, to) {
   for (let c = to; c && routes.get(k(c))?.from; c = routes.get(k(c)).from) path.unshift(c);
   return path;
 }
-// A shot's speed, roughly (not measured here), for shield_policy: an arrow
-// or a trident about thirty blocks a second, a fireball about ten.
-const SHOT_SPEED = { arrow: 30, fireball: 10 };
 // Eaten only when one is gone: the equip's own held-item change came after
 // the eating began and ended it at once (mineflayer finishes an eat on any
 // held-item change), and mid-244-n "ate" its golden apple every half second
@@ -2311,6 +2308,11 @@ class Survival {
     // The places mobs were met, for the work's choices too (mobSourceAbout).
     bot._survivalState = this.state;
     watchFuses(bot);
+    // A shooter's warning asked about as it begins, and a shot in the air on
+    // a line that hits met with the shield, whatever holds the turn
+    // (shot-reflex.js, note 676). The latest layer's questions are asked.
+    require('./shot-reflex').install(bot, this);
+    if (encounterJudgments(this) || !bot._shotSurvival?.client) bot._shotSurvival = this;
     if (!bot._survivalHurtListener) {
       bot._survivalHurtListener = (entity, source) => {
         if (entity !== bot.entity) return;
@@ -2562,50 +2564,11 @@ class Survival {
     return danger;
   }
 
-  // What to do about shots while shooters are about (shield_policy): a shot
-  // is in the air a fraction of a second, less than an answer and the
-  // shield's quarter second to rise, so the shot itself cannot be asked
-  // about; what to do about them for the next while can. Asked beside the
-  // stance and not waited for: until the answer stands, the shield rises at
-  // each shot (the fallback, the old rule). Held by projectile-guard.js
-  // policy.
-  shieldPolicy(task, goal, save, danger = []) {
-    const bot = this.bot;
-    if (!encounterJudgments(this) || bot.inventory?.slots?.[45]?.name !== 'shield' || this._askingShield) return null;
-    const guard = require('./projectile-guard');
-    if (guard.policy(bot)) return null;
-    const shooters = threats(bot, 48).filter(t => t.visible && shooter(t.entity));
-    const inAir = guard.incoming(bot).length;
-    if (!shooters.length && !inAir) return null;
-    const { MOBS, afterArmour, armourOf } = require('./combat-estimate');
-    const wornNames = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), worn = armourOf(wornNames);
-    const round = n => Math.round(n * 10) / 10;
-    const speed = name => ['blaze', 'ghast'].includes(name) ? SHOT_SPEED.fireball : SHOT_SPEED.arrow;
-    const each = shooters.slice(0, 4).map(t => { const m = MOBS[t.entity.name]; return { name: t.entity.name, distance: round(t.distance), flightSeconds: round(t.distance / speed(t.entity.name)), ...(m ? { hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(m.hit, worn)) } : {}), ...(m?.note ? { note: m.note } : {}) }; });
-    const said = n => n.replaceAll('_', ' ');
-    const flights = each.length ? each.map(e => `the ${said(e.name)} ${Math.round(e.distance)} blocks off, its shot about ${e.flightSeconds} seconds in the air`).join('; ') : 'a shot on its way from a shooter out of sight';
-    const hits = each.length ? each.map(e => `the ${said(e.name)}'s about ${e.hitsBot ?? '?'} health a shot through what the bot wears${e.note ? ` (${e.note})` : ''}`).join('; ') : 'a shot from a shooter out of sight';
-    const tree = {
-      shield_at_shots: { description: `Raise the shield at each shot on its way: ${flights} (rough speeds, not measured), against the quarter second the shield takes to rise. Each time it stops whatever the bot is doing (a walk, a dig, a swing, a block placed) for up to 0.7 seconds and covers only the way the bot faces; it is not raised with something that bites within 3.5 blocks, or a creeper that could reach the bot meanwhile.` },
-      take_shots: { description: `Leave the shield down and keep on with the stance or the step: the shots land, ${hits}; at ${round(bot.health ?? 20)} health.` },
-    };
-    const held = stanceHeld(bot);
-    const state = { health: bot.health, armour: wornNames, shooters: each, shotsInTheAir: inAir, ...(held ? { stance: held.choice } : {}),
-      biters: danger.filter(t => !shooter(t.entity)).slice(0, 4).map(t => ({ name: t.entity.name, distance: round(t.distance) })),
-      standsUntil: `a shooter of a kind not counted here, or more of a kind than are about now, comes into sight; with the shots taken, health falls ${guard.POLICY_HEALTH} below ${round(bot.health ?? 20)}; or ${guard.POLICY_MS / 60000} minute` };
-    // Every shooter about is counted, in sight or not (projectile-guard.js
-    // policy): one coming out from cover is not new.
-    const about = threats(bot, 48).filter(t => shooter(t.entity));
-    const ids = about.map(t => t.entity.id), kinds = guard.counted(about), health = bot.health ?? 20;
-    // Only a cancellation stops the question: the task's own check throws
-    // for the very shooters it is asked about.
-    const only = { get cancelled() { return task?.cancelled; }, label: task?.label, check() { if (task?.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
-    this._askingShield = true;
-    return this.decide(only, goal, save, { id: 'shield_policy', state, tree })
-      .then(d => { if (d && !d.stale && d.path?.[0] && tree[d.path[0]]) bot._shieldPolicy = { choice: d.path[0], ids, kinds, at: Date.now(), health, by: d.fallback ? 'fallback' : 'jev' }; return d; })
-      .catch(() => null)
-      .finally(() => { this._askingShield = false; });
-  }
+  // What to do about shots is asked at each shooter's warning, beside
+  // whatever holds the turn (shot-reflex.js shot_answer, note 676): the
+  // standing choice asked here in an encounter (shield_policy) left the
+  // shield down through the work's steps, the walks and the questions, 71%
+  // of the shots that landed on a bot carrying one.
 
   async flee(task, goal, save) {
     const bot = this.bot;
@@ -2615,13 +2578,12 @@ class Survival {
     // span (hold_on_span), the step off an edge (fight_from_footing, and the
     // drop said with every stance), the swing (every stance swings at what
     // is in reach, and the question's wait swings meanwhile) and the shield
-    // (shield_policy) were the code's first, and are so below only when Jev
-    // cannot be reached or has not answered.
+    // (shot_answer, at each shooter's warning) were the code's first, and
+    // are so below only when Jev cannot be reached or has not answered.
     let asked = false;
     if (jev && !stanceHeld(bot)) {
       const danger = this.encounterDanger();
       if (danger.length) {
-        this.shieldPolicy(task, goal, save, danger);
         asked = true;
         if (await this.stanceStep(task, goal, save, danger, false)) return;
       }
@@ -2735,8 +2697,6 @@ class Survival {
     // With a creeper out of sight within four blocks among them (danger.js
     // immediateThreat): it is the danger, seen or not.
     const danger = this.encounterDanger();
-    // The shots, while a stance holds or without the stance asked above.
-    if (danger.length) this.shieldPolicy(task, goal, save, danger);
     // A shot from a shooter out of view: the shield up to it, since there
     // is no mob here to answer (danger.js immediateThreat, projectile).
     if (!danger.length) {
@@ -6915,8 +6875,8 @@ class Survival {
 
   // One Jev decision over a tree the code built: the question is defined in
   // decisions/survival.js and asked the one way every question is.
-  decide(task, goal, save, { id, state, tree, context, isFresh = () => true, interrupt = () => {}, situation = undefined }) {
-    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt, situation });
+  decide(task, goal, save, { id, state, tree, context, isFresh = () => true, interrupt = () => {}, situation = undefined, aside = false }) {
+    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt, situation, aside });
   }
 
   // The carried bed goes down where the night caught us and comes back up

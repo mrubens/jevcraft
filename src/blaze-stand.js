@@ -622,7 +622,10 @@ async function putOutFlames(bot, task) {
 async function shieldVolley(bot, task, { holdMs = 4500, graceMs = 300, toward = null, face = null } = {}) {
   if (bot.inventory?.slots?.[45]?.name !== 'shield') return false;
   volleyWatch(bot);
-  const due = () => blazesSeeing(bot).filter(e => volleyDue(bot, e));
+  // Not a blaze whose volley Jev answered otherwise (shot-reflex.js
+  // shot_answer: out of its line, struck first, or taken).
+  const otherwise = require('./shot-reflex').answeredOtherwise;
+  const due = () => blazesSeeing(bot).filter(e => volleyDue(bot, e) && !otherwise(bot, e.id));
   let now = due();
   if (!now.length) return false;
   const { raiseShield, lowerShield } = require('./combat');
@@ -708,7 +711,7 @@ function strikeCells(bot, blaze) {
 const claimBlazes = bot => { bot._huntingEntity = { name: 'blaze', until: Date.now() + 5000 }; bot._closingOn = { name: 'blaze', until: Date.now() + 5000 }; };
 
 // A volley due from any blaze that sees the bot, with a shield to meet it.
-const volleyComing = bot => shieldCarried(bot) && (volleyWatch(bot), blazesSeeing(bot).some(e => volleyDue(bot, e)));
+const volleyComing = bot => shieldCarried(bot) && (volleyWatch(bot), blazesSeeing(bot).some(e => volleyDue(bot, e) && !require('./shot-reflex').answeredOtherwise(bot, e.id)));
 
 // A blaze a step or two from reach, from a stand: a step out to where the
 // sword reaches it, the swings, and back to the stand. Holding a hole or a
