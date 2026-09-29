@@ -131,6 +131,7 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   // An exit being dug by hand clears stone without a tool: slowly, and for
   // the way out rather than the drops. Nothing else digs without one.
   const byHand = !!goal.surfaceReturn?.byHand;
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
   const dy = Math.sign(target.y - feet.y);
   const heights = dy ? [dy, 0] : [0];
   const choices = [];
@@ -176,6 +177,16 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       if (pushersAbout(bot).length) { block(destination, 'a deadly drop beside the step while something about can push the bot'); continue; }
     }
     if (bot.pathfinder?.movements?.allowedPosition && !bot.pathfinder.movements.allowedPosition(destination)) { block(destination, 'a forbidden cell'); continue; }
+    // In the Nether, not a step the walk onto it refuses (movement.js
+    // besideLavaRefused, note 516): lava in a cell round it, or an edge
+    // that falls into lava. The stair was dug and then never stood on, the
+    // walk to it "No route ... the way passes beside lava", and mid-243-ch
+    // went down to that landing and back up the pathfinder's way every few
+    // seconds for five minutes, its leg turned twice there (note 652).
+    if (nether && typeof bot.pathfinder?.movements?.besideLavaRefused === 'function') {
+      const refused = bot.pathfinder.movements.besideLavaRefused(dropTo || destination);
+      if (refused) { block(destination, refused === 'lava' ? 'lava beside the step (the walk onto it refuses it)' : 'a deadly drop beside the step while something about can push the bot'); continue; }
+    }
     const clear = [];
     // A jump needs three blocks of headroom in the cell we leave. Inspect and
     // clear that ceiling first, but never drop sand/gravel onto our own head.

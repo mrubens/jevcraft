@@ -444,6 +444,12 @@ function goalPoint(goal) {
   return null;
 }
 
+// Where a goal with no height is, on the ground.
+function flatGoalPoint(goal) {
+  if (goal?.entity || Number.isFinite(goal?.y) || !Number.isFinite(goal?.x) || !Number.isFinite(goal?.z)) return null;
+  return { x: goal.x + 0.5, z: goal.z + 0.5 };
+}
+
 async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }) {
   task.check(); checkAir(bot);
   if (stopWhen?.()) return;
@@ -452,9 +458,9 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   let acquired = false;
   let corrections = [];
   let latestRoute;
-  let routeLength = null;
+  let routeLength = null, routeNodes = null;
   const observedRoute = route => {
-    if (Array.isArray(route.path) && route.status !== 'noPath') routeLength = route.path.length;
+    if (Array.isArray(route.path) && route.status !== 'noPath') { routeLength = route.path.length; routeNodes = route.path.map(p => ({ x: p.x, y: p.y, z: p.z })); }
     latestRoute = { status: route.status, path: (route.path || []).slice(0, 12).map(p => ({
       x: p.x, y: p.y, z: p.z, toBreak: p.toBreak, toPlace: p.toPlace,
     })) };
@@ -528,8 +534,26 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       // fourteen seconds, every bounce a new cell, shot from 10.8 health to
       // 4.8 before the timeout (2026-09-26). New cells still count for a
       // goal with neither.
-      const there = goalPoint(goal);
-      const near = there ? bot.entity.position.distanceTo(there) : null;
+      // A goal with no height (GoalNearXZ, GoalXZ: the fortress search's
+      // legs, the way to a landmark) is got nearer to along the ground.
+      // Measured by neither, a walk toward one counted progress only when
+      // the pathfinder searched again and found a shorter route, never as
+      // the route was walked: mid-243-ch's legs walked straight at their
+      // ends, 85 to 24 blocks off in 40 seconds, each eight seconds of it
+      // called a stall, the walk stopped and begun again, and its detours
+      // round a ravine broken off half-way until the leg was turned where
+      // it stood (note 652).
+      const there = goalPoint(goal), flat = !there ? flatGoalPoint(goal) : null;
+      const near = there ? bot.entity.position.distanceTo(there) : flat ? Math.hypot(bot.entity.position.x - flat.x, bot.entity.position.z - flat.z) : null;
+      // The route left: a route is walked a node at a time, and the nodes
+      // behind the bot are ground gained, a detour's included.
+      if (routeNodes?.length) {
+        const at = bot.entity.position;
+        for (let i = routeNodes.length - 1; i >= 0; i--) {
+          const n = routeNodes[i];
+          if (Math.hypot(n.x - at.x, n.z - at.z) <= 0.8 && Math.abs(n.y - at.y) <= 1.5) { routeLength = Math.min(routeLength ?? Infinity, routeNodes.length - 1 - i); break; }
+        }
+      }
       if (routeLength !== null && (bestRoute === null || routeLength < bestRoute)) { bestRoute = routeLength; lastProgress = Date.now(); }
       if (near !== null && (bestNear === null || near <= bestNear - 1)) { bestNear = near; lastProgress = Date.now(); }
       if (bot.entity.position.distanceTo(previous) >= 1) {

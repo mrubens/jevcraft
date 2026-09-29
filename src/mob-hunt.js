@@ -18,7 +18,7 @@ const { descendTo } = require('./descent');
 const { setAside, isSetAside, watch, unwatch } = require('./progress');
 const { bridgeTo, surveyCrossing, underFire, blocksCarried, stepOntoFooting, spanBlockSources, gatherSpanBlocks } = require('./bridging');
 const { crossToward, crossingSays, crossingSeconds, nearer, surveyLeg, legSays, WALK_SPEED, floorWay, walkFloor, headingColumns, wayDownSays, floorWalkSays, goDown, FLOOR_WALKABLE } = require('./nether-travel');
-const coverage = require('./nether-coverage');
+const coverage = require('./nether-coverage'), regions = require('./nether-regions');
 const { bunkerFight, digBunker, raiseCover, openToward, swarm, nearWall, centroid: bunkerCentroid } = require('./bunker');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const dimension = bot => String(bot.game.dimension).replace(/^minecraft:/, '').replace(/^the_/, '');
@@ -1472,7 +1472,12 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   coverage.look(bot, state);
   const seenThatWay = HEADINGS.map(h => coverage.headingCoverage(state, dim, here, h, { length: FORTRESS_LEG, bot }));
   const thatWay = HEADINGS.map(h => sightingsThatWay(bot, goal, state, here, h));
-  const headingSays = i => coverage.headingSays(seenThatWay[i], HEADING_NAMES[i]) + thatWay[i];
+  // Where fortresses can begin (nether-regions.js): each heading says where
+  // it leaves the region the bot stands in and what is known past it. mid-
+  // 243-ch walked thirteen legs round a bastion's region, where no fortress
+  // begins, never told so (note 652).
+  const landmarks = goal.landmarks || [];
+  const headingSays = i => coverage.headingSays(seenThatWay[i], HEADING_NAMES[i]) + thatWay[i] + regions.headingRegionSays(here, HEADINGS[i], regions.known(landmarks), state, dim);
   const back = state.legFrom && Number.isInteger(state.lastHeading) ? (state.lastHeading + 2) % 4 : null;
   const { restingSays } = require('./tunneling');
   // Each way's staircase as the step would dig it (fortressLegTarget), and
@@ -1611,6 +1616,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     ...(resting.length ? { legsResting: resting } : {}), ...(blocked.length ? { legsClosed: blocked } : {}),
     seenSoFar: coverage.coverageSays(state, dim, here, FORTRESS_LEG),
     ...(left ? { waysLeft: left } : {}),
+    structureRegions: regions.regionFacts(here, landmarks, state, dim), ...portalBackFact(goal, here),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(fortress ? { fortressInView: fortress.facts } : {}), ...rodsFact(bot, goal) };
   // Without Jev: the most ground unseen beside the leg's open air, then the
@@ -1622,6 +1628,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     context: { current: `leg_${HEADING_NAMES[current]}`, open, unseen, stood, passes: fortress?.passes || 0 } });
   if (decision.stale) return false;
   return options[decision.path.at(-1)].run();
+}
+// The portal the search can go home by, and how far the search has come
+// from it: the nearest known in the Nether.
+const compass = (dx, dz) => { const ns = dz < -0.38 * Math.hypot(dx, dz) ? 'north' : dz > 0.38 * Math.hypot(dx, dz) ? 'south' : '', ew = dx > 0.38 * Math.hypot(dx, dz) ? 'east' : dx < -0.38 * Math.hypot(dx, dz) ? 'west' : ''; return ns && ew ? `${ns}-${ew}` : ns || ew || 'here'; };
+function portalBackFact(goal, here) {
+  const portal = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+  if (!portal) return {};
+  const off = Math.round(Math.hypot(portal.x - here.x, portal.z - here.z));
+  return { portalBack: `the nearest portal known in the Nether is at (${portal.x}, ${portal.y}, ${portal.z}), ${off} blocks ${compass(portal.x - here.x, portal.z - here.z)} of here` };
 }
 // The restock Jev chose, held until its blocks are carried, wherever the
 // leg's end lies: it was looked at only within eight blocks of the leg's

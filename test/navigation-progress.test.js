@@ -24,6 +24,32 @@ test('bouncing about a shaft is no progress toward the goal: new cells alone do 
   assert(Date.now() - started < 4000, `stalled in ${Date.now() - started} ms, not at the timeout`);
 });
 
+test('a walk toward a goal with no height that keeps getting nearer along the ground is progress, not a stall every few seconds (mid-243-ch, note 652)', async () => {
+  // 25581's fortress legs (GoalNearXZ) walked straight north at their ends, 85 to 24 blocks off, each eight seconds of it called a stall.
+  let on = true;
+  const bot = walker(new Vec3(0.5, 64, 0.5), () => {});
+  bot.pathfinder.setGoal = g => { if (!g) on = false; };
+  bot.pathfinder.goto = () => new Promise(() => { let i = 0; bot.emit('path_update', { status: 'partial', path: [{ x: 0.5, y: 64, z: 0.5 }] });
+    const t = setInterval(() => { if (!on) return clearInterval(t); bot.entity.position = new Vec3(0.5 + i++ * 0.5, 64, 0.5); }, 100); });
+  await assert.rejects(navigate(bot, new Task('walk'), new goals.GoalNearXZ(200, 0, 6), { timeoutMs: 3000, stallMs: 1000 }), /navigation timed out/);
+});
+
+test('a route walked node by node is progress though it leads away from the goal first: a detour round a ravine is not broken off half-way (note 652)', async () => {
+  // The route goes 20 blocks east, away from a goal to the west, then comes back past the start; searched once and walked.
+  const path = [];
+  for (let x = 0; x <= 20; x++) path.push({ x: x + 0.5, y: 64, z: 0.5 });
+  for (let z = 1; z <= 10; z++) path.push({ x: 20.5, y: 64, z: z + 0.5 });
+  for (let x = 19; x >= -30; x--) path.push({ x: x + 0.5, y: 64, z: 10.5 });
+  let on = true;
+  const bot = walker(new Vec3(0.5, 64, 0.5), () => {});
+  bot.pathfinder.setGoal = g => { if (!g) on = false; };
+  bot.pathfinder.goto = () => new Promise(resolve => { bot.emit('path_update', { status: 'success', path }); let i = 0;
+    const t = setInterval(() => { if (!on) return clearInterval(t); const n = path[Math.min(i, path.length - 1)]; bot.entity.position = new Vec3(n.x, n.y, n.z); i++; if (i >= path.length) { clearInterval(t); resolve(); } }, 100); });
+  // The walk arrives: no stall though its first seconds take it away from the goal.
+  await navigate(bot, new Task('walk'), new goals.GoalNearXZ(-30, 10, 2), { timeoutMs: 15000, stallMs: 1500 });
+  assert.equal(Math.round(bot.entity.position.x - 0.5), -30);
+});
+
 test('in the Nether a leg toward the portal back that comes no nearer than before gives way to a crossing straight at it', async () => {
   // mid-211-c: its legs on foot toward the portal 250 blocks off made no ground, and nothing else but a staircase was tried (note 241).
   const { walkToKnownPortal } = require('../src/work');

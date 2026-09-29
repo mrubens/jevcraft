@@ -856,3 +856,23 @@ test('a fortress bridge with drops on both sides is stepped down onto and walked
   const refused = stairOptions(shot, {}, target);
   assert(!refused.some(c => c.destination.x === 0 && c.destination.z === 0 && c.destination.y <= 57), JSON.stringify(refused.map(c => c.destination)));
 });
+
+test('in the Nether a stair step the walk onto it refuses (lava beside it) is not dug: mid-243-ch dug one and went down to it and back for five minutes (note 652)', () => {
+  const rock = { name: 'netherrack', boundingBox: 'block', diggable: true };
+  const air = { name: 'air', boundingBox: 'empty' };
+  const make = dimension => ({
+    entity: { position: new Vec3(0.5, 77, 0.5), height: 1.8 },
+    game: { dimension, gameMode: 'survival', difficulty: 'normal' },
+    registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'diamond_pickaxe', type: 1 }] },
+    world: { raycast: () => null }, time: { timeOfDay: 6000 }, entities: {},
+    blockAt: p => ({ ...(p.y < 77 || p.x >= 1 ? rock : air), position: p }),
+    // The walk refuses every cell east of the bot: lava lies beside it.
+    pathfinder: { movements: { besideLavaRefused: p => (p.x >= 1 ? 'lava' : null) } },
+  });
+  const target = new Vec3(8, 77, 0);
+  const nether = stairOptions(make('the_nether'), {}, target, { approach: true });
+  assert(nether.every(c => c.destination.x < 1), `no step the walk refuses: ${JSON.stringify(nether.map(c => c.destination))}`);
+  const overworld = stairOptions(make('overworld'), {}, target, { approach: true });
+  assert.equal(overworld[0].destination.x, 1, 'in the Overworld the step toward the target is still dug');
+});
