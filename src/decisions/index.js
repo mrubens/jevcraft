@@ -350,7 +350,11 @@ class NoSafeDefault extends Error {
 // sent it to the fallback. A single feasible leaf is taken without asking.
 // watchAir false: the question is about the breath or the lava itself
 // (body_way), which checkAir would stop at once.
-async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined }) {
+// `situation`: the caller's own key for "the same situation", where the whole
+// state's fingerprint changes with what the answer does not turn on (the
+// stance's scene, stance-scene.js, note 659); with it a none-good answer is
+// counted whatever its weight.
+async function decide(id, { client, bot, task, goal, save = () => {}, tree, state, isFresh = () => true, interrupt = () => {}, context, watchMs = 100, watchAir = true, target = null, above = undefined, situation = undefined }) {
   // The question above this one, where the caller knows it will not be
   // asked here (`above`: { parent: null, says }): the stall's question with
   // its rung set aside, or between requests, escalated to the rung's
@@ -465,7 +469,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // same situation from about here (note 599). Not asked again while it
   // stands: the best of the options by that answer's weights is taken, as
   // it was each time, and the question above has been told (below).
-  const sit = tracked ? repeats.situation(state, plainOf(tree, original)) : null;
+  const sit = tracked ? (situation ?? repeats.situation(state, plainOf(tree, original))) : null;
   const spentHere = tracked ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
   if (spentHere) {
     const keys = Object.keys(tree).filter(k => k !== NONE_GOOD_KEY);
@@ -575,7 +579,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // raised, not thrown: the question above is asked with whatFailedBelow
   // on its next asking (the rung's at the loop's next pass).
   if (tracked && !decision.stale && decision.path && decision.judgments?.length) {
-    const ng = repeats.noneGoodAfter(bot, id, sit, decision.judgments[0]?.probabilities || {}, { here: bot.entity?.position, took: decision.noneGood ? decision.path : [] });
+    const ng = repeats.noneGoodAfter(bot, id, sit, decision.judgments[0]?.probabilities || {}, { here: bot.entity?.position, took: decision.noneGood ? decision.path : [], anyWeight: situation !== undefined });
     if (ng?.spent) {
       decision.spent = true;
       console.log(`[none good] ${id}: ${ng.says}`);

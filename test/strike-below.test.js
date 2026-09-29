@@ -116,7 +116,7 @@ test('the stance question on the recorded 06:47:06 state offers striking from ab
   assert.ok(attacks.length >= 1 && attacks.every(id => id === 1795), `struck: ${attacks}`);
 });
 
-test('a fight that ends at once without acting is not offered again while nothing changes, and is when the hoglin moves (the 06:27:21 burst)', async () => {
+test('a fight that ends at once without acting is not offered again while nothing changes, and is when the scene does (the 06:27:21 burst; note 659)', async () => {
   // Asked every quarter second, fight answered each time, each run at the
   // hoglin three below finding no way: 350 askings in two and a half minutes.
   const { bot, hoglin, threat } = ledgeBot({ at: new Vec3(-38.5, 46, 63.78), hoglinAt: new Vec3(-38.72, 43, 65.71) });
@@ -137,12 +137,21 @@ test('a fight that ends at once without acting is not offered again while nothin
   await survival.stanceStep(new Task('x'), {}, () => {}, [threat()], false);
   assert.equal(trees[1].fight, undefined, 'nothing has changed: not offered as if it might end otherwise');
   assert.match(states[1].notOfferedNow[0].why, /^ended here without acting, the last \d+ seconds? ago: nothing was struck, and the run at the hoglin [\d.]+ blocks off found no way to it; nothing has changed here since \(the bot, the mobs and the health as they were\), so it would end the same; offered again when something changes$/);
-  // The hoglin walks a block and a half: something changed.
+  // The hoglin walks a block and a half, still below the ledge with no way up
+  // to the bot: nothing the fight turns on changed (the stance's scene, note
+  // 659), and it is still left out, said so.
   delete survival.state.stance;
   hoglin.position = hoglin.position.offset(1.5, 0, 0);
   await survival.stanceStep(new Task('x'), {}, () => {}, [threat()], false);
-  assert.ok(trees[2].fight, 'offered again once the hoglin has moved');
-  assert.equal(states[2].notOfferedNow, undefined);
+  assert.equal(trees[2].fight, undefined, 'a block and a half along below the ledge is the same scene');
+  assert.match(states[2].notOfferedNow.find(f => f.choice === 'fight').why, /^came to nothing once in this same scene, the last \d+ seconds? ago: nothing was struck, and the run at the hoglin [\d.]+ blocks off found no way to it; nothing a stance turns on has changed since \(sameSceneSoFar\), so it would come to the same; offered again when the scene changes$/);
+  assert.match(states[2].sameSceneSoFar, /the hoglin unable to get to the bot, in sight/);
+  // A heart of health gone: the scene changed, and the fight is offered.
+  delete survival.state.stance;
+  bot.health -= 2.5;
+  await survival.stanceStep(new Task('x'), {}, () => {}, [threat()], false);
+  assert.ok(trees[3].fight, 'offered again once the scene has changed');
+  assert.equal(states[3].notOfferedNow, undefined);
 });
 
 // Timed: on the old code the fight's second of swinging at nothing never

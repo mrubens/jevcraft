@@ -202,12 +202,16 @@ function situation(state, tree) {
 const NONE_GOOD_SURE = 0.4, NONE_GOOD_RUN = 2, SPENT_MS = 5 * 60000, SPENT_NEAR = 4;
 // After a none good answer: its run to this situation from about here, and
 // whether this answer spends the question. -> { spent, run, says } or null
-function noneGoodAfter(bot, id, print, weights, { now = Date.now(), here = null, took = [] } = {}) {
+// `anyWeight`: the caller keys the situation itself (the stance's scene, note
+// 659), and none good as the answer counts at any weight: 25590's ledge was
+// answered none good 114 times in fifteen minutes, most under 0.4, each time
+// the likeliest listed carried out and nothing above told.
+function noneGoodAfter(bot, id, print, weights, { now = Date.now(), here = null, took = [], anyWeight = false } = {}) {
   if (!bot) return null;
   const memo = bot._noneGood ||= {};
   const p = weights?.none_good || 0;
   const top = Object.entries(weights || {}).sort((a, b) => b[1] - a[1])[0]?.[0];
-  const sure = top === 'none_good' && p >= NONE_GOOD_SURE;
+  const sure = top === 'none_good' && (anyWeight || p >= NONE_GOOD_SURE);
   const was = memo[id];
   if (!sure) { delete memo[id]; return null; }
   const near = !was?.place || !here || Math.hypot(was.place.x - here.x, was.place.y - here.y, was.place.z - here.z) <= SPENT_NEAR;

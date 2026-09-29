@@ -4646,10 +4646,12 @@ class Survival {
     // again while the wither skeleton it ran from came back and struck it
     // twice, note 601), and not a striking stance that has not acted (note
     // 596's rule has it).
+    // A rod picked up is noted when it is first seen (after-rod.js, note 659).
+    require('./after-rod').noteRods(bot);
     const striking = STRIKING_STANCES.has(held?.choice);
     const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple', 'drink_fire_resistance', 'retreat', 'leave_reach'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
     if (extendable) holding = false;
-    let holdEnded = null;
+    let holdEnded = null, holdCapped = false;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
     // And when the stance held is no longer on offer, as that asks too:
@@ -4671,7 +4673,7 @@ class Survival {
           holding = true; save();
           console.log(`[hold] ${held.choice.replaceAll('_', ' ')} held on ${Math.round(x.extend / 1000)} seconds more, ${Math.round((Date.now() - held.at) / 1000)} in all: nothing it was chosen on has changed (${holds.againstSays(held.hold) || 'no mob named'})`);
         } else {
-          holdEnded = x.capped;
+          holdEnded = x.capped; holdCapped = true;
           // At its cap the rung's question is due, whatever its clock.
           require('./tried').rungDue(goal, `the ${held.choice.replaceAll('_', ' ')} stance ${x.capped}`);
         }
@@ -4758,8 +4760,23 @@ class Survival {
       const s = idleSays(f);
       options[f.choice].description += ` It ${s}.`;
     }
+    // The scene as a stance's outcome turns on it (stance-scene.js, note 659):
+    // an answer that came to nothing in it is left out as the idle rule
+    // leaves one out, while it is unchanged and two or more other ways stay.
+    const scenes = require('./stance-scene');
+    const scene = scenes.sceneOf(bot, danger, { apart: this.lastApart?.ids || new Set(), strikes: e => !!e.position && canStrike(bot, e), blocks: shelter.materialStock(bot) });
+    const book = scenes.observe(this.state, scene);
+    const blazePlace = scenes.exposure(this.state, bot, { blazes: danger.some(t => t.entity.name === 'blaze') });
+    const sceneOut = [];
+    const sceneSays = f => `came to nothing ${f.times === 1 ? 'once' : `${f.times} times`} in this same scene, the last ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago${f.why ? `: ${f.why}` : ''}; nothing a stance turns on has changed since (sameSceneSoFar), so it would come to the same`;
+    for (const f of scenes.nothingHere(book)) {
+      if (!options[f.choice] || leftOut.includes(f.choice)) continue;
+      if (rest().length > 2) { leftOut.push(f.choice); sceneOut.push(f); continue; }
+      options[f.choice].description += ` It ${sceneSays(f)}.`;
+    }
     for (const k of leftOut) delete options[k];
-    const notOfferedNow = idle.filter(f => leftOut.includes(f.choice)).map(f => ({ choice: f.choice, why: `${idleSays(f)}; offered again when something changes` }));
+    const notOfferedNow = [...idle.filter(f => leftOut.includes(f.choice)).map(f => ({ choice: f.choice, why: `${idleSays(f)}; offered again when something changes` })),
+      ...sceneOut.map(f => ({ choice: f.choice, why: `${sceneSays(f)}; offered again when the scene changes` }))];
     if (!Object.keys(options).length) return false;
     // A spawner in reach, said with every stance: mid-207-j fought beside a
     // dungeon's zombie spawner six blocks off, told each time of "a zombie,
@@ -4797,6 +4814,24 @@ class Survival {
     let choice = holding && options[held.choice] ? held.choice : null;
     // One stance possible is no choice: it is taken without asking.
     if (!choice && Object.keys(options).length === 1) choice = Object.keys(options)[0];
+    // The scene unchanged since an answer that held: that answer holds, and
+    // is not asked again (stance-scene.js, note 659); at holds.js's cap the
+    // question is asked, and the rung's question is due.
+    // Not where the stance before was ended by one of its physical triggers
+    // (a newcomer, a hit, a line to where it hid, a creeper's walk, a shot,
+    // the bot off its spot), a way new on offer or a shot on its way: those
+    // are asked, as they were.
+    let askedNow = false, noneGoodNow = false;
+    const triggered = !!held && (leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
+      || /^a way not on offer|^a shot came/.test(holdEnded || ''));
+    if (!choice && !holdCapped && !triggered) {
+      const kept = scenes.holdFor(book, Object.keys(options));
+      if (kept) {
+        choice = kept.choice;
+        const n = book.answers.filter(a => a.choice === choice && !a.asked).length + 1;
+        if (n === 1 || n % 20 === 0) console.log(`[scene hold] ${choice.replaceAll('_', ' ')} held without asking (${n} in this scene): nothing a stance turns on has changed since it was answered ${Math.round((Date.now() - kept.askedAt) / 1000)} s ago${holdEnded ? `; the hold's own end said: ${holdEnded}` : ''}`);
+      } else if (scenes.capped(book)) require('./tried').rungDue(goal, `the ${book.answers.at(-1).choice.replaceAll('_', ' ')} stance held ${Math.round((Date.now() - book.since) / 60000)} minutes with nothing it turns on changed`);
+    }
     if (!choice) {
       const armour = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
       const ownCells = new Set(inOwnCells(bot, danger, feet).map(t => t.entity.id));
@@ -4849,6 +4884,12 @@ class Survival {
         ...(this.lastPillarHold ? { pillarSoFar: this.lastPillarHold.facts } : {}),
         // Gold, where piglins are about and none is worn (note 581).
         ...((g => g ? { piglinsAndGold: g } : {})(piglinGoldSays(bot, [...danger, ...(this.lastFar || [])]))),
+        // The scene unchanged and what each answer in it came to, or what
+        // changed since the last one's answers; at a blaze fight, the place so
+        // far; after a rod, what followed the trials' rods (note 659).
+        ...((s => s ? { sameSceneSoFar: s } : {})(scenes.says(book))),
+        ...(blazePlace ? { hereSoFar: scenes.exposureSays(blazePlace) } : {}),
+        ...((a => a ? { afterTheLastRod: a } : {})(require('./after-rod').says(bot))),
 
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
@@ -4861,7 +4902,9 @@ class Survival {
         // was blown up twice, the second time dead before the answer came
         // (2026-09-26).
         let answered = false;
-        const asking = this.decide(task, goal, save, { id: 'encounter_stance', state, tree,
+        // Its none-good answers counted by this scene, not the whole state's
+        // fingerprint (stance-scene.js, note 659).
+        const asking = this.decide(task, goal, save, { id: 'encounter_stance', state, tree, situation: `stance:${scene.key}`,
           isFresh: () => Math.abs(bot.health - state.health) < 4 }).finally(() => { answered = true; });
         // And swings at what is in reach meanwhile, as a player fights on
         // while thinking: mid-227-i's fight with magma cubes was asked again
@@ -4876,6 +4919,7 @@ class Survival {
       // Jev could not be reached: the rules answer this tick.
       if (decision.fallback) return false;
       choice = decision.path.at(-1);
+      askedNow = !decision.only; noneGoodNow = !!decision.noneGood;
       // Chosen up on the pillar: counted for what the hold says next.
       if (this.lastPillarHold) require('./pillar-wait').noteChoice(this.state, choice);
     }
@@ -4888,6 +4932,11 @@ class Survival {
       start: stanceMark(bot),
       // What it was chosen on, for holding on while that stands (holds.js).
       hold: require('./holds').begin({ choice, health: bot.health, expects: options[choice]?.expects || null, mobs: danger, offered: [...Object.keys(options), ...leftOut] }) };
+    // An answer in this scene, asked or held without asking (note 659).
+    if (!holding || held.choice !== choice) {
+      scenes.answered(this.state, { choice, asked: askedNow, noneGood: noneGoodNow, striking: STRIKING_STANCES.has(choice), start: this.state.stance.start });
+      scenes.exposureAnswered(this.state, choice);
+    }
     // The reflexes see the stance too (the hurt watchdog, the shield, the
     // meal): they give way to it while it holds.
     const stance = bot._stance = this.state.stance;
@@ -4917,6 +4966,9 @@ class Survival {
     // A stance that could not be carried out is not offered again for a
     // while, and Jev chooses again at the next tick from what is left.
     why ||= this.state.stanceWhy || null; delete this.state.stanceWhy;
+    // What it came to in this scene; a meal cut short is not the place's
+    // doing (note 475).
+    scenes.ran(this.state, { choice, done: done || /^eat/.test(choice), acted: stanceActed(bot, stance.start) || /^eat/.test(choice), why });
     if (!done) {
       delete this.state.stance; delete bot._stance;
       this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }];
@@ -6788,8 +6840,8 @@ class Survival {
 
   // One Jev decision over a tree the code built: the question is defined in
   // decisions/survival.js and asked the one way every question is.
-  decide(task, goal, save, { id, state, tree, context, isFresh = () => true, interrupt = () => {} }) {
-    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt });
+  decide(task, goal, save, { id, state, tree, context, isFresh = () => true, interrupt = () => {}, situation = undefined }) {
+    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt, situation });
   }
 
   // The carried bed goes down where the night caught us and comes back up
