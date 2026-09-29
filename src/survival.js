@@ -4902,6 +4902,8 @@ class Survival {
         // What fights with blazes came to in the trials, by the health and hunger
         // begun at (blaze-record.js, note 631).
         ...(danger.some(t => t.entity.name === 'blaze') ? { playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot) } : {}),
+        // The blazes about by count, how many can see this cell, the spawner's rule and the rows by count (note 665).
+        ...(danger.some(t => t.entity.name === 'blaze') ? { blazeCounts: (() => { try { return require('./blaze-record').entryFacts(bot, { about: danger.filter(t => t.entity.name === 'blaze' && t.visible).map(t => t.entity), cage: require('./blaze-stand').spawnerAt(bot) }).says; } catch (_) { return undefined; } })() } : {}),
         // Up on the pillar: how the hold has gone (pillar-wait.js, note 590).
         ...(this.lastPillarHold ? { pillarSoFar: this.lastPillarHold.facts } : {}),
         // Gold, where piglins are about and none is worn (note 581).
@@ -5306,6 +5308,13 @@ class Survival {
   // was found is said on the option, and a way found is the one run.
   async scoutRetreat(task, danger, { budgetMs = SCOUT_MS } = {}) {
     const bot = this.bot;
+    // The way out past the game's despawn distance, for wait_far_off (note 665):
+    // only with a live blaze spawner within sixteen and a blaze about.
+    try {
+      const T = require('./blaze-tactics'), blazes = Object.values(bot.entities || {}).filter(e => e?.name === 'blaze' && e.position && e.isValid !== false && e.position.distanceTo(bot.entity.position) <= 48);
+      const cage = blazes.length && /nether/.test(String(bot.game?.dimension || '')) ? require('./blaze-stand').spawnerAt(bot) : null;
+      if (cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16) await T.scoutFar(bot, task, blazes, cage);
+    } catch (err) { task.check?.(); if (['NeedsAir', 'Cancelled'].includes(err?.name)) throw err; }
     const movements = bot.pathfinder?.movements;
     if (!movements || typeof surveyRoute !== 'function') return null;
     const feet = `${feetCell(bot)}`;

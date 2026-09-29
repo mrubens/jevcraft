@@ -615,7 +615,7 @@ test('a fortress in view is asked whether the visit happens now before the way i
   const goal = goal0();
   await findFortressStep(a.bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} });
   assert.equal(client.visits.length, 1, 'the visit asked once');
-  assert.deepEqual(Object.keys(client.visits[0].options).sort(), ['go_in', 'leave_fortress']);
+  assert.deepEqual(Object.keys(client.visits[0].options).sort(), ['get_food_here', 'go_in', 'leave_fortress']);
   assert.match(client.visits[0].state.visit, /^about to approach a Nether fortress \d+ blocks off/);
   assert.equal(client.asked[0].kind, 'fortress');
   assert.equal(goal.fortressVisit.pick, 'go_in');

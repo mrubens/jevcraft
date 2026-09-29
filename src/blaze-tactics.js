@@ -736,4 +736,102 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
   return stats;
 }
 
-module.exports = { biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE };
+// ---- Waiting far off (note 665) ----------------------------------------
+// The one way to a smaller count the game allows without killing them: a
+// blaze a spawner made is an ordinary monster to Mob.checkDespawn (read from
+// the 26.1.2 server jar, note 665): with no player within 32 blocks and idle
+// for 600 ticks (30 seconds) it is removed by chance, one in 800 each tick (a
+// mean of about 40 seconds, so about 78 in 100 gone at ninety seconds and 89
+// in 100 at two minutes), and at once beyond 128. The spawner
+// itself makes none while no player is within sixteen. So a bot that walks
+// past 32 blocks of every blaze and waits leaves the room with fewer in it; the
+// spawner's first try on the way back is up to four more, ten to forty seconds
+// after the bot is within sixteen again. Nothing in the records shows a bot
+// doing it, and a blaze that follows in sight is not one that is left behind.
+const FAR = { blocks: 34, seconds: 120, spread: 12, maxWalk: 120, think: 700, fresh: 6000, chance: 800, idle: 600 };
+// The share of blazes gone by a wait: none in the first 30 idle seconds, then
+// one in 800 each tick.
+const farGone = seconds => Math.round(100 * (1 - Math.pow(1 - 1 / FAR.chance, Math.max(0, seconds - FAR.idle / 20) * 20)));
+// The way found before the stance is asked (survival.scoutRetreat calls it):
+// a route to any cell past FAR.blocks of the cage and of every blaze about,
+// that passes no blaze nearer than the bot is now. Kept on the bot for the
+// question that follows, for the cell it was found from.
+async function scoutFar(bot, task, blazes, cage, { now = Date.now() } = {}) {
+  const movements = bot.pathfinder?.movements, here = bot.entity?.position;
+  if (!movements || !here || !blazes.length || !cage) return null;
+  const feet = `${feetCell(bot)}`, prev = bot._farScout;
+  if (prev && prev.feet === feet && now - prev.at < FAR.fresh) return prev;
+  const centre = cage.offset(0.5, 0.5, 0.5);
+  const spread = Math.min(FAR.spread, Math.max(0, ...blazes.map(e => e.position.distanceTo(centre))));
+  const radius = Math.ceil(FAR.blocks + spread);
+  const nearestNow = Math.min(...blazes.map(e => e.position.distanceTo(here)));
+  const found = { at: now, feet, radius, nearestNow: round(nearestNow), spread: round(spread) };
+  const saved = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
+  Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+  try {
+    const { surveyRoute } = require('./skills');
+    const route = await surveyRoute(bot, task, movements, new goals.GoalInvert(new goals.GoalNear(centre.x, centre.y, centre.z, radius)), FAR.think);
+    const path = route?.path || [];
+    if (route?.status !== 'success' || !path.length) return bot._farScout = { ...found, none: `no route was found in ${FAR.think} milliseconds to a place ${radius} blocks from the cage${route?.status && route.status !== 'success' ? ` (${route.status})` : ''}` };
+    const along = Math.min(...path.map(n => Math.min(...blazes.map(e => Math.hypot(e.position.x - (n.x + 0.5), e.position.y - n.y, e.position.z - (n.z + 0.5))))));
+    if (path.length > FAR.maxWalk) return bot._farScout = { ...found, none: `the nearest such place is ${path.length} blocks of walking away` };
+    if (along < nearestNow - 1.5) return bot._farScout = { ...found, none: `the way there passes within ${round(along)} blocks of a blaze, nearer than the ${round(nearestNow)} the nearest is now` };
+    const end = path.at(-1);
+    return bot._farScout = { ...found, destination: { x: end.x, y: end.y, z: end.z }, blocks: path.length, nearestAlong: round(along), ...(route.lava ? { lava: route.lava } : {}) };
+  } catch (err) {
+    task.check?.(); if (['NeedsAir', 'Cancelled'].includes(err?.name)) throw err;
+    return bot._farScout = { ...found, none: `the route search failed: ${err?.message || err}` };
+  } finally { Object.assign(movements, saved); }
+}
+const farSite = (bot, now = Date.now()) => {
+  const f = bot._farScout;
+  return f && f.destination && f.feet === `${feetCell(bot)}` && now - f.at < FAR.fresh ? f : null;
+};
+// The walk out and the wait. Ends with its time, a mob that is not a blaze
+// coming to arm's length, a shooter in sight that is not a blaze, or the health
+// gone below eight (the walk's fire); eats where health can come back.
+async function waitFarOff(bot, task, goal, save, site, { navigate, seconds = FAR.seconds, stats = {} } = {}) {
+  const stand = require('./blaze-stand');
+  const { chooseFood } = require('./vitals');
+  const d = site.destination, dest = new Vec3(d.x, d.y, d.z);
+  stand.volleyWatch(bot);
+  const started = Date.now();
+  Object.assign(stats, { seconds: 0, walked: 0, ate: 0, ended: 'time', from: bot.health, to: bot.health });
+  goal.step = { action: 'wait_far_off', at: { ...d } }; save?.();
+  const nearest = () => { const b = blazesAbout(bot, 128).map(t => t.distance); return b.length ? Math.min(...b) : Infinity; };
+  try {
+    for (let tries = 0; tries < 6 && feetCell(bot).distanceTo(dest) > 2; tries++) {
+      task.check(); bot._threatResponseAt = Date.now();
+      if (await stand.putOutFlames(bot, task)) continue;
+      if (await stand.shieldVolley(bot, task)) continue;
+      try { await navigate(bot, task, new goals.GoalNear(dest.x, dest.y, dest.z, 2), { timeoutMs: Math.max(6000, site.blocks * 500), stallMs: 2500, onFoot: true, sprint: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    stats.walked = Math.round((Date.now() - started) / 1000);
+    if (feetCell(bot).distanceTo(dest) > 6) throw Object.assign(new Error(`the walk out to (${d.x}, ${d.y}, ${d.z}) ended ${round(feetCell(bot).distanceTo(dest))} blocks short`), { name: 'StanceFailed' });
+    const arrived = Date.now(), biter = biterWatch(bot);
+    stats.nearestBlaze = round(nearest());
+    while (Date.now() - arrived < seconds * 1000) {
+      task.check(); bot._threatResponseAt = Date.now();
+      const came = biter(); if (came) { stats.ended = came; break; }
+      if ((bot.health ?? 20) < 8) { stats.ended = 'under eight health'; break; }
+      if (await stand.putOutFlames(bot, task)) continue;
+      if (await strikeInReach(bot, task)) continue;
+      if (await stand.shieldVolley(bot, task)) continue;
+      const food = (bot.food ?? 20) < 20 && ((bot.health ?? 20) < 20 || (bot.food ?? 20) < 18) ? chooseFood(bot) : null;
+      if (food) {
+        require('./combat').lowerShield(bot);
+        await bot.equip(food, 'hand');
+        const before = bot.food;
+        try { await bot.consume(); stats.ate++; } catch (err) { task.check(); debug('far eat', err.message); }
+        if (bot.food <= before) await sleep(300);
+        continue;
+      }
+      await sleep(500);
+    }
+    stats.blazesTracked = blazesAbout(bot, 128).length;
+  } finally { stats.seconds = Math.round((Date.now() - started) / 1000); stats.to = bot.health; }
+  return stats;
+}
+
+module.exports = { FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE };

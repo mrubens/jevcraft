@@ -1069,7 +1069,7 @@ function towardRods(need, gain, { spawner = false, of = '' } = {}) {
   if (gain === 'stops') return ` Toward the rods: none; no blaze killed, and the spawner makes no more while it is lit${still}.`;
   return ` Toward the rods: none, no blaze killed; the blazes stay${spawner ? ' and the spawner makes more' : ''}, and waiting does not send them away${still}.`;
 }
-const STAND_GAIN = { close: 'kills', charge: 'kills', break: 'kills', hole: 'comes', window: 'comes', spawner: 'comes', wall: 'comes', box: 'comes', corner: 'comes', light: 'stops', heal: 'none' };
+const STAND_GAIN = { close: 'kills', charge: 'kills', break: 'kills', hole: 'comes', window: 'comes', spawner: 'comes', wall: 'comes', box: 'comes', corner: 'comes', light: 'stops', heal: 'none', far: 'none' };
 const gainOf = o => STAND_GAIN[o.kind] === 'kills' ? { kills: o.cost?.kills || 0, seconds: o.cost?.deathAt ?? o.cost?.seconds, dies: o.cost?.deathAt != null } : STAND_GAIN[o.kind] || null;
 
 // A stand's figure is over its setup and the fifteen seconds held after.
@@ -1293,7 +1293,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
 // said with the rules of the game it rests on, a price worked out from the
 // fight at hand (the walk and the building in their fire, then what reaches
 // the bot there) and what the arena measured of it, fight by fight.
-const TACTICS = new Set(['box', 'light', 'corner', 'heal']);
+const TACTICS = new Set(['box', 'light', 'corner', 'heal', 'far']);
 const PLACE_SECONDS = 0.45, TORCH_SECONDS = 0.45;
 function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig }) {
   const T = require('./blaze-tactics');
@@ -1413,13 +1413,30 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
       const heal = healable ? round((20 - after) * (fast ? 0.5 : 4) + (eat ? 1.6 : 0)) : 0;
       const m = measuredSays('heal', bot);
       const where = walled ? `no rock to go behind within fourteen blocks of walking, so wall the bot in where it stands, the box shut all round (${n(walled, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire, about ${setup.hurt}), where none of the ${n(about.length, 'blaze')} about has a line to it (the nearest ${site.nearest} blocks off), ` : `walk ${n(site.steps, 'block')} (about ${setup.time} in their fire, about ${setup.hurt}) to (${site.cell.x}, ${site.cell.y}, ${site.cell.z}), where none of the ${n(about.length, 'blaze')} about has a line to the bot (the nearest ${site.nearest} blocks off), `;
-      const stays = `The blazes stay where they are${cageNear ? ', and the spawner makes more meanwhile while the bot is within sixteen of it' : ''}; the fight after is asked again${healable ? ' with the health back' : ' at the health it has now'}${walled ? ', the side toward them opened first' : ''}.`;
+      const clock = require('./food-facts').clock(bot);
+      const holds = healable ? ` The health it heals to holds only while hunger stays at 18 or more: fights spent ${clock.rate} hunger a minute (note 664), so from hunger ${hunger} that is about ${clock.noEating} minutes of fighting${points ? ` and at most ${clock.withFood} with all ${points} carried points eaten` : ' with nothing carried to eat'}.` : '';
+      const stays = `The blazes stay where they are${cageNear ? ', and the spawner makes more meanwhile while the bot is within sixteen of it' : ''}; the fight after is asked again${healable ? ' with the health back' : ' at the health it has now'}${walled ? ', the side toward them opened first' : ''}.${holds}`;
       const what = healable
         ? `${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}.`
         : `${food ? `eat the ${words(food.name)} (it brings hunger only to ${eatenTo}) and ` : ''}stay only until the fire on the body is out: at hunger ${hunger}, under eighteen, no health comes back (${food ? `eating all that is carried leaves hunger at ${eatenTo}` : 'nothing carried is food'}), so healing there would take never. It gets the bot out of the fire and the volleys and no health back${setup.damage >= hp ? '; and the health runs out before it is out of their sight' : `: it stays at about ${round(after)} health`}, and each point lost from here on stays lost until the bot has eaten to eighteen.`;
       options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
         description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}` + m.says };
     }
+  }
+
+  // Waiting far off (note 665): past 32 blocks of every blaze, the game's own
+  // clock removes a monster with no player near; the spawner makes none beyond
+  // sixteen. Offered where a live spawner is within sixteen and a way out
+  // was found (T.scoutFar, from the retreat's scouting), whatever the count.
+  const far = cageNear && about.length ? T.farSite(bot) : null;
+  if (far) {
+    const walk = far.blocks / WALK, setup = underFire(walk);
+    const hunger = bot.food ?? 20, eatable = (() => { try { return require('./healing').foodCarried(bot).reduce((k, f) => k + f.count * f.points, 0); } catch (_) { return 0; } })();
+    const heals = hunger >= 18 || Math.min(20, hunger + eatable) >= 18;
+    const rule = ` The game's rule (read from the server jar): a monster with no player within 32 blocks for 30 seconds is removed by chance, one in 800 each tick (a mean of about 40 seconds each: about ${T.farGone(90)} in 100 gone at 90 seconds, ${T.farGone(T.FAR.seconds)} in 100 after ${T.FAR.seconds} seconds here), and at once beyond 128; the blazes a spawner makes are ordinary monsters to it, and a blaze that follows in sight, or flies toward the bot, keeps its clock at nothing. The spawner makes none while no player is within sixteen of it.`;
+    const back = ` Coming back, the spawner's first try is up to four blazes, ten to forty seconds after the bot is within sixteen of it again (of the fights at a spawner that began with one to three in sight, half had four or more about by a median 32 seconds), plus any that stayed. Nothing in the record shows a bot doing this: no bot has walked out and waited, so what is left of the room after ${T.FAR.seconds} seconds is not counted.`;
+    options.wait_far_off = { kind: 'far', site: far, expects: { damage: round(setup.damage), seconds: round(setup.wall + T.FAR.seconds), oneHit: fireHit },
+      description: `Go out of their reach and let the room thin: walk ${n(far.blocks, 'block')} (about ${setup.time} in their fire${shield ? ', the shield up for each volley' : ''}, about ${setup.hurt}) to a place ${far.radius} blocks from the cage, the nearest blaze now ${far.nearestNow} blocks off and none nearer than that along the way (${far.nearestAlong} at the closest)${far.lava ? `; lava lies beside ${far.lava.beside ?? far.lava.cells ?? 'some'} of its cells` : ''}, and stay ${T.FAR.seconds} seconds${heals ? `, eating what is carried (health comes back at hunger 18 or more)` : `; at hunger ${hunger} with ${eatable ? `only ${eatable} points of food` : 'nothing to eat'} no health comes back there`}. It ends sooner if a mob other than a blaze comes to arm's length or the health falls under eight.${rule}${back} It kills no blaze itself.` };
   }
   return options;
 }
@@ -1692,6 +1709,7 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   if (kind === 'light') { Object.assign(stats, await T.lightSpawner(bot, task, goal, save, site.spawner, { navigate, seconds: seconds ?? 60 })); return stats; }
   if (kind === 'corner') return T.holdCorner(bot, task, goal, save, site, { navigate, seconds: seconds ?? 30, item, want, stats });
   if (kind === 'heal') return T.leaveAndHeal(bot, task, goal, save, site, { navigate, seconds: seconds ?? 60, stats });
+  if (kind === 'far') return T.waitFarOff(bot, task, goal, save, site, { navigate, stats });
   return null;
 }
 

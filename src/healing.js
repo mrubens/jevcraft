@@ -150,7 +150,7 @@ function overworldFoodSays(bot, goal) {
     const points = Object.entries(home.stash.contents || {}).filter(([name]) => safeFood(bot, { name }) && bot.registry.foodsByName[name]).reduce((n, [name, c]) => n + c * bot.registry.foodsByName[name].foodPoints, 0);
     if (points) parts.push(`home's chest, ${Math.round(Math.hypot(home.stash.position.x - out.x, home.stash.position.z - out.z))} blocks from that portal, with ${points} hunger of food`);
   }
-  return parts.length ? `Known on the Overworld side: ${parts.join('; ')}.` : 'No food is known on the Overworld side: it is hunted there, where cows, sheep and pigs are common on grass.';
+  return parts.length ? `Known on the Overworld side: ${parts.join('; ')}.` : 'No food is known on the Overworld side: it is hunted there, where cows, sheep and rabbits are common on grass (the bot never hurts pigs or chickens).';
 }
 function withoutFoodSays(bot, goal, { health, hunger, points }) {
   const overworld = /overworld/.test(String(bot.game?.dimension || 'overworld'));

@@ -24,6 +24,10 @@
 // With --records <file>: every fight described (setting, gear, stance chain, kills,
 // damage, sight, the rod's timing; see describe) one JSON line each; with --wins
 // and --sequence: the rod fights against the deaths, and the stance chains.
+// With --counts (note 665): the fights at a live blaze spawner by the most blazes within 16 at once,
+// the fights with none by the same, the fights at four or more by the nearest the bot was to the
+// cage, and the clock: how long after a fight began four were within 16, and a first rod, and a
+// death (rows for src/blaze-record.js COUNTS).
 // With --runs (note 648): the funnel per run, a run being one life of the bot
 // (a file's first frame, or the first frame after a respawn, to the death or the
 // end of the record): the most rods it carried (a rod made into two powder
@@ -219,6 +223,11 @@ function describe(frames, e) {
   const states = decisions.map(x => x.snapshot.decision.state).filter(Boolean);
   const stanceStates = decisions.filter(x => x.snapshot.decision.id === 'encounter_stance').map(x => x.snapshot.decision.state).filter(Boolean);
   const spawnerNear = states.length ? states.some(s => s.spawner && s.spawner.makes === 'blaze' && s.spawner.blocksAway <= 16) : null;
+  // The nearest the bot was to a live blaze spawner in the fight (its decisions' states), and the seconds from the fight's start to four blazes within 16 (note 665).
+  const aways = states.filter(s => s.spawner && s.spawner.makes === 'blaze' && typeof s.spawner.blocksAway === 'number').map(s => s.spawner.blocksAway);
+  const spawnerMin = aways.length ? Math.min(...aways) : null;
+  const four = mobFrames.find(x => blazesOf(x).filter(m => m.d <= 16).length >= 4);
+  const toFour = four ? Math.round(at(four)) : null;
   const drops = stanceStates.map(s => s.dropWithinThreeBlocks);
   const labels = W.map(x => `${x.kind}|${x.label}`);
   const spanFrames = labels.filter(l => /hold on span|cross toward|cross_level/.test(l)).length;
@@ -227,12 +236,15 @@ function describe(frames, e) {
   const dy = [];
   for (const x of mobFrames) { const y = x.snapshot.position?.y; if (y == null) continue; for (const m of blazesOf(x)) if (m.d <= 16 && m.at) dy.push(m.at.y - y); }
   const height = median(dy);
-  const pos = W.map(x => x.snapshot?.position).filter(Boolean);
+  // The frames of the life only: after a death the frames carry the respawn's position, some blocks off (note 665).
+  const pos = W.filter(x => !(e.died && x.at > e.end) && x.snapshot?.health !== 0).map(x => x.snapshot?.position).filter(Boolean);
   const moved = pos.length ? Math.max(...pos.map(p => Math.hypot(p.x - pos[0].x, p.z - pos[0].z))) : null;
   // Gear.
   const inv = W.find(x => x.snapshot?.inventory)?.snapshot.inventory || {};
   const weapon = SWORD.slice().reverse().find(s => inv[s]) || states.find(s => s.weapon)?.weapon || null;
   const shield = W.some(x => x.snapshot?.equipment?.offhand === 'shield');
+  // Ranged kit carried at the fight's start (note 665): a bow with arrows, snowballs.
+  const bow = !!(inv.bow && inv.arrow), snowballs = inv.snowball || 0;
   // Stances in order (a decision's first pick), and the actions the bot began.
   const stances = decisions.filter(x => STANCE_IDS.has(x.snapshot.decision.id)).map(x => ({ t: Math.round(at(x)), id: x.snapshot.decision.id, choice: (x.snapshot.decision.path || [])[0] || null, hp: round1(x.snapshot.health),
     n16: blazesOf(x).filter(m => m.d <= 16).length, sp: (st => st ? (st.spawner && st.spawner.makes === 'blaze' && st.spawner.blocksAway <= 16 ? 1 : 0) : null)(x.snapshot.decision.state),
@@ -257,8 +269,8 @@ function describe(frames, e) {
   const minHp = Math.min(...W.map(x => x.snapshot?.health).filter(v => typeof v === 'number' && v > 0), e.hp0 ?? 20);
   const firstStance = stances[0] || null;
   return { start: e.start, secs: Math.round((e.end - e.start) / 1000), died: !!e.died, rod: e.rodsGain > 0, rods: e.rodsGain,
-    hp0: round1(e.hp0), hunger0: e.hunger0, minHp: round1(minHp), iron: e.iron, shield, weapon,
-    n24start: startIds.size, peak24, peak16, peak8, spawnerNear, terrain, height: round1(height), moved: round1(moved),
+    hp0: round1(e.hp0), hunger0: e.hunger0, minHp: round1(minHp), iron: e.iron, shield, weapon, bow, snowballs,
+    n24start: startIds.size, peak24, peak16, peak8, spawnerNear, spawnerMin, toFour, terrain, height: round1(height), moved: round1(moved),
     soloPct: pct(solo, solo + multi), seenPct: pct(seenT, seenT + unseenT), breaks,
     chain, seq: stances.filter(x => x.id !== 'fortress_visit').map(x => [x.t, x.choice, x.hp, x.n16, x.sp, x.shield, x.id]), first: firstStance && firstStance.choice, stances: stances.length, acts: acts.slice(0, 12), shieldFrames,
     kills: kills.length, killTimes: kills.map(k => Math.round(k.t)), lost: round1(lost), lostBy: by,
@@ -378,6 +390,24 @@ function waysTable(list) {
   return Object.fromEntries(Object.entries(cells).map(([b, ways]) => [b, Object.fromEntries(Object.entries(ways).filter(([, c]) => c[0] >= MIN_WAY).sort().map(([w, c]) => [w, [c[0], c[1], Math.round(c[2] / c[0] * 10)]]))]));
 }
 
+// The rows src/blaze-record.js COUNTS says (note 665): the fights at a live spawner (a decision's
+// state had one within 16) by the most blazes within 16 at once, the rest by the same, the fights
+// at four or more by the nearest the bot came to the cage, and the clock of a fight at a spawner.
+function countsTable(list) {
+  const stat = a => ({ fights: a.length, died: a.filter(f => f.died).length, rod: a.filter(f => f.rod).length, rods: a.reduce((n, f) => n + (f.rods || 0), 0), lost: round1(a.reduce((n, f) => n + (f.lost || 0), 0) / Math.max(1, a.length)) });
+  const sp = list.filter(f => f.spawnerNear === true), rest = list.filter(f => f.spawnerNear !== true);
+  const q = (a, p) => { const b = a.filter(v => v != null).sort((x, y) => x - y); return b.length ? b[Math.min(b.length - 1, Math.floor(b.length * p))] : null; };
+  const four = sp.filter(f => f.peak16 >= 4), began = sp.filter(f => f.n24start <= 3);
+  return { fights: list.length, atSpawner: {
+      'to 3': stat(sp.filter(f => f.peak16 <= 3)), '4': stat(sp.filter(f => f.peak16 === 4)), '5 to 6': stat(sp.filter(f => f.peak16 >= 5 && f.peak16 <= 6)), '7 and more': stat(sp.filter(f => f.peak16 >= 7)) },
+    noSpawner: { '0 to 1': stat(rest.filter(f => f.peak16 <= 1)), '2 to 3': stat(rest.filter(f => f.peak16 >= 2 && f.peak16 <= 3)), '4 and more': stat(rest.filter(f => f.peak16 >= 4)) },
+    fourAtSpawnerByNearest: { 'within 8': stat(four.filter(f => f.spawnerMin <= 8)), '9 to 12': stat(four.filter(f => f.spawnerMin > 8 && f.spawnerMin <= 12)), '13 to 16': stat(four.filter(f => f.spawnerMin > 12)) },
+    ranged: { bowAndArrows: stat(list.filter(f => f.bow)), snowballs: stat(list.filter(f => f.snowballs > 0)), neither: stat(list.filter(f => !f.bow && !(f.snowballs > 0))) },
+    clock: { beganWithOneToThreeInSight: began.length, reachedFour: began.filter(f => f.peak16 >= 4).length, secondsToFour: { median: q(began.map(f => f.toFour), 0.5), p90: q(began.map(f => f.toFour), 0.9) },
+      firstRodSeconds: { median: q(four.map(f => f.rodT), 0.5), n: four.filter(f => f.rodT != null).length },
+      deathSeconds: { p25: q(four.filter(f => f.died).map(f => f.secs), 0.25), median: q(four.filter(f => f.died).map(f => f.secs), 0.5), p75: q(four.filter(f => f.died).map(f => f.secs), 0.75) } } };
+}
+
 // The rows src/blaze-record.js RECENT and IRON_LOST say (note 661): a spawner's
 // fights (a live spawner within 16 and four or more blazes within 16 at most)
 // against the rest, the fights by the most blazes within 16 at once, and the
@@ -457,6 +487,9 @@ if (require.main === module) {
     // --recent: the rows RECENT and IRON_LOST hold, for the window; --records-in reads a file --records wrote.
     const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
     console.log(JSON.stringify(recentTable(list), null, 1));
+  } else if (args.counts) {
+    const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
+    console.log(JSON.stringify(countsTable(list), null, 1));
   } else if (args.answers) {
     const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
     const cells = answerRows(list), min = require('../src/blaze-record').MIN_FIGHTS;
@@ -493,4 +526,4 @@ if (require.main === module) {
     console.log(JSON.stringify(Object.fromEntries(Object.entries(by).map(([c, list]) => [c, row(list)])), null, 1));
   } else console.log(JSON.stringify(tables(readFights(dir, from, to)), null, 1));
 }
-module.exports = { wayRows, waysTable, MIN_WAY, recentTable, runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };
+module.exports = { countsTable, wayRows, waysTable, MIN_WAY, recentTable, runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };

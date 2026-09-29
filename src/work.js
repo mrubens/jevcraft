@@ -5777,7 +5777,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const worn = k => { const i = short.find(s => `top_up_${s.key}` === k); return i && kit.spent[i.key]?.ms >= KIT_FALLBACK_MS && i.carried > 0; };
     const fallback = KIT_ORDER.find(k => tree[k] && !worn(k)) || 'cross_now';
     const decision = await decide('crossing_kit', { client, bot, task, goal, save, tree, context: { fallback },
-      state: { kit: Object.fromEntries(items.map(i => [i.key, `${i.carried} carried, the code would take ${i.wants}`])), health: bot.health, hunger: bot.food,
+      state: { kit: Object.fromEntries(items.map(i => [i.key, `${i.carried} carried, the code would take ${i.wants}`])), health: bot.health, hunger: bot.food, foodBeforeTheNether: require('./food-facts').beforeSays(bot, goal),
         minutesAtCrossing: Math.round(kit.workedMs / 60000), riskNow: require('./risk').riskNow(bot) } });
     if (decision.stale) return false;
     pick = decision.path.at(-1);

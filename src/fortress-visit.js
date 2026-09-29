@@ -58,6 +58,17 @@ const hostileNear = (bot, radius = 24) => { try { return require('./danger').thr
 // What the goal wants in rods, one number (eye-need.js), against what is carried.
 const eyeSays = (bot, goal) => require('./eye-need').says(bot, goal);
 
+// Food before the fight, from food-facts.js (note 664): hunger and whether health
+// comes back, what is carried and the minutes of fighting it holds, what fights
+// begun with and without food came to, and each way to more with its price.
+const foodFacts = (bot, goal) => {
+  const ff = require('./food-facts');
+  return ff.beforeSays(bot, goal, { trip: dimensionOf(bot) === 'nether' ? ff.tripSays(bot, goal) : '' });
+};
+// The food line an option says of itself: the hunger clock and the fact that
+// health comes back only at 18 or more.
+const foodLine = bot => `Food: ${require('./food-facts').clockSays(bot)} Health comes back only at hunger 18 or more.`;
+
 // The state the question is asked with.
 function facts(bot, goal, ctx = {}) {
   const f = fitness(bot);
@@ -73,7 +84,10 @@ function facts(bot, goal, ctx = {}) {
     ...(need != null ? { rodsStillNeeded: need, rodsTheGoalWants: eyeSays(bot, goal) } : {}),
     blazesInSightNow: blazesInSight(bot),
     fireResistance: require('./fire-resistance').says(bot),
+    foodBeforeTheFight: foodFacts(bot, goal),
     playedRecord: recordSays(bot),
+    // The blazes' count at a spawner and what fights of each count came to (note 665).
+    blazeCounts: require('./blaze-record').entryFacts(bot, {}).says,
     aboutTheRecord: `The record of the trials of ${DAY} (note 631, counted again in note 661). The health rows and the hunger rows were counted separately: there is no row for both. Each is what happened to bots that began a fight there, not what getting to a better row first would do; a bot that began healthy may differ in other ways.`,
   };
   return { state, f };
@@ -98,26 +112,40 @@ function options(bot, task, goal, save, actions, ctx = {}) {
   const nether = dimensionOf(bot) === 'nether';
   const tree = {};
   const row = rowSays(f.health, f.hunger);
-  tree.go_in = { description: `Go in now, at health ${round(f.health)} and hunger ${f.hunger}${f.carried.length ? ` with ${f.carried.map(c => c.says).join('; ')} carried` : ' with nothing to eat'}: ${ctx.fortress ? 'the way in is asked next (fortress_approach), and each blaze fight after it as it comes' : 'the fights are asked as they come'}. What the bot's own fights with blazes came to, ${row}. That is the record of fights begun in that row (two days of trials), not a forecast for this fortress. ${f.health < 20 ? (f.healable ? `Health does come back on the way (${f.hunger >= 18 ? `hunger ${f.hunger}` : 'after eating'}), at about a point each four seconds, half a second with saturation at full hunger.` : `Health does not come back: hunger ${f.hunger} is under eighteen and ${f.points ? `eating all that is carried brings it only to ${f.eatenTo}` : 'nothing carried is food'}, so every point lost in the fight stays lost.`) : ''}`.replace(/\s+$/, '') };
+  tree.go_in = { description: `Go in now, at health ${round(f.health)} and hunger ${f.hunger}${f.carried.length ? ` with ${f.carried.map(c => c.says).join('; ')} carried` : ' with nothing to eat'}: ${ctx.fortress ? 'the way in is asked next (fortress_approach), and each blaze fight after it as it comes' : 'the fights are asked as they come'}. What the bot's own fights with blazes came to, ${row}. That is the record of fights begun in that row (two days of trials), not a forecast for this fortress. ${f.health < 20 ? (f.healable ? `Health does come back on the way (${f.hunger >= 18 ? `hunger ${f.hunger}` : 'after eating'}), at about a point each four seconds, half a second with saturation at full hunger.` : `Health does not come back: hunger ${f.hunger} is under eighteen and ${f.points ? `eating all that is carried brings it only to ${f.eatenTo}` : 'nothing carried is food'}, so every point lost in the fight stays lost.`) : ''} ${foodLine(bot)}`.replace(/\s+$/, '') };
 
   // Eat what is carried and wait here: where it is possible.
   const canFeed = f.hunger < 18 && f.points > 0;
   if ((f.health < 20 && f.healable) || canFeed) {
     const after = f.healable ? 20 : f.health;
     tree.heal_first = { description: `Do not go in yet: ${f.items && f.hunger < 20 ? `eat what is carried (${f.carried.map(c => c.says).join('; ')}), which brings hunger to ${f.eatenTo}, and ` : ''}${f.healable && f.health < 20 ? `wait where the bot stands until the health is full: from ${round(f.health)}, about ${f.seconds} seconds (${f.eatenTo >= 20 ? 'a point each half second while saturation lasts, then each four seconds' : 'a point each four seconds at hunger 18 or 19'}); standing still spends no hunger; at most three minutes, then the visit is asked again` : `then the visit is asked again: ${f.healable ? `health is full, so this raises hunger to ${f.eatenTo}, where health comes back after a hit, and heals nothing now` : `health does not come back at hunger ${f.eatenTo}, under eighteen, so this raises hunger and not health`}`}. ` +
-      `${rowThen(after, f.eatenTo, { health: f.health, hunger: f.hunger })} Nothing here gets the bot a rod; it is the time the wait costs. A mob that comes meanwhile is met as it always is, and ends the wait.` };
+      `${rowThen(after, f.eatenTo, { health: f.health, hunger: f.hunger })} Nothing here gets the bot a rod; it is the time the wait costs. A mob that comes meanwhile is met as it always is, and ends the wait. What it heals to holds only while hunger stays at 18 or more: ${require('./food-facts').clockSays(bot)}` };
   }
 
-  // Back for food: where health cannot come back at all here.
-  if (nether && actions?.returnOverworld && !f.healable) {
+  // Back for food. Offered where health cannot come back here, and where the food carried is short of the
+  // stay's own count (nether-food.js stayFacts, the crossing kit's measure), which said out
+  // loud is the price: 22 fights began with nothing to eat at hunger 18 or more, and
+  // fights begun with nothing to eat at hunger under 18 ended in a death 47% of the time.
+  let stay = null; try { stay = require('./nether-food').stayFacts(bot); } catch (_) { stay = null; }
+  if (nether && actions?.returnOverworld && (!f.healable || stay?.short > 0)) {
     let trip = ''; try { trip = require('./game-progress').portalTrip(bot, goal).trim(); } catch (_) { trip = 'the way back to a portal is not known'; }
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { /* unknown */ }
-    tree.go_back = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${trip}${there ? ` ${there}` : ''} The measured pace is part of the price: the walk back is minutes, not seconds, and of the walks back that began over 60 blocks in the Nether that day most were given up or ended in a death (note 626). ${rowThen(20, 20, { health: f.health, hunger: f.hunger })} It gains no rod while it lasts.`,
+    tree.go_back = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${trip}${there ? ` ${there}` : ''} The measured pace is part of the price: the walk back is minutes, not seconds, and of the walks back that began over 60 blocks in the Nether that day most were given up or ended in a death (note 626). ${rowThen(20, 20, { health: f.health, hunger: f.hunger })} It gains no rod while it lasts. ${require('./food-facts').overworldWays(bot)} ${f.healable ? '' : `${require('./food-facts').regenSays(bot)} `}${require('./food-facts').recordSays(bot)}`,
       run: async () => {
         goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: Date.now() };
         goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
         await actions.returnOverworld(bot, task, goal, save);
       } };
+  }
+
+  // The ways to food from here (nether-food.js restockFoodOption: a hoglin, a stew, cooking the raw
+  // meat carried, a bastion's chests, the trip home), asked as their own question where the food
+  // carried is under eight points or health is hurt at a hunger where it does not come back.
+  if (nether) {
+    try {
+      const r = require('./nether-food').restockFoodOption(bot, task, goal, save, { actions: actions || {}, client: actions?.client || task?.opportunityClient });
+      if (r) tree.get_food_here = { description: r.description, run: r.run };
+    } catch (_) { /* no route from here */ }
   }
 
   // A hoglin for its meat: where hunger is under eighteen in the Nether.

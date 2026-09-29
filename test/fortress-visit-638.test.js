@@ -40,7 +40,7 @@ test('at 5 health, hunger 14 and nothing to eat: no wait is offered (nothing wou
   const b = bot({ health: 5, food: 14, hoglin: true });
   const calls = [];
   const tree = visit.options(b, null, goalOf(), () => {}, { navigate: async () => {}, returnOverworld: async () => calls.push('back') }, { fortress, leave: () => {} });
-  assert.deepEqual(Object.keys(tree).sort(), ['go_back', 'go_in', 'hoglin_hunt', 'leave_fortress']);
+  assert.deepEqual(Object.keys(tree).sort(), ['get_food_here', 'go_back', 'go_in', 'hoglin_hunt', 'leave_fortress']);
   assert.match(tree.go_in.description, /under 8 health, 29 fights begun there, 62% died, 3% brought a rod; at hunger 14: under 18, 162 fights begun there, 33% died, 16% brought a rod/);
   assert.match(tree.go_in.description, /Health does not come back: hunger 14 is under eighteen and nothing carried is food, so every point lost in the fight stays lost/);
   assert.doesNotMatch(tree.go_in.description, /Health does come back/);
@@ -70,10 +70,11 @@ test('the hoglin hunt sets the hunt as the survival layer\'s food hunt does, and
   assert.equal(goal.leaveNether.reason, 'food'); assert.equal(goal.leaveNether.pick, 'go_back');
 });
 
-test('at 12 health and hunger 18 with food carried: eating and waiting is offered with its seconds and the rows it moves; going back is not (health comes back here)', () => {
+test('at 12 health and hunger 18 with food carried: eating and waiting is offered with its seconds and the rows it moves; going back is priced too, the stay being longer than the food (note 664)', () => {
   const b = bot({ health: 12, food: 18, items: [['iron_sword', 1], ['cooked_beef', 4]], saturation: 0 });
   const tree = visit.options(b, null, goalOf(), () => {}, { returnOverworld: async () => {}, navigate: async () => {} }, { fortress, leave: () => {} });
-  assert.deepEqual(Object.keys(tree).sort(), ['go_in', 'heal_first', 'leave_fortress']);
+  // Note 664: 32 points carried is short of the stay's own count, so the way home is priced too.
+  assert.deepEqual(Object.keys(tree).sort(), ['go_back', 'go_in', 'heal_first', 'leave_fortress']);
   assert.match(tree.heal_first.description, /^Do not go in yet: eat what is carried \(4 cooked beef, 8 hunger each\), which brings hunger to 20, and wait where the bot stands until the health is full: from 12, about \d+(\.\d)? seconds/);
   assert.match(tree.heal_first.description, /standing still spends no hunger; at most three minutes, then the visit is asked again/);
   assert.match(tree.heal_first.description, /the health row moves from 8 to 16 health \(40% died, 11% brought a rod\) to over 16 health \(22% died, 34% brought a rod\)/);

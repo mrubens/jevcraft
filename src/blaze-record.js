@@ -191,6 +191,71 @@ function rowSays(health, food) {
 }
 
 
+// The fights at a live blaze spawner by how many blazes were about (note 665;
+// scripts/blaze-record.js `--counts`, 2026-09-28T00:00Z to 2026-09-29T11:40Z, 567
+// fights). Counted by the MOST blazes within sixteen of the bot at once in the
+// fight, which the bot's own stay within sixteen of the cage raised (the spawner
+// tries up to four every ten to forty seconds while a player is within sixteen,
+// until six are about): so a row is what a fight that got that many came to, not
+// what entering with that many would do. [fights, died, brought a rod, rods, mean
+// health lost].
+const COUNTS = {
+  from: '2026-09-28', to: '2026-09-29T11:40Z', fights: 567,
+  atSpawner: { 'three or fewer': [85, 19, 45, 76, 13.7], four: [29, 15, 12, 16, 17.8], 'five or six': [85, 42, 34, 49, 23.7], 'seven or more': [130, 39, 29, 47, 18.9] },
+  noSpawner: { 'none or one': [144, 19, 32, 34, 9.1], 'two or three': [75, 10, 27, 29, 11], 'four or more': [19, 6, 5, 7, 10.5] },
+  // Four or more at a live spawner, by the nearest the bot came to the cage.
+  byNearest: { 'within 8 blocks': [178, 74, 66, 102, 23.1], '9 to 12 blocks': [47, 16, 7, 8, 12.6], '13 to 16 blocks': [19, 6, 2, 2, 15.5] },
+  // The clock of a fight at a spawner: of the fights that began with one to three
+  // blazes in sight, how many reached four within sixteen and when; the first rod
+  // (of the fights that reached four) and the deaths, in seconds after the start.
+  // A bow with arrows, or snowballs, carried at the start of a fight: 8 of the 567 had a bow, none a snowball.
+  ranged: { bow: [8, 2, 1, 1, 7.2], snowballs: 0 },
+  clock: { began: 163, reached: 82, toFour: { median: 32, p90: 65 }, firstRod: { median: 16, n: 76 }, death: { p25: 32, median: 58, p75: 95 } },
+};
+const pctN = (k, n) => `${Math.round(100 * k / n)}%`;
+const countRow = ([n, died, rod, rods, lost]) => `${n} fights, ${pctN(died, n)} died, ${pctN(rod, n)} brought a rod, ${Math.round(rods / n * 10) / 10} rods a fight and ${died ? `${Math.round(rods / died * 10) / 10} rods for each death` : 'no death'}, ${lost} health lost on average`;
+// The bot's stay within sixteen of a live cage, in seconds (a gap of a minute
+// begins a new stay), for the clock said beside the counts.
+function stayWithin(bot, cage, now = Date.now()) {
+  if (!bot) return 0;
+  const key = cage ? `${cage.x},${cage.y},${cage.z}` : null;
+  const st = bot._spawnerStay;
+  if (!key) { if (st && now - st.last > 60000) delete bot._spawnerStay; return st ? Math.round((now - st.since) / 1000) : 0; }
+  if (!st || st.key !== key || now - st.last > 60000) bot._spawnerStay = { key, since: now, last: now };
+  else st.last = now;
+  return Math.round((now - bot._spawnerStay.since) / 1000);
+}
+// The facts at the entry to a fight at a spawner, in the bot's state now: the
+// blazes in sight and within sixteen, how many have a line to the cell it
+// stands in, the spawner's own rule and the measured rows by count, and what a
+// fight that stayed at one to three got. `about` is the blaze entities in sight
+// (danger.threats), `cage` the spawner's block or null. Returns { says, ...facts }.
+function entryFacts(bot, { about = null, cage = null, now = Date.now() } = {}) {
+  const here = bot?.entity?.position;
+  const all = Object.values(bot?.entities || {}).filter(e => e?.name === 'blaze' && e.position && e.isValid !== false);
+  const blazes = (about || all).filter(e => e?.position);
+  const within16 = here ? Math.max(blazes.filter(e => e.position.distanceTo(here) <= 16).length, all.filter(e => e.position.distanceTo(here) <= 16).length) : 0;
+  let sees = null;
+  try { const T = require('./blaze-tactics'), { feetCell } = require('./terrain'); sees = here ? T.seeing(bot, blazes, feetCell(bot)).length : null; } catch (_) { sees = null; }
+  const live = !!cage && !!here && cage.offset(0.5, 0.5, 0.5).distanceTo(here) <= 16;
+  const away = live ? Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(here) * 10) / 10 : null;
+  const stay = live ? stayWithin(bot, cage, now) : (stayWithin(bot, null, now), 0);
+  const c = COUNTS, k = c.clock, at = c.atSpawner, no = c.noSpawner;
+  const rows = live
+    ? ` At a live spawner, by the most blazes within sixteen at once in the fight (${c.from} to ${c.to}, ${c.fights} fights with blazes): three or fewer, ${countRow(at['three or fewer'])}; four, ${countRow(at.four)}; five or six, ${countRow(at['five or six'])}; seven or more, ${countRow(at['seven or more'])}. With no spawner within sixteen: none or one, ${countRow(no['none or one'])}; two or three, ${countRow(no['two or three'])}; four or more, ${countRow(no['four or more'])}.`
+      + ` Of the fights at a spawner with four or more about, by the nearest the bot came to the cage: within 8 blocks ${countRow(c.byNearest['within 8 blocks'])}; 9 to 12 blocks ${countRow(c.byNearest['9 to 12 blocks'])}; 13 to 16 blocks ${countRow(c.byNearest['13 to 16 blocks'])}.`
+      + ` The clock: of the ${k.began} fights at a spawner that began with one to three blazes in sight, ${k.reached} reached four or more within sixteen, a median ${k.toFour.median} seconds after the start (nine in ten within ${k.toFour.p90}); the first rod came a median ${k.firstRod.median} seconds in (${k.firstRod.n} fights with four or more); a death at four or more came a median ${k.death.median} seconds in (a quarter within ${k.death.p25}, three quarters within ${k.death.p75}). These are the fights the bot played, chosen in states these rows do not hold alike: a row by count is what a fight that got that many came to, not what entering with that many would do.`
+    : ` The spawner's rule (the server jar): while a player is within sixteen blocks of a live blaze spawner it tries up to four blazes every ten to forty seconds until six are about, and none beyond sixteen. In the fights of ${c.from} to ${c.to} at a live spawner, three or fewer at most, ${countRow(at['three or fewer'])}; four or more about (${at.four[0] + at['five or six'][0] + at['seven or more'][0]} fights), ${pctN(at.four[1] + at['five or six'][1] + at['seven or more'][1], at.four[0] + at['five or six'][0] + at['seven or more'][0])} died and ${pctN(at.four[2] + at['five or six'][2] + at['seven or more'][2], at.four[0] + at['five or six'][0] + at['seven or more'][0])} brought a rod; with no spawner within sixteen: none or one, ${countRow(no['none or one'])}; two or three, ${countRow(no['two or three'])}.`;
+  // What can shoot from a distance, honestly: none is made in the Nether.
+  const inv = (bot?.inventory?.items?.() || []), have = n => inv.filter(i => i.name === n).reduce((k, i) => k + i.count, 0);
+  const arrows = have('arrow'), bow = have('bow') > 0, snow = have('snowball');
+  const ranged = ` Ranged, carried now: ${bow ? 'a bow' : 'no bow'}, ${arrows} arrow${arrows === 1 ? '' : 's'}, ${snow} snowball${snow === 1 ? '' : 's'}. A bow is three sticks and three string; string comes from spiders (the Nether has none) and, in the Nether, only from a piglin's barter (about 4 in 100 of its rounds); a fortress's skeletons drop arrows and now and then a bow; a snowball (three damage to a blaze) is dug from snow, which the Nether has none of, and is carried in from the Overworld. In the fights of ${c.from} to ${c.to} ${c.ranged.bow[0]} of the ${c.fights} began with a bow and arrows carried (${c.ranged.bow[1]} died) and ${c.ranged.snowballs} with snowballs.`;
+  const other = ' Another spawner, in this fortress or another, is the same rule: its first try is up to four blazes, ten to forty seconds after the bot is within sixteen of it.';
+  const seesSays = sees == null ? '' : `, ${sees} of them with a line to the cell the bot stands in`;
+  const now_ = `Blazes in sight now: ${blazes.length}${here ? `; ${within16} within sixteen blocks, in sight or not` : ''}${seesSays}.${live ? ` A live spawner is ${away} blocks off; the bot has been within sixteen of it ${stay} seconds${stay >= k.toFour.median ? `, past the median ${k.toFour.median} seconds at which a fight there had four or more about` : ''}.` : ''}`;
+  return { blazesInSightNow: blazes.length, within16, withALineToTheCell: sees, spawnerBlocksAway: away, secondsWithinSixteen: stay, says: `${now_}${rows}${other}${ranged}` };
+}
+
 // How the rods came and how the deaths did, in one paragraph of counts (note
 // 645; scripts/blaze-record.js --wins, --sequence). Of the fights that ended
 // with a rod nearly all had a close_in or charge_nearest in them, and the
@@ -243,4 +308,4 @@ function optionSays(bot, key, opts = {}) {
   return row ? ` In the fights of ${ANSWERS_OF.from} to ${ANSWERS_OF.to} after an answer of this kind (${CLASS_SAYS[kind].short}) in a situation like this (${situationSays(s)}): ${answerRowSays(row, s)}.` : '';
 }
 
-module.exports = { WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };
+module.exports = { COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };
