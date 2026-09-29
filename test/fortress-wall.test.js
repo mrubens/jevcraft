@@ -118,6 +118,8 @@ test('from the recorded spot, fortress_approach offers mining the blocks and cro
   assert(d, `offered: ${Object.keys(options)}`);
   assert.match(d, /^Mine netherrack for blocks here first, then go straight at the fortress with them, 98 blocks off and 11 blocks up\./);
   assert.match(d, /No pickaxe is carried, and netherrack dug by hand drops nothing: an iron pickaxe is made first from what is carried \(3 of the 11 iron ingots; 4 logs, 1 stick, a crafting table\)/);
+  // Made first, the pickaxe digs the blocks the crossing lays again: not said as none coming back (note 655).
+  assert.doesNotMatch(d, /no block comes back/);
   assert.match(d, /The crossing to its end lays 54 blocks \(12 over lava\) and digs 158 of rock in 135 cells; 5 carried\./);
   assert.match(d, /Mined first: 49 from the \d+ that can be dug from ground walked to from here \(\d+ netherrack\)/);
   assert.match(d, /Then, with them: Go straight at the fortress at the height the bot stands, 135 blocks, digging 158 blocks of rock and laying 54 blocks/);

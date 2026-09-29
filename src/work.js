@@ -578,6 +578,23 @@ const spareDue = (bot, budget = null) => {
   const pickaxes = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
   return pickaxes.length > 0 && (pickaxes.every(i => remainingUses(bot, i) < SPARE_PICKAXE_DURABILITY) || !!budget?.short) && sparePickaxeMaterials(bot);
 };
+// No pickaxe carried, out of Creative.
+const pickaxeNeeded = bot => bot.game?.gameMode !== 'creative' && !bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+// What going on with no pickaxe costs, and the one the pockets make.
+// `made` is the fortress search's own (mob-hunt.js pickaxeFirst, note 654):
+// the best whose head is carried, and what from.
+function makePickaxeSays(bot, made) {
+  const nether = /nether/.test(String(bot.game?.dimension || ''));
+  const uses = bot.registry?.itemsByName?.[made.item]?.maxDurability;
+  return `Make ${made.name} now from what is carried (${made.from}), a few seconds at a crafting table: ${uses ? `${uses} uses` : 'a pickaxe'}. No pickaxe is carried: rock dug by hand takes about two seconds a block for ${nether ? 'netherrack' : 'dirt and gravel'} and six to seven and a half for ${nether ? 'basalt and blackstone' : 'stone'}, and drops nothing${nether ? ', so no block comes back to lay over a gap or lava, and every leg, staircase, tunnel or crossing through rock is dug by hand' : ', and ore and stone need a pickaxe to drop at all'}.`;
+}
+// The pickaxe made from the pockets, one craft at a time (acquireStep
+// takes one step a call), until one is carried.
+async function makePickaxe(bot, task, goal, save, item) {
+  for (let n = 0; n < 8 && pickaxeNeeded(bot); n++) { task.check(); await acquireStep(bot, task, item, countOf(bot, item) + 1, goal, save); }
+  if (pickaxeNeeded(bot)) throw new Error(`The ${item.replaceAll('_', ' ')} was not made from what is carried`);
+  return true;
+}
 async function maintainPickaxe(bot, task, goal, save, budget = null) {
   if (!spareDue(bot, budget)) return false;
   if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
@@ -710,6 +727,14 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (goal.kind === 'win' && worn.length && bot.game?.gameMode !== 'creative') { try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal, { look: false }); } catch (_) { budget = null; } }
   let saying = null;
   const said = () => { if (saying === null) { try { saying = ` ${require('./pickaxe-budget').pickaxeBudget(bot, goal).says}`; } catch (_) { saying = ` The pickaxes carried: ${worn.join(', ')}.`; } } return saying; };
+  // None carried at all, and one to be made from the pockets as they are:
+  // a spare was offered only beside a pickaxe carried, and 25581 and 25592
+  // searched the Nether for their fortresses with none, the makings of an
+  // iron or a wooden one in their pockets, digging rock by hand at six
+  // seconds a block that dropped nothing (note 655).
+  const pick = pickaxeNeeded(bot) ? require('./mob-hunt').pickaxeFirst(bot) : null;
+  const makeable = pick && !pick.carried && !pick.none && pick.item ? pick : null;
+  if (makeable && reserveWeather(bot)) options.make_pickaxe = { description: makePickaxeSays(bot, makeable), run: () => makePickaxe(bot, task, goal, save, makeable.item) };
   if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
@@ -741,7 +766,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (goal.kind === 'win' && blocksDue(bot, goal)) {
     const source = inNether ? await blockSourceSaid(bot, task, goal, 'netherrack') : '';
     options.block_reserve = { description: (inNether
-      ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it.${source} ${BLOCK_RESERVE} also seal a pocket or tower out of a hole.`
+      ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it${pickaxeNeeded(bot) ? `, and ${makeable ? 'none is carried: it is made first from what is carried' : 'none is carried and none can be made from what is carried: dug by hand, netherrack drops nothing'}` : ''}.${source} ${BLOCK_RESERVE} also seal a pocket or tower out of a hole.`
       : `Gather building blocks now: ${blockStock(bot)} carried, and ${BLOCK_RESERVE} seal a pocket for the night or tower out of a hole.`) + blockRoundsSay(goal), run: () => gatherBlocks(bot, task, goal, save) };
   }
   // Two things a night asks for, seen to before it comes (the user,
@@ -767,7 +792,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // was carried on from before.
   const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
-  if (!client) return options[due.includes('spare_pickaxe') ? 'spare_pickaxe' : due.includes('wood_reserve') ? 'wood_reserve' : due[0]].run();
+  if (!client) return options[due.includes('make_pickaxe') ? 'make_pickaxe' : due.includes('spare_pickaxe') ? 'spare_pickaxe' : due.includes('wood_reserve') ? 'wood_reserve' : due[0]].run();
   options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
   const step = goal.step;

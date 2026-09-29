@@ -458,10 +458,11 @@ define({
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
-  question: 'Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?',
-  trigger: 'Between work steps, when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs\' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).',
+  question: 'Something the bot keeps in its pockets is running short (a pickaxe or a spare, wood, building blocks): see to it now, or carry on?',
+  trigger: 'Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs\' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).',
   source: 'src/work.js (upkeepStep)',
   options: [
+    { key: 'make_pickaxe', label: 'make a pickaxe now from what is carried, none being carried', when: 'no pickaxe is carried and the pockets as they are make one with crafts alone (iron from ingots, stone from cobblestone, blackstone or cobbled deepslate, wood from planks, with the sticks and a table from the wood carried); said with the best one they make, what it takes, its uses, and what digging by hand costs where the bot is (note 655)', level: 'root' },
     { key: 'spare_pickaxe', label: 'make a spare stone pickaxe now', when: 'every pickaxe carried has under twenty-four uses left, or on the game ladder their uses fall short of the step in hand and the way home after it, and cobblestone and sticks (or wood) are carried; said with the uses, the digs ahead and home, what the pockets make and the nearest wood known (note 543)', level: 'root' },
     { key: 'wood_reserve', label: 'cut a few logs now', when: 'on the game ladder, fewer than six logs\' worth of wood carried, in the Overworld; said with the depth, the pickaxes\' uses against the step in hand and the way home, and the nearest wood known; chosen underground, it is the climb for the wood chosen', level: 'root' },
     { key: 'block_reserve', label: 'gather building blocks now', when: 'on the game ladder, fewer than sixteen building blocks carried', level: 'root' },
@@ -471,7 +472,7 @@ define({
   ],
   instructions: workInstructions('Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work; each option says what is carried and what it is for.'),
   // Without Jev, the old order.
-  fallback: children => ['spare_pickaxe', 'wood_reserve', 'block_reserve'].find(k => children[k]) || 'carry_on',
+  fallback: children => ['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'block_reserve'].find(k => children[k]) || 'carry_on',
 });
 
 // Work within reach of sculk: mid-230-n made its obsidian four blocks over

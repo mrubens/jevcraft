@@ -170,6 +170,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `(step\|climb\|place\|bridge\|take_floor)_(north\|east\|south\|west)` (pattern) | root | walk, climb, place a block, bridge a gap in the floor that way, or take up a block of the floor the bot laid itself there | the cells that way allow it; a bridge is laid with a block that holds (rock, wart block, nether wood, wool), or else a fence or the crafting table, and says how many cells of gap lie between this floor and the nearest ground the bot is not on by way of it, against the blocks carried, and, for a fence, what walking it is; a block taken up is offered only where the block dug has a floor to land on, not over lava or a fall (it drops out of its cell and burns), and the line for it says so in here.notOffered |
 | `dig_(north\|east\|south\|west)_(feet\|head\|over)` (pattern) | root | dig the block that way | a natural block there, and a tool for it if it needs one |
 | `dig_up\|dig_down\|swim_up\|pillar\|rise_through` (pattern) | root | dig over the head or underfoot, swim up, pillar, or rise straight up through the rock over the head | what is over the head or underfoot allows it; the rise says the air, the rock and the open space above it, the blocks it lays and where they come from (the pack, then the rock dug on the way), and how long it takes |
+| `walk_off` | root | walk off the spot over the ground as it stands, to the nearest dry ground eight blocks from where it got stuck with no lava round it | the aim is off a spot every walk failed from and such ground lies more than a step away within sixteen blocks; said with its cells, the height it goes up or down, and how many of its cells have lava beside them (walked crouched, with what a touch of lava costs this body), since the walks the bot makes on its own take no cell beside lava in the Nether (note 655) |
 | `ask_server` | root | ask the server what the blocks round the body are, and take its answer for the view | the server put the body back where it was several times within five minutes near here (a body it will not let move where the view says it can); said with how many times, and what an earlier asking found |
 
 ### `way_down`
@@ -854,9 +855,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `upkeep`
 
-**Something the bot keeps in its pockets is running short (a spare pickaxe, wood, building blocks): see to it now, or carry on?**
+**Something the bot keeps in its pockets is running short (a pickaxe or a spare, wood, building blocks): see to it now, or carry on?**
 
-- When: Between work steps, when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).
+- When: Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs' worth of wood are carried; or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).
 - Decision tree, choice; stakes low; ledger kind `upkeep`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -865,6 +866,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
+| `make_pickaxe` | root | make a pickaxe now from what is carried, none being carried | no pickaxe is carried and the pockets as they are make one with crafts alone (iron from ingots, stone from cobblestone, blackstone or cobbled deepslate, wood from planks, with the sticks and a table from the wood carried); said with the best one they make, what it takes, its uses, and what digging by hand costs where the bot is (note 655) |
 | `spare_pickaxe` | root | make a spare stone pickaxe now | every pickaxe carried has under twenty-four uses left, or on the game ladder their uses fall short of the step in hand and the way home after it, and cobblestone and sticks (or wood) are carried; said with the uses, the digs ahead and home, what the pockets make and the nearest wood known (note 543) |
 | `wood_reserve` | root | cut a few logs now | on the game ladder, fewer than six logs' worth of wood carried, in the Overworld; said with the depth, the pickaxes' uses against the step in hand and the way home, and the nearest wood known; chosen underground, it is the climb for the wood chosen |
 | `block_reserve` | root | gather building blocks now | on the game ladder, fewer than sixteen building blocks carried |

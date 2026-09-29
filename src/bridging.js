@@ -97,7 +97,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
   // From the block the bot rests on, where the span begins (stepOntoFooting).
   const start = require('./terrain').restingCell(bot) || bot.entity.position.floored();
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
-  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot), stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
+  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
   let here = start, digMs = 0;
   for (let n = 0; n < cells; n++) {
     const step = stepToward(here, target);
@@ -331,8 +331,11 @@ async function stepOntoFooting(bot, task) {
 // them) is not counted: dug, the way back is a hole.
 // `names`: other blocks looked for the same way (the Nether's gathering
 // looks so for wood within reach, nether-gather.js).
+// `cells`: the most cells the walk takes in, nearest first: the far look
+// back along a span (mob-hunt.js RESTOCK_FAR) is a few dozen cells of floor
+// there, and on open ground its reach would be thousands.
 const DROP_OF = { stone: 'cobblestone' };
-function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false, names = MATERIALS } = {}) {
+function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false, names = MATERIALS, cells: most = Infinity } = {}) {
   const out = { sources: [], reachable: {}, unreachable: {}, walkCells: 0 };
   if (typeof bot.findBlocks !== 'function' || typeof bot.blockAt !== 'function' || !bot.entity?.position) return out;
   const { restingCell } = require('./terrain'), { miningReach } = require('./mining-access');
@@ -344,7 +347,7 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false, name
   if (standing(start)) cells.set(`${start}`, { c: start, walk: 0 });
   for (const queue = [...cells.values()]; queue.length;) {
     const { c, walk: w } = queue.shift();
-    if (w >= walk) continue;
+    if (w >= walk || cells.size >= most) continue;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [0, 1, -1]) {
       const n = c.offset(dx, dy, dz), key = `${n}`;
       if (cells.has(key) || Math.hypot(n.x - start.x, n.z - start.z) > reach || !standing(n)) continue;
@@ -400,21 +403,23 @@ function spanBlockSources(bot, { reach = 16, walk = 32, skip = () => false, name
 // stopped; a block that gained nothing is not tried again this round.
 // `names`, `carried` and `what`: other blocks gathered the same way, how
 // many of them are carried, and what they are called.
-async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = null, reach = 16, walk = 32, skip = () => false, onBlock = () => {}, names = MATERIALS, carried = blocksCarried, what = 'what a span is laid with' }) {
+async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = null, reach = 16, walk = 32, cells = Infinity, skip = () => false, onBlock = () => {}, names = MATERIALS, carried = blocksCarried, what = 'what a span is laid with' }) {
   const { goals } = require('mineflayer-pathfinder');
   const start = carried(bot), tried = new Set();
   let misses = 0, why = null;
   while (carried(bot) < want) {
     task.check();
     if (deadline && Date.now() > deadline) { why = 'the time it was said to take ran out twice over'; break; }
-    const { sources } = spanBlockSources(bot, { reach, walk, names, skip: p => tried.has(`${p}`) || skip(p) });
+    const { sources } = spanBlockSources(bot, { reach, walk, cells, names, skip: p => tried.has(`${p}`) || skip(p) });
     const s = sources[0];
     if (!s) { why = `nothing more of ${what} can be dug from ground walked to from here`; break; }
     tried.add(`${s.p}`); onBlock(s);
     const before = carried(bot);
     try {
       const feet = bot.entity.position.floored();
-      if (!feet.equals(s.from)) await navigate(bot, task, new goals.GoalBlock(s.from.x, s.from.y, s.from.z), { timeoutMs: 15000, stallMs: 4000 });
+      // A walk back along a span to the rock it came from is longer than
+      // one within the near reach: timed by its cells.
+      if (!feet.equals(s.from)) await navigate(bot, task, new goals.GoalBlock(s.from.x, s.from.y, s.from.z), { timeoutMs: Math.max(15000, s.walk * 600), stallMs: 4000 });
       await mineAt(s);
     } catch (err) {
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err;

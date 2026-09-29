@@ -343,6 +343,67 @@ function risePlan(view, feet, { reach = 48 } = {}) {
   return { move: { key: 'rise_through', does, kind: 'rise', top, rise, blocks, seconds: Math.round(seconds), effects: [] } };
 }
 
+// A whole walk off the spot, for the 'away' aim: to the nearest cell at
+// least eight blocks from where it got stuck that is dry ground with no lava
+// in the eight cells round it, over the ground as it stands (a step level,
+// one up, or down as far as three; nothing dug or laid), taking as few cells
+// beside lava as the ground allows. In the Nether the pathfinder's walks
+// take no cell with lava beside it (movement.js besideLavaRefused), and in
+// a basalt delta, where the lava lies in pools level with the floor, that
+// is every cell: 25583 (mid-243-cg) stood thirty minutes on a cell of
+// blackstone at 1.8 health, every walk "no route", its moves single steps
+// onto the cells beside it and back, while a walk of nine cells, two of
+// them beside lava, came off the delta's lava onto dry ground eight blocks
+// north (note 655). The cells beside lava are said and walked crouched,
+// one at a time; a drop of two or more onto one, or a jump up onto one, is
+// not taken (movement.js, notes 514 and 220-e: the body carries on past
+// the cell it was aimed at). -> { path: [Vec3], lavaSide, to } or null.
+const WALK_OFF_REACH = 16, WALK_OFF_NODES = 4000, LAVA_SIDE_COST = 100;
+function lavaBeside(view, c) {
+  for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) {
+    if (!dx && !dz) continue;
+    for (const dy of [-1, 0, 1]) if (isLava(view.name(c.offset(dx, dy, dz)))) return true;
+  }
+  return false;
+}
+function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OFF_NODES, away = 8 } = {}) {
+  if (!from || isWater(view.name(feet))) return null;
+  const empty = c => { const n = view.name(c); return n != null && open(n) && !isWater(n) && !isLava(n); };
+  const stand = c => empty(c) && empty(c.plus(UP)) && solid(view.name(c.plus(DOWN))) && !/magma|campfire|fire/.test(view.name(c.plus(DOWN)) || '');
+  const start = { cost: 0, c: feet, prev: null };
+  const best = new Map([[`${feet}`, start]]);
+  const frontier = [start];
+  let found = null;
+  for (let i = 0; i < nodes && frontier.length; i++) {
+    let k = 0;
+    for (let j = 1; j < frontier.length; j++) if (frontier[j].cost < frontier[k].cost) k = j;
+    const cur = frontier.splice(k, 1)[0];
+    if (cur.stale) continue;
+    const c = cur.c;
+    if (cur.prev && Math.hypot(c.x - from.x, c.z - from.z) >= away && !lavaBeside(view, c)) { found = cur; break; }
+    for (const d of Object.values(DIRS)) for (const dy of [0, 1, -1, -2, -3]) {
+      const q = c.plus(d).offset(0, dy, 0);
+      if (Math.abs(q.x - feet.x) > reach || Math.abs(q.z - feet.z) > reach || !stand(q)) continue;
+      // Up needs the head's room over the cell stood on; down, the column
+      // over the landing open from the level stood on.
+      if (dy === 1 && !empty(c.offset(0, 2, 0))) continue;
+      if (dy < 0 && ![...Array(-dy + 1).keys()].every(n => empty(c.plus(d).offset(0, 1 - n, 0)))) continue;
+      const side = lavaBeside(view, q);
+      if (side && (dy <= -2 || dy === 1)) continue;
+      const cost = cur.cost + 1 + (side ? LAVA_SIDE_COST : 0), key = `${q}`, was = best.get(key);
+      if (was && was.cost <= cost) continue;
+      if (was) was.stale = true;
+      const node = { cost, c: q, prev: cur, side };
+      best.set(key, node); frontier.push(node);
+    }
+  }
+  if (!found) return null;
+  const path = [];
+  let lavaSide = 0;
+  for (let n = found; n && n.prev; n = n.prev) { path.unshift(n.c); if (n.side) lavaSide++; }
+  return { path, lavaSide, to: found.c };
+}
+
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
@@ -367,6 +428,10 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       facts.airUp = top != null && open(top) && !isWater(top) ? n : null;
       facts.ceilingUp = facts.airUp == null && top != null ? n : null;
     }
+    // Lava beside the cell it ends on, as the walk off says of its cells:
+    // 25583's step north onto such a cell was said as "ends on dry ground"
+    // only (note 655).
+    if (!inWater && lavaBeside(view, p)) facts.lavaBeside = true;
     if (target) facts.blocksToTarget = Math.round(p.distanceTo(target));
     if (from) facts.blocksFromStart = Math.round(Math.hypot(p.x - from.x, p.z - from.z));
     return facts;
@@ -515,6 +580,18 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     const c = view.corrections;
     moves.push({ key: 'ask_server', kind: 'resync', effects: [], does: `Ask the server what the blocks round the body are: it answers a use of a block's face with the block it holds there, and this client's view is made to match its answer (nothing is placed or broken; the shield or an empty hand does the asking). The server put the body back ${c.times} times in ${c.withinSeconds} seconds here, as it does when a move would put the body into a block the server has and the view does not${c.askedAbout ? `; it was asked ${c.secondsAgo} seconds ago about ${c.askedAbout} blocks and ${c.viewDiffered.length ? 'its answer differed from the view at ' + c.viewDiffered.map(x => `(${x.x}, ${x.y}, ${x.z})`).join(', ') : 'its answers matched the view'}` : ''}.` });
   }
+  // The whole walk off, where single steps are what is offered: more than
+  // one cell, so not a step already listed.
+  if (goal === 'away' && from && !inWater) {
+    const walk = walkOffPlan(view, feet, from);
+    if (walk && walk.path.length > 1) {
+      const rise = walk.to.y - feet.y, off = Math.round(Math.hypot(walk.to.x - from.x, walk.to.z - from.z));
+      const side = walk.lavaSide;
+      moves.push({ key: 'walk_off', kind: 'walk', path: walk.path, to: walk.to, lavaSide: side,
+        does: `Walk off this spot to (${walk.to.x}, ${walk.to.y}, ${walk.to.z}), ${walk.path.length} cells over the ground as it stands (nothing dug or laid${rise ? `, ${rise > 0 ? `${rise} up` : `${-rise} down`} in all` : ''}), onto dry ground with no lava in the eight cells round it, ${off} blocks from where it got stuck. ${side ? `${side} of its cells ${side === 1 ? 'has' : 'have'} lava beside it (level with the feet or the floor, a block to the side or corner to corner), walked crouched one cell at a time; a misstep or a push there is into the lava${view.lavaTouch ? ` (${view.lavaTouch})` : ''}. The walks the bot makes on its own take no cell beside lava in the Nether, so they find no way here.` : 'None of its cells has lava beside it.'}`,
+        effects: [], ...where(walk.to) });
+    }
+  }
   // 'away': off a spot every walk failed from, onto dry ground eight blocks off.
   const done = goal === 'dry' ? dryFooting(view, feet)
     : goal === 'away' ? dryFooting(view, feet) && !!from && Math.hypot(feet.x - from.x, (feet.y - from.y) || 0, feet.z - from.z) >= 8
@@ -573,6 +650,7 @@ function describeMove(m) {
   if (m.to) {
     facts.push(m.rises > 0 ? `rises ${m.rises}` : m.rises < 0 ? `goes down ${-m.rises}` : 'same level');
     if (m.dryFooting) facts.push('ends on dry ground');
+    if (m.lavaBeside) facts.push('lava beside the cell it ends on (level with the feet or the floor, a block to the side or corner to corner): a misstep or a push there is into the lava');
     if (m.breathes === true) facts.push('the head comes out into air there');
     else if (m.breathes === false) facts.push('the head is still under water there');
     if (m.airUp != null) facts.push(`air ${m.airUp} blocks straight up from there`);
@@ -707,6 +785,21 @@ async function perform(bot, task, m, { dig }) {
     for (let n = 0; n < 10 && bot.entity.onGround === false && !isWater(bot.blockAt(bot.entity.position.floored())?.name); n++) { task.check(); await new Promise(r => setTimeout(r, 50)); }
     return;
   }
+  // The walk off, a cell at a time as the steps are made: crouched where
+  // the cell has lava beside it and the step stays level, and stopped
+  // where the body is not in the cell the last step was for.
+  if (m.kind === 'walk') {
+    for (const cell of m.path) {
+      task.check();
+      const at = bot.entity.position.floored();
+      const step = { key: m.key, kind: 'move', to: cell, from: at, pastLava: cell.y === at.y && lavaBeside(liveView(bot), cell) };
+      await perform(bot, task, step, { dig });
+      await landed(bot, task);
+      const now = bot.entity.position.floored();
+      if (now.x !== cell.x || now.z !== cell.z) throw new Error(`The walk off stopped at (${now.x}, ${now.y}, ${now.z}), short of (${cell.x}, ${cell.y}, ${cell.z})`);
+    }
+    return;
+  }
   if (m.kind === 'dig') { await dig(bot, task, m.cell, { requireDrops: false, dropInto: m.key === 'dig_down' }); return; }
   if (m.kind === 'place') {
     await equipBlock(m.block);
@@ -818,4 +911,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { walkOffPlan, lavaBeside, islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

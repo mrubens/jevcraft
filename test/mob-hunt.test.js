@@ -713,7 +713,8 @@ test('a fortress leg over a void is priced by the blocks carried, its failure ke
   // A basalt ledge to z 1, a sixty-block void to z 61 over the lava sea, basalt again from z 62; a basalt wall north from z -4.
   const rock = p => p.y <= 31 ? 'lava' : (p.x === 5 && p.y === 63 && p.z === -3) ? 'netherrack'
     : (p.z <= 1 && p.y <= 64) || (p.z <= -4) || (p.z >= 62 && p.y <= 64) ? 'basalt' : null;
-  const carried = [];
+  // A pickaxe carried: without one, rock dug by hand drops nothing and no restock is offered (note 655).
+  const carried = [{ name: 'iron_pickaxe', count: 1 }];
   const { bot, dug } = netherWorld(new Vec3(0.5, 65, 1.5), rock, carried);
   const near = [new Vec3(5, 63, -3)];
   for (let x = -3; x <= 3; x++) for (let z = -3; z <= 1; z++) for (let y = 60; y <= 64; y++) near.push(new Vec3(x, y, z));
@@ -759,7 +760,7 @@ test('a restock at the end of a span over the lava sea digs only what it can rea
   const outcrop = p => p.x >= 1 && p.x <= 3 && p.z >= -15 && p.z <= -11 && p.y >= 40 && p.y <= 74;
   const island = p => p.x >= 9 && p.x <= 12 && p.z >= -24 && p.z <= -18 && p.y >= 60 && p.y <= 72;
   const rock = p => p.y <= 31 ? 'lava' : span(p) ? 'cobblestone' : outcrop(p) || island(p) || (p.z >= 1 && p.y <= 72) ? 'netherrack' : null;
-  const carried = [{ name: 'cobblestone', count: 61 }];
+  const carried = [{ name: 'cobblestone', count: 61 }, { name: 'iron_pickaxe', count: 1 }];
   const { bot, dug } = netherWorld(new Vec3(0.5, 73, -19.5), rock, carried);
   const world = [];
   for (let x = -20; x <= 20; x++) for (let y = 50; y <= 80; y++) for (let z = -40; z <= 5; z++) { const p = new Vec3(x, y, z); if (rock(p) && rock(p) !== 'lava') world.push(p); }
@@ -791,7 +792,7 @@ test('a restock at the end of a span over the lava sea digs only what it can rea
   // A restock held (a threat broke it off) goes on where it stands, however far from the leg's end: it was looked at only
   // within eight blocks of it, and the leg walked the bot back to the span's end between digs.
   bot.entity.position = new Vec3(0.5, 73, -9.5); walks.length = 0; digs.length = 0;
-  const have = carried.reduce((n, i) => n + i.count, 0);
+  const have = carried.filter(i => !/_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0);
   goal.fortressSearch.restock = { want: have + 3, since: Date.now(), said: 30, from: { x: 0, y: 73, z: -20 } };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: jevStub([]) });
   assert.equal(digs.length, 3, 'the restock went on');

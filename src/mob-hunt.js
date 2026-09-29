@@ -1184,6 +1184,15 @@ const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 // across the drop, mid-244-ad-nether-2's restock walked its span back and
 // forth for a minute and dug nothing (note 561).
 const RESTOCK_REACH = 16, RESTOCK_WALK = 32, RESTOCK_MOST = 128;
+// Where nothing can be dug from ground within that, the floor the bot
+// stands on is looked along farther, to the rock it joins: 25589 (mid-243-
+// cd-nether-1) stood at the far end of its own span over the lava sea, no
+// block carried and an iron pickaxe with 170 uses, the shore netherrack a
+// walk of 30 back along the span; nothing within sixteen, the restock was
+// not offered, every leg rested "out of blocks", and the one way to blocks
+// offered was a portal 219 blocks off (note 655). The walk is the span's
+// few dozen cells; on open ground the near look has found rock already.
+const RESTOCK_FAR = { reach: 64, walk: 96, cells: 800 };
 // Seconds a block of this kind takes to dig with the tool the dig would
 // take (skills.js cheapestTool), as the crossing's survey reckons it.
 // `tool`, where given, is the item type it will be dug with (a pickaxe
@@ -1206,22 +1215,29 @@ function restockPlan(bot, goal, surveys) {
 // `need` blocks past those carried, as many as can be dug here, priced.
 function blocksPlan(bot, goal, need, { tool } = {}) {
   const carried = blocksCarried(bot);
-  const found = spanBlockSources(bot, { reach: RESTOCK_REACH, walk: RESTOCK_WALK, skip: p => isSetAside(goal, 'reach', p) });
+  const skip = p => isSetAside(goal, 'reach', p);
+  let found = spanBlockSources(bot, { reach: RESTOCK_REACH, walk: RESTOCK_WALK, skip }), far = false;
+  if (need && !found.sources.length) {
+    const farther = spanBlockSources(bot, { ...RESTOCK_FAR, skip });
+    if (farther.sources.length) { found = farther; far = true; }
+  }
   if (!need || !found.sources.length) return { found, need, want: 0, carried };
   const want = Math.min(need, RESTOCK_MOST, found.sources.length);
   const first = found.sources[0], taken = found.sources.slice(0, want);
   const digs = taken.map(t => digSeconds(bot, t.block, tool));
   const seconds = digs.some(d => d === null) ? null : Math.round(first.walk / WALK_SPEED + digs.reduce((n, d) => n + d, 0) + want / WALK_SPEED);
-  return { found, need, want, first, seconds, carried };
+  return { found, need, want, first, seconds, carried, far };
 }
+// The reach the gathering looks within, as the plan found its blocks.
+const restockReach = far => far ? RESTOCK_FAR : { reach: RESTOCK_REACH, walk: RESTOCK_WALK };
 function restockSays(bot, plan, last, pick = pickaxeFirst(bot)) {
   const { found, need, want, first, seconds, carried } = plan, here = bot.entity.position;
   const has = found.sources.length;
-  const whereFrom = first.walk ? `a walk of ${first.walk} block${first.walk === 1 ? '' : 's'} from here` : 'where the bot stands';
+  const whereFrom = first.walk ? `a walk of ${first.walk} block${first.walk === 1 ? '' : 's'} from here${plan.far ? `, back along the floor the bot stands on (nothing can be dug from ground within ${RESTOCK_REACH} blocks of here)` : ''}` : 'where the bot stands';
   return `Dig ${want} block${want === 1 ? '' : 's'} to lay spans with here, one after another, from the ${has} that can be dug from ground walked to from here (${kindsSaid(found.reachable)}): ` +
     `the nearest ${Math.round(first.p.distanceTo(here))} blocks off, dug from ${whereFrom}${seconds === null ? '' : `, about ${seconds} seconds in all`}. ${pick.says}` +
     `The longest leg short of blocks needs ${need + carried} laid and ${carried} are carried: ${need} short${want < need ? `, and only ${want} can be had here` : ''}. ` +
-    (Object.keys(found.unreachable).length ? `Within ${RESTOCK_REACH} blocks but not to be dug from ground walked to from here (across open drop, under a span's floor, or with nowhere for the drop to land): ${kindsSaid(found.unreachable)}. ` : '') +
+    (Object.keys(found.unreachable).length && !plan.far ? `Within ${RESTOCK_REACH} blocks but not to be dug from ground walked to from here (across open drop, under a span's floor, or with nowhere for the drop to land): ${kindsSaid(found.unreachable)}. ` : '') +
     (last ? `The last restock, ${Math.max(1, Math.round((Date.now() - last.at) / 60000))} min ago ${Math.round(Math.hypot(last.from.x - here.x, last.from.z - here.z))} blocks from here, gained ${last.gained}${last.why ? `: ${last.why}` : ''}. ` : '') +
     'The leg is chosen again after.';
 }
@@ -1334,9 +1350,14 @@ async function mineThenCross(bot, task, goal, save, actions, state, cross) {
   const { target } = cross;
   if (blocksCarried(bot) < cross.want) {
     const here = bot.entity.position;
-    state.restock = { want: cross.want, since: Date.now(), said: cross.plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) } }; save();
+    state.restock = { want: cross.want, since: Date.now(), said: cross.plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, ...(cross.plan.far ? { far: true } : {}) }; save();
     await restockStep(bot, task, goal, save, actions, state);
   }
+  // With the blocks carried already the restock is not run, and the
+  // crossing's rock was dug by hand: 25592's, 57 blocks of basalt at about
+  // six seconds each with the makings of a pickaxe carried (note 655).
+  // Unmade, the crossing goes on as surveyed, by hand.
+  await makePickaxe(bot, task, goal, save, actions);
   const survey = surveyCrossing(bot, target, { cells: FORTRESS_CROSS });
   if (!survey.cells || survey.gain < 1) return `no crossing to make after the mining (${blocksCarried(bot)} blocks carried${state.lastRestock?.why ? `; the mining ended: ${state.lastRestock.why}` : ''})${survey.stoppedBy ? `: ${survey.stoppedBy}` : ''}`;
   goal.step = { action: 'cross_toward', what: 'the fortress', target: { x: target.x, y: target.y, z: target.z }, cells: survey.cells, dig: survey.dig, bridge: survey.bridge, carried: survey.carried }; save();
@@ -1614,11 +1635,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', since: Date.now() }; save(); return 'goto'; } };
   }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
-  if (short && actions.mineAt && actions.navigate) {
+  // With no pickaxe carried and none to be made from what is carried, rock
+  // dug by hand drops nothing: no restock to offer, and each leg says so.
+  // 25585 was offered "Dig 35 blocks ... about 78 seconds" with "none can
+  // be made" in the same line (note 655).
+  if (short && actions.mineAt && actions.navigate && !pickaxeFirst(bot).none) {
     const plan = restockPlan(bot, goal, surveys);
     if (plan.want) {
       options.restock_blocks = { description: restockSays(bot, plan, state.lastRestock),
-        run: async () => { state.restock = { want: blocksCarried(bot) + plan.want, since: Date.now(), said: plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) } }; save(); await restockStep(bot, task, goal, save, actions, state); return 'restock'; } };
+        run: async () => { state.restock = { want: blocksCarried(bot) + plan.want, since: Date.now(), said: plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, ...(plan.far ? { far: true } : {}) }; save(); await restockStep(bot, task, goal, save, actions, state); return 'restock'; } };
     }
   }
   // With no pickaxe, making one is a way of its own: every leg through rock,
@@ -1702,7 +1727,7 @@ async function restockStep(bot, task, goal, save, actions, state) {
   const deadline = r.said === null || r.said === undefined ? null : r.since + Math.max(60, r.said * 2) * 1000;
   let result = { gained: 0, why: null };
   try {
-    result = await gatherSpanBlocks(bot, task, r.want, { navigate: actions.navigate, deadline, reach: RESTOCK_REACH, walk: RESTOCK_WALK,
+    result = await gatherSpanBlocks(bot, task, r.want, { navigate: actions.navigate, deadline, ...restockReach(r.far),
       skip: p => isSetAside(goal, 'reach', p),
       onBlock: s => { goal.step = { action: 'restock_blocks', block: s.name, target: { x: s.p.x, y: s.p.y, z: s.p.z }, from: { x: s.from.x, y: s.from.y, z: s.from.z }, want: r.want, have: blocksCarried(bot) }; save(); },
       mineAt: s => actions.mineAt(bot, task, goal, save, s.p, s.name, s.drops) });
