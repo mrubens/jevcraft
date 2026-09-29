@@ -591,6 +591,81 @@ test('a stand made for the last slot is walked to; one no walk reaches is the ca
   assert.equal(second.w.nameAt(second.last), 'obsidian');
 });
 
+test('a stand made high up is walked to in one pass while each walk gets nearer: a tower ends its walk at every block laid (note 651)', async () => {
+  // mid-244-ce, nine of ten cast, the last slot four blocks up: each pass walked one block of the tower, threw "Navigation
+  // ended before reaching the destination" as a site failure and asked portal_method (four times in 47 seconds), the ladder's
+  // enter_nether between; the trial was stopped as a flip sixteen seconds before the stand was reached.
+  const { Task } = require('../src/skills');
+  const made = castingBot({ water_bucket: 1, lava_bucket: 1, cobblestone: 64, flint_and_steel: 1 });
+  const { bot, w, actions } = made;
+  const frame = newFrame('x');
+  const last = cast.castOrder(frame).at(-1);
+  for (const p of frame.blocks) if (!new Vec3(p.x, p.y, p.z).equals(last)) w.set(new Vec3(p.x, p.y, p.z), 'obsidian');
+  bot.entity.position = new Vec3(last.x + 0.5, frame.origin.y, last.z - 1.5);
+  actions.surveyRoute = async () => ({ status: 'noPath' });
+  const goal = { portalFrame: frame };
+  const walks = [];
+  let climb = 0;
+  const go = actions.navigate;
+  // One block up a walk, each ending short, as the pathfinder's tower does; the last walk arrives.
+  actions.navigate = async (b, t, g) => {
+    if (g.y <= frame.origin.y + 1) return go(b, t, g);
+    walks.push(b.entity.position.y);
+    climb++;
+    b.entity.position = climb >= 4 ? new Vec3(g.x + 0.5, g.y, g.z + 0.5) : b.entity.position.offset(0.2, 1, 0.1);
+    if (climb < 4) throw new Error('Navigation ended before reaching the destination');
+  };
+  assert.equal(await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions), false, 'the first pass makes the stand');
+  let done = false;
+  for (let pass = 0; pass < 3 && !done; pass++) done = await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
+  assert(done, 'cast from the made stand, no throw between');
+  assert.equal(walks.length, 4, `four walks in one pass: ${walks}`);
+  assert.equal(w.nameAt(last), 'obsidian');
+  // A walk that gains nothing is still the failure, said with what it did.
+  const stuck = castingBot({ water_bucket: 1, lava_bucket: 1, cobblestone: 64, flint_and_steel: 1 });
+  const f2 = newFrame('x'), l2 = cast.castOrder(f2).at(-1);
+  for (const p of f2.blocks) if (!new Vec3(p.x, p.y, p.z).equals(l2)) stuck.w.set(new Vec3(p.x, p.y, p.z), 'obsidian');
+  stuck.bot.entity.position = new Vec3(l2.x + 0.5, f2.origin.y, l2.z - 1.5);
+  stuck.actions.surveyRoute = async () => ({ status: 'noPath' });
+  let tries = 0;
+  const g2 = { portalFrame: f2 }, go2 = stuck.actions.navigate;
+  stuck.actions.navigate = async (b, t, g) => { if (g.y <= f2.origin.y + 1) return go2(b, t, g); tries++; throw new Error('Navigation ended before reaching the destination'); };
+  await cast.castFrame(stuck.bot, new Task('cast'), g2, () => {}, stuck.actions);
+  await assert.rejects(cast.castFrame(stuck.bot, new Task('cast'), g2, () => {}, stuck.actions), /could not be walked to .*Navigation ended before reaching the destination/);
+  assert.equal(tries, 1, 'a walk that came no nearer is not walked again');
+});
+
+test('the way held, cast beside a lava, with a frame already begun says the frame stays: no frame down by the lava, no trip of a few seconds (note 651)', async () => {
+  // mid-244-ce (25588): nine of ten cast at a hilltop frame 66 blocks above the lava, the held cast_at_lava said "walks there
+  // first and puts the frame down within a few blocks of it, so a trip for lava is a few seconds" and "the portal is then down
+  // there"; kept at 0.64, 0.52 and 0.67. Kept, it goes on at the frame where it stands.
+  const { Task } = require('../src/skills');
+  const { portalMethod } = require('../src/work');
+  const { bot, w } = castingBot({ water_bucket: 1, lava_bucket: 1, bucket: 8, cobblestone: 64, iron_ingot: 10 });
+  bot.findBlocks = () => []; bot.health = 20; bot.food = 20;
+  const frame = newFrame('x', new Vec3(8, 64, 23));
+  for (const p of frame.blocks.slice(0, 9)) w.set(new Vec3(p.x, p.y, p.z), 'obsidian');
+  const near = { x: 20, y: 10, z: 60 };
+  const goal = { portalFrame: frame, landmarks: [{ kind: 'lava_pool', ...near, dimension: 'overworld' }],
+    portalMethod: { kind: 'cast', near: { ...near }, activeMs: 0, reasked: 0, from: { obsidian: 0, diamonds: 0, diamondPickaxe: false, placed: 0 }, siteFailed: true } };
+  let offered = null;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.7 } } }; } };
+  assert.equal(await portalMethod(bot, task, goal, () => {}), true);
+  const held = offered.cast_at_lava;
+  assert.match(held, /^Go on with the cast at the frame begun at \(8, 64, 23\), 9 of ten cast: the frame stays where it stands, \d+ blocks from the lava chosen before/);
+  assert.match(held, /each bucket still to fetch is /);
+  assert.match(held, /does not put a frame down beside that lava/);
+  assert.match(held, /The portal is at this frame/);
+  assert.doesNotMatch(held, /so a trip for lava is a few seconds|puts the frame down within a few blocks of it|The portal is then down there/);
+  assert.equal(goal.portalFrame, frame, 'kept: the frame is not left');
+  // Chosen afresh with a frame begun (not the way held), it does leave the frame, and says so.
+  const fresh = { portalFrame: frame, landmarks: goal.landmarks, portalMethod: { kind: 'cast', activeMs: 0, reasked: 0, from: {}, siteFailed: true } };
+  await portalMethod(bot, task, fresh, () => {});
+  assert.match(offered.cast_at_lava, /puts the frame down within a few blocks of it/);
+  assert.match(offered.cast_at_lava, /is left as it stands and all ten are cast down there/);
+});
+
 test('a source feeding a slot that the bucket cannot scoop is filled with a block instead', async () => {
   // mid-242-r tried to scoop a source inside its own cast walls round after round until the loop watch ended the trial (2026-09-27).
   const { Task } = require('../src/skills');
@@ -669,7 +744,7 @@ test('every way prices the lava trip alike: from the frame to the lava that serv
   const trip = 'about 4 minutes a trip, as the 10 trips for lava made so far took in working time (from leaving the frame to pouring), against about 19 seconds there and back reckoned';
   for (const key of ['cast_at_lava', 'cast_frame', 'build_new', 'craft_buckets']) assert(offered[key].includes(trip), `${key}: ${offered[key]}`);
   assert.doesNotMatch(offered.cast_at_lava, /few seconds/);
-  assert.match(offered.cast_at_lava, /beside the lava chosen before .* but that lava has no source left to scoop .*: each bucket is fetched from the nearest lava that serves, 40 blocks from the frame begun, about 4 minutes a trip/);
+  assert.match(offered.cast_at_lava, /the frame stays where it stands, .*lava chosen before .*that lava has no source left to scoop .*: each bucket is fetched from the nearest lava that serves, 40 blocks from the frame begun, about 4 minutes a trip/);
   assert.match(offered.cast_frame, /The nearest known lava is 40 blocks from the frame \(in sight about here\): about 4 minutes a trip.*, 27 minutes in all/);
   assert.match(offered.build_new, /7 trips of the same, about 27 minutes/);
   assert.match(offered.craft_buckets, /with 2 buckets the 7 lava still to fetch is about 4 trips \(about 16 minutes of trips\), against 7 \(about 27 minutes of trips\)/);

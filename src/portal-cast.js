@@ -31,6 +31,8 @@ const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec
 const EYE = 1.62;
 // A bucket's use is confirmed by its count as in obsidian.js's pour.
 const POUR_MS = 2500;
+// Walks to a stand made for a slot in one pass, while each gets nearer (a tower's blocks).
+const STAND_WALKS = 8;
 const AIR = /^(air|cave_air|void_air)$/;
 const at = p => new Vec3(p.x, p.y, p.z);
 const key = p => `${p.x},${p.y},${p.z}`;
@@ -531,13 +533,30 @@ async function castFrame(bot, task, goal, save, actions) {
       const saved = { allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks };
       if (scaffoldId !== undefined) Object.assign(movements, { allow1by1towers: true, scafoldingBlocks: [...new Set([...(movements.scafoldingBlocks || []), scaffoldId])] });
       let why = null;
+      // A walk up by towering ends after each block laid ("Navigation ended
+      // before reaching the destination"), and every pass that threw at that
+      // was a site failure asked about: mid-244-ce's stand four blocks up took
+      // four passes of seven seconds, a block each (y 74 to 77), "turning
+      // between cast portal and enter nether" until the trial was stopped
+      // sixteen seconds before the pour (note 651). A walk that got nearer is
+      // walked again in the same pass; one that gained nothing is the failure.
+      const from = bot.entity.position.floored();
+      const away = () => bot.entity.position.distanceTo(standing.offset(0.5, 0, 0.5));
+      let best = away(), walks = 0;
       try {
         stepIs(p, 'to_stand', { stand: { x: standing.x, y: standing.y, z: standing.z }, made: true });
-        await navigate(bot, task, new goals.GoalBlock(standing.x, standing.y, standing.z), { timeoutMs: 30000, stallMs: 5000 });
-      } catch (err) { task.check(); if (fatal(err)) throw err; why = String(err.message || err).slice(0, 100); }
-      finally { Object.assign(movements, saved); }
+        while (walks < STAND_WALKS) {
+          walks++; why = null;
+          try { await navigate(bot, task, new goals.GoalBlock(standing.x, standing.y, standing.z), { timeoutMs: 30000, stallMs: 5000 }); }
+          catch (err) { task.check(); if (fatal(err)) throw err; why = String(err.message || err).slice(0, 100); }
+          if (bot.entity.position.floored().equals(standing)) break;
+          const now = away();
+          if (now > best - 0.5) break;
+          best = now;
+        }
+      } finally { Object.assign(movements, saved); }
       if (!bot.entity.position.floored().equals(standing)) {
-        throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${standing} could not be walked to from ${bot.entity.position.floored()} (${why || 'the walk ended short of it'})`);
+        throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${standing} could not be walked to from ${from} (${why || 'the walk ended short of it'}${walks > 1 ? `, ${walks} walks, ${Math.round(away())} blocks from it at the last` : ''})`);
       }
       stand = stands.find(s => s.feet.equals(standing));
     }
