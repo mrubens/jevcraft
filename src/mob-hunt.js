@@ -1297,6 +1297,12 @@ const PICK_HEADS = [
 function pickaxeFirst(bot) {
   if (!bot.inventory?.items) return { carried: false, none: true, tool: null, says: '' };
   if (pickaxeTier(bot) >= 1) return { carried: true, says: '' };
+  return bestMakeable(bot);
+}
+// The best pickaxe the pockets make as they are, whether one is carried or
+// not: a spare beside the one in hand is made the same way (note 687).
+function bestMakeable(bot) {
+  if (!bot.inventory?.items) return { carried: false, none: true, tool: null, says: '' };
   const items = bot.inventory?.items?.() || [];
   const sum = re => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
   const logs = sum(/_log$|_stem$|_hyphae$|_wood$/), planks = sum(/_planks$/), sticks = sum(/^stick$/);
@@ -1322,9 +1328,9 @@ async function makePickaxe(bot, task, goal, save, actions, pick = pickaxeFirst(b
   if (!actions.acquireStep) return 'no way to craft here';
   const want = countOf(bot, pick.item) + 1;
   try {
-    for (let i = 0; i < 8 && pickaxeTier(bot) < 1; i++) if (await actions.acquireStep(bot, task, pick.item, want, goal, save)) break;
+    for (let i = 0; i < 8 && countOf(bot, pick.item) < want; i++) if (await actions.acquireStep(bot, task, pick.item, want, goal, save)) break;
   } catch (err) { task.check(); if (!retryable(err)) throw err; return `${pick.name} was not made: ${err.message}`; }
-  return pickaxeTier(bot) >= 1 ? null : `${pick.name} was not made`;
+  return countOf(bot, pick.item) >= want ? null : `${pick.name} was not made`;
 }
 // The ways to a pickaxe on the way into a fortress, where none is carried
 // and the ways in dig rock by hand: made here from what is carried, or
@@ -1463,8 +1469,18 @@ function restSays(key, r, now = Date.now()) {
 // rock ... about 782 seconds" that did dig them, by hand: mid-242-cf-nether-1-
 // fortress-9 crawled at four blocks a minute through basalt for twelve
 // minutes told both (note 669). Rock is dug by hand, slowly, for nothing.
-function pickaxeSays(bot) {
+// A staircase's digs with the last pickaxe, none other to be made: its
+// steps as tunneling.js stairFromHere counts them, two blocks a step
+// (pickaxe-budget.js lastPickaxeSays). '' otherwise.
+function stairDigs(bot, goal, target) {
+  if ((bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0) !== 1) return '';
+  let stair = null;
+  try { stair = require('./tunneling').stairFromHere(bot, goal, target); } catch (_) { stair = null; }
+  return stair?.gains ? require('./pickaxe-budget').lastPickaxeSays(bot, 2 * stair.steps) : '';
+}
+function pickaxeSays(bot, goal = null) {
   const picks = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  if (picks.length && goal && /nether/.test(String(bot.game?.dimension || ''))) { const w = require('./pickaxe-budget').wearSays(bot, goal); if (w) return w; }
   if (!picks.length) return `none carried: rock is dug by hand and drops nothing, ${handDigSays(bot)}; the staircase digs by hand only rock softer than basalt (netherrack) and stops at harder`;
   const left = i => { const max = bot.registry?.itemsByName?.[i.name]?.maxDurability; return max ? max - (i.durabilityUsed || 0) : null; };
   return picks.map(i => `${i.name.replaceAll('_', ' ')}${left(i) === null ? '' : `, ${left(i)} uses left`}`).join('; ');
@@ -1647,7 +1663,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const rest = legResting(state, HEADING_NAMES[i], here);
     if (rest) { resting.push(restSays(HEADING_NAMES[i], rest)); return; }
     if (surveys[i]?.stoppedAt === 0) { blocked.push(`leg ${HEADING_NAMES[i]}: closed at the first cell at y ${y}, ${surveys[i].stoppedBy}`); return; }
-    options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) +
+    options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
       (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, HEADING_NAMES[i], here) +
       (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : '') + headingSays(i),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
@@ -1681,9 +1697,17 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const most = surveys.every(s => !s) && open.includes(current) ? current : open.map(i => [surveys[i]?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
     const passed = HEADINGS.map((h, i) => i).filter(i => seekRests[i] && i !== most).map(i => ` Not heading ${HEADING_NAMES[i]}: ${seekRests[i]}.`).join('');
     const seekRest = legResting(state, legKey(most, true), here);
+    // With no pickaxe the staircase digs by hand only rock softer than
+    // basalt: from where no step toward the heights can be so dug it is
+    // not a way, said among the closed; else it says so. 25585 was offered
+    // it with no pickaxe over and over and it ended "no route" (note 687).
+    const byHand = require('./block-stock').pickaxeCarried(bot) ? { offered: true, says: '' }
+      : (() => { const to = fortressLegTarget({ heading: most, legMode: 'descend' }, here), bs = require('./block-stock');
+        return bs.handWaySays(bot, require('./tunneling').stairFromHere(bot, goal, to), bs.handLine(bot, to)); })();
     if (seekRest) resting.push(restSays(legKey(most, true), seekRest));
+    else if (!byHand.offered) blocked.push(`the staircase toward the fortress heights heading ${HEADING_NAMES[most]}: ${byHand.says}`);
     else options.seek_fortress_height = { description: `Dig a staircase ${off > 0 ? 'down' : 'up'} toward y ${FORTRESS_Y} heading ${HEADING_NAMES[most]}, ${Math.abs(off)} blocks of height, a step at a time with rock round the bot and no block dug with lava or water behind it: fortress corridors and bridges stand mostly between y 48 and 75, over the lava sea at y 31, and from y ${y} ${fortress ? 'only what open air shows is seen, the fortress in view among it' : 'none is seen through the rock'}. The leg goes level again once within ${FORTRESS_BAND} of y ${FORTRESS_Y}.` +
-      (seekRests[most] ? ` ${capital(seekRests[most])}: taken now, it digs nothing until then.` : '') + passed + legHistorySays(state, legKey(most, true), here, 'staircase'),
+      (seekRests[most] ? ` ${capital(seekRests[most])}: taken now, it digs nothing until then.` : '') + byHand.says + stairDigs(bot, goal, fortressLegTarget({ heading: most, legMode: 'descend' }, here)) + passed + legHistorySays(state, legKey(most, true), here, 'staircase'),
       run: () => { state.heading = most; state.legMode = 'descend'; return true; } };
   }
   if (fortress) {
@@ -1813,9 +1837,16 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const left = waysLeftSays(state, here);
   if (!Object.keys(options).length) throw new Error(`No leg from here can be walked, dug or bridged: ${[...blocked, ...resting].join('; ')}${left ? `; and the ways Jev left: ${left.join('; ')}` : ''}`);
   try { require('./healing').withNoHealSays(bot, goal, options); } catch (_) { /* no body */ }
-  const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }]));
+  // With no pickaxe and a way to one on offer, the question leads with it:
+  // its first line what the ways here lack without one, and the ways to one
+  // first. 25589 answered carry_on to 37 of 42 upkeeps in four hours
+  // and fetch_stems stayed second here while every way in dug or laid (note
+  // 687).
+  const bs = require('./block-stock');
+  const lead = bs.pickaxeLead(bot, PICKAXE_WAYS.filter(k => options[k]), blocked.filter(b => /no pickaxe|no hand digs/.test(b)).map(b => b.split(':')[0]));
+  const tree = Object.fromEntries(Object.entries(lead ? bs.pickaxeFirstOrder(options) : options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
-  const facts = { ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
+  const facts = { ...(lead ? { withoutAPickaxe: lead } : {}), ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
     lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, state.legMode)];
       return `${seeking ? 'a staircase toward the fortress heights ' : state.legMode === 'floor' ? 'down to the floor and along it ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
@@ -1823,7 +1854,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     seenSoFar: coverage.coverageSays(state, dim, here, FORTRESS_LEG),
     ...(left ? { waysLeft: left } : {}),
     structureRegions: regions.regionFacts(here, landmarks, state, dim), ...portalBackFact(goal, here),
-    blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
+    blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot, goal), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(fortress ? { fortressInView: fortress.facts } : {}), ...rodsFact(bot, goal) };
   // Without Jev: the most ground unseen beside the leg's open air, then the
   // open air each heading's carried blocks reach.
@@ -1996,7 +2027,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
   const inView = threatsInView(bot);
   const options = {};
-  let noRoute = null, handDig = null;
+  let noRoute = null, handDig = null, noStair = null;
   if (actions.navigate) {
     const level = new goals.GoalNear(nearest.x, Math.round(here.y), nearest.z, 4);
     const route = await routeSurvey(bot, task, level, nearest);
@@ -2052,7 +2083,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       // Rock dug by hand is most of a crossing's time: said beside what a
       // pickaxe makes of it, and the ways to one are offered (pickaxeWays).
       if (survey.noPickaxe && survey.dig) handDig = handDigOf(bot, nearest, survey);
-      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${handDig?.says || ''}${risk}${shot}`,
+      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${handDig?.says || ''}${require('./pickaxe-budget').lastPickaxeSays(bot, survey.dig)}${risk}${shot}`,
         run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
     }
   }
@@ -2112,9 +2143,14 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   if (handDig || (actions.tunnel && bot.inventory?.items && !require('./block-stock').pickaxeCarried(bot))) {
     Object.assign(options, await pickaxeWays(bot, task, goal, save, actions, { handSays: handDig ? ` ${handDig.brief}` : '', after: 'The way in is asked again after.' }));
   }
-  if (actions.tunnel) {
+  // With no pickaxe, the staircase only where a step toward it can be dug
+  // by hand, and said so; else said in the facts (note 687).
+  const stairByHand = actions.tunnel && !require('./block-stock').pickaxeCarried(bot)
+    ? require('./block-stock').handWaySays(bot, require('./tunneling').stairFromHere(bot, goal, nearest), require('./block-stock').handLine(bot, nearest)) : { offered: true, says: '' };
+  if (actions.tunnel && !stairByHand.offered) noStair = `the staircase is not offered: ${stairByHand.says}`;
+  if (actions.tunnel && stairByHand.offered) {
     const rest = require('./tunneling').restingSays(goal, nearest, here);
-    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}`,
+    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairByHand.says}${stairDigs(bot, goal, nearest)}`,
       run: async () => { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null; } };
   }
   const minutes = state.legSince ? Math.round((Date.now() - state.legSince) / 60000) : null;
@@ -2163,13 +2199,21 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const tries = (record?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
-  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
-    ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot) } : {}),
+  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
+    ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot, goal) } : {}),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
     // Blazes at the bricks: what the bot's fights with blazes came to, by the health and hunger begun at (blaze-record.js, note 631).
     ...(counted.blaze ? { playedRecord: require('./blaze-record').says(bot) } : {}),
     ...(record?.failed?.length ? { failed: record.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
+}
+
+// Standing on the fortress's floors as its map has them (fortress-map.js
+// standing: a floor seen within a block of the feet's height and three
+// across), the one test of "in the fortress" said (note 687).
+function onFortressFloors(bot, state) {
+  if (!state?.map?.cells || !bot?.entity?.position) return false;
+  try { return !!require('./fortress-map').standing(bot, state.map); } catch (_) { return false; }
 }
 
 // `stretch`: on the fortress's floors, the way to a stretch of them the
@@ -2195,7 +2239,12 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   const at = bot.entity.position;
   if (!approach.from || approach.found.x !== found.x || approach.found.y !== found.y || approach.found.z !== found.z) approach.from = { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) };
   approach.found = found;
-  goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), legs: state.legs }; save();
+  // "In the fortress" (narration.js) only standing on its floors seen:
+  // a way to a place asked from off them (go_to_blazes, the spawner) is
+  // no walk in it. 25585 said "I'm in the fortress" 44 blocks under it
+  // (note 687).
+  const onFloors = !!stretch && onFortressFloors(bot, state);
+  goal.step = { action: 'find_fortress', found, ...(onFloors ? { walking: found } : {}), legs: state.legs }; save();
   const approaches = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
   const { options } = approaches;
   // The blazes lead: they are what the search is for, and the ones about
@@ -2232,7 +2281,7 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     pick = decision.path.at(-1);
     approach.choice = pick; approach.until = Date.now() + APPROACH_HOLD_MS; save();
   }
-  goal.step = { action: 'find_fortress', found, ...(stretch ? { walking: found } : {}), approach: pick, legs: state.legs }; save();
+  goal.step = { action: 'find_fortress', found, ...(onFloors ? { walking: found } : {}), approach: pick, legs: state.legs }; save();
   const from = nearest.distanceTo(bot.entity.position);
   let why = null;
   try { why = await options[pick].run(); }
@@ -2948,4 +2997,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, fortressInView, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst };
+module.exports = { onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView };

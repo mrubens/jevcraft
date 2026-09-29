@@ -106,7 +106,7 @@ function intakeProblem(error) {
   return 'I had trouble understanding that. Please try saying it another way.';
 }
 
-function friendlyProblem(error) {
+function friendlyProblem(error, { known = null } = {}) {
   const text = String(error?.message || error || '');
   if (/silk touch/i.test(text)) return 'I need a tool with Silk Touch to pick up that block.';
   if (/That place is in the /i.test(text)) return text;
@@ -123,6 +123,19 @@ function friendlyProblem(error) {
   if (/inventory.*full|inventory space|free.*slot/i.test(text)) return 'My pockets are full. I need to make some room.';
   if (/food|hungry|hunger/i.test(text)) return 'I need some food before I can keep going.';
   if (/tool|pickaxe|durability/i.test(text)) return 'I need the right tool before I can keep going.';
+  // A search that has found what it looks for and stalls getting to it is
+  // not "not found": 25590 said "I haven't found it yet" 16 blocks from its
+  // fortress, the stalled step's own `found` in the message (note 687).
+  const stalled = /^No measurable progress on (\{.*\})/.exec(text);
+  let step = null;
+  if (stalled) { try { step = JSON.parse(stalled[1]); } catch (_) { step = null; } }
+  // The step's own find, else the one the search keeps (`known`, the
+  // fortress search's found) for a stall on the fortress search.
+  const found = step?.found || (known && (!step || step.action === 'find_fortress') ? known : null);
+  if ((stalled || /find_fortress|fortress/i.test(text)) && found && Number.isFinite(found.x) && Number.isFinite(found.z)) {
+    const what = !step || step.action === 'find_fortress' ? 'the fortress' : 'it';
+    return `I know where ${what} is, near ${Math.round(found.x)}, ${Math.round(found.z)}, but I'm not getting any closer to it.`;
+  }
   if (/find|search|explor/i.test(text)) return 'I haven\'t found it yet. We may need to look farther away.';
   if (/^No route from here.*passes beside lava/.test(text)) return 'I can\'t find a way there that keeps off the lava\'s edge.';
   if (/^No route from here/.test(text)) return 'I can\'t find a way there from here.';

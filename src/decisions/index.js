@@ -504,6 +504,9 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // back (note 642).
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.blockStock) {
     let blocks = null; try { blocks = require('../block-stock').stockSays(bot); } catch (_) { /* no body */ }
+    // What a pickaxe is made of is said once: where a way to make one is
+    // offered, its own words say it with what is carried (note 687).
+    if (blocks && tree && (tree.make_pickaxe || tree.fetch_stems)) { const { makingAPickaxe, ...rest } = blocks; blocks = rest; }
     if (blocks) state = { ...state, blockStock: blocks };
   }
   // The body alight, with every such question but the body's own: while

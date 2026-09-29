@@ -114,9 +114,15 @@ test('on the fortress search with no pickaxe and no wood, the leg question offer
   const now = Date.now(), from = { x: -21, y: 101, z: -19 };
   const rest = { from, until: now + 240000, at: now - 30000, made: 1, why: 'no route' };
   const goal = { fortressSearch: { axis: 1, legs: 20, since: now - 60 * 60000, legRests: { east: rest, south: rest, west: rest, north: rest } } };
-  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, acquireStep: async () => false, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {} }).catch(() => {});
-  assert(client.asked.length > 0);
-  const options = client.asked[0].options;
-  assert(options.fetch_stems, `offered: ${Object.keys(options)}`);
-  assert.match(options.fetch_stems, /warped stems known .* The leg is chosen again after\./);
+  let fetched = 0;
+  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, acquireStep: async () => { fetched++; return false; }, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {} }).catch(() => {});
+  // Every leg rests, and with no pickaxe the staircase toward the fortress
+  // heights is not a way from a cell no step of which can be dug by hand
+  // (the delta's basalt and blackstone, note 687): the fetch is the one way
+  // left, taken without a question.
+  assert.equal(client.asked.length, 0);
+  assert(fetched > 0, 'the stems asked for');
+  const { fetchStemsOffer } = require('../src/nether-wood');
+  const offer = await fetchStemsOffer(deltaBot(), new Task('hunt'), {});
+  assert.match(`${await offer.describe()} The leg is chosen again after.`, /warped stems known .* The leg is chosen again after\./);
 });

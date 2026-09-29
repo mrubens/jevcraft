@@ -634,6 +634,10 @@ test('the way chosen to a fortress holds while it makes ground, and a failure is
   const { findFortressStep } = require('../src/mob-hunt');
   const { approachFallback } = require('../src/decisions/travel');
   const { bot } = fortressAcrossLava();
+  // A pickaxe carried: with none, a staircase no step of which can be dug
+  // by hand from here is not offered (note 687).
+  const carried = bot.inventory.items();
+  bot.inventory = { items: () => [...carried, { name: 'stone_pickaxe', count: 1, type: 900 }] };
   const client = jevStub(['tunnel', 'keep_searching']);
   const goal = { fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } };
   let tunnels = 0;
@@ -681,7 +685,7 @@ test('the next leg of the fortress search is Jev\'s: each heading surveyed for o
   assert.equal(client.asked.length, 1); assert.equal(client.asked[0].kind, 'fortress');
   const { options, state } = client.asked[0];
   assert.deepEqual(Object.keys(options).sort(), ['leg_east', 'leg_north', 'leg_south', 'leg_west', 'seek_fortress_height']);
-  assert.match(options.leg_east, /Go east 96 blocks at y 100: of the 96 cells ahead, 96 of rock to dig \(about 0\.8 seconds a cell with the tools carried, and nothing is seen from inside it\); about 77 seconds/);
+  assert.match(options.leg_east, /Go east 96 blocks at y 100: of the 96 cells ahead, 96 of rock to dig \(about 0\.8 seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it\); about 77 seconds/);
   // Each cell priced by its blocks' own dig times (the stub's 0.4 seconds a block), not one trial's six seconds a cell (note 677).
   assert.match(options.leg_south, /40 of open air \(40 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar\) and 56 of rock to dig/);
   assert.match(options.seek_fortress_height, /Dig a staircase down toward y 64 heading south, 36 blocks of height/);

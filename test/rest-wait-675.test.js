@@ -146,7 +146,7 @@ test('25585 mid-242-ca-nether-1: leave_nether\'s wait_here says what the hold ha
   assert.match(w.waitHereSaid, /^Other work in the Nether until the rods step's rest ends, taken up again in 27 minutes, then the rods again; what the work is, is asked then\.$/);
   const { gameHandlers } = require('../src/work');
   const stage = { phase: 'obtain_blaze_rods', action: 'rods_waiting', until: T0 + 27 * 60000 - 30000, why: 'Jev set it aside at the rung\'s question' };
-  for (const [extra, idle] of [[{}, false], [{ iron_pickaxe: 1, crimson_stem: 8, netherrack: 32 }, true]]) {
+  for (const [extra, idle] of [[{}, false], [{ iron_pickaxe: 1, stone_pickaxe: 1, crimson_stem: 8, netherrack: 32 }, true]]) {
     const { bot, goal } = recorded(w, { extra });
     const asked = [], holds = [];
     const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'wait_here', confidence: 0.87 } } }; } };

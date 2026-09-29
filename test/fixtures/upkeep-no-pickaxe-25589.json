@@ -1,0 +1,345 @@
+{
+ "source": "flight record 127_0_0_1-25589-Jev-2026-09-29T19-47-09-653Z.jsonl (mid-242-dd-fortress-22), the upkeep frame at 2026-09-29T20:08:20.721Z, answered carry_on",
+ "at": "2026-09-29T20:08:20.721Z",
+ "label": "carry_on",
+ "probabilities": {
+  "none_good": 0.03,
+  "carry_on": 0.58,
+  "block_reserve": 0.02,
+  "fetch_stems": 0.37
+ },
+ "position": {
+  "x": -171.4783996674241,
+  "y": 58,
+  "z": 181.77318293009824
+ },
+ "dimension": "the_nether",
+ "health": 20,
+ "food": 20,
+ "inventory": {
+  "bone": 5,
+  "quartz": 2,
+  "coal": 115,
+  "flint": 1,
+  "nether_brick_fence": 1,
+  "leaf_litter": 27,
+  "water_bucket": 1,
+  "lapis_lazuli": 9,
+  "white_bed": 1,
+  "wooden_hoe": 1,
+  "string": 1,
+  "furnace": 1,
+  "obsidian": 2,
+  "flint_and_steel": 1,
+  "gold_ingot": 1,
+  "bucket": 1,
+  "stick": 2,
+  "mutton": 9,
+  "raw_copper": 7,
+  "leather": 3,
+  "egg": 1,
+  "oak_planks": 2,
+  "stone_axe": 1,
+  "beef": 5,
+  "oak_fence": 11,
+  "twisting_vines": 2,
+  "gravel": 9,
+  "iron_sword": 1
+ },
+ "equipment": {
+  "head": "iron_helmet",
+  "torso": "iron_chestplate",
+  "legs": null,
+  "feet": null,
+  "offhand": "shield"
+ },
+ "step": {
+  "action": "find_fortress",
+  "found": {
+   "x": -173,
+   "y": 57,
+   "z": 180
+  },
+  "approach": "cross_level",
+  "legs": 16
+ },
+ "options": {
+  "fetch_stems": "Fetch 3 stems of the Nether's forests now: Wanted in wood: 12 planks' worth for the pickaxe to make now (wooden, its head three planks) and a spare (wooden, its head three planks): a crafting table (4 planks), the sticks for 2 pickaxes (4 sticks, 2 carried, 2 planks), 2 wooden heads (6 planks); carried: 2 planks, 2 sticks (2 planks' worth), 10 short: 3 stems (12 planks). No pickaxe is carried and none can be made from what is carried: rock and netherrack dug by hand drop nothing, so no block comes back to lay, and every leg through rock is dug by hand. The nearest stems: 116 crimson stems known at (-194, 49, 156), 35 blocks north-west and 9 down, a crimson forest: hoglins (hostile on sight, they charge and toss, 40 health; they shy from warped fungus) and piglins (hostile unless gold is worn) spawn there; about it now: 1 zombified piglin, 1 piglin. A half-second route survey from here did not finish (far, or a long way round); the way there is asked on the spot as the gathering asks it. Next nearest: crimson stems 46 blocks north. A stem needs no tool to drop and breaks by hand in about 3 seconds, about 0.8 with the stone axe carried. The pickaxe is made as soon as the wood for it is carried. Wood carried is sticks for the next pickaxe wherever one wears out (two a pickaxe) and a crafting table wherever the bot is; with any pickaxe, blackstone (basalt deltas, bastions) makes a stone one, three of it and two sticks.",
+  "block_reserve": "Mine netherrack for building blocks now: 2 carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it, and none is carried and none can be made from what is carried: dug by hand, netherrack drops nothing. The nearest netherrack the gather would go for is 3 blocks off, with footing on the straight line to it. 16 also seal a pocket or tower out of a hole.",
+  "carry_on": "Carry on with the find fortress and see to this later; asked again in five minutes, or sooner if what is due here changes.",
+  "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+ },
+ "state": {
+  "playerRequest": "beat the game",
+  "retainedGoal": "win",
+  "inventory": {
+   "bone": 5,
+   "quartz": 2,
+   "coal": 115,
+   "flint": 1,
+   "nether_brick_fence": 1,
+   "leaf_litter": 27,
+   "water_bucket": 1,
+   "lapis_lazuli": 9,
+   "white_bed": 1,
+   "wooden_hoe": 1,
+   "string": 1,
+   "furnace": 1,
+   "obsidian": 2,
+   "flint_and_steel": 1,
+   "gold_ingot": 1,
+   "bucket": 1,
+   "stick": 2,
+   "mutton": 9,
+   "raw_copper": 7,
+   "leather": 3,
+   "egg": 1,
+   "oak_planks": 2,
+   "stone_axe": 1,
+   "beef": 5,
+   "oak_fence": 11,
+   "twisting_vines": 2,
+   "gravel": 9,
+   "iron_sword": 1
+  },
+  "health": 20,
+  "food": 20,
+  "oxygen": 20,
+  "survivalFacts": {
+   "healthMaximum": 20,
+   "hungerMaximum": 20,
+   "hungerNeedsAttention": false,
+   "injured": false,
+   "hungerAllowsNaturalHealing": true,
+   "safeFoodCarried": true
+  },
+  "dimension": "the_nether",
+  "position": {
+   "x": -172,
+   "y": 58,
+   "z": 181
+  },
+  "biome": "nether_wastes",
+  "biomesNearby": [
+   {
+    "biome": "crimson_forest",
+    "distance": 45,
+    "direction": "north-west",
+    "x": -204,
+    "z": 149
+   },
+   {
+    "biome": "soul_sand_valley",
+    "distance": 96,
+    "direction": "west",
+    "x": -268,
+    "z": 181
+   },
+   {
+    "biome": "warped_forest",
+    "distance": 132,
+    "direction": "north",
+    "x": -140,
+    "z": 53
+   }
+  ],
+  "riskNow": {
+   "level": "low: the mobs about are a fight the bot wins",
+   "hostilesWithin": {
+    "blocks": 24,
+    "shootersTo": 48,
+    "count": 4,
+    "kinds": [
+     "blaze",
+     "piglin"
+    ],
+    "inSight": 0,
+    "shooters": 4
+   },
+   "fightingAllHere": {
+    "damageTaken": 2.8,
+    "healthAfter": 17.2
+   },
+   "health": 20,
+   "food": 20,
+   "healing": "health comes back while hunger stays at eighteen or more",
+   "armourPoints": 8,
+   "weapon": "iron_sword",
+   "mobsSpawnAround": true
+  },
+  "deathWouldCost": {
+   "dropsWorn": [
+    "iron helmet",
+    "iron chestplate",
+    "shield"
+   ],
+   "dropsGear": [
+    "water bucket",
+    "white bed",
+    "flint and steel",
+    "bucket",
+    "stone axe",
+    "iron sword"
+   ],
+   "dropsValuables": {
+    "lapis lazuli": 9,
+    "gold ingot": 1
+   },
+   "otherStacks": 21,
+   "respawnAt": "the world spawn",
+   "walkBackBlocks": null,
+   "levelsLost": 13,
+   "realMinutesToMakeAgain": {
+    "shield": 3,
+    "iron sword": 3,
+    "bucket": 4,
+    "iron armour": 12
+   },
+   "realSecondsToWalkBack": null,
+   "stashChestBlocks": null,
+   "note": "Everything carried drops where the bot dies and vanishes five minutes later; the walk back from the respawn point is the only way to get it again."
+  },
+  "recentPositions": {
+   "every": "fifteen seconds",
+   "minutes": 2.9,
+   "furthestFromNowBlocks": 27,
+   "places": [
+    {
+     "secondsAgo": 173,
+     "x": -169,
+     "y": 58,
+     "z": 199,
+     "doing": "stalk_mob"
+    },
+    {
+     "secondsAgo": 156,
+     "x": -170,
+     "y": 58,
+     "z": 206,
+     "doing": "block_shot"
+    },
+    {
+     "secondsAgo": 141,
+     "x": -170,
+     "y": 58,
+     "z": 206,
+     "doing": "block_shot"
+    },
+    {
+     "secondsAgo": 125,
+     "x": -171,
+     "y": 58,
+     "z": 208,
+     "doing": "out_of_sight_hold"
+    },
+    {
+     "secondsAgo": 110,
+     "x": -171,
+     "y": 58,
+     "z": 208,
+     "doing": "out_of_sight_hold"
+    },
+    {
+     "secondsAgo": 94,
+     "x": -171,
+     "y": 58,
+     "z": 208,
+     "doing": "out_of_sight_hold"
+    },
+    {
+     "secondsAgo": 79,
+     "x": -171,
+     "y": 58,
+     "z": 208,
+     "doing": "stalk_mob"
+    },
+    {
+     "secondsAgo": 62,
+     "x": -171,
+     "y": 58,
+     "z": 208,
+     "doing": "eat"
+    },
+    {
+     "secondsAgo": 47,
+     "x": -173,
+     "y": 58,
+     "z": 189,
+     "doing": "eat"
+    },
+    {
+     "secondsAgo": 31,
+     "x": -173,
+     "y": 58,
+     "z": 181,
+     "doing": "eat"
+    },
+    {
+     "secondsAgo": 16,
+     "x": -171,
+     "y": 58,
+     "z": 183,
+     "doing": "eat"
+    },
+    {
+     "secondsAgo": 1,
+     "x": -172,
+     "y": 58,
+     "z": 181,
+     "doing": "find_fortress"
+    }
+   ]
+  },
+  "nearbyThreats": [],
+  "recentFailures": {},
+  "situation": "Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.",
+  "runClock": {
+   "minutesPlayed": 78,
+   "minutesSinceStart": 800,
+   "reached": {
+    "nether entered": "27 minutes in"
+   },
+   "nowOn": "obtain blaze rods",
+   "minutesBy": {
+    "obtain blaze rods: find fortress": 18,
+    "reach nether: mine": 7,
+    "reach nether: fill bucket": 5,
+    "obtain blaze rods: detour": 3,
+    "wait in shelter": 3,
+    "reach nether: enter nether": 3,
+    "eat": 3,
+    "reach nether: tunnel": 3
+   },
+   "lastHalfHourBy": {
+    "obtain blaze rods: find fortress": 10,
+    "obtain blaze rods: detour": 3,
+    "wait in shelter": 3,
+    "eat": 2,
+    "obtain blaze rods: return to blazes": 2,
+    "obtain blaze rods: stalk mob": 1,
+    "out of sight hold": 1,
+    "obtain blaze rods: cross toward": 1
+   }
+  },
+  "healing": {
+   "health": 20,
+   "hunger": 20,
+   "healthComesBack": "health is full",
+   "foodCarried": [
+    "9 mutton, 2 hunger each",
+    "5 beef, 3 hunger each"
+   ],
+   "nearestFood": [
+    "1 hoglin seen 9 minutes ago, 46 blocks north-west (-197, 144)"
+   ],
+   "daylight": "no day or night here: its mobs neither burn nor stop",
+   "standingStill": "standing still spends no hunger: it falls with moving, sprinting, jumping, swimming, mining, fighting, being hurt and healing"
+  },
+  "blockStock": {
+   "canBeLaid": 0,
+   "pickaxe": "none carried",
+   "none": "no block that holds is carried and none can be had: No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. Every walk, crossing or climb that needs a block stops at its first gap; only floor already there is walked, and a crafting table and a pickaxe are the way to blocks again.",
+   "makingAPickaxe": "A pickaxe is three planks, cobblestone, blackstone or iron ingots and two sticks made at a crafting table (four planks; a log or stem makes four planks). Carried: none of the three heads; 2 sticks; 2 planks; no crafting table. The table and the sticks need 4 planks' worth of wood beside the three planks for a wooden head, and 2 is carried: wood is what is missing."
+  }
+ }
+}

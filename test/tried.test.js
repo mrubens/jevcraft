@@ -315,7 +315,9 @@ test('a step that never asks its plan passes the plan over only after two failur
   const s = rung.state.stalled;
   assert.match(s.whatFailedBelow, /passed over fortress leg: not asked since 2 failures below were sent to it; the work carried on without asking it/);
   assert.doesNotMatch(rung.state.situation, /Every way/);
-  assert.match(rung.state.situation, /^The find fortress could not go on below this question: step: the find fortress step failed 3 times running/);
+  // No pickaxe carried and a leg out of blocks for want of one: the rung's
+  // question leads with getting one (note 687), then says what failed below.
+  assert.match(rung.state.situation, /^No pickaxe is carried: .*tried lately and came to nothing for want of one: leg east: no way on \(out of blocks \(0 carried\)\)\. fetch_stems gets one first\. The find fortress could not go on below this question: step: the find fortress step failed 3 times running/);
   assert.match(s.workedOnRung, /^in 0\.5 minutes on it: 3 answers given to 2 different ways of the 5 its questions offered, 3 coming to nothing, 0 getting somewhere; the step failed 3 times; not yet tried from here: fortress leg \(asked \d+ seconds ago\): seek fortress height, restock blocks, return for blocks; brought to this question by a failure below 0\.5 minutes into the rung's ten, not by its ten minutes running out$/);
   // Brought here by a failure below with the leg's ways untried, the rung is not set aside (note 605): said, and
   // keeping at it sends the work back to the leg's question with them.

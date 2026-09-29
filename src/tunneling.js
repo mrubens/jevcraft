@@ -213,7 +213,7 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       // tool: the tool is for the drop, and a stair wants the room, not the
       // drop. mid-231-j's stairs up a mountain were "no tool for snow block"
       // and rested ten minutes (2026-09-27).
-      if (byHand || !cell.harvestTools || bot.inventory.items().some(i => cell.harvestTools[i.type]) || (cell.hardness ?? Infinity) < 1) return true;
+      if (byHand || require('./block-stock').handDigs(bot, cell)) return true;
       why = `no tool for ${cell.name.replaceAll('_', ' ')}`; return false;
     });
     if (!safe) { block(destination, why); continue; }

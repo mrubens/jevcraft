@@ -115,4 +115,55 @@ function pickaxeBudget(bot, goal = {}, { look = true } = {}) {
   return { picks, usesLeft, up, ahead, home, need, short, wood, nearestWood: known, says: parts.join(' ') };
 }
 
-module.exports = { pickaxeBudget, makeable, stepDigs, nearestWood, HAND_STAIR_SECONDS };
+// Wear as a fact before the pickaxe breaks (note 687). Of the Nether bots
+// that lost their last pickaxe on 2026-09-29, most wore it through on the
+// fortress search's legs, crossings and staircases (25589's iron one from
+// 117 uses to 3 in ten minutes, wooden ones from 59 to 2), no spare offered
+// (spareDue wanted cobblestone) and nothing said of the wear until it
+// broke. The uses carried are sampled every half minute over a quarter of
+// an hour, a new pickaxe starting them again; the rate is what they were
+// spent at, and how long the rest lasts at it.
+const WEAR_SAMPLE_MS = 30000, WEAR_KEEP_MS = 15 * 60000, WEAR_MIN_MS = 2 * 60000;
+function wearOf(bot, goal, now = Date.now()) {
+  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  if (!picks.length) return null;
+  const uses = picks.reduce((n, i) => { const u = usesOf(bot, i); return n + (Number.isFinite(u) ? u : 0); }, 0);
+  const w = goal ? (goal.pickaxeWear ||= { samples: [] }) : { samples: [] };
+  const last = w.samples.at(-1);
+  if (last && uses > last.uses) w.samples = [];
+  if (!w.samples.length || now - w.samples.at(-1).at >= WEAR_SAMPLE_MS) w.samples.push({ at: now, uses });
+  w.samples = w.samples.filter(x => now - x.at <= WEAR_KEEP_MS).slice(-40);
+  const first = w.samples[0] || { at: now, uses };
+  const spent = first.uses - uses, minutes = (now - first.at) / 60000;
+  const rate = now - first.at >= WEAR_MIN_MS && spent > 0 ? spent / minutes : null;
+  return { count: picks.length, uses, spent, minutes, rate, lastsMinutes: rate ? uses / rate : null };
+}
+// The wear said, with whether another can be made from the pockets (the
+// best head carried, wood for the sticks and a table: mob-hunt.js
+// bestMakeable).
+function wearSays(bot, goal, now = Date.now()) {
+  const w = wearOf(bot, goal, now);
+  if (!w) return '';
+  let spare = null;
+  try { spare = require('./mob-hunt').bestMakeable(bot); } catch (_) { spare = null; }
+  const mins = n => `${n} minute${n === 1 ? '' : 's'}`;
+  const rate = w.rate ? `; ${w.spent} used in the last ${mins(Math.max(1, Math.round(w.minutes)))}, at which rate ${w.count === 1 ? 'it lasts' : 'they last'} about ${mins(Math.max(1, Math.round(w.lastsMinutes)))} more` : '';
+  const more = spare && !spare.none ? `the pockets make another (${spare.name.replace(/^an? /, '')} from ${spare.from})` : 'no other can be made from the pockets';
+  const picks = (bot.inventory.items() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => { const u = usesOf(bot, i); return `${words(i.name)}${Number.isFinite(u) ? `, ${u} uses left` : ''}`; });
+  return `${picks.join('; ')}${w.count === 1 ? ' (the only one carried)' : `, ${w.uses} uses in all`}${rate}; ${more}`;
+}
+// On a way that digs with the last pickaxe, none other to be made: the
+// blocks it digs against the uses left. '' otherwise.
+function lastPickaxeSays(bot, digs) {
+  if (!(digs > 0)) return '';
+  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  if (picks.reduce((n, i) => n + i.count, 0) !== 1) return '';
+  let spare = null;
+  try { spare = require('./mob-hunt').bestMakeable(bot); } catch (_) { spare = null; }
+  if (spare && !spare.none) return '';
+  const uses = usesOf(bot, picks[0]);
+  if (!Number.isFinite(uses)) return '';
+  return ` It digs about ${digs} blocks with the one pickaxe carried, ${uses} uses left, no other to be made from the pockets${digs >= uses ? `: it breaks on the way, the rest dug by hand and dropping nothing` : `: ${uses - digs} left after`}.`;
+}
+
+module.exports = { pickaxeBudget, makeable, stepDigs, nearestWood, wearOf, wearSays, lastPickaxeSays, HAND_STAIR_SECONDS };

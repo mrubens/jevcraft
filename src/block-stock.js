@@ -58,4 +58,107 @@ function stockSays(bot) {
   };
 }
 
-module.exports = { stockSays, afterSays, makingSays, pickaxeCarried, NO_RETURN };
+// A block the staircase, the legs and the crossings dig with no pickaxe for
+// it: one with no harvest tool, one the tools carried harvest, or one softer
+// than hardness one (netherrack 0.4, magma, soul sand's kind), dug by hand
+// for the room and dropping nothing (tunneling.js stairChoices keeps the
+// same rule). Basalt, blackstone, nether bricks, stone and ore are not.
+function handDigs(bot, block) {
+  if (!block || block.boundingBox !== 'block') return true;
+  if (!block.harvestTools) return true;
+  if ((bot?.inventory?.items?.() || []).some(i => block.harvestTools[i.type])) return true;
+  return (block.hardness ?? Infinity) < 1;
+}
+
+// What the rock here is that no hand digs, by the dimension: the words
+// every way that needs a pickaxe says it with.
+const hardRock = bot => inNether(bot) ? 'basalt, blackstone or nether bricks' : 'stone, deepslate or ore';
+
+// What going on without a pickaxe for `minutes` leaves the bot unable to
+// do, said on the choice to go on (upkeep's carry_on) where it bites.
+// 25589 (mid-242-dd-fortress-22) was asked the upkeep 42 times from 16:06
+// to 20:21 with no pickaxe and answered carry_on 37 of them, "see to this
+// later; asked again in five minutes" the whole of what going on was said
+// to cost, while every way into its fortress dug or laid (note 687).
+function goingOnSays(bot, minutes = 5) {
+  if (!bot?.inventory?.items || bot.game?.gameMode === 'creative' || pickaxeCarried(bot)) return '';
+  const laid = require('./bridging').blocksCarried(bot);
+  const cannot = [`dig or stair through ${hardRock(bot)}`, ...(laid ? [] : ['pillar or span a gap'])];
+  const soft = inNether(bot) ? '; netherrack is dug by hand (about 2 seconds a block) and drops nothing' : '';
+  return ` No pickaxe is carried: the next ${minutes} minutes cannot ${cannot.join(', or ')}${soft}${laid ? `, and a span or pillar has only the ${laid} block${laid === 1 ? '' : 's'} carried` : ''}.`;
+}
+
+// The straight line from the feet to `target` as a staircase with no
+// pickaxe digs it: the feet's and the head's cells in order, the rock a
+// hand digs and its seconds (hardness x 5), up to the first cell no hand
+// digs. -> { steps, handSeconds, stopAt, stopName } (stopAt: blocks along
+// the line to it, null where the line is clear of such rock).
+function handLine(bot, target, { cells = 128 } = {}) {
+  const from = bot?.entity?.position?.floored?.();
+  if (!from || !target || typeof bot.blockAt !== 'function') return null;
+  const dx = target.x - from.x, dy = target.y - from.y, dz = target.z - from.z, n = Math.min(cells, Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)));
+  const seen = new Set([`${from.x},${from.y},${from.z}`, `${from.x},${from.y + 1},${from.z}`]);
+  let handSeconds = 0;
+  for (let i = 1; i <= n; i++) {
+    const x = Math.round(from.x + dx * i / n), y = Math.round(from.y + dy * i / n), z = Math.round(from.z + dz * i / n);
+    for (const h of [0, 1]) {
+      const key = `${x},${y + h},${z}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const b = bot.blockAt(new (require('vec3').Vec3)(x, y + h, z));
+      if (!b || b.boundingBox !== 'block') continue;
+      if (!handDigs(bot, b)) return { steps: n, handSeconds: Math.round(handSeconds), stopAt: i, stopName: String(b.name || 'rock').replaceAll('_', ' ') };
+      handSeconds += 5 * (b.hardness ?? 0);
+    }
+  }
+  return { steps: n, handSeconds: Math.round(handSeconds), stopAt: null, stopName: null };
+}
+
+// A way that digs, said with what digging by hand does to it: where its
+// first step (tunneling.js stairFromHere) or the first few blocks of its
+// line (handLine) meet rock no hand digs, it is not a way (the caller does
+// not offer it); else the words it carries. 25585's staircase up from
+// y 36 through basalt was offered with no pickaxe and ended "no route"
+// (note 687).
+const HAND_LINE_MIN = 3;
+function handWaySays(bot, stair, line = null) {
+  if (!bot?.inventory?.items || pickaxeCarried(bot)) return { offered: true, says: '' };
+  if (stair && !stair.gains) return { offered: false, says: `no pickaxe carried, and no step toward it can be dug by hand from here (${stair.blocked || 'nothing nearer can be dug'})` };
+  if (line?.stopName && line.stopAt < HAND_LINE_MIN) return { offered: false, says: `no pickaxe carried, and ${line.stopName} ${line.stopAt} block${line.stopAt === 1 ? '' : 's'} along the straight line to it, which no hand digs` };
+  if (line?.stopName) return { offered: true, says: ` No pickaxe is carried: rock is dug by hand, dropping nothing (about ${line.handSeconds} seconds before it), and the straight line to it meets ${line.stopName} about ${line.stopAt} blocks along, which no hand digs: there it stops.` };
+  return { offered: true, says: ` No pickaxe is carried: it digs by hand only rock softer than ${hardRock(bot)}, dropping nothing${line ? ` (about ${line.handSeconds} seconds on the straight line to it)` : ''}, and stops at the first of those.` };
+}
+
+// The question's first line where no pickaxe is carried and a way to one is
+// on offer: what the ways here lack without it, and which get one. `ways`
+// are the keys of the ways to a pickaxe offered; `closed` what was not
+// offered for want of one.
+function pickaxeLead(bot, ways = [], closed = [], { closedSays = 'not offered for want of one' } = {}) {
+  if (!ways.length || !bot?.inventory?.items || pickaxeCarried(bot)) return null;
+  const laid = require('./bridging').blocksCarried(bot);
+  return `No pickaxe is carried: no ${hardRock(bot)} is dug, no block comes back, and ${laid ? `a span or pillar has only the ${laid} carried` : 'no block that holds is carried to span or pillar with'}${closed.length ? `; ${closedSays}: ${closed.join('; ')}` : ''}. ${ways.join(' and ')} get${ways.length === 1 ? 's' : ''} one first.`;
+}
+// The tree with the ways to a pickaxe first, the rest in their order.
+function pickaxeFirstOrder(options, ways = ['make_pickaxe', 'fetch_stems']) {
+  return Object.fromEntries([...ways.filter(k => options[k]).map(k => [k, options[k]]), ...Object.entries(options).filter(([k]) => !ways.includes(k))]);
+}
+
+// A way chosen that failed for want of a pickaxe (a dig refused for the
+// tool, a leg or crossing out of blocks with none to come back) ends the
+// upkeep's "carry on" hold taken with no pickaxe: going on was chosen for
+// five minutes on the ways that did not need one, and the first that did
+// has now said so. The upkeep is asked again at the next pass, told how
+// the hold ended (note 687). Called by the ledger (tried.js) as an answer
+// settles blocked.
+const WANTS_PICKAXE = /no tool for|harvest tool|out of blocks|none to lay|no pickaxe/i;
+function pickaxeWanted(bot, goal, { q = null, method = null, why = '', at = Date.now() } = {}) {
+  const hold = goal?.upkeepHold;
+  if (!hold?.noPickaxe || !(hold.until > Date.now()) || !WANTS_PICKAXE.test(String(why || ''))) return false;
+  if (bot?.inventory?.items && pickaxeCarried(bot)) return false;
+  if (Number.isFinite(hold.since) && at < hold.since) return false;
+  goal.upkeepHoldEnded = { q, method: String(method || 'a way').replaceAll('_', ' '), why: String(why).slice(0, 120), at: Date.now() };
+  delete goal.upkeepHold;
+  return true;
+}
+
+module.exports = { pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };

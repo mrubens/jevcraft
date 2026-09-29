@@ -192,7 +192,14 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
     // or water behind the netherrack" (note 572).
     const walled = [next, next.offset(0, 1, 0)].find((p, k) => !passable(body[k]) && !safeDig(bot, p));
     if (walled) { out.stoppedBy = `${String(bot.blockAt(walled)?.name || 'rock').replaceAll('_', ' ')} with lava or water behind it (not dug)`; out.stoppedAt = out.cells; break; }
-    if (body.some(b => !passable(b))) { note('rock'); out.rock++; const dig = cellDigSeconds(bot, body); out.rockSeconds = (out.rockSeconds || 0) + dig; seconds += dig; }
+    // With no pickaxe the leg's staircase digs by hand only rock softer
+    // than basalt (block-stock.js handDigs, tunneling.js stairChoices): a
+    // cell of basalt, blackstone or bricks stops it there. Said as "about
+    // 15 seconds a cell with the tools carried", 25589's legs through it
+    // were offered with no tool carried (note 687).
+    const hard = out.noPickaxe ? body.find(b => !passable(b) && !require('./block-stock').handDigs(bot, b)) : null;
+    if (hard) { out.stoppedBy = `${String(hard.name || 'rock').replaceAll('_', ' ')}, which no hand digs (no pickaxe carried)`; out.stoppedAt = out.cells; break; }
+    if (body.some(b => !passable(b))) { note('rock'); out.rock++; out.rockBlocks = (out.rockBlocks || 0) + body.filter(b => !passable(b)).length; const dig = cellDigSeconds(bot, body); out.rockSeconds = (out.rockSeconds || 0) + dig; seconds += dig; }
     else {
       out.open++;
       const floor = bot.blockAt(next.offset(0, -1, 0));
@@ -221,7 +228,7 @@ function legSays(survey, { direction, length, y }) {
   if (!survey) return `Go ${direction} ${length} blocks at y ${y}. Not surveyed from here.`;
   const parts = [];
   if (survey.open) parts.push(`${survey.open} of open air${survey.cavern ? ` (${survey.cavern} of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar)` : ''}`);
-  if (survey.rock) parts.push(`${survey.rock} of rock to dig (about ${Math.round((survey.rockSeconds ?? survey.rock * ROCK_CELL_SECONDS) / survey.rock * 10) / 10} seconds a cell with the tools carried, and nothing is seen from inside it)`);
+  if (survey.rock) parts.push(`${survey.rock} of rock to dig (about ${Math.round((survey.rockSeconds ?? survey.rock * ROCK_CELL_SECONDS) / survey.rock * 10) / 10} seconds a cell ${survey.noPickaxe ? 'by hand, no pickaxe carried, dropping nothing' : 'with the pickaxe carried'}, and nothing is seen from inside it)`);
   const stop = survey.stoppedBy ? ` ${survey.stoppedBy[0].toUpperCase()}${survey.stoppedBy.slice(1)} stops it at cell ${survey.stoppedAt}.` : '';
   const lay = survey.lay || 0, carried = survey.carried ?? 0, short = Number.isInteger(survey.runsOut);
   const blocks = !lay ? '' : ` ${lay} of the open cells have no floor: it needs ${lay} block${lay === 1 ? '' : 's'} laid, crouched, about ${Math.round(LAY_CELL_SECONDS * 10) / 10} seconds a cell, ${carried} carried: ` +

@@ -87,7 +87,10 @@ function noteError(goal, err) {
   goal.lastError = err.message;
   // When, for a question asked again after its answer ended this way
   // (decisions/repeats.js, note 560).
-  goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now() };
+  // With the answer then being carried out, so a failure is said on the
+  // answer it ended and not on one given before it (tried.js ownFailure).
+  const by = require('./tried').answerNow(goal);
+  goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now(), ...(by ? { by } : {}) };
   const frames = String(err.stack || '').split('\n').filter(line => /\/src\//.test(line)).map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(src/'));
   // Where a failure came from, past the shared primitives: "navigation
   // ended" five times over said nothing about which walk it was.
@@ -760,12 +763,25 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (!client) return options[['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems'].find(k => due.includes(k)) || due[0]].run();
   // The route to the stems surveyed only for a question asked.
   if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
-  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes, or sooner if what is due here changes.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}`,
-    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS }; save(); } };
+  // With no pickaxe, what going on leaves the bot unable to do for the
+  // hold's five minutes, and that the hold ends at the first way that fails
+  // for want of one; and how the last carry-on ended, where it did so
+  // (note 687).
+  const bs = require('./block-stock');
+  const noPick = pickaxeNeeded(bot) && (options.make_pickaxe || options.fetch_stems);
+  // With a pickaxe carried in the Nether and a spare or its wood on offer,
+  // the wear the carry-on goes on with (note 687).
+  const wearNow = !noPick && inNetherNow(bot) && goal.kind === 'win' && (options.spare_pickaxe || options.fetch_stems) ? require('./pickaxe-budget').wearSays(bot, goal) : '';
+  const ended = goal.upkeepHoldEnded && Date.now() - goal.upkeepHoldEnded.at < 15 * 60000 ? goal.upkeepHoldEnded : null;
+  options.carry_on = { description: `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later; asked again in five minutes, or sooner if what is due here changes${noPick ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPick ? bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000) : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
+    run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS, ...(noPick ? { noPickaxe: true, since: Date.now() } : {}) }; delete goal.upkeepHoldEnded; save(); } };
+  // The lead short: carry_on says what going on without one costs.
+  const ways = ['make_pickaxe', 'fetch_stems'].filter(k => options[k]);
+  const lead = noPick ? `No pickaxe is carried: ${ways.join(' or ')} gets one first.` : null;
   const step = goal.step;
   let chosen = null;
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
-  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.' }, 'upkeep'); }
+  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.` }, 'upkeep'); }
   finally { if (chosen === 'carry_on') goal.step = step; }
   return chosen !== null && chosen !== 'carry_on';
 }
@@ -803,7 +819,17 @@ async function upkeepOffers(bot, task, goal, save) {
       if (done.unmade) throw new Error(done.unmade);
     } };
   }
-  if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
+  // The wear sampled every pass, and in the Nether a spare offered beside
+  // the one pickaxe carried while the pockets make one, said with the wear:
+  // the Nether bots wore their last pickaxe through on the fortress search
+  // with no spare ever offered (spareDue wants cobblestone), and every way
+  // through rock and every block after was gone (note 687).
+  const wear = require('./pickaxe-budget');
+  if (worn.length && goal.kind === 'win') wear.wearOf(bot, goal);
+  const netherSpare = inNetherNow(bot) && goal.kind === 'win' && bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0) === 1 && reserveWeather(bot) && !spareDue(bot, budget) ? require('./mob-hunt').bestMakeable(bot) : null;
+  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), a few seconds at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.`; },
+    run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`); } };
+  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
@@ -4929,7 +4955,8 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     frame.siteFailures = (frame.siteFailures || 0) + 1; frame.siteFailure = err.message;
     // Swallowed here, the pass ends at once: said to the next question
     // (decisions/repeats.js). mid-242-ab's "Nowhere to stand" 3,463 times.
-    goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now() };
+    const by = require('./tried').answerNow(goal);
+    goal.lastFailure = { why: String(err.message).slice(0, 200), at: Date.now(), ...(by ? { by } : {}) };
     const castIn = frame.blocks.filter(q => bot.blockAt(pos(q))?.name === 'obsidian').length;
     // The failures since the last block went in, each said with its reason.
     if (!frame.siteFailed || frame.siteFailed.cast !== castIn) frame.siteFailed = { cast: castIn, n: 0, whys: {} };
@@ -5104,7 +5131,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message, from: goal.lastErrorFrom };
   if (goal.struggles === 1 || goal.struggles % 5 === 0) {
-    bot.chat?.(`${friendlyProblem(err)} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
+    bot.chat?.(`${friendlyProblem(err, { known: goal.fortressSearch?.found || null })} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
   }
   const failed = goal.lastStruggleStep || goal.step;
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
@@ -5653,6 +5680,26 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
       if (/^travel_/.test(key) && holdsWater({ biome: key.slice(7), has: biomeFacts(key.slice(7)) })) node.description += " It has water, which is what the portal frame's cast is waiting for: no water bucket is carried, and an empty one fills at any water.";
     }
   }
+  // The rung's measure has not moved, no pickaxe is carried, and the ways
+  // tried under it lately came to nothing for want of one: the question
+  // leads with getting one, the ways to it first (note 687).
+  let pickaxeLeads = null;
+  if (id === 'rung_progress' && goal.kind === 'win' && pickaxeNeeded(bot)) {
+    const bs = require('./block-stock');
+    const wanted = (goal.tried?.entries || []).filter(e => e.outcome === 'blocked' && now - (e.settledAt || e.at) < 10 * 60000 && bs.WANTS_PICKAXE.test(e.why || ''));
+    if (wanted.length) {
+      if (!tree.make_pickaxe && !tree.fetch_stems) {
+        let offers = {};
+        try { offers = (await upkeepOffers(bot, bounded, goal, save)).options; }
+        catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; offers = {}; }
+        for (const key of ['make_pickaxe', 'fetch_stems']) if (offers[key]) offer(key, offers[key].describe ? await offers[key].describe() : offers[key].description, offers[key].run);
+      }
+      const ways = ['make_pickaxe', 'fetch_stems'].filter(k => tree[k]);
+      const failedFor = [...new Set(wanted.map(e => `${String(e.method).replaceAll('_', ' ')}: ${String(e.why).split('; ')[0].slice(0, 100)}`))].slice(-3);
+      pickaxeLeads = bs.pickaxeLead(bot, ways, failedFor, { closedSays: 'tried lately and came to nothing for want of one' });
+      if (pickaxeLeads) { const first = bs.pickaxeFirstOrder(tree); for (const k of Object.keys(tree)) delete tree[k]; Object.assign(tree, first); }
+    }
+  }
   const options = Object.keys(tree);
   const stats = survival?.state || goal.survival || goal;
   // Work while a rest runs out is not the work standing still.
@@ -5663,7 +5710,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const step = goal.step;
   const what = reason.replace(/^\w+:/, '').replace(/^rung:/, '').replaceAll('_', ' ');
   const context = { situation: id === 'rung_progress'
-    ? `${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : stalled?.whatFailedBelow ? `The ${what} could not go on below this question: ${stalled.whatFailedBelow.replace(/\.$/, '')}.${stalled.workedOnRung ? ` Worked on this rung ${stalled.workedOnRung}.` : ''}` : `The ${what} is brought to the rung's question.`}${stalled?.setAsideNotOffered ? ' Choose: keep at it with the ways left below, or change the plan; setting the rung aside is not offered here, and why is said.' : ' Choose: keep at it with the ways left, change the plan, or set the rung aside for now.'}`
+    ? `${pickaxeLeads ? `${pickaxeLeads} ` : ''}${stalled?.rung ? `${stalled.rung[0].toUpperCase()}${stalled.rung.slice(1)}.` : stalled?.whatFailedBelow ? `The ${what} could not go on below this question: ${stalled.whatFailedBelow.replace(/\.$/, '')}.${stalled.workedOnRung ? ` Worked on this rung ${stalled.workedOnRung}.` : ''}` : `The ${what} is brought to the rung's question.`}${stalled?.setAsideNotOffered ? ' Choose: keep at it with the ways left below, or change the plan; setting the rung aside is not offered here, and why is said.' : ' Choose: keep at it with the ways left, change the plan, or set the rung aside for now.'}`
     : holding
     ? `The ${what} rests ${holding.minutes} more minute${holding.minutes === 1 ? '' : 's'}${holding.why ? ` (${holding.why})` : ''}, and Jev chose other work until then. Choose the work for now; it has until the rest ends.`
     : stalled?.failure

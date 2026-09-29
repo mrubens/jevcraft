@@ -137,6 +137,7 @@ function record(bot, goal, { q, method, target = null, outcome, why = null, gain
   const t = ledger(goal); prune(t, now);
   const entry = { q, method, ...(P(target) ? { target: P(target) } : {}), place: P(bot?.entity?.position), at: now, work: workOf(goal, now), outcome, ...(why ? { why: String(why).slice(0, 200) } : {}), ...(gained ? { gained } : {}), settledAt: now };
   t.entries.push(entry);
+  if (outcome === 'blocked') require('./block-stock').pickaxeWanted(bot, goal, entry);
   return entry;
 }
 
@@ -272,10 +273,11 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
   else {
     e.outcome = 'blocked';
     const said = own ? RM.says(own.nothing, e.place && own.here ? dist(e.place, own.here) : NaN, { food: /food/.test(e.q) }) : null;
-    const why = [error || whyItEnded(bot, goal, e.at) || noNearer, said].filter(Boolean).join('; ');
+    const why = [error || ownFailure(bot, goal, e) || noNearer, said].filter(Boolean).join('; ');
     if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200);
   }
   e.settledAt = now; delete e.mark; delete e.scene; delete e.measure;
+  if (e.outcome === 'blocked') require('./block-stock').pickaxeWanted(bot, goal, e);
   return true;
 }
 // Settled: the pending answers to one question (it is being asked again),
@@ -593,6 +595,36 @@ function workedOn(goal, { work = null, here = null, now = Date.now(), escalated 
     `${open.length ? `; not yet tried from here: ${open.map(o => `${label(o.q)} (asked ${ago(now - o.at)} ago): ${o.keys.map(label).join(', ')}`).join('; ')}` : ''}${early}`;
   return { ms, answers: answers.length, ways: ways.size, offered: offered.size, cameToNothing: n('blocked'), progressed: n('progressed'), steps, open, openBelow, says };
 }
+// The answer being carried out when a failure is noted: the latest given
+// (work.js noteError keeps it on goal.lastFailure.by).
+function answerNow(goal) {
+  const e = goal?.tried?.entries?.at(-1);
+  return e ? { q: e.q, method: e.method, at: e.at } : null;
+}
+// Whether `q` is `above` or asked under it (a question below the one it
+// answered, fortress_approach under fortress_leg).
+function under(q, above) {
+  if (q === above) return true;
+  let parentOf;
+  try { parentOf = require('./decisions').parentOf; } catch (_) { return false; }
+  const seen = new Set();
+  for (let p = parentOf(q); p && !seen.has(p); p = parentOf(p)) { if (p === above) return true; seen.add(p); }
+  return false;
+}
+// The failure an answer ended with: the last one noted since it began, if it
+// was noted while this answer or one under its question was the latest
+// given. 25585's return_for_blocks, overtaken in the same second by the
+// stall's questions and the stems' gathering, was said to have "came to
+// nothing: The leg east came no nearer", the gathering's leg, and Jev was
+// steered off the one way home there was (note 687).
+function ownFailure(bot, goal, e) {
+  const f = goal?.lastFailure;
+  if (f?.why && f.at >= e.at && f.by && !(f.by.at === e.at && f.by.q === e.q && f.by.method === e.method) && !(f.by.at > e.at && under(f.by.q, e.q))) {
+    const w = bot?._survivalState?.walkFailed;
+    return w?.says && w.at >= e.at ? w.says : null;
+  }
+  return whyItEnded(bot, goal, e.at);
+}
 // A question of the rung's own work: under the rung's question, and not the
 // stall's question or one under it (its moves, working free).
 function workBelowRung(q) {
@@ -794,5 +826,5 @@ function rungDue(goal, says, now = Date.now()) {
   return true;
 }
 
-module.exports = { begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, leavesOf, leafAt, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
+module.exports = { answerNow, ownFailure, begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, leavesOf, leafAt, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
   measuredBy, measureMark, measureOf, rungItems, sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };
