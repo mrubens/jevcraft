@@ -5,9 +5,10 @@
 //   node scripts/trials/stage-pick.js --list [stage ...]    every save with its health, hunger, food points, source world, starts
 // STAGE_ANY=1 (or --any) keeps the old pick: the least started save. JEV_ROOT reads another checkout's saves.
 // STAGE_PORT=<port> is the port being started (its old trial is not counted as running).
+// STAGE_ARM=<arm> takes first the save that arm owes another (two-arm trials, note 666).
 // STAGE_MAX_PER_HOUR=<n> is the starts of one save in an hour after which it rests (default 4; 0 turns the rest off).
 const path = require('node:path');
-const { readStage, choose, listing, runningSources } = require('../lib/stage-select');
+const { readStage, choose, listing, runningSources, pairingStarts } = require('../lib/stage-select');
 
 async function main() {
   const argv = process.argv.slice(2), root = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..', '..');
@@ -23,7 +24,9 @@ async function main() {
   }
   const stage = names[0];
   if (!stage) { console.error('usage: stage-pick.js <nether|fortress> | --list [stage ...]'); process.exit(2); }
-  const pick = choose(stages, stage, { any, maxPerHour, running });
+  // STAGE_ARM (start-stage.sh: the port's arm): the save this arm owes another first.
+  const owedKeys = process.env.STAGE_ARM ? require('../lib/arms').owed(pairingStarts(root), process.env.STAGE_ARM) : [];
+  const pick = choose(stages, stage, { any, maxPerHour, owedKeys, running });
   if (pick.error) { console.error(pick.error); process.exit(1); }
   console.error(`stage-pick: ${pick.rule}: ${pick.why}`);
   console.log(`${pick.stage}\t${pick.snapshot.dir}`);

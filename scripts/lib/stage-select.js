@@ -41,6 +41,10 @@
 //      logged in .trial-checkpoints/stage-starts.log by start-stage.sh, not in
 //      the saves), so a pool of a few saves gives way to the nether stage's
 //      instead of taking every start.
+//   7. two-arm trials (note 666, scripts/lib/arms.js): a start asked for on
+//      one arm takes first the save another arm started (asked as the same
+//      stage) in the last six hours and this arm has not, so each pick is
+//      started once per arm and the arms play the same saves.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -127,6 +131,36 @@ function recentStarts(root, now = Date.now()) {
   return by;
 }
 
+// The logged starts as pairing starts (two-arm trials, note 666): a line
+// with an arm ("<ISO time>\t<stage>\t<save>\t<arm>\t<stage asked for>") is
+// { t, key: '<asked>|<stage>/<save>', arm }; older lines carry no arm and
+// are not paired.
+function pairingStarts(root) {
+  let text = ''; try { text = fs.readFileSync(path.join(root, '.trial-checkpoints', 'stage-starts.log'), 'utf8'); } catch (_) { return []; }
+  const out = [];
+  for (const line of text.split('\n')) {
+    const [at, stage, name, arm, asked] = line.split('\t');
+    const t = Date.parse(at);
+    if (name && arm && Number.isFinite(t)) out.push({ t, key: `${asked || stage}|${stage}/${name}`, arm });
+  }
+  return out;
+}
+
+// The start this arm owes another (arms.js owed, keyed as pairingStarts), for
+// a start asked as `stage`: the same save, whatever its hourly rest says (the
+// pair is the point), unless it is gone or its player stands on a span.
+function pairPick(stages, stage, owedKeys = []) {
+  for (const { key, since } of owedKeys) {
+    const [asked, rest] = key.split('|');
+    if (asked !== stage || !rest) continue;
+    const [st, name] = rest.split('/');
+    const s = (stages[st] || []).find(x => x.name === name);
+    if (!s || spotSays(s.spot)) continue;
+    return { snapshot: s, stage: st, rule: 'pair', why: `the other arm started ${name} (${st} stage) at ${new Date(since).toISOString()} and this arm has not yet: started once per arm, so both arms play the same saves` };
+  }
+  return null;
+}
+
 // The snapshots of a stage, each { name, dir, stage, source, started, recent,
 // spot, vitals }.
 async function readStage(root, stage, { vitals = vitalsOf, spot = spotOf, now = Date.now() } = {}) {
@@ -194,8 +228,10 @@ function rotate(pool, all = pool, running = {}) {
 
 // The pick for a stage: { snapshot, stage, rule, why } or { error }.
 // `stages` maps a stage name to its snapshots (fortress needs nether too).
-function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, minFood = MIN_FOOD, maxPerHour = MAX_PER_HOUR, running = {} } = {}) {
+function choose(stages, stage, { any = false, minQualifying = MIN_QUALIFYING, minFood = MIN_FOOD, maxPerHour = MAX_PER_HOUR, owedKeys = [], running = {} } = {}) {
   const own = stages[stage] || [];
+  const paired = pairPick(stages, stage, owedKeys);
+  if (paired) return paired;
   if (any) {
     const best = [...own].sort((a, b) => a.started - b.started || (a.name < b.name ? -1 : 1))[0];
     return best ? { snapshot: best, stage, rule: 'any', why: `STAGE_ANY: the least started ${stage} save (${best.started} starts), whatever it carried or came from` } : { error: `no usable ${stage} snapshot` };
@@ -249,4 +285,4 @@ function listing(stages, stage, opts = {}) {
   return lines.join('\n');
 }
 
-module.exports = { runningSources, sourceWorld, foodPoints, vitalsOf, shortfalls, placeShortfalls, allShortfalls, recentStarts, readStage, worldStarts, rotate, choose, listing, MIN_HEALTH, MIN_HUNGER, MIN_FOOD, MIN_QUALIFYING, MAX_PER_HOUR };
+module.exports = { runningSources, sourceWorld, foodPoints, vitalsOf, shortfalls, placeShortfalls, allShortfalls, recentStarts, pairingStarts, pairPick, readStage, worldStarts, rotate, choose, listing, MIN_HEALTH, MIN_HUNGER, MIN_FOOD, MIN_QUALIFYING, MAX_PER_HOUR };

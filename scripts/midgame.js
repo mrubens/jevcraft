@@ -24,6 +24,7 @@ const { analyse } = require('./lib/audit');
 const { strandedFromFrames } = require('./lib/stranded');
 const { spectatorNightVision } = require('./first-days');
 const { ensureSupervisor, absences } = require('./lib/supervise');
+const { launch, armOf } = require('./lib/arms');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = Number(process.env.MIDGAME_PORT || 25582);
@@ -106,7 +107,7 @@ function verdict(trial, { now = Date.now() } = {}) {
   const stranded = all ? null : strandedFromFrames(a.frames, { now: to });
   const reasons = [...(deaths.length ? [`${deaths.length} death(s)`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : [])];
-  return { world: trial.world, source: trial.source, from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
+  return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
     playedMinutes: Math.round((windowMs - absentMs) / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
     absences: gone.map(g => ({ atMinute: minute(g.from), minutes: Math.round((g.to - g.from) / 60000) })),
@@ -126,6 +127,7 @@ async function start(world, source, archive) {
   // A trial's record is kept by its world's name, across every port: a
   // second world of the same name on another port would take its record.
   if (fs.existsSync(path.join(LOG_DIR, `${world}.json`))) throw new Error(`${world} already has a trial record`);
+  armOf(PORT, ROOT); // an arm that cannot carry the bot stops the start before the server is touched
   const starting = BOT_PID.replace(/\.pid$/, '.starting');
   fs.mkdirSync(path.dirname(starting), { recursive: true }); fs.writeFileSync(starting, `${process.pid}\n`);
   try {
@@ -172,12 +174,12 @@ async function start(world, source, archive) {
     for (const f of fs.readdirSync(STATE).filter(f => f.startsWith(IDENTITY) && f.endsWith('.json'))) fs.renameSync(path.join(STATE, f), path.join(aside, f));
     for (const f of saved) fs.copyFileSync(path.join(arc, f), path.join(STATE, f.replace(/^127_0_0_1-\d+-Jev/, IDENTITY)));
     const out = fs.openSync(path.join(ROOT, 'artifacts', `midgame-${world}.log`), 'a');
-    const child = spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
-      env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: String(PORT), MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
-    child.unref();
+    // The bot runs from the port's arm (scripts/lib/arms.js: main, or a
+    // pinned baseline checkout), and the trial record says which.
+    const { child, arm, commit } = launch(PORT, out, { root: ROOT });
     for (let i = 0; i < 30 && !botPid(); i++) await sleep(1000);
     if (String(botPid()) !== String(child.pid)) throw new Error(`The trial's bot is not the one just started (${botPid()} vs ${child.pid})`);
-    const trial = { world, port: PORT, source, archive, startedAt: new Date().toISOString() };
+    const trial = { world, port: PORT, source, archive, startedAt: new Date().toISOString(), arm: arm.name, commit };
     saveTrial(trial);
     if (ensureSupervisor(PORT, ROOT)) console.log(`No supervisor was watching ${PORT}: one started (artifacts/supervisors/${PORT}.log).`);
     console.log(`Midgame trial ${world} (from ${source}) started at ${trial.startedAt}; at most ${LIMIT_MS / 3600000} hours.`);

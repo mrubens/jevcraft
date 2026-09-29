@@ -16,7 +16,12 @@ if [ "$1" = "--list" ]; then shift; exec node "$ROOT/scripts/trials/stage-pick.j
 PORT=$1; STAGE=$2
 [ -n "$PORT" ] && [ -n "$STAGE" ] || { echo "usage: start-stage.sh <port> <nether|fortress> | --list [stage]"; exit 1; }
 [ -d "$ROOT/.trial-checkpoints/stages/$STAGE" ] || { echo "no $STAGE snapshots yet"; exit 1; }
-PICK=$(STAGE_PORT=$PORT node "$ROOT/scripts/trials/stage-pick.js" "$STAGE") || { echo "no usable $STAGE snapshot"; exit 1; }
+# The port's arm (two-arm trials, scripts/lib/arms.js, note 666): a save the
+# other arm started and this one has not is taken first, and the start is
+# logged with the arm and the stage asked for.
+ARM=$(cd "$ROOT" && node scripts/lib/arms.js name "$PORT" 2>&1) || { echo "the arm of $PORT cannot carry a bot: $ARM"; exit 1; }
+ASKED=$STAGE
+PICK=$(STAGE_PORT=$PORT STAGE_ARM=$ARM node "$ROOT/scripts/trials/stage-pick.js" "$STAGE") || { echo "no usable $STAGE snapshot"; exit 1; }
 # A fortress start with too few good saves is a nether start: the pick says which.
 STAGE=$(printf '%s' "$PICK" | cut -f1); BEST=$(printf '%s' "$PICK" | cut -f2)
 BESTN=$(cat "$BEST/started" 2>/dev/null || echo 0)
@@ -30,5 +35,5 @@ NAME="mid-$SRC-$STAGE-$K"
 echo "$K" > "$BEST/started"
 # The start is logged beside the saves (not in one) for the hourly rest the
 # pick gives a save started from often (scripts/lib/stage-select.js).
-printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STAGE" "$(basename "$BEST")" >> "$ROOT/.trial-checkpoints/stage-starts.log"
+printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STAGE" "$(basename "$BEST")" "$ARM" "$ASKED" >>"$ROOT/.trial-checkpoints/stage-starts.log"
 cd "$ROOT" && MIDGAME_PORT=$PORT node scripts/midgame.js start "$NAME" "$BEST/world" "$BEST/state"

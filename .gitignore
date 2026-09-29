@@ -25,6 +25,8 @@ artifacts/
 .test-replay/
 .clean-run/
 .clean-run-*/
+# Baseline checkouts of two-arm trials (scripts/lib/arms.js)
+.arms/
 .geyser/
 .test-endgame/
 

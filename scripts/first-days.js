@@ -206,13 +206,12 @@ async function startTrial(world) {
   for (const f of fs.readdirSync(STATE).filter(f => f.startsWith(IDENTITY) && f.endsWith('.json'))) fs.renameSync(path.join(STATE, f), path.join(archive, f));
   fs.writeFileSync(path.join(STATE, `${IDENTITY}-dream.json`), JSON.stringify({ version: 1, dream: 'beat_the_game', setBy: 'TestPlayer', setAt: new Date().toISOString() }));
   const out = fs.openSync(process.env.FIRST_DAYS_LOG || path.join(ROOT, 'artifacts', `first-days-${world}.log`), 'a');
-  const child = spawn(process.execPath, ['index.js'], { cwd: ROOT, detached: true, stdio: ['ignore', out, out],
-    env: { ...process.env, MC_HOST: '127.0.0.1', MC_PORT: String(PORT), MC_USERNAME: 'Jev', RECOVERY_ADVISER: 'jev', JEV_ENCOUNTERS: '1' } });
-  child.unref();
+  // The bot runs from the port's arm (scripts/lib/arms.js).
+  const { child, arm } = require('./lib/arms').launch(PORT, out, { root: ROOT });
   for (let i = 0; i < 30 && !botPid(); i++) await sleep(1000);
   if (String(botPid()) !== String(child.pid)) throw new Error(`The trial's bot is not the one just started (${botPid()} vs ${child.pid}); start again`);
   const all = trials();
-  all.push({ world, port: PORT, startedAt: new Date().toISOString() });
+  all.push({ world, port: PORT, startedAt: new Date().toISOString(), arm: arm.name });
   saveTrials(all);
   if (require('./lib/supervise').ensureSupervisor(PORT, ROOT)) console.log(`No supervisor was watching ${PORT}: one started (artifacts/supervisors/${PORT}.log).`);
   console.log(`Trial on ${world} started at ${all.at(-1).startedAt}; verdict from ${new Date(Date.now() + DAYS_MS).toISOString()}.`);

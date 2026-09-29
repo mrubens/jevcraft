@@ -23,7 +23,7 @@ function terrain(bot, radius = 12) {
   return { origin: position(origin), radius, minY: -5, maxY: 12, palette, blocks, known };
 }
 
-function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, controls = {}, server = '', commit = loadedCommit() } = {}) {
+function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, controls = {}, server = '', commit = loadedCommit(), arm = process.env.JEV_ARM || null } = {}) {
   let alive = true, world = null, worldAt = 0, route = [], previousDecision, previousAction;
   const epoch = ++trace.epoch;
   trace.label = `${bot.username || 'Jev'} · ${server}`;
@@ -122,8 +122,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
     delete trace.observationError;
   }
   // The commit rides on every connection frame: the first frame of a run, and
-  // the one a rejoin writes, say which build the run is (scripts/lib/flight-commit.js).
-  on('spawn', () => { trace.connected = true; sample('connection', { connected: true, ...(commit ? { commit } : {}) }); });
+  // the one a rejoin writes, say which build the run is (scripts/lib/flight-commit.js),
+  // and the arm of a two-arm trial it was started on (JEV_ARM, scripts/lib/arms.js).
+  on('spawn', () => { trace.connected = true; sample('connection', { connected: true, ...(commit ? { commit } : {}), ...(arm ? { arm } : {}) }); });
   on('path_update', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('flight_route', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });

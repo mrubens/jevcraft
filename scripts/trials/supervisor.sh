@@ -2,7 +2,8 @@
 # Keeps a trial's bot running: a bot whose flight record has gone quiet for
 # 60 s (or that is gone) is stopped and started again on the same state,
 # logging to the current trial's log. Leaves the bot alone while a trial is
-# starting or the server is down.
+# starting or the server is down. The bot runs from the port's arm
+# (scripts/lib/arms.js): ROOT's checkout, or a pinned baseline's.
 #   sh scripts/trials/supervisor.sh 25582 &
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=$1
@@ -31,7 +32,9 @@ while :; do
   else
     log "no bot; starting one"
   fi
-  (cd "$ROOT" && MC_HOST=127.0.0.1 MC_PORT=$PORT MC_USERNAME=Jev RECOVERY_ADVISER=jev JEV_ENCOUNTERS=1 \
-    nohup "$NODE" index.js >> "$OUT" 2>&1 &)
+  # The bot runs from the port's arm (.bot-state/arms/<port>, scripts/lib/arms.js:
+  # main unless a baseline checkout is named), so a restart keeps it on its arm.
+  STARTED=$(cd "$ROOT" && "$NODE" scripts/lib/arms.js launch "$PORT" "$OUT" 2>&1) || { log "not started: $STARTED"; sleep 30; continue; }
+  log "started $STARTED"
   sleep 30
 done
