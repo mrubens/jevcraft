@@ -220,12 +220,48 @@ async function chooseTrip(bot, task, goal, save, actions = {}, now = Date.now())
     state: f.state, target: tree.raid_chests.target });
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
-  const key = KEY(o.landmark);
-  goal.bastionRaid = { key, pick, at: now, asked: true, ...(decision.noneGood ? { noneGood: true } : {}) };
-  rememberRaid(goal, { key, x: o.landmark.x, z: o.landmark.z, at: now, pick, outcome: pick === 'leave_it' ? 'declined' : 'pending', distance: o.distance, health: round(bot.health ?? 20), goldWorn: goldWorn(bot) });
-  if (pick === 'leave_it') { setAside(goal, 'rung', 'bastion_gold', 'Jev chose to leave the bastion alone', LEAVE_MS); goal.bastionRaid.ended = true; }
+  beginTrip(bot, goal, o, pick, now, decision.noneGood ? { noneGood: true } : {});
   save();
   return pick;
+}
+
+// The trip Jev chose, kept: the held answer (looting.js reads raidOn) and the
+// entry of the record.
+function beginTrip(bot, goal, o, pick, now, extra = {}) {
+  const key = KEY(o.landmark);
+  goal.bastionRaid = { key, pick, at: now, asked: true, ...extra };
+  rememberRaid(goal, { key, x: o.landmark.x, z: o.landmark.z, at: now, pick, outcome: pick === 'leave_it' ? 'declined' : 'pending', distance: o.distance, health: round(bot.health ?? 20), goldWorn: goldWorn(bot), ...(extra.via ? { via: extra.via } : {}) });
+  if (pick === 'leave_it') { setAside(goal, 'rung', 'bastion_gold', 'Jev chose to leave the bastion alone', LEAVE_MS); goal.bastionRaid.ended = true; }
+}
+
+// The bastion's chests as a way to food (note 649), put beside the other ways
+// at restock_food and nether_food_kit: a bastion's hoglin stable chest holds
+// about 17 food points on average, its other chests about 12, the bridge's
+// none, golden apples and golden carrots among them (note 639). The same
+// facts as bastion_raid, said as the price of a route: the walk, what lives
+// there and what the bot has in view, gold armor and what it does not do,
+// what a lid does, the fights as the game's numbers price them, the record
+// ("not yet tried"). Jev chooses it, and choosing it is the raid's answer
+// (a raid_chests held as bastion_raid would hold it): the walk goes there and
+// the chests are opened by the loot pass while the raid is on. null when no
+// bastion is remembered within reach and not resting, or a raid is on.
+const FOOD = 'Food in the chests, from the jar\'s tables (note 639): the hoglin stable\'s chest about 17 food points on average (golden carrots 10% for 8 to 17, a golden apple 10%, porkchops raw and cooked 23% each), the housing units\' chests about 12 (golden carrots 13% for 6 to 17, a golden apple 10%, a cooked porkchop 24%), the bridge\'s none; an enchanted golden apple 5% in a treasure chest. Which room a chest is in is not known before it is opened, so how much food a raid brings is not known.';
+function foodRoute(bot, goal, { navigate = null, loot = null, now = Date.now() } = {}) {
+  if (!navigate || !bot?.entity?.position || raidOn(goal, now)) return null;
+  const o = offer(bot, goal);
+  if (!o) return null;
+  const f = facts(bot, goal, o, now), s = f.state, l = o.landmark;
+  const at = `${o.distance} blocks off${f.dy ? ` and ${Math.abs(f.dy)} ${f.dy > 0 ? 'up' : 'down'}` : ''}, ${plural(f.legs, 'leg')}`;
+  const description = `Raid the chests of the bastion at (${l.x}, ${l.z}), ${at}, for their food (and the gold and golden apples with it): walk there, open the nearest chest, take what the ladder uses, go on to the next while nothing that bites is in view within 16 blocks. ${FOOD} Lifting a lid angers every piglin within 16 blocks that sees it, gold armor or not, and a brute attacks on sight within 12 anyway. ${s.mobsThere.inView} ${s.mobsThere.count} Gold armor worn: ${s.goldArmorWorn}. Health ${s.health}, hunger ${s.hunger}. Priced from the game's numbers, not measured on a bastion: ${s.fights.oneBrute}; ${s.fights.threePiglins}; ${s.fights.bruteChase}${s.fights.inView === 'nothing in view to price' ? '' : ` In view now: ${s.fights.inView}.`} ${s.route} ${s.record.bastionChestsOpenedByTheBotEver}; this run: ${Array.isArray(s.record.thisRun) ? s.record.thisRun.join('; ') : s.record.thisRun}. ${s.guard}.`;
+  return { landmark: l, distance: o.distance, description,
+    run: async (task, save) => {
+      beginTrip(bot, goal, o, 'raid_chests', Date.now(), { via: 'food' });
+      save?.();
+      const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['bastion'], { navigate, reach: REACH, arrive: 20 });
+      if (arrived && loot && await loot(bot, task, goal, save)) return true;
+      if (arrived && !require('./looting').lootableChests(bot, goal, { reach: RAID_REACH }).length) { closeRaid(goal); save?.(); }
+      return !!arrived;
+    } };
 }
 
 // A raid ends: what it took, or that it came to nothing. Called when no
@@ -248,4 +284,4 @@ function closeRaid(goal, { now = Date.now() } = {}) {
   return entry || null;
 }
 
-module.exports = { RECORD, CHESTS, HOLDS, LID, REACH, RAID_REACH, HOLD_MS, offer, facts, options, chooseTrip, raidOn, heldFor, closeRaid, settle, rememberRaid, goldWorn, seenNow };
+module.exports = { foodRoute, beginTrip, FOOD, RECORD, CHESTS, HOLDS, LID, REACH, RAID_REACH, HOLD_MS, offer, facts, options, chooseTrip, raidOn, heldFor, closeRaid, settle, rememberRaid, goldWorn, seenNow };

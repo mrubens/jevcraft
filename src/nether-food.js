@@ -209,7 +209,7 @@ const woodForBowls = bot => planksCarried(bot) + 4 * bot.inventory.items().filte
 
 // The chests that hold food, said for what a lifted lid gets (from the jar's
 // tables, expectation per chest counted from the pools' weights).
-const CHEST_FOOD = 'A bastion\'s hoglin stable chest holds about 17 food points on average (golden carrots 8 to 17 a 1 in 10 roll at 6 each, a golden apple 1 in 10, and 3 to 4 rolls of a pool with porkchop and cooked porkchop 2 to 5 each at 1 in 14 apiece), its other chests about 12 (golden carrots 12 in 89 for 6 to 17, a cooked porkchop 1 in 13 of 3 to 4 rolls), a ruined portal\'s chest about 4 (golden apples, golden carrots); a fortress\'s chests and the bridge bastion\'s hold none. Lifting a bastion chest\'s lid turns the piglins that see it hostile (bastion_raid is that question, note 636); the bot does not go for chests for food.';
+const CHEST_FOOD = 'A bastion\'s hoglin stable chest holds about 17 food points on average (golden carrots 8 to 17 a 1 in 10 roll at 6 each, a golden apple 1 in 10, and 3 to 4 rolls of a pool with porkchop and cooked porkchop 2 to 5 each at 1 in 14 apiece), its other chests about 12 (golden carrots 12 in 89 for 6 to 17, a cooked porkchop 1 in 13 of 3 to 4 rolls), a ruined portal\'s chest about 4 (golden apples, golden carrots); a fortress\'s chests and the bridge bastion\'s hold none. Lifting a bastion chest\'s lid turns the piglins that see it hostile (bastion_raid is that question, note 636); a raid for the food in them is one of the ways offered here (raid_bastion) when a bastion is remembered within reach.';
 const NOT_FOOD = 'piglin barter\'s items (19 in the jar) hold none, a strider drops string, chorus fruit grows only in the End, and cake, golden carrots and golden apples are made from an apple, a carrot, milk, sugar, wheat and eggs, all of the Overworld.';
 
 // The routes, each priced from where the bot stands. `ctx.actions` carries
@@ -273,6 +273,13 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
     } else notOffered.push(`cooking the raw meat carried (${stock.raw.map(m => `${m.n} ${words(m.item)}`).join(', ')}, +${stock.cookedGain} points): ${cook ? `no ${cook.fuel ? 'furnace or eight blocks of stone to make one' : 'fuel that burns (coal, charcoal, a blaze rod) is carried'}` : 'nothing to cook it with is carried'}; the Nether's stems and planks do not burn`);
   }
 
+  // A bastion's chests (note 649): the same facts as bastion_raid, as a route.
+  try {
+    const raid = require('./bastion-raid').foodRoute(bot, goal, { navigate: actions.navigate, loot: actions.loot });
+    if (raid) routes.raid_bastion = { description: raid.description, run: () => raid.run(task, save) };
+    else notOffered.push('a bastion\'s chests: none remembered within 384 blocks (or a raid is already on)');
+  } catch (_) { /* no bastion route from here */ }
+
   // The trip back.
   if (actions.returnOverworld) {
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { there = ''; }
@@ -299,7 +306,7 @@ function restockFoodOption(bot, task, goal, save, { actions = {}, survival = nul
   if (!keys.length) return null;
   const stay = stayFacts(bot);
   const list = keys.map(k => ({ hoglin_walk: 'a hoglin hunted on foot (2 to 4 raw porkchops, 6 to 12 points raw, 16 to 32 cooked)', hoglin_pillar: 'the same hoglin hunted from a pillar two blocks up (the pillar stances measured 0.1 health lost, none of these hunts made yet)',
-    mushroom_stew: 'mushroom stew from the mushrooms in view (6 points a stew)', cook_meat: `the raw meat carried cooked (+${found.stock.cookedGain} points)`, return_for_food: 'the trip back through the portal for food (at the pace the Nether walks measured)' }[k])).join('; ');
+    mushroom_stew: 'mushroom stew from the mushrooms in view (6 points a stew)', raid_bastion: 'the food in a bastion\'s chests (a hoglin stable\'s chest about 17 points, the others about 12, piglins and brutes at the lids; never tried by this bot)', cook_meat: `the raw meat carried cooked (+${found.stock.cookedGain} points)`, return_for_food: 'the trip back through the portal for food (at the pace the Nether walks measured)' }[k])).join('; ');
   return { description: `Get food here before going on, the way asked next with each priced: ${list}. On offer because ${need.why}. ${staySays(bot, stay)} Health does not come back at hunger under eighteen, and the Nether has little else to eat: what its bastions' chests hold and the stew are the rest.`,
     run: () => askRestockFood(bot, task, goal, save, { actions, survival, client, found }) };
 }
@@ -310,8 +317,8 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   const { routes, notOffered, stock } = found;
   const options = { ...routes };
   const nv = require('./nether-travel');
-  if (!options.keep_on && (bot.food ?? 20) < 18) {
-    options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, health comes back only at eighteen or more. No fight is started while it does not.`,
+  if (!options.keep_on && ((bot.food ?? 20) < 18 || options.raid_bastion)) {
+    options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, ${(bot.food ?? 20) < 18 ? 'health comes back only at eighteen or more. No fight is started while it does not.' : 'health comes back at eighteen or more, as it does now.'}`,
       run: async () => { const { setAside } = require('./progress'); setAside(goal, 'nether_return', 'food', nv.keepOnWhy(bot), 20 * 60000); delete goal.stockFood; save?.(); } };
   }
   if (!Object.keys(options).length) throw new Error(`No way to food from here: ${notOffered.join('; ')}`.slice(0, 500));
@@ -328,6 +335,18 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   return true;
 }
 
+// The cauldron made in the Nether (note 649): the crafting table first if
+// there is none carried (the recipe is a 3 by 3), then the cauldron; the set
+// is then carried, and the way to use it is body_way's (set_down_cauldron)
+// when the bot is alight. A craft that fails is said and the stay goes on.
+async function makeCauldron(bot, task, goal, save, actions = {}) {
+  if (!actions.acquire) return false;
+  goal.step = { action: 'cauldron_for_nether', cauldron: countOf(bot, 'cauldron'), waterBucket: countOf(bot, 'water_bucket') }; save?.();
+  try { await actions.acquire(bot, task, 'cauldron', countOf(bot, 'cauldron') + 1, goal, save); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; if (goal.netherFoodKit) goal.netherFoodKit.cauldronFailed = String(err.message || err).slice(0, 160); save?.(); return false; }
+  return countOf(bot, 'cauldron') > 0;
+}
+
 // The food-kit question of a stay: the Nether's equivalent of the crossing
 // kit's food line, asked the first time a Nether question is due in a stay
 // (the stage saves begin inside the Nether and were never asked at a portal),
@@ -337,8 +356,11 @@ function stayKitDue(bot, goal, now = Date.now()) {
   const last = goal.netherFoodKit;
   if (last && now - last.at < STAY_KIT_MS) return null;
   const stay = stayFacts(bot);
-  if (!stay.short) return null;
-  return stay;
+  // Food short, or the cauldron set makeable here (note 649): either makes the
+  // kit worth asking; the cauldron is on offer, never a gap.
+  let cauldron = null; try { cauldron = require('./crossing-kit').stayCauldron(bot); } catch (_) { cauldron = null; }
+  if (!stay.short && !cauldron) return null;
+  return { ...stay, cauldron };
 }
 async function askStayKit(bot, task, goal, save, { actions = {}, survival = null, client = null, now = Date.now() } = {}) {
   const stay = stayKitDue(bot, goal, now);
@@ -346,24 +368,33 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   try { if (require('./danger').threats(bot, 16).some(t => t.visible)) return 'go_on'; } catch (_) { /* none seen */ }
   const found = foodRoutes(bot, task, goal, save, { actions, survival });
   const tree = {
-    go_on: { description: `Go on with the stay on what is carried: ${stay.carried} food points, about ${stay.lasts} minutes of it at ${HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal still wants; ${stay.short} points short. Nothing is done about food now; it is asked again in an hour, and when health and hunger say so the food step is offered at the stalls.` },
+    go_on: { description: stay.short
+      ? `Go on with the stay on what is carried: ${stay.carried} food points, about ${stay.lasts} minutes of it at ${HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal still wants; ${stay.short} points short. Nothing is done about food now; it is asked again in an hour, and when health and hunger say so the food step is offered at the stalls.`
+      : `Go on with the stay as it is: ${stay.carried} food points carried, about ${stay.lasts} minutes of it at ${HUNGER_AN_HOUR} an hour, ${stay.minutes} minutes wanted, so food is not short. Nothing is made now; it is asked again in an hour.` },
   };
-  if (found.routes.return_for_food) tree.return_for_food = { description: found.routes.return_for_food.description };
-  const others = Object.keys(found.routes).filter(k => !['return_for_food'].includes(k));
-  if (others.length) tree.restock_food = { description: `Get food here first (the ways asked next, each priced): ${others.map(k => ({ hoglin_walk: 'a hoglin hunted on foot', hoglin_pillar: 'a hoglin hunted from a pillar', mushroom_stew: 'mushroom stew', cook_meat: 'the raw meat cooked' }[k])).join(', ')}. ${found.notOffered.join('; ')}.` };
+  // Food ways only when food is short: a stay with enough is not offered a trip for more.
+  if (stay.short) {
+    if (found.routes.return_for_food) tree.return_for_food = { description: found.routes.return_for_food.description };
+    if (found.routes.raid_bastion) tree.raid_bastion = { description: found.routes.raid_bastion.description };
+    const others = Object.keys(found.routes).filter(k => !['return_for_food', 'raid_bastion'].includes(k));
+    if (others.length) tree.restock_food = { description: `Get food here first (the ways asked next, each priced): ${others.map(k => ({ hoglin_walk: 'a hoglin hunted on foot', hoglin_pillar: 'a hoglin hunted from a pillar', mushroom_stew: 'mushroom stew', cook_meat: 'the raw meat cooked' }[k])).join(', ')}. ${found.notOffered.join('; ')}.` };
+  }
+  if (stay.cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire now: ${stay.cauldron.says}` };
   goal.netherFoodKit = { at: now, points: stay.carried, minutes: stay.minutes };
   save?.();
   if (Object.keys(tree).length < 2) return 'go_on';
   const state = { stay: { minutesWanted: stay.minutes, pointsWanted: stay.points, pointsCarried: stay.carried, carriedLastMinutes: stay.lasts, short: stay.short }, hunger: bot.food, health: r1(bot.health ?? 20), staying: staySays(bot, stay),
-    note: 'This is the food line of the crossing kit, asked inside the Nether because this stay began here (a save, or a crossing made before the kit counted food for the stay).' };
+    note: `This is the food${stay.cauldron ? ' and cauldron lines' : ' line'} of the crossing kit, asked inside the Nether because this stay began here (a save, or a crossing made before the kit counted food for the stay).${stay.short ? '' : ' Food is not short for this stay.'}` };
   const decision = await require('./decisions').decide('nether_food_kit', { client: client || actions.client || task.opportunityClient, bot, task, goal, save, tree, state, context: {} });
   if (decision.stale) { delete goal.netherFoodKit; return null; }
   const pick = decision.path.at(-1);
   goal.netherFoodKit.pick = pick; save?.();
   if (pick === 'return_for_food') { await found.routes.return_for_food.run(); return pick; }
   if (pick === 'restock_food') { await askRestockFood(bot, task, goal, save, { actions, survival, client, found }); return pick; }
+  if (pick === 'raid_bastion') { await found.routes.raid_bastion.run(); return pick; }
+  if (pick === 'top_up_cauldron') { await makeCauldron(bot, task, goal, save, actions); return pick; }
   return pick;
 }
 
-module.exports = { foodStock, foodNeed, stayFacts, staySays, foodRoutes, restockFoodOption, askRestockFood, askStayKit, stayKitDue, startFoodHunt, huntHoglin, pillarHuntStep, noteHunt, noteRoute, recordSays, mushroomsIn,
+module.exports = { foodStock, foodNeed, stayFacts, staySays, foodRoutes, restockFoodOption, askRestockFood, askStayKit, makeCauldron, stayKitDue, startFoodHunt, huntHoglin, pillarHuntStep, noteHunt, noteRoute, recordSays, mushroomsIn,
   HUNGER_AN_HOUR, LOW_POINTS, STAY_KIT_MS, PILLAR_RECORD, PILLAR_FROM, PILLAR_WAIT_MS, PILLAR_BLOCKS, CHEST_FOOD, NOT_FOOD, RAW_MEAT };

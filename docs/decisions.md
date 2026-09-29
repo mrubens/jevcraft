@@ -278,7 +278,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **In the Nether with little food carried, or hurt at a hunger where health does not come back: which way to more food, or go on without?**
 
-- When: Chosen as the step (restock_food) at the food question of a hunt short of fitness (leave_nether), at a stalled Nether step, or at the stay's food kit (nether_food_kit); not asked where no way is real from here.
+- When: Chosen as the step (restock_food) at the food question of a hunt short of fitness (leave_nether), at a stalled Nether step, or at the stay's food kit (nether_food_kit); not asked where no way is real from here. A bastion raid for the chests' food is among the ways when a bastion is remembered within reach.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -291,8 +291,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hoglin_pillar` | root | hunt the hoglin from a pillar two blocks up | the same hoglin and two blocks carried that can be laid; the walk to within twelve blocks, two blocks laid, the sword struck down from the top (a hoglin's blow does not reach two up; 168 pillar stances measured 0.1 health lost, 2 deaths), and what a pillar does not stop; the hunt ends if the hoglin does not come in forty-five seconds |
 | `mushroom_stew` | root | make mushroom stew from mushrooms in view | a red and a brown mushroom within forty-eight blocks or carried, and a bowl or three planks' worth of wood carried; said with the count, the nearest, 6 hunger a stew, what the stew is made of, and that the game grows them only in the nether wastes and basalt deltas and gathering them is not measured |
 | `cook_meat` | root | cook the raw meat carried | raw meat carried, and a furnace (or eight stone) and fuel that burns (coal, charcoal, a blaze rod) carried; said with the points now and cooked, the seconds standing at it, and that the meat is in the furnace, not eaten, meanwhile |
+| `raid_bastion` | root | raid a bastion's chests for their food | a bastion remembered within 384 blocks whose walk is not resting, and no raid already on (note 649); said with the same facts as bastion_raid: the walk, what lives there and is in view, gold armor and what it does not do, what a lid does, the fights priced from the game's numbers, what the chests hold in food (a hoglin stable about 17 points, the others about 12, the bridge none), and that no bastion chest has been opened by the bot; chosen, it is the raid Jev chose (the chests are opened while it is on) |
 | `return_for_food` | root | go back through the portal to the Overworld for food | the way back is at hand; said with the trip (its walk at the pace the Nether walks measured, lava on the line, the hour it comes out at) and the food known on the other side |
-| `keep_on` | root | go on in the Nether without more food for twenty minutes | hunger under eighteen |
+| `keep_on` | root | go on in the Nether without more food for twenty minutes | hunger under eighteen, or a bastion raid is among the ways |
 
 ## combat
 
@@ -515,7 +516,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **In the Nether with a stay still ahead and less food than it will spend: go on with what is carried, get food here, or go back through the portal for it?**
 
-- When: On the game ladder, the first time a Nether question is due in a stay (the fortress search or a blaze hunt at a fortress) with fewer food points carried than the goal's stay wants (crossing-kit.js netherStay), and each hour of the stay after; not with a mob in sight; asked once whatever the answer.
+- When: On the game ladder, the first time a Nether question is due in a stay (the fortress search or a blaze hunt at a fortress) with fewer food points carried than the goal's stay wants (crossing-kit.js netherStay), or with the cauldron set makeable from what is carried (7 iron ingots, a water bucket, a crafting table or wood for one: note 649), and each hour of the stay after; not with a mob in sight; asked once whatever the answer.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -526,6 +527,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `go_on` | root | go on with the stay on what is carried | always; said with the points carried and how many minutes they last at forty hunger an hour against the minutes the goal still wants |
 | `restock_food` | root | get food here first: the ways to it asked next, each priced | some way to food real from here other than the trip back (a hoglin known, mushrooms of both kinds in view, raw meat to cook); the ways not real are said |
+| `raid_bastion` | root | raid a bastion's chests for their food | food short for the stay and a bastion remembered within 384 blocks whose walk is not resting (note 649); said with the same facts as bastion_raid and the food its chests hold; chosen, it is the raid Jev chose |
+| `top_up_cauldron` | root | make the cauldron set for the Nether's fire now | in the Nether with a water bucket, seven iron ingots and a crafting table or wood for one carried, and no cauldron (no water is to be had there to fill an empty bucket); said with the iron it costs, the slots, what fire is of the blaze fights' damage, that it must be set down near the fight or when alight, the seconds it takes, and that no trial has played it; never the fallback (note 649) |
 | `return_for_food` | root | go back through the portal to the Overworld for food | the way back is at hand; said with the trip at the measured pace of the Nether's walks, and the food known on the other side |
 
 ### `win_strategy`

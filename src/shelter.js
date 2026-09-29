@@ -121,9 +121,19 @@ const enclosedAir = (bot, p) => replaceable(bot.blockAt(p)) &&
 // (the cell is full), and the live bot, walled in on a sand bar at sea,
 // sealed the same pocket fourteen times a second.
 const floorSolid = b => b?.boundingBox === 'block' && !['magma_block', 'cactus', 'powder_snow'].includes(b.name);
+// A cell that holds a block the game never lets be dug or built over, and
+// that is not a body of water or lava: a nether portal's sheet, an end portal
+// or gateway, a light block. It cannot be dug out and nothing can be placed
+// in it, so it is not a cell the bot can wall; it is left as it is, and not
+// counted missing (mid-244-bg tried to dig a portal 128 times: "seal_shelter
+// failed: Cannot dig nether_portal"; note 649). Bedrock, a barrier and an end
+// portal frame are full blocks and already count as walls (solid). Water and
+// lava are diggable in the game's data and are gaps to be filled.
+const FLUIDS = new Set(['water', 'lava', 'bubble_column']);
+const fixed = b => !!b && b.diggable === false && !FLUIDS.has(b.name) && !replaceable(b);
 function missingShell(bot, shelter) {
   const floorY = shelter.kind !== 'house' ? position(shelter.origin).y - 1 : null;
-  return enclosure(shelter).filter(p => !(p.y === floorY ? floorSolid : solid)(bot.blockAt(p)) && !enclosedAir(bot, p));
+  return enclosure(shelter).filter(p => { const b = bot.blockAt(p); return !(p.y === floorY ? floorSolid : solid)(b) && !fixed(b) && !enclosedAir(bot, p); });
 }
 function inside(bot, shelter) {
   if (shelter.dimension !== bot.game.dimension) return false;
@@ -210,4 +220,4 @@ function beyond(bot, o, door) {
   return [-1, 0, 1].filter(dy => replaceable(bot.blockAt(door.plus(d).offset(0, dy, 0)))).length;
 }
 
-module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable };
+module.exports = { wetBelow, foundation, shell, enclosure, safeSite, shelterSites, missingShell, inside, sealed, materialStock, supplyTarget, plankCraft, exits, closures, buildingMaterials, buildingItem, LAST_MATERIALS, NETHER_WOOD, solid, replaceable, fixed };

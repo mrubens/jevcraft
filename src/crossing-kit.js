@@ -142,6 +142,31 @@ function cauldronSet(bot) {
   return { offer: true, cauldrons, says: `Cauldron: ${parts.join(' and ')} carried; the set is ${need.join(' and ')} short of complete. ${how} Its cost is ${cauldrons ? '' : `${CAULDRON_IRON} iron ingots (the bot carries ${iron}; an iron pickaxe is three) and `}a slot or two.` };
 }
 
+// The cauldron set as it can be made INSIDE the Nether (note 649). At the
+// portal top_up_cauldron was one line of the crossing kit; the trials now
+// mostly begin in the Nether (saves), where it was never asked and never
+// reached (note 643: the way was seen 0 times in play). Water is the limit:
+// the Nether has none to fill an empty bucket, so the set can be made there
+// only from a water bucket already carried, seven iron ingots, and a crafting
+// table (the recipe is a 3 by 3; the two-by-two of the inventory cannot make
+// it) that is carried or made from wood carried. Nothing is given: null when
+// the bot could not make it. Said with what it saves, what it costs and the
+// place it has to be used from.
+function stayCauldron(bot) {
+  if (bot?.game?.gameMode !== 'survival' || !/nether/.test(String(bot.game?.dimension || '')) || bot.game?.difficulty === 'peaceful') return null;
+  const { CAULDRON_IRON } = require('./cauldron');
+  const iron = countOf(bot, 'iron_ingot'), water = countOf(bot, 'water_bucket');
+  if (countOf(bot, 'cauldron') || !water || iron < CAULDRON_IRON) return null;
+  const table = countOf(bot, 'crafting_table') > 0;
+  const planks = bot.inventory.items().filter(i => /_planks$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const wood = bot.inventory.items().filter(i => /_(log|stem)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
+  if (!table && planks < 4 && !wood) return null;
+  const tableSays = table ? 'a crafting table is carried' : `a crafting table is made first from ${planks >= 4 ? '4 of the planks carried' : 'a log or stem carried (one makes four planks)'} and put down for the craft (one more slot, and a few seconds to put it down and take it up again; not timed in a trial)`;
+  const others = 'an iron pickaxe is 3 of them, an iron sword 2, a chestplate 8';
+  const says = `A cauldron for the fire, made here: ${CAULDRON_IRON} of the ${iron} iron ingots carried in a U at a crafting table (${others}; they are not made back), ${tableSays}, one slot for the cauldron and the water bucket carried (${water}) kept for it; nothing is given and nothing else is needed. What it is for: fire is about 40% of the damage taken in the blaze fights that killed the bot, 44 of 70 blaze deaths were alight at the end, and a fireball that lands costs its hit plus about four ticks of fire (note 631); in the Nether nothing but a cauldron's water puts a burning body out (a poured bucket evaporates there). What it is not: it puts a fire out only where it stands, so it has to be set down near the fight before the bot is alight, or carried and set down when it is (the way set_down_cauldron, offered to the burning body): about a second in the open (put down, filled, lined up, a hop onto its rim and a drop into the bowl; measured on a test server, note 634), the fire burning meanwhile, one cauldron of three levels puts out three fires and stays where it is put, the water bucket is spent filling it (no bucket of water is then left for a fall or the portal cast). Not yet played: no trial has carried the set in the Nether, so there is no record of it putting a fire out in a fight.`;
+  return { iron, water, table, planks, wood, says };
+}
+
 // The valuables and where they could be left: the home's chest in reach (a
 // walk there and back), or a chest put down here when home is too far.
 function valuablesAt(bot, goal) {
@@ -177,4 +202,4 @@ function kitSummary(bot, goal) {
     : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
 }
 
-module.exports = { cauldronSet, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
