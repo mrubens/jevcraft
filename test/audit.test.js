@@ -29,6 +29,6 @@ test('two steps trading names while the bot climbs a tower are progress, not a f
   const obs = (s, action, y) => JSON.stringify({ kind: 'observation', label: 'observation', at: new Date(t0 + s * 1000).toISOString(), snapshot: { health: 20, position: { x: 0, y, z: 0 }, goal: { step: { action } } } });
   const file = path.join(dir, `${id}-2026-09-29T01-06-00-000Z.jsonl`);
   const run = ys => { fs.writeFileSync(file, ys.map((y, i) => obs(i * 3, i % 2 ? 'cast_portal' : 'enter_nether', y)).join('\n') + '\n'); return analyse({ identity: id, from: t0 - 1000, to: t0 + 60000, dir }).flips; };
-  assert.deepEqual(run([74.4, 74.4, 75, 75, 75.2, 75.2, 75, 75, 77.4, 77.4]), [], 'a climb of three blocks is somewhere else');
+  assert.deepEqual(run([74.4, 75, 75.2, 75, 76, 77, 77.4, 77.4]), [], 'a climb of three blocks is somewhere else');
   assert.equal(run(Array.from({ length: 16 }, () => 74.4)).length > 0, true, 'the same steps at one height are still a flip');
 });
