@@ -584,8 +584,20 @@ function takeBackPlace(bot, goal, phase, now = Date.now()) {
   if (!known.length) return { says: `No ${words} is known: its work begins with a search for one.` };
   const k = known[0], l = k.landmark, here = bot.entity.position, dy = Number.isFinite(l.y) ? Math.round(l.y - here.y) : 0;
   const shunned = (goal.fortressSearch?.shunned || []).find(s => Math.hypot(s.x - l.x, s.z - l.z) < 32 && s.until > now);
+  // The place kept is the first brick seen, a footing as often as a floor:
+  // 25585 was told its fortress was "3 blocks off and 2 down", the bricks of
+  // a pier, with its floors 26 up (note 692). The nearest floor mapped is
+  // said beside it.
+  let floor = null;
+  const approached = goal.fortressSearch?.approach?.found;
+  for (const key of [...Object.keys(goal.fortressSearch?.map?.cells || {}), ...(approached ? [`${approached.x},${approached.y},${approached.z}`] : [])]) {
+    const [x, y, z] = key.split(',').map(Number);
+    const d = Math.hypot(x + 0.5 - here.x, z + 0.5 - here.z);
+    if (Math.hypot(x - l.x, z - l.z) <= 128 && (!floor || d < floor.d)) floor = { d, up: y + 1 - Math.floor(here.y) };
+  }
+  const floorSays = floor && Math.abs(floor.up) >= 2 ? `; that is a brick of it, and its nearest floor seen is ${Math.round(floor.d)} block${Math.round(floor.d) === 1 ? '' : 's'} off and ${Math.abs(floor.up)} ${floor.up > 0 ? 'up' : 'down'}` : '';
   return { target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(here.y), z: l.z },
-    says: `The nearest ${words} known is ${k.distance} blocks off${dy ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} at (${l.x}, ${l.z})${shunned ? `; the search left it for ${Math.max(1, Math.ceil((shunned.until - now) / 60000))} more minutes` : ''}.` };
+    says: `The nearest ${words} known is ${k.distance} blocks off${dy ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} at (${l.x}, ${l.z})${floorSays}${shunned ? `; the search left it for ${Math.max(1, Math.ceil((shunned.until - now) / 60000))} more minutes` : ''}.` };
 }
 // Whether a way to a place is found from here: the pathfinder's own look,
 // half a second of it, said as it came out (as nextRungSays does). On 25600
@@ -6724,4 +6736,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };

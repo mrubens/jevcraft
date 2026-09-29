@@ -137,7 +137,8 @@ async function descendPillar(bot, task, goal, save, expected, { combat = false }
 // pool under it. Stops at the height asked for, at a block it must not dig
 // (obsidian, the portal, a chest), or where lava or water is beside the
 // next cell up; the pathfinder takes over from wherever it stops.
-const SCAFFOLD = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'dirt', 'nether_bricks', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'soul_soil'];
+// The hand-dug Nether blocks last (block-stock.js HAND_BLOCKS, note 692).
+const SCAFFOLD = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'dirt', 'nether_bricks', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'tuff', 'soul_soil', 'soul_sand', 'nether_wart_block', 'warped_wart_block', 'shroomlight'];
 const DIGGABLE_ABOVE = /^(netherrack|stone|deepslate|cobblestone|cobbled_deepslate|dirt|gravel|sand|soul_sand|soul_soil|basalt|blackstone|andesite|diorite|granite|tuff|nether_bricks|glowstone|magma_block|crimson_nylium|warped_nylium|nether_quartz_ore|nether_gold_ore|.*_leaves)$/;
 // `canDig` says which blocks overhead may be dug: a climb out of the mine
 // passes its own test, the one its column was looked over by.

@@ -642,13 +642,15 @@ test('the way chosen to a fortress holds while it makes ground, and a failure is
   const { approachFallback } = require('../src/decisions/travel');
   const { bot } = fortressAcrossLava();
   // A pickaxe carried: with none, a staircase no step of which can be dug
-  // by hand from here is not offered (note 687).
+  // by hand from here is not offered (note 687). The stair ends a block
+  // short of the rock's edge: at the edge, over open air, no step toward
+  // it gains and the staircase is not offered there (note 692).
   const carried = bot.inventory.items();
   bot.inventory = { items: () => [...carried, { name: 'stone_pickaxe', count: 1, type: 900 }] };
   const client = jevStub(['tunnel', 'keep_searching']);
   const goal = { fortressSearch: { axis: 1, legs: 3, target: { x: 96, y: 65, z: 0 } } };
   let tunnels = 0;
-  const actions = { client, tunnel: async () => { tunnels++; if (tunnels === 1) { bot.entity.position = new Vec3(3.5, 65, 0.5); return; } throw new Error('No safe way toward (30, 64, 0): lava'); } };
+  const actions = { client, tunnel: async () => { tunnels++; if (tunnels === 1) { bot.entity.position = new Vec3(2.5, 65, 0.5); return; } throw new Error('No safe way toward (30, 64, 0): lava'); } };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(tunnels, 2); assert.equal(client.asked.length, 1, 'held while it made ground');
@@ -876,7 +878,7 @@ test('bricks a block off with the fortress\'s floors seven blocks up are not the
   assert.deepEqual(state.fortress, { distance: 1, height: 7 }, 'the way is to its nearest floor, seven up');
   assert.match(options.pillar_up, /^Pillar straight up 7 blocks to the fortress floor's height \(jump and lay a block under the feet, 64 carried that can be laid, 57 left after[;)]/);
   // Over the lava sea: a push off the top lands beside the column's foot, not on it (mid-208-k-nether-3-fortress-1, note 551).
-  assert.match(options.pillar_up, /On top a push is a fall of up to 24 blocks \(the pillar's 7, then a drop of 17 a block from its foot\), into lava\./);
+  assert.match(options.pillar_up, /On top a push is a fall of up to 24 blocks \(the pillar's 7, then a drop of 17, a block from its foot\), into lava\./);
   assert.equal(goal.step.action, 'find_fortress');
   // Set aside as Jev chose: the legs are asked, and the step is still the search. From the spot it was left, going back is
   // those same ways asked again, and mid-235-q-nether-2 left and took back its fortress every three seconds for a

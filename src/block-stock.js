@@ -161,4 +161,29 @@ function pickaxeWanted(bot, goal, { q = null, method = null, why = '', at = Date
   return true;
 }
 
-module.exports = { pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };
+// The blocks a bare hand digs that drop themselves and stand as a block
+// (the game's rule: a block with no harvest tool drops by hand; netherrack,
+// basalt, blackstone, magma and nether bricks need a pickaxe for any drop).
+// In the Nether: soul sand and soil, the wart blocks and shroomlight. Gravel
+// drops too but falls, and the pillars and spans do not lay it; stems are
+// wood, fetched for a pickaxe (fetch_stems).
+// 25585 (mid-242-gf-fortress-1) stood at y 41 under its fortress's floors, 26
+// up, with no pickaxe, no wood and no blocks, and nothing said whether any
+// block at all could be had there (note 692).
+const HAND_BLOCKS = ['soul_sand', 'soul_soil', 'nether_wart_block', 'warped_wart_block', 'shroomlight'];
+const handBlocksCarried = bot => carriedOf(bot, new RegExp(`^(${HAND_BLOCKS.join('|')})$`));
+// What a hand gets here: the hand-dropping blocks that can be dug from
+// ground walked to, and the words for it. -> { n, sources, found, says }.
+function handGather(bot, { reach = 16, walk = 32 } = {}) {
+  let found = { sources: [], reachable: {}, unreachable: {} };
+  try { found = require('./bridging').spanBlockSources(bot, { reach, walk, names: HAND_BLOCKS }); } catch (_) { /* nothing looked at */ }
+  const n = found.sources.length;
+  const kinds = Object.entries(found.reachable).map(([k, c]) => `${c} ${k.replaceAll('_', ' ')}`).join(', ');
+  const rule = 'netherrack dug by hand takes about 2 seconds a block and drops nothing, and basalt, blackstone and nether bricks drop nothing by hand either (the game\'s rule: they drop only to a pickaxe)';
+  const says = n
+    ? `By hand here: ${rule}; what a hand does get is ${kinds} within ${reach} blocks, dug from ground walked to (they drop by hand and can be laid).`
+    : `Nothing a hand digs within ${reach} blocks drops a block: ${rule}, and no soul sand, soul soil or wart block can be dug from ground walked to here (gravel drops, but falls, and is not laid).`;
+  return { n, sources: found.sources, found, says };
+}
+
+module.exports = { HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };

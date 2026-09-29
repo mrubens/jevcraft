@@ -167,9 +167,13 @@ test('a plan\'s question spent by none good escalates to the rung\'s question, w
   const goal = { kind: 'win', gameProgress: { phase: 'obtain_blaze_rods' }, step: { action: 'find_fortress' } };
   const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'none_good', confidence: 0.7, probabilities: { none_good: 0.7, return_for_blocks: 0.2, leg_east: 0.1 } } } }) };
   const tree = () => ({ return_for_blocks: { description: 'Back to the Overworld for blocks.' }, leg_east: { description: 'A leg east.' } });
-  for (let i = 0; i < 2; i++) await decide('fortress_leg', { client, bot, goal, tree: tree(), state: { height: 70 } });
+  // Note 693: the least bad came to nothing, and the same options from here
+  // are not asked a second time: the question above is, with the none good said.
+  await decide('fortress_leg', { client, bot, goal, tree: tree(), state: { height: 70 } });
+  await assert.rejects(decide('fortress_leg', { client, bot, goal, tree: tree(), state: { height: 70 } }), err => err.name === 'Stalled');
   assert.equal(bot._stalls.stall?.escalated?.to, 'rung_progress');
   assert.equal(bot._stalls.stall?.escalated?.from, 'fortress_leg');
+  assert.match(bot._stalls.stall.escalated.says, /Jev said none of these options was good \(none good 0\.7\); return for blocks was taken as the least bad/);
 });
 
 test('a hold is judged by what it was chosen on: nearer by four, into or out of sight, gone, a shot, a new way, or more damage than priced end it; otherwise it is held on 15, 30, 60 seconds to its cap (note 599)', () => {

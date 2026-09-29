@@ -52,6 +52,7 @@ const { checkAir } = require('../vitals');
 const { stage } = require('../typesafe');
 const repeats = require('./repeats');
 const tried = require('../tried');
+const leastBad = require('./least-bad');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -155,6 +156,7 @@ const HEALING = 'healing is health, hunger, whether health comes back, the food 
 const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFood is the way back through the portal for food; hoglinHunt, the one food of the Nether.';
 const AGAIN = 'sameAnswerAgain, lastAnswersCameToNothing and answersThatCameToNothing are this question\'s recent answers that came to nothing; the same answer again seldom ends differently.';
 const LEDGER = 'An option tried from about here lately says how it ended; waysResting are options left out after coming to nothing here, and when they come back; whatFailedBelow is what the question below tried and why it ended.';
+const LEAST_BAD = 'leastBadLast: at this question\'s last asking Jev said none of its options was good; it says what was taken as the least bad and what came of it.';
 const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet arrived, done or failed; lastIntention is how the last one ended.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 // Off the Overworld the clock is only minutes (note 677): no day comes to
@@ -191,7 +193,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -266,25 +268,32 @@ function pickWhenNoneGood(listed, weights, health) {
   const least = priced.slice().sort((a, b) => soon(a) - soon(b) || (weights[b] || 0) - (weights[a] || 0))[0];
   return { key: least, why: `every priced option takes the ${Math.round(health * 10) / 10} health the bot has or more by its own figures; ${least} takes the least in the next ${EXPOSED_S} seconds (about ${Math.round(soon(least) * 10) / 10})` };
 }
-// Recorded, and an option taken instead (pickWhenNoneGood), walked on down
-// its branch by the question's fallback.
-function noneGood(id, decision, listed, fallback, { bot, goal, state }) {
+// Recorded, and an option taken instead: the least bad (least-bad.js,
+// note 693: a wait or keep-on taken so twice running with nothing changed
+// is passed over for the best other), unless its own price takes the health
+// the bot has (pickWhenNoneGood, note 691), walked on down its branch by the
+// question's fallback.
+function noneGood(id, decision, listed, fallback, { bot, goal, state, last = null }) {
   const weights = decision.judgments?.[0]?.probabilities || {};
-  const { key: best, why } = pickWhenNoneGood(listed, weights, bot?.health);
-  if (why) console.log(`[none good] ${id}: took ${best}, not the next by weight: ${why}`);
-  const node = listed[best];
-  const rest = node?.children ? walk(node.children, fallback || firstOption) : { path: [], action: node };
-  const took = { path: [best, ...rest.path], action: rest.action };
-  recordMissing(id, decision, listed, { bot, goal, state }, { took: took.path, why });
-  console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead`);
-  return { ...decision, ...took, noneGood: true };
+  const keys = Object.keys(listed);
+  const down = k => { const node = listed[k]; return node?.children ? { path: [k, ...walk(node.children, fallback || firstOption).path] } : { path: [k] }; };
+  const safety = pickWhenNoneGood(listed, weights, bot?.health);
+  let path, passedOver = null, why = safety.why;
+  if (why) { path = down(safety.key).path; console.log(`[none good] ${id}: took ${safety.key}, not the next by weight: ${why}`); }
+  else ({ path, passedOver } = leastBad.choose(id, keys, weights, last, k => down(k).path));
+  let node = { children: listed };
+  for (const k of path) node = node.children[k];
+  const took = { path, action: node };
+  recordMissing(id, decision, listed, { bot, goal, state }, { took: took.path, ...(why ? { tookBecause: why } : {}), ...(passedOver ? { passedOver } : {}), ...(last ? { lastLeastBad: last.says } : {}) });
+  console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead${passedOver ? ` (${passedOver})` : ''}`);
+  return { ...decision, ...took, noneGood: true, ...(passedOver ? { passedOver } : {}) };
 }
-function recordMissing(id, decision, listed, { bot, goal, state }, { near = false, took = [], why = null } = {}) {
+function recordMissing(id, decision, listed, { bot, goal, state }, { near = false, took = [], ...more } = {}) {
   const weights = decision.judgments?.[0]?.probabilities || {};
   const keys = Object.keys(listed);
   const entry = { ...(near ? { near: true } : {}), at: new Date().toISOString(), question: id, bot: bot?.username || null, port: bot?._client?.socket?.remotePort ?? null,
     dimension: String(bot?.game?.dimension || '').replace('minecraft:', ''), position: bot?.entity?.position ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) } : null,
-    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took, ...(why ? { tookBecause: why } : {}),
+    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took, ...more,
     options: Object.fromEntries(keys.map(k => [k, typeof listed[k].description === 'string' ? listed[k].description : JSON.stringify(listed[k].description)])), state };
   try {
     const fs = require('fs'), path = require('path');
@@ -477,8 +486,22 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // asked instead, with this one's failure said (escalate).
   const ledgered = !!bot && !!goal && GAMEPLAY_AREAS.has(spec.area) && !UNLEDGERED.has(id);
   let resting = null, below = null;
+  // The least bad taken at the last asking, when Jev said none of its
+  // options was good (least-bad.js, note 693): asked again with the same
+  // options from about here and nothing come of it, the same set is not
+  // asked again: the least bad is held from here and the question above is
+  // asked with the none good said. Else it is said, in the facts and on it.
+  let lastLeastBad = null;
   if (ledgered) {
     tried.settle(bot, goal, { q: id });
+    lastLeastBad = leastBad.before(bot, goal, id, original);
+    if (lastLeastBad?.unchanged && spec.parent && !SAY_ONLY.has(id)) {
+      const why = `${lastLeastBad.says}; the same options from here are not asked again`;
+      delete bot._leastBad[id];
+      tried.hold(bot, goal, id, [lastLeastBad.key], why, { target, targets: { [lastLeastBad.key]: tried.leafAt(original, lastLeastBad.key)?.target } });
+      console.log(`[none good] ${id}: ${why}`);
+      escalateFrom(bot, goal, spec, why);
+    }
     const read = tried.read(bot, goal, id, tree, { target, sayOnly: SAY_ONLY.has(id) });
     if (read.allResting && spec.parent !== undefined && spec.parent !== null) escalateFrom(bot, goal, spec, `every way it had from here rests: ${read.resting.join('; ')}`, { until: read.until });
     tree = read.tree;
@@ -589,7 +612,9 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // stands: the best of the options by that answer's weights is taken, as
   // it was each time, and the question above has been told (below).
   const sit = tracked ? (situation ?? repeats.situation(state, plainOf(tree, original))) : null;
-  const spentHere = tracked ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
+  // The stance's only (note 693): elsewhere a none good changes the next
+  // asking (least-bad.js) instead of the likeliest listed being taken unasked.
+  const spentHere = tracked && !leastBad.applies(id) ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
   if (spentHere) {
     const { key: best } = pickWhenNoneGood(tree, spentHere.weights || {}, bot?.health);
     const node = tree[best];
@@ -630,6 +655,11 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (again || quickly || lately) state = { ...state, ...(again ? { sameAnswerAgain: again.says } : {}), ...(quickly ? { lastAnswersCameToNothing: quickly } : {}), ...(lately ? { answersThatCameToNothing: lately } : {}) };
   }
   if (state && typeof state === 'object' && (resting || below)) state = { ...state, ...(resting ? { waysResting: resting } : {}), ...(below ? { whatFailedBelow: below } : {}) };
+  if (!ledgered && bot && GAMEPLAY_AREAS.has(spec.area)) lastLeastBad = leastBad.before(bot, goal, id, original);
+  if (lastLeastBad) {
+    if (state && typeof state === 'object') state = { ...state, leastBadLast: lastLeastBad.says };
+    if (tried.leafAt(tree, lastLeastBad.key)) tree = leastBad.sayOn(tree, lastLeastBad.key, lastLeastBad.optionSays);
+  }
   if (state && typeof state === 'object' && (underWay || intentionEnded)) state = { ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
   // each question offers; test/decisions.test.js turns it back on).
@@ -682,7 +712,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       if (spec.gate.below === 'fallback') decision = { ...decision, ...walk(tree, fallback) };
     }
     if (goal && bot && !decision.stale) announceFallback(bot, goal, decision);
-    if (!decision.stale && decision.path?.[0] === NONE_GOOD_KEY) decision = noneGood(id, decision, listed, fallback, { bot, goal, state });
+    if (!decision.stale && decision.path?.[0] === NONE_GOOD_KEY) decision = noneGood(id, decision, listed, fallback, { bot, goal, state, last: lastLeastBad });
     // A near flag: "none of these" weighed a quarter or more but not taken.
     // In the replay of mid-227-q's blaze at 1.4 health, cover missing, it was
     // a close second (0.32 against the pillar's 0.37) every time (note 462).
@@ -697,6 +727,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
+  if (bot && client && !decision.stale && decision.path && GAMEPLAY_AREAS.has(spec.area)) leastBad.after(bot, goal, id, original, decision, lastLeastBad);
   // "None of these is good", sure, twice running to the same situation:
   // the question is spent here, and escalates as a resting way does (note
   // 599). The best listed is still carried out meanwhile, so the stall is
@@ -716,7 +747,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
   }
   if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, decision.path), offered: offeredOf(original, target) });
-  if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state });
+  // The least bad is not Jev's choice: it begins no intention (note 693).
+  if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state, chosen: !decision.noneGood });
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');
@@ -726,7 +758,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, ...(dimension ? { dimension } : {}), state, options: JSON.parse(JSON.stringify(tree)),
       ...(client ? { stages: trace.stages } : {}),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
-      stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}) });
+      stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}), ...(decision.passedOver ? { passedOver: decision.passedOver } : {}) });
     goal.decisions = goal.decisions.slice(-40); save();
     // The flight records it now. Its frame used to wait for the next step's
     // report, after the chosen stance had run, and read as seconds of

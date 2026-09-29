@@ -233,6 +233,43 @@ const wayKey = (bot, target, method) => { const h = bot.entity.position; return 
 const wayResting = (bot, goal, target, method) => isSetAside(goal, 'gather_way', wayKey(bot, target, method));
 const WAY_SAYS = { walk: 'on foot', cross: 'straight across', floor: 'down to the floor and along it' };
 
+// A way that ends at the same place again. 25585 (mid-242-gf-fortress-1,
+// 21:02 to 21:36Z on 2026-09-29) asked this question about 60 times on one
+// line at y 41: leg_east from x 897 ended at the basalt past 928, leg_west
+// from there ended at the drop at 897, and each "came nearer", so neither
+// ever rested; walk_to_1 went to the same (897, 41, 74) each time. Where a
+// way (by heading, or by its target and method) has ended within four blocks
+// of one place twice in twenty minutes, that place is where it ends: the way
+// is not offered while that place lies ahead of it (a leg), or is where its
+// survey ends (a walk or crossing), for fifteen minutes after the last, and
+// is said with where, how often and why (note 692).
+const SAME_END = 4, END_WINDOW_MS = 20 * 60000, END_REST_MS = 15 * 60000, END_TIMES = 2;
+const nearEnd = (e, p) => flat(e, p) <= SAME_END && Math.abs(e.y - p.y) < 4;
+function noteEnd(goal, key, p, why, now = Date.now()) {
+  const ends = (goal.gatherEnds || []).filter(e => now - e.at < END_WINDOW_MS);
+  ends.push({ key, x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z), at: now, ...(why ? { why: String(why).slice(0, 100) } : {}) });
+  goal.gatherEnds = ends.slice(-24);
+  return ends.filter(e => e.key === key && nearEnd(e, p)).length;
+}
+// The place a way keeps ending at, where `test` says it would end there
+// again, or null.
+function sameEnd(goal, key, test, now = Date.now()) {
+  const ends = (goal.gatherEnds || []).filter(e => e.key === key && now - e.at < END_WINDOW_MS);
+  for (const e of ends.slice().reverse()) {
+    const same = ends.filter(o => nearEnd(o, e));
+    const last = same.reduce((m, o) => Math.max(m, o.at), 0);
+    if (same.length >= END_TIMES && last + END_REST_MS > now && test(e)) {
+      const why = same.map(o => o.why).filter(Boolean).at(-1);
+      return { at: e, n: same.length, minutes: Math.max(1, Math.round((now - Math.min(...same.map(o => o.at))) / 60000)), rest: Math.max(1, Math.ceil((last + END_REST_MS - now) / 60000)), why };
+    }
+  }
+  return null;
+}
+const sameEndSays = (what, s) => `${what}: ended at the same place, ${at3(s.at)}, ${s.n} times in the last ${plural(s.minutes, 'minute')}${s.why ? ` (${s.why})` : ''}; it goes no further from here, so it rests ${plural(s.rest, 'more minute')}`;
+// Ahead on a heading from here, within a leg's length and four blocks of its line.
+const aheadOn = (here, h, length) => e => { const along = (e.x - here.x) * h[0] + (e.z - here.z) * h[1], side = Math.abs((e.x - here.x) * h[1] - (e.z - here.z) * h[0]); return along >= -1 && along <= length + 8 && side <= SAME_END && Math.abs(e.y - here.y) < 4; };
+const wayEndKey = (target, method) => `${method}>${Math.round(target.x)},${Math.round(target.z)}`;
+
 // Taken: the way chosen, and whether it came nearer. One that came no
 // nearer rests from here and is said as the step's failure.
 async function runWay(bot, task, goal, save, way, method, what, navigate) {
@@ -252,6 +289,7 @@ async function runWay(bot, task, goal, save, way, method, what, navigate) {
     }
   } catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 160); }
   const nearer = before - bot.entity.position.distanceTo(target);
+  if (flat(target, bot.entity.position) > THERE + 1) { noteEnd(goal, wayEndKey(target, method), bot.entity.position, why); save(); }
   if (nearer >= 1) return { nearer: Math.round(nearer) };
   const said = `The way ${WAY_SAYS[method]} to ${what} came no nearer${why ? `: ${why}` : ''}; it rests from here`;
   setAside(goal, 'gather_way', key, said.slice(0, 300), WAY_REST_MS); save();
@@ -373,6 +411,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     for (const method of ['walk', 'cross', 'floor']) {
       if (!offered[method]) continue;
       if (wayResting(bot, goal, place.at, method)) { notOffered.push(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}: came to nothing from here a few minutes ago, resting`); continue; }
+      const endsAt = method === 'walk' ? (way.walk.found ? null : way.walk.end) : method === 'cross' ? way.cross.now.end : null;
+      const same = endsAt ? sameEnd(goal, wayEndKey(place.at, method), e => nearEnd(e, endsAt)) : null;
+      if (same) { notOffered.push(sameEndSays(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}`, same)); continue; }
       const key = `${method}_to_${i + 1}`;
       keys.push(key);
       const how = method === 'walk' ? (way.walk.found ? 'on foot, by the pathfinder\'s route' : `on foot as far as the pathfinder goes (${at3(way.walk.end)}, ${way.walk.nearer} blocks nearer), and the way on asked from there`)
@@ -432,6 +473,8 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const goes = Math.min(...[survey.stoppedAt, survey.runsOut, survey.cells].filter(Number.isInteger));
     if (goes < LEG_FIRST) { legsClosed.push(`leg ${name}: ${goes ? `goes ${plural(goes, 'cell')} at y ${Math.round(here.y)}, then` : `closed at the first cell at y ${Math.round(here.y)},`} ${Number.isInteger(survey.runsOut) && survey.runsOut === goes ? `open air with no floor and ${plural(survey.carried, 'block')} carried to lay` : survey.stoppedBy}`); return; }
     if (wayResting(bot, goal, here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), 'leg')) { legsClosed.push(`leg ${name}: came to nothing from here a few minutes ago, resting`); return; }
+    const same = sameEnd(goal, `leg_${name}`, aheadOn(here, h, LEG));
+    if (same) { legsClosed.push(sameEndSays(`leg ${name}`, same)); return; }
     let forests = [];
     try { forests = biomeRay(bot, RAY_OF[i]).filter(s => /crimson_forest|warped_forest/.test(s.biome)); } catch (_) { forests = []; }
     const seen = coverage.headingCoverage(state, dim, here, h, { length: LEG, bot });
@@ -451,6 +494,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
             catch (err) { task.check(); if (!retryable(err)) throw err; why = `${why ? `${why}; ` : ''}${String(err.message || err).slice(0, 120)}`; }
           }
         }
+        if (flat(target, bot.entity.position) >= 8) { noteEnd(goal, `leg_${name}`, bot.entity.position, why || survey.stoppedBy || 'the walk and the crossing went no further'); save(); }
         if (before - flat(target, bot.entity.position) < 2) {
           const said = `The leg ${name} came no nearer${why ? `: ${why}` : ''}; it rests from here`;
           setAside(goal, 'gather_way', wayKey(bot, target, 'leg'), said.slice(0, 300), WAY_REST_MS); save();
@@ -479,4 +523,4 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   return true;
 }
 
-module.exports = { netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
+module.exports = { noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };

@@ -31,7 +31,7 @@
 const TIMED = {
   fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|seek_fortress_height|blocks_then_cross)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
-  fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round)$/,
+  fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|portal_trip)$/,
   nether_food_kit: /^(restock_food|return_for_food)$/,
   leave_nether: /^(go_back|restock_food)$/,
@@ -101,7 +101,8 @@ const SAYS = [
   [/^fortress_leg\/unwalked_\d+$/, 'Crossing to a part of the fortress not yet walked', 'rods'],
   [/^fortress_leg\/seek_fortress_height$/, 'Digging to the height fortresses stand at', null],
   [/^(fortress_leg|fortress_approach)\/(restock_blocks|blocks_then_cross)$/, 'Digging netherrack for blocks to build with', 'blocks'],
-  [/^fortress_leg\/return_for_blocks$/, 'Going back through the portal for stone to build with', 'blocks'],
+  [/^fortress_approach\/blocks_then_pillar$/, 'Digging blocks to pillar up to the fortress', 'blocks'],
+  [/^(fortress_leg|fortress_approach)\/return_for_blocks$/, 'Going back through the portal for a pickaxe and blocks', 'kit'],
   [/\/fetch_stems$/, 'Fetching stems for a pickaxe', 'pickaxe'],
   [/^fortress_visit\/go_in$/, 'Going into the fortress', 'rods'],
   [/^fortress_visit\/heal_first$/, 'Healing before going into the fortress', 'health'],
@@ -119,7 +120,8 @@ function whySays(bot, goal, kind, state) {
     if (kind === 'food' && Number.isFinite(bot?.food)) return `hunger ${bot.food}, health ${Math.round(bot.health ?? 0)}`;
     if (kind === 'health' && Number.isFinite(bot?.health)) return `health ${Math.round(bot.health)}`;
     if (kind === 'pickaxe') return (bot?.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name)) ? null : 'no pickaxe carried';
-    if (kind === 'blocks') { const n = require('./block-stock').stockSays?.(bot)?.carried; return Number.isFinite(n) ? `${n} carried` : null; }
+    if (kind === 'blocks') { const n = require('./bridging').blocksCarried(bot); return Number.isFinite(n) ? `${n} blocks carried` : null; }
+    if (kind === 'kit') { const bs = require('./block-stock'), n = require('./bridging').blocksCarried(bot); return `${bs.pickaxeCarried(bot) ? 'a pickaxe' : 'no pickaxe'}, ${n} blocks carried`; }
   } catch (_) { /* said without why */ }
   return null;
 }

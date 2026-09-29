@@ -260,7 +260,9 @@ function stairFromHere(bot, goal, target) {
   let choices;
   try { choices = stairChoices(bot, goal, target, { hostiles: false }); } catch (_) { return null; }
   const step = choices.find(c => c.destination.distanceTo(target) < here - 0.1);
-  if (!step) return { gains: false, blocked: blockedSays(choices.blocked) };
+  // A step refused only while something that can push is about is a step
+  // for later, not a wall (note 692).
+  if (!step) return { gains: false, blocked: blockedSays(choices.blocked), ...(Object.keys(choices.blocked || {}).some(k => /something about can push/.test(k)) ? { pushed: true } : {}) };
   const dug = step.clear.map(p => bot.blockAt(p)).filter(b => b && b.boundingBox === 'block');
   // Each step as the first one digs, or at least two cells of the rock
   // underfoot where the first step is open (a stair digs its way).
