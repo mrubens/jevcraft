@@ -10,7 +10,7 @@ The goal is to beat Minecraft from a fresh Survival world with an empty inventor
 
 ## Now: blaze rods
 
-Six rods from a fortress without dying. A few trials have taken one or two. What kills the bot:
+Six rods from a fortress without dying. One trial has taken seven rods (at full health, at a live spawner); others took three to five, and most then died within minutes. Twelve pearls come next, then the End. What kills the bot:
 
 - Blazes at a live spawner. The arena shows walking in and fighting is the only tactic that gets rods; the work is in pricing it honestly and knowing when to leave and heal.
 - Ghast and blaze fireballs pushing the bot off a ledge into lava.
