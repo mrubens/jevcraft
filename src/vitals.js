@@ -957,6 +957,136 @@ function lineAtEnd(bot, at, cell) {
   return seen.length ? ` Its end is in the line of the ${[...new Set(seen.map(e => e.name.replaceAll('_', ' ')))].join(' and the ')}: its fire goes on there.` : ` Its end is out of the line of the ${names.join(' and the ')} from where ${names.length === 1 ? 'it is' : 'they are'} now.`;
 }
 
+// The mobs whose blows reach the body now, for body_way (note 657): a biter
+// at its reach (danger.js atItsReach), and a blaze within three, which
+// swings instead of shooting once within two (the game's BlazeAttackGoal: a
+// blow of six before armour every twenty ticks) and keeps closing. Each is
+// said with where it is from the way the bot faces: a raised shield takes
+// only what comes from the half in front, and the ways out of a body's
+// danger face their own work (the cauldron's cell, the way out), not the
+// mob. mid-243-ch (25581) at 03:33:47Z on 2026-09-29, alight at 17.3 with a
+// blaze 2.3 blocks off behind it, was asked of the fire alone, chose the
+// cauldron, and took six blows at its back a second apart, 17.6 to none,
+// while it lined up on the rim; nothing turned it to the blaze.
+// { says, mobs } or null.
+const BLOW_REACH = 3;
+function blowsAtBody(bot) {
+  if (!bot?.entity?.position) return null;
+  const danger = require('./danger'), ce = require('./combat-estimate');
+  let near = [];
+  try { near = danger.threats(bot, BLOW_REACH + 1); } catch (_) { return null; }
+  const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+  const here = bot.entity.position, yaw = bot.entity.yaw ?? 0, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  const mobs = [];
+  for (const t of near) {
+    const e = t.entity, name = e?.name;
+    if (!e?.position || name === 'creeper') continue;
+    const blaze = name === 'blaze';
+    if (blaze ? t.distance > BLOW_REACH : !(danger.atItsReach(bot, t) && (t.visible || t.distance <= 2))) continue;
+    const m = ce.MOBS[name] || {}, hit = blaze ? ce.FIREBALL.melee : m.hit;
+    if (!(hit > 0)) continue;
+    const dx = e.position.x - here.x, dz = e.position.z - here.z, h = Math.hypot(dx, dz);
+    const off = h < 0.2 ? 0 : Math.round(Math.acos(Math.max(-1, Math.min(1, (dx * fx + dz * fz) / h))) * 180 / Math.PI);
+    mobs.push({ entity: e, name, id: e.id, distance: round(t.distance), off, behind: off >= 90, hit, blow: round(m.ignoresArmour ? hit : ce.afterArmour(hit, worn)), every: m.blowEvery || 1,
+      ...(blaze ? { swingsNow: t.distance <= ce.FIREBALL.meleeReach } : {}) });
+  }
+  if (!mobs.length) return null;
+  const where = k => k.off >= 90 ? `behind the bot (${k.off} degrees from where it faces)` : k.off > 45 ? `to its side (${k.off} degrees from where it faces)` : 'in front of it';
+  const says = 'At arm\'s length now: ' + mobs.map(k => {
+    const said = k.name.replaceAll('_', ' ');
+    const how = k.name === 'blaze'
+      ? `${k.swingsNow ? 'within the two blocks where a blaze swings instead of shooting' : 'a blaze swings instead of shooting once within two blocks, and it keeps closing'}: ${k.hit} a blow before armour, about ${k.blow} through the armour worn, a blow a second`
+      : `about ${k.blow} a blow through the armour worn, a blow ${k.every === 1 ? 'a second' : `every ${k.every} seconds`}`;
+    return `the ${said} ${k.distance} blocks off, ${where(k)}: ${how}, each blow knocking the body back`;
+  }).join('; ') + `. A raised shield takes only what comes from the half in front of where the bot faces${mobs.some(k => k.behind) ? ', so nothing from behind' : ''}; the ways out below face their own work, not the mob, and do not strike it.`;
+  return { says, mobs };
+}
+// What the blows at arm's length come to over a way's seconds: about as
+// many blows as whole seconds pass at each one's pace (the blaze's a second
+// apart, as mid-243-ch's six were).
+function blowsDuring(blows, seconds) {
+  if (!blows?.mobs?.length || !(seconds > 0)) return '';
+  const each = blows.mobs.map(k => ({ k, n: Math.max(1, Math.floor(seconds / k.every)) }));
+  const health = round(each.reduce((s, { k, n }) => s + n * k.blow, 0));
+  const names = blows.mobs.length === 1 ? `the ${blows.mobs[0].name.replaceAll('_', ' ')} is` : 'they are';
+  return ` In its about ${round(seconds)} seconds, about ${each.map(({ k, n }) => `${n} blow${n === 1 ? '' : 's'} from the ${k.name.replaceAll('_', ' ')} ${k.distance} blocks off`).join(' and ')}, about ${health} health through the armour worn, each knocking the body back; and after it ${names} still there, a blow ${blows.mobs.every(k => k.every === 1) ? 'a second' : 'at each one\'s pace'}, until something turns to ${blows.mobs.length === 1 ? 'it' : 'them'}.`;
+}
+// Each way over the same stretch, as the stances are priced (the next
+// fifteen seconds there): the fire left or the strike's seconds, whichever
+// is longer, the blows and the fire each way lets land in it if nothing else
+// turns to the mob. Priced alone, the cauldron's second and a half read one
+// blow against the fire it saves; the blaze at the back went on after it.
+// A strike lands the one struck's third (combat-estimate STRUCK) until it
+// dies, then none; a way that does not strike lets every blow land; a way
+// that puts the fire out ends the fire at its seconds (note 657).
+const PUTS_OUT = new Set(['douse_bucket', 'to_water', 'extinguish_in_cauldron', 'set_down_cauldron']);
+function horizonSays(ways, blows, burn, hp) {
+  const ce = require('./combat-estimate');
+  const strike = ways.strike_at_arm;
+  const span = Math.min(15, Math.ceil(Math.max(burn.fireLeftSeconds || 0, strike?.seconds || 0)));
+  if (!(span > 0)) return;
+  const names = blows.mobs.length === 1 ? `the ${blows.mobs[0].name.replaceAll('_', ' ')}` : 'the mobs at arm\'s length';
+  for (const [key, way] of Object.entries(ways)) {
+    if (key === 'eat_golden_apple' || key === 'drink_fire_resistance') continue;
+    const struck = key === 'strike_at_arm';
+    if (PUTS_OUT.has(key) && !(way.seconds > 0)) continue;
+    const fire = round(Math.min(burn.fireLeftSeconds || 0, PUTS_OUT.has(key) ? way.seconds : span));
+    const landed = blows.mobs.reduce((n, k, i) => n + (struck && i === 0 ? Math.round(Math.min(span, way.seconds) / k.every * ce.STRUCK) : Math.floor(span / k.every)), 0);
+    const hurt = round(blows.mobs.reduce((n, k, i) => n + (struck && i === 0 ? Math.round(Math.min(span, way.seconds) / k.every * ce.STRUCK) : Math.floor(span / k.every)) * k.blow, 0));
+    const all = round(hurt + fire);
+    way.description += ` Over the next ${span} seconds this way${struck ? '' : `, if nothing turns to ${names}`}: about ${all} health, ${landed} blow${landed === 1 ? '' : 's'} (${hurt}) and ${fire} of fire, from ${hp}${all >= hp ? ': more than the bot has' : ''}.`;
+  }
+}
+// Turn to the mob at arm's length and strike it (strike_at_arm, note 657):
+// until it dies, goes past reach, or `seconds` pass; the look is to it, the
+// swing at the weapon's recharge. True when a swing was thrown.
+async function strikeAtArm(bot, task, id, onAction = () => {}, { seconds = 6 } = {}) {
+  const { canStrike, strike, defenseWeapon } = require('./combat');
+  const ce = require('./combat-estimate');
+  const live = () => { const e = bot.entities?.[id]; return e && e.isValid !== false ? e : null; };
+  const first = live();
+  if (!first) return false;
+  onAction({ action: 'out_of_fire', way: 'strike_at_arm', mob: first.name, distance: round(first.position.distanceTo(bot.entity.position)), health: bot.health });
+  bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
+  require('./combat').lowerShield?.(bot);
+  const weapon = defenseWeapon(bot);
+  if (weapon && bot.heldItem?.name !== weapon.name) { try { await bot.equip(weapon, 'hand'); } catch (err) { if (err.name === 'Cancelled') throw err; } }
+  const swingMs = ce.SWING_MS[weapon ? weapon.name.split('_').at(-1) : 'fist'] || ce.SWING_MS.fist;
+  const end = Date.now() + seconds * 1000;
+  let swung = 0;
+  while (Date.now() < end) {
+    task?.check?.();
+    const e = live();
+    if (!e || e.position.distanceTo(bot.entity.position) > BLOW_REACH + 1) break;
+    await bot.lookAt(e.position.offset(0, (e.height || 1.8) / 2, 0), true);
+    if (!canStrike(bot, e)) { await sleep(100); continue; }
+    const wait = swingMs - (Date.now() - (bot._defenseAttackAt || 0));
+    if (wait > 0) { await sleep(Math.min(wait, 150)); continue; }
+    await strike(bot, task, e);
+    swung++;
+    bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+    bot._struck = { id, at: bot._defenseAttackAt };
+  }
+  return swung > 0;
+}
+// The way that answers the blows: offered to a body alight, out of the
+// fire, with a mob at arm's length and a weapon or a fist to strike with.
+function strikeWay(bot, task, onAction, blows, burn, hp) {
+  const k = blows?.mobs?.[0];
+  if (!k) return null;
+  const ce = require('./combat-estimate'), { defenseWeapon } = require('./combat');
+  const weapon = defenseWeapon(bot)?.name || null;
+  const dmg = ce.WEAPONS[weapon]?.[0] ?? 1, health = ce.MOBS[k.name]?.health ?? 20;
+  const swings = Math.ceil(health / ce.afterArmour(dmg, { points: ce.MOBS[k.name]?.armor || 0, toughness: 0 }));
+  const secs = round(swings * ce.swingEvery(weapon));
+  const burnSays = burn.burnsToDeath ? `the fire burns on meanwhile, and at a health a second it outlasts the ${hp} health the bot has` : `the fire burns on meanwhile, a health a second (about ${round(burn.fireLeftSeconds)} seconds of it left)`;
+  // The one struck is knocked back by each swing and lands about a third of
+  // its blows (combat-estimate STRUCK, the bot's recorded fights).
+  const landed = Math.round(secs / k.every * ce.STRUCK);
+  return { description: `Turn to the ${k.name.replaceAll('_', ' ')} ${k.distance} blocks off, ${k.behind ? 'behind the bot, ' : ''}and strike it with the ${weapon ? weapon.replaceAll('_', ' ') : 'fist'}: it has ${health} health, about ${swings} swing${swings === 1 ? '' : 's'}, about ${secs} seconds at the pace the bot's fights go, facing it (a raised shield then faces it too). A mob being struck is knocked back by each swing and lands about a third of its blows (the bot's recorded fights): about ${landed} of them in those seconds, about ${round(landed * k.blow)} health through the armour worn; ${burnSays}. Killed, it strikes no more${k.name === 'blaze' ? ' and drops a rod about half the time' : ''}, and the fire left is asked of then. Asked again when it dies, goes past arm's length, or the seconds are up.`,
+    seconds: secs, run: () => strikeAtArm(bot, task, k.id, onAction, { seconds: secs + 2 }) };
+}
+
 // The cauldron's ways for a body alight (not standing in fire), each with
 // its seconds, what it saves and what is beside it. The measured times are
 // src/cauldron.js's (note 634).
@@ -966,6 +1096,13 @@ function cauldronWays(bot, task, onAction, burn, hp) {
   let plans;
   try { plans = cauldron.plans(bot); } catch (_) { return ways; }
   const shot = shootersAtBody(bot), { fallBeside } = require('./movement');
+  // A blow knocks the body back: off the rim, out of line with the bowl, out
+  // of the cell it goes in from. The steps stop at the first and it is asked
+  // again (cauldron.js struck, note 657).
+  const blows = blowsAtBody(bot);
+  // The steps measured with nothing striking, against the time between blows.
+  const gap = blows ? Math.min(...blows.mobs.map(k => k.every)) : Infinity;
+  const knocked = secs => blows ? `${blowsDuring(blows, secs)} A blow knocks the body off the rim or out of line with the bowl: the steps stop at the first blow that lands and the way is asked again.${secs > gap ? ` The ${round(secs)} seconds were measured with nothing striking; the blows come ${gap === 1 ? 'a second' : `${gap} seconds`} apart, so one is due before the steps are done, and the fire is put out only if the steps finish between two blows.` : ''}` : '';
   const saves = `it saves the ${Math.max(1, Math.round(burn.fireLeftSeconds))} second${Math.round(burn.fireLeftSeconds) === 1 ? '' : 's'} of fire left, about ${burn.burnsToDeath ? `all ${hp} health the bot has` : `${burn.healthItTakes} of the ${hp} health`}`;
   const beside = from => {
     const fall = fallBeside(bot, from);
@@ -976,12 +1113,12 @@ function cauldronWays(bot, task, onAction, burn, hp) {
     const { cell, from, level } = plans.placed;
     const here = bot.entity.position, d = Math.round(Math.hypot(cell.x + 0.5 - here.x, cell.z + 0.5 - here.z) * 10) / 10;
     const secs = Math.round((1.2 + d / 3.5) * 10) / 10;
-    ways.extinguish_in_cauldron = { description: `Step into the cauldron of water ${d} blocks off at (${cell.x}, ${cell.y}, ${cell.z}) (${level} of 3 levels of water): the walk to the cell beside it, then ${body}: about ${secs} seconds from now, burning meanwhile; ${saves}. It costs the cauldron one level of its ${level}, and the way out is a hop, half a second. The Nether's water does not evaporate in a cauldron.${beside(from)}${lineAtEnd(bot, shot, cell)}`,
+    ways.extinguish_in_cauldron = { seconds: secs, description: `Step into the cauldron of water ${d} blocks off at (${cell.x}, ${cell.y}, ${cell.z}) (${level} of 3 levels of water): the walk to the cell beside it, then ${body}: about ${secs} seconds from now, burning meanwhile; ${saves}. It costs the cauldron one level of its ${level}, and the way out is a hop, half a second. The Nether's water does not evaporate in a cauldron.${beside(from)}${lineAtEnd(bot, shot, cell)}${knocked(secs)}`,
       run: () => cauldron.extinguishIn(bot, task, plans.placed, onAction) };
   }
   if (plans.carry) {
     const { cell, from } = plans.carry;
-    ways.set_down_cauldron = { description: `Put the cauldron carried down beside the bot at (${cell.x}, ${cell.y}, ${cell.z}), fill it from the water bucket (${plans.buckets} carried: the bucket is left empty, and no water bucket is left for a fall or the portal cast), and step in: ${body}: about ${cauldron.seconds(cauldron.HOP_SECONDS)} seconds from now in all (measured: the fire out 0.8 to 1 second after the first step, the placing and filling a fraction of a second each), burning meanwhile; ${saves}. What it spends: the water bucket's water (the Nether has none to refill it from) and the cauldron's place in the pack, the cauldron staying where it is put (two levels of water left in it for another fire here, and a pickaxe takes it up again without water); the bucket is carried on empty. The Nether's water does not evaporate in a cauldron.${beside(from)}${lineAtEnd(bot, shot, cell)}`,
+    ways.set_down_cauldron = { seconds: cauldron.HOP_SECONDS, description: `Put the cauldron carried down beside the bot at (${cell.x}, ${cell.y}, ${cell.z}), fill it from the water bucket (${plans.buckets} carried: the bucket is left empty, and no water bucket is left for a fall or the portal cast), and step in: ${body}: about ${cauldron.seconds(cauldron.HOP_SECONDS)} seconds from now in all (measured: the fire out 0.8 to 1 second after the first step, the placing and filling a fraction of a second each), burning meanwhile; ${saves}. What it spends: the water bucket's water (the Nether has none to refill it from) and the cauldron's place in the pack, the cauldron staying where it is put (two levels of water left in it for another fire here, and a pickaxe takes it up again without water); the bucket is carried on empty. The Nether's water does not evaporate in a cauldron.${beside(from)}${lineAtEnd(bot, shot, cell)}${knocked(cauldron.HOP_SECONDS)}`,
       run: () => cauldron.setDownAndIn(bot, task, plans.carry, onAction) };
   }
   return ways;
@@ -1077,6 +1214,14 @@ function fireWays(bot, task, onAction = () => {}) {
   if (apple) ways.eat_golden_apple = eat();
   const potion = drinkWay();
   if (potion) ways.drink_fire_resistance = potion;
+  // A mob at arm's length: turning to it and striking it is a way too, and
+  // every way says what its blows come to meanwhile (note 657).
+  const blows = blowsAtBody(bot);
+  if (blows) {
+    const strikeIt = strikeWay(bot, task, onAction, blows, burn, hp);
+    if (strikeIt) ways.strike_at_arm = strikeIt;
+    horizonSays(ways, blows, burn, hp);
+  }
   // The old rule: the bucket poured where it can be, else (none carried)
   // the water run into, else nothing.
   const first = pours ? 'douse_bucket' : !bucket && pond ? 'to_water' : 'burn_out';
@@ -1332,4 +1477,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

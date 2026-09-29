@@ -47,6 +47,8 @@ const WAYS_NOW = { fire: bot => require('./vitals').inFire(bot) ? null : Object.
 // Looked at no oftener than this (a pond's search is some hundreds of
 // blocks read).
 const RECHECK_MS = 250;
+// A way a blow stopped is said to the questions asked this soon after.
+const STOPPED_SAID_MS = 10000;
 
 const round = n => Math.round(n * 10) / 10;
 // Fire resistance on the body (an enchanted golden apple's, a potion's):
@@ -182,11 +184,19 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   // (a threat, a preemption) are what this answers first.
   const only = { get cancelled() { return task?.cancelled; }, label: task?.label, check() { if (task?.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
   const t0 = Date.now();
+  // What else is hurting the body while it is asked (note 657): a mob at
+  // arm's length and its blows, with where it is from the way the bot
+  // faces; and a way chosen a moment ago that a blow stopped.
+  let blows = null;
+  try { blows = require('./vitals').blowsAtBody(bot); } catch (_) { blows = null; }
+  const stopped = bot?._bodyWayStopped && t0 - bot._bodyWayStopped.at < STOPPED_SAID_MS ? bot._bodyWayStopped : null;
   let decision, by = 'jev';
   try {
     decision = await (decide || require('./decisions').decide)('body_way', { client, bot, task: only, goal, save, tree, watchAir: false,
       context: { ...context, default: keys[0] },
-      state: { condition: key, says: conditionSays(bot, key, facts), health: bot.health, ...lasts(bot, key, facts), ...facts },
+      state: { condition: key, says: conditionSays(bot, key, facts), health: bot.health, ...lasts(bot, key, facts), ...facts,
+        ...(blows ? { atArmsLength: blows.says } : {}),
+        ...(stopped ? { lastWay: `${stopped.way.replaceAll('_', ' ')} was chosen ${round((t0 - stopped.at) / 1000 + stopped.after)} seconds ago and stopped ${stopped.after} seconds in: ${stopped.why}.` } : {}) },
       interrupt: () => { if (Date.now() - t0 >= ASK_MS) throw Object.assign(new Error(`body_way: no answer in ${ASK_MS / 1000} seconds`), { name: 'CutShort' }); } });
   } catch (err) {
     if (err?.name === 'Cancelled') throw err;
@@ -207,7 +217,11 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   // Kept with the ways it was chosen among: one that comes after is asked.
   if (way.hold && (by === 'jev' || by === 'only')) bot._bodyHeld = { key, choice, by, at: Date.now(), until: Date.now() + way.hold * 1000, health: bot.health ?? 20, drop: holdDrop(bot.health), offered: keys };
   else if (bot?._bodyHeld?.key === key) delete bot._bodyHeld;
+  const began = Date.now();
   const acted = await way.run();
+  // A way a mob's blow stopped (cauldron.js struck) is said to the next
+  // question, with what stopped it.
+  if (acted === false && bot?._blowAt > began) bot._bodyWayStopped = { way: choice, at: Date.now(), after: round((bot._blowAt - began) / 1000), why: `a blow from ${bot._blowBy ? `the ${String(bot._blowBy).replaceAll('_', ' ')}` : 'a mob'} at arm's length knocked the body back` };
   return { key: choice, by, acted: acted !== false };
 }
 

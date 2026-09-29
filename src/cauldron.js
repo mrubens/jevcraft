@@ -116,6 +116,15 @@ const yawFor = ([dx, dz]) => Math.atan2(-dx, -dz);
 const frame = d => { const yaw = yawFor(d); return { yaw, fwd: [-Math.sin(yaw), -Math.cos(yaw)], right: [Math.cos(yaw), -Math.sin(yaw)] }; };
 const offsetOf = (bot, cell, v) => { const p = bot.entity.position; return (p.x - (cell.x + 0.5)) * v[0] + (p.z - (cell.z + 0.5)) * v[1]; };
 
+// A mob's blow since `since` (session.js marks each one the server says
+// was a mob's attack): it knocks the body back, off the rim or out of line
+// with the bowl, and the steps are undone. The way stops at it, the keys
+// let go, and body_way asks again with the blows said (note 657): mid-243-ch
+// (25581) lined up on the rim for five seconds under a blaze's six blows at
+// its back, a second apart, from 17.6 to none, and never went in.
+const struck = (bot, since) => (bot?._blowAt || 0) > since;
+const letGo = bot => { bot.clearControlStates?.(); bot.setControlState?.('sneak', false); return false; };
+
 // Put a carried cauldron down at `spot` and fill it from the water bucket.
 async function setDown(bot, task, spot, onAction = () => {}) {
   const cauldron = bot.inventory.items().find(i => i.name === 'cauldron'), bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
@@ -138,7 +147,7 @@ async function setDown(bot, task, spot, onAction = () => {}) {
 
 // In: line the side up with the cauldron's middle at a crouch's steps, hop
 // onto the rim, and step along it a tick at a time until the body drops in.
-async function stepIn(bot, task, plan, onAction = () => {}) {
+async function stepIn(bot, task, plan, onAction = () => {}, since = Date.now()) {
   const { move } = require('./motion');
   const { cell, from, d } = plan;
   const { fwd, right } = frame(d);
@@ -147,13 +156,15 @@ async function stepIn(bot, task, plan, onAction = () => {}) {
   if (Math.floor(start.x) !== from.x || Math.floor(start.z) !== from.z || Math.abs(start.y - from.y) > 0.6) {
     const { navigate } = require('./skills');
     const { goals } = require('mineflayer-pathfinder');
-    try { await navigate(bot, task, new goals.GoalBlock(from.x, from.y, from.z), { timeoutMs: 6000, stallMs: 3000, onFoot: true }); } catch (err) { if (err.name === 'Cancelled') throw err; }
+    try { await navigate(bot, task, new goals.GoalBlock(from.x, from.y, from.z), { timeoutMs: 6000, stallMs: 3000, onFoot: true, stopWhen: () => struck(bot, since) }); } catch (err) { if (err.name === 'Cancelled') throw err; }
   }
   task?.check?.();
+  if (struck(bot, since)) return letGo(bot);
   const aim = () => bot.entity.position.offset(d[0] * 5, 1.6, d[1] * 5);
   // Along the ground, each key a tick or two.
   const pulse = (key, sneak = true) => move(bot, task, { label: 'into_cauldron', keys: [key], sneak, why: sneak ? undefined : 'a step along the cauldron\'s rim', look: aim(), maxMs: 60, tick: 25 });
   for (let i = 0; i < 24; i++) {
+    if (struck(bot, since)) return letGo(bot);
     const across = offsetOf(bot, cell, right);
     if (Math.abs(across) <= WINDOW * 0.75) break;
     await pulse(across < 0 ? 'right' : 'left'); await sleep(90);
@@ -162,14 +173,16 @@ async function stepIn(bot, task, plan, onAction = () => {}) {
   const rim = cell.y + 0.95, inside = () => bot.entity.position.y < cell.y + 0.6 && Math.abs(offsetOf(bot, cell, fwd)) < 0.5 && Math.abs(offsetOf(bot, cell, right)) < 0.5;
   // The hop: up and over the wall, a few ticks; carried on by its own
   // speed it may cross the whole bowl, so it stops at the rim.
+  if (struck(bot, since)) return letGo(bot);
   await move(bot, task, { label: 'into_cauldron', keys: ['forward', 'jump'], sneak: false, why: 'a hop onto the cauldron\'s rim', look: aim(), maxMs: 500, tick: 25,
-    until: () => inside() || (bot.entity.position.y >= rim && offsetOf(bot, cell, fwd) > -0.55) });
+    until: () => inside() || struck(bot, since) || (bot.entity.position.y >= rim && offsetOf(bot, cell, fwd) > -0.55) });
   // Along the rim a tick at a time, forward or back, until the middle of
   // the body is over the hollow and gravity does the rest.
   for (let i = 0; i < 40 && !inside(); i++) {
     task?.check?.();
     await sleep(160);
     if (inside()) break;
+    if (struck(bot, since)) return letGo(bot);
     if (!bot.entity.onGround) continue;
     if (bot.entity.position.y < cell.y + 0.9) break;
     const along = offsetOf(bot, cell, fwd), across = offsetOf(bot, cell, right);
@@ -193,16 +206,19 @@ async function stepOut(bot, task, plan) {
 }
 
 // A filled cauldron's way: to it and in.
-async function extinguishIn(bot, task, plan, onAction = () => {}) {
+async function extinguishIn(bot, task, plan, onAction = () => {}, since = Date.now()) {
   bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
-  const done = await stepIn(bot, task, plan, onAction);
+  const done = await stepIn(bot, task, plan, onAction, since);
   if (done) { try { await stepOut(bot, task, plan); } catch (err) { if (err.name === 'Cancelled') throw err; } }
   return done;
 }
 // A carried cauldron's way: down, filled, in.
 async function setDownAndIn(bot, task, spot, onAction = () => {}) {
+  const since = Date.now();
+  // Put down and filled whatever strikes meanwhile (it takes no footwork,
+  // and a filled cauldron is a way at the next question); the steps in stop.
   if (!await setDown(bot, task, spot, onAction)) return false;
-  return extinguishIn(bot, task, { cell: spot.cell, from: spot.from, d: spot.d }, onAction);
+  return extinguishIn(bot, task, { cell: spot.cell, from: spot.from, d: spot.d }, onAction, since);
 }
 
 // Said for the way's description. The seconds are the measured ones: a
@@ -222,4 +238,4 @@ function says(bot) {
   return parts.length ? ` A cauldron of water puts it out at once too, in the Nether as anywhere, by stepping into it: ${parts.join('; ')}.` : '';
 }
 
-module.exports = { says, levelOf, alight, approachFrom, placedCauldron, placeSpot, plans, setDown, stepIn, stepOut, extinguishIn, setDownAndIn, have, nether, CAULDRON_IRON, NEAR, WINDOW, PLACE_SECONDS, HOP_SECONDS, SPRINT, seconds, frame, yawFor };
+module.exports = { struck, says, levelOf, alight, approachFrom, placedCauldron, placeSpot, plans, setDown, stepIn, stepOut, extinguishIn, setDownAndIn, have, nether, CAULDRON_IRON, NEAR, WINDOW, PLACE_SECONDS, HOP_SECONDS, SPRINT, seconds, frame, yawFor };

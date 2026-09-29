@@ -75,6 +75,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
     // wardenSays): mid-230-n was boomed through its pocket's wall and asked
     // again told nothing of it (note 412).
     if (type === 'sonic_boom') (bot._sonicBooms ||= []).push(Date.now());
+    // A mob's blow at arm's length (not its shot): the body's own ways that
+    // take seconds of footwork stop at it (cauldron.js struck, note 657).
+    if (type === 'mob_attack' || type === 'mob_attack_no_aggro') { bot._blowAt = Date.now(); bot._blowBy = bot.entities?.[packet.sourceCauseId - 1]?.name || null; }
   });
   // When each of the bot's own effects came: mineflayer keeps the length the
   // server sent, and what is left of a poison or a wither is that less the
