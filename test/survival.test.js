@@ -5967,3 +5967,14 @@ test('a bed that cannot be picked up is recorded as left, reported, and fetched 
   assert(carried()); assert.equal(survival.state.bedLeft, undefined);
   assert(actions.some(a => a.action === 'bed_recovered'));
 });
+
+test('a lava way out keeps its route as copies, so the cell and its route save as JSON (mid-242-hb, 2026-09-29)', () => {
+  const { Vec3 } = require('vec3');
+  const { routeOf } = require('../src/survival');
+  const a = new Vec3(0, 64, 0), b = new Vec3(1, 64, 0), c = new Vec3(2, 64, 0);
+  const routes = new Map([['0,64,0', {}], ['1,64,0', { from: a }], ['2,64,0', { from: b }]]);
+  const best = c;
+  best.route = routeOf(routes, best);
+  assert.doesNotThrow(() => JSON.stringify({ start: best }));
+  assert.deepEqual(best.route.map(p => p.x), [1, 2]);
+});
