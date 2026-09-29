@@ -212,6 +212,29 @@ const COUNTS = {
   ranged: { bow: [8, 2, 1, 1, 7.2], snowballs: 0 },
   clock: { began: 163, reached: 82, toFour: { median: 32, p90: 65 }, firstRod: { median: 16, n: 76 }, death: { p25: 32, median: 58, p75: 95 } },
 };
+// A box held against the open, and the lulls (note 691; the flight records of
+// 2026-09-28T00:00Z to 2026-09-29T21:20Z, 952 records, a fight as fights()
+// has it; "boxed" a fight in which the bot held a walled box, the step
+// hold_box, at some time; by a live spawner within 16 in a decision's state
+// and the health the fight began at). [fights, died, brought a rod]. Boxed
+// fights are few: the rows are what they are, not a trial of the box.
+// A lull: 8 seconds or more inside a fight at a spawner with no blaze in the
+// bot's sight within 24.
+const BOXED = { from: '2026-09-28', to: '2026-09-29T21:20Z',
+  spawner: { '>16': { boxed: [15, 5, 4], open: [341, 116, 167] }, '8-16': { boxed: [3, 1, 0], open: [29, 15, 4] }, '<8': { boxed: [1, 0, 0], open: [15, 11, 2] } },
+  none: { '>16': { boxed: [14, 1, 3], open: [276, 32, 82] } },
+  // Minutes of fight time in the open and the health a minute it cost, by the health then.
+  openPerMinute: { '>16': 17.4, '8-16': 20.6, '<8': 18.7 },
+  lulls: { n: 346, medianSeconds: 14, begunFull: 115, healed: 159, boxBuilt: 11, inFightsThatDied: 122 } };
+function boxedSays(health) {
+  const b = BOXED, band = HEALTH_BAND(health), row = b.spawner[band];
+  const r = ([n, died, rod]) => `${n} fights, ${pctOf(died, n)}% died, ${pctOf(rod, n)}% brought a rod`;
+  return ` In the trials' fights at a live spawner begun at ${band === '>16' ? 'over 16' : band === '8-16' ? '8 to 16' : 'under 8'} health (${b.from} to ${b.to}): with a box held ${r(row.boxed)}; in the open ${r(row.open)}; too few boxed fights to tell them apart. In the open a minute of fight cost about ${b.openPerMinute[band]} health.`;
+}
+function lullsSay() {
+  const l = BOXED.lulls;
+  return ` In those fights ${l.n} spells of 8 seconds or more had no blaze in sight (median ${l.medianSeconds} seconds); ${l.begunFull} began at full health, health rose in ${l.healed}, and a box was built or held in ${l.boxBuilt}.`;
+}
 const pctN = (k, n) => `${Math.round(100 * k / n)}%`;
 const countRow = ([n, died, rod, rods, lost]) => `${n} fights, ${pctN(died, n)} died, ${pctN(rod, n)} brought a rod, ${Math.round(rods / n * 10) / 10} rods a fight and ${died ? `${Math.round(rods / died * 10) / 10} rods for each death` : 'no death'}, ${lost} health lost on average`;
 // The bot's stay within sixteen of a live cage, in seconds (a gap of a minute
@@ -308,4 +331,4 @@ function optionSays(bot, key, opts = {}) {
   return row ? ` In the fights of ${ANSWERS_OF.from} to ${ANSWERS_OF.to} after an answer of this kind (${CLASS_SAYS[kind].short}) in a situation like this (${situationSays(s)}): ${answerRowSays(row, s)}.` : '';
 }
 
-module.exports = { COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };
+module.exports = { BOXED, boxedSays, lullsSay, COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };

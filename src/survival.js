@@ -2331,6 +2331,8 @@ class Survival {
     // a line that hits met with the shield, whatever holds the turn
     // (shot-reflex.js, note 676). The latest layer's questions are asked.
     require('./shot-reflex').install(bot, this);
+    // A blaze spawner's tries, seen as they come, for the lull's clock (note 691).
+    require('./spawner-clock').watch(bot);
     if (encounterJudgments(this) || !bot._shotSurvival?.client) bot._shotSurvival = this;
     if (!bot._survivalHurtListener) {
       bot._survivalHurtListener = (entity, source) => {
@@ -4925,6 +4927,9 @@ class Survival {
         ...(danger.some(t => t.entity.name === 'blaze') ? { playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot) } : {}),
         // The blazes about by count, how many can see this cell, the spawner's rule and the rows by count (note 665).
         ...(danger.some(t => t.entity.name === 'blaze') ? { blazeCounts: (() => { try { return require('./blaze-record').entryFacts(bot, { about: danger.filter(t => t.entity.name === 'blaze' && t.visible).map(t => t.entity), cage: require('./blaze-stand').spawnerAt(bot) }).says; } catch (_) { return undefined; } })() } : {}),
+        // The lull by a live spawner: no blaze sees the bot, and the clock of
+        // its next try (spawner-clock.js, note 691).
+        ...(danger.some(t => t.entity.name === 'blaze') ? (l => l ? { lull: l.says } : {})((() => { try { return require('./spawner-clock').lull(bot); } catch (_) { return null; } })()) : {}),
         // Up on the pillar: how the hold has gone (pillar-wait.js, note 590).
         ...(this.lastPillarHold ? { pillarSoFar: this.lastPillarHold.facts } : {}),
         // Gold, where piglins are about and none is worn (note 581).
@@ -4937,7 +4942,9 @@ class Survival {
         ...(blazePlace ? { hereSoFar: scenes.exposureSays(blazePlace) } : {}),
 
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
-      const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
+      // Each stance's price rides with it (not in its words): what the code
+      // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
+      const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.expects ? { expects: o.expects } : {}) }]));
       let decision;
       try {
         // Jev's answer can take seconds, and a creeper's fuse is a second

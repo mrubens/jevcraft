@@ -695,7 +695,13 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   else if (holder?.layer === 'work' && holder.ids) {
     let mobs = [];
     try { mobs = look.mobs(bot, STANCE_NEWCOMER) || []; } catch (_) { /* no world */ }
-    const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || t.distance <= 4) && !holder.ids.includes(t.entity.id));
+    // A build begun in a lull (spawner-clock.js, note 691) is finished: the
+    // kind it was begun against coming out of the spawner is what it is for,
+    // and the build meets its volleys itself. A mob at its reach, a push by a
+    // drop, and the body's own dangers still preempt (below and above).
+    const commit = bot._buildCommit && bot._buildCommit.until > now ? bot._buildCommit : null;
+    const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || t.distance <= 4) && !holder.ids.includes(t.entity.id) &&
+      !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };
   }

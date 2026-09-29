@@ -1,0 +1,125 @@
+{
+ "source": "127_0_0_1-25589-Jev-2026-09-29T21-11-58-525Z.jsonl, encounter_stance at 2026-09-29T21:17:28.131Z",
+ "position": {
+  "x": -151.66654408845136,
+  "y": 81,
+  "z": 166.51635691061597
+ },
+ "yaw": -3.0399203004418522,
+ "health": 20,
+ "food": 20,
+ "inventory": {
+  "oak_log": 4,
+  "bone": 1,
+  "white_wool": 3,
+  "coal": 109,
+  "diamond": 1,
+  "egg": 1,
+  "light_gray_wool": 2,
+  "gray_wool": 1,
+  "leaf_litter": 32,
+  "wooden_hoe": 1,
+  "lapis_lazuli": 9,
+  "stone_axe": 1,
+  "raw_iron": 3,
+  "cooked_mutton": 10,
+  "flint": 1,
+  "gravel": 15,
+  "bucket": 1,
+  "oak_fence": 15,
+  "iron_ingot": 1,
+  "flint_and_steel": 1,
+  "obsidian": 2,
+  "crafting_table": 1,
+  "raw_copper": 7,
+  "water_bucket": 1,
+  "leather": 2,
+  "nether_bricks": 11,
+  "cooked_beef": 1,
+  "gold_ingot": 3,
+  "netherrack": 4,
+  "blaze_rod": 3,
+  "gold_nugget": 23,
+  "white_bed": 1,
+  "iron_sword": 1,
+  "iron_pickaxe": 1
+ },
+ "equipment": {
+  "head": "iron_helmet",
+  "torso": "iron_chestplate",
+  "legs": null,
+  "feet": null,
+  "offhand": "shield"
+ },
+ "blazes": [
+  {
+   "id": 628,
+   "position": {
+    "x": -168.7370341481034,
+    "y": 66,
+    "z": 161.79402361364274
+   },
+   "seen": false
+  },
+  {
+   "id": 1054,
+   "position": {
+    "x": -149.7781234698066,
+    "y": 83,
+    "z": 167.69999998807907
+   },
+   "seen": false
+  },
+  {
+   "id": 1055,
+   "position": {
+    "x": -152.59213763277933,
+    "y": 83,
+    "z": 169.7515176580544
+   },
+   "seen": false
+  },
+  {
+   "id": 1095,
+   "position": {
+    "x": -151.88854622130023,
+    "y": 83.33297156951905,
+    "z": 169.3873237855597
+   },
+   "seen": false
+  }
+ ],
+ "tries": [
+  "2026-09-29T21:16:54.9Z",
+  "2026-09-29T21:17:37.0Z",
+  "2026-09-29T21:18:02.9Z"
+ ],
+ "arrived": "2026-09-29T21:16:27.4Z",
+ "cage": {
+  "x": -152,
+  "y": 83,
+  "z": 168
+ },
+ "answered": [
+  "charge_nearest"
+ ],
+ "weights": {
+  "retreat": 0.14,
+  "box_here": 0.14,
+  "fight": 0.05,
+  "none_good": 0,
+  "dig_down": 0.02,
+  "charge_nearest": 0.17,
+  "break_spawner": 0.06,
+  "back_to_wall": 0.06,
+  "fight_at_spawner": 0.14,
+  "close_in": 0.03,
+  "seal": 0.07,
+  "wait_far_off": 0.04,
+  "keep_working": 0.04,
+  "dig_in_and_fight": 0.02,
+  "bunker": 0.02
+ },
+ "boxHereSaid": "Walk 1 block (about 0.2 seconds) to a cell 3 blocks from the spawner's cage, wall it in at feet and head on all four sides and roof it (8 blocks to place of the 30 carried), leaving one block open at head height toward the spawner, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front, where the shield faces each volley; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window. Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come. Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back. The spawner 3.2 blocks off makes more while the bot is within sixteen of it: up to four tries every ten to forty seconds at a cell within four blocks of its cage, until six are about. Walking there and building takes about 3.8 seconds in their fire with the shield up for each volley (about 0 damage, the burning included); in it, none of the 8 about is in line with the window now. Food can be eaten in it. It is held up to 15 seconds at a time, and asked again then, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight. Measured in the arena with the same kit, this way: against four blazes nine to eleven off round the bot by a live spawner eleven off on a fortress floor over a lava sea (more come from it as the run goes), with an iron helmet and chestplate only, 5 runs: 0 killed, 0 rods carried away, about 31.5 damage a run on the median over about 124.9 seconds, 1 death (built where it stood, eleven from the cage: once whole, holds of 45 seconds took no damage with six to ten blazes about, and nothing came to the window; the damage was the building and what was chosen between holds); against one blaze in the open eight blocks off, with an iron helmet and chestplate only, 5 runs: 0 killed, 0 rods carried away, about 0 damage a run on the median over about 99.6 seconds, no deaths (the blaze shot into the window at the shield and never came). Toward the rods: a kill only if a blaze comes within the sword's reach; 4 rods still needed (the goal wants 7 in all for 13 eyes, 3 carried). In the fights of 2026-09-28 to 2026-09-29T11:38Z after an answer of this kind (cover) in a situation like this (a live blaze spawner within 16, two or three blazes within 16): 27 fights, 6 took a rod after it (22%), 9 died after it (33%). The work (wait at spawner) waits meanwhile: it has waited 48 seconds for these mobs so far. A blaze spawner is 3 blocks off: while a player is within 16 blocks of it, it makes more blazes, up to four at a time every ten to forty seconds, so the mobs here do not run out and do not lose interest while the bot stays within that. Beyond 16 blocks of it no more come; broken with a pickaxe, it makes no more.",
+ "lullStateSaid": "Blazes in sight now: 0; 3 within sixteen blocks, in sight or not, 0 of them with a line to the cell the bot stands in. A live spawner is 3.2 blocks off; the bot has been within sixteen of it 48 seconds, past the median 32 seconds at which a fight there had four or more about. At a live spawner, by the most blazes within sixteen at once in the fight (2026-09-28 to 2026-09-29T11:40Z, 567 fights with blazes): three or fewer, 85 fights, 22% died, 53% brought a rod, 0.9 rods a fight and 4 rods for each death, 13.7 health lost on average; four, 29 fights, 52% died, 41% brought a rod, 0.6 rods a fight and 1.1 rods for each death, 17.8 health lost on average; five or six, 85 fights, 49% died, 40% brought a rod, 0.6 rods a fight and 1.2 rods for each death, 23.7 health lost on average; seven or more, 130 fights, 30% died, 22% brought a rod, 0.4 rods a fight and 1.2 rods for each death, 18.9 health lost on average. With no spawner within sixteen: none or one, 144 fights, 13% died, 22% brought a rod, 0.2 rods a fight and 1.8 rods for each death, 9.1 health lost on average; two or three, 75 fights, 13% died, 36% brought a rod, 0.4 rods a fight and 2.9 rods for each death, 11 health lost on average; four or more, 19 fights, 32% died, 26% brought a rod, 0.4 rods a fight and 1.2 rods for each death, 10.5 health lost on average. Of the fights at a spawner with four or more about, by the nearest the bot came to the cage: within 8 blocks 178 fights, 42% died, 37% brought a rod, 0.6 rods a fight and 1.4 rods for each death, 23.1 health lost on average; 9 to 12 blocks 47 fights, 34% died, 15% brought a rod, 0.2 rods a fight and 0.5 rods for each death, 12.6 health lost on average; 13 to 16 blocks 19 fights, 32% died, 11% brought a rod, 0.1 rods a fight and 0.3 rods for each death, 15.5 health lost on average. The clock: of the 163 fights at a spawner that began with one to three blazes in sight, 82 reached four or more within sixteen, a median 32 seconds after the start (nine in ten within 65); the first rod came a median 16 seconds in (76 fights with four or more); a death at four or more came a median 58 seconds in (a quarter within 32, three quarters within 95). These are the fights the bot played, chosen in states these rows do not hold alike: a row by count is what a fight that got that many came to, not what entering with that many would do. Another spawner, in this fortress or another, is the same rule: its first try is up to four blazes, ten to forty seconds after the bot is within sixteen of it. Ranged, carried now: no bow, 0 arrows, 0 snowballs. A bow is three sticks and three string; string comes from spiders (the Nether has none) and, in the Nether, only from a piglin's barter (about 4 in 100 of its rounds); a fortress's skeletons drop arrows and now and then a bow; a snowball (three damage to a blaze) is dug from snow, which the Nether has none of, and is carried in from the Overworld. In the fights of 2026-09-28 to 2026-09-29T11:40Z 8 of the 567 began with a bow and arrows carried (2 died) and 0 with snowballs."
+}

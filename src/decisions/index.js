@@ -239,25 +239,52 @@ function recentDeaths(bot, goal, now = Date.now()) {
   }));
 }
 
-// Recorded, and the best listed option taken instead: the likeliest by
-// Jev's own weights, walked on down its branch by the question's fallback.
+// The option taken when Jev says none of them is good: the likeliest by
+// Jev's own weights, unless it is priced (a stance's `expects`: the damage
+// it takes over its seconds, by its own figures) at the health the bot has
+// or more. Then the likeliest priced one that is not;
+// and where every priced one does, the one that takes the least in the next
+// seconds (its damage at its own pace over EXPOSED_S, as a hold judges a
+// stance on pace, holds.js), not the next weight down. At 21:18:09Z on
+// 25589 (6.8 health, six blazes by a live spawner) none_good was 0.18 and
+// the code took break_spawner, 0.17, priced 9.6 damage in its first second
+// and a half; leave_and_heal took 9.9 on a 2.1-second walk and then none
+// (note 691). An option with no price is not judged by it. The weights are Jev's where Jev chose;
+// here Jev chose none of them, and the rule is what the code does meanwhile.
+const EXPOSED_S = 15;
+function pickWhenNoneGood(listed, weights, health) {
+  const keys = Object.keys(listed).filter(k => k !== NONE_GOOD_KEY);
+  const byWeight = keys.slice().sort((a, b) => (weights[b] || 0) - (weights[a] || 0));
+  const priced = keys.filter(k => Number.isFinite(listed[k]?.expects?.damage) && Number.isFinite(listed[k]?.expects?.seconds));
+  if (!Number.isFinite(health) || !priced.length) return { key: byWeight[0], why: null };
+  const takes = k => listed[k].expects.damage;
+  const soon = k => takes(k) * EXPOSED_S / Math.max(1, listed[k].expects.seconds);
+  // The next by weight stands unless its own figures take the health.
+  if (!priced.includes(byWeight[0]) || takes(byWeight[0]) < health) return { key: byWeight[0], why: null };
+  const lives = byWeight.filter(k => priced.includes(k) && takes(k) < health);
+  if (lives.length) return { key: lives[0], why: `the likelier ${byWeight.slice(0, byWeight.indexOf(lives[0])).filter(k => priced.includes(k)).join(', ')} priced at the health the bot has or more` };
+  const least = priced.slice().sort((a, b) => soon(a) - soon(b) || (weights[b] || 0) - (weights[a] || 0))[0];
+  return { key: least, why: `every priced option takes the ${Math.round(health * 10) / 10} health the bot has or more by its own figures; ${least} takes the least in the next ${EXPOSED_S} seconds (about ${Math.round(soon(least) * 10) / 10})` };
+}
+// Recorded, and an option taken instead (pickWhenNoneGood), walked on down
+// its branch by the question's fallback.
 function noneGood(id, decision, listed, fallback, { bot, goal, state }) {
   const weights = decision.judgments?.[0]?.probabilities || {};
-  const keys = Object.keys(listed);
-  const best = keys.slice().sort((a, b) => (weights[b] || 0) - (weights[a] || 0))[0];
+  const { key: best, why } = pickWhenNoneGood(listed, weights, bot?.health);
+  if (why) console.log(`[none good] ${id}: took ${best}, not the next by weight: ${why}`);
   const node = listed[best];
   const rest = node?.children ? walk(node.children, fallback || firstOption) : { path: [], action: node };
   const took = { path: [best, ...rest.path], action: rest.action };
-  recordMissing(id, decision, listed, { bot, goal, state }, { took: took.path });
+  recordMissing(id, decision, listed, { bot, goal, state }, { took: took.path, why });
   console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead`);
   return { ...decision, ...took, noneGood: true };
 }
-function recordMissing(id, decision, listed, { bot, goal, state }, { near = false, took = [] } = {}) {
+function recordMissing(id, decision, listed, { bot, goal, state }, { near = false, took = [], why = null } = {}) {
   const weights = decision.judgments?.[0]?.probabilities || {};
   const keys = Object.keys(listed);
   const entry = { ...(near ? { near: true } : {}), at: new Date().toISOString(), question: id, bot: bot?.username || null, port: bot?._client?.socket?.remotePort ?? null,
     dimension: String(bot?.game?.dimension || '').replace('minecraft:', ''), position: bot?.entity?.position ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) } : null,
-    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took,
+    health: bot?.health ?? null, request: goal?.request || null, weights, tookInstead: took, ...(why ? { tookBecause: why } : {}),
     options: Object.fromEntries(keys.map(k => [k, typeof listed[k].description === 'string' ? listed[k].description : JSON.stringify(listed[k].description)])), state };
   try {
     const fs = require('fs'), path = require('path');
@@ -564,8 +591,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   const sit = tracked ? (situation ?? repeats.situation(state, plainOf(tree, original))) : null;
   const spentHere = tracked ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
   if (spentHere) {
-    const keys = Object.keys(tree).filter(k => k !== NONE_GOOD_KEY);
-    const best = keys.slice().sort((a, b) => (spentHere.weights[b] || 0) - (spentHere.weights[a] || 0))[0];
+    const { key: best } = pickWhenNoneGood(tree, spentHere.weights || {}, bot?.health);
     const node = tree[best];
     const rest = node?.children ? walk(node.children, typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : firstOption) : { path: [], action: node };
     return { ...takeOne({ path: [best, ...rest.path], action: rest.action }, `spent here: none of its options was good, ${spentHere.times} times running with these same facts; the best listed taken`), spent: true };
@@ -739,7 +765,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { escalate, withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { pickWhenNoneGood, EXPOSED_S, escalate, withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

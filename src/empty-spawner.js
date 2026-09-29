@@ -96,6 +96,7 @@ function standSite(bot, cage) {
 // The ways, each a real route from here. `actions` as the hunt has them.
 function options(bot, task, goal, save, actions, known, { now = Date.now() } = {}) {
   const { cage, off } = known;
+  const quiet = known.lull || null;
   const { f } = facts(bot, goal, known);
   const tree = {};
   const es = goal.emptySpawner || {};
@@ -114,16 +115,21 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
     const where = site
       ? `a cell ${site.off} blocks from the cage, ${site.steps ? `a ${site.steps}-block walk` : 'where the bot stands'}, ${bot.blockAt(site.cell.offset(0, 2, 0))?.boundingBox === 'block' ? 'under a ceiling' : 'rock at its back'}`
       : `within four blocks of the cage (${off} off now; no covered cell found near it)`;
-    tree.stand_by_spawner = { description: `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail. ${healthSays}`,
+    tree.stand_by_spawner = { description: quiet
+      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built. ${healthSays.replace(row, '')}`
+      : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail. ${healthSays}`,
       run: () => {
         const fs = goal.fortressSearch ||= { legs: 0 };
         fs.spawnerWait = { x: cage.x, y: cage.y, z: cage.z, until: now + STAND_MS, startedAt: now, chosen: 'empty_spawner', ...(site ? { cell: P(site.cell) } : {}) };
         delete fs.spawnerWaitEnded; save?.();
       } };
   }
+  // The lull by a live spawner (note 691): the time before its next try is
+  // the time to prepare. Each way says its seconds against that clock.
+  if (quiet) Object.assign(tree, lullOptions(bot, task, goal, save, actions, known, quiet, { now }));
   const canFeed = f.hunger < 18 && f.points > 0;
   if ((f.health < 20 && f.healable) || canFeed) {
-    tree.heal_first = { description: `${f.items && f.hunger < 20 ? `Eat what is carried (hunger to ${f.eatenTo}) and w` : 'W'}ait here${f.health < 20 && f.healable ? ` until health is full: about ${f.seconds} seconds` : ''}, at most three minutes, then asked again. ${off <= RANGE ? 'Within sixteen of the spawner, as the bot is now, blazes may come meanwhile; a mob ends the wait.' : 'Beyond sixteen of the spawner none come from it meanwhile.'} No rod meanwhile.`,
+    tree.heal_first = { description: `${f.items && f.hunger < 20 ? `Eat what is carried (hunger to ${f.eatenTo}) and w` : 'W'}ait here${f.health < 20 && f.healable ? ` until health is full: about ${f.seconds} seconds` : ''}, at most three minutes, then asked again. ${off <= RANGE ? 'Within sixteen of the spawner, as the bot is now, blazes may come meanwhile; a mob ends the wait.' : 'Beyond sixteen of the spawner none come from it meanwhile.'}${quiet && f.health < 20 && f.healable ? require('./spawner-clock').jobSays(quiet, f.seconds) : ''} No rod meanwhile.`,
       run: () => { goal.emptySpawner = { ...es, pick: 'heal_first', at: now, cage: P(cage) }; save?.(); } };
   }
   if (actions?.returnOverworld && !f.healable) {
@@ -161,6 +167,81 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
   return tree;
 }
 
+// The ways to prepare in a lull (note 691), each a real route from here:
+// the box by the cage or where the bot stands (built out of their fire, then
+// held for the next blazes), a hole in the rock beside the cage, the rods on
+// the ground, out past sixteen, or after the blazes out of sight.
+function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.now() } = {}) {
+  const { cage } = known;
+  const T = require('./blaze-tactics'), stand = require('./blaze-stand'), clock = require('./spawner-clock');
+  const tree = {};
+  const toward = centre(cage), carried = T.blocksCarried(bot);
+  const WALK = 4.3, PLACE = 0.45;
+  const boxWords = (b, at) => {
+    const secs = b.steps / WALK + b.blocks * PLACE + (b.dig ? 1 : 0);
+    const where = b.steps ? `Walk ${b.steps} block${b.steps === 1 ? '' : 's'} to a cell ${at}` : `Where the bot stands, ${at}`;
+    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : 'the box whole already'}, one open at head height toward the spawner, and hold it for its next blazes: only a blaze in line with the window sees in, from the front.${clock.jobSays(quiet, secs)}` };
+  };
+  const box = (key, site) => ({ description: site.words, secs: site.secs,
+    run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'box', site: site.b, key }, site.secs) });
+  if (actions?.navigate) {
+    const atCage = T.boxSite(bot, { cage, from: toward });
+    if (atCage) { const w = boxWords(atCage, `${atCage.off} blocks from the cage, where it puts its blazes beside the box`); tree.box_at_spawner = box('box_at_spawner', { b: atCage, words: w.says + ' Arena: built among four blazes it lost 3 runs of 5, never whole in those.', secs: w.secs }); }
+    const here = T.boxSite(bot, { from: toward });
+    if (here && !(atCage && atCage.cell.equals(here.cell))) { const off = round(Math.hypot(here.cell.x + 0.5 - toward.x, here.cell.z + 0.5 - toward.z)); const w = boxWords(here, `${off} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    // A hole in the rock beside the cage, its mouth toward it: rock behind,
+    // beside and over, only the front open.
+    const pick = bot.inventory?.items?.().some(i => /_pickaxe$/.test(i.name));
+    const hole = pick ? (() => { try { return stand.spawnerHoleSite(bot, cage); } catch (_) { return null; } })() : null;
+    if (hole) {
+      const secs = (hole.steps || 0) / WALK + 2 * 0.75;
+      tree.dig_in_at_spawner = { description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage, the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
+        run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: hole, key: 'dig_in_at_spawner' }, secs) };
+    }
+    // Out past sixteen: the spawner makes none and its delay stops counting.
+    const out = outOfRange(bot, cage);
+    if (out) {
+      const secs = out.steps / WALK;
+      tree.step_out = { description: `Walk ${out.steps} blocks to a cell ${out.off} from the cage, past 16: the spawner makes none and its clock stops. Eat and heal there up to a minute, then asked again.`, secs,
+        run: () => stepOut(bot, task, goal, save, actions, out) };
+    }
+  }
+  // Rods on the ground the hunt's pickup (twelve blocks) left.
+  const rods = Object.values(bot.entities || {}).filter(e => e.getDroppedItem?.()?.name === 'blaze_rod' && e.position?.distanceTo(bot.entity.position) <= 24);
+  if (rods.length && actions?.navigate) tree.pick_up_rods = { description: `Pick up the ${rods.length} blaze rod${rods.length === 1 ? '' : 's'} on the ground, the nearest ${round(Math.min(...rods.map(e => e.position.distanceTo(bot.entity.position))))} blocks off.`,
+    run: async () => { await require('./drop-collection').collectNearbyDrops(bot, task, 'blaze_rod', { radius: 24, timeoutMs: 8000, move: actions.navigate }); } };
+  // The blazes out of sight: the hunt's own stalk.
+  if (quiet.within16 && blazeNear(bot, goal)) tree.hunt_on = { description: `Go after the ${quiet.within16 === 1 ? 'blaze' : `${quiet.within16} blazes`} out of sight within sixteen, as the hunt does.`,
+    run: () => { goal.emptySpawner = { ...(goal.emptySpawner || {}), huntOnUntil: now + HUNT_ON_MS }; save?.(); } };
+  return tree;
+}
+const HUNT_ON_MS = 60000;
+// A cell past sixteen of the cage, the nearest by walking within 40 steps.
+function outOfRange(bot, cage) {
+  try {
+    const c = centre(cage);
+    const cells = require('./blaze-tactics').walkCells(bot, { steps: 40 });
+    const found = cells.find(({ cell }) => cell.offset(0.5, 0.5, 0.5).distanceTo(c) > 17);
+    return found ? { ...found, off: round(found.cell.offset(0.5, 0.5, 0.5).distanceTo(c)) } : null;
+  } catch (_) { return null; }
+}
+// A box or a hole, begun in the lull and finished before anything else: the
+// build is not cut by a blaze coming out of the spawner (arbiter.js), only by
+// a mob at its reach, a push by a drop, the body's own dangers or its own
+// failure; then held as the hunt holds a stand.
+async function buildAndHold(bot, task, goal, save, actions, option, secs) {
+  bot._buildCommit = { until: Date.now() + (secs + 10) * 1000, kinds: ['blaze'], what: option.key };
+  goal.emptySpawner = { ...(goal.emptySpawner || {}), built: { key: option.key, at: Date.now() } }; save?.();
+  try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, option, { item: 'blaze_rod', want: require('./skills').countOf(bot, 'blaze_rod') + 1 }); }
+  finally { delete bot._buildCommit; }
+}
+async function stepOut(bot, task, goal, save, actions, out) {
+  const { goals } = require('mineflayer-pathfinder');
+  goal.step = { action: 'step_out_of_spawner', target: P(out.cell), health: bot.health }; save?.();
+  await actions.navigate(bot, task, new goals.GoalBlock(out.cell.x, out.cell.y, out.cell.z), { timeoutMs: 20000, stallMs: 4000, onFoot: true });
+  goal.emptySpawner = { ...(goal.emptySpawner || {}), pick: 'heal_first', at: Date.now(), cage: goal.emptySpawner?.cage || null }; save?.();
+}
+
 // The heal chosen: eat what is carried, then wait while health comes back.
 // Ends with health full, three minutes, or a mob in sight. -> true while it waits.
 async function rest(bot, task, goal, save, now = Date.now()) {
@@ -191,9 +272,15 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   const client = actions.client || task?.opportunityClient;
   if (!client || process.env.JEV_EMPTY_SPAWNER === '0' || !inNether(bot) || !bot.entity) return false;
   const fs = goal.fortressSearch;
+  // The lull by a live spawner (note 691): blazes about out of sight, none at
+  // reach. Asked then too, unless Jev chose to go after them just now.
+  let quiet = null;
+  { const k = knownSpawner(bot, goal); if (k && k.off <= RANGE) { try { quiet = require('./spawner-clock').lull(bot, { cage: k.cage, now }); } catch (_) { quiet = null; } } }
+  if (quiet && goal.emptySpawner?.huntOnUntil > now) quiet = null;
+  if (quiet && fs?.spawnerWait?.until > now) quiet = null;
   // A blaze the hunt can go at: its own stalk and fights. One come while a
   // stand is held is counted for the stand's end.
-  if (blazeNear(bot, goal)) {
+  if (!quiet && blazeNear(bot, goal)) {
     const w = fs?.spawnerWait;
     if (w?.chosen === 'empty_spawner') { w.came = [...new Set([...(w.came || []), ...Object.values(bot.entities || {}).filter(e => e?.name === 'blaze' && e.position?.distanceTo(bot.entity.position) < HUNT_NEAR).map(e => e.id)])].slice(-12); save?.(); }
     return false;
@@ -210,9 +297,13 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // The trip back chosen goes on as the hunt carries it (leave_nether's hold).
   try { if (require('./game-progress').netherLeaveHeld(goal, 'food', now)) return false; } catch (_) { /* no hold */ }
   if (goal.emptySpawner?.pick === 'heal_first' && await rest(bot, task, goal, save, now)) return true;
+  if (quiet) known.lull = quiet;
   const tree = options(bot, task, goal, save, actions, known, { now });
   if (!Object.keys(tree).length) return false;
   const { state } = facts(bot, goal, known);
+  // In the lull the facts are said once, short (the plain cap, note 672):
+  // health and food are the question's own facts here.
+  if (quiet) { state.lull = quiet.short; state.healing = state.healthComesBack; delete state.healthComesBack; }
   if (goal.emptySpawner?.standRest?.until > now) state.standResting = `the stand rests ${Math.round((goal.emptySpawner.standRest.until - now) / 60000)} more minutes: ${goal.emptySpawner.standRest.why}`;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
@@ -221,7 +312,9 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   if (tree[pick]?.run) await tree[pick].run();
   if (pick === 'stand_by_spawner' && actions.waitAtSpawner) await actions.waitAtSpawner();
   if (pick === 'heal_first') await rest(bot, task, goal, save);
+  // Going after them: the hunt's own stalk this very pass.
+  if (pick === 'hunt_on') return false;
   return true;
 }
 
-module.exports = { atSpawner, options, facts, knownSpawner, blazeNear, rest, KNOWN_NEAR, STAND_MS, REST_MS };
+module.exports = { atSpawner, options, lullOptions, outOfRange, buildAndHold, facts, knownSpawner, blazeNear, rest, KNOWN_NEAR, STAND_MS, REST_MS, HUNT_ON_MS };

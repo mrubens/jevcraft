@@ -631,7 +631,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const blazesInSight = state.entity === 'blaze' ? threats(bot, 24).filter(t => t.entity.name === 'blaze') : [];
   if (blazesInSight.length && !isSetAside(goal, 'hunt_stand', 'blaze')) {
     const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed, of: rodsOf });
-    for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, run: async () => {
+    for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, ...(o.expects ? { expects: o.expects } : {}), run: async () => {
       try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, o, { item: state.item, want: countOf(bot, state.item) + 1 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
     } };

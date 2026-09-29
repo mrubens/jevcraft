@@ -1,0 +1,137 @@
+{
+ "source": "127_0_0_1-25589-Jev-2026-09-29T21-11-58-525Z.jsonl, encounter_stance at 21:18:09.991Z",
+ "health": 6.766665458679199,
+ "food": 20,
+ "weights": {
+  "leave_and_heal": 0.07,
+  "dig_in_and_fight": 0.02,
+  "bunker": 0.02,
+  "charge_nearest": 0.06,
+  "nook": 0.01,
+  "corner_ambush": 0.01,
+  "close_in": 0.02,
+  "break_spawner": 0.17,
+  "box_here": 0.03,
+  "back_to_wall": 0.08,
+  "dig_down": 0.01,
+  "seal": 0.03,
+  "out_of_sight": 0.07,
+  "fight": 0.02,
+  "retreat": 0.1,
+  "none_good": 0.18,
+  "fight_at_spawner": 0.1
+ },
+ "took": [
+  "break_spawner"
+ ],
+ "options": {
+  "fight": {
+   "expects": {
+    "damage": 8.7,
+    "seconds": 10.6
+   },
+   "said": "about 10.6 seconds and 8.7 damage to kill the 2"
+  },
+  "bunker": {
+   "expects": {
+    "damage": 19.5,
+    "seconds": 15
+   },
+   "said": "About 19.5 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "dig_in_and_fight": {
+   "expects": {
+    "damage": 51,
+    "seconds": 16
+   },
+   "said": "About 51 damage from the mobs here in the next 16"
+  },
+  "break_spawner": {
+   "expects": {
+    "damage": 9.6,
+    "seconds": 1.3
+   },
+   "said": "about 1.3 seconds of digging ... About 9.6 damage by then"
+  },
+  "fight_at_spawner": {
+   "expects": {
+    "damage": 8.7,
+    "seconds": 15
+   },
+   "said": "About 8.7 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "back_to_wall": {
+   "expects": {
+    "damage": 8.7,
+    "seconds": 15
+   },
+   "said": "About 8.7 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "close_in": {
+   "expects": {
+    "damage": 29.1,
+    "seconds": 7.2
+   },
+   "said": "About 29.1 damage by then (two blazes at about 3.6 seconds each)"
+  },
+  "charge_nearest": {
+   "expects": {
+    "damage": 19.6,
+    "seconds": 3.6
+   },
+   "said": "about 4 swings of the sword, about 3.6 seconds ... About 19.6 damage by then"
+  },
+  "box_here": {
+   "expects": {
+    "damage": 32.9,
+    "seconds": 23
+   },
+   "said": "8 seconds in their fire (about 32.9 damage), then held fifteen"
+  },
+  "corner_ambush": {
+   "expects": {
+    "damage": 9.9,
+    "seconds": 17.1
+   },
+   "said": "walk 5 blocks (about 2.1 seconds in their fire ... about 9.9 damage) and held fifteen"
+  },
+  "leave_and_heal": {
+   "expects": {
+    "damage": 9.9,
+    "seconds": 12.1
+   },
+   "said": "about 2.1 seconds in their fire, about 9.9 damage, then ten seconds healing at hunger 20"
+  },
+  "out_of_sight": {
+   "expects": {
+    "damage": 13.7,
+    "seconds": 15
+   },
+   "said": "About 13.7 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "nook": {
+   "expects": {
+    "damage": 16.9,
+    "seconds": 15
+   },
+   "said": "About 16.9 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "seal": {
+   "expects": {
+    "damage": 20.9,
+    "seconds": 15
+   },
+   "said": "About 20.9 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "dig_down": {
+   "expects": {
+    "damage": 16.2,
+    "seconds": 15
+   },
+   "said": "About 16.2 damage from the mobs here in the next fifteen seconds this way"
+  },
+  "retreat": {
+   "said": "no price in its words"
+  }
+ }
+}

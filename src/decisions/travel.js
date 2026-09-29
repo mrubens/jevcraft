@@ -96,14 +96,20 @@ define({
 define({
   id: 'empty_spawner', area: 'endgame', parent: 'rung_progress', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   ungated: 'every way offered is a real route from here (the stand is the fortress search\'s wait by a spawner, a minute at a covered cell; the heal eats what is carried and ends at full health, three minutes or a mob; the trip back and the food ways are the ones leave_nether and restock_food run); none refuses anything for health',
-  question: 'A blaze spawner is known here and no blaze is near: take a stand by it for its next blazes, heal or eat first, go back for food, or get food here?',
-  trigger: 'On a blaze hunt in the Nether, each pass with a spawner the fortress map holds (or one in sight) within 48 blocks, not seen broken, and no blaze within 32 that is not set aside; not while a stand or wait by a spawner is going on, a heal chosen here is going on, or the trip back for food is held. The search is not offered: the spawner is the target.',
+  question: 'A blaze spawner is known here and no blaze is near or in sight: take a stand by it for its next blazes, build or dig cover by it first, heal or eat first, pick up rods, step out past sixteen, go after the blazes out of sight, go back for food, or get food here?',
+  trigger: 'On a blaze hunt in the Nether, each pass with a spawner the fortress map holds (or one in sight) within 48 blocks, not seen broken, and no blaze within 32 that is not set aside; or, within 16 of a live cage, no blaze in the bot\'s sight and none within two blocks (where a blaze swings instead of shooting) (the lull between its tries, note 691: spawner-clock.js), unless Jev chose to go after the ones out of sight within the last minute; not while a stand or wait by a spawner is going on, a heal chosen here is going on, or the trip back for food is held. The search is not offered: the spawner is the target.',
   source: 'src/empty-spawner.js (atSpawner, options), src/mob-hunt.js (prepareMobHunt, findFortressStep\'s wait by a spawner)',
   options: [
     { key: 'stand_by_spawner', label: 'take a stand by the spawner and wait for its next blazes, up to a minute', when: 'the stand has not just found no way there; said with the cell (within three of the cage under a ceiling or rock at its back, blaze-stand.js spawnerSite, else within four of the cage), the spawner\'s rule (within sixteen, a try every 10 to 40 seconds, up to 4 within four of the cage, until 6), note 665\'s median 32 seconds to 4 or more, and whether health comes back meanwhile', level: 'root' },
     { key: 'heal_first', label: 'eat what is carried and wait here until health is full, then asked again', when: 'health under 20 and it comes back (hunger 18 or more, or what is carried brings it there), or hunger under 18 with food carried; said with the seconds, and whether blazes may come meanwhile (within sixteen of the spawner)', level: 'root' },
     { key: 'go_back', label: 'go back through the portal to the Overworld for food and come back fed', when: 'in the Nether with the way back at hand and health not coming back here; said with the way out\'s distance and the measured walks back', level: 'root' },
     { key: 'get_food_here', label: 'get food here first, the way asked next (restock_food)', when: 'food carried under eight points or hurt at a hunger where health does not come back, and a way to food is real from here (nether-food.js foodRoutes)', level: 'root' },
+    { key: 'box_at_spawner', label: 'wall the bot in two to four and a half from the cage, one block open toward it at head height, and hold it for its next blazes', when: 'the lull (within sixteen of a live cage, no blaze in sight, none within two), a way to walk, a cell there with ground under each side, no lava beside it and no more blocks than are carried (blaze-tactics.js boxSite); said with the walk, the blocks, the seconds (0.45 a block, 4.3 blocks a second walking) and the chance it is done before the spawner\'s next try by the clock of its last try seen (10 to 40 seconds after it, spawner-clock.js), and what the arena measured; begun, the build is not cut by a blaze coming out of the spawner (arbiter.js _buildCommit), only by a mob at its reach, a push by a drop or the body\'s own dangers; held as the hunt holds a box', level: 'root' },
+    { key: 'box_here', label: 'wall the bot in where it stands (or within eight steps), one block open toward the cage, and hold it', when: 'as box_at_spawner, for a cell within eight steps that is not the one by the cage', level: 'root' },
+    { key: 'dig_in_at_spawner', label: 'dig a hole into the rock beside the cage, its mouth toward it, and hold it for its next blazes', when: 'the lull, a pickaxe carried and rock for such a hole within four and a half of the cage (blaze-stand.js spawnerHoleSite); said with the walk, the seconds and the clock', level: 'root' },
+    { key: 'step_out', label: 'walk out past sixteen blocks of the cage, eat and heal there up to a minute, then be asked again', when: 'the lull and a cell past seventeen from the cage within forty steps of walking; said with the steps and that the spawner makes none and its clock stops while no one is within sixteen', level: 'root' },
+    { key: 'pick_up_rods', label: 'pick up the blaze rods on the ground within twenty-four blocks', when: 'the lull and rods on the ground within twenty-four (the hunt\'s own pickup takes those within twelve first)', level: 'root' },
+    { key: 'hunt_on', label: 'go after the blazes out of sight, as the hunt does', when: 'the lull with a blaze within sixteen out of sight; the question is not asked again for a minute after', level: 'root' },
   ],
   instructions: {
     task: 'A blaze spawner is known here and no blaze is near. Choose what the bot does now.',
@@ -111,6 +117,8 @@ define({
   },
   fallback: children => {
     if (children.heal_first) return 'heal_first';
+    if (children.box_at_spawner) return 'box_at_spawner';
+    if (children.box_here) return 'box_here';
     if (children.stand_by_spawner && !children.go_back) return 'stand_by_spawner';
     return children.go_back ? 'go_back' : children.get_food_here ? 'get_food_here' : Object.keys(children)[0];
   },

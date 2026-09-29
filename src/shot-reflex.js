@@ -267,18 +267,30 @@ function holdRefused(bot) {
 }
 
 // The facing that covers the most of these points in its front half, the
-// soonest first among equals; and those it leaves out.
+// soonest first among equals; and those it leaves out. A point's weight
+// (`w`, 1 by default) is how sure its shot is: a shot already in the air on
+// a line that hits before a warned shooter with a line to the bot, and that
+// before one out of its sight. On 25589 at 21:18:21Z the hold faced four
+// glowing blazes behind rock (within 42 degrees) and turned its back (130
+// degrees) on the one in sight, whose fireball landed through the raised
+// shield, 9 to 5.1; it turned to that one, then back to the four, and the
+// next landed too, 5.1 to 1.2 (note 691).
+const weightOf = p => p.w ?? 1;
+// A shot on its way outweighs any number of warnings; a shooter in sight,
+// the rest of the room behind rock (at most six from one spawner).
+const SHOT_W = 100, SEEN_W = 10;
 function facingFor(bot, points) {
   const here = bot.entity.position;
   const dir = p => Math.atan2(-(p.x - here.x), -(p.z - here.z));
   const diff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  const sum = list => list.reduce((n, q) => n + weightOf(q), 0);
   let best = null;
   for (const p of points) {
     const yaw = dir(p.at);
     const covered = points.filter(q => diff(dir(q.at), yaw) < Math.PI / 2 - 0.15);
-    if (!best || covered.length > best.covered.length) best = { yaw, covered };
+    if (!best || sum(covered) > sum(best.covered)) best = { yaw, covered };
   }
-  const mean = best.covered.reduce((s, q) => s.plus(q.at), new Vec3(0, 0, 0)).scaled(1 / best.covered.length);
+  const mean = best.covered.reduce((s, q) => s.plus(q.at.scaled(weightOf(q))), new Vec3(0, 0, 0)).scaled(1 / sum(best.covered));
   return { point: mean, left: points.filter(p => !best.covered.includes(p)) };
 }
 
@@ -309,7 +321,9 @@ function tick(bot, survival, now = Date.now()) {
       // In sight, or within 24 blocks unseen: a blaze that glows behind a
       // pillar shoots the moment it has a line again, too soon for a
       // question then (the scratch server's blaze, note 676).
-      shooters = threats(bot, 64).filter(t => warnKind(t.entity.name) && (t.visible || t.distance <= 24)).map(t => t.entity);
+      const found = threats(bot, 64).filter(t => warnKind(t.entity.name) && (t.visible || t.distance <= 24));
+      shooters = found.map(t => t.entity);
+      bot._shotInSight = new Set(found.filter(t => t.visible).map(t => t.entity.id));
     } catch (_) { shooters = []; }
     bot._shotShooters = shooters.map(e => e.id);
     const warned = trackWarnings(bot, shooters, now);
@@ -324,7 +338,7 @@ function tick(bot, survival, now = Date.now()) {
   // not: the shield held through a line lost for a moment.
   for (const id of new Set([...(bot._shotShooters || []), ...(bot._shotWarned || [])])) {
     const e = bot.entities?.[id], a = answerFor(bot, id, now);
-    if (e?.position && a?.choice === 'shield_up' && warnDue(bot, e, now)) guard.push({ at: e.position.offset(0, (e.height || 1.8) / 2, 0), why: `answer: shield up to the ${e.name}` });
+    if (e?.position && a?.choice === 'shield_up' && warnDue(bot, e, now)) guard.push({ at: e.position.offset(0, (e.height || 1.8) / 2, 0), why: `answer: shield up to the ${e.name}`, w: bot._shotInSight?.has(id) ? SEEN_W : 1 });
   }
   // A shot in the air on a line that hits.
   for (const s of bot._shots?.values?.() || []) {
@@ -337,7 +351,7 @@ function tick(bot, survival, now = Date.now()) {
     // or take it; the step it chose is what answers it.
     if (a && a.choice !== 'shield_up') continue;
     s.by = a ? 'answer' : 'reflex';
-    guard.push({ at: h.at, why: a ? 'answer: shield up' : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s });
+    guard.push({ at: h.at, why: a ? 'answer: shield up' : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s, w: SHOT_W });
   }
   // Behind the block chosen: walked to while the warning is due or on.
   const cover = coverDue(bot, now);
@@ -401,10 +415,14 @@ function shotOptions(bot, warned) {
   const doing = step ? `the step (${step.replaceAll('_', ' ')})` : 'what the bot is doing';
   const tree = {};
   if (shieldCarried(bot)) {
-    const points = warned.map(e => ({ at: e.position, e }));
-    const { left } = facingFor(bot, points);
+    const inSight = bot._shotInSight || new Set();
+    const points = warned.map(e => ({ at: e.position, e, w: inSight.has(e.id) ? SEEN_W : 1 }));
+    const { left, point } = facingFor(bot, points);
     const secs = Math.max(...warned.map(e => e._shotWarn?.kind === 'blaze' ? require('./blaze-stand').DUE_SECONDS : e._shotWarn?.kind === 'ghast' ? 2 : 1.5));
-    tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after. The shield blocks what comes from the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}. ${blockedSays(bot)}` };
+    const behind = behindSays(bot, point, warned);
+    tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after. The shield blocks only the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}.${behind.says} ${blockedSays(bot)}`,
+      // Split: a warned shooter, or a blaze in sight, outside the half faced.
+      split: left.length > 0 || behind.seeing > 0 };
   }
   const cover = coverCell(bot, warned);
   if (cover) tree.behind_cover = { description: `Step ${cover.steps} block${cover.steps === 1 ? '' : 's'} to (${cover.cell.x}, ${cover.cell.y}, ${cover.cell.z}), out of the line of ${who}, and stay there while the shots come (until about ${round(Math.max(...warned.map(e => WARNS[e._shotWarn.kind].most - (Date.now() - e._shotWarn.at) / 1000)))} seconds from now); ${doing} goes on after.`, cell: cover.cell };
@@ -420,6 +438,25 @@ function shotOptions(bot, warned) {
   const hits = warned.map(e => { const m = MOBS[e.name]; return m ? `the ${e.name}'s about ${round(afterArmour(m.hit, worn))} health a shot${e.name === 'blaze' ? ' (three shots, each setting the bot alight five seconds more, about one health a second)' : ''}` : null; }).filter(Boolean);
   tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land cost ${hits.join('; ') || 'what they cost'}, at ${round(bot.health ?? 20)} health.` };
   return tree;
+}
+// The rest of the room against that facing: the blazes within sixteen, in
+// sight or not, that the half faced leaves out, and how many of those see
+// the bot now (note 691: at 21:18:06 to 08Z on 25589 three blows came from a
+// blaze at 93 to 101 degrees off the facing, and at 21:18:21 a fireball from
+// one at 130 degrees, the shield up each time).
+function behindSays(bot, point, warned = []) {
+  const here = bot.entity?.position;
+  if (!here || !point) return { says: '', out: 0, seeing: 0 };
+  const dir = p => Math.atan2(-(p.x - here.x), -(p.z - here.z));
+  const diff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  const yaw = dir(point);
+  const about = Object.values(bot.entities || {}).filter(e => e?.name === 'blaze' && e.position && e.isValid !== false && e.position.distanceTo(here) <= 16);
+  if (about.length < 2) return { says: '', out: 0, seeing: 0 };
+  const out = about.filter(e => diff(dir(e.position), yaw) >= Math.PI / 2 - 0.15);
+  if (!out.length) return { says: ` All ${about.length} blazes within sixteen are in that half.`, out: 0, seeing: 0 };
+  const inSight = bot._shotInSight || new Set();
+  const seeing = out.filter(e => inSight.has(e.id)).length;
+  return { says: ` Of the ${about.length} blazes within sixteen, ${out.length} ${out.length === 1 ? 'is' : 'are'} outside that half (${seeing ? `${seeing} in sight now` : 'none in sight now'}): the shield does not stop what they send.`, out: out.length, seeing };
 }
 // Seconds until this shooter's first shot.
 function firesIn(bot, e, now = Date.now()) {
@@ -482,7 +519,8 @@ function ask(bot, survival, warned) {
   const until = new Map(warned.map(e => [e.id, e._shotWarn.at + WARNS[e._shotWarn.kind].most * 1000]));
   const record = (choice, by) => { for (const [id, key] of keys) answers.set(id, { key, choice, at: Date.now(), until: until.get(id), ...(choice === 'behind_cover' ? { cell: tree.behind_cover.cell } : {}), by }); };
   // Without Jev (no client, or JEV_ENCOUNTERS=0): the rule, the shield.
-  if (!survival.client || process.env.JEV_ENCOUNTERS === '0') { if (tree.shield_up) record('shield_up', 'rules'); return; }
+  // Split round the bot, a cell out of their line is the rule's answer.
+  if (!survival.client || process.env.JEV_ENCOUNTERS === '0') { const rule = shotRule(tree); if (rule) record(rule, 'rules'); return; }
   const state = shotState(bot, warned);
   const goal = bot._survivalGoal || bot._goal || {}, save = bot._goalSave || (() => {});
   const only = { get cancelled() { return false; }, label: 'shot_answer', check() {} };
@@ -497,6 +535,9 @@ function ask(bot, survival, warned) {
     .catch(() => null)
     .finally(() => { bot._shotAsking = false; });
 }
+// The answer without Jev: the shield, or where the shooters are split round
+// the bot and a cell out of their line is a step off, that cell (note 691).
+const shotRule = tree => tree.shield_up?.split && tree.behind_cover ? 'behind_cover' : tree.shield_up ? 'shield_up' : null;
 // The strike chosen: swings at the shooter while it is in reach and its
 // warning is on, as the weapon's recharge allows.
 async function strikeFirst(bot, id) {
@@ -527,4 +568,4 @@ function install(bot, survival) {
 // shooter's line, strike it first or take its shots.
 const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up'; };
 
-module.exports = { install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };
+module.exports = { shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };
