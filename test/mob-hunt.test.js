@@ -915,7 +915,7 @@ test('on a fortress floor it had left, with blazes seen there forty times and ev
   let { options, state } = client.asked[0];
   assert.equal(Object.keys(state)[0], 'blazesSeen', 'the blazes lead the question');
   assert.match(state.blazesSeen, /^blazes seen 40 times in 1 place; the busiest 40 times at \(-108, 77, 155\) \(6 of them in sight, the rest heard through the walls\), 51 blocks off and 5 up, last 1 minute ago/);
-  assert.match(state.pickaxe, /^none carried: rock and nether bricks cannot be dug/);
+  assert.match(state.pickaxe, /^none carried: rock is dug by hand and drops nothing, about 2 seconds a block of netherrack, 6\.3 a block of basalt, .*10 a block of nether bricks \(with a stone pickaxe 0\.2, 0\.5, 0\.6, 0\.8\)/, 'dug by hand, slowly, not "cannot be dug" (note 669)');
   assert.match(options.go_to_blazes, /^Go to where blazes were seen 40 times at \(-108, 77, 155\)/);
   assert.match(options.back_to_fortress, /Jev chose to leave it and search on.*its floors are walked from where the bot stands\.$/, 'standing on its floors, going back is offered');
   assert.match(options.leg_east, /Lava in the way stops it at cell 2\. The first 2 cells, in order: 2 of open air with a floor, then lava in the way\./);

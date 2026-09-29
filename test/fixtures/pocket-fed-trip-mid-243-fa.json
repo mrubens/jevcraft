@@ -1,0 +1,18 @@
+{
+  "source": "flight record 127_0_0_1-25583-Jev-2026-09-29T10-27-08-580Z (mid-243-fa), pocket_next at 2026-09-29T11:14:11.9Z; note 670",
+  "tripChosenAt": "2026-09-29T10:58:19.4Z",
+  "goOnAt": "2026-09-29T10:58:31.1Z",
+  "sealedAt": "2026-09-29T11:03:02.2Z",
+  "askedAt": "2026-09-29T11:14:11.9Z",
+  "bot": { "position": { "x": 91.49, "y": 35, "z": 22.45 }, "health": 20, "food": 20 },
+  "inventory": { "iron_pickaxe": 1, "stone_pickaxe": 1, "iron_sword": 1, "cooked_beef": 2, "cobblestone": 74, "basalt": 28, "cobbled_deepslate": 50, "dirt": 24, "oak_log": 4 },
+  "equipment": { "head": "iron_helmet", "torso": "iron_chestplate", "legs": "iron_leggings", "feet": "golden_boots", "offhand": "shield" },
+  "mobs": [
+    { "id": 6900, "name": "magma_cube", "position": { "x": 102.2, "y": 31.46, "z": 25.46 } },
+    { "id": 6903, "name": "magma_cube", "position": { "x": 102.46, "y": 32.38, "z": 5.13 } }
+  ],
+  "sealedAgainst": { "choice": "seal", "ids": [6900, 6901, 6903], "mobs": [ { "name": "magma_cube", "distance": 4.3, "visible": true }, { "name": "magma_cube", "distance": 7.2, "visible": true }, { "name": "magma_cube", "distance": 19.9, "visible": true } ] },
+  "fortressFound": { "x": 105, "y": 42, "z": 11 },
+  "portal": { "x": 8, "y": 42, "z": 11, "dimension": "nether" },
+  "recorded": { "leave": "Open the pocket and go on with the way back to the Overworld for food, as Jev chose at 10:58, before this pocket was sealed on it, past a magma cube 12 blocks off", "answers": "stay 13 of 13 asks from 11:03 to 11:16, 0.51 to 0.73" }
+}

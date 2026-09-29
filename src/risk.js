@@ -6,7 +6,7 @@
 // other half of a risk: how likely, and how much it would lose.
 const { threats } = require('./danger');
 const { shooter } = require('./combat');
-const { fightEstimate } = require('./combat-estimate');
+const { fightEstimate, slimeSize } = require('./combat-estimate');
 const { DAY } = require('./day');
 
 // Shooters count out to forty-eight: mid-227-r was told "nothing hostile
@@ -50,7 +50,7 @@ function mobsAbout(bot, radius = 24) {
   let apart = new Set();
   try { apart = require('./danger').noWayIds(bot, about); } catch (_) { apart = new Set(); }
   const reach = about.filter(t => !apart.has(t.entity.id));
-  const estimate = fightEstimate({ threats: [...reach, ...about.filter(t => apart.has(t.entity.id))].slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true, ...(apart.has(t.entity.id) ? { apart: true } : {}) })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+  const estimate = fightEstimate({ threats: [...reach, ...about.filter(t => apart.has(t.entity.id))].slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(slimeSize(t.entity) ? { size: slimeSize(t.entity) } : {}), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true, ...(apart.has(t.entity.id) ? { apart: true } : {}) })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
   return { about, apart, reach, estimate, health };
 }
 

@@ -541,6 +541,22 @@ function netherLeaveHeld(goal, reason, now = Date.now(), { sealedAt = 0 } = {}) 
   return held.until ? held.until > now && rodsRest(goal, reason, now).until === held.until : upTo - held.at < NETHER_LEAVE_MS;
 }
 
+// The trip back for food, held, is the work only while the work would make
+// it: the hunt's rule (mob-hunt.js prepareMobHunt) goes back with hunger
+// under eighteen and nothing safe to eat, unless keep_on set the trip aside.
+// Fed, or with food carried, the work goes on with the rung, and a pocket's
+// leave said as the trip was not what leaving did. mid-243-fa (25583, note
+// 670) chose the trip at 10:58, ate to 20, chose go_on at the food kit, and
+// sat thirteen minutes sealed in 19 blocks from its fortress, the leave told
+// as 84 blocks to the portal with 18 deaths in 181 such walks; stay answered
+// every time.
+function foodTripDrives(bot, goal, now = Date.now(), opts = {}) {
+  if (!netherLeaveHeld(goal, 'food', now, opts)) return false;
+  if ((bot?.food ?? 20) >= 18) return false;
+  if (require('./mob-policy').hasFood(bot)) return false;
+  return !require('./progress').isSetAside(goal, 'nether_return', 'food', now);
+}
+
 // The rods step waits in the Nether: going back, the step taken up again,
 // or other work here till its rest ends, as Jev chooses (leave_nether).
 // Asked once for each rest: "wait here" met again is every way resting,
@@ -899,4 +915,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

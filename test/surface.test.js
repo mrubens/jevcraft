@@ -481,7 +481,7 @@ test('the ways out say what they cost: by hand the stairs take three digs a bloc
   const target = new Vec3(0, 64, 24);
   const byHand = climbOptions(bot, target, straightUpColumn(bot));
   assert.deepEqual(Object.keys(byHand.options).sort(), ['staircase', 'straight_up']);
-  assert.match(byHand.options.staircase.description, /72 blocks dug.*bare hands/);
+  assert.match(byHand.options.staircase.description, /67 blocks dug \(stone\).*bare hands/, "the stairs reach the grass at y 64 before their last digs");
   assert.match(byHand.options.straight_up.description, /24 blocks up, 22 blocks to dig.*64 building blocks carried.*no way back down/);
   assert(byHand.estimate.straight_up < byHand.estimate.staircase / 2, JSON.stringify(byHand.estimate));
   // A pickaxe with twenty uses left: the stairs would wear it out halfway.

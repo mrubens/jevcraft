@@ -362,6 +362,7 @@ function stayKitDue(bot, goal, now = Date.now()) {
   if (!stay.short && !cauldron) return null;
   return { ...stay, cauldron };
 }
+const kitEndsTrip = (goal, pick) => { if (['go_on', 'restock_food', 'raid_bastion'].includes(pick) && goal?.leaveNether?.reason === 'food') delete goal.leaveNether; };
 async function askStayKit(bot, task, goal, save, { actions = {}, survival = null, client = null, now = Date.now() } = {}) {
   const stay = stayKitDue(bot, goal, now);
   if (!stay) return 'go_on';
@@ -388,7 +389,13 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   const decision = await require('./decisions').decide('nether_food_kit', { client: client || actions.client || task.opportunityClient, bot, task, goal, save, tree, state, context: {} });
   if (decision.stale) { delete goal.netherFoodKit; return null; }
   const pick = decision.path.at(-1);
-  goal.netherFoodKit.pick = pick; save?.();
+  goal.netherFoodKit.pick = pick;
+  // A later answer about food ends the trip back chosen before it: go_on,
+  // or food got here. mid-243-fa chose the trip at 10:58:19, its walk found
+  // no route, and at 10:58:31 chose go_on; the trip stayed held and a pocket
+  // told its leave as that trip for thirteen minutes (note 670).
+  kitEndsTrip(goal, pick);
+  save?.();
   if (pick === 'return_for_food') { await found.routes.return_for_food.run(); return pick; }
   if (pick === 'restock_food') { await askRestockFood(bot, task, goal, save, { actions, survival, client, found }); return pick; }
   if (pick === 'raid_bastion') { await found.routes.raid_bastion.run(); return pick; }
@@ -396,5 +403,5 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   return pick;
 }
 
-module.exports = { foodStock, foodNeed, stayFacts, staySays, foodRoutes, restockFoodOption, askRestockFood, askStayKit, makeCauldron, stayKitDue, startFoodHunt, huntHoglin, pillarHuntStep, noteHunt, noteRoute, recordSays, mushroomsIn,
+module.exports = { foodStock, foodNeed, stayFacts, staySays, foodRoutes, restockFoodOption, askRestockFood, askStayKit, kitEndsTrip, makeCauldron, stayKitDue, startFoodHunt, huntHoglin, pillarHuntStep, noteHunt, noteRoute, recordSays, mushroomsIn,
   HUNGER_AN_HOUR, LOW_POINTS, STAY_KIT_MS, PILLAR_RECORD, PILLAR_FROM, PILLAR_WAIT_MS, PILLAR_BLOCKS, CHEST_FOOD, NOT_FOOD, RAW_MEAT };

@@ -1295,6 +1295,39 @@ async function makePickaxe(bot, task, goal, save, actions, pick = pickaxeFirst(b
   } catch (err) { task.check(); if (!retryable(err)) throw err; return `${pick.name} was not made: ${err.message}`; }
   return pickaxeTier(bot) >= 1 ? null : `${pick.name} was not made`;
 }
+// The ways to a pickaxe on the way into a fortress, where none is carried
+// and the ways in dig rock by hand: made here from what is carried, or
+// stems fetched from the Nether's forests for one. The legs offered both
+// (notes 654, 655); the way in did not. Of 1,851 crossings straight at a
+// fortress over two days, 591 were taken with no pickaxe; those that ran
+// came 8.9 blocks nearer a minute against 27.3 with one, and 39 of them had
+// the pickaxe to be made in a few seconds from what was carried (note 669).
+// Each run returns 'pickaxe' when one is carried after, and throws why not.
+const PICKAXE_WAYS = ['make_pickaxe', 'fetch_stems'];
+async function pickaxeWays(bot, task, goal, save, actions, { handSays = '', after = '' } = {}) {
+  const ways = {};
+  if (!actions.acquireStep || pickaxeTier(bot) >= 1) return ways;
+  const pick = pickaxeFirst(bot);
+  if (!pick.carried && !pick.none) {
+    ways.make_pickaxe = { description: `Make ${pick.name} here from what is carried (${pick.from}), a few seconds at a crafting table: with it rock is dug in a fraction of the time it takes by hand, and what is dug comes back as blocks to lay.${handSays} ${after}`.trim(),
+      run: async () => {
+        const unmade = await makePickaxe(bot, task, goal, save, actions, pick);
+        if (unmade) throw new Error(`The pickaxe was not made: ${unmade}`);
+        return 'pickaxe';
+      } };
+  }
+  if (pick.none) {
+    const nw = require('./nether-wood');
+    const fetch = await nw.fetchStemsOffer(bot, task, goal);
+    if (fetch) ways.fetch_stems = { description: `${await fetch.describe()}${handSays} ${after}`.trim(),
+      run: async () => {
+        const done = await nw.fetchStems(bot, task, goal, save, { acquireStep: actions.acquireStep });
+        if (done.unmade) throw new Error(done.unmade);
+        return pickaxeTier(bot) >= 1 ? 'pickaxe' : 'stems';
+      } };
+  }
+  return ways;
+}
 
 // Straight at the fortress with the blocks for it mined here first: the
 // crossing surveyed to its end at the height the bot stands (rock dug,
@@ -1392,15 +1425,29 @@ function restSays(key, r, now = Date.now()) {
   const mins = Math.max(1, Math.round((r.until - now) / 60000));
   return `${kind === 'seek' ? `the staircase toward the fortress heights heading ${name}` : kind === 'floor' ? `the floor below, heading ${name}` : `leg ${name}`}: ended ${Math.round((now - r.at) / 60000)} minutes ago ${r.made ? `${r.made} block${r.made === 1 ? '' : 's'} from where it began` : 'where it began'}, no way on (${r.why}); not offered from here for ${mins} more minute${mins === 1 ? '' : 's'}`;
 }
-// The pickaxe carried, as the ways that dig need it said: a staircase, a
-// tunnel and a crossing through rock dig nothing without one. mid-242-ac-
+// The pickaxe carried, as the ways that dig need it said. mid-242-ac-
 // nether-1's staircase rested "no tool for nether bricks", said only
-// inside a failure (note 557).
+// inside a failure (note 557). With none it was "rock and nether bricks cannot be dug ... a crossing
+// through rock digs nothing", beside a crossing priced "digging 113 blocks of
+// rock ... about 782 seconds" that did dig them, by hand: mid-242-cf-nether-1-
+// fortress-9 crawled at four blocks a minute through basalt for twelve
+// minutes told both (note 669). Rock is dug by hand, slowly, for nothing.
 function pickaxeSays(bot) {
   const picks = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
-  if (!picks.length) return 'none carried: rock and nether bricks cannot be dug, so a staircase, a tunnel or a crossing through rock digs nothing';
+  if (!picks.length) return `none carried: rock is dug by hand and drops nothing, ${handDigSays(bot)}; the staircase digs by hand only rock softer than basalt (netherrack) and stops at harder`;
   const left = i => { const max = bot.registry?.itemsByName?.[i.name]?.maxDurability; return max ? max - (i.durabilityUsed || 0) : null; };
   return picks.map(i => `${i.name.replaceAll('_', ' ')}${left(i) === null ? '' : `, ${left(i)} uses left`}`).join('; ');
+}
+// The game's time to break a block: a block whose drop wants a pickaxe,
+// broken without one, takes its hardness times five seconds; with the
+// pickaxe, ticks of speed / hardness / 30 (a stone pickaxe's speed is 4).
+const digSecondsOf = (hardness, speed = null) => Math.ceil(1 / (speed ? speed / hardness / 30 : 1 / hardness / 100)) / 20;
+const NETHER_ROCK = ['netherrack', 'basalt', 'blackstone', 'nether_bricks'];
+function handDigSays(bot) {
+  const known = NETHER_ROCK.map(n => [n, bot.registry?.blocksByName?.[n]?.hardness]).filter(([, h]) => Number.isFinite(h) && h > 0);
+  if (!known.length) return 'far slower than with a pickaxe';
+  const sec = s => `${Math.round(s * 10) / 10}`;
+  return `about ${known.map(([n, h], i) => `${sec(digSecondsOf(h))}${i ? '' : ' seconds'} a block of ${n.replaceAll('_', ' ')}`).join(', ')} (with a stone pickaxe ${known.map(([, h]) => sec(digSecondsOf(h, 4))).join(', ')})`;
 }
 // Where blazes were seen (the hunt's sightings, rememberSighting), as the
 // search says them and offers the way back: a spawner keeps its room full.
@@ -1831,6 +1878,23 @@ function columnBelow(bot) {
   return { depth: 16, open: true };
 }
 
+// A crossing's rock dug by hand, against the same rock dug with the pickaxe
+// that would be had (the one made from what is carried, else a stone one):
+// `says` for the crossing, `brief` for the ways to the pickaxe.
+function handDigOf(bot, nearest, survey) {
+  const pick = pickaxeFirst(bot);
+  const tool = pick.tool ?? bot.registry?.itemsByName?.stone_pickaxe?.id ?? null;
+  if (tool === null) return null;
+  const withPick = surveyCrossing(bot, nearest, { cells: survey.cells, tool });
+  const hand = Math.round(survey.digSeconds), dug = Math.round(withPick.digSeconds);
+  const name = pick.name || 'a stone pickaxe';
+  const whole = crossingSeconds(withPick);
+  return {
+    says: ` Of its about ${crossingSeconds(survey)} seconds, about ${hand} are the ${survey.dig} blocks of rock dug by hand, none of which drops anything; with ${name} they take about ${dug}, the crossing about ${whole}${pick.none ? ' (none can be made from what is carried: wood is what is short)' : ' (made here from what is carried, a few seconds: make_pickaxe)'}.`,
+    brief: ` The crossing straight at the fortress from here digs ${survey.dig} blocks of rock: about ${crossingSeconds(survey)} seconds by hand, about ${whole} with ${name}.`,
+  };
+}
+
 // Each way to the fortress that can be tried from here, with what it
 // meets. `run` returns why it ended, when it did not throw.
 async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = [], record = state.approach) {
@@ -1838,7 +1902,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
   const inView = threatsInView(bot);
   const options = {};
-  let noRoute = null;
+  let noRoute = null, handDig = null;
   if (actions.navigate) {
     const level = new goals.GoalNear(nearest.x, Math.round(here.y), nearest.z, 4);
     const route = await routeSurvey(bot, task, level, nearest);
@@ -1891,7 +1955,10 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       // fireball's push from the lava, for the rest of the ten minutes).
       const under = Math.round(nearest.y - survey.end.y), left = survey.carried - survey.bridge;
       const climb = under >= 4 ? ` It stays level: it ends ${under} blocks under the nearest brick (y ${Math.round(nearest.y)}), and the ${under} blocks up are still to be made from the end of the span, with ${left} block${left === 1 ? '' : 's'} left${survey.overLava ? ', over the lava it was laid across' : ''}; the way up is asked again from there.` : '';
-      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${risk}${shot}`,
+      // Rock dug by hand is most of a crossing's time: said beside what a
+      // pickaxe makes of it, and the ways to one are offered (pickaxeWays).
+      if (survey.noPickaxe && survey.dig) handDig = handDigOf(bot, nearest, survey);
+      options.cross_level = { description: `${crossingSays(survey, `the fortress, ${where}`)}${climb}${handDig?.says || ''}${risk}${shot}`,
         run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
     }
   }
@@ -1946,6 +2013,11 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const cross = mineThenCrossPlan(bot, goal, nearest, bricks.length ? bricks : [nearest]);
     if (cross) options.blocks_then_cross = { description: mineThenCrossSays(bot, cross, where), run: () => mineThenCross(bot, task, goal, save, actions, state, cross) };
   }
+  // No pickaxe, and a way in that digs rock by hand: the ways to a pickaxe
+  // are ways in of their own, the way in asked again after (note 669).
+  if (handDig || (actions.tunnel && bot.inventory?.items && !require('./block-stock').pickaxeCarried(bot))) {
+    Object.assign(options, await pickaxeWays(bot, task, goal, save, actions, { handSays: handDig ? ` ${handDig.brief}` : '', after: 'The way in is asked again after.' }));
+  }
   if (actions.tunnel) {
     const rest = require('./tunneling').restingSays(goal, nearest, here);
     options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}`,
@@ -1991,7 +2063,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   // And the health in Nether terms, through what is worn: a way that
   // arrives among blazes arrives at it (note 515).
   let hits = null; try { hits = require('./crossing-kit').netherHitSays(bot); } catch (_) { /* no body */ }
-  if (waiting) for (const [key, option] of Object.entries(options)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.${hits && key !== 'keep_searching' ? ` ${hits}` : ''}`;
+  if (waiting) for (const [key, option] of Object.entries(options)) if (!PICKAXE_WAYS.includes(key)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.${hits && key !== 'keep_searching' ? ` ${hits}` : ''}`;
   // What each way came to on this approach, said with it.
   for (const [key, option] of Object.entries(options)) {
     const tries = (record?.failed || []).filter(f => f.choice === key);
@@ -2078,6 +2150,8 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     if (stretch) leaveWay(state, found, stretch.what || 'the place chosen', `the walk there on foot failed: ${stretch.why}`, bot.entity.position);
     save(); return 'Jev chose to leave this way for now';
   }
+  // A pickaxe had is what the way was for: the way in is asked again with it.
+  if (PICKAXE_WAYS.includes(pick) && pickaxeTier(bot) >= 1) { delete approach.choice; delete approach.until; save(); return null; }
   // Closer counts; a shuffle along the shelf does not.
   if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return null; }
   approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
@@ -2364,9 +2438,15 @@ async function goToStep(bot, task, goal, save, actions, state) {
 async function goToWay(bot, task, goal, save, actions, state) {
   const g = state.goTo, target = new Vec3(g.x, g.y, g.z);
   goal.step = { action: 'find_fortress', goingTo: { x: g.x, y: g.y, z: g.z, kind: g.kind }, legs: state.legs || 0 }; save();
-  // Floors across a gap are reached when stood on; blazes when near.
-  const near = g.kind === 'unwalked' ? 2.5 : GO_TO_NEAR;
-  const close = () => target.distanceTo(bot.entity.position) <= near;
+  // Floors across a gap are reached when stood on: at their height, a step
+  // from the cell; blazes when near. Within 2.5 blocks from the cell's
+  // corner was "reached" from a block under the floor two across: 25598's
+  // crossing dug by hand for seven minutes to a fortress floor a block up,
+  // was "reached it" three times in three seconds without a step, and left
+  // the fortress for the next bricks forty-eight blocks off (note 669).
+  const close = g.kind === 'unwalked'
+    ? () => { const p = bot.entity.position; return Math.abs(p.y - target.y) < 0.75 && Math.hypot(p.x - target.x - 0.5, p.z - target.z - 0.5) <= 1.5; }
+    : () => target.distanceTo(bot.entity.position) <= GO_TO_NEAR;
   let why = null;
   if (!close() && actions.navigate) {
     try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, g.kind === 'unwalked' ? 1 : 4), { timeoutMs: 60000, stallMs: 8000, passing: true, onFoot: true }); }

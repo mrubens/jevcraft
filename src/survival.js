@@ -8095,7 +8095,12 @@ class Survival {
       const offWorld = !/overworld/.test(String(bot.game?.dimension || 'overworld'));
       // The minutes sealed in on it are not the trip's (note 597), and
       // leaving to go on with it is choosing it again: its clock starts over.
-      const foodTrip = offWorld && require('./game-progress').netherLeaveHeld(goal, 'food', Date.now(), { sealedAt: this.state.pocketWait?.since })
+      // Only while the work would make that trip (foodTripDrives, note 670):
+      // fed, or with food carried, leaving goes on with the rung, and the
+      // leave says so and why.
+      const tripOpts = { sealedAt: this.state.pocketWait?.since };
+      const tripHeld = offWorld && require('./game-progress').netherLeaveHeld(goal, 'food', Date.now(), tripOpts);
+      const foodTrip = tripHeld && require('./game-progress').foodTripDrives(bot, goal, Date.now(), tripOpts)
         ? { renew: () => { if (goal.leaveNether) { goal.leaveNether.at = Date.now(); save(); } }, to: `go on with the way back to the Overworld for food, as Jev chose at ${new Date(goal.leaveNether.at).toISOString().slice(11, 16)}${this.state.pocketWait?.since > goal.leaveNether.at ? ', before this pocket was sealed on it' : ''}`,
           says: ` ${require('./game-progress').portalTrip(bot, goal)} ${waiting ? `${waiting.charAt(0).toUpperCase()}${waiting.slice(1)}` : 'The work'} waits till the bot is fed and back.` } : null;
       const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
@@ -8119,7 +8124,7 @@ class Survival {
       const quietSays = heldOff.says(bot, quietOut);
       const pricedOut = outsideAll.filter(t => !quietOut.some(x => x.t === t));
       if (quietSays && options.stay) options.stay.description += quietSays;
-      const outCost = pricedOut.length ? fightEstimate({ threats: pricedOut.map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true })),
+      const outCost = pricedOut.length ? fightEstimate({ threats: pricedOut.map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true })),
         armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere : null;
       // The creepers too: mid-83-i left past three creepers and two
       // skeletons told "2.5 damage", the creepers left out of the sum, and
@@ -8209,7 +8214,19 @@ class Survival {
           if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'tunnel_from_warden' };
           return this.tunnelOut(task, goal, save, refuge, wardenAbout, away);
         } };
-      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : ''}${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
+      // The trip held but not driving the work: said, so the leave is not
+      // read as the trip (note 670).
+      const tripNot = tripHeld && !foodTrip ? ` The trip back to the Overworld for food Jev chose at ${new Date(goal.leaveNether.at).toISOString().slice(11, 16)} is not what leaving does now: ${(bot.food ?? 20) >= 18 ? `hunger is ${bot.food}` : require('./mob-policy').hasFood(bot) ? 'food is carried' : 'going on without it was chosen'}, so the work goes on here, and food is asked about again when it is short.` : '';
+      // Where the work goes from here, by the rung's own measure (rung-
+      // measure.js parts): the fortress, the blazes seen, the cage, the
+      // portal. mid-243-fa sat thirteen minutes sealed in 19 blocks from its
+      // fortress, the leave naming only "the obtain blaze rods step".
+      const workWhere = foodTrip ? '' : (() => {
+        let rp = {}; try { rp = require('./rung-measure').parts(bot, goal, { rung: goal.rungTime?.phase || '' }); } catch (_) { rp = {}; }
+        const near = ['fortress', 'blazes', 'cage', 'portal'].map(k => Object.entries(rp).find(([key]) => key.startsWith(`${k}@`))?.[1]).filter(Boolean);
+        return near.length ? ` From here that work is ${near.map(x => `${x.what} ${Math.round(x.v)} blocks off`).join(', ')}.` : '';
+      })();
+      options.leave = { description: `Open the pocket and ${foodTrip ? foodTrip.to : `go back to ${waiting || 'work'}`}${night ? ' in the dark, where mobs spawn' : ''}${who ? `, past ${who}` : ''}.${foodTrip ? foodTrip.says : `${workWhere}${tripNot}`}${night && below ? ` ${BELOW_NIGHT}` : ''}${lidSays}${doorsSay}${outSays}${outHealth}` + wardenSays(bot) + placeSays + (waitSays?.leave || ''),
         run: async () => {
           delete this.state.watchedSince;
           // Out at night is a plan for a while, not a moment: without it the
