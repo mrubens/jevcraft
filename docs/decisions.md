@@ -918,7 +918,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **An animal whose drop the bot is short of is in view: chase it briefly, or carry on?**
 
-- When: Every third step with a sheep (fewer than three wool carried) or a chicken (fewer than four feathers) in view.
+- When: Every third step with a sheep in view and fewer than three wool carried (chickens and pigs are never hurt).
 - Batched question, choice; stakes low; ledger kind `pickup`
 - Bar: none
 - Jev unreachable: no detour: an error or a five-second timeout is swallowed and the main step carries on

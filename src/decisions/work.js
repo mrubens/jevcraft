@@ -519,10 +519,10 @@ define({
 define({
   id: 'opportunistic_animal', area: 'resources', kind: 'pickup', primitive: 'choice', stakes: 'low',
   question: 'An animal whose drop the bot is short of is in view: chase it briefly, or carry on?',
-  trigger: 'Every third step with a sheep (fewer than three wool carried) or a chicken (fewer than four feathers) in view.',
+  trigger: 'Every third step with a sheep in view and fewer than three wool carried (chickens and pigs are never hurt).',
   source: 'src/opportunistic-pickups.js (animalCandidates)',
   unreachable: 'no detour: an error or a five-second timeout is swallowed and the main step carries on',
-  build: ({ options }) => require('../typesafe').choice('Standing instruction: an animal in view whose drop the bot is short of is worth a short chase, even when it is not an ingredient of the current request. These candidates already pass checks for isolation, safe footing, health and a twelve-block radius; the chase is bounded and the main request resumes afterward. Wool is the next bed; feathers are the next quiver of arrows. Choose continue if the player explicitly said no detours/only the requested item, or if the request is urgent.', {
+  build: ({ options }) => require('../typesafe').choice('Standing instruction: an animal in view whose drop the bot is short of is worth a short chase, even when it is not an ingredient of the current request. These candidates already pass checks for isolation, safe footing, health and a twelve-block radius; the chase is bounded and the main request resumes afterward. Wool is the next bed. Choose continue if the player explicitly said no detours/only the requested item, or if the request is urgent.', {
     ...options, continue: 'Keep working on the requested task without a detour.',
   }),
 });
