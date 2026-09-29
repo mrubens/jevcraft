@@ -49,11 +49,26 @@ const WAYS_NOW = { fire: bot => require('./vitals').inFire(bot) ? null : Object.
 const RECHECK_MS = 250;
 
 const round = n => Math.round(n * 10) / 10;
-// Fire resistance on the body (an enchanted golden apple's): lava and
-// burning do not hurt while it lasts.
-function fireResistant(bot) {
+// Fire resistance on the body (an enchanted golden apple's, a potion's):
+// lava and burning do not hurt while it lasts. Counted here, where lava is
+// weighed as harmless or deadly, only with half a minute or more of it left
+// (fire-resistance.js SURE_SECONDS: a swim out and the fifteen seconds of
+// burning after lava); less, the lava is counted as it is without it
+// (note 656). An effect whose time the server did not give is counted.
+function fireResistant(bot, now = Date.now()) {
   const e = bot?.registry?.effectsByName?.fire_resistance || bot?.registry?.effectsByName?.FireResistance;
-  return !!e && !!bot.entity?.effects?.[e.id];
+  const on = !!e && bot.entity?.effects?.[e.id];
+  if (!on) return false;
+  if (!Number.isFinite(on.duration) || on.duration < 0) return true;
+  const fr = require('./fire-resistance');
+  return fr.left(bot, now) >= fr.SURE_SECONDS;
+}
+
+// Alight out of the fire: the fire resistance left outlasts the fire left on
+// the body, so the burning does nothing (note 656).
+function outlastsBurning(bot) {
+  const s = require('./fire-resistance').left(bot);
+  return s > 0 && s >= require('./combat-estimate').burnLeft(bot) + 1;
 }
 
 // How long the body lasts at the rate it is losing health now.
@@ -64,7 +79,7 @@ function lasts(bot, key, facts = {}) {
     const breath = require('./vitals').breathSeconds(bot, air);
     return { breathSeconds: round(breath), thenLosesPerSecond: RATE.drowning, secondsToDeath: round(breath + Math.max(0, hp / RATE.drowning)) };
   }
-  if ((key === 'lava' || key === 'fire' || key === 'hot_floor') && fireResistant(bot)) return { losesPerSecond: 0, fireResistance: true, secondsToDeath: null };
+  if ((key === 'lava' || key === 'fire' || key === 'hot_floor') && (fireResistant(bot) || (key === 'fire' && !inFire && outlastsBurning(bot)))) return { losesPerSecond: 0, fireResistance: true, secondsToDeath: null };
   // The hot floor's hurt is cut by the armour worn, as lava's is: the
   // magma took 0.7 a time off mid-242-aa-nether-3 in an iron helmet and
   // chestplate (note 579).
@@ -106,7 +121,7 @@ const hurtHalfSecond = facts => Number.isFinite(facts.hurt) ? facts.hurt : 1;
 function conditionSays(bot, key, facts = {}) {
   const l = lasts(bot, key, facts);
   const hp = round(bot.health ?? 20);
-  if (l.fireResistance) return `${key === 'lava' ? 'In lava' : key === 'hot_floor' ? `On a ${String(facts.floor || 'hot floor').replaceAll('_', ' ')}` : facts.inFire ? 'Standing in fire' : 'Alight'} at ${hp} health, with fire resistance on the body: it does not hurt while that lasts.`;
+  if (l.fireResistance) return `${key === 'lava' ? 'In lava' : key === 'hot_floor' ? `On a ${String(facts.floor || 'hot floor').replaceAll('_', ' ')}` : facts.inFire ? 'Standing in fire' : 'Alight'} at ${hp} health, with fire resistance on the body (${(() => { const s = require('./fire-resistance').left(bot); return s > 0 ? `about ${Math.round(s)} seconds left, running down` : 'its time not given'; })()}): it does not hurt while that lasts.`;
   switch (key) {
     case 'lava': return `In lava at ${hp} health: it takes about ${l.losesPerSecond} health a second ${l.throughArmourWorn ? 'through the armour worn (fire protection not counted)' : 'before armour'}, about ${l.secondsToDeath} seconds to death at that rate; once out, the body burns on up to ${BURNS_AFTER.lava} seconds at a health a second unless put out in water.`;
     case 'fire': return facts.inFire
@@ -128,7 +143,7 @@ function conditionSays(bot, key, facts = {}) {
 // fire in no fact of it (note 595). With the way out left be, when it is
 // asked again.
 function burningSays(bot) {
-  if (!(bot?.entity?.metadata?.[0] & 1) || fireResistant(bot)) return null;
+  if (!(bot?.entity?.metadata?.[0] & 1) || fireResistant(bot) || outlastsBurning(bot)) return null;
   let standing = false; try { standing = require('./vitals').inFire(bot); } catch (_) { /* no world */ }
   const hp = round(bot.health ?? 20);
   const h = bot._bodyHeld?.key === 'fire' ? bot._bodyHeld : null;
@@ -196,4 +211,4 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   return { key: choice, by, acted: acted !== false };
 }
 
-module.exports = { answer, held, holdDrop, burningSays, lasts, conditionSays, fireResistant, RATE, BURNS_AFTER, ASK_MS, HOLD_HEALTH };
+module.exports = { answer, held, holdDrop, burningSays, lasts, conditionSays, fireResistant, outlastsBurning, RATE, BURNS_AFTER, ASK_MS, HOLD_HEALTH };

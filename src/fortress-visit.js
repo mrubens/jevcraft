@@ -72,6 +72,7 @@ function facts(bot, goal, ctx = {}) {
     worn: worn.length ? worn.map(words) : 'no armor', weapon: weapon ? words(weapon) : 'no sword or axe', shield: bot.inventory?.slots?.[45]?.name === 'shield',
     ...(need != null ? { rodsStillNeeded: need, rodsTheGoalWants: eyeSays(bot, goal) } : {}),
     blazesInSightNow: blazesInSight(bot),
+    fireResistance: require('./fire-resistance').says(bot),
     playedRecord: recordSays(bot),
     aboutTheRecord: `One day's record (${DAY}'s trials, note 631). The health rows and the hunger rows were counted separately: there is no row for both. Each is what happened to bots that began a fight there, not what getting to a better row first would do; a bot that began healthy may differ in other ways.`,
   };
@@ -135,12 +136,56 @@ function options(bot, task, goal, save, actions, ctx = {}) {
     }
   }
 
+  // Fire resistance (note 656): drunk before going in where a potion is
+  // carried, or bartered for where gold and a piglin are at hand.
+  Object.assign(tree, fireOptions(bot, task, goal, save, actions, ctx));
+
   // Another fortress: where the one in view can be left.
   if (ctx.leave) {
     tree.leave_fortress = { description: `Leave this fortress for ten minutes and search for another one (${ctx.fortress ? `this one is ${ctx.fortress.distance} blocks off` : 'the fortress in view'}). It changes nothing about health or hunger (health ${round(f.health)}, hunger ${f.hunger}: ${f.healable || f.health >= 20 ? 'as they stand' : 'nothing comes back on the way'}) and the next fortress begins this question again from the same row unless something on the way changes it. It gains no rod, and the search is the minutes the trials' fortress searches took.`,
       run: async () => { ctx.leave(); } };
   }
   return tree;
+}
+
+// The walk to the fortress in view at a walk's pace, for what the
+// effect's minutes cover.
+const WALK_PER_SECOND = 4.3;
+// The fire resistance options: each a real route from here, priced with
+// the potion's minutes against the walk ahead and the barter's odds from the
+// game's table (fire-resistance.js). Offered while the effect is not on for
+// a minute more.
+const FIRE_OFFER_BELOW = 60;
+function fireOptions(bot, task, goal, save, actions = {}, ctx = {}) {
+  const fr = require('./fire-resistance'), out = {};
+  const left = fr.left(bot);
+  if (left >= FIRE_OFFER_BELOW) return out;
+  const walk = ctx.fortress ? Math.round(Math.hypot(ctx.fortress.distance || 0, ctx.fortress.height || 0) / WALK_PER_SECOND) : 0;
+  const ahead = ctx.fortress ? `the fortress is about ${walk} seconds' walk off at a walk's pace (more with climbing and a way to find), and the effect runs down on the way` : 'the blazes are close: the fight begins within seconds';
+  const have = fr.carried(bot);
+  if (have.length) {
+    const p = have[0], count = have.reduce((n, x) => n + (x.item.count || 1), 0);
+    out.drink_fire_resistance = { description: `${p.kind === 'drink' ? 'Drink' : 'Throw at the feet'} ${fr.kindSays(p)} now, then go in (the way in and each fight asked as they come): ${fr.clock(p.seconds)} of fire resistance from now; ${ahead}. ${fr.WHAT} ${count} fire resistance potion${count === 1 ? '' : 's'} carried; one used here is not there for a later fight or a fall into lava.${left > 0 ? ` About ${Math.round(left)} seconds of it are on the body now; drinking sets it to the potion's length, it does not add.` : ''}`,
+      run: async () => {
+        goal.step = { action: 'drink_fire_resistance', kind: p.kind, before: 'fortress_visit' }; save();
+        return fr.drink(bot, task, p);
+      } };
+    return out;
+  }
+  const nether = dimensionOf(bot) === 'nether';
+  const b = require('./bartering');
+  let ready = false; try { ready = nether && b.barterReady(bot, goal) && (b.dressed(bot) || !!actions.acquireStep); } catch (_) { ready = false; }
+  if (ready) {
+    const gold = b.barterGold(bot);
+    const odds = fr.barterOdds(gold.throwable);
+    out.barter_fire_resistance = { description: `Before going in, barter with the piglins about for a fire resistance potion: ${fr.barterSays(gold.throwable)} ${gold.dressed ? 'A gold piece is worn or carried, as a barter needs.' : 'Golden boots are made from four ingots first and worn, or the piglins turn on the bot.'} Three piglins a round, each admiring its ingot about eight seconds, so about ${Math.ceil(Math.min(gold.throwable, odds.expectedIngots) / 3) * 10} seconds for the throws an average potion takes, and it stops at the first potion, when the gold is gone, or when no piglin is in view; the gold thrown is gone either way (the pearls it brings kept). Then this visit is asked again, with what was bartered. It gains no rod meanwhile. ${fr.clock(fr.POTIONS[11].seconds)} of fire resistance a potion, running from when it is drunk.`,
+      run: async () => {
+        const r = await b.barterForFireResistance(bot, task, goal, save, actions);
+        goal.step = { action: 'barter_fire_resistance_done', thrown: r.thrown, firePotions: r.firePotions, pearls: r.pearls, why: r.why }; save();
+        return r.firePotions > 0;
+      } };
+  }
+  return out;
 }
 
 // Whether the held answer still stands: no death since, hunger not two
@@ -205,8 +250,20 @@ async function ask(bot, task, goal, save, actions = {}, ctx = {}, now = Date.now
   save();
   if (pick === 'go_in') return 'go_in';
   if (pick === 'heal_first') return (await rest(bot, task, goal, save)) ? 'acted' : 'go_in';
+  // Drunk, the visit goes on as go_in, held as that; bartered, it is asked
+  // again with what the barter brought (note 656).
+  if (pick === 'drink_fire_resistance') {
+    try { await tree[pick].run(); } catch (err) { task.check?.(); if (['NeedsAir', 'Cancelled'].includes(err?.name)) throw err; }
+    goal.fortressVisit = { ...goal.fortressVisit, pick: 'go_in', after: 'drank fire resistance' }; save();
+    return 'go_in';
+  }
+  if (pick === 'barter_fire_resistance') {
+    try { await tree[pick].run(); } catch (err) { task.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err; }
+    delete goal.fortressVisit; save();
+    return 'acted';
+  }
   if (tree[pick]?.run) await tree[pick].run();
   return 'acted';
 }
 
-module.exports = { ask, facts, options, fitness, stands, rest, rowThen, PILLAR, HOLD_MS, HUNGER_DROP, HURT_DROP };
+module.exports = { ask, facts, options, fireOptions, FIRE_OFFER_BELOW, fitness, stands, rest, rowThen, PILLAR, HOLD_MS, HUNGER_DROP, HURT_DROP };

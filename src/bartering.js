@@ -18,8 +18,15 @@ const { setAside, isSetAside } = require('./progress');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // What is picked up afterwards. The rest (gravel, blackstone, spectral
-// arrows, leather) fills pockets for nothing and is left lying.
+// arrows, leather, water bottles) fills pockets for nothing and is left
+// lying. A potion of fire resistance, plain or splash, is kept whatever the
+// barter was for: it makes a blaze's fire nothing for three minutes
+// (fire-resistance.js, note 656); a water bottle is the same item name and
+// is told apart by what it holds.
 const KEEP = new Set(['ender_pearl', 'obsidian', 'string', 'fire_charge', 'quartz', 'soul_sand', 'iron_nugget', 'enchanted_book']);
+const fireResistance = () => require('./fire-resistance');
+const keeps = item => !!item && (KEEP.has(item.name) || fireResistance().isFireResistance(item));
+const firePotions = bot => fireResistance().carried(bot).reduce((n, p) => n + (p.item.count || 1), 0);
 const ADMIRE_MS = 8000, PER_ROUND = 3, SEARCH = 32;
 const GOLD_PIECES = ['golden_helmet', 'golden_chestplate', 'golden_leggings', 'golden_boots'];
 const nether = bot => /nether/.test(String(bot.game?.dimension || ''));
@@ -89,7 +96,7 @@ async function barterStep(bot, task, goal, save, actions = {}) {
   }
   if (!ingots(bot)) throw new Error('No gold to barter with');
   if (!await wearGold(bot, task, goal, save, actions)) throw new Error('No gold to wear: piglins will not barter with a player in no gold');
-  const pearlsBefore = countOf(bot, 'ender_pearl');
+  const pearlsBefore = countOf(bot, 'ender_pearl'), potionsBefore = firePotions(bot);
   const round = piglins(bot, goal).slice(0, PER_ROUND);
   if (!round.length) throw new Error('No adult piglin in view to barter with');
   const state = goal.barter ||= { thrown: 0, pearls: 0 };
@@ -112,12 +119,14 @@ async function barterStep(bot, task, goal, save, actions = {}) {
     setAside(goal, 'barter_piglin', piglin.id, 'admiring', ADMIRE_MS);
     goal.step = { action: 'barter', piglin: piglin.id, thrown: state.thrown, pearls: countOf(bot, 'ender_pearl'), ingotsLeft: ingots(bot) }; save();
   }
-  if (!thrownAt.length) return { thrown: 0, pearls: 0 };
+  if (!thrownAt.length) return { thrown: 0, pearls: 0, firePotions: 0 };
   for (let waited = 0; waited < ADMIRE_MS; waited += 200) { task.check(); checkAir(bot); await sleep(200); }
   // What the piglins dropped, near where they stood.
   const near = p => thrownAt.some(t => t.distanceTo(p) <= 8);
-  const loot = () => Object.values(bot.entities).filter(e => KEEP.has(e.getDroppedItem?.()?.name) && e.position && near(e.position))
-    .sort((a, b) => (b.getDroppedItem().name === 'ender_pearl') - (a.getDroppedItem().name === 'ender_pearl'));
+  // Pearls first, and the fire resistance potions with them.
+  const first = e => { const i = e.getDroppedItem(); return i.name === 'ender_pearl' || fireResistance().isFireResistance(i) ? 1 : 0; };
+  const loot = () => Object.values(bot.entities).filter(e => { try { return keeps(e.getDroppedItem?.()); } catch (_) { return false; } }).filter(e => e.position && near(e.position))
+    .sort((a, b) => first(b) - first(a));
   for (const drop of loot().slice(0, 8)) {
     task.check();
     if (bot.entities[drop.id] !== drop) continue;
@@ -125,9 +134,31 @@ async function barterStep(bot, task, goal, save, actions = {}) {
     try { await (actions.navigate || navigate)(bot, task, new goals.GoalNear(p.x, p.y, p.z, 1), { timeoutMs: 6000, stallMs: 2500 }); await sleep(300); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
-  const gained = countOf(bot, 'ender_pearl') - pearlsBefore;
-  state.pearls += Math.max(0, gained); save();
-  return { thrown: thrownAt.length, pearls: gained };
+  const gained = countOf(bot, 'ender_pearl') - pearlsBefore, potions = firePotions(bot) - potionsBefore;
+  state.pearls += Math.max(0, gained);
+  if (potions > 0) state.firePotions = (state.firePotions || 0) + potions;
+  save();
+  return { thrown: thrownAt.length, pearls: gained, firePotions: Math.max(0, potions) };
+}
+
+// A barter for a fire resistance potion (Jev's barter_fire_resistance,
+// fortress_visit, note 656): rounds until one is carried, the gold to throw
+// is gone, no piglin is in view, or `maxThrows` are thrown. Pearls and the
+// rest are picked up as in any barter. -> { thrown, firePotions, pearls, why }
+async function barterForFireResistance(bot, task, goal, save, actions = {}, { maxThrows = Infinity } = {}) {
+  const start = firePotions(bot);
+  let thrown = 0, pearls = 0, why = 'a potion carried';
+  goal.step = { action: 'barter_fire_resistance', ingots: barterGold(bot).throwable, maxThrows: Number.isFinite(maxThrows) ? maxThrows : null }; save();
+  while (firePotions(bot) <= start) {
+    if (thrown >= maxThrows) { why = `the ${maxThrows} throws chosen are thrown`; break; }
+    if (!barterGold(bot).throwable) { why = 'no gold left to throw'; break; }
+    if (!barterReady(bot, goal)) { why = 'no adult piglin in view to barter with'; break; }
+    const r = await barterStep(bot, task, goal, save, actions);
+    thrown += r.thrown; pearls += Math.max(0, r.pearls);
+    if (!r.thrown) { why = 'no piglin could be reached to throw to'; break; }
+  }
+  const got = Math.max(0, firePotions(bot) - start);
+  return { thrown, firePotions: got, pearls, why: got ? 'a potion carried' : why };
 }
 
 // Gold for bartering from a bastion remembered by exploration.js: a gold
@@ -176,4 +207,4 @@ async function gatherBastionGold(bot, task, goal, save, actions = {}) {
   return countOf(bot, 'gold_block') + countOf(bot, 'gold_nugget') + countOf(bot, 'gold_ingot') > before;
 }
 
-module.exports = { barterReady, barterGold, barterGoldSays, barterStep, goldOnHand, wearingGold, KEEP, bastionGold, bastionKnown, gatherBastionGold };
+module.exports = { barterReady, barterGold, barterGoldSays, barterStep, barterForFireResistance, dressed, keeps, goldOnHand, wearingGold, KEEP, bastionGold, bastionKnown, gatherBastionGold };

@@ -47,8 +47,12 @@ const knockLands = (bot, c) => !terrain.dropAt(bot, c) && !terrain.dropWithin(bo
 // What a push does where the bot stands, said beside the drop (note 469's
 // pattern): the drop's distance against the push's.
 function knockSays(bot, feet = feetCell(bot), { what = 'A blaze\'s fireball that lands' } = {}) {
+  // With fire resistance on the body a blaze's fireball pushes nothing
+  // while it lasts (note 656).
+  const proof = /blaze/.test(what) ? require('./fire-resistance').left(bot) : 0;
   const drop = terrain.dropNear(bot, feet, 3);
   if (!drop || (drop.into !== 'lava' && drop.damage < 1)) return '';
+  if (proof >= ce.HOLD_SECONDS) return ` ${what} does not push the bot toward the drop ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under it'} while the fire resistance on it lasts (about ${Math.round(proof)} seconds left): a fire hurt that does not land pushes nothing.`;
   const pushes = Math.max(1, Math.ceil(drop.blocksAway / KNOCK));
   return ` ${what} pushes the bot about ${KNOCK} blocks, shield raised or not; the drop ${drop.into === 'lava' ? 'into lava ' : ''}is ${drop.blocksAway ? `${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'under the bot'}: ${pushes === 1 ? 'one that lands puts' : `about ${pushes} landing in turn put`} it over.`;
 }
@@ -257,11 +261,14 @@ function standCost(bot, danger, { setup = 0, at = null, open = null, atOnce = In
   const settling = pinned && at ? new Set(shooting.filter(e => e.name === 'blaze' && !seeing.has(e.id) && settlesInto(bot, e, at, open)).map(e => e.id)) : new Set();
   const sees = t => !seeing || seeing.has(t.entity.id) || settling.has(t.entity.id);
   const burning = ce.burnLeft(bot);
-  const estimate = (vis, burningFor) => ce.fightEstimate({ threats: base.map(t => ({ name: t.entity.name, distance: t.distance, shoots: vis(t) === 'melee' ? false : shooter(t.entity), id: t.entity.id,
+  // Fire resistance on the body: the blazes' fire counts from when it ends
+  // (note 656).
+  const proof = require('./fire-resistance').left(bot);
+  const estimate = (vis, burningFor, fireproofFor = 0) => ce.fightEstimate({ threats: base.map(t => ({ name: t.entity.name, distance: t.distance, shoots: vis(t) === 'melee' ? false : shooter(t.entity), id: t.entity.id,
     ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: vis(t) !== false })), armour: worn, weapon, health: bot.health, shield,
-    poisonedFor: ce.effectLeft(bot, 'poison')?.seconds || 0, burningFor }).mobs;
-  const now = estimate(t => t.visible, burning);
-  const there = estimate(t => shooter(t.entity) ? (sees(t) ? true : melee && t.entity.name === 'blaze' ? 'melee' : false) : true, Math.max(0, burning - setup));
+    poisonedFor: ce.effectLeft(bot, 'poison')?.seconds || 0, burningFor, fireproofFor }).mobs;
+  const now = estimate(t => t.visible, burning, proof);
+  const there = estimate(t => shooter(t.entity) ? (sees(t) ? true : melee && t.entity.name === 'blaze' ? 'melee' : false) : true, Math.max(0, burning - setup), Math.max(0, proof - setup));
   const hit = Math.round(ce.afterArmour(ce.FIREBALL.melee, ce.armourOf(worn)) * 10) / 10;
   for (const m of there) if (m.name === 'blaze' && !m.shoots) m.hitsBot = hit;
   const first = setup ? ce.stanceCost({ mobs: now, setup, seconds: setup }) : { damage: 0, blasts: [] };
@@ -340,7 +347,10 @@ function blazeRate(list, { shield, shieldUp, fireHit, meleeHit, extra = 0, extra
   }
   fire += extra * ce.FIREBALL.volley * ce.fireballHit(extraAt) / ce.FIREBALL.volleySeconds;
   const hits = Math.min(fire * fireHit + melee, 2 * Math.max(fireHit, melee ? meleeHit : 0));
-  return { hits, fire, burn: 1 - Math.exp(-ce.FIRE_TICKS.fireball * fire) };
+  // With fire resistance on the body the fireballs are nothing and only the
+  // swings are left (note 656).
+  const proofHits = Math.min(melee, 2 * (melee ? meleeHit : 0));
+  return { hits, proofHits, fire, burn: 1 - Math.exp(-ce.FIRE_TICKS.fireball * fire) };
 }
 // What the biters among them do meanwhile (a wither skeleton by the
 // blazes, a piglin brute): each gets to the bot at its own pace and strikes
@@ -391,6 +401,10 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   let alive = blazes.map(t => ({ id: t.entity.id, at: t.entity.position, d: t.distance, sees: !!t.visible || into.includes(t), covered: arc.covered.has(t.entity.id), reach: strikeCells(bot, t.entity).length > 0 }));
   const rate = (list, { shieldUp, extra = 0, extraAt = 8 }) => blazeRate(list, { shield, shieldUp, fireHit, meleeHit, extra, extraAt });
   const burning = ce.burnLeft(bot);
+  // Fire resistance on the body (note 656): until it ends the fireballs
+  // are nothing and light nothing, the swings of one within two blocks
+  // still land.
+  const proof = require('./fire-resistance').left(bot);
   const hp = bot.health ?? 20;
   const open = rate(alive, { shieldUp: false });
   const spawnAt = spawner ? spawner.offset(0.5, 0.5, 0.5).distanceTo(here) : null;
@@ -404,7 +418,8 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
     // the fire the landings so far light comes a second after each and not
     // all at once (combat-estimate burnBetween, note 647).
     landings.push({ from: t, to: t + s, perSecond: r.fire });
-    const add = r.hits * s + ce.burnBetween(landings, t, t + s, burning);
+    const covered = Math.max(0, Math.min(s, proof - t));
+    const add = r.proofHits * covered + r.hits * (s - covered) + ce.burnBetween(landings, t, t + s, burning, proof);
     if (damage + add >= hp) deathAt = round(t + (hp - damage) / Math.max(0.01, add / s));
     damage += add; t += s;
     if (spawning) extra = Math.min(Math.max(0, SPAWN_CAP - alive.length), extra + s / SPAWN_SECONDS);
@@ -467,7 +482,7 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   }
   return { bite, shield: !!shield, upTo, strikeOnly: !!strikeAt, atCage, damage: round(damage), seconds: round(t), deathAt, kills, seeing: seen.length, covered: seen.filter(t => arc.covered.has(t.entity.id)).length, spread: arc.spread,
     reachable: blazes.filter(t => strikeCells(bot, t.entity).length).length, blazes: blazes.length, unseen: blazes.length - seen.length - into.length, into: into.length, firstWalk, strikeSeconds, swings, every,
-    lull: round(lull(seen.length), 2), fireHit: round(fireHit), meleeHit: round(meleeHit), spawning: !!spawning, phases, striking: round(open.hits + open.burn) };
+    lull: round(lull(seen.length), 2), fireHit: round(fireHit), meleeHit: round(meleeHit), spawning: !!spawning, phases, striking: round(open.hits + open.burn), ...(proof > 0 ? { fireproofFor: round(proof) } : {}) };
 }
 // The arena's rows after the sum, each said with its own fight: led by a
 // row, the figure read as the price of the fight at hand (note 602).
@@ -486,6 +501,8 @@ function closeInSays(c, hp, { breaking = false } = {}) {
   if (breaking && c.atCage?.nearest != null) parts.push(` At the cell by the cage ${c.atCage.within5 ? `${c.atCage.within5} of them ${c.atCage.within5 === 1 ? 'is' : 'are'} within five blocks, the nearest ${c.atCage.nearest} off${c.atCage.within2 ? `, ${c.atCage.within2} within two, swinging` : ''}` : `the nearest is ${c.atCage.nearest} off`}: the digging is done with the shield down, each shooting meanwhile from where it is to there; after it no more come.`);
   else if (breaking) parts.push(' The digging is done with the shield down, the others shooting meanwhile; after it no more come.');
   else if (c.spawning) parts.push(' The spawner within sixteen blocks puts in about one more every six seconds (four every ten to forty), up to six about, and those are fought too.');
+  // Fire resistance on the body (note 656), counted in the sum.
+  if (c.fireproofFor > 0) parts.push(` Fire resistance is on the body, about ${Math.round(c.fireproofFor)} seconds left: until it ends a fireball that lands does nothing (no hurt, no push, no fire), and only the swing of a blaze within two blocks hurts; ${c.fireproofFor >= c.seconds ? 'it outlasts this run' : `the rest of the run after it is counted as without it`}.`);
   const reach = c.reachable < c.blazes ? ` (${c.reachable} of the ${c.blazes} over ground the sword reaches from; the rest shoot on throughout)` : '';
   if (c.bite?.damage > 0) parts.push(` ${c.bite.biters.map(b => `The ${words(b.name)} ${b.distance} blocks off`).join('; ')} ${c.bite.biters.length === 1 ? 'gets' : 'get'} to the bot meanwhile and ${c.bite.biters.length === 1 ? 'strikes' : 'strike'} until the sword, turning to ${c.bite.biters.length === 1 ? 'it' : 'each'} first, has killed ${c.bite.biters.length === 1 ? 'it' : 'them'}: about ${c.bite.damage} of the damage below, the wither and the like counted.`);
   parts.push(c.deathAt != null
@@ -1208,6 +1225,10 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
   const arc = shieldArc(bot, blazes.filter(t => t.visible).map(t => t.entity));
   const list = blazes.map(t => ({ d: t.distance, sees: !!t.visible, covered: arc.covered.has(t.entity.id) }));
   const burning = ce.burnLeft(bot);
+  // Fire resistance on the body (note 656): the fireballs and the fire count
+  // from when it ends; `from` seconds from now, the hits over `seconds`.
+  const proof = require('./fire-resistance').left(bot);
+  const fireOver = (r, seconds, from = 0) => { const covered = Math.max(0, Math.min(seconds, proof - from)); return r.proofHits * covered + r.hits * (seconds - covered); };
   // In their fire for `seconds` of work done in the lulls, the shield up for
   // each volley: the wall-clock seconds and the damage, the burn on the
   // body now included.
@@ -1215,7 +1236,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     // With no shield nothing waits for a volley: the work goes straight on.
     const k = list.filter(b => b.sees).length, wall = seconds / (shield ? lull(k) : 1);
     const r = blazeRate(list, { shield, shieldUp: true, fireHit, meleeHit });
-    const damage = round(r.hits * wall + ce.burnBetween([{ from: 0, to: wall, perSecond: r.fire }], 0, wall, burning) + biteCost(bot, danger, wall).damage);
+    const damage = round(fireOver(r, wall) + ce.burnBetween([{ from: 0, to: wall, perSecond: r.fire }], 0, wall, burning, proof) + biteCost(bot, danger, wall).damage);
     // Said with the share of time the volleys take, which is what makes it
     // long: with many blazes at the bot there is hardly a lull to work in.
     const busy = k && shield ? Math.round(100 * (1 - lull(k))) : 0;
@@ -1251,7 +1272,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     // In the box every blaze in line with the window is in front, where the
     // shield faces (the probe's one in thirty), and none has a line past it.
     const inside = blazeRate(inLine.map(e => ({ d: d(e), sees: true, covered: true })), { shield, shieldUp: true, fireHit, meleeHit });
-    const hold = round(inside.hits * ce.HOLD_SECONDS + ce.burnBetween([{ from: 0, to: ce.HOLD_SECONDS, perSecond: inside.fire }], 0, ce.HOLD_SECONDS));
+    const hold = round(fireOver(inside, ce.HOLD_SECONDS, setup.wall) + ce.burnBetween([{ from: 0, to: ce.HOLD_SECONDS, perSecond: inside.fire }], 0, ce.HOLD_SECONDS, 0, Math.max(0, proof - setup.wall)));
     const cageOff = cageNear ? round(Math.hypot(box.cell.x + 0.5 - cageNear.x - 0.5, box.cell.z + 0.5 - cageNear.z - 0.5)) : null;
     const byCage = cageOff != null && cageOff <= T.BOX_NEAR[1];
     const crowd = about.filter(e => e.position.distanceTo(box.cell.offset(0.5, 1, 0.5)) <= 4).length;
@@ -1282,7 +1303,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const built = corner.build?.length || 0;
     const setup = underFire(corner.steps / WALK + built * PLACE_SECONDS);
     const m = measuredSays('corner', bot);
-    options.corner_ambush = { kind: 'corner', site: corner, expects: { damage: round(setup.damage + Math.max(0, burning - setup.wall)), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
+    options.corner_ambush = { kind: 'corner', site: corner, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
       description: `${built ? `No rock to go round within ten blocks of walking: make a corner where the bot stands, a wall two high and three wide a step toward the blazes' middle (${n(built, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire), and wait behind it` : corner.steps ? `Walk ${n(corner.steps, 'block')} (about ${setup.time} in their fire) round` : 'Stay at'}${built ? ` at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})` : ` the corner at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})`}, where none of the ${n(about.length, 'blaze')} about has a line to the bot and the cell beside it has one, and wait there facing the corner${shield ? ', the shield up' : ''}, striking what comes within reach: the nearest is ${corner.nearest} blocks from it. What comes: a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering. Out of their sight the bot takes nothing from them (about ${setup.hurt} ${built ? 'while building' : 'on the way'}, the burning on the body burning on).${spawnSays} Held up to thirty seconds, or until a rod is carried or six health is gone.` + m.says };
   }
 
@@ -1313,7 +1334,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
       const what = healable
         ? `${eat ? `eat the ${words(food.name)} (about 1.6 seconds) and ` : ''}stay until the health is full: at hunger 20 with saturation a point comes back each half second, at 18 or 19 one each four seconds${setup.damage >= hp ? `; but the health runs out before it is out of their sight` : `, so from about ${round(after)} to 20 takes about ${heal} seconds${food ? '' : ' (nothing carried to eat)'}`}.`
         : `${food ? `eat the ${words(food.name)} (it brings hunger only to ${eatenTo}) and ` : ''}stay only until the fire on the body is out: at hunger ${hunger}, under eighteen, no health comes back (${food ? `eating all that is carried leaves hunger at ${eatenTo}` : 'nothing carried is food'}), so healing there would take never. It gets the bot out of the fire and the volleys and no health back${setup.damage >= hp ? '; and the health runs out before it is out of their sight' : `: it stays at about ${round(after)} health`}, and each point lost from here on stays lost until the bot has eaten to eighteen.`;
-      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - setup.wall)), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
+      options.leave_and_heal = { kind: 'heal', site, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + heal), oneHit: fireHit, heals: healable ? round(20 - after) : 0 },
         description: `Go out of their sight${healable ? ' to heal and come back' : ' (no health comes back at this hunger)'}: ${where}${what} ${stays}` + m.says };
     }
   }

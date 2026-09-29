@@ -339,7 +339,7 @@ const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pill
 // eating: a shield raised at each arrow stops them.
 // The most a route drops the bot (movement.js).
 const ROUTE_DROP = 3;
-const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple']);
+const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
 const PILLAR_SECONDS = 1.5;
@@ -437,7 +437,12 @@ function shotPushers(bot, range = 64) {
   const { RANGE } = require('./combat-estimate');
   let about = [];
   try { about = threats(bot, range); } catch (_) { return []; }
-  return about.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0) && (t.visible || FLYING_SHOOTERS.has(t.entity.name)))
+  // A blaze's fireball pushes nothing with fire resistance on the body
+  // (LivingEntity.hurtServer returns before the knockback for fire damage,
+  // note 656): not a pusher while the effect outlasts a stance's fifteen
+  // seconds. A ghast's blast is not fire, and still pushes.
+  const proof = require('./fire-resistance').left(bot) >= HOLD_SECONDS;
+  return about.filter(t => shooter(t.entity) && !(proof && require('./combat-estimate').FIRE_SHOTS.has(t.entity.name)) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0) && (t.visible || FLYING_SHOOTERS.has(t.entity.name)))
     .sort((a, b) => b.visible - a.visible || a.distance - b.distance);
 }
 // Said with every stance that leaves the bot open over the drop beside it
@@ -1092,7 +1097,9 @@ function costSays(cost, health, mobs, { doing = null, done = null, over = 'in th
   // A blaze's blow is a fireball that lands with its fire (combat-estimate
   // FIRE_TICKS, note 631): the 2.5 through iron and four more.
   const ceLand = require('./combat-estimate');
-  const blowOf = m => m.name === 'blaze' && m.shoots && m.hitsBot > 0 ? ceLand.landingCost(m.hitsBot) : (m.jab ?? m.hitsBot ?? 0);
+  // With fire resistance on the body past the fifteen seconds, a blaze's
+  // fireball is no blow at all (note 656).
+  const blowOf = m => m.name === 'blaze' && m.shoots && m.hitsBot > 0 ? (m.fireproofFor >= ceLand.HOLD_SECONDS ? 0 : ceLand.landingCost(m.hitsBot)) : (m.jab ?? m.hitsBot ?? 0);
   const blowMob = mobs.filter(m => !m.apart && !['creeper', 'warden', 'ghast'].includes(m.name)).sort((a, b) => blowOf(b) - blowOf(a))[0];
   const blow = blowMob ? blowOf(blowMob) : 0;
   const blowSays = blowMob?.name === 'blaze' && blowMob.shoots ? `the ${Math.round(blow * 10) / 10} of one fireball that lands (its hit and its fire)` : `the ${Math.round(blow * 10) / 10} of one blow`;
@@ -3094,9 +3101,13 @@ class Survival {
     // A creeper is priced by where it goes off, and that is as far as the
     // bot can back from it (backRoom). The poison on the bot runs on in
     // every figure (combat-estimate effectLeft).
-    const estimate = fightEstimate({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(quietIds.has(t.entity.id) ? { quiet: quietIds.get(t.entity.id).q.minutes } : {}), ...(t.unseen ? { unseen: true } : {}), ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(inCellIds.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
+    const estimateArgs = ({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(quietIds.has(t.entity.id) ? { quiet: quietIds.get(t.entity.id).q.minutes } : {}), ...(t.unseen ? { unseen: true } : {}), ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(inCellIds.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: opening ? Infinity : open + inCell.length,
-      poisonedFor: require('./combat-estimate').effectLeft(bot, 'poison')?.seconds || 0, burningFor: require('./combat-estimate').burnLeft(bot) });
+      poisonedFor: require('./combat-estimate').effectLeft(bot, 'poison')?.seconds || 0, burningFor: require('./combat-estimate').burnLeft(bot),
+      // The fire resistance on the body: a blaze's fire counted from when it
+      // ends (note 656).
+      fireproofFor: require('./fire-resistance').left(bot) });
+    const estimate = fightEstimate(estimateArgs);
     const cost = estimate.fightHere;
     // And the biters out of sight further off, within their own follow range
     // and with a way to the bot (farBiters): each counted in a stance's
@@ -3131,6 +3142,9 @@ class Survival {
       const b = bot.health < 14 ? (estimate.mobs || []).find(m => m.name === 'blaze' && !m.apart && m.shoots && m.hitsBot > 0) : null;
       if (!b) return '';
       const ce = require('./combat-estimate');
+      // With fire resistance on the body a landing is nothing until it ends
+      // (note 656).
+      if (b.fireproofFor > 0) return ` With fire resistance on the body (about ${Math.round(b.fireproofFor)} seconds left), a blaze's fireball that lands does nothing until it ends; after it, ${ce.landingsSays(bot.health, b.hitsBot, 0).replace(/^At /, 'at ')}`;
       return ` ${ce.landingsSays(bot.health, b.hitsBot, ce.burnLeft(bot))}`;
     })();
     const hitsLeft = blazeLands && hardest?.name === 'blaze' ? blazeLands : (hardest && bot.health < 14 ? ` At ${Math.round(bot.health * 10) / 10} health, ${Math.max(1, Math.ceil(bot.health / hardest.hitsBot))} ${hardest.shoots ? shotWord(hardest.name) : 'hit'}${Math.ceil(bot.health / hardest.hitsBot) === 1 ? '' : 's'} from the ${hardest.name.replaceAll('_', ' ')} (about ${hardest.hitsBot} each after armour${hardest.hitsBotMost ? `, up to ${hardest.hitsBotMost}: ${Math.max(1, Math.ceil(bot.health / hardest.hitsBotMost))} at the hardest` : ''}) end it${mobs.some(m => m.poisons && !m.apart) || mobs.some(m => m.poisonedFor > 0) ? ', or one once the poison has taken it to 1' : ''}.` : '') + (hardest?.name === 'blaze' ? '' : blazeLands);
@@ -4122,12 +4136,32 @@ class Survival {
     // "0.8 damage from 2.8 health").
     if (apple && bot.health < 20) options.eat_golden_apple = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit },
       description: (apple.name === 'enchanted_golden_apple'
-        ? `Eat the enchanted golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then sixteen extra health as absorption, strong regeneration for twenty seconds and resistance for five minutes. Worth more later in the game than any other food.`
+        ? `Eat the enchanted golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then sixteen extra health as absorption, strong regeneration for twenty seconds, and resistance and fire resistance for five minutes. Worth more later in the game than any other food.`
         : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`) + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + creeperAfterMeal(bot, this.creepersOfRun(danger)),
       run: async () => {
         this.report(goal, save, { action: 'eat', item: apple.name, food: bot.food, health: bot.health, stance: true });
         return eatApple(bot, task, apple);
       } };
+    // A fire resistance potion carried where fire is coming: a blaze in
+    // sight or the body alight (note 656). Priced as the meal is, over the
+    // seconds it takes, with the fight here after it set beside the fight
+    // without it.
+    const fr = require('./fire-resistance');
+    const firePotion = fr.carried(bot)[0];
+    const fireComing = (estimate.mobs || []).some(m => require('./combat-estimate').FIRE_SHOTS.has(m.name) && m.shoots && m.visible && !m.apart) || !!(bot.entity?.metadata?.[0] & 1);
+    const proofLeft = fr.left(bot);
+    if (firePotion && fireComing && proofLeft < HOLD_SECONDS * 2) {
+      const takes = firePotion.kind === 'drink' ? fr.DRINK_SECONDS : fr.SPLASH_SECONDS;
+      const drinkCost = stanceCost({ mobs: eatMobs, setup: takes, seconds: takes, effectsTo: takes + 10 });
+      const withIt = fightEstimate({ ...estimateArgs, fireproofFor: firePotion.seconds }).fightHere.inFifteenSeconds;
+      const count = fr.carried(bot).reduce((n, p) => n + (p.item.count || 1), 0);
+      options.drink_fire_resistance = { expects: { damage: drinkCost.damage, seconds: takes, oneHit },
+        description: `${firePotion.kind === 'drink' ? 'Drink' : 'Throw at the feet'} ${fr.kindSays(firePotion)} now (${count} carried): ${fr.clock(firePotion.seconds)} of fire resistance from then, running down whatever is done${proofLeft > 0 ? `; about ${Math.round(proofLeft)} seconds of it are on the body now, and the potion sets it to its length, it does not add` : ''}. ${fr.WHAT} The fight here over fifteen seconds, the stance after it asked again: about ${cost.inFifteenSeconds} damage as the bot is, about ${withIt} with the effect on.` + costSays(drinkCost, bot.health, mobs, { over: `while it ${firePotion.kind === 'drink' ? 'drinks' : 'throws'}` }),
+        run: async () => {
+          this.report(goal, save, { action: 'drink_fire_resistance', kind: firePotion.kind, health: bot.health, stance: true });
+          return fr.drink(bot, task, firePotion);
+        } };
+    }
     // Where a run could go, said before it is chosen: with three or more
     // mobs about, 25 of the 39 retreats chosen with none at arm's length in
     // the midgame trials of 2026-09-25 and 26 found no way and failed (a
@@ -4613,7 +4647,7 @@ class Survival {
     // twice, note 601), and not a striking stance that has not acted (note
     // 596's rule has it).
     const striking = STRIKING_STANCES.has(held?.choice);
-    const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple', 'retreat', 'leave_reach'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
+    const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple', 'drink_fire_resistance', 'retreat', 'leave_reach'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
     if (extendable) holding = false;
     let holdEnded = null;
     // About to ask: the run's way is looked for first, so the retreat says
@@ -7595,6 +7629,9 @@ class Survival {
     const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
     if (apple) ways.eat_golden_apple = { description: `Eat the enchanted golden apple (${countOf(bot, apple.name)} carried): about ${EAT_SECONDS} seconds eating in the lava first, then fire resistance for five minutes (the lava and burning no longer hurt), sixteen extra health as absorption and strong regeneration; the way out still to take after.`,
       run: async () => { report('eat_golden_apple', null); return eatApple(bot, task, apple); } };
+    // A fire resistance potion (note 656): a splash acts sooner than a drink.
+    const potionWay = require('./fire-resistance').bodyWay(bot, task, 'the lava and burning do not hurt', () => report('drink_fire_resistance', null));
+    if (potionWay) ways.drink_fire_resistance = { ...potionWay, run: async () => { const was = bot._leavingLava; bot._leavingLava = true; try { return await potionWay.run(); } finally { bot._leavingLava = was; } } };
     const first = ways.to_water ? 'to_water' : ways.to_dry_ground ? 'to_dry_ground' : ways.pillar_out ? 'pillar_out' : last ? 'back_the_way_came' : 'swim_up';
     return ways[first] ? { [first]: ways[first], ...ways } : ways;
   }

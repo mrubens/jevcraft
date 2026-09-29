@@ -693,9 +693,14 @@ function pondNear(bot) {
 // combat-estimate burnLeft), and who acts is the claims' question.
 function fireToAnswer(bot) {
   if (inFire(bot)) return true;
+  // Alight with fire resistance that outlasts the fire: it does nothing,
+  // and there is nothing to answer (note 656).
+  if (require('./body').outlastsBurning(bot)) return false;
   // An enchanted golden apple carried is a way too, in any dimension: its
   // fire resistance ends what burning is left (body_way, note 549).
   if (onFire(bot) && bot.inventory?.items?.().some(i => i.name === 'enchanted_golden_apple')) return true;
+  // So is a fire resistance potion (note 656).
+  if (onFire(bot) && require('./fire-resistance').carried(bot).length) return true;
   // A cauldron of water, placed near or carried with a water bucket to fill
   // it from, puts a burning body out in the Nether too (note 634).
   try { if (onFire(bot) && (() => { const p = require('./cauldron').plans(bot); return !!(p.placed || p.carry); })()) return true; } catch (_) { /* no world to look at */ }
@@ -988,6 +993,9 @@ function fireWays(bot, task, onAction = () => {}) {
   const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
   const eat = () => ({ description: `Eat the enchanted golden apple (${apple.count} carried): about ${EAT_MEAL_SECONDS} seconds eating first, then fire resistance for five minutes (burning no longer hurts), sixteen extra health as absorption and strong regeneration.`,
     run: async () => { onAction({ action: 'eat', item: apple.name, health: bot.health, burning: true }); return require('./survival').eatApple(bot, task, apple); } });
+  // A fire resistance potion carried (note 656): burning does nothing from
+  // when it acts.
+  const drinkWay = () => require('./fire-resistance').bodyWay(bot, task, 'the fire and burning do not hurt', onAction);
   if (standing) {
     // Every way out there is (note 575): the run clear of any edge; the
     // crouched walk along cells beside a fall that kills, where it is the
@@ -1035,6 +1043,8 @@ function fireWays(bot, task, onAction = () => {}) {
         return !inFire(bot);
       } };
     if (apple) ways.eat_golden_apple = eat();
+    const potion = drinkWay();
+    if (potion) ways.drink_fire_resistance = potion;
     return ways;
   }
   const bucket = bot.inventory.items().find(i => i.name === 'water_bucket');
@@ -1065,6 +1075,8 @@ function fireWays(bot, task, onAction = () => {}) {
   ways.burn_out = { description: `Leave it to burn out and go on: ${ends}${nether ? (Object.keys(cauldrons).length ? '; in the Nether only a cauldron\'s water puts it out' : '; in the Nether nothing else puts it out') : ''}. ${drop < 1 ? 'Asked again at the next hurt of the burning' : `Asked again at about ${round(Math.max(0, (bot.health ?? 20) - require('./body').holdDrop(bot.health)))} health (${drop} more)`}, or when another way to put it out comes.`,
     hold: 15, run: async () => false };
   if (apple) ways.eat_golden_apple = eat();
+  const potion = drinkWay();
+  if (potion) ways.drink_fire_resistance = potion;
   // The old rule: the bucket poured where it can be, else (none carried)
   // the water run into, else nothing.
   const first = pours ? 'douse_bucket' : !bucket && pond ? 'to_water' : 'burn_out';
@@ -1098,6 +1110,8 @@ function hotFloorWays(bot, task, onAction = () => {}, hot = onHotFloor(bot)) {
   const apple = bot.inventory?.items?.().find(i => i.name === 'enchanted_golden_apple');
   if (apple) ways.eat_golden_apple = { description: `Eat the enchanted golden apple (${apple.count} carried) standing here: about ${EAT_MEAL_SECONDS} seconds eating first, hurt meanwhile, then fire resistance for five minutes, which stops the hot floor's hurt, sixteen extra health as absorption and strong regeneration.`,
     run: async () => { onAction({ action: 'eat', item: apple.name, health: bot.health, hotFloor: true }); return require('./survival').eatApple(bot, task, apple); } };
+  const potion = require('./fire-resistance').bodyWay(bot, task, 'the hot floor does not hurt', a => onAction({ ...a, hotFloor: true }));
+  if (potion) ways.drink_fire_resistance = potion;
   return ways;
 }
 // The way out from under a block, as the old rule stepped: aside into an
