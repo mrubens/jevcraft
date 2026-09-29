@@ -200,7 +200,8 @@ test('on the span, the step back to the rock\'s tunnel is offered, across the gh
   assert.match(step, /this walk carries the body about 1\.9 blocks across its line meanwhile, where a fireball meets the body only within about 0\.8: one fired while it walks passes to the side of it/);
   assert.match(step, /meets it if it comes in the first 0\.8 seconds, before the body is 0\.8 across: about 27 in 100 while the ghast has a line/);
   // Behind the rail the ghast still shoots: its fireballs are in the price, as the span's hold has them.
-  assert.match(options.rail_and_fight.description, /About 20\.9 damage from the mobs here in the next fifteen seconds this way/);
+  // (2.4 at what a ghast 45 blocks off lands in the record, 17 in 100 of its fireballs, note 647; 20.9 when every one landed.)
+  assert.match(options.rail_and_fight.description, /About 2\.4 damage from the mobs here in the next fifteen seconds this way/);
 });
 
 const BB4 = require('./fixtures/lava-span-mid-242-bb4.json');

@@ -82,6 +82,60 @@ const BURN_PER_SECOND = 1;
 // 6.5 health or less, where one landing is the end, and the questions said
 // "at 3 health, 2 fireballs (2.5 each) end it".
 const FIRE_TICKS = { fireball: 4 };
+// The fire a stretch of landings lights, as the health it is expected to take
+// (note 647). A landing at u puts the bot alight for FIRE_SECONDS.fireball
+// and the fire's ticks come a second after it, one a second, FIRE_TICKS of
+// them: a tick density of one over [u + 1, u + 5). With landings at
+// `perSecond` (Poisson) from `from` to `to`, a tick falls at t if a landing
+// fell in the four seconds ending one second before it, so at t the chance
+// is 1 - e^(-perSecond x that overlap), and it is not at its steady value
+// the moment the shooting starts: it starts a second in and climbs for four.
+// Priced as if it were (a steady chance of being alight from the first
+// second, five seconds past the last shot), a blaze ten blocks off cost a
+// stance of a second and a quarter's building 2.8, where the hits and fire
+// of its landings in those seconds come to under one; the holding stances'
+// prices ran two to three times what they took (note 631, note 647).
+const BURN_STEP = 0.5;
+const burnLag = () => FIRE_SECONDS.fireball - FIRE_TICKS.fireball;
+function burnChance(perSecond, from, to, t) {
+  const a = Math.max(from, t - FIRE_SECONDS.fireball), b = Math.min(to, t - burnLag());
+  return b > a ? 1 - Math.exp(-perSecond * (b - a)) : 0;
+}
+// The same over landings at different rates in turn (`segments`: [{ from, to,
+// perSecond }], the landing rates of the phases of a run so far): the health
+// the fire takes between t0 and t1, the fire already on the bot (`alightUntil`
+// seconds from the run's start) counted as certain while it lasts.
+function burnBetween(segments, t0, t1, alightUntil = 0) {
+  let total = 0;
+  for (let t = t0; t < t1 - 1e-9; t += BURN_STEP) {
+    const b = Math.min(t + BURN_STEP, t1), mid = (t + b) / 2;
+    const lands = segments.reduce((n, g) => n + g.perSecond * Math.max(0, Math.min(g.to, mid - burnLag()) - Math.max(g.from, mid - FIRE_SECONDS.fireball)), 0);
+    total += (mid < Math.max(0, alightUntil - 0.5) ? 1 : 1 - Math.exp(-lands)) * (b - t);
+  }
+  return total;
+}
+// The fire already on the body (`left` seconds of it, burnLeft), as pieces:
+// its ticks fall a second apart and the last a second before it ends, so
+// 4.9 seconds left is four more health and 3.5 is three, not a health a
+// second for the whole of them (note 631's open item: about a point over on
+// every fire the bot was alight in). One piece a tick, from where it falls.
+function bodyBurn(left) {
+  const out = [], ticks = Math.floor(left + 1e-9), start = Math.max(0, left - ticks - 0.5);
+  for (let i = 0; i < ticks; i++) out.push({ from: start + i, to: start + i + 1, perSecond: BURN_PER_SECOND, effect: 'burn' });
+  return out;
+}
+// The same as pieces of a timeline: [{ from, to, perSecond: chance a tick
+// falls, effect: 'burn' }], each BURN_STEP long, from the first tick's second
+// to the last landing's fire going out.
+function burnRamp(perSecond, from, to) {
+  const out = [];
+  if (!(perSecond > 0) || !(to > from)) return out;
+  for (let a = from + burnLag(); a < to + FIRE_SECONDS.fireball - 1e-9; a += BURN_STEP) {
+    const b = Math.min(a + BURN_STEP, to + FIRE_SECONDS.fireball), p = burnChance(perSecond, from, to, (a + b) / 2);
+    if (p > 0) out.push({ from: a, to: b, perSecond: p, effect: 'burn' });
+  }
+  return out;
+}
 // One landing's cost in health: the hit and the fire it sets, less the fire
 // still to come on a bot already alight (a landing sets it back to its five
 // seconds, so it adds only what that is beyond what was left).
@@ -423,8 +477,74 @@ const volleyHit = distance => 1 - (1 - fireballHit(distance)) ** FIREBALL.volley
 // blazes about read as 48 to 62 in fifteen seconds for every stance.
 function blazeCadence(distance) {
   const every = FIREBALL.volleySeconds / (FIREBALL.volley * fireballHit(Math.max(FIREBALL.meleeReach, distance || 0)));
-  return { every: round(every, 2), burns: round(1 - Math.exp(-FIRE_SECONDS.fireball / every), 2) };
+  return { every: round(every, 2), burns: round(1 - Math.exp(-FIRE_TICKS.fireball / every), 2) };
 }
+// What the other shooters land (note 647). Every one of them was priced a shot
+// every two seconds, each landing: a skeleton at ten blocks was 0.5 hits a
+// second, where the flight records of 2026-09-26 to 28 have a skeleton in
+// sight land 0.24 a second within 4 blocks, 0.18 from 4 to 12 and 0.09 from
+// 12 to 16 (2,000 skeleton-seconds, 450 hits), and ghasts, priced the same,
+// landed 0.05 a second in sight where 0.5 was priced.
+// - A bow, from the 26.1.2 jar (AbstractSkeleton.reassessWeaponGoal and
+//   RangedBowAttackGoal): the bow is drawn twenty ticks and the goal waits
+//   forty more (Normal; twenty on Hard) before the next draw, a shot every
+//   three seconds; the arrow's aim is scattered as a triangle of half-width
+//   0.0172275 x (14 - 4 x the difficulty's id) = 0.1034 of its direction,
+//   and it starts aimed 0.2 of the horizontal distance high and falls
+//   (gravity 0.05 a tick, speed 1.6): it lands where it passes within 0.6
+//   sideways of the player's middle (the body's half width and the
+//   projectile's margin) and inside the body's height less that fall. The
+//   game's own figure for a bot standing still is every arrow within 6
+//   blocks, 70 in 100 at 10, 55 at 14; the record's, over a bot that also
+//   walks, shields and stands behind blocks, about two thirds of that.
+// - A crossbow (a pillager's, a piglin's): charged 25 ticks and then a wait
+//   of 20 to 40 (CrossbowAttackGoal, the brain's CrossbowAttack), a shot
+//   about every 2.75 seconds, scattered as the bow's. A pillager's landings
+//   are too few in the record to correct (14 hits); a piglin's bolts landed
+//   0.054 a second per piglin in sight within 4 blocks, 0.03 from 4 to 8, and
+//   3 in 3,143 seconds from 8 to 12 and none in the 13,000 beyond, priced at
+//   a shot every two seconds from as far as fifteen: the record's rates are
+//   used, since the game's numbers say nothing of when a piglin attacks.
+// - A ghast (Ghast$GhastShootFireballGoal, the same as ghast.js GHAST): a
+//   fireball every three seconds while it has a line, flying slowly (from 0.1
+//   a block a tick, gaining) at where the bot was when it was thrown, so the
+//   longer the flight the more of them miss or are struck back. Landings in
+//   the flight records per second of a ghast in sight, by its distance: 5 in
+//   35 seconds from 12 to 16 blocks, 15 in 165 from 16 to 24, 23 in 314 from
+//   24 to 32, 52 in 929 from 32 to 48, 46 in 1,517 beyond, against the shot
+//   every three seconds.
+const BOW_EVERY = 3, CROSSBOW_EVERY = 2.75;
+const GHAST_SHOT = { every: 3, table: [[16, 5, 35], [24, 15, 165], [32, 23, 314], [48, 52, 929], [Infinity, 46, 1517]] };
+const ghastShot = distance => { const [, hits, seconds] = GHAST_SHOT.table.find(([to]) => (distance || 0) < to) || GHAST_SHOT.table.at(-1); return { every: GHAST_SHOT.every, lands: round(Math.min(1, hits / seconds * GHAST_SHOT.every), 2), hits, seconds }; };
+const ARROW = { inaccuracy: 6, within: 0.6, fall: 0.0101, high: 0.2, aimAt: 0.6, margin: 0.3, tall: 1.8 };
+// The cdf of a triangle on [-w, w] at x.
+const triangleCdf = (w, x) => x <= -w ? 0 : x >= w ? 1 : x < 0 ? 0.5 * (1 + x / w) ** 2 : 1 - 0.5 * (1 - x / w) ** 2;
+// The chance an arrow or a bolt lands on a player standing still `distance`
+// blocks off, from the game's scatter (see above).
+function arrowHit(distance) {
+  const d = Math.max(1, distance || 0), w = 0.0172275 * ARROW.inaccuracy * d;
+  const sideways = w <= ARROW.within ? 1 : triangleCdf(w, ARROW.within) - triangleCdf(w, -ARROW.within);
+  // Where the arrow arrives over the target's feet, and the band of heights
+  // that hit: the aim's point, the lift of 0.2 a block of distance, less the
+  // fall.
+  const height = ARROW.aimAt + ARROW.high * d - ARROW.fall * d * d;
+  const lo = -ARROW.margin - height, hi = ARROW.tall + ARROW.margin - height;
+  const upright = w <= 0.05 ? (lo < 0 && hi > 0 ? 1 : 0) : triangleCdf(w, hi) - triangleCdf(w, lo);
+  return Math.max(0, Math.min(1, sideways * upright));
+}
+// A piglin's bolts, landings a second per piglin in sight (measured).
+const piglinBolts = distance => distance < 4 ? 0.054 : distance < 8 ? 0.03 : distance < 12 ? 0.001 : 0.0005;
+// { every, lands, basis } for a shooter that is not a blaze, or null.
+function shotModel(name, distance) {
+  const d = Math.round(distance || 0);
+  if (name === 'skeleton' || name === 'stray' || name === 'bogged' || name === 'parched') { const lands = round(arrowHit(distance), 2); return { every: BOW_EVERY, lands, basis: 'game', says: `a shot every ${BOW_EVERY} seconds, ${Math.round(lands * 100)} in 100 landing from ${d} blocks on a bot standing still (the game's scatter; walking and shielding took the record's bot to about two thirds of that)` }; }
+  if (name === 'pillager') { const lands = round(arrowHit(distance), 2); return { every: CROSSBOW_EVERY, lands, basis: 'game', says: `a bolt every ${CROSSBOW_EVERY} seconds, ${Math.round(lands * 100)} in 100 landing from ${d} blocks on a bot standing still (the game's scatter)` }; }
+  if (name === 'piglin') { const rate = piglinBolts(distance || 0); return { every: CROSSBOW_EVERY, lands: round(Math.min(1, rate * CROSSBOW_EVERY), 3), basis: 'measured', says: rate >= 0.01 ? `its bolts landed about ${rate} a second per piglin in sight at this range (measured: 3 in 3,143 seconds from 8 to 12 blocks, none beyond)` : 'its bolts landed hardly at all from this far off (measured: 3 in 3,143 seconds from 8 to 12 blocks, none in 13,000 beyond)' }; }
+  if (name === 'ghast') { const g = ghastShot(distance); return { every: g.every, lands: g.lands, basis: 'measured', says: `a fireball every ${g.every} seconds, ${Math.round(g.lands * 100)} in 100 landing from ${d} blocks (measured: ${g.hits} landings in ${g.seconds} seconds of a ghast in sight at about this range)` }; }
+  return null;
+}
+// Landings a second from one shooter's mob record.
+const landsPerSecond = m => (m.lands ?? 1) / (m.every || 2);
 // The farthest a blaze's volley lands one more often than not.
 const FIRE_LANDS = (() => { let d = 1; while (d < RANGE.blaze && volleyHit(d + 1) >= 0.5) d++; return d; })();
 const inHundred = p => Math.round(p * 100);
@@ -437,6 +557,20 @@ function fireballSays(distance) {
 // How far a shooter is counted a threat by its fire, where RANGE is how
 // far it fires from: a blaze by where its volleys land.
 const FIRE_REACH = { ...RANGE, blaze: FIRE_LANDS };
+// What still lands behind a wall (note 647). A stance that puts blocks or rock
+// between the bot and the shooters was priced as if none of their shots came
+// after the seconds of building: "Behind it, none of them reaches it". The
+// flight records say otherwise for every one of them alike: in the stance
+// windows that hold (take_cover, seal, dig_down, pillar, out_of_sight, the
+// wall's rail), from the fourth second on the bot took 0.11 of the open rate
+// behind cover from a blaze, 0.17 to 0.22 from a skeleton, 0.04 to 0.25 from a
+// ghast and 0.2 from a piglin (the open rate being what the model gives for
+// that shooter standing in the open, per second), about 0.15 in all: a
+// shooter finds a line round the block or the corner, a fireball's blast and
+// its fire come round it, the wall is not always where the line is, a stance
+// is broken off and begun again. Priced as that share of its open rate for the
+// seconds after the setup, where the shooter is taken not to reach the bot.
+const COVER_LEAK = 0.15;
 const HOLD_SECONDS = 15, APPROACH = 3, FUSE = 1.5, LIGHTS_AT = 3;
 // How fast each mob goes after the bot on the ground, from the 26.1 server
 // jar: its movement speed attribute (createAttributes), and the move
@@ -504,13 +638,13 @@ const inRange = m => Math.max(0, ((m.distance || 0) - (RANGE[m.name] || 15)) / A
 // stop, renewed by each that lands (a blaze's fire is steady while it
 // shoots). mid-235-p-fortress-2 went from 14.7 to none in twenty seconds
 // against blazes priced at their fireball alone (note 512).
-const shooting = (m, shield) => m.visible ? (m.hitsBot / (m.every || 2) + (m.burns || 0)) * (shield && m.name !== 'witch' ? 0.5 : 1) : 0;
+const shooting = (m, shield) => m.visible ? (m.hitsBot * landsPerSecond(m) + (m.burns || 0)) * (shield && m.name !== 'witch' ? 0.5 : 1) : 0;
 // A shooter's fire as timeline pieces: its shots, each a hit, and the burn
 // they leave, which is not.
 const shotPieces = (m, shield, from, to) => {
   if (!m.visible || !(to > from)) return [];
   const f = shield && m.name !== 'witch' ? 0.5 : 1;
-  return [{ from, to, perSecond: m.hitsBot / (m.every || 2) * f, hit: m.hitsBot }, ...(m.burns ? [{ from, to: to + FIRE_SECONDS.fireball, perSecond: m.burns * f, effect: 'burn' }] : [])];
+  return [{ from, to, perSecond: m.hitsBot * landsPerSecond(m) * f, hit: m.hitsBot }, ...(m.burns ? burnRamp(f * landsPerSecond(m), from, to) : [])];
 };
 // A body that has just been hurt cannot be hurt again for half a second
 // (26.1 LivingEntity.hurtServer: within ten ticks of a hit, a blow no
@@ -524,6 +658,49 @@ const HURT_PER_SECOND = 2;
 // that a hurt body cannot be hurt again, so two landing together count as
 // the bigger (within), and one landing before a stretch ends counts whole.
 const blowAt = (at, hit) => ({ from: at, to: at + 1 / HURT_PER_SECOND, perSecond: hit * HURT_PER_SECOND, hit, blow: true });
+
+// A biter with no line to the bot (`unseen`, within the eight a biter is
+// counted from) was priced as at the bot as any other: it comes as its own
+// speed brings it. The game gives it no target to come at: a mob takes a
+// player as its target only in sight (NearestAttackableTargetGoal, mustSee)
+// and drops it after sixty ticks out of it (TargetGoal, unseenMemoryTicks),
+// so one round a rock reaches the bot only by wandering into sight first. In
+// the flight records' 272 stance windows with only out-of-sight biters about
+// the price was 3.06 and the damage taken 0.73 (a fight 6.8 against 0.39); a
+// quarter landed. Its blows are counted at that chance, and said so; a biter
+// out of sight that can be there before a build or a dig is done (`far`) is
+// not weighed here, it is said as counted (note 581).
+const UNSEEN = { arrives: 0.25 };
+const arrival = m => m.unseen && !m.far && !m.remembered ? UNSEEN.arrives : 1;
+
+// A slime or magma cube of a given size (26.1.2 Slime.setSize and
+// MagmaCube.getAttackDamage): health is the size squared and the hit the size
+// (a magma cube's two more), Normal, so 1, 4 and 16 health and 3, 4 and 6 for
+// a magma cube of size 1, 2 and 4; killed, one of size 2 or more is two to
+// four of half its size (three reckoned). Every one was priced as the big
+// one and its whole family: the magma cubes of the fortress are sizes 1, 2
+// and 4 in equal parts (Slime.finalizeSpawn, 1 << nextInt(3)), and the
+// flight records' fights with them were priced 9.6 to 16.7 and took 0.3 to
+// 0.9 (note 647). The size is the entity's own (`size`, the caller reads
+// metadata 16 with slimeSize); with none given the big one is priced, the most
+// it can be.
+const SLIMES = { magma_cube: { plus: 2 }, slime: { plus: 0 } };
+const slimeHit = (name, size) => size + SLIMES[name].plus;
+const SIZE_WORDS = { 1: 'small', 2: 'medium', 4: 'big' };
+function slimeOf(t) {
+  if (!SLIMES[t.name] || !(t.size >= 1) || t.split) return null;
+  const size = Math.round(t.size);
+  return { ...MOBS[t.name], hit: slimeHit(t.name, size), health: size * size, note: `a ${SIZE_WORDS[size] || `size ${size}`} one: ${size * size} health, a hit of ${slimeHit(t.name, size)} before armour${size > 1 ? `, and it splits into about three of size ${size / 2} where it dies` : ''}` };
+}
+function slimeSplits(t) {
+  if (!SLIMES[t.name] || !(t.size >= 1)) return null;
+  const out = [];
+  for (let size = Math.round(t.size) / 2, count = 3; size >= 1; size /= 2, count *= 3) out.push({ size: SIZE_WORDS[size] || `size ${size}`, count, hit: slimeHit(t.name, size), health: size * size });
+  return out;
+}
+// The size of a slime or a magma cube from its entity (metadata 16), or
+// undefined where it is not one or the size is not known.
+const slimeSize = entity => SLIMES[entity?.name] && Number.isFinite(Number(entity.metadata?.[16])) && Number(entity.metadata[16]) >= 1 ? Number(entity.metadata[16]) : undefined;
 
 // The fight where the bot stands, as a timeline: nearest first; every mob
 // still standing hits meanwhile, biters once a second at arm's length,
@@ -577,17 +754,20 @@ function fightTimeline(order, { shield = false, atOnce = Infinity, poisonedFor =
       if (m.jab) perSecond = m.jab;
       else if (++biters > atOnce) return;
       else perSecond = (j === 0 && !m.inCell ? MOBS[m.name]?.struck ?? STRUCK * rate : rate) * m.hitsBot;
+      // One out of sight is there at the chance the record gives it (UNSEEN).
+      const w = arrival(m);
+      perSecond *= w;
       // Closed on first: its hits as they came while the bot got to it.
       const closing = j === 0 && led > 0 && !m.jab && !m.inCell ? Math.min(led, end - from) : 0;
-      if (closing > 0) pieces.push({ from, to: from + closing, perSecond: PACE.leadBites * m.hitsBot, hit: m.hitsBot });
-      if (perSecond > 0 && end > from + closing) pieces.push({ from: from + closing, to: end, perSecond, hit: m.jab ?? m.hitsBot });
+      if (closing > 0) pieces.push({ from, to: from + closing, perSecond: PACE.leadBites * m.hitsBot * w, hit: m.hitsBot * w });
+      if (perSecond > 0 && end > from + closing) pieces.push({ from: from + closing, to: end, perSecond, hit: (m.jab ?? m.hitsBot) * w });
       if (m.withers && !m.shoots && !withering.has(m)) withering.set(m, from);
       if (m.poisons && perSecond > 0 && end > from && !poisoning.has(m)) poisoning.set(m, from);
     });
     killed.set(m0, end);
     t = end;
   });
-  if (burningFor > 0) pieces.push({ from: 0, to: burningFor, perSecond: BURN_PER_SECOND, effect: 'burn' });
+  if (burningFor > 0) pieces.push(...bodyBurn(burningFor));
   pieces.push(...effectPieces([...withering].map(([m, from]) => [from, killed.get(m) + WITHER.seconds])));
   pieces.push(...effectPieces([...[...poisoning].map(([m, from]) => [from + POISON.first, killed.get(m) + m.poisons]), [0, poisonedFor || 0]], 'poison'));
   return pieces;
@@ -635,7 +815,8 @@ function poisonFightSays(order, poison, { health = 20, poisonedFor = 0 } = {}) {
 // The fire on the bot, said where it is priced.
 function burnSays(seconds) {
   const s = Math.max(1, Math.round(seconds));
-  return `The bot is alight: about ${s} second${s === 1 ? '' : 's'} of fire left, ${BURN_PER_SECOND} health a second that armour does not stop, whatever is chosen, and each fireball that lands sets it back to ${FIRE_SECONDS.fireball}; counted in the figures. Only water or time puts it out, and the Nether has no water.`;
+  const ticks = bodyBurn(seconds).length;
+  return `The bot is alight: about ${s} second${s === 1 ? '' : 's'} of fire left, ${BURN_PER_SECOND} health a second that armour does not stop, the last a second before it ends: ${ticks} more health from it, whatever is chosen, and each fireball that lands sets it back to ${FIRE_SECONDS.fireball}; counted in the figures. Only water or time puts it out, and the Nether has no water.`;
 }
 // threats: [{ name, distance, shoots, visible }]; armour: piece names worn;
 // weapon: the item name or null; atOnce: how many biters can be at arm's
@@ -707,7 +888,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   threats = threats.flatMap(t => {
     const out = [t];
     let parents = [t];
-    for (const s of MOBS[t.name]?.splits || []) {
+    for (const s of slimeSplits(t) || MOBS[t.name]?.splits || []) {
       const per = Math.round(s.count / parents.length);
       parents = parents.flatMap(p => Array.from({ length: per }, () => ({ ...t, distance: (t.distance || 0) + 0.5, split: s, from: p })));
       out.push(...parents);
@@ -715,7 +896,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
     return out;
   });
   mobs = threats.map(t => {
-    const base = t.split ? { hit: t.split.hit, health: t.split.health, note: `a ${t.split.size} one, from a split` } : MOBS[t.name];
+    const base = t.split ? { hit: t.split.hit, health: t.split.health, note: `a ${t.split.size} one, from a split` } : slimeOf(t) || MOBS[t.name];
     if (!base) { unknown.push(t.name); return null; }
     // A spear in a mob's hand (26.1): its charged thrust is the hit. One
     // took mid-87-m from twenty to 11.4 through full iron, a zombie
@@ -752,7 +933,7 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       // A blow that varies (a hoglin's three to eight): its least and its
       // hardest through the armour worn, and how often it comes (note 587).
       ...(m.most && !spear ? { hitsBotLeast: round(afterArmour(m.least, worn)), hitsBotMost: round(afterArmour(m.most, worn)) } : {}), ...(m.blowEvery && !spear ? { blowEvery: m.blowEvery } : {}),
-      swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(t.name === 'blaze' && !t.split ? blazeCadence(t.distance) : { ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}) }), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
+      swingsToKill: hitsToKill, secondsToKill: round(seconds), ...(spear ? { spear: true, jab: round(afterArmour(seen ?? SPEAR.jab, worn)), reach: SPEAR.reach, knock: SPEAR.knock } : {}), ...(t.name === 'blaze' && !t.split ? blazeCadence(t.distance) : shoots && !t.split && shotModel(t.name, t.distance) ? (({ every, lands, says }) => ({ every, lands, shots: says }))(shotModel(t.name, t.distance)) : { ...(m.every ? { every: m.every } : {}), ...(m.burns ? { burns: m.burns } : {}) }), ...(m.withers ? { withers: m.withers } : {}), ...(m.poisons ? { poisons: m.poisons } : {}), ...(t.unseen ? { unseen: true } : {}), ...(m.note ? { note: m.note } : {}) }, 'health', { value: m.health });
   });
   // The mob each split one comes from, kept off the record (not enumerable).
   mobs.forEach((m, i) => { if (m && threats[i].from) Object.defineProperty(m, 'bornOf', { value: mobs[threats.indexOf(threats[i].from)] }); });
@@ -859,7 +1040,7 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   const withering = [], poisoning = [[0, mobs.find(m => m.poisonedFor > 0)?.poisonedFor || 0]];
   // The fire on the bot now burns on whatever the stance (burnLeft).
   const burningFor = mobs.find(m => m.burningFor > 0)?.burningFor || 0;
-  if (burningFor > 0) pieces.push({ from: 0, to: burningFor, perSecond: BURN_PER_SECOND, effect: 'burn' });
+  if (burningFor > 0) pieces.push(...bodyBurn(burningFor));
   // A biter that comes to the bot during the stance (`anchor`, when it
   // arrives or can reach again) strikes the moment it is there, a whole
   // blow (within), then at its pace: one blow each `blowEvery` seconds (a
@@ -869,14 +1050,16 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   // lands at once (mid-208-k-nether-4-fortress-1, note 587). One at arm's
   // length already has been striking at its own pace: where in it the
   // next blow falls is not known, so its blows are its steady rate.
+  const leaks = new Set(), unseenCounted = new Set();
   const hurts = (m, from, to, shielded, anchor = from) => {
     if (!(to > from)) return;
+    if (!m.shoots && arrival(m) < 1 && m.name !== 'creeper') unseenCounted.add(m.name);
     // A shooter off the side the shield faces (`unshielded`: a stance that
     // faces one mob) lands as if it were down (note 606).
     if (m.unshielded) shielded = false;
     if (m.shoots) pieces.push(...shotPieces(m, shielded, from, to));
     else {
-      const every = m.jab ? 1 : MOBS[m.name]?.blowEvery || 1, hit = bites(m);
+      const every = m.jab ? 1 : MOBS[m.name]?.blowEvery || 1, hit = bites(m) * arrival(m);
       const steady = anchor > 0 ? anchor + every : from;
       if (anchor > 0 && anchor >= from && anchor < to) pieces.push(blowAt(anchor, hit));
       if (to > Math.max(from, steady)) pieces.push({ from: Math.max(from, steady), to, perSecond: hit / every, hit });
@@ -932,6 +1115,11 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
       if (again > 0 && Math.max(setup, again) >= seconds) continue;
       if (again > setup) later.push({ name: m.name, seconds: round(again) }); else stillReach(m);
       hurts(m, start, seconds, shield, Math.max(from, again));
+    } else if (m.shoots && m.visible && !m.quiet && !fought(m) && again == null && seconds > setup && !(m.name === 'witch')) {
+      // Kept off by what stands between, and still landing some (COVER_LEAK).
+      const leaking = { ...m, poisons: undefined, ...(m.burns ? { every: (m.every || 2) / COVER_LEAK } : { lands: (m.lands ?? 1) * COVER_LEAK }) };
+      hurts(leaking, Math.max(setup, from), seconds, false);
+      leaks.add(m.name);
     }
   }
   if (fight && seconds > setup) {
@@ -961,8 +1149,9 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   damage += spanned(clipped(begunWithin(withering), effectEnd)) * WITHER.perSecond;
   const poison = spanned(clipped(effectsTo != null ? [...begunWithin(poisoning)] : poisoning, effectEnd)) * POISON.perSecond;
   damage = poisonFloored(damage + poison, poison, health ?? Infinity);
-  const out = { seconds, setup: round(setup), damage: round(damage), ...(poison > 0 ? { poison: round(poison) } : {}), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds), ...(farIn.length ? { farIn } : {}) };
+  const out = { seconds, setup: round(setup), damage: round(damage), ...(poison > 0 ? { poison: round(poison) } : {}), blasts, still: [...still], later: later.sort((a, b) => a.seconds - b.seconds), ...(farIn.length ? { farIn } : {}),
+    ...(leaks.size ? { leaks: [...leaks] } : {}), ...(unseenCounted.size ? { unseenBiters: [...unseenCounted] } : {}) };
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, FIRE_TICKS, landingCost, landingsToEnd, landingsApart, landingsSays, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { slimeSize, slimeOf, slimeSplits, ghastShot, bodyBurn, COVER_LEAK, UNSEEN, arrival, arrowHit, shotModel, landsPerSecond, BOW_EVERY, CROSSBOW_EVERY, GHAST_SHOT, burnChance, burnRamp, burnBetween, SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, FIRE_TICKS, landingCost, landingsToEnd, landingsApart, landingsSays, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };

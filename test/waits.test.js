@@ -215,7 +215,8 @@ test('a mob that has held off for minutes is priced at what it has done on every
   // Priced: a way off (anything that does not go at it) costs nothing from
   // it with it held off, as the hold does; the fight that goes at it is
   // priced as that fight.
-  const est = q => ce.fightEstimate({ threats: [{ name: 'piglin', distance: 8.1, shoots: true, held: 'crossbow', visible: true, ...(q ? { quiet: 4 } : {}) }], armour: [], weapon: 'iron_sword', health: 20 });
+  // (Six blocks: a piglin's bolts landed hardly at all from eight on in the record, note 647, and the price would be nothing either way.)
+  const est = q => ce.fightEstimate({ threats: [{ name: 'piglin', distance: 6, shoots: true, held: 'crossbow', visible: true, ...(q ? { quiet: 4 } : {}) }], armour: [], weapon: 'iron_sword', health: 20 });
   assert.equal(est(true).fightHere.damageTaken, est(false).fightHere.damageTaken);
   assert(est(true).fightHere.damageTaken > 0);
   assert(ce.stanceCost({ mobs: est(false).mobs, reaches: () => true }).damage > 0);

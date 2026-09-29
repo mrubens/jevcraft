@@ -340,3 +340,20 @@ test('in play only the tactics that worked in the arena are offered: the box whe
     assert.match(stands.box_here.description, /Measured in the arena with the same kit, this way: against four blazes nine to eleven off round the bot by a live spawner eleven off[^;]*5 runs: 0 killed, 0 rods carried away, about 31\.5 damage a run on the median over about 124\.9 seconds, 1 death/);
   } finally { process.env.BLAZE_TACTICS_ALL = '1'; }
 });
+
+// Note 647: the fire the landings light comes a second after each and climbs
+// for four; the close-in priced every phase at the steady chance of being
+// alight from its first second, five seconds long.
+test('the close-in counts the fire its landings light as it comes, a second late, not a steady chance of being alight from the first second of the walk (note 647)', () => {
+  const bot = floorWorld({ spawner: null, solid: p => p.y <= 63, at: new Vec3(0.5, 64, 0.5), health: 20 });
+  blazeAt(bot, 1, 12.5, 65, 0.5);
+  const c = stand.closeInCost(bot, near(bot));
+  assert(c.phases.length >= 2, JSON.stringify(c.phases));
+  // The first phase's damage a second is under what the steady rates come to (the hits and the chance of being alight 1 - e^(-4 x landings)).
+  const steady = c.striking;
+  assert(c.phases[0].perSecond < steady, `${c.phases[0].perSecond} a second in the first phase, ${steady} steady`);
+  assert(c.phases[0].perSecond > 0);
+  // And the burn counted for the whole run is the ramp's (combat-estimate burnBetween), not the old steady 5-second sum.
+  const ce = require('../src/combat-estimate');
+  assert(ce.burnBetween([{ from: 0, to: 4, perSecond: 0.2 }], 0, 4) < (1 - Math.exp(-5 * 0.2)) * 4);
+});

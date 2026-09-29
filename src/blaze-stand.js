@@ -340,7 +340,7 @@ function blazeRate(list, { shield, shieldUp, fireHit, meleeHit, extra = 0, extra
   }
   fire += extra * ce.FIREBALL.volley * ce.fireballHit(extraAt) / ce.FIREBALL.volleySeconds;
   const hits = Math.min(fire * fireHit + melee, 2 * Math.max(fireHit, melee ? meleeHit : 0));
-  return { hits, fire, burn: 1 - Math.exp(-ce.FIRE_SECONDS.fireball * fire) };
+  return { hits, fire, burn: 1 - Math.exp(-ce.FIRE_TICKS.fireball * fire) };
 }
 // What the biters among them do meanwhile (a wither skeleton by the
 // blazes, a piglin brute): each gets to the bot at its own pace and strikes
@@ -396,13 +396,15 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   const spawnAt = spawner ? spawner.offset(0.5, 0.5, 0.5).distanceTo(here) : null;
   let spawning = spawner && spawnAt <= 16;
   let t = 0, damage = 0, kills = 0, deathAt = null, extra = 0, from = here;
-  const phases = [];
+  const phases = [], landings = [];
   const spend = (seconds, r, what) => {
     if (!(seconds > 0) || t >= horizon || deathAt != null) return;
     const s = Math.min(seconds, horizon - t);
-    // The fire on the bot now burns on at a health a second whatever else.
-    const onFire = Math.max(0, Math.min(t + s, burning) - t);
-    const add = r.hits * s + Math.max(onFire, r.burn * s);
+    // The fire on the bot now burns on at a health a second whatever else;
+    // the fire the landings so far light comes a second after each and not
+    // all at once (combat-estimate burnBetween, note 647).
+    landings.push({ from: t, to: t + s, perSecond: r.fire });
+    const add = r.hits * s + ce.burnBetween(landings, t, t + s, burning);
     if (damage + add >= hp) deathAt = round(t + (hp - damage) / Math.max(0.01, add / s));
     damage += add; t += s;
     if (spawning) extra = Math.min(Math.max(0, SPAWN_CAP - alive.length), extra + s / SPAWN_SECONDS);
@@ -1213,7 +1215,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     // With no shield nothing waits for a volley: the work goes straight on.
     const k = list.filter(b => b.sees).length, wall = seconds / (shield ? lull(k) : 1);
     const r = blazeRate(list, { shield, shieldUp: true, fireHit, meleeHit });
-    const damage = round(r.hits * wall + Math.max(Math.min(wall, burning), r.burn * wall) + biteCost(bot, danger, wall).damage);
+    const damage = round(r.hits * wall + ce.burnBetween([{ from: 0, to: wall, perSecond: r.fire }], 0, wall, burning) + biteCost(bot, danger, wall).damage);
     // Said with the share of time the volleys take, which is what makes it
     // long: with many blazes at the bot there is hardly a lull to work in.
     const busy = k && shield ? Math.round(100 * (1 - lull(k))) : 0;
@@ -1249,7 +1251,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     // In the box every blaze in line with the window is in front, where the
     // shield faces (the probe's one in thirty), and none has a line past it.
     const inside = blazeRate(inLine.map(e => ({ d: d(e), sees: true, covered: true })), { shield, shieldUp: true, fireHit, meleeHit });
-    const hold = round(inside.hits * ce.HOLD_SECONDS + inside.burn * ce.HOLD_SECONDS);
+    const hold = round(inside.hits * ce.HOLD_SECONDS + ce.burnBetween([{ from: 0, to: ce.HOLD_SECONDS, perSecond: inside.fire }], 0, ce.HOLD_SECONDS));
     const cageOff = cageNear ? round(Math.hypot(box.cell.x + 0.5 - cageNear.x - 0.5, box.cell.z + 0.5 - cageNear.z - 0.5)) : null;
     const byCage = cageOff != null && cageOff <= T.BOX_NEAR[1];
     const crowd = about.filter(e => e.position.distanceTo(box.cell.offset(0.5, 1, 0.5)) <= 4).length;

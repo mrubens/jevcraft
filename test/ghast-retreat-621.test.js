@@ -52,7 +52,7 @@ test('the retreat says its footing is in the ghast\'s line, and prices the fifte
   const options = s.stanceOptions(task, { step: { action: 'find_fortress' } }, () => {}, danger, false);
   const r = options.retreat.description;
   assert.match(r, /A way is found: \d+ blocks to footing/);
-  assert.match(r, /The footing is not out of their sight: the ghast has a line to it from where it is now, and its shots go on there as here: about (\d+(\.\d)?) damage from the shooters in the next fifteen seconds this way, the run included, from 7\.4 health \(more than the bot has\)\./);
+  assert.match(r, /The footing is not out of their sight: the ghast has a line to it from where it is now, and its shots go on there as here: about (\d+(\.\d)?) damage from the shooters in the next fifteen seconds this way, the run included, from 7\.4 health\./);
   const all = Number(/about (\d+(?:\.\d)?) damage from the shooters in the next fifteen seconds/.exec(r)[1]);
   const run = Number(/About (\d+(?:\.\d)?) damage from the shooters in range over those seconds/.exec(r)[1]);
   assert.ok(all > run * 3, `the fire after the run counted: ${run} over the run, ${all} in fifteen seconds`);

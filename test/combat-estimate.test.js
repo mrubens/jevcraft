@@ -98,7 +98,10 @@ test('every stance that fights a creeper prices it as the fight does; a stance t
 test('a skeleton is not a quick kill: it backs off after each hit and shoots while it is closed on', () => {
   // Trial 44 was told 2.5 seconds and 1.3 damage; it lost fourteen health in six seconds.
   const e = fightEstimate({ threats: [{ name: 'skeleton', distance: 4.3, shoots: true, visible: true }], weapon: 'stone_sword', health: 9.2 });
-  assert(e.fightHere.damageTaken >= 6, JSON.stringify(e.fightHere));
+  // A skeleton shoots every three seconds (the bow drawn and waited on) and
+  // its arrow lands 100 in 100 from 4 blocks on a bot standing still (note
+  // 647): 5.3, where every two seconds and every arrow said 6.4.
+  assert(e.fightHere.damageTaken >= 5, JSON.stringify(e.fightHere));
   assert(e.fightHere.healthAfter < 4, 'at nine health it is close to fatal');
 });
 
@@ -296,7 +299,8 @@ test('in a tunnel a crowd comes one or two at a time: the fight costs less than 
 
 test('a shooter out of its range walks in before it shoots, and a shield does not stop a witch\'s potion', () => {
   const { stanceCost } = require('../src/combat-estimate');
-  const mobsAt = distance => fightEstimate({ threats: [{ name: 'skeleton', distance, shoots: true, visible: true }], armour: IRON, weapon: 'iron_sword' }).mobs;
+  // The same shot at every distance, so that it is the walking in that is counted (what lands by distance is arrowHit's, note 647).
+  const mobsAt = distance => fightEstimate({ threats: [{ name: 'skeleton', distance, shoots: true, visible: true }], armour: IRON, weapon: 'iron_sword' }).mobs.map(m => Object.assign(m, { every: 2, lands: 1 }));
   const far = stanceCost({ mobs: mobsAt(24), reaches: () => true }), near = stanceCost({ mobs: mobsAt(12), reaches: () => true });
   assert.equal(Math.round((near.damage - far.damage) / (near.damage / 15) * 10) / 10, 3, 'three seconds walking in from twenty-four');
   const witch = fightEstimate({ threats: [{ name: 'witch', distance: 6, shoots: true, visible: true }], armour: IRON, weapon: 'iron_sword' }).mobs;
@@ -358,9 +362,12 @@ test('a blaze is priced with the burn its fireballs set, not the hit alone (mid-
   // each landing about 24 in 100 from 15, a landing about every 12 seconds;
   // alight from each for five, so alight about 34 in 100 of the time.
   assert.equal(e.mobs[0].every, 11.9);
-  assert.equal(e.mobs[0].burns, 0.34);
-  // The burn counted beside the hits: 2.5 a landing over its eight seconds is 1.7.
-  assert(e.fightHere.damageTaken >= 1.7 + 0.34 * 8 - 0.1, `${e.fightHere.damageTaken}`);
+  // A landing's fire is four ticks (note 631), so alight 29 in 100 of the time.
+  assert.equal(e.mobs[0].burns, 0.29);
+  // The burn counted beside the hits: 2.5 a landing over its eight seconds is
+  // 1.7, and the fire begins a second after the first landing and climbs for
+  // four (note 647): about 0.29 of the seconds from the second on, not from the first.
+  assert(e.fightHere.damageTaken >= 1.7 + 0.29 * 6, `${e.fightHere.damageTaken}`);
 });
 
 test('four blazes about burn the bot as one fire, lit more often the more of them there are (note 602)', () => {
@@ -399,7 +406,9 @@ test('a wither skeleton withers as it hits: half a health a second through armou
   assert.equal(e.mobs[0].hitsBot, 4.5, 'eight through full iron');
   assert.equal(e.mobs[0].withers, 0.5);
   assert.match(e.mobs[0].note, /withers the bot for ten seconds/);
-  assert(e.fightHere.damageTaken > 15.5, JSON.stringify(e.fightHere));
+  // A piglin's bolts from 20 blocks are priced at what the record has them land, none (note 647), so the blade
+  // and the wither alone: the 10.4 that left the bot at 5.1, where it was at 4.2.
+  assert(e.fightHere.damageTaken > 9 && e.fightHere.healthAfter < 6.5, JSON.stringify(e.fightHere));
   // Alone: its 2.7 seconds of blade (four swings at 0.9, the first at once;
   // a third of its hits) and 12.7 seconds withering.
   const alone = fightEstimate({ threats: [{ name: 'wither_skeleton', distance: 1.3, visible: true }], armour: iron, weapon: 'iron_sword', health: 15.5 });
