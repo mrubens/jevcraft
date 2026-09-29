@@ -141,7 +141,11 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
     // names with the pickup of each block's cobblestone every second or two
     // while it advanced a block each time, five blocks in sixteen seconds,
     // and was failed as a loop. A loop comes back to where it was.
-    const movedOn = dist(win[6].s.position, win[0].s.position) >= 3;
+    // A climb is somewhere else too: mid-244-ce built a tower one block at a
+    // time toward the last slot of a nine-of-ten portal frame, its walks
+    // ending short and the step trading names, and was failed as a flip in
+    // the trial's last 47 seconds (note 651). Two blocks up is progress.
+    const movedOn = dist(win[6].s.position, win[0].s.position) >= 3 || (win[6].s.position.y - win[0].s.position.y) >= 2;
     // Nor when the step's own count went down: mid-202-c mined cobblestone
     // for its Nether blocks, the mine and the pickup of each block trading
     // names while seventeen to go became twelve, and was failed as a loop;
