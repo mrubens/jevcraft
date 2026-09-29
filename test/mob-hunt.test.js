@@ -1107,6 +1107,15 @@ test('a spawner behind a wall is not known; seen through an opening, waiting by 
   ({ options, state } = client.asked[1]);
   assert.match(state.fortressInView.map.spawnersSeen[0], /^\(20, 65, -4\), \d+ blocks off, about \d+ steps along the floors$/);
   assert.match(options.wait_at_spawner, /^Wait by the spawner seen at \(20, 65, -4\), \d+ blocks off, for 3 minutes: .*Floors seen join it to where the bot stands, about \d+ steps\./);
+  assert.equal(options.go_to_spawner, undefined, 'the spawner wait_at_spawner offers is not offered twice (note 686)');
+  // Going back into it from here walks the same floors: said plainly, with the spawner a way of its own (note 686).
+  const { fortressInView } = require('../src/mob-hunt');
+  const ids = ['nether_bricks'].map(n => registry.blocksByName[n].id);
+  goal2.fortressSearch.walkedAllLog.unshift({ at: Date.now() - 5 * 60000, kills: 0, rods: 0 });
+  const back = fortressInView(bot, goal2, () => {}, goal2.fortressSearch, bot.findBlocks({ matching: ids, count: 4096 }), { stay: false });
+  assert.match(back.description, /It has walked all it can reach of this fortress 2 times in the last 5 minutes, no blaze killed and no rod taken meanwhile\./);
+  assert.equal(back.key, 'back_to_fortress');
+  assert.match(back.description, /Every floor of it joined to here that runs on into unseen space has been walked: walking them again finds nothing new\..* The spawner at \(20, 65, -4\) is a way of its own \(go_to_spawner\)\./);
   // Taken: the walk to the cage is on foot, and there it waits, a wait the stall watch lets be.
   const before = walks.length;
   await findFortressStep(bot, new Task('hunt'), goal2, () => {}, actions);

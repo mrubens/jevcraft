@@ -135,6 +135,30 @@ function features(bot, map, eye, now) {
   for (const p of find('chest', 8)) if (!map.chests.some(c => c.x === p.x && c.y === p.y && c.z === p.z) && visible(p)) map.chests.push({ x: p.x, y: p.y, z: p.z });
 }
 
+// What came of the bot's time at each spawner the map holds (note 686):
+// when it was last within sixteen of it (the spawner's reach), and the
+// blazes killed, rods taken and seconds spent while it was, counted from the bot's own
+// tallies between passes. A spawner seen broken is marked so. `kills` and
+// `rods` are the bot's running counts now.
+const SPAWNER_REACH = 16;
+function noteSpawners(bot, map, { kills = 0, rods = 0, now = Date.now() } = {}) {
+  const here = bot?.entity?.position;
+  if (!here || !map?.spawners?.length) return;
+  const was = map.tally || { kills, rods };
+  const gained = { kills: Math.max(0, kills - was.kills), rods: Math.max(0, rods - was.rods) };
+  // The time since the last pass, up to half a minute (a pass is a second
+  // or a fight's length; a longer gap is the bot away or the bot stopped).
+  const secs = was.at ? Math.min(30, Math.max(0, (now - was.at) / 1000)) : 0;
+  map.tally = { kills, rods, at: now };
+  for (const s of map.spawners) {
+    const b = typeof bot.blockAt === 'function' ? bot.blockAt(new Vec3(s.x, s.y, s.z)) : null;
+    if (b && b.name !== 'spawner') s.broken ||= now;
+    if (Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z) > SPAWNER_REACH) continue;
+    s.lastThereAt = now; s.secondsThere = Math.round((s.secondsThere || 0) + secs);
+    s.kills = (s.kills || 0) + gained.kills; s.rods = (s.rods || 0) + gained.rods;
+  }
+}
+
 // The seen floor the bot stands on, or the nearest within reach of it.
 function standing(bot, map) {
   const here = bot.entity.position, fx = Math.floor(here.x), fy = Math.floor(here.y + 0.01) - 1, fz = Math.floor(here.z);
@@ -377,7 +401,7 @@ function mapSays(bot, map, planned, { now = Date.now() } = {}) {
     joinedOnFoot: planned.from ? `${planned.joined} of the ${planned.seen} floors seen are joined to where the bot stands${planned.seen > planned.joined ? `; the other ${planned.seen - planned.joined} lie apart from it${planned.groups.length ? `, in ${planned.groups.length} part${planned.groups.length === 1 ? '' : 's'} with floors unwalked` : ''}` : ''}` : 'the bot stands on no floor it has seen' };
   out.waysOnFoot = planned.frontiers.length ? `${planned.frontiers.length} seen floor${planned.frontiers.length === 1 ? '' : 's'} running on into unseen space that the bot can walk to, the nearest ${planned.frontiers[0].steps} steps along the floors` : 'none: every floor joined to here that runs on into unseen space has been walked, or its walk failed';
   const off = s => `${Math.round(Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z))} blocks off`;
-  if (map.spawners.length) out.spawnersSeen = map.spawners.map(s => { const st = stepsTo(map, planned, s); return `(${s.x}, ${s.y}, ${s.z}), ${off(s)}, ${st === null ? 'no floor seen joins it to here' : `about ${st} steps along the floors`}`; });
+  if (map.spawners.length) out.spawnersSeen = map.spawners.map(s => { const st = stepsTo(map, planned, s); return `(${s.x}, ${s.y}, ${s.z}), ${off(s)}, ${st === null ? 'no floor seen joins it to here' : `about ${st} steps along the floors`}${s.broken ? ', seen broken' : ''}`; });
   const stairs = Object.entries(map.cells).filter(([, c]) => c[2]);
   if (stairs.length) out.stairsSeen = `${stairs.length} nether brick stair${stairs.length === 1 ? '' : 's'} seen (a fortress's stairs lead up to its spawner rooms), ${stairs.filter(([, c]) => c[0]).length} walked`;
   if (map.wart) out.wartSeen = `nether wart at (${map.wart.x}, ${map.wart.y}, ${map.wart.z}), ${off(map.wart)}: the wart room`;
@@ -387,4 +411,4 @@ function mapSays(bot, map, planned, { now = Date.now() } = {}) {
   return out;
 }
 
-module.exports = { look, plan, mapSays, mapOf, gapTo, crossing, crossings, crossingSays, lavaLevel, stepsTo, standing, reach, floorAt, keyOf, parse, FLOORS, FAILED_MS };
+module.exports = { look, plan, mapSays, mapOf, noteSpawners, SPAWNER_REACH, gapTo, crossing, crossings, crossingSays, lavaLevel, stepsTo, standing, reach, floorAt, keyOf, parse, FLOORS, FAILED_MS };

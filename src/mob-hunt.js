@@ -795,6 +795,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // While this runs, mobs of this kind are the hunt's business and not the
   // survival layer's emergency. Refreshed every tick; it lapses in seconds.
   bot._huntingEntity = { name: step.entity, until: Date.now() + 5000 };
+  // What the bot's time at each spawner known comes to (note 686): said
+  // with the way back to it.
+  if (step.entity === 'blaze' && goal.fortressSearch?.map?.spawners?.length) {
+    require('./rung-measure').watchKills(bot);
+    require('./fortress-map').noteSpawners(bot, goal.fortressSearch.map, { kills: bot._kills?.blaze || 0, rods: countOf(bot, step.item) });
+  }
   // A drop on the floor is a drop not carried. The arena killed a blaze and
   // scored nothing three times over because the rod lay where it fell: the
   // fight's own pickup only runs when the fight's own code did the killing.
@@ -1077,7 +1083,8 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // Where the blazes were last seen is where they will be again: a spawner
   // keeps its room full. After a death the bot swept from the portal as if
   // it had never been there. Head back to the freshest sighting first.
-  const spot = rememberedSpot(state, bot);
+  // Not while a walk to a spawner Jev chose is under way (note 686).
+  const spot = !goal.fortressSearch?.spawnerWait?.go && rememberedSpot(state, bot);
   if (spot && actions.navigate) {
     spot.triedAt = Date.now(); spot.tries = (spot.tries || 0) + 1; save();
     goal.step = { action: 'return_to_blazes', target: { x: spot.x, y: spot.y, z: spot.z }, seen: spot.seen }; save();
@@ -1134,8 +1141,26 @@ const FORTRESS_MIN_BRICKS = 24;
 const FORTRESS_LOOK = 512, FORTRESS_VIEW = 4096;
 // A wait by a spawner Jev chose (wait_at_spawner), before the legs are asked again.
 const SPAWNER_WAIT_MS = 3 * 60000;
+// A walk to a spawner Jev chose (go_to_spawner), before the legs are asked
+// again: 100 blocks of fortress floor at a walk is under a minute, the way
+// asked where it finds none included.
+const SPAWNER_GO_MS = 5 * 60000;
 // A walk over the fortress's corridors again Jev chose (stay_in_fortress).
 const PATROL_MS = 3 * 60000;
+// How far back the times the bot walked all it could reach of a fortress
+// are said (walkedAllSays).
+const WALKED_ALL_MS = 30 * 60000;
+// The times the bot walked all it could reach of the fortress lately, and
+// what came of them: 25589 went back into its fortress and walked the same
+// floors seven times in forty minutes, no blaze killed, each asking told
+// only the floors walked (note 686).
+function walkedAllSays(bot, state, now = Date.now()) {
+  const log = (state.walkedAllLog || []).filter(e => now - e.at < WALKED_ALL_MS);
+  if (log.length < 2) return '';
+  const first = log[0], kills = Math.max(0, (bot._kills?.blaze || 0) - first.kills), rods = Math.max(0, countOf(bot, 'blaze_rod') - first.rods);
+  const mins = Math.max(1, Math.round((now - first.at) / 60000));
+  return ` It has walked all it can reach of this fortress ${log.length} times in the last ${mins} minutes, ${kills || rods ? `${kills} blaze${kills === 1 ? '' : 's'} killed and ${rods} rod${rods === 1 ? '' : 's'} taken meanwhile` : 'no blaze killed and no rod taken meanwhile'}.`;
+}
 const LEAVE_RADIUS = 48, LEAVE_MS = 4 * 60 * 1000;
 const FORTRESS_BLOCKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab', 'nether_wart'];
 const FORTRESS_LEG = 96;
@@ -1466,6 +1491,30 @@ function blazeSpots(bot, goal) {
     .map(s => ({ spot: s, off: Math.round(Math.hypot(s.x - here.x, s.y - here.y, s.z - here.z)) }))
     .sort((a, b) => (b.spot.seen || 1) - (a.spot.seen || 1) || a.off - b.off);
 }
+// The blaze spawners the fortress map holds, not seen broken, nearest
+// first (note 686).
+function spawnersKnown(bot, state) {
+  const here = bot.entity.position;
+  return (state.map?.spawners || []).filter(s => !s.broken)
+    .map(s => ({ s, off: Math.round(Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z)) })).sort((a, b) => a.off - b.off);
+}
+// A spawner as said with a way to it: where, the blazes seen near it, what
+// the bot's time within its sixteen came to, and whether there is a way
+// there (floors seen joining it, the pathfinder's survey, ground stood on).
+function spawnerSays(bot, goal, state, { s, off }, planned = null, route = null, now = Date.now()) {
+  const here = bot.entity.position, dy = Math.round(s.y - here.y);
+  const ago = t => { const m = Math.round((now - t) / 60000); return m ? `${m} minute${m === 1 ? '' : 's'} ago` : 'just now'; };
+  const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const seen = (goal.mobHunt?.sightings || []).filter(p => p.dimension === bot.game?.dimension && Math.hypot(p.x - s.x, p.y - s.y, p.z - s.z) <= 16).reduce((n, p) => n + (p.seen || 1), 0);
+  const tally = s.lastThereAt ? `${plural(s.kills || 0, 'blaze')} killed and ${plural(s.rods || 0, 'rod')} taken in about ${Math.max(1, Math.round((s.secondsThere || 0) / 60))} minute${Math.round((s.secondsThere || 0) / 60) > 1 ? 's' : ''} within 16 of it, last there ${ago(s.lastThereAt)}` : 'the bot has not been within 16 of it since it was seen';
+  const steps = planned ? require('./fortress-map').stepsTo(state.map, planned, s) : null;
+  const stood = coverage.stoodNear(state, coverage.dimOf(bot), s, 32);
+  const way = steps !== null ? `Floors seen join it to here, about ${steps} steps.`
+    : route && !route.cells ? 'The pathfinder found no route toward it from here (it digs no netherrack).'
+    : route ? `The pathfinder found ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells, placing ${route.place} and digging ${route.dig}.`
+    : 'No floor seen joins it to here.';
+  return `at (${s.x}, ${s.y}, ${s.z}), ${off} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, seen ${ago(s.seenAt || now)}: ${seen ? `blazes seen near it ${plural(seen, 'time')}` : 'no blaze seen near it'}; ${tally}. ${way}${stood === null ? '' : ` The bot has stood ${stood} blocks from it.`}`;
+}
 function blazeSpotSays({ spot, off }, here, now = Date.now()) {
   const dy = Math.round(spot.y - here.y), mins = Math.round((now - (spot.at || now)) / 60000);
   const sight = Number.isInteger(spot.inSight) ? ` (${spot.inSight} of them in sight, the rest heard through the walls)` : '';
@@ -1668,6 +1717,26 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     // corridors run on past the last brick seen (fortressRuns).
     const runs = fortressRuns(fortress.bricks || [], here);
     HEADINGS.forEach((h, i) => { if (runs[i] >= 8 && options[`leg_${HEADING_NAMES[i]}`]) options[`leg_${HEADING_NAMES[i]}`].description += ` The fortress's bricks in view run ${runs[i]} blocks this way from here; what lies past them is unseen.`; });
+  }
+  // A blaze spawner the map holds is the place the blazes come from: each
+  // not seen broken is a way of its own, nearest first (note 686). 25589
+  // fought blazes at the cage at (-108, 77, 155), left it, and walked the
+  // fortress's floors again and again, back_to_fortress each time: the
+  // spawner was said only in fortressInView.map, and offered only as
+  // wait_at_spawner, on the floors with nothing left to walk.
+  const covered = fortress?.others?.wait_at_spawner?.spawner;
+  const cages = spawnersKnown(bot, state).filter(k => k.off > GO_TO_NEAR && !wayLeft(state, k.s) && !(covered && covered.x === k.s.x && covered.y === k.s.y && covered.z === k.s.z)).slice(0, 3);
+  if (cages.length) {
+    const planned = require('./fortress-map').plan(bot, state.map);
+    for (const [i, k] of cages.entries()) {
+      const s = k.s, key = i ? `go_to_spawner_${i + 1}` : 'go_to_spawner', ended = state.goToEnded?.[`spawner:${s.x},${s.y},${s.z}`];
+      // The pathfinder's survey toward the nearest only: a survey is up to
+      // half a second on a loaded machine.
+      const route = i === 0 && actions.navigate ? await routeSurvey(bot, task, new goals.GoalNear(s.x, s.y, s.z, 4), new Vec3(s.x, s.y, s.z)) : null;
+      options[key] = { description: `Go to the blaze spawner ${spawnerSays(bot, goal, state, k, planned, route)} While the bot is within 16 of it, it makes up to 4 blazes every 10 to 40 seconds. The walk is on foot first; where it finds no way, the way there is asked (fortress_approach). There, with no blaze near, the stand is asked (empty_spawner).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
+        target: { x: s.x, y: s.y, z: s.z },
+        run: () => { state.spawnerWait = { x: s.x, y: s.y, z: s.z, until: Date.now() + SPAWNER_GO_MS, startedAt: Date.now(), go: true }; delete state.spawnerWaitEnded; save(); return 'goto'; } };
+    }
   }
   // Where blazes were seen, farther than the hunt's own look: the way back
   // to the busiest of them, walked on foot first and otherwise asked.
@@ -2344,9 +2413,12 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
   const here = bot.entity.position;
   const nearest = bricks.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   const off = Math.round(nearest.distanceTo(here));
-  const blazes = (goal.mobHunt?.sightings || []).filter(s => s.dimension === bot.game?.dimension && Math.hypot(s.x - nearest.x, s.z - nearest.z) <= LEAVE_RADIUS)
-    .reduce((n, s) => n + (s.seen || 1), 0);
-  const seen = blazes ? `blazes seen near it ${blazes} time${blazes === 1 ? '' : 's'}` : 'no blaze seen near it yet';
+  const near = (goal.mobHunt?.sightings || []).filter(s => s.dimension === bot.game?.dimension && Math.hypot(s.x - nearest.x, s.z - nearest.z) <= LEAVE_RADIUS);
+  const blazes = near.reduce((n, s) => n + (s.seen || 1), 0);
+  // How many of them were in sight: heard through its walls is not a blaze
+  // the walk of its floors meets (note 686).
+  const inSight = near.every(s => Number.isInteger(s.inSight)) ? near.reduce((n, s) => n + s.inSight, 0) : null;
+  const seen = blazes ? `blazes seen near it ${blazes} time${blazes === 1 ? '' : 's'}${inSight === null ? '' : ` (${inSight ? `${inSight} in sight` : 'none in sight'}, the rest heard through the walls)`}` : 'no blaze seen near it yet';
   const passes = state.patrols || 0;
   const minutes = state.inFortressSince ? Math.round((Date.now() - state.inFortressSince) / 60000) : 0;
   // Its floors against where the bot stands: bricks a block off can be a
@@ -2365,13 +2437,15 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
     // A spawner seen through open air is where blazes come without walking:
     // waiting by it is a player's way (blaze-stand.js has how it makes them).
     // Only one seen: a spawner behind a wall is not known.
-    const spawner = map.spawners.map(s => new Vec3(s.x, s.y, s.z)).sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
+    const known = spawnersKnown(bot, state)[0];
+    const spawner = known && new Vec3(known.s.x, known.s.y, known.s.z);
     if (spawner) {
       const d = Math.round(spawner.offset(0.5, 0.5, 0.5).distanceTo(here));
       const steps = fm.stepsTo(map, planned, spawner);
       const way = steps === null ? 'No floor seen joins it to where the bot stands: the walk there is on foot first, and where it finds no way the way there is asked (fortress_approach).' : `Floors seen join it to where the bot stands, about ${steps} steps.`;
       facts.spawner = `a spawner seen ${d} blocks off at (${spawner.x}, ${spawner.y}, ${spawner.z})`;
-      others.wait_at_spawner = { description: `Wait by the spawner seen at (${spawner.x}, ${spawner.y}, ${spawner.z}), ${d} blocks off, for ${SPAWNER_WAIT_MS / 60000} minutes: a fortress's spawners are blaze spawners, and while a player is within sixteen blocks of one it makes up to four blazes within four blocks of itself every ten to forty seconds, and the hunt takes each one as it comes into view. ${way} ${capital(seen)}. The legs are asked again after.${state.spawnerWaitEnded ? ` The last wait here ended: ${state.spawnerWaitEnded}.` : ''}`,
+      others.wait_at_spawner = { description: `Wait by the spawner seen at (${spawner.x}, ${spawner.y}, ${spawner.z}), ${d} blocks off, for ${SPAWNER_WAIT_MS / 60000} minutes: a fortress's spawners are blaze spawners, and while a player is within sixteen blocks of one it makes up to four blazes within four blocks of itself every ten to forty seconds, and the hunt takes each one as it comes into view. ${way} ${capital(seen)}${known.s.lastThereAt ? `; ${known.s.kills || 0} killed and ${known.s.rods || 0} rods taken within 16 of it` : ''}. The legs are asked again after.${state.spawnerWaitEnded ? ` The last wait here ended: ${state.spawnerWaitEnded}.` : ''}`,
+        spawner: { x: spawner.x, y: spawner.y, z: spawner.z },
         run: () => { state.spawnerWait = { x: spawner.x, y: spawner.y, z: spawner.z, until: Date.now() + SPAWNER_WAIT_MS }; delete state.spawnerWaitEnded; save(); return 'wait'; } };
     }
     // Floors seen that no floor seen joins to here, nearest first: the way
@@ -2394,7 +2468,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
         target: { x: g.at[0], y: g.at[1] + 1, z: g.at[2] }, run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, keys: groups.map(p => p.key), since: Date.now() }; save(); return 'goto'; } };
     });
     const patrol = planned.patrol.length ? { key: 'stay_in_fortress',
-      description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.`,
+      description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.${walkedAllSays(bot, state)}`,
       run: () => { state.patrolUntil = Date.now() + PATROL_MS; save(); return 'stay'; } } : null;
     return { key: 'stay_in_fortress', ...(patrol ? {} : { offer: false }), passes, bricks, facts, others,
       description: patrol?.description || '', run: patrol?.run || (() => 'stay') };
@@ -2423,6 +2497,18 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
     ? `left ${leftAgo} minute${leftAgo === 1 ? '' : 's'} ago after its passes, and set behind the bot for ${Math.round((state.leaving.until - Date.now()) / 60000)} more`
     : shun ? `set aside ${mins(Date.now() - (shun.at || Date.now()))} ago, for ${mins(shun.until - Date.now())} more: ${shun.why}${!sameSpot ? '' : shun.left ? `, from where the bot stands, over the ways into it from here (${shun.left.length ? shun.left.join(', ') : 'none but leaving'}): going back from here is asking those same ways again` : '; the bot stands where that was found, and from here the same look finds the same'}`
     : aside || 'set aside as a face not approached, for ten minutes';
+  // Its floors all walked, said plainly: going back walks them again, and
+  // that finds nothing new. 25589 chose back_to_fortress over and over at
+  // 0.78, each followed by "Walked what I can reach of this fortress"
+  // (note 686). From its floors, the map from here; off them, the last
+  // time the bot walked all it could reach, while nothing since was walked.
+  const fmap = state.map && require('./fortress-map');
+  const fromHere = fmap && onFloors ? fmap.plan(bot, state.map) : null;
+  const walkedNow = state.map ? Object.values(state.map.cells).filter(c => c[0]).length : 0;
+  const allWalked = fromHere?.from ? !fromHere.frontiers.length
+    : !!state.walkedAll && Date.now() - state.walkedAll.at < LEAVE_MS * 5 && walkedNow <= state.walkedAll.walked + 8;
+  const known = allWalked ? spawnersKnown(bot, state)[0] : null;
+  const walkedSaysAll = !allWalked ? '' : ` Every floor of it joined to ${fromHere?.from ? 'here' : 'where the bot last walked it'} that runs on into unseen space has been walked: walking them again finds nothing new.${walkedAllSays(bot, state)}${known ? ` The spawner at (${known.s.x}, ${known.s.y}, ${known.s.z})${known.s.rods ? `, where ${known.s.rods} rod${known.s.rods === 1 ? ' was' : 's were'} taken,` : ''} is a way of its own (go_to_spawner).` : ''}`;
   const restSays = waysRest ? `; from here every way into it last offered came to nothing (${spent.keys.map(k => k.replaceAll('_', ' ')).join(', ')}): going back from here is asking those same ways again` : '';
   // Going back from where it was found to hold nothing to walk to is no
   // move: the patrol sets it aside again before a step. Nor from where Jev
@@ -2430,7 +2516,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
   // again, and each answer undid the other (note 541). Said as a fact
   // with the legs, not offered (chooseLeg).
   return { key: 'back_to_fortress', passes, bricks, facts: { ...facts, setAside: `${why}${restSays}` }, ...(sameSpot || waysRest ? { offer: false, leftHere: sameSpot ? shun?.left || [] : [] } : {}),
-    description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${state.map ? ` Of its floors seen, ${Object.values(state.map.cells).filter(c => c[0]).length} of ${Object.keys(state.map.cells).length} walked.` : ''} Taken, it is no longer set aside, and ${onFloors ? 'its floors are walked from where the bot stands' : 'the way to its bricks is asked (fortress_approach), or its floors walked when the bot is among them'}.`,
+    description: `Go back into the fortress in view: ${bricks.length} of its bricks, the nearest ${off} blocks off, ${why}; ${floorSays}; ${seen}.${state.map ? ` Of its floors seen, ${Object.values(state.map.cells).filter(c => c[0]).length} of ${Object.keys(state.map.cells).length} walked.` : ''}${walkedSaysAll} Taken, it is no longer set aside, and ${onFloors ? 'its floors are walked from where the bot stands' : 'the way to its bricks is asked (fortress_approach), or its floors walked when the bot is among them'}.`,
     run: () => {
       delete state.leaving;
       state.shunned = (state.shunned || []).filter(sh => !bricks.some(b => Math.hypot(sh.x - b.x, sh.z - b.z) <= (sh.radius || 16)));
@@ -2539,11 +2625,24 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // How it ended, with what came: a stand at an empty spawner (empty-
     // spawner.js) is asked again with it (note 681).
     const came = w.came?.length ? `${w.came.length} blaze${w.came.length === 1 ? '' : 's'} came` : 'no blaze came';
-    if (!(w.until > Date.now())) { state.spawnerWaitEnded = w.startedAt ? `waited ${Math.round((Date.now() - w.startedAt) / 1000)} seconds, ${came}` : 'waited its minutes'; state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+    // A walk to it Jev chose (go_to_spawner, note 686): how it ended is
+    // said with the next offer of it.
+    const walked = why => { if (w.go) (state.goToEnded ||= {})[`spawner:${w.x},${w.y},${w.z}`] = { why, at: Date.now() }; };
+    if (!(w.until > Date.now())) {
+      state.spawnerWaitEnded = w.go ? `the walk's ${Math.round(SPAWNER_GO_MS / 60000)} minutes ran out ${Math.round(off)} blocks from it` : w.startedAt ? `waited ${Math.round((Date.now() - w.startedAt) / 1000)} seconds, ${came}` : 'waited its minutes';
+      walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save();
+    }
+    else if (w.go && off <= GO_TO_NEAR) {
+      // There: the walk ends, and with no blaze near the stand is asked
+      // next pass (empty-spawner.js); a blaze near is the hunt's.
+      state.spawnerWaitEnded = `reached it, ${Math.round(off)} blocks from the cage`; walked('reached it');
+      state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait;
+      goal.step = { action: 'at_spawner', target: { x: w.x, y: w.y, z: w.z }, off: Math.round(off), legs: state.legs || 0 }; save();
+    }
     else {
       // The spawner is the step's target: the rung's measure and the stall
       // watch read it (stillness.js actionOf), not the search's (note 681).
-      goal.step = { action: 'wait_at_spawner', spawner: { x: w.x, y: w.y, z: w.z }, target: { x: w.x, y: w.y, z: w.z }, off: Math.round(off), secondsLeft: Math.round((w.until - Date.now()) / 1000), legs: state.legs || 0 }; save();
+      goal.step = { action: w.go ? 'go_to_spawner' : 'wait_at_spawner', spawner: { x: w.x, y: w.y, z: w.z }, target: { x: w.x, y: w.y, z: w.z }, off: Math.round(off), secondsLeft: Math.round((w.until - Date.now()) / 1000), legs: state.legs || 0 }; save();
       // The stand's own cell (a ceiling over it or rock at its back), walked
       // to once; otherwise within eight of the cage is the wait.
       const cell = w.cell && new Vec3(w.cell.x, w.cell.y, w.cell.z);
@@ -2562,13 +2661,17 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // No way on foot: the way there is Jev's once for the wait, as for
       // any place chosen (a span, a pillar, the staircase through the rock).
       const far = () => cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) > 8;
+      // A walk that came nearer goes on next pass: a long walk is more than
+      // one navigation's half minute, and was ended as "no way to it"
+      // after the first (note 686).
+      if (!why && far() && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) < off - 4) return;
       if (far() && !w.asked) {
         w.asked = true; save();
         const ended = await approachFortress(bot, task, goal, save, actions, state, cage, [], { stretch: { why: why || 'the walk came no nearer', what: 'the spawner seen' } });
         if (ended) why = ended;
         if (!far()) return;
       }
-      if (far()) { state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+      if (far()) { state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
       return;
     }
   }
@@ -2696,6 +2799,9 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // seen unwalked, a spawner seen, the blazes, or a leg away are Jev's
       // (fortress_leg), with what the map comes to.
       state.patrols = (state.patrols || 0) + 1;
+      state.walkedAll = { at: Date.now(), walked: planned.walked };
+      require('./rung-measure').watchKills(bot);
+      state.walkedAllLog = [...(state.walkedAllLog || []).filter(e => Date.now() - e.at < WALKED_ALL_MS), { at: Date.now(), kills: bot._kills?.blaze || 0, rods: countOf(bot, 'blaze_rod') }].slice(-16);
       if (!(state.patrolSaidAt > Date.now() - 120000)) { state.patrolSaidAt = Date.now(); bot.chat?.('Walked what I can reach of this fortress. Deciding where next.'); }
       // Along the fortress's own length, as the outage default: fortress
       // corridors run straight along x or z.
@@ -2842,4 +2948,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst };
+module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, fortressInView, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst };

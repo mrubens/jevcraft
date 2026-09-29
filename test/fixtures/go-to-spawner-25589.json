@@ -1,0 +1,226 @@
+{
+ "note": "mid-242-dc-fortress-22 (25589), note 686. The frame: fortress_leg at 2026-09-29T20:09:26Z, full health and hunger, raw meat carried, on the fortress floor at (-171, 58, 203) having walked all it could reach; back_to_fortress chosen at 0.78. The spawner: the fortress map before the 19:21 restart held the cage at (-108, 77, 155), seen 19:04:47Z; within 16 of it the bot took 3 rods (18:46 to 18:49Z; kills set to 3, one per rod, the record holding no kill count), last within 16 at 19:07:44Z, 321 seconds within 16 of it in all (between frames both within 16, each gap up to 30 seconds) (flight 18-43-29). The sightings: the goal saved at 20:10 with the sighting by the cage from the archive of 19:21.",
+ "at": "2026-09-29T20:09:26.629Z",
+ "frame": {
+  "position": {
+   "x": -171.4996575539034,
+   "y": 58,
+   "z": 203.09738127341345
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 5,
+   "quartz": 2,
+   "coal": 116,
+   "flint": 1,
+   "nether_brick_fence": 1,
+   "leaf_litter": 27,
+   "water_bucket": 1,
+   "lapis_lazuli": 9,
+   "white_bed": 1,
+   "wooden_hoe": 1,
+   "string": 1,
+   "furnace": 1,
+   "obsidian": 2,
+   "flint_and_steel": 1,
+   "gold_ingot": 1,
+   "bucket": 1,
+   "stick": 2,
+   "mutton": 9,
+   "raw_copper": 7,
+   "leather": 3,
+   "egg": 1,
+   "oak_planks": 2,
+   "stone_axe": 1,
+   "beef": 5,
+   "oak_fence": 11,
+   "twisting_vines": 2,
+   "gravel": 9,
+   "iron_sword": 1
+  }
+ },
+ "spawner": {
+  "x": -108,
+  "y": 77,
+  "z": 155,
+  "seenMinutesAgo": 65,
+  "lastThereMinutesAgo": 62,
+  "kills": 3,
+  "rods": 3,
+  "secondsThere": 321
+ },
+ "sightings": [
+  {
+   "x": -162,
+   "y": 76,
+   "z": 200,
+   "dimension": "the_nether",
+   "seen": 16,
+   "inSight": 0,
+   "tries": 4,
+   "why": "No route from here to (-157, 78, 186) (noPath): the way passes along a drop that would kill",
+   "minutesAgo": 4
+  },
+  {
+   "x": -172,
+   "y": 84,
+   "z": 175,
+   "dimension": "the_nether",
+   "seen": 8,
+   "inSight": 0,
+   "tries": 4,
+   "why": "No route from here to (-176, 87, 194) (noPath): the way passes along a drop that would kill",
+   "minutesAgo": 0
+  },
+  {
+   "x": -160,
+   "y": 80,
+   "z": 216,
+   "dimension": "the_nether",
+   "seen": 2,
+   "inSight": 0,
+   "tries": 4,
+   "why": "No route from here to (-159, 80, 208) (noPath): the way passes along a drop that would kill",
+   "minutesAgo": 5
+  },
+  {
+   "x": -203,
+   "y": 72,
+   "z": 101,
+   "dimension": "the_nether",
+   "seen": 24,
+   "inSight": 0,
+   "tries": 5,
+   "why": "Jev chose to leave that way for now",
+   "minutesAgo": 34
+  },
+  {
+   "x": -123,
+   "y": 68,
+   "z": 101,
+   "dimension": "the_nether",
+   "seen": 4,
+   "inSight": 0,
+   "tries": 4,
+   "why": "No route from here to (-123, 68, 101) (noPath)",
+   "minutesAgo": 37
+  },
+  {
+   "x": -142,
+   "y": 67,
+   "z": 103,
+   "dimension": "the_nether",
+   "seen": 5,
+   "inSight": 0,
+   "tries": 4,
+   "why": "Took to long to decide path to goal!",
+   "minutesAgo": 46
+  },
+  {
+   "x": -113,
+   "y": 74,
+   "z": 156,
+   "dimension": "the_nether",
+   "seen": 27,
+   "inSight": 20,
+   "tries": 3,
+   "why": "No route from here to (-113, 74, 156) (noPath): the way passes along a drop that would kill",
+   "minutesAgo": 80
+  }
+ ],
+ "fortress": {
+  "legs": 17,
+  "walkedAll": {
+   "walked": 1078,
+   "seen": 1781
+  },
+  "found": {
+   "x": -171,
+   "y": 57,
+   "z": 188
+  }
+ },
+ "decision": {
+  "path": [
+   "back_to_fortress"
+  ],
+  "options": {
+   "leg_east": "Go east 96 blocks at y 58: of the 96 cells ahead, 91 of open air (55 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar) and 5 of rock to dig (about 2.8 seconds a cell with the tools carried, and nothing is seen from inside it); about 98 seconds with the blocks for all of it. 55 of the open cells have no floor: it needs 55 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 3, about 1 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. It steps a block up or down 3 times where the ground does. The first 16 cells, in order: 3 of open air with a floor, 12 of open air with no floor under it, 1 of open air with a floor. The last leg this way, begun 21 blocks from here, ended no nearer (12 tries from there): The staircase toward (-106, 66, 93) is set aside (paced the same few cells round where the round began, 107 blocks from it); trying another way. Of the ground within 128 blocks of this leg's line east, ahead and on past its end (about 133 chunks), about 46 chunks are unseen at fortress heights (no line from the eyes has reached it through open air between y 48 and 79). The bot has stood on 3 of the 96 blocks of this leg's own line before. Seen before and lying this way: the blazes seen 16 times at (-162, 76, 200), 10 blocks off and 18 up. This way the bot leaves the region it stands in after about 172 blocks, into the region x 0 to 431, z 0 to 431 may hold the fortress seen at (-106, 66, 93), which could have begun in it or in a region beside it; about 3% of it seen at fortress heights. The fortress's bricks in view run 11 blocks this way from here; what lies past them is unseen.",
+   "leg_south": "Go south 96 blocks at y 58: of the 96 cells ahead, 96 of open air (91 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar); about 126 seconds with the blocks for all of it. 91 of the open cells have no floor: it needs 91 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 5, about 1 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. The first 16 cells, in order: 5 of open air with a floor, 11 of open air with no floor under it. The last leg this way, begun 93 blocks from here, ended no nearer (87 tries from there): The staircase toward (-106, 66, 93) is set aside (paced the same few cells round where the round began, 107 blocks from it); trying another way. Of the ground within 128 blocks of this leg's line south, ahead and on past its end (about 134 chunks), about 79 chunks are unseen at fortress heights (no line from the eyes has reached it through open air between y 48 and 79). The bot has stood on 12 of the 96 blocks of this leg's own line before. Seen before and lying this way: the blazes seen 2 times at (-160, 80, 216), 17 blocks off and 22 up. This way the bot leaves the region it stands in after about 229 blocks, into the region x -432 to -1, z 432 to 863 nothing of a fortress or bastion known there; about 0% of it seen at fortress heights. The fortress's bricks in view run 12 blocks this way from here; what lies past them is unseen.",
+   "leg_west": "Go west 96 blocks at y 58: of the 96 cells ahead, 96 of open air (92 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar); about 127 seconds with the blocks for all of it. 92 of the open cells have no floor: it needs 92 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 1, about 0 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. It steps a block up or down 2 times where the ground does. The first 16 cells, in order: 1 of open air with a floor, 8 of open air with no floor under it, 3 of open air with a floor, 4 of open air with no floor under it. This is back the way the last leg came. The last leg this way, begun 93 blocks from here, ended no nearer: The staircase toward (-206, 54, 133) is set aside (no safe step toward it from (-111, 54, 132) (no floor to step onto (a gap, for a span or a pillar): 1 of the steps nearer)); trying another way. Of the ground within 128 blocks of this leg's line west, ahead and on past its end (about 132 chunks), about 85 chunks are unseen at fortress heights (no line from the eyes has reached it through open air between y 48 and 79). This way the bot leaves the region it stands in after about 261 blocks, into the region x -864 to -433, z 0 to 431 nothing of a fortress or bastion known there; about 0% of it seen at fortress heights.",
+   "leg_north": "Go north 96 blocks at y 58: of the 96 cells ahead, 38 of open air (2 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar) and 58 of rock to dig (about 15.3 seconds a cell with the tools carried, and nothing is seen from inside it); about 905 seconds with the blocks for all of it. 7 of the open cells have no floor: it needs 7 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 55, about 566 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. It steps a block up or down 7 times where the ground does. The first 16 cells, in order: 16 of open air with a floor. The last leg this way, begun 93 blocks from here, ended no nearer: The staircase toward (-110, 54, 37) is set aside (gained no ground from the landing at (-111, 54, 132) since backing off there last, 63 blocks from it; every step on was blocked (no floor to step onto (a gap, for a span or a pillar): 1 of the steps n); trying another way. Of the ground within 128 blocks of this leg's line north, ahead and on past its end (about 132 chunks), about 54 chunks are unseen at fortress heights (no line from the eyes has reached it through open air between y 48 and 79), about 42 of them within 128 blocks of the 26 blocks of the line past its first 8 in open air (from inside the rock nothing is seen). The bot has stood on 96 of the 96 blocks of this leg's own line before: it walks again ground already walked and looked at from, and what is unseen that way lies off to its sides and past its end. Seen before and lying this way: the blazes seen 24 times at (-203, 72, 101), 107 blocks off and 14 up; the blazes seen 6 times at (-176, 87, 192), 12 blocks off and 29 up; the blazes seen 5 times at (-142, 67, 103), 104 blocks off and 9 up; the blazes seen 4 times at (-123, 68, 101), 113 blocks off and 10 up. This way the bot leaves the region it stands in after about 204 blocks, into the region x -432 to -1, z -432 to -1 nothing of a fortress or bastion known there; about under 1% of it seen at fortress heights. The fortress's bricks in view run 24 blocks this way from here; what lies past them is unseen.",
+   "back_to_fortress": "Go back into the fortress in view: 4096 of its bricks, the nearest 1 blocks off, set aside 8 minutes ago, for 2 minutes more: Jev chose to leave it and search on; the bot stands at the height of its floors; blazes seen near it 24 times. Of its floors seen, 1078 of 1781 walked. Taken, it is no longer set aside, and its floors are walked from where the bot stands.",
+   "go_to_blazes_about": "Go to the blazes about now: 2 blazes about now (none in sight, 2 heard through the walls), the nearest 35 blocks off and 24 up at (-172, 82, 177). The hunt takes each one as it comes into view within its reach. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets). The last try at blazes about ended: tunnel: came no nearer.",
+   "go_to_blazes": "Go to where blazes were seen 24 times at (-203, 72, 101) (0 of them in sight, the rest heard through the walls), 108 blocks off and 14 up, last 34 minutes ago; the hunt walked back toward it 5 times, the last ending: Jev chose to leave that way for now: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view. It lies north of here; the bot has stood 1 blocks from it before. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets). The last try at it ended: Jev chose to leave that way for now.",
+   "fetch_stems": "Fetch 3 stems of the Nether's forests now: Wanted in wood: 12 planks' worth for the pickaxe to make now (wooden, its head three planks) and a spare (wooden, its head three planks): a crafting table (4 planks), the sticks for 2 pickaxes (4 sticks, 2 carried, 2 planks), 2 wooden heads (6 planks); carried: 2 planks, 2 sticks (2 planks' worth), 10 short: 3 stems (12 planks). No pickaxe is carried and none can be made from what is carried: rock and netherrack dug by hand drop nothing, so no block comes back to lay, and every leg through rock is dug by hand. The nearest stems: 116 crimson stems known at (-194, 49, 156), 53 blocks north-west and 9 down, a crimson forest: hoglins (hostile on sight, they charge and toss, 40 health; they shy from warped fungus) and piglins (hostile unless gold is worn) spawn there; about it now: 5 zombified piglins, 1 piglin. A half-second route survey from here did not finish (far, or a long way round); the way there is asked on the spot as the gathering asks it. Next nearest: crimson stems 67 blocks north. A stem needs no tool to drop and breaks by hand in about 3 seconds, about 0.8 with the stone axe carried. The pickaxe is made as soon as the wood for it is carried. Wood carried is sticks for the next pickaxe wherever one wears out (two a pickaxe) and a crafting table wherever the bot is; with any pickaxe, blackstone (basalt deltas, bastions) makes a stone one, three of it and two sticks. The leg is chosen again after.",
+   "return_for_blocks": "Go back through the portal to the Overworld, the nearest known 239 blocks off at -19, 71, 19, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {
+   "blazesSeen": "2 blazes about now (none in sight, 2 heard through the walls), the nearest 35 blocks off and 24 up at (-172, 82, 177); blazes seen 57 times in 6 places; the busiest 24 times at (-203, 72, 101) (0 of them in sight, the rest heard through the walls), 108 blocks off and 14 up, last 34 minutes ago; the hunt walked back toward it 5 times, the last ending: Jev chose to leave that way for now; next 16 times at (-162, 76, 200) (0 of them in sight, the rest heard through the walls), 21 blocks off and 18 up, last 4 minutes ago; the hunt walked back toward it 4 times, the last ending: No route from here to (-157, 78, 186) (noPath): the way passes along a drop that would kill",
+   "height": 58,
+   "fortressHeights": "corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air",
+   "legsSoFar": 16,
+   "minutesSearching": 775,
+   "lastLeg": "east, ended no nearer: The staircase toward (-106, 66, 93) is set aside (paced the same few cells round where the round began, 107 blocks from it); trying another way",
+   "seenSoFar": "seen at fortress heights (y 48 to 79) through open air: about 313 chunks' worth of ground in all, and of the ground within 96 blocks of here about 108 of 113 chunks; stood on: 232 columns of 4 by 4 blocks",
+   "structureRegions": {
+    "rule": "The Nether is cut into regions of 432 by 432 blocks (27 by 27 chunks, the first from x 0, z 0), and each region holds one fortress or one bastion, never both: a fortress about two times in five. Each begins in its region's west and north 368 blocks (along x and along z), and a fortress's corridors run up to about 112 blocks from where it begins, so one begun in a region beside can reach a little way into this one. A region holding a bastion has no fortress of its own; a region with nothing known of it holds one or the other.",
+    "standingIn": "the region x -432 to -1, z 0 to 431 holds the fortress remembered at (-169, 53, 175); about 39% of it seen at fortress heights",
+    "otherRegionsKnown": [
+     "the region x 0 to 431, z 0 to 431 may hold the fortress seen at (-106, 66, 93), which could have begun in it or in a region beside it; about 3% of it seen at fortress heights"
+    ]
+   },
+   "portalBack": "the nearest portal known in the Nether is at (-19, 71, 19), 239 blocks north-east of here",
+   "blocksCarried": 0,
+   "pickaxe": "none carried: rock is dug by hand and drops nothing, about 2 seconds a block of netherrack, 6.3 a block of basalt, 7.5 a block of blackstone, 10 a block of nether bricks (with a stone pickaxe 0.2, 0.5, 0.6, 0.8); the staircase digs by hand only rock softer than basalt (netherrack) and stops at harder",
+   "health": 20,
+   "food": 20,
+   "threatsInView": [],
+   "fortressInView": {
+    "bricks": 4096,
+    "nearestBlocksOff": 1,
+    "floors": "the bot stands at the height of its floors",
+    "passes": 1,
+    "minutesThere": 22,
+    "blazesSeenNear": 24,
+    "map": {
+     "floorsSeen": 1781,
+     "floorsWalked": 1078,
+     "joinedOnFoot": "147 of the 1781 floors seen are joined to where the bot stands; the other 1634 lie apart from it, in 11 parts with floors unwalked",
+     "waysOnFoot": "none: every floor joined to here that runs on into unseen space has been walked, or its walk failed",
+     "stairsSeen": "102 nether brick stairs seen (a fortress's stairs lead up to its spawner rooms), 50 walked",
+     "wartSeen": "nether wart at (-129, 67, 102), 110 blocks off: the wart room",
+     "chestsSeen": 8,
+     "waysFailed": [
+      "(-169, 57, 182): No route from here to (-169, 58, 182) (noPath): the way passes along a drop that would kill"
+     ]
+    },
+    "setAside": "set aside 8 minutes ago, for 2 minutes more: Jev chose to leave it and search on"
+   },
+   "rodsTheGoalWants": "Blaze rods: 0 carried, 7 wanted in all (13 eyes for the portal and the search), 7 still needed.",
+   "healing": {
+    "health": 20,
+    "hunger": 20,
+    "healthComesBack": "health is full",
+    "foodCarried": [
+     "9 mutton, 2 hunger each",
+     "5 beef, 3 hunger each"
+    ],
+    "nearestFood": [
+     "1 hoglin seen 10 minutes ago, 64 blocks north-west (-197, 144)"
+    ],
+    "daylight": "no day or night here: its mobs neither burn nor stop",
+    "standingStill": "standing still spends no hunger: it falls with moving, sprinting, jumping, swimming, mining, fighting, being hurt and healing"
+   },
+   "blockStock": {
+    "canBeLaid": 0,
+    "pickaxe": "none carried",
+    "none": "no block that holds is carried and none can be had: No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. Every walk, crossing or climb that needs a block stops at its first gap; only floor already there is walked, and a crafting table and a pickaxe are the way to blocks again.",
+    "makingAPickaxe": "A pickaxe is three planks, cobblestone, blackstone or iron ingots and two sticks made at a crafting table (four planks; a log or stem makes four planks). Carried: none of the three heads; 2 sticks; 2 planks; no crafting table. The table and the sticks need 4 planks' worth of wood beside the three planks for a wooden head, and 2 is carried: wood is what is missing."
+   },
+   "dimension": "the_nether"
+  }
+ }
+}

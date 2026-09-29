@@ -103,7 +103,7 @@ function parts(bot, goal, { rung, items = [], target = null, stepItems = [] } = 
     const fs = goal?.fortressSearch;
     at('fortress', fs?.approach?.found || fs?.found, 'the fortress');
     nearest((goal?.mobHunt?.sightings || []).filter(s => !s.dimension || dimOf({ game: { dimension: s.dimension } }) === dim), 'the nearest place blazes were seen', 'blazes');
-    nearest(fs?.map?.spawners, 'the nearest blaze cage known', 'cage');
+    nearest((fs?.map?.spawners || []).filter(s => !s.broken), 'the nearest blaze cage known', 'cage');
     const g = dim === 'nether' && fs ? groundCells(goal, 'nether') : null;
     if (g !== null) put('ground', g, 'ground');
   }
