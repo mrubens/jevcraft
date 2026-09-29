@@ -504,6 +504,16 @@ define({
   }),
 });
 define({
+  id: 'passing_gold', area: 'resources', kind: 'mining', primitive: 'choice', stakes: 'low',
+  question: 'Gold is in reach of a Nether walk while pearls are short: a short detour to mine it, then the same walk on, or walk past?',
+  trigger: 'A Nether walk that looks in passing (the fortress sweep, the return to the blazes, the warped search, the gather and portal walks, the way down, corpse runs) has gold within eight blocks that the rule does not take: past four blocks, gilded blackstone, or any gold while health is under 16 or food under 14. Asked at most every fifteen seconds. Nether gold ore and gold blocks within four blocks at full enough health and food are taken without asking.',
+  source: 'src/opportunistic-mining.js (mineInPassing)',
+  unreachable: 'no detour: an error or a five-second timeout is swallowed and the walk goes on',
+  build: ({ options, pearls }) => require('../typesafe').choice(`The bot is walking in the Nether and is short of ender pearls (${pearls ?? 'fewer than 16'} of 16 carried). Piglins barter about one pearl for nine gold ingots, nine nuggets an ingot; bartering gold and hunting endermen are the two ways the bot gets pearls, and the eyes of ender that find and open the End portal take twelve. Each option is a block of gold beside the walk with what it gives, its share of a pearl, and the seconds the detour costs; the walk goes on to the same place afterward. The candidates already pass checks for a tool, dry standing, no lava against the block, no hostile near, no piglin within 16 blocks of the gold, and a route on foot that digs and lays nothing. Weigh the gold against the seconds, the health and food an option states, and what the walk is for; choose continue to walk past.`, {
+    ...options, continue: 'Walk past without a detour.',
+  }),
+});
+define({
   id: 'opportunistic_animal', area: 'resources', kind: 'pickup', primitive: 'choice', stakes: 'low',
   question: 'An animal whose drop the bot is short of is in view: chase it briefly, or carry on?',
   trigger: 'Every third step with a sheep (fewer than three wool carried) or a chicken (fewer than four feathers) in view.',

@@ -84,7 +84,7 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   const seen = () => { actions.notice?.(bot, goal, save); return warpedKnown(goal).length > 0; };
   const start = bot.entity.position.clone();
   let walkWhy = null, stairWhy = null;
-  try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 8), { timeoutMs: 45000, stallMs: 8000, stopWhen: seen }); }
+  try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 8), { timeoutMs: 45000, stallMs: 8000, stopWhen: seen, passing: true }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walkWhy = String(err.message || err).slice(0, 120); }
   // No way on foot: through the netherrack, as the fortress sweep goes. The
   // staircase is this step's phase, not a step of its own: named 'tunnel'

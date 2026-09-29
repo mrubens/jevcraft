@@ -1,5 +1,4 @@
 'use strict';
-const { goldInPassing, mineGoldInPassing } = require('./opportunistic-mining');
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { handlers, combatGear, durable, carriedEquipment, equipped, readyEquipment, kitReady, observedDead, shooter, hasFood, SHOOTERS, FIGHT_FLOOR: HUNT_FLOOR } = require('./mob-policy');
@@ -1071,16 +1070,12 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // it had never been there. Head back to the freshest sighting first.
   const spot = rememberedSpot(state, bot);
   if (spot && actions.navigate) {
-    if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
     spot.triedAt = Date.now(); spot.tries = (spot.tries || 0) + 1; save();
     goal.step = { action: 'return_to_blazes', target: { x: spot.x, y: spot.y, z: spot.z }, seen: spot.seen }; save();
     const from = bot.entity.position.clone();
-    let stoppedForGold = false;
-    const stopWhen = () => (stoppedForGold = goldInPassing(bot, goal));
-    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, stopWhen }); delete spot.why; }
+    // Gold passed on the way is mined and the walk goes on (note 653).
+    try { await actions.navigate(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 6), { timeoutMs: 60000, stallMs: 10000, passing: true }); delete spot.why; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; spot.why = String(err.message || err).slice(0, 160); }
-    // A walk cut short for gold is not a try at the spot.
-    if (stoppedForGold) { spot.tries--; delete spot.triedAt; save(); return; }
     if (bot.entity.position.distanceTo(from) < 2 && actions.tunnel) {
       try { await actions.tunnel(bot, task, goal, save, new Vec3(spot.x, spot.y, spot.z), 'fortress'); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
@@ -1769,7 +1764,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
         let why = null;
         for (const g of [level, onIt]) {
           if (onIt.isEnd(bot.entity.position.floored())) break;
-          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000 }); why = null; }
+          try { await actions.navigate(bot, task, g, { timeoutMs: 45000, stallMs: 8000, passing: true }); why = null; }
           catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
         }
         if (onIt.isEnd(bot.entity.position.floored())) return null;
@@ -2270,14 +2265,14 @@ async function goToStep(bot, task, goal, save, actions, state) {
   }
 }
 async function goToWay(bot, task, goal, save, actions, state) {
-  const g = state.goTo, target = new Vec3(g.x, g.y, g.z), stopWhen = () => goldInPassing(bot, goal);
+  const g = state.goTo, target = new Vec3(g.x, g.y, g.z);
   goal.step = { action: 'find_fortress', goingTo: { x: g.x, y: g.y, z: g.z, kind: g.kind }, legs: state.legs || 0 }; save();
   // Floors across a gap are reached when stood on; blazes when near.
   const near = g.kind === 'unwalked' ? 2.5 : GO_TO_NEAR;
   const close = () => target.distanceTo(bot.entity.position) <= near;
   let why = null;
   if (!close() && actions.navigate) {
-    try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, g.kind === 'unwalked' ? 1 : 4), { timeoutMs: 60000, stallMs: 8000, stopWhen, onFoot: true }); }
+    try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, g.kind === 'unwalked' ? 1 : 4), { timeoutMs: 60000, stallMs: 8000, passing: true, onFoot: true }); }
     catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   }
   if (!close()) {
@@ -2308,8 +2303,6 @@ async function goToWay(bot, task, goal, save, actions, state) {
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   if (await stayKit(bot, task, goal, save, actions)) return;
-  if (await mineGoldInPassing(bot, task, goal, save, actions)) return;
-  const stopWhen = () => goldInPassing(bot, goal);
   // The hunt's work while no blaze is near is this search, whatever branch
   // of it runs: a tick that only asked Jev left the hunt's own step named,
   // and the step "turned between find fortress and hunt mob" twice a
@@ -2347,7 +2340,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       if (off <= 8) { await sleep(1000); task.check(); return; }
       let why = null;
       if (actions.navigate) {
-        try { await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y, w.z, 4), { timeoutMs: 30000, stallMs: 6000, stopWhen, onFoot: true }); }
+        try { await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y, w.z, 4), { timeoutMs: 30000, stallMs: 6000, passing: true, onFoot: true }); }
         catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
       } else why = 'no way to walk there';
       // No way on foot: the way there is Jev's once for the wait, as for
@@ -2469,7 +2462,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       goal.step = { action: 'find_fortress', found: state.found, [exploring ? 'exploring' : 'patrolling']: { x, y, z }, steps: next.steps, walked: planned.walked, seen: planned.seen, legs: state.legs }; save();
       let why = null;
       if (actions.navigate) {
-        try { await actions.navigate(bot, task, new goals.GoalNear(x, y + 1, z, 1), { timeoutMs: 30000, stallMs: 6000, stopWhen, onFoot: true }); }
+        try { await actions.navigate(bot, task, new goals.GoalNear(x, y + 1, z, 1), { timeoutMs: 30000, stallMs: 6000, passing: true, onFoot: true }); }
         catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
       } else why = 'no way to walk';
       const off = new Vec3(x + 0.5, y + 1, z + 0.5).distanceTo(bot.entity.position);
@@ -2574,7 +2567,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // The pathfinder first: it walks open ground, bridges and climbs where a
   // staircase can only dig. The tunnel takes over where it finds no way.
   if (actions.navigate && !seeking) {
-    try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000, stopWhen }); }
+    try { await actions.navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 6), { timeoutMs: 30000, stallMs: 8000, passing: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     if (gained()) { state.legFails = 0; return; }
   }

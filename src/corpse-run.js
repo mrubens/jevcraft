@@ -132,7 +132,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   goal.step = { action: 'corpse_run', to: { ...run.position }, items: { ...run.items } }; save();
   const before = flat(bot.entity.position, spot);
   if (before > ARRIVE) {
-    try { await move(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 3), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true }); }
+    try { await move(bot, task, new goals.GoalNear(spot.x, spot.y, spot.z, 3), { timeoutMs: LEG_MS, stallMs: 8000, sprint: true, passing: /nether/.test(String(bot.game?.dimension || '')) }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     const after = flat(bot.entity.position, spot);
     if (after > ARRIVE) {

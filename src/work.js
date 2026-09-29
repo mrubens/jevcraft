@@ -3597,7 +3597,7 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   const distance = here.distanceTo(pos(p));
   let walk;
   if (distance <= 48) {
-    try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000 }); return true; }
+    try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000, passing: where === 'nether' }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walk = `the walk there failed (${String(err.message || err).slice(0, 80)})`; }
   } else if (!isSetAside(goal, 'portal_leg', pos(p))) {
     if (await portalLeg(bot, task, goal, p)) return true;
@@ -6216,7 +6216,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
       turnShadow?.gave(vitalsActed ? 'vitals' : 'work');
       require('./turn').takeTurn(bot, 'work', goal.step?.action || 'step');
       if (!endTask && await upkeepStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
-      bot._goal = goal;
+      bot._goal = goal; bot._goalSave = save;
       if (!endTask && await sculkStep(bot, task, goal, save, decisionClient, onStep)) { goal.stalls = 0; save(); onStep(goal); continue; }
       // A structure's chest within reach is opened as a rule (looting.js).
       if (goal.kind === 'win' && !endTask && await inCatch(task, goal, () => lootNearby(bot, task, goal, save, lootActions()))) { goal.stalls = 0; save(); onStep(goal); continue; }

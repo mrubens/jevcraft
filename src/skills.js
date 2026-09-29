@@ -360,8 +360,17 @@ function goalGuardPlugin(bot) {
 // `onFoot`: the walk digs nothing and lays nothing (no tower, no bridge):
 // along a fortress's corridors, not through its walls (mob-hunt.js, note
 // 557). What it cannot walk to is said as no route.
-async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false } = {}) {
+//
+// `passing`: the walk looks for gold (and diamonds, iron, lapis while short)
+// as it goes, mines what it finds and walks on to the same goal (note 653,
+// opportunistic-mining.js mineInPassing). The stop for it is not the walk's
+// end: a walk that stopped for gold was booked by its caller as a walk that
+// came no nearer, and the fortress patrol marked the floor it was going to
+// as failed. The detour's time is added to the walk's.
+async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false } = {}) {
   task.check();
+  const look = passing && bot._goal && bot.pathfinder?.movements ? passingLook(bot, task) : null;
+  if (look) return look.walk(timeoutMs, timeout => navigate(bot, task, goal, { timeoutMs: timeout, stallMs, stopWhen: () => stopWhen?.() || look.due(), sprint, shore, besideLava, edgeTaken, onFoot }), stopWhen);
   // Where the bot is going, kept for the shore rule (shore.js): out of the
   // water on the side it was heading for, not back where it went in.
   if (!shore && Number.isFinite(goal?.x) && Number.isFinite(goal?.z)) bot._heading = { x: goal.x, z: goal.z, at: Date.now() };
@@ -434,6 +443,34 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     if (hadGoalY) movements.walkGoalY = walkGoalY;
     else if (movements) delete movements.walkGoalY;
   }
+}
+
+// The look in passing around one walk: the walk runs with a stop for gold
+// in reach; stopped for it (and not for the caller's own stop), the detour
+// is taken and the walk runs again, its time given back the detour's
+// seconds, up to eight detours.
+const PASSING_DETOURS = 8;
+function passingLook(bot, task) {
+  const mining = require('./opportunistic-mining'), goal = bot._goal, save = bot._goalSave || (() => {});
+  const client = task.opportunityClient || null;
+  let stopped = false;
+  return {
+    // Once seen, the stop holds for the rest of that run: the look is
+    // throttled, and a throttled look is not a look that found nothing.
+    due: () => { if (!stopped && mining.goldInPassing(bot, goal, Date.now(), { client: !!client })) stopped = true; return stopped; },
+    async walk(timeoutMs, run, callerStop) {
+      let deadline = Date.now() + timeoutMs;
+      for (let detours = 0; ; detours++) {
+        stopped = false;
+        const result = await run(Math.max(1, deadline - Date.now()));
+        if (!stopped || callerStop?.() || detours >= PASSING_DETOURS) return result;
+        const began = Date.now();
+        await mining.mineInPassing(bot, task, goal, save, { navigate, dig: require('./work').dig }, client);
+        task.check();
+        deadline += Date.now() - began;
+      }
+    },
+  };
 }
 
 // Where a goal is, when it has a place: a block or near-a-point goal, or
@@ -729,6 +766,7 @@ module.exports = { openWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, picka
   Task,
   Cancelled,
   navigate,
+  passingLook,
   shakeLoose,
   surveyRoute,
   equipBestTool,

@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-96 questions: 47 decision trees and 49 batched questions.
+97 questions: 47 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -881,6 +881,16 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - Bar: none
 - Jev unreachable: no detour: an error or a five-second timeout is swallowed and the main step carries on
 - Options built in: src/opportunistic-mining.js (opportunityCandidates)
+
+### `passing_gold`
+
+**Gold is in reach of a Nether walk while pearls are short: a short detour to mine it, then the same walk on, or walk past?**
+
+- When: A Nether walk that looks in passing (the fortress sweep, the return to the blazes, the warped search, the gather and portal walks, the way down, corpse runs) has gold within eight blocks that the rule does not take: past four blocks, gilded blackstone, or any gold while health is under 16 or food under 14. Asked at most every fifteen seconds. Nether gold ore and gold blocks within four blocks at full enough health and food are taken without asking.
+- Batched question, choice; stakes low; ledger kind `mining`
+- Bar: none
+- Jev unreachable: no detour: an error or a five-second timeout is swallowed and the walk goes on
+- Options built in: src/opportunistic-mining.js (mineInPassing)
 
 ### `opportunistic_animal`
 

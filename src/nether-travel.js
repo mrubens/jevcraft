@@ -76,6 +76,10 @@ async function crossToward(bot, task, goal, save, target, { what = 'the target',
   }
   goal.step = { action: 'cross_toward', what, target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) },
     cells: survey.cells, dig: survey.dig, bridge: survey.bridge, carried: survey.carried }; save();
+  // The crossing lays and digs its own way, not by the walk: gold beside
+  // where it starts is looked for first, as a walk looks (note 653).
+  try { await require('./opportunistic-mining').mineInPassing(bot, task, goal, save, { navigate: require('./skills').navigate, dig: require('./work').dig }, task.opportunityClient || null); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; }
   const key = crossKey(bot, target), before = flat(target, bot.entity.position);
   let why = null;
   try { await bridgeTo(bot, task, target, { maxBlocks: survey.bridge, maxSteps: survey.cells }); }
@@ -501,7 +505,7 @@ async function goDown(bot, task, down, navigate) {
   let why = null;
   try {
     const { goals } = require('mineflayer-pathfinder');
-    await navigate(bot, task, new goals.GoalNear(end.x, end.y, end.z, 1), { timeoutMs: 60000, stallMs: 8000, besideLava: n => cells.has(`${n.x},${n.y},${n.z}`) });
+    await navigate(bot, task, new goals.GoalNear(end.x, end.y, end.z, 1), { timeoutMs: 60000, stallMs: 8000, passing: true, besideLava: n => cells.has(`${n.x},${n.y},${n.z}`) });
   } catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   finally { if (m) { m.maxDropDown = kept.maxDropDown; for (const id of freed) m.blocksCantBreak.add(id); } }
   const y = Math.floor(bot.entity.position.y);
@@ -526,7 +530,7 @@ async function walkFloorToward(bot, task, goal, save, target, down, navigate) {
   if (done.reached) {
     const here = bot.entity.position, d = Math.hypot(target.x - here.x, target.z - here.z), step = Math.min(CROSS_STRETCH, Math.max(0, d - 4)) / (d || 1);
     const { goals } = require('mineflayer-pathfinder');
-    try { await navigate(bot, task, new goals.GoalNearXZ(here.x + (target.x - here.x) * step, here.z + (target.z - here.z) * step, 4), { timeoutMs: 30000, stallMs: 8000 }); }
+    try { await navigate(bot, task, new goals.GoalNearXZ(here.x + (target.x - here.x) * step, here.z + (target.z - here.z) * step, 4), { timeoutMs: 30000, stallMs: 8000, passing: true }); }
     catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
   }
   const lower = before.y - bot.entity.position.y >= 2, nearer = flat(target, before) - flat(target, bot.entity.position) >= 1;

@@ -241,7 +241,7 @@ async function runWay(bot, task, goal, save, way, method, what, navigate) {
   try {
     if (method === 'walk') {
       const end = way.walk.found ? target : way.walk.end;
-      await navigate(bot, task, way.walk.found ? new goals.GoalNear(end.x, end.y, end.z, THERE) : new goals.GoalBlock(end.x, end.y, end.z), { timeoutMs: 60000, stallMs: 8000 });
+      await navigate(bot, task, way.walk.found ? new goals.GoalNear(end.x, end.y, end.z, THERE) : new goals.GoalBlock(end.x, end.y, end.z), { timeoutMs: 60000, stallMs: 8000, passing: true });
     } else if (method === 'cross') {
       const now = way.cross.now;
       await bridgeTo(bot, task, target, { maxBlocks: now.bridge, maxSteps: now.cells });
@@ -416,7 +416,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
         const target = here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), before = flat(target, bot.entity.position);
         goal.step = { action: 'nether_gather', way: `leg_${name}`, what: words(resource), target: { x: target.x, y: target.y, z: target.z } }; save();
         let why = null;
-        try { await navigate(bot, task, new goals.GoalNearXZ(target.x, target.z, 8), { timeoutMs: 45000, stallMs: 8000 }); }
+        try { await navigate(bot, task, new goals.GoalNearXZ(target.x, target.z, 8), { timeoutMs: 45000, stallMs: 8000, passing: true }); }
         catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 120); }
         if (before - flat(target, bot.entity.position) < 2) {
           const s = surveyCrossing(bot, target, { cells: 32 });

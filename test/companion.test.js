@@ -254,7 +254,7 @@ test('nether gold is not broken with a piglin within sixteen blocks: they turn o
   assert.equal(opportunityCandidates(bot, {}, primary).length, 1, 'twenty blocks off it does not');
 });
 
-test('a Nether walk stops for gold within four blocks while pearls are short, and the fortress step digs it before going on', async () => {
+test('a Nether walk stops for gold within four blocks while pearls are short, and the fortress step walks with the look in passing', async () => {
   const { goldInPassing } = require('../src/opportunistic-mining');
   const { findFortressStep } = require('../src/mob-hunt');
   const { bot, ore, stock } = oreWorld();
@@ -273,12 +273,15 @@ test('a Nether walk stops for gold within four blocks while pearls are short, an
   assert.equal(goldInPassing(bot, {}, now += 1000), false, 'with the pearls in hand the gold is left');
   stock([{ name: 'iron_pickaxe', type: registry.itemsByName.iron_pickaxe.id, count: 1, durabilityUsed: 0 }]);
 
-  const dug = [], legs = [];
+  // The walk itself looks (skills.js navigate `passing`, note 653): the
+  // step no longer stops its own walk for gold, which it then booked as a
+  // walk that came no nearer.
+  const dug = [], walks = [];
   const goal = { kind: 'win', step: { action: 'hunt_mob' } };
-  const actions = { navigate: async (b, t, g) => { legs.push(g); }, dig: async (b, t, p) => { dug.push(`${p}`); gold = false; }, tunnel: async () => {} };
+  const actions = { navigate: async (b, t, g, o) => { walks.push(o); }, dig: async (b, t, p) => { dug.push(`${p}`); gold = false; }, tunnel: async () => {} };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
-  assert.deepEqual(dug, [`${ore}`], 'the gold is dug first');
-  assert.equal(goal.fortressSearch.legs, 0, 'and the sweep leg waits for the next step');
+  assert.deepEqual(dug, [], 'the step digs nothing itself');
+  assert(walks.length && walks.every(o => o?.passing === true && !o.stopWhen), 'every walk of the sweep looks in passing');
 });
 
 test('a diamond beside the tunnel is dug by rule, never walked past for want of a question', async () => {
