@@ -34,14 +34,24 @@ const movesAt = bot => {
   return localMoves(view, bot.entity.position.floored(), { goal: 'away', visits: {}, from: new Vec3(-78, 38, -89), breathS: 15 }).moves;
 };
 
-test('on the island with no block that holds, the floor of the cell beside is offered to be taken up, the gap to lay it in only once one is carried (note 625)', () => {
-  const bot = islandBot(new Vec3(-78.5, 38, -88.5));
-  const keys = movesAt(bot).map(m => m.key);
-  assert.ok(keys.includes('take_floor_east'), `take the wart block east: ${keys.join(', ')}`);
-  assert.ok(!keys.some(k => k.startsWith('bridge_')), 'nothing to bridge with yet');
-  const taken = movesAt(islandBot(new Vec3(-78.5, 38, -88.5))).find(m => m.key === 'take_floor_east');
-  assert.equal(`${taken.cell}`, '(-78, 37, -89)');
-  assert.match(taken.does, /Dig up the warped wart block in the floor east, a block the bot laid itself at 18:10Z \(about/);
+// Note 650: the floor taken up from over the lava sea drops out of its cell
+// and burns (the dig was refused every time in 25598, 228 in a day, and the
+// drop was lost in any case), so it is not offered where nothing under the
+// cell holds it, and says so. The crafting table carried is a block that
+// holds, and floors the one-cell gap.
+test('on the island with no block that holds, the floor beside is not taken up over the lava sea, and the crafting table carried is a block to bridge with (notes 625, 650)', () => {
+  const bare = CARRIED.filter(([n]) => n !== 'crafting_table');
+  const moves = movesAt(islandBot(new Vec3(-78.5, 38, -88.5), bare));
+  assert.ok(!moves.some(m => m.key.startsWith('take_floor_') || m.key.startsWith('bridge_')), moves.map(m => m.key).join(', '));
+  const view = liveView(islandBot(new Vec3(-78.5, 38, -88.5), bare));
+  view.laid = p => ISLAND.includes(`${p.x},${p.y},${p.z}`) ? { at: Date.parse('2026-09-28T18:10:00Z') } : null;
+  const { here } = localMoves(view, new Vec3(-78, 38, -89), { goal: 'away', visits: {}, breathS: 15 });
+  assert.ok(here.notOffered.some(t => /^take up the floor beside \(west\): the block dug drops out of its cell with nothing under the cell to hold it, into lava, and burns; nothing is picked up/.test(t)), here.notOffered.join(' | '));
+  const withTable = movesAt(islandBot(new Vec3(-79.5, 38, -90.5)));
+  const west = withTable.find(m => m.key === 'bridge_west');
+  assert.ok(west, withTable.map(m => m.key).join(', '));
+  assert.equal(west.block, 'crafting_table');
+  assert.match(west.does, /Put the crafting table into the gap in the floor west, against the floor stood on: a whole block to walk onto; it is the crafting table carried, the only one, and it stays where it is put; the floor beyond it, west, is solid: it joins that ground/);
 });
 
 test('with the wart block carried, at the island\'s end the gap toward the span is offered as a floor to lay, and it says the floor beyond is solid (note 625)', () => {

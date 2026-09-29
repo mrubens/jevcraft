@@ -56,6 +56,8 @@ function thresholds(minutes, history) {
     waitShare: { share: 0.20, says: 'target: under 20% of the clocked minutes waiting: hold_bunker, in a shelter or sealed pocket (pocket_next stay, wait in shelter), a pillar top hold, back_to_wall, the wait for day (sealed), and the three minutes of a stay_in_fortress walk' },
     stanceRate: { perMinute: 1, stretchMinutes: 1, health: 1, mob: 2, says: 'target: under 1 encounter_stance or turn_priority asking a minute over the stretches of a minute or more in which health stayed within 1, and the nearest mob\'s distance within 2 blocks, of what they were at the stretch\'s start' },
     noneGoodStreak: { says: 'no target: the longest run of none_good answers in a row to one question' },
+    // Note 650: 25598 stood on a span tip 110 minutes and nothing said so.
+    stranded: { says: 'stranded: every position of the last 30 min within 12 blocks of each other, and either 10+ none_good answers in a row to one question in the last 15 min or none good in 40%+ of 40+ answers in the half hour (scripts/lib/stranded.js)' },
   };
 }
 
@@ -636,8 +638,11 @@ function review({ minutes, frames, positioned, history, from, to, trial, known, 
   const waits = waitsOf({ entries, decs: decsAll });
   const { stillMs, ...stance } = stanceOf({ frames, decs: decsAll });
   const noneGoodStreak = noneGoodStreakOf(decsAll);
+  // 10. Stranded (note 650): the last half hour's positions, the history
+  // before the window and the window's, and the window's answers.
+  const stranded = require('../lib/stranded').strandedOf({ positions: [...history, ...positioned.map(f => ({ t: f.t, position: f.snapshot.position, dimension: f.snapshot.dimension }))].sort((a, b) => a.t - b.t), decs: decsAll, now: to });
 
-  return { quickNothing, reask, stall, nether, firsts, rung, waits: (({ ms, clockedMs, ...w }) => w)(waits), stance, noneGoodStreak };
+  return { quickNothing, reask, stall, nether, firsts, rung, waits: (({ ms, clockedMs, ...w }) => w)(waits), stance, noneGoodStreak, stranded };
 }
 
 // The review's measures said a line each, each against its target.
@@ -664,6 +669,7 @@ function reviewLines(m) {
   if (w) out.push({ id: 'waitShare', met: w.share === null ? null : w.share < T.waitShare.share, text: `waiting (under 20%): ${w.share === null ? 'no clock' : `${Math.round(w.share * 100)}%, ${w.minutes} of ${w.clocked} min`}${Object.keys(w.by).length ? ` (${Object.entries(w.by).map(([k, v]) => `${human(k)} ${v}`).join(', ')})` : ''}` });
   const st = r.stance;
   if (st) out.push({ id: 'stanceRate', met: st.perMinute === null ? null : st.perMinute < T.stanceRate.perMinute, text: `stance askings while nothing changed (under 1 a min): ${st.perMinute === null ? `no still stretch of a minute (${st.asks} asked)` : `${st.perMinute}/min, ${st.stillAsks} in ${st.stillMinutes} min unchanged (${st.asks} asked in all)${st.worst ? `; worst ${st.worst.asks} in ${st.worst.minutes} min from ${st.worst.at.slice(11, 16)}Z` : ''}`}` });
+  if (r.stranded) out.push({ id: 'stranded', met: false, text: r.stranded.says });
   if (r.waits) out.push({ id: 'noneGoodStreak', met: null, noTarget: true, text: `longest none-good run (no target): ${r.noneGoodStreak ? `${r.noneGoodStreak.run} in a row to ${r.noneGoodStreak.id}, ${r.noneGoodStreak.from.slice(11, 19)} to ${r.noneGoodStreak.to.slice(11, 19)}Z` : 'none'}` });
   return out;
 }

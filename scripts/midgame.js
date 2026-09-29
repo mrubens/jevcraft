@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync, spawn } = require('child_process');
 const { analyse } = require('./lib/audit');
+const { strandedFromFrames } = require('./lib/stranded');
 const { spectatorNightVision } = require('./first-days');
 const { ensureSupervisor, absences } = require('./lib/supervise');
 
@@ -100,10 +101,13 @@ function verdict(trial, { now = Date.now() } = {}) {
   const absentMs = gone.reduce((n, g) => n + (g.to - g.from), 0), windowMs = to - from;
   const unplayed = timedOut && absentMs >= 0.1 * windowMs;
   const said = unplayed ? `after ${Math.round((windowMs - absentMs) / 60000)} minutes played of ${LIMIT_MS / 3600000} hours (the bot was not running for ${Math.round(absentMs / 60000)}; not a verdict on play)` : `after ${LIMIT_MS / 3600000} hours`;
-  const reasons = [...(deaths.length ? [`${deaths.length} death(s)`] : []), ...loops.map(l => `loop: ${l}`),
+  // Stranded (note 650): not a death and not a loop, and no more play in it:
+  // half an hour inside a dozen blocks with the way off answered none good.
+  const stranded = all ? null : strandedFromFrames(a.frames, { now: to });
+  const reasons = [...(deaths.length ? [`${deaths.length} death(s)`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : [])];
   return { world: trial.world, source: trial.source, from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
-    pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons,
+    pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
     playedMinutes: Math.round((windowMs - absentMs) / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
     absences: gone.map(g => ({ atMinute: minute(g.from), minutes: Math.round((g.to - g.from) / 60000) })),
     reachedAtMinute: Object.fromEntries(Object.entries(at).map(([k, t]) => [k, minute(t)])), most: { blazeRods: best.rods, enderPearls: best.pearls } };

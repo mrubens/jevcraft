@@ -35,6 +35,100 @@ const solid = n => !!n && !open(n) && !isLava(n);
 // span with five warped stems and a gravel was offered the gravel only.
 const PLACEABLE = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'andesite', 'diorite', 'granite', 'tuff', 'stone', 'deepslate', 'sandstone', 'nether_wart_block', 'warped_wart_block', ...require('./shelter').NETHER_WOOD, ...require('./shelter').LAST_MATERIALS, 'gravel', 'sand'];
 const ORE = /_ore$/;
+// What floors a gap when no block of the list above is carried (note 650): a
+// fence, which holds and does not fall, and the crafting table, a full block.
+// Not for a pillar or a block at the feet: a fence is a block and a half tall,
+// so the body jumping over the cell it stands in cannot have one put there
+// (the game refuses a block that overlaps the body), and it cannot be stepped
+// onto from the floor beside. In a gap at floor level it is a step of half a
+// block up, a bar a quarter of a block wide, walked crouched. Two trials
+// stranded on their own spans carried fifteen oak fences the whole time
+// (25586, 25598): "0 carried that can be laid".
+const FENCE = /_fence$/;
+function bridgeStock(view) {
+  const carried = view.carried || {}, count = names => names.reduce((n, k) => n + (carried[k] || 0), 0);
+  const full = PLACEABLE.filter(n => !falls(n) && carried[n] > 0);
+  if (full.length) return { name: full[0], count: count(full), kind: 'block' };
+  const fences = Object.keys(carried).filter(n => FENCE.test(n) && carried[n] > 0);
+  if (fences.length) return { name: fences[0], count: count(fences.filter(n => n === fences[0])), kind: 'fence' };
+  if (carried.crafting_table > 0) return { name: 'crafting_table', count: carried.crafting_table, kind: 'table' };
+  return null;
+}
+
+// The ground a floor laid from the gap `gap` would come to: the floor the bot
+// stands on, and the cells joined to it (a span, an island), are not ground
+// (they are what it is stuck on); ground is a floor cell of the same plane or
+// one up or down that is not joined to them, with room over it to stand. A
+// walk of open cells at the gap's level, four ways, to the first cell with
+// such a floor beside it: `cells` is the gap cells that take a block, `to`
+// the ground reached. null where none is within `reach`, or the bot stands on
+// ground that is not an island (more than `island` joined cells).
+function islandOf(view, floor, { limit = 150 } = {}) {
+  const seen = new Set([`${floor}`]), queue = [floor], dist = new Map([[`${floor}`, 0]]);
+  const standOn = c => solid(view.name(c)) && open(view.name(c.plus(UP))) && open(view.name(c.offset(0, 2, 0)));
+  for (let i = 0; i < queue.length; i++) {
+    if (queue.length > limit) return null;
+    const c = queue[i];
+    // Diagonals too: a span laid on a slant touches cell to cell at a corner,
+    // and a cell with a block of the bot's own on it (the cover it put up)
+    // is walked round.
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) for (const dy of [0, 1, -1]) {
+      const q = c.offset(dx, dy, dz);
+      if (seen.has(`${q}`) || !standOn(q)) continue;
+      seen.add(`${q}`); queue.push(q); dist.set(`${q}`, dist.get(`${c}`) + 1);
+    }
+  }
+  // The cells in the order found, and how many steps along the floor each is.
+  seen.cells = queue; seen.dist = dist;
+  return seen;
+}
+// Searching from `starts` ([{ c, n, from }]: a gap cell, its count and the
+// cell of the floor it is beside) across open cells at each start's level, four
+// ways, for ground: the first floor beside a walked cell that is not part of
+// `island`, has room to stand and is itself joined to more than a hundred and
+// fifty cells of floor (islandOf gives up past its limit: a span laid back to
+// the shore is ground at its far end). -> { cells, to, from } or null.
+function groundSearch(view, starts, island, { reach = 24, nodes = 8000 } = {}) {
+  if (!island) return null;
+  const empty = c => { const n = view.name(c); return n != null && open(n) && !isLava(n) && !isWater(n); };
+  const clear = c => [1, 2, 3].every(dy => empty(new Vec3(c.x, c.y + dy, c.z)));
+  const big = new Map();
+  const isBig = c => { const k = `${c}`; if (!big.has(k)) big.set(k, islandOf(view, c) === null); return big.get(k); };
+  const groundAt = (x, y, z) => [0, 1, -1].map(dy => new Vec3(x, y + dy, z)).find(c => solid(view.name(c)) && !island.has(`${c}`) && empty(c.plus(UP)) && empty(c.offset(0, 2, 0)) && isBig(c));
+  const seen = new Set(starts.map(s => `${s.c}`)), queue = starts.map(s => ({ ...s }));
+  for (let i = 0; i < queue.length && i < nodes; i++) {
+    const { c, n, from } = queue[i];
+    if (!empty(c) || !clear(c)) continue;
+    for (const d of Object.values(DIRS)) {
+      const q = c.plus(d), found = groundAt(q.x, c.y, q.z);
+      if (found) return { cells: n, to: found, from };
+    }
+    if (n >= reach) continue;
+    for (const d of Object.values(DIRS)) {
+      const q = c.plus(d);
+      if (seen.has(`${q}`)) continue;
+      seen.add(`${q}`); queue.push({ c: q, n: n + 1, from });
+    }
+  }
+  return null;
+}
+const groundRun = (view, gap, island, opts) => groundSearch(view, [{ c: gap, n: 1, from: null }], island, opts);
+// What the floor stood on is, when it is a small one (a span, an island): its
+// size, and the nearest ground that is not part of it from any of its cells,
+// in cells of gap and steps along the floor to the cell it is laid from
+// (note 650: 25585 stood fourteen cells along a bar from the tip and eight
+// from land, its price said from the cell it stood at, twelve, only).
+function floorFacts(view, feet, island) {
+  if (!island) return null;
+  const starts = [];
+  for (const c of island.cells) for (const d of Object.values(DIRS)) starts.push({ c: c.plus(d), n: 1, from: c });
+  const found = groundSearch(view, starts, island, { nodes: 12000 });
+  const along = found && found.from ? island.dist.get(`${found.from}`) : null;
+  const size = island.size;
+  return `a floor of ${size} cell${size === 1 ? '' : 's'}, joined to no ground (a span or an island)${found
+    ? `; the nearest ground that is not part of it is ${found.cells} cell${found.cells === 1 ? '' : 's'} of gap from the floor cell at (${found.from.x}, ${found.from.y}, ${found.from.z})${along ? `, ${along} step${along === 1 ? '' : 's'} along it from here` : ', the cell stood on'}, at (${found.to.x}, ${found.to.y}, ${found.to.z})`
+    : '; no ground that is not part of it within 24 cells of open air of any of its cells'}`;
+}
 // Stone and ore take a pickaxe; the rest comes away in the hand.
 function digSeconds(name, view, inWater) {
   const stony = /stone|deepslate|granite|diorite|andesite|tuff|calcite|terracotta|basalt|netherrack/.test(name) || ORE.test(name);
@@ -238,8 +332,12 @@ function risePlan(view, feet, { reach = 48 } = {}) {
   }
   const kinds = [...new Set(rock.map(r => r.name.replaceAll('_', ' ')))].slice(0, 3).join(', ');
   const tool = view.pickaxe ? `the ${view.pickaxe.replaceAll('_', ' ')}${Number.isFinite(view.pickaxeUses) ? ` (${view.pickaxeUses} uses left${view.pickaxeUses < rock.length ? `, the last ${rock.length - view.pickaxeUses} by hand, which drop nothing` : ''})` : ''}` : 'bare hands (nothing dropped)';
-  if (have < before) return { blocked: `rise straight up through the rock over the head: ${before} blocks to lay before the rock, ${have} carried that can be laid` };
-  if (have + drops < rise) return { blocked: `rise straight up through the rock over the head: ${rise} blocks to lay in all, ${have} carried and ${drops} dropped by the rock dug on the way` };
+  // Fences carried do not count (note 650): a pillar block goes under the feet
+  // as the body jumps over the cell, and a fence is a block and a half tall.
+  const fenced = Object.entries(view.carried || {}).filter(([n, c]) => FENCE.test(n) && c > 0);
+  const fenceSays = fenced.length ? `; the ${fenced.map(([n, c]) => `${c} ${n.replaceAll("_", " ")}${c === 1 ? "" : "s"}`).join(", ")} carried cannot be laid under the feet (a fence is a block and a half tall, and the body jumping over its cell cannot have one put there)` : "";
+  if (have < before) return { blocked: `rise straight up through the rock over the head: ${before} blocks to lay before the rock, ${have} carried that can be laid${fenceSays}` };
+  if (have + drops < rise) return { blocked: `rise straight up through the rock over the head: ${rise} blocks to lay in all, ${have} carried and ${drops} dropped by the rock dug on the way${fenceSays}` };
   const airCells = firstRock - feet.y - 1;
   const does = `Rise straight up through the rock over the head: ${airCells} block${airCells === 1 ? '' : 's'} of open air, then ${rock.length} of ${kinds}, dug from below with ${tool}, then open space at y ${top} (${rise} up, at (${feet.x}, ${top}, ${feet.z})). A block goes under the feet at each of the ${rise} steps: the first ${before} from the pack (${listed(carried)}), the rest from the rock dug on the way (${drops} dropped). About ${Math.round(seconds)} seconds. The shaft is one block wide, with no lava or water in or beside it and nothing over the head that falls; it ends on the rock's top, not over the drop under this span.`;
   return { move: { key: 'rise_through', does, kind: 'rise', top, rise, blocks, seconds: Math.round(seconds), effects: [] } };
@@ -273,7 +371,23 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     if (from) facts.blocksFromStart = Math.round(Math.hypot(p.x - from.x, p.z - from.z));
     return facts;
   };
+  // The floor stood on, and the cells joined to it: a small island or none
+  // (islandOf), read once and only when a move needs it.
+  let island;
+  const ownIsland = () => island === undefined ? (island = inWater ? null : islandOf(view, feet.plus(DOWN))) : island;
   const standable = p => open(view.name(p)) && open(view.name(p.plus(UP))) && !isLava(view.name(p)) && !isLava(view.name(p.plus(UP)));
+  // A step down onto a floor that is not the floor stood on, from a floor that
+  // is a small island: what that floor is, and the way back up. The step
+  // north of 25598's span tip drops two onto a post of three netherrack over
+  // the lava, and was said only "dropping 2".
+  const landsApart = land => {
+    if (land.y >= feet.y || isWater(view.name(land)) || !ownIsland()) return null;
+    const floor = land.plus(DOWN);
+    if (ownIsland().has(`${floor}`)) return null;
+    const there = islandOf(view, floor);
+    if (there === null) return 'it lands on ground joined to a hundred and fifty cells of floor or more, not on the floor stood on';
+    return `it lands on a floor of ${there.size} cell${there.size === 1 ? '' : 's'} that is not joined to the floor stood on${feet.y - land.y > 1 ? ` (the way back up is ${feet.y - land.y} blocks, and a jump climbs one)` : ''}`;
+  };
   for (const [dir, d] of Object.entries(DIRS)) {
     const level = feet.plus(d);
     // A walk or a swim to the next cell at the same level, dropping at most
@@ -289,7 +403,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       // Past it into lava: the step is crouched where it stays level, and
       // said, a run past its cell being a fall into the lava (note 600).
       const pastLava = pastOpen && dropInto(view, past).into === 'lava';
-      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}.`, kind: 'move', to: land, ...(pastDrop ? { effects: [`one block past it, ${pastDrop}`] } : {}), ...(pastLava ? { pastLava: true } : {}), ...where(land) });
+      if (isWater(view.name(land)) || solid(view.name(land.plus(DOWN)))) moves.push({ key: `step_${dir}`, does: `${inWater ? 'Swim' : 'Walk'} one block ${dir}${land.y < feet.y ? `, dropping ${feet.y - land.y}` : ''}${landsApart(land) ? `, and ${landsApart(land)}` : ''}.`, kind: 'move', to: land, ...(pastDrop ? { effects: [`one block past it, ${pastDrop}`] } : {}), ...(pastLava ? { pastLava: true } : {}), ...where(land), ...(/^it lands on a floor of/.test(landsApart(land) || '') ? { dryFooting: false } : {}) });
     }
     // Up a block onto the next cell: the cell over the head must be open to
     // rise into, out of water too (the game lifts a swimmer only then).
@@ -331,21 +445,50 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // "no route" (a jump over lava is not taken), the moves offered were
   // steps on the island and gravel that falls, and the four blocks under its
   // feet were the blocks to bridge with (note 625).
-  const carriedBlock = PLACEABLE.find(n => !falls(n) && (view.carried?.[n] || 0) > 0);
+  const stock = bridgeStock(view);
+  const carriedBlock = stock?.name || null;
+  const pieces = (n, kind) => `${n} ${kind === 'fence' ? (n === 1 ? 'fence' : 'fences') : n === 1 ? 'block' : 'blocks'}`;
+  const lostTakes = [];
   for (const [dir, d] of Object.entries(DIRS)) {
     const gap = feet.plus(d).plus(DOWN), beyond = gap.plus(d);
     if (inWater || !solid(view.name(feet.plus(DOWN)))) break;
-    if (carriedBlock && open(view.name(gap)) && !isLava(view.name(gap)) && !isWater(view.name(gap)) && open(view.name(feet.plus(d))) && open(view.name(feet.plus(d).plus(UP)))) {
+    if (carriedBlock && open(view.name(gap)) && !isLava(view.name(gap)) && !isWater(view.name(gap)) && open(view.name(feet.plus(d))) && open(view.name(feet.plus(d).plus(UP))) && (stock.kind !== 'fence' || open(view.name(feet.plus(d).offset(0, 2, 0))))) {
       const leads = solid(view.name(beyond)) ? `the floor beyond it, ${dir}, is solid: it joins that ground` : `beyond it, ${dir}, there is no floor`;
-      moves.push({ key: `bridge_${dir}`, does: `Put a ${carriedBlock.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto; ${leads}; ${dropBelow(view, gap) ? `under it, ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'place', cell: gap, block: carriedBlock, to: null });
+      // How far the ground the bot is not on lies by this way, against what
+      // is carried (note 650): 25598 stood on the tip of a span nine cells
+      // from rock it could have crossed to with the fifteen fences it carried.
+      const run = groundRun(view, gap, ownIsland());
+      const ground = !ownIsland() ? '' : run
+        ? `By way of this cell the nearest ground that is not part of what the bot stands on is ${run.cells} cell${run.cells === 1 ? '' : 's'} of gap away, at (${run.to.x}, ${run.to.y}, ${run.to.z}): ${stock.count >= run.cells ? `${run.cells} of the ${pieces(stock.count, stock.kind)} carried would reach it` : `${pieces(stock.count, stock.kind)} carried, ${run.cells - stock.count} short of it`}. `
+        : `By way of this cell no ground that is not part of what the bot stands on lies within 24 cells of open air (${pieces(stock.count, stock.kind)} carried). `;
+      const what = stock.kind === 'fence'
+        ? `Put ${/^[aeiou]/.test(stock.name) ? 'an' : 'a'} ${stock.name.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto, not a whole block: a bar a quarter of a block wide and a block and a half tall, its top half a block over the floor beside it, so it is walked crouched (a step up of half a block, no jump; a crouched body is held at the edge of the bar and does not walk off it), one bar wide, and a fence cannot be pillared on`
+        : stock.kind === 'table'
+          ? `Put the crafting table into the gap in the floor ${dir}, against the floor stood on: a whole block to walk onto; it is the crafting table${stock.count === 1 ? ' carried, the only one' : ''}, and it stays where it is put`
+          : `Put a ${carriedBlock.replaceAll('_', ' ')} into the gap in the floor ${dir}, against the floor stood on: a floor cell to walk onto`;
+      moves.push({ key: `bridge_${dir}`, does: `${ground}${what}; ${leads}; ${dropBelow(view, gap) ? `under it, ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'place', cell: gap, block: carriedBlock, to: null, groundCells: run?.cells ?? null, groundSays: ground });
     }
     // The floor of the cell beside, when nothing is carried to put down and
     // the block is the bot's own: one block of it to carry, the rest stays.
-    if (!carriedBlock && diggable(view, gap, view.name(gap)) && !!laidOf(view, gap) && solid(view.name(feet.plus(DOWN))) && open(view.name(feet.plus(d)))) {
+    // Only where the block dug has a floor to land on: dug from over the lava
+    // sea it drops out of its cell and burns, and the dig was refused (work.js
+    // opensPit) every time in 25598 while it was offered, 228 in a day (note
+    // 650).
+    if (!stock && diggable(view, gap, view.name(gap)) && !!laidOf(view, gap) && solid(view.name(feet.plus(DOWN))) && open(view.name(feet.plus(d)))) {
       const seconds = digSeconds(view.name(gap), view, false);
+      const lands = dropInto(view, gap);
+      if (seconds != null && lands.n > 0 && lands.into !== 'ground') { lostTakes.push([dir, lands.into]); continue; }
       if (seconds != null) moves.push({ key: `take_floor_${dir}`, does: `Dig up the ${view.name(gap).replaceAll('_', ' ')} in the floor ${dir}, a block the bot laid itself${Number.isFinite(laidOf(view, gap).at) ? ` at ${hhmm(laidOf(view, gap).at)}Z` : ''} (about ${seconds} s) and pick it up, to put down somewhere else: the floor stood on stays; that cell of the floor is gone, ${dropBelow(view, gap) ? `a drop there: ${dropBelow(view, gap)}` : 'ground close under it'}.`, kind: 'dig', cell: gap, seconds, effects: [] });
     }
   }
+  // The four ways side by side: a way longer than the shortest says so, as Jev
+  // took the eight-cell way over the six with the same ground at both ends.
+  const runs = moves.filter(m => m.groundCells != null);
+  if (runs.length > 1) {
+    const best = runs.reduce((a, b) => b.groundCells < a.groundCells ? b : a);
+    for (const m of runs) if (m.groundCells > best.groundCells) m.does = m.does.replace(m.groundSays, `${m.groundSays.trimEnd()} The shortest of the ways from here is ${best.key.replace('bridge_', '')}, ${best.groundCells} cells. `);
+  }
+  if (lostTakes.length) notOffered.push(`take up the floor beside (${lostTakes.map(([dir]) => dir).join(', ')}): the block dug drops out of its cell with nothing under the cell to hold it, into ${lostTakes.some(([, into]) => into === 'lava') ? 'lava, and burns' : 'a fall'}; nothing is picked up and that cell of the floor is gone`);
   // Straight up: dig what is over the head, swim up, or pillar.
   const over = feet.offset(0, 2, 0), overName = view.name(over);
   if (diggable(view, over, overName)) {
@@ -419,7 +562,8 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
     m.effects.push(swim != null ? `the nearest air through that water is a swim of ${swim} block${swim === 1 ? '' : 's'} from here (about ${Math.round(swim * STEP_S * 10) / 10} s)` : `no air through that water within a swim of ${reach} blocks`);
     return !(headDry && floods && (swim == null || swim * STEP_S + (m.seconds || 0) > breathS));
   });
-  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet), ...(notOffered.length ? { notOffered } : {}) } };
+  const floorSays = ownIsland() ? floorFacts(view, feet, ownIsland()) : null;
+  return { moves, done, here: { feet: { x: feet.x, y: feet.y, z: feet.z }, inWater, headInWater: isWater(view.name(feet.plus(UP))), headroomToRise: headroom, dryFooting: dryFooting(view, feet), openSkyAbove: skyAbove(view, feet), atSurface: atSurface(view, feet), ...(floorSays ? { floor: floorSays } : {}), ...(notOffered.length ? { notOffered } : {}) } };
 }
 
 // The moves as Jev is shown them: one option each, with its facts.
@@ -674,4 +818,4 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   return false;
 }
 
-module.exports = { pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

@@ -1,8 +1,11 @@
 #!/bin/sh
 # Returns when a trial on one of the ports needs attention: its verdict is
-# done, or it failed by a death or a loop. A first-days milestone missed by
-# its minute is a pace note, not a reason to stop: the world can still be a
-# midgame source if it gets there with no death or loop.
+# done, or it failed by a death, a loop, or being stranded (half an hour in
+# one small place with the way off answered none good, scripts/lib/stranded.js:
+# nothing else ends it, and the three hours are not worth waiting out). A
+# first-days milestone missed by its minute is a pace note, not a reason to
+# stop: the world can still be a midgame source if it gets there with no
+# death or loop.
 #   sh scripts/trials/watch.sh 25582 25583 ...   (or auto)
 # Midgame trials by default; TRIAL=first-days for first-days trials.
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -27,7 +30,7 @@ while :; do
   for p in $(ports "$@"); do
     if [ "$TRIAL" = midgame ]; then V=$(MIDGAME_PORT=$p limit node scripts/midgame.js verdict 2>/dev/null </dev/null)
     else V=$(FIRST_DAYS_PORT=$p limit node scripts/first-days.js verdict 2>/dev/null </dev/null); fi
-    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(v.done||(v.reasons||[]).some(r=>/death|loop/.test(r))?0:1)}catch{process.exit(1)}})"; then
+    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(v.done||(v.reasons||[]).some(r=>/death|loop|stranded/.test(r))?0:1)}catch{process.exit(1)}})"; then
       echo "attention on $p"; echo "$V" | head -30; exit 0
     fi
   done
