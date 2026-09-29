@@ -9,7 +9,7 @@
 // by a named pattern, and each minute put to the rung and step it was on and
 // the question in hand.
 //
-//   node scripts/wasted-minutes.js [--since ISO] [--to ISO] [--port N] [--top 25] [--examples 3] [--json out.json]
+//   node scripts/wasted-minutes.js [--until rod|fight] [--since ISO] [--to ISO] [--port N] [--top 25] [--examples 3] [--json out.json]
 //   node scripts/wasted-minutes.js --window <port> <fromISO> <toISO>   (each minute of one window, with what decided it)
 // JEV_ROOT reads another checkout's records (from a worktree).
 //
@@ -193,14 +193,32 @@ function readTrial({ port, start, end, dir = FLIGHT, files = null }) {
       frames.push(o);
     }
     text = null;
-    if (frames.some(isFight)) break;
+    if (UNTIL === 'fight' && frames.some(isFight)) break;
   }
   frames.sort((a, b) => a.t - b.t);
-  const i = frames.findIndex(isFight);
+  const i = UNTIL === 'fight' ? frames.findIndex(isFight) : firstRodGain(frames);
   if (i >= 0) { fightAt = frames[i].t; frames.length = i; }
   return { frames, fightAt };
 }
 const isFight = o => o.dim === 'nether' && (o.blaze || o.blazeHurt);
+// Where a trial's counted time ends: 'rod' (the default) at the first blaze
+// rod gained over what the trial began with, so the minutes at a fortress
+// before any rod (walking in and out of it, the approach ping-pong) count;
+// 'fight' (--until fight) at the first blaze in fighting range, as note 667
+// measured. A fortress save reaches a blaze in a median 6.9 minutes, and its
+// loops at the fortress fell outside the old cut (Fable, 2026-09-29 19:47Z).
+let UNTIL = 'rod';
+function firstRodGain(frames) {
+  let base = null;
+  for (let i = 0; i < frames.length; i++) {
+    const inv = frames[i].inv;
+    if (!inv) continue;
+    const rods = inv.blaze_rod || 0;
+    if (base === null) { base = rods; continue; }
+    if (rods > base) return i;
+  }
+  return -1;
+}
 
 // ---------------------------------------------------------------- minutes
 
@@ -644,6 +662,7 @@ function windowLines(port, from, to, dir = FLIGHT) {
 function main() {
   const argv = process.argv.slice(2);
   const opt = (name, dflt) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : dflt; };
+  UNTIL = opt('until', 'rod') === 'fight' ? 'fight' : 'rod';
   const time = s => { const t = Date.parse(s); if (!Number.isFinite(t)) throw new Error(`not a time: ${s}`); return t; };
   const w = argv.indexOf('--window');
   if (w >= 0) { console.log(windowLines(Number(argv[w + 1]), time(argv[w + 2]), time(argv[w + 3]))); return; }
@@ -658,4 +677,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { analyse, slim, minutesOf, classify, attribution, flipsOf, windowsOf, report, table, readTrial, isFight, NEW_COLUMNS, LADDER };
+module.exports = { firstRodGain, setUntil: u => { UNTIL = u; }, analyse, slim, minutesOf, classify, attribution, flipsOf, windowsOf, report, table, readTrial, isFight, NEW_COLUMNS, LADDER };

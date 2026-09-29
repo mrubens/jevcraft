@@ -9,6 +9,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const W = require('../scripts/wasted-minutes');
+// Note 667 measured to the first blaze fight; the default is now the first rod.
+W.setUntil('fight');
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'wasted-minutes-flight.jsonl');
 const START = Date.parse('2026-09-28T10:00:00Z');
@@ -81,4 +83,12 @@ test('the report ranks waste and crawl buckets with example windows', () => {
   assert.equal(pacing.question, 'turn priority → work');
   assert.ok(r.buckets.some(b => b.pattern === 'crawling (span)'));
   assert.match(W.table(r), /Waste and crawl buckets/);
+});
+
+test('the ledger counts to the first rod gained over what the trial began with, not the first blaze in sight', () => {
+  const { firstRodGain } = require('../scripts/wasted-minutes');
+  const f = (t, rods) => ({ t, inv: rods == null ? undefined : { blaze_rod: rods } });
+  assert.equal(firstRodGain([f(1, 2), f(2), f(3, 2), f(4, 3), f(5, 4)]), 3);
+  assert.equal(firstRodGain([f(1, 0), f(2, 0)]), -1);
+  assert.equal(firstRodGain([f(1), f(2, 1), f(3, 1)]), -1);
 });
