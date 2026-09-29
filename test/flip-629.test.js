@@ -100,7 +100,7 @@ test('a walk toward the crimson stems that ends where an earlier one ended is no
   assert(tried.read(bot, goal, 'nether_gather', tree(), { now: Date.now() }).tree.walk_to_1, 'from a hundred blocks away');
 });
 
-test('a walk toward a place that comes nearer than any before is getting somewhere, and one that moved and came no nearer but dug new ground or carried more still is', t => {
+test('a walk toward a place that comes nearer than any before is getting somewhere, and one that moved and came no nearer but carried more still is (a block dug is not)', t => {
   const T0 = Date.parse('2026-09-28T18:12:31Z');
   t.mock.timers.enable({ apis: ['Date'], now: T0 });
   const bot = { entity: { position: new Vec3(-119.5, 66, -112.5) }, game: { dimension: 'the_nether', gameMode: 'survival' }, inventory: { items: () => [] }, health: 9.5, food: 14 };
@@ -116,14 +116,25 @@ test('a walk toward a place that comes nearer than any before is getting somewhe
   const nearer = go(-140.5, -176.5);
   assert.equal(nearer.outcome, 'progressed', 'from 38 blocks off to 6 is nearer than 28');
   assert.equal(nearer.reached, 6.2);
-  // No nearer, but a block was dug in a cell not dug in the last ten minutes: the stall watch's own measure.
+  // No nearer, and a block was dug in a cell not dug in the last ten minutes: a block dug is not the rung's measure (note 646),
+  // and the walk ended where the first did.
   bot._stalls = { marked: 0 };
   bot.entity.position = new Vec3(-140.5, 66, -112.5);
   const dug = tried.begin(bot, goal, { q: 'nether_gather', method: 'walk_to_1', target: STEMS });
   t.mock.timers.tick(20000); bot._stalls.marked = 1; bot.entity.position = new Vec3(-176.5, 66, -112.5);
   tried.settle(bot, goal, { q: 'nether_gather' });
-  assert.equal(dug.outcome, 'progressed');
-  assert.equal(dug.gained, 'a block was dug or placed');
+  assert.equal(dug.outcome, 'blocked', 'a block dug is not something gained on the rung');
+  assert.match(dug.why, /nothing gained on the rung/);
+  // No nearer, but what the step was for was carried at the end of it: that is.
+  goal.step = { action: 'nether_gather', item: 'crimson_stem' };
+  bot.entity.position = new Vec3(-140.5, 66, -112.5);
+  const carriedMore = tried.begin(bot, goal, { q: 'nether_gather', method: 'walk_to_1', target: STEMS });
+  t.mock.timers.tick(20000); bot.entity.position = new Vec3(-176.5, 66, -112.5);
+  bot.inventory = { items: () => [{ name: 'crimson_stem', count: 3 }] };
+  tried.settle(bot, goal, { q: 'nether_gather' });
+  bot.inventory = { items: () => [] };
+  assert.equal(carriedMore.outcome, 'progressed');
+  assert.match(carriedMore.gained, /3 more crimson stem/);
   // Brought from afar (a respawn, a long errand) and ending farther than the best of before is still ground made.
   bot._stalls = { marked: 1 };
   bot.entity.position = new Vec3(-320.5, 66, -112.5);

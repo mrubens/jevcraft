@@ -46,15 +46,23 @@ function fingerprint(state, tree) {
 // measures (stillness.js), read directly so an answer that ends in a
 // fraction of a second is judged before the watch's next look.
 const GROUND = 3;
-function mark(bot) {
+// With a goal and the question, a question of the work's own under a rung also
+// carries the rung's measure (rung-measure.js, note 646): what came of an
+// answer under a rung is a change in that, and motion counts only through the
+// position measures in it.
+function mark(bot, goal = null, id = null) {
   const p = bot?.entity?.position;
   let worth = 0; try { worth = require('../stillness').worth?.(bot) ?? 0; } catch (_) { /* no inventory */ }
-  return { x: p?.x, y: p?.y, z: p?.z, worth, blocks: bot?._stalls?.marked || 0, progressAt: bot?._stalls?.progressAt || 0 };
+  const m = goal && id ? (() => { try { return require('../tried').measureMark(bot, goal, id); } catch (_) { return null; } })() : null;
+  return { x: p?.x, y: p?.y, z: p?.z, worth, blocks: bot?._stalls?.marked || 0, progressAt: bot?._stalls?.progressAt || 0, ...(m ? { m } : {}) };
 }
 function cameOf(before, now, since) {
+  if (before.m && now.m && before.m.rung === now.m.rung) return require('../rung-measure').changed(before.m.v, now.m.v);
   const moved = Number.isFinite(before.x) && Number.isFinite(now.x) ? Math.hypot(now.x - before.x, now.y - before.y, now.z - before.z) : 0;
   if (moved > GROUND) return `moved ${Math.round(moved)} blocks`;
-  if (now.worth !== before.worth) return 'what is carried changed';
+  // More of what is worth keeping, not less: a meal eaten or a stack spent lowers it, and is no progress (note 646: the heal
+  // cycles, eat and heal and go back, each counted as something come of it).
+  if (now.worth > before.worth) return 'what is carried changed';
   if (now.blocks !== before.blocks) return 'a block was dug or placed';
   if (now.progressAt > since) return 'the stall watch saw progress';
   return null;
@@ -97,7 +105,7 @@ function before(bot, goal, id, print, { now = Date.now(), waiting = false } = {}
   const run = memo?.[id];
   if (!run || now - run.at > KEEP_MS) return null;
   if (run.print !== print) return null;
-  const came = cameOf(run.mark, mark(bot), run.at);
+  const came = cameOf(run.mark, mark(bot, goal, id), run.at);
   if (came) { delete memo[id]; return null; }
   if (!run.counted) {
     run.counted = true;
@@ -127,7 +135,7 @@ function quickBefore(bot, goal, id, { now = Date.now(), waiting = false } = {}) 
     q.last.judged = true;
     const gap = now - q.last.at;
     // Another piece of work asking is another run of answers.
-    if (gap > AT_ONCE_MS || q.last.goal !== goal || cameOf(q.last.mark, mark(bot), q.last.at)) q.streak = [];
+    if (gap > AT_ONCE_MS || q.last.goal !== goal || cameOf(q.last.mark, mark(bot, goal, id), q.last.at)) q.streak = [];
     else q.streak = [...(q.streak || []), { choice: q.last.choice, gap, at: q.last.at, why: whyItEnded(bot, goal, q.last.at) }].slice(-8);
   }
   const streak = q.streak || [];
@@ -151,11 +159,11 @@ function after(bot, id, print, choice, { now = Date.now(), goal = null } = {}) {
   if (!bot || !choice) return;
   const answers = bot._answers ||= {};
   const q = answers[id] ||= { streak: [] };
-  q.last = { choice, at: now, mark: mark(bot), judged: false, goal };
+  q.last = { choice, at: now, mark: mark(bot, goal, id), judged: false, goal };
   const memo = bot._repeats ||= {};
   const run = memo[id];
-  if (run && run.print === print && run.choice === choice && run.counted) Object.assign(run, { times: run.times + 1, at: now, mark: mark(bot), counted: false });
-  else memo[id] = { print, choice, times: 1, first: now, at: now, mark: mark(bot), gaps: [], counted: false };
+  if (run && run.print === print && run.choice === choice && run.counted) Object.assign(run, { times: run.times + 1, at: now, mark: mark(bot, goal, id), counted: false });
+  else memo[id] = { print, choice, times: 1, first: now, at: now, mark: mark(bot, goal, id), gaps: [], counted: false };
 }
 
 // A run held as failed is said, for two minutes, in every question about

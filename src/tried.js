@@ -18,8 +18,10 @@
 //                 entry is about the place it was tried from
 //   place, at     where the bot stood and when
 //   work          the work it was for (stillness.js actionOf key)
-//   outcome       pending, progressed (something measurable came of it:
-//                 repeats.js cameOf), blocked (nothing did, or it failed),
+//   outcome       pending, progressed (something measurable came of it: for
+//                 an answer under a rung a change in the rung's own measure,
+//                 rung-measure.js and note 646; else repeats.js cameOf),
+//                 blocked (nothing did, or it failed),
 //                 waited (a wait chosen: its point is to stay), done or
 //                 impossible
 //   why, gained   what it ended with, or what came of it
@@ -36,6 +38,7 @@
 // (waysResting). With every option resting, the question is not asked:
 // the question above it is (escalate), with this one's failure said.
 const { mark, cameOf, whyItEnded } = require('./decisions/repeats');
+const RM = require('./rung-measure');
 
 const NEAR = 4;             // "from here"
 const TARGET_NEAR = 4;      // the same target
@@ -118,6 +121,11 @@ function begin(bot, goal, { q, method, target = null, waiting = false, offered =
   const here = P(bot.entity?.position);
   const entry = { q, method, ...(P(target) ? { target: P(target) } : {}), place: here, at: now, work: workOf(goal, now), outcome: 'pending', mark: mark(bot), ...(waiting ? { waiting: true, scene: sceneOf(bot, { now }) } : {}),
     ...(offered?.length ? { offered: offered.map(o => ({ key: o.key, ...(P(o.target) ? { target: P(o.target) } : {}) })) } : {}) };
+  // An answer to a question below the rung is judged by the rung's own measure
+  // (rung-measure.js, note 646), read as it began.
+  const rung = waiting ? null : measuredBy(goal, q, now, { stall: true });
+  const parts = rung ? measureOf(bot, goal, rung) : null;
+  if (parts) { RM.observe(parts, bestsOf(t), now); entry.rung = rung; entry.measure = RM.values(parts); }
   t.entries.push(entry);
   return entry;
 }
@@ -138,6 +146,32 @@ function record(bot, goal, { q, method, target = null, outcome, why = null, gain
 // nearer (note 571). Something came of one when the rung has a new best
 // since.
 const RUNG_JUDGED = new Set(['stillness_detour', 'rung_progress']);
+// The rung an answer is for, when its question is one of the work's own (under
+// the rung's, not the stall's): judged by the rung's measure. null otherwise:
+// the survival layer's stances and the routing keep their own judgments.
+// The stall's answers and the rung's are judged by the rung's best, and carry the
+// measure too, so that one that comes to nothing says what did not change.
+function measuredBy(goal, q, now = Date.now(), { stall = false } = {}) {
+  if (RUNG_JUDGED.has(q) ? !stall : !workBelowRung(q)) return null;
+  return rungOf(goal, now);
+}
+// The names the step in hand is for: its item, what it drops, its resource or block.
+function stepItemsOf(goal) {
+  const step = goal?.step?.action === 'combined_request' ? goal.step.detail : goal?.step;
+  return [step?.item, step?.drops, step?.resource, step?.block].filter(n => typeof n === 'string' && n);
+}
+function measureOf(bot, goal, rung) {
+  let target = null;
+  try { target = require('./stillness').actionOf(goal).target; } catch (_) { /* none */ }
+  try { return RM.parts(bot, goal, { rung, items: rungItems(goal, rung), target, stepItems: stepItemsOf(goal) }); } catch (_) { return null; }
+}
+const bestsOf = t => t.bests ||= {};
+// The rung's measure now, as values, for the repeat rule's looks.
+function measureMark(bot, goal, q) {
+  const rung = measuredBy(goal, q);
+  const parts = rung && bot?.entity?.position ? measureOf(bot, goal, rung) : null;
+  return parts ? { rung, v: RM.values(parts) } : null;
+}
 // What a wait brought, by its mark: a walk off (cameOf's own measure), or
 // more carried of what is worth keeping; a block laid or dug is its own
 // building, and a block used up for its walls is not a gain either (a box
@@ -173,20 +207,41 @@ function reachOf(goal, e, bot) {
   const best = earlier.length ? earlier.reduce((m, o) => o.reached < m.reached ? o : m) : null;
   return { reached, best, here };
 }
+// What the rung's measure says of an answer under it, and where the bot is.
+function judgeOwn(bot, goal, e, now) {
+  const parts = measureOf(bot, goal, e.rung);
+  if (!parts) return null;
+  return { ...RM.judge({ before: e.measure, parts, store: bestsOf(ledger(goal)), since: e.at, at: now }), here: P(bot.entity?.position) };
+}
 function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null } = {}) {
   if (e.outcome !== 'pending') return false;
   const rung = goal?.tried?.rung;
   const byRung = RUNG_JUDGED.has(e.q) && rung && rung.rung === rungOf(goal);
+  // An answer under the rung is judged by the rung's measure over its life,
+  // not by the ground it walked (note 646); a walk toward a place of its own
+  // is judged by its nearest approach, below.
+  const own = !e.waiting && e.rung && e.measure ? judgeOwn(bot, goal, e, now) : null;
   // A stall's answer that brought something home (a hunt's meat, a block
   // of ore) got somewhere, though not on the rung; its walk alone did not.
-  let carried = e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  const walked = e.mark ? cameOf(e.mark, mark(bot), e.at) : null;
+  let carried = own ? own.came : walked;
   const reach = byRung ? null : reachOf(goal, e, bot);
   let noNearer = null;
   if (reach) {
     e.reached = reach.reached; e.endedAt = reach.here;
     const back = reach.best?.endedAt && e.place && dist(e.place, reach.best.endedAt) <= TAKEN_BACK;
-    if (back && /^moved /.test(carried || '') && reach.reached >= reach.best.reached - NEARER) {
-      noNearer = `ended ${Math.round(reach.reached)} blocks from it, no nearer than the ${Math.round(reach.best.reached)} an answer toward it reached ${ago(Math.max(0, e.at - (reach.best.settledAt || reach.best.at)))} before this began`;
+    const noNearerThanBest = back && reach.reached >= reach.best.reached - NEARER;
+    const sayNoNearer = () => `ended ${Math.round(reach.reached)} blocks from it, no nearer than the ${Math.round(reach.best.reached)} an answer toward it reached ${ago(Math.max(0, e.at - (reach.best.settledAt || reach.best.at)))} before this began`;
+    if (own) {
+      // Its own target is a position measure: nearer it than it began, and
+      // than any answer toward it has come since it was left (note 629).
+      const began = e.place ? dist(e.place, e.target) : Infinity;
+      if (!carried && /^moved /.test(walked || '')) {
+        if (noNearerThanBest) { noNearer = sayNoNearer(); e.noNearer = true; }
+        else if (reach.reached < began - NEARER) carried = `${walked} toward its own target, ${Math.round(reach.reached)} blocks off it`;
+      }
+    } else if (noNearerThanBest && /^moved /.test(carried || '')) {
+      noNearer = sayNoNearer();
       carried = cameOf({ ...e.mark, x: NaN }, mark(bot), e.at);
       if (!carried) e.noNearer = true;
     }
@@ -199,7 +254,7 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
   // nothing changed about it; it never came to nothing, never rested and was
   // never said so (note 620). A wait is judged by its world (sceneChanges)
   // and by what it brought (more carried, a walk off), not its blocks.
-  const came = byRung ? (rung.bestAt > e.at ? `a new best on the ${rungSays(rung.rung)} (${rung.lastBest || 'progress'})` : carried === 'what is carried changed' ? carried : null)
+  const came = byRung ? (rung.bestAt > e.at ? `a new best on the ${rungSays(rung.rung)} (${rung.lastBest || 'progress'})` : own?.came || (walked === 'what is carried changed' ? walked : null))
     : e.waiting ? waitBrought(e.mark, bot)
     : carried;
   if (onlyIf === 'decided' && !came && !error) return false;
@@ -214,8 +269,13 @@ function settleOne(bot, goal, e, { error = null, now = Date.now(), onlyIf = null
   // Cut short by the survival layer (air, a threat) or a cancellation, with
   // nothing come of it: not a try that came to nothing (note 583).
   else if (e.cut && !error) { e.outcome = 'cut'; e.why = e.cut; }
-  else { e.outcome = 'blocked'; const why = error || whyItEnded(bot, goal, e.at) || noNearer; if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200); }
-  e.settledAt = now; delete e.mark; delete e.scene;
+  else {
+    e.outcome = 'blocked';
+    const said = own ? RM.says(own.nothing, e.place && own.here ? dist(e.place, own.here) : NaN, { food: /food/.test(e.q) }) : null;
+    const why = [error || whyItEnded(bot, goal, e.at) || noNearer, said].filter(Boolean).join('; ');
+    if (why) e.why = String(why).replace(/^Stalled: /, '').slice(0, 200);
+  }
+  e.settledAt = now; delete e.mark; delete e.scene; delete e.measure;
   return true;
 }
 // Settled: the pending answers to one question (it is being asked again),
@@ -461,7 +521,7 @@ function owner(goal, { now = Date.now(), withinMs = WINDOW_MS, skip = new Set(),
 }
 function markBlocked(e, why, now = Date.now()) {
   if (!e) return;
-  if (e.outcome === 'pending' || e.outcome === 'blocked') { e.outcome = 'blocked'; e.why = String(why).slice(0, 200); e.settledAt = now; delete e.mark; }
+  if (e.outcome === 'pending' || e.outcome === 'blocked') { e.outcome = 'blocked'; e.why = String(why).slice(0, 200); e.settledAt = now; delete e.mark; delete e.measure; }
 }
 // The latest entry of a question, pending or blocked, in the window.
 function latestOf(goal, q, now = Date.now()) {
@@ -735,4 +795,4 @@ function rungDue(goal, says, now = Date.now()) {
 }
 
 module.exports = { begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, leavesOf, leafAt, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
-  sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };
+  measuredBy, measureMark, measureOf, rungItems, sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };
