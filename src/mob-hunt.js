@@ -1801,17 +1801,18 @@ const mobsSaid = list => [...new Set(list.map(t => `${/^[aeiou]/.test(t.entity.n
 
 // The pathfinder's route toward `target`, surveyed before it is walked:
 // its cells, the blocks it would place and dig, how many of its cells are
-// within two blocks of lava, and how much nearer its end is.
+// with lava round them (movement.js lavaAlong), and how much nearer its end is.
 async function routeSurvey(bot, task, target, brick) {
   if (!bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return null;
   try {
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, target, 500);
     const path = route?.path || [];
-    const { lavaBeside } = require('./survival');
     const end = path.at(-1);
     return { status: route?.status || 'noPath', cells: path.length,
       place: path.reduce((n, p) => n + (p.toPlace?.length || 0), 0), dig: path.reduce((n, p) => n + (p.toBreak?.length || 0), 0),
-      besideLava: typeof bot.blockAt === 'function' ? path.filter(p => lavaBeside(bot, new Vec3(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)))).length : 0,
+      // Its cells with lava round them, as the walk prices them (movement.js
+      // lavaAlong, note 660).
+      lava: route?.lava || null, besideLava: route?.lava?.beside || 0,
       gain: end ? Math.round(flatTo(brick, bot.entity.position) - flatTo(brick, end)) : 0 };
   } catch (err) { if (!retryable(err)) throw err; return null; }
 }
@@ -1843,13 +1844,13 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const route = await routeSurvey(bot, task, level, nearest);
     const surveyed = !route ? 'Not surveyed from here.'
       : !route.cells ? 'The pathfinder found no route toward it from here.'
-      : `Surveyed toward the first: ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells, placing ${route.place} block${route.place === 1 ? '' : 's'} and digging ${route.dig}, ${route.besideLava} of its cells within two blocks of lava; it ends ${route.gain} blocks nearer.`;
+      : `Surveyed toward the first: ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells, placing ${route.place} block${route.place === 1 ? '' : 's'} and digging ${route.dig}; it ends ${route.gain} blocks nearer.${route.lava?.beside ? ` ${require('./movement').lavaAlongSays(route.lava, bot)}` : ''}`;
     const edge = route?.besideLava && inView.length ? ` In sight: ${mobsSaid(inView)}; a hit at the lava's edge is the fall.` : '';
     // No route found is no way: said in the state, not offered. mid-242-ab-
     // nether-4 was offered "the pathfinder found no route toward it from
     // here" as a way in, and chose it (note 591).
     if (route && !route.cells) noRoute = 'the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)';
-    else options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot beside it first, then on up or down to the floor itself. ${surveyed} The pathfinder walks upright, not crouched: a push or a misstep at an edge is the fall.${edge}`,
+    else options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot beside it first, then on up or down to the floor itself. ${surveyed} The pathfinder walks upright on open ground and crouched beside lava or a drop that kills: a crouch stops the body at an edge, but a push there carries it over.${edge}`,
       run: async () => {
         const from = bot.entity.position.clone();
         // On to the floor itself once level with it: the walk had ended at

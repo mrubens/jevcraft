@@ -3,8 +3,8 @@
 //  - 25583 (mid-243-cg) stood thirty minutes on a cell of blackstone in a
 //    basalt delta at 1.8 health, no food, no pickaxe and no block that holds
 //    (test/fixtures/basalt-delta-mid-243-cg.json): every walk "no route"
-//    (the Nether's walks take no cell with lava beside it, and in the delta
-//    every cell has), its unstuck moves single steps onto the cells beside it
+//    (the Nether's walks took no cell with lava beside it, and in the delta
+//    every cell has; priced since note 660), its unstuck moves single steps onto the cells beside it
 //    and back, and 95% of fifteen minutes held waiting for rests to end.
 //  - 25589 (mid-243-cd-nether-1) stood at the far end of its own span over
 //    the lava sea, no block carried and an iron pickaxe with 170 uses
@@ -18,7 +18,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { goals } = require('mineflayer-pathfinder');
 const { groundBot, registry } = require('./fixtures/saved-ground');
 const { Task } = require('../src/skills');
 
@@ -34,9 +33,8 @@ function deltaBot(items = DELTA_KIT) {
 test('25583 in the basalt delta: the walks find no route, and working free offers the walk off with its cells beside lava said, a touch at 1.8 health said as death (note 655)', () => {
   const { localMoves, liveView, walkOffPlan } = require('../src/unstuck');
   const bot = deltaBot();
-  // The pathfinder, with the Nether's rule of no cell beside lava, has no way to the dry ground eight blocks north.
-  const route = bot.pathfinder.getPathTo(bot.pathfinder.movements, new goals.GoalNear(-22, 98, -27, 1), 2000);
-  assert.equal(route.status, 'noPath');
+  // The pathfinder, with the Nether's rule of no cell beside lava, had no way to the dry ground eight blocks north; since
+  // note 660 it prices those cells and finds one (nether-lava-660.test.js).
   const feet = new Vec3(-21, 101, -19);
   const view = liveView(bot);
   const { moves } = localMoves(view, feet, { goal: 'away', visits: {}, from: feet, breathS: 15 });
@@ -45,7 +43,7 @@ test('25583 in the basalt delta: the walks find no route, and working free offer
   assert.deepEqual(walk.path.map(p => `${p.x},${p.y},${p.z}`), ['-21,100,-20', '-21,100,-21', '-22,98,-21', '-22,98,-22', '-22,98,-23', '-22,98,-24', '-22,98,-25', '-22,98,-26', '-22,98,-27']);
   assert.equal(walk.lavaSide, 2);
   assert.match(walk.does, /^Walk off this spot to \(-22, 98, -27\), 9 cells over the ground as it stands \(nothing dug or laid, 3 down in all\), onto dry ground with no lava in the eight cells round it, 8 blocks from where it got stuck\. 2 of its cells have lava beside it/);
-  assert.match(walk.does, /walked crouched one cell at a time; a misstep or a push there is into the lava \(One touch of lava .* more than the 1\.8 health the bot has: a touch is death\.\)\. The walks the bot makes on its own take no cell beside lava in the Nether, so they find no way here\./);
+  assert.match(walk.does, /walked crouched one cell at a time; a misstep or a push there is into the lava \(One touch of lava .* more than the 1\.8 health the bot has: a touch is death\.\)\. The walks the bot makes on its own in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot\./);
   // The end is dry ground with no lava round it, and no drop of two onto a cell beside lava is on the way.
   const { lavaBeside } = require('../src/unstuck');
   assert.equal(lavaBeside(view, walk.to), false);

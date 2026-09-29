@@ -123,8 +123,8 @@ async function routeSays(bot, task, at) {
   let r = null;
   try { r = await require('./skills').surveyRoute(bot, task, m, new goals.GoalNear(at.x, at.y, at.z, 3), 500); }
   catch (err) { if (!retryable(err) || err.name === 'Stalled') throw err; return ''; }
-  if (r?.status === 'success') return ` A route survey from here found a way there on foot, ${plural(r.path?.length || 0, 'step')}.`;
-  if (r?.status === 'noPath') return ' A route survey from here found no way there on foot (the bot\'s own walks in the Nether take no cell with lava beside it); the way there is asked on the spot as the gathering asks it: on foot as far as it goes, straight across at this height with the blocks carried, or down to the floor and along it.';
+  if (r?.status === 'success') return ` A route survey from here found a way there on foot, ${plural(r.path?.length || 0, 'step')}.${r.lava?.beside ? ` ${require('./movement').lavaAlongSays(r.lava, bot)}` : ''}`;
+  if (r?.status === 'noPath') return ' A route survey from here found no way there on foot (the bot\'s own walks in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot); the way there is asked on the spot as the gathering asks it: on foot as far as it goes, straight across at this height with the blocks carried, or down to the floor and along it.';
   return ' A half-second route survey from here did not finish (far, or a long way round); the way there is asked on the spot as the gathering asks it.';
 }
 

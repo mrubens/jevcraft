@@ -146,7 +146,7 @@ async function wayTo(bot, task, target) {
       // The blocks the pathfinder's own route lays (a tower, a bridge) and
       // digs, each priced as the crossing prices it.
       const placed = path.reduce((n, q) => n + (q.toPlace?.length || 0), 0), dug = path.reduce((n, q) => n + (q.toBreak?.length || 0), 0);
-      out.walk = { found: route.status === 'success', steps: path.length, placed, dug, end: end ? new Vec3(end.x, end.y, end.z) : null,
+      out.walk = { found: route.status === 'success', steps: path.length, placed, dug, end: end ? new Vec3(end.x, end.y, end.z) : null, lava: route.lava || null,
         nearer: end ? Math.round(out.from - end.distanceTo(target)) : 0, seconds: Math.round(path.length / travel.WALK_SPEED + placed * travel.LAY_CELL_SECONDS + dug * travel.ROCK_CELL_SECONDS / 2) };
     }
   }
@@ -179,15 +179,16 @@ function rockSays(bot) {
   const pick = (bot.inventory?.items?.() || []).find(i => /_pickaxe$/.test(i.name));
   return pick ? `dug with the ${words(pick.name)}` : 'dug by hand, no pickaxe being carried: netherrack so dug drops nothing';
 }
-function walkSays(way) {
+function walkSays(way, bot) {
   const w = way.walk;
   if (!w) return 'On foot: not surveyed.';
   const work = [w.placed && `laying ${plural(w.placed, 'block')} as it goes`, w.dug && `digging ${plural(w.dug, 'block')}`].filter(Boolean).join(' and ');
-  if (w.found) return `On foot: the pathfinder's route there is ${plural(w.steps, 'step')}${work ? `, ${work}` : ''}, about ${w.seconds} seconds.`;
+  const lava = w.lava?.beside ? ` ${require('./movement').lavaAlongSays(w.lava, bot)}` : '';
+  if (w.found) return `On foot: the pathfinder's route there is ${plural(w.steps, 'step')}${work ? `, ${work}` : ''}, about ${w.seconds} seconds.${lava}`;
   const on = w.onFrom, carried = on?.carried ?? 0;
   const onSays = !on ? '' : on.gain >= 1 ? ` From there, straight across with the ${plural(carried, 'block')} carried: ${plural(on.cells, 'cell')}, ${plural(Math.round(on.gain), 'block')} nearer${on.stoppedBy ? `, then ${on.stoppedBy}` : ''}.`
     : ` From there, straight across: ${on.stoppedBy || 'no way on'} at the first cell, so the walk ends there.`;
-  return `On foot: the pathfinder finds no route there${w.end ? `; the nearest it walks to is ${at3(w.end)}, ${w.nearer > 0 ? `${w.nearer} blocks nearer` : 'no nearer'}` : ''}.${onSays}`;
+  return `On foot: the pathfinder finds no route there${w.end ? `; the nearest it walks to is ${at3(w.end)}, ${w.nearer > 0 ? `${w.nearer} blocks nearer` : 'no nearer'}` : ''}.${w.end && w.nearer > 0 ? lava : ''}${onSays}`;
 }
 function crossSays(bot, way) {
   const { whole, now, carried } = way.cross, y = Math.round(bot.entity.position.y);
@@ -357,7 +358,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const whereSays = `${place.n ? `${plural(place.n, words(place.name))} known` : `No ${words(place.name)} is known yet in ${place.forest}`} at ${at3(place.at)}, ${off} blocks ${HEADING_NAMES[Math.round(Math.atan2(place.at.z - here.z, place.at.x - here.x) / (Math.PI / 2) + 4) % 4]}${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}`;
     const stood = coverage.stoodNear(state, dim, place.at, 32);
     const standSays = stood === null ? 'The bot has not stood within 32 blocks of it.' : `The bot has stood ${stood} blocks from it before.`;
-    const says = `${whereSays}. ${walkSays(way)} ${crossSays(bot, way)}${floorSays(way)} ${standSays}`;
+    const says = `${whereSays}. ${walkSays(way, bot)} ${crossSays(bot, way)}${floorSays(way)} ${standSays}`;
     const offered = waysOffered(way);
     const keys = [];
     for (const method of ['walk', 'cross', 'floor']) {
@@ -380,7 +381,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const portal = portalsKnown(bot, goal)[0];
     if (portal) {
       const way = await wayTo(bot, task, portal);
-      const says = `The nether portal at ${at3(portal)}, ${Math.round(flat(portal, here))} blocks off. ${walkSays(way)} ${crossSays(bot, way)}`;
+      const says = `The nether portal at ${at3(portal)}, ${Math.round(flat(portal, here))} blocks off. ${walkSays(way, bot)} ${crossSays(bot, way)}`;
       const reaches = way.walk?.found || (way.cross.now.cells && flat(way.cross.now.end, portal) <= THERE && way.cross.now.gain >= 1);
       if (reaches && !isSetAside(goal, 'gather_way', wayKey(bot, portal, 'portal'))) {
         options.portal_trip = { description: `Go back through the portal to the Overworld for wood, ${way.walk?.found ? 'on foot' : 'straight across at this height'}. ${says} ${overworldWoodSays(goal, portal)} The work here waits till the bot comes back through.`,

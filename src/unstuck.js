@@ -348,8 +348,9 @@ function risePlan(view, feet, { reach = 48 } = {}) {
 // in the eight cells round it, over the ground as it stands (a step level,
 // one up, or down as far as three; nothing dug or laid), taking as few cells
 // beside lava as the ground allows. In the Nether the pathfinder's walks
-// take no cell with lava beside it (movement.js besideLavaRefused), and in
-// a basalt delta, where the lava lies in pools level with the floor, that
+// took no cell with lava beside it (movement.js besideLavaRefused; since
+// note 660 only where a touch is death or a push is in line), and in a
+// basalt delta, where the lava lies in pools level with the floor, that
 // is every cell: 25583 (mid-243-cg) stood thirty minutes on a cell of
 // blackstone at 1.8 health, every walk "no route", its moves single steps
 // onto the cells beside it and back, while a walk of nine cells, two of
@@ -588,7 +589,7 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       const rise = walk.to.y - feet.y, off = Math.round(Math.hypot(walk.to.x - from.x, walk.to.z - from.z));
       const side = walk.lavaSide;
       moves.push({ key: 'walk_off', kind: 'walk', path: walk.path, to: walk.to, lavaSide: side,
-        does: `Walk off this spot to (${walk.to.x}, ${walk.to.y}, ${walk.to.z}), ${walk.path.length} cells over the ground as it stands (nothing dug or laid${rise ? `, ${rise > 0 ? `${rise} up` : `${-rise} down`} in all` : ''}), onto dry ground with no lava in the eight cells round it, ${off} blocks from where it got stuck. ${side ? `${side} of its cells ${side === 1 ? 'has' : 'have'} lava beside it (level with the feet or the floor, a block to the side or corner to corner), walked crouched one cell at a time; a misstep or a push there is into the lava${view.lavaTouch ? ` (${view.lavaTouch})` : ''}. The walks the bot makes on its own take no cell beside lava in the Nether, so they find no way here.` : 'None of its cells has lava beside it.'}`,
+        does: `Walk off this spot to (${walk.to.x}, ${walk.to.y}, ${walk.to.z}), ${walk.path.length} cells over the ground as it stands (nothing dug or laid${rise ? `, ${rise > 0 ? `${rise} up` : `${-rise} down`} in all` : ''}), onto dry ground with no lava in the eight cells round it, ${off} blocks from where it got stuck. ${side ? `${side} of its cells ${side === 1 ? 'has' : 'have'} lava beside it (level with the feet or the floor, a block to the side or corner to corner), walked crouched one cell at a time; a misstep or a push there is into the lava${view.lavaTouch ? ` (${view.lavaTouch})` : ''}. The walks the bot makes on its own in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot.` : 'None of its cells has lava beside it.'}`,
         effects: [], ...where(walk.to) });
     }
   }

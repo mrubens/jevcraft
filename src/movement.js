@@ -21,6 +21,38 @@ const LAVA_EDGE_COST = 4;
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const DROP_DEEPEST = 48;
 const BURNS = /lava|fire|magma_block|campfire/;
+// A cell with lava round it costs this much more than open ground, so a
+// route takes as few as the ground allows (note 660).
+const LAVA_SIDE_COST = 6;
+// The lava round a standing cell (note 516's set): the eight cells round it
+// at the floor, the feet and the head. `sides` counts those a block to a
+// side, not corner to corner: the ones the body's own width meets when it
+// drifts off the middle of its cell. `nameAt(x, y, z)` names a block.
+function lavaRound(nameAt, c) {
+  const cells = [];
+  for (const [dx, dz] of AROUND) for (const dy of [-1, 0, 1]) if (/lava/.test(nameAt(c.x + dx, c.y + dy, c.z + dz) || '')) cells.push([dx, dy, dz]);
+  return { cells, sides: cells.filter(([dx, , dz]) => !dx || !dz).length };
+}
+// Whether a push toward the lava round `c` could come now: lava on the far
+// side of the cell from something that can push the bot (danger.js
+// pushersAbout), within seventy degrees of the line the push comes along.
+// A mob's hit and a shot's knockback carry the body along the line from
+// the one that hits, a crouch holding nothing against it; a shot in flight
+// along its own heading.
+function pushInLine(lava, c, pushers) {
+  const cx = c.x + 0.5, cz = c.z + 0.5;
+  for (const t of pushers || []) {
+    const e = t.entity, v = e?.velocity;
+    let ux, uz;
+    if (t.projectile && v && Math.hypot(v.x, v.z) > 1e-3) { ux = v.x; uz = v.z; }
+    else if (e?.position) { ux = cx - e.position.x; uz = cz - e.position.z; }
+    else continue;
+    const n = Math.hypot(ux, uz);
+    if (n < 1e-3) return t;
+    for (const [dx, , dz] of lava.cells) if ((dx * ux + dz * uz) / (n * Math.hypot(dx, dz)) > 0.34) return t;
+  }
+  return null;
+}
 const netherOf = bot => /nether/.test(String(bot?.game?.dimension || ''));
 function gapSurvivable(movements, node, dir, k = 1) {
   for (let dy = -1; dy >= -(GAP_FALL_MAX + 1); dy--) {
@@ -131,6 +163,10 @@ class SurvivalMovements extends Movements {
     // trench onto the cells beside a lava flow at 14.6 health and its side
     // went into the flow; fifteen seconds of burning after (note 514).
     const airborne = next => node.y - next.y >= 2 || next.y > node.y && (next.x !== node.x || next.z !== node.z);
+    // In the Nether the whole of note 516's set counts for a landing, as
+    // the walk off counts it (unstuck.js walkOffPlan): a walk takes a cell
+    // with lava round it at its cost, crouched, but never lands on one.
+    const lavaOf = next => next._lava || (next._lava = lavaRound((x, y, z) => this.getBlock({ x, y, z }, 0, 0, 0)?.name, next));
     // No block laid level beside the floor where a miss ends in lava: the
     // pathfinder lays it by backing to the edge crouched, and off the ground
     // mid-jump a crouch holds nothing. mid-235-p-nether-2, towering beside
@@ -140,25 +176,29 @@ class SurvivalMovements extends Movements {
     // (cross_toward), said with its cost.
     const missIntoLava = p => (p.dx || p.dz) && !p.useOne && p.dy === 0 && this.fallIntoLava({ x: p.x + p.dx, y: p.y + 1, z: p.z + p.dz });
     for (let i = kept.length - 1; i >= 0; i--) {
-      if (airborne(kept[i]) && lavaBy(kept[i]) || kept[i].toPlace?.some(missIntoLava)) kept.splice(i, 1);
+      if (airborne(kept[i]) && (lavaBy(kept[i]) || nether && lavaOf(kept[i]).cells.length) || kept[i].toPlace?.some(missIntoLava)) kept.splice(i, 1);
       // Nor a drop or a jump onto a lip beside a deadly drop, pushers or
       // not: the body's own drift carries on past the cell (the staircase's
       // rule, mid-244-q). A step there is the edge rule below (note 541).
       else if (nether && airborne(kept[i]) && !this.besideLava?.(kept[i]) && this.deadlyDropBeside(kept[i])) { kept.splice(i, 1); this.edgeRefusals = (this.edgeRefusals || 0) + 1; }
-      // In the Nether no cell a block sideways of lava, or of an edge whose
-      // fall ends in lava or costs half the health, whatever the move:
-      // refused one kind of move at a time, the pathfinder's routes found
-      // the next, and both of note 514's burns were its own (mid-235-p-
-      // nether-2, mid-235-p-fortress-3). mid-243-q-nether-1, on a ledge
-      // thirteen over the lava sea, was knocked off by a ghast's fireball
-      // into the sea with no shore to climb onto (note 516). With no water
-      // there, lava beside the feet or below the edge is the end. A one-wide
-      // span or bridge over the sea is such an edge: crossing it is Jev's
-      // (cross_toward, cross_level), crouched, its cost said; a walk that
-      // needs such cells opts out by name (besideLava).
+      // In the Nether a cell with lava round it where a touch is death or a
+      // push is in line, or beside an edge whose fall ends in lava or costs
+      // half the health while something can push: refused whatever the
+      // move (besideLavaRefused). Refused one kind of move at a time, the
+      // pathfinder's routes found the next, and both of note 514's burns
+      // were its own (mid-235-p-nether-2, mid-235-p-fortress-3). mid-243-q-
+      // nether-1, on a ledge thirteen over the lava sea, was knocked off by
+      // a ghast's fireball into the sea (note 516). A one-wide span or
+      // bridge over the sea is Jev's crossing (cross_toward, cross_level),
+      // crouched, its cost said; a walk that needs such cells opts out by
+      // name (besideLava).
       else if (nether) {
         const why = this.besideLavaRefused(kept[i]);
-        if (why) { kept.splice(i, 1); this.lavaRefusals = (this.lavaRefusals || 0) + (why === 'lava' ? 1 : 0); this.edgeRefusals = (this.edgeRefusals || 0) + (why === 'edge' ? 1 : 0); }
+        if (why) {
+          kept.splice(i, 1);
+          this.lavaRefusals = (this.lavaRefusals || 0) + (why === 'lava' ? 1 : 0); this.edgeRefusals = (this.edgeRefusals || 0) + (why === 'edge' ? 1 : 0);
+          if (why === 'lava' && this._lavaWhy) (this.lavaRefusedFor ||= {})[this._lavaWhy] = (this.lavaRefusedFor[this._lavaWhy] || 0) + 1;
+        }
       }
     }
     // In every dimension, no move that leaves the ground beside a fall that
@@ -170,6 +210,9 @@ class SurvivalMovements extends Movements {
     for (const next of kept) {
       if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, -1].some(dy => this.getBlock(next, dx, dy, dz)?.name === 'lava')) ||
         (nether && this.deadlyDropBeside(next))) next.cost += LAVA_EDGE_COST;
+      // And in the Nether each cell with lava round it, so the route takes
+      // as few as the ground allows (note 660).
+      if (nether && lavaOf(next).cells.length) next.cost += LAVA_SIDE_COST;
     }
     // Nor back onto the edge the bot has just stepped back from, while the
     // mobs it stepped back from are about (terrain.js holdOffEdge); save the
@@ -303,30 +346,68 @@ class SurvivalMovements extends Movements {
     return standsInLava(at, { x: feet.x + dx, y: feet.y - dy + 1, z: feet.z + dz });
   }
 
-  // The note 516 rule for a cell: 'lava' for lava in any of the eight
-  // cells round it at the feet, the head or the floor, or an edge there
-  // whose fall ends in lava; 'edge' for an edge whose fall costs half the
-  // health; null for neither. `besideLava` is the opt-out: a predicate of
-  // cells the caller has chosen to take all the same.
+  // The note 516 rule for a cell, priced since note 660: 'lava' for lava
+  // round it (the eight cells round it at the floor, the feet or the head)
+  // where a touch of it is death to this body now (terrain.js lavaTouch:
+  // the armour worn, the health, fire resistance) and the lava lies a block
+  // to a side, or where something that can push the bot is in line with it
+  // (pushInLine), or an edge beside it whose fall ends in lava while
+  // something can push; 'edge' for an edge whose fall costs half the health
+  // while something can push; null otherwise, the cell walked at its cost
+  // (LAVA_SIDE_COST) and crouched (skills.js crouchOnEdge). What the rule
+  // kept off was a step's drift or a push into the lava: a crouched body
+  // stops at the edge of its floor, and lava only corner to corner is out
+  // of the body's width, but a hit carries a crouched body on, and lava a
+  // block to the side is walked into as easily as the next cell. Refused
+  // whenever lava was round the cell, 25583 (mid-243-cg) stood 174 minutes
+  // in a basalt delta with one cell to walk on, and 25589 walked 325
+  // minutes never sighting a fortress, every leg, gather walk and portal
+  // walk refusing the lava sea's shore (note 660). `besideLava` is the
+  // opt-out: a predicate of cells the caller has chosen to take all the
+  // same. `this._lavaWhy` is left as 'touch' or 'push' for the no-route
+  // error.
   // An edge is refused only while something about can push the bot over
   // it (danger.js pushersAbout); with nothing that can, it is walked at its
   // cost, as a player walks a fortress bridge. mid-235-p-nether-3-fortress-
   // 2 reached none of its fortress's stretches in seventy-three minutes,
-  // every bridge edge refused with nothing about (note 541). Lava itself
-  // beside the feet stays refused: a misstep there is the burn.
+  // every bridge edge refused with nothing about (note 541).
   besideLavaRefused(next) {
+    this._lavaWhy = null;
     if (this.besideLava?.(next)) return null;
-    if (AROUND.some(([dx, dz]) => [1, 0, -1].some(dy => /lava/.test(this.getBlock(next, dx, dy, dz)?.name || '')))) return 'lava';
-    const drop = this.deadlyDropBeside(next);
-    if (!drop || !require('./danger').pushersAbout(this.bot).length) return null;
+    const lava = next._lava || lavaRound((x, y, z) => this.getBlock({ x, y, z }, 0, 0, 0)?.name, next);
+    const hazard = this.lavaHazard();
+    if (lava.cells.length && !hazard.resistant) {
+      if (hazard.deadly && lava.sides) { this._lavaWhy = 'touch'; return 'lava'; }
+      if (pushInLine(lava, next, hazard.pushers)) { this._lavaWhy = 'push'; return 'lava'; }
+    }
+    // Lava level with the floor beside the cell is the lava above's, not an
+    // edge's: a drop is one of a block or more.
+    const drop = this.deadlyDropBeside(next, { level: false });
+    if (!drop || !hazard.pushers.length) return null;
     // An escape offered along the edge, its cells beside the drop said and
     // priced by the push (survival.js routeEdge), walks the cells it was
     // offered with (edgeTaken): the bot stands beside the drop already, and
     // refused, mid-243-ah-fortress-5's way out of a ghast's line was
     // offered and refused four times on its ridge over the lava sea while
-    // the ghast fired (note 610). Lava beside the feet stays refused.
+    // the ghast fired (note 610). Lava beside the feet stays as above.
     if (this.edgeTaken?.(next)) return null;
+    if (drop.into === 'lava') this._lavaWhy = 'push';
     return drop.into === 'lava' ? 'lava' : 'edge';
+  }
+  // What a touch of lava is to this body now and what can push it: the two
+  // facts the rule above stands on. The touch is read once a quarter second
+  // at the same health; danger.js keeps its own look at the pushers.
+  lavaHazard() {
+    const now = Date.now(), health = this.bot?.health;
+    let touch = this._lavaTouch;
+    if (!touch || now - touch.at > 250 || touch.health !== health) {
+      let t = null;
+      try { t = require('./terrain').lavaTouch(this.bot); } catch (_) { t = null; }
+      touch = this._lavaTouch = { at: now, health, deadly: !!t?.deadly, resistant: !!t?.resistant };
+    }
+    let pushers = [];
+    try { pushers = require('./danger').pushersAbout(this.bot); } catch (_) { pushers = []; }
+    return { deadly: touch.deadly, resistant: touch.resistant, pushers };
   }
 
   // Where a body with its feet at `feet`, over nothing, comes down: into
@@ -353,7 +434,7 @@ class SurvivalMovements extends Movements {
   // three, and then lava, or a fall whose damage is half the health or more.
   // Read through the pathfinder's own block view and kept for a second, so
   // a search over the same ledge measures each column once.
-  deadlyDropBeside(node) {
+  deadlyDropBeside(node, { level = true } = {}) {
     const now = Date.now();
     if (!this._drops || now - this._drops.at > 1000) this._drops = { at: now, cells: new Map() };
     const health = this.bot?.health ?? 20;
@@ -361,7 +442,7 @@ class SurvivalMovements extends Movements {
       const key = `${node.x + dx},${node.y},${node.z + dz}`;
       let drop = this._drops.cells.get(key);
       if (drop === undefined) { drop = this.dropFrom(node, dx, dz, health); this._drops.cells.set(key, drop); }
-      if (drop && (drop.into === 'lava' || drop.damage >= health / 2)) return drop;
+      if (drop && (drop.into === 'lava' || drop.damage >= health / 2) && (level || drop.fall > 0)) return drop;
     }
     return null;
   }
@@ -574,4 +655,31 @@ function fallBeside(bot, feet, health = bot?.health ?? 20) {
   return null;
 }
 
-module.exports = { fallBeside, configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };
+// The cells of a route with lava round them (lavaRound), read from the
+// world: `beside` those with any, `touching` those with lava a block to a
+// side. In the Nether only, where the walk is priced by them (note 660);
+// null elsewhere or with no world to read.
+function lavaAlong(bot, path) {
+  if (!netherOf(bot) || typeof bot?.blockAt !== 'function' || !Array.isArray(path)) return null;
+  const nameAt = (x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name;
+  let beside = 0, touching = 0;
+  for (const p of path) {
+    const lava = lavaRound(nameAt, { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) });
+    if (lava.cells.length) beside++;
+    if (lava.sides) touching++;
+  }
+  return { beside, touching };
+}
+// Those facts said, for a question that offers the walk: how many cells,
+// how they are walked, and what a touch or a push there costs this body.
+function lavaAlongSays(lava, bot) {
+  if (!lava?.beside) return '';
+  let touch = '';
+  try { touch = ` ${require('./terrain').lavaTouchSays(bot)}`; } catch (_) { touch = ''; }
+  const one = n => n === 1;
+  return `${lava.beside} of its cells ${one(lava.beside) ? 'has' : 'have'} lava round ${one(lava.beside) ? 'it' : 'them'} (at the floor, the feet or the head, a block off)` +
+    `${lava.touching ? `, ${lava.touching} of ${one(lava.beside) ? 'it' : 'them'} with the lava a block to a side rather than only corner to corner` : ', all of it corner to corner'}: ` +
+    `walked crouched, which stops the body at the edge of its floor but not against a hit; a misstep or a push there is into the lava.${touch}`;
+}
+
+module.exports = { lavaAlong, lavaAlongSays, lavaRound, pushInLine, LAVA_SIDE_COST, fallBeside, configureMovements, updateDigCapabilities, installToolPolicy, SurvivalMovements, gapSurvivable };

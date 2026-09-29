@@ -84,17 +84,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function surveyRoute(bot, task, movements, goal, timeoutMs = 500) {
   task.check(); checkAir(bot);
   if (require('./flight').canFly(bot)) return require('./flight').surveyFlight(bot, task, goal, { timeoutMs });
-  if (!bot.pathfinder.getPathFromTo) return bot.pathfinder.getPathTo(movements, goal, timeoutMs);
+  if (!bot.pathfinder.getPathFromTo) return withLava(bot, bot.pathfinder.getPathTo(movements, goal, timeoutMs));
   const deadline = Date.now() + timeoutMs;
   let last;
   for (const { result } of bot.pathfinder.getPathFromTo(movements, bot.entity.position, goal,
     { timeout: timeoutMs, tickTimeout: Math.min(20, timeoutMs) })) {
     task.check(); checkAir(bot); last = result;
-    if (result.status !== 'partial') return result;
-    if (Date.now() >= deadline) return { ...result, status: 'timeout' };
+    if (result.status !== 'partial') return withLava(bot, result);
+    if (Date.now() >= deadline) return withLava(bot, { ...result, status: 'timeout' });
     await sleep(0); // Let physics, new mob observations and cancellation run.
   }
-  return last || { status: 'noPath', path: [] };
+  return withLava(bot, last || { status: 'noPath', path: [] });
+}
+// A route surveyed in the Nether carries how many of its cells have lava
+// round them and how many have it a block to a side (movement.js
+// lavaAlong), for the question that offers the walk to say (note 660).
+function withLava(bot, route) {
+  if (!route?.path?.length || route.lava) return route;
+  const lava = require('./movement').lavaAlong(bot, route.path);
+  return lava ? Object.assign(route, { lava }) : route;
 }
 
 class NavigationCorrectionLoop extends Error {
@@ -487,6 +495,20 @@ function flatGoalPoint(goal) {
   return { x: goal.x + 0.5, z: goal.z + 0.5 };
 }
 
+// No route to `goal`, said with where to and why, when the Nether's edge
+// rule refused cells on the way: the stall question names it, and a
+// crossing is Jev's to choose (note 516). Which of the lava rule's two facts
+// refused it (movement.js besideLavaRefused, note 660): a touch that is
+// death, or a push.
+function noRoute(bot, goal, status) {
+  const destination = goal && Number.isFinite(goal.x) && Number.isFinite(goal.z) ? { x: goal.x, ...(Number.isFinite(goal.y) ? { y: goal.y } : {}), z: goal.z } : null;
+  const to = destination ? `(${destination.x}, ${Number.isFinite(destination.y) ? `${destination.y}, ` : ''}${destination.z})` : 'the destination';
+  const refused = bot.pathfinder?.movements || {};
+  const lavaFor = refused.lavaRefusedFor || {}, lavaWhy = [lavaFor.touch && 'where a touch of it is death at this health', lavaFor.push && 'in line with something that can push the bot'].filter(Boolean).join(', and ');
+  const lava = refused.lavaRefusals > 0 ? `: the way passes beside lava${lavaWhy ? ` ${lavaWhy}` : ''}` : refused.edgeRefusals > 0 ? ': the way passes along a drop that would kill' : '';
+  return Object.assign(new Error(`No route from here to ${to} (${status})${lava}`), { name: 'NoRoute', destination, besideLava: refused.lavaRefusals > 0 });
+}
+
 async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }) {
   task.check(); checkAir(bot);
   if (stopWhen?.()) return;
@@ -510,11 +532,16 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   bot.on?.('forcedMove', corrected);
   bot.on?.('path_update', observedRoute);
   for (const k of ['lavaRefusals', 'edgeRefusals']) if (bot.pathfinder?.movements?.[k]) bot.pathfinder.movements[k] = 0;
+  if (bot.pathfinder?.movements?.lavaRefusedFor) bot.pathfinder.movements.lavaRefusedFor = {};
   // Crouched along a deadly edge in the Nether, as a player walks a ridge
   // over the lava: a crouching body cannot step off an edge. Not before a
   // step down the path means to take. mid-229-h walked a one-wide netherrack
   // ridge five blocks over a lava lake upright, slid off it with nothing
-  // pushing, and burned from twenty to none (2026-09-27).
+  // pushing, and burned from twenty to none (2026-09-27). Crouched too on a
+  // cell with lava round it, which the walk takes at its cost (movement.js
+  // besideLavaRefused, note 660): at the edge of a lava pool the crouch
+  // holds the body on its floor, and beside lava at the feet it walks at a
+  // third of the pace, drifting less off the middle of the cell.
   let edgeCrouch = false;
   const crouchOnEdge = () => {
     try {
@@ -530,7 +557,8 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
       let deadly = false, down = false;
       if (nether) {
         const drop = require('./terrain').dropNear(bot, feet, 1);
-        deadly = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2);
+        deadly = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2) ||
+          require('./movement').lavaRound((x, y, z) => bot.blockAt(new Vec3(x, y, z))?.name, feet).cells.length > 0;
         const next = latestRoute?.path?.find(n => Math.hypot(n.x - feet.x - 0.5, n.z - feet.z - 0.5) > 0.4);
         down = next && next.y < feet.y;
       }
@@ -665,19 +693,18 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
         // Where to, said and carried: mid-202-o-nether-2 persisted twelve
         // times on "No route from here to the destination" with none named,
         // a cell two blocks under its own pocket's floor (note 500).
-        const destination = goal && Number.isFinite(goal.x) && Number.isFinite(goal.z) ? { x: goal.x, ...(Number.isFinite(goal.y) ? { y: goal.y } : {}), z: goal.z } : null;
-        const to = destination ? `(${destination.x}, ${Number.isFinite(destination.y) ? `${destination.y}, ` : ''}${destination.z})` : 'the destination';
-        // And why, when the Nether's edge rule refused cells on the way: the
-        // stall question names it, and a crossing is Jev's to choose (note 516).
-        const refused = bot.pathfinder?.movements || {};
-        const lava = refused.lavaRefusals > 0 ? ': the way passes beside lava' : refused.edgeRefusals > 0 ? ': the way passes along a drop that would kill' : '';
-        throw Object.assign(new Error(`No route from here to ${to} (${latestRoute?.status || 'no search'})${lava}`), { name: 'NoRoute', destination, besideLava: refused.lavaRefusals > 0 });
+        throw noRoute(bot, goal, latestRoute?.status || 'no search');
       }
       throw new Error('Navigation ended before reaching the destination');
     }
   } catch (err) {
     bot.pathfinder.setGoal(null);
     task.check();
+    // The pathfinder's own "no path" (a search that found part of a way):
+    // where the Nether's lava or edge rule refused cells on it, said as the
+    // empty route's no-route is, with the rule's reason (note 660).
+    const m = bot.pathfinder?.movements || {};
+    if (err?.name === 'NoPath' && (m.lavaRefusals > 0 || m.edgeRefusals > 0)) throw noRoute(bot, goal, 'noPath');
     throw err;
   } finally {
     doorUse.restore();

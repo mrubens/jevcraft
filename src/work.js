@@ -522,7 +522,7 @@ async function nextRungSays(bot, task, goal, rung, now = Date.now()) {
       if (!aside && bot.pathfinder?.movements && (bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) {
         try {
           const r = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNear(l.x, Number.isFinite(l.y) ? l.y : Math.round(here.y), l.z, 12), 500);
-          survey = r?.status === 'success' ? 'a route survey from here found a way there' : r?.status === 'noPath' ? 'a route survey from here found no way there' : 'a half-second route survey from here did not finish (far, or a long way round)';
+          survey = r?.status === 'success' ? `a route survey from here found a way there${r.lava?.beside ? ` (${r.lava.beside} of its cells with lava round them, ${r.lava.touching} with it a block to a side, walked crouched)` : ''}` : r?.status === 'noPath' ? 'a route survey from here found no way there' : 'a half-second route survey from here did not finish (far, or a long way round)';
         } catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
       }
       parts.push(`the nearest ${words(kind)} known is ${Math.round(k.distance)} blocks off${dy ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} at (${l.x}, ${l.z})` +
@@ -557,7 +557,7 @@ async function surveySays(bot, task, t) {
   if (!t || !bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return '';
   try {
     const r = await surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNear(t.x, t.y, t.z, 3), 500);
-    return r?.status === 'success' ? ' A route survey from here found a way there.' : r?.status === 'noPath' ? ' A route survey from here found no way there.' : ' A half-second route survey from here did not finish (far, or a long way round).';
+    return r?.status === 'success' ? ` A route survey from here found a way there.${r.lava?.beside ? ` ${require('./movement').lavaAlongSays(r.lava, bot)}` : ''}` : r?.status === 'noPath' ? ' A route survey from here found no way there.' : ' A half-second route survey from here did not finish (far, or a long way round).';
   } catch (err) { if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; return ''; }
 }
 // Where a step was going, for the ledger (tried.js): its target, its
