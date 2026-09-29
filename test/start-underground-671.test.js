@@ -139,7 +139,7 @@ test('in a two-high tunnel no block is offered as a step up: there is no room to
   assert(keys.includes('step_east') && keys.includes('step_west'), 'the walks along the tunnel stay');
 });
 
-test('a move that takes back the move before, from the same cell, is not offered', () => {
+test('a move that takes back the move before is not offered', () => {
   const { localMoves } = require('../src/unstuck');
   const feet = new Vec3(46, 26, 9);
   // Room to climb: three high. The dirt put east is a step, and climbing
@@ -153,8 +153,12 @@ test('a move that takes back the move before, from the same cell, is not offered
   assert(!keys.includes('dig_east_feet'), 'the dirt just put there');
   assert(keys.includes('climb_east'), 'the step it was put there for');
   assert(here.notOffered.some(s => /^dig east feet: it takes back the move before \(place east\)/.test(s)));
-  // From another cell, or after another move, it is a dig like any.
-  assert(localMoves(withDirt, feet, { goal: 'sky', last: { ...last, from: '(45, 26, 9)' } }).moves.some(m => m.key === 'dig_east_feet'));
+  // Judged by the cell the move changes, wherever it was made from (note
+  // 684: a pillar and the dig under it are a cell apart); after another
+  // move, or a minute on, it is a dig like any.
+  assert(!localMoves(withDirt, feet, { goal: 'sky', last: { ...last, from: '(45, 26, 9)' } }).moves.some(m => m.key === 'dig_east_feet'));
+  assert(localMoves(withDirt, feet, { goal: 'sky', last: { ...last, at: Date.now() - 120000 } }).moves.some(m => m.key === 'dig_east_feet'));
+  assert(localMoves(withDirt, feet, { goal: 'sky', last: { move: 'step_west', from: `${feet}` } }).moves.some(m => m.key === 'dig_east_feet'));
   // And a cell just dug is not filled again.
   const dug = { move: 'dig_east_feet', from: `${feet}`, cell: `${placed}`, kind: 'dig' };
   assert(!localMoves(view, feet, { goal: 'sky', last: dug }).moves.some(m => m.key === 'place_east'));

@@ -344,6 +344,25 @@ function triedSays(list, { here, now = Date.now(), toward = false } = {}) {
   return `Tried ${blocked.length === 1 ? 'once' : `${blocked.length} times`} ${toward ? 'toward the same place from about here' : 'from here'} in the last ${ago(now - first)}, and it came to nothing${why ? `: ${why.replace(/\.$/, '')}` : ' (no new ground, nothing gained, no block dug or placed)'}.`;
 }
 
+// The same answer to the same question, come to nothing moments ago from
+// wherever the bot then stood, said on its option at the next asking (not
+// rested: a place can be the difference). Read from about here only, an
+// answer carried out that took the bot away before it failed (a walk to a
+// hoglin that found no way thirty blocks on) was offered back as untried:
+// 25598 chose the hunt eight times in five minutes, each failing the same
+// way from a new place (note 682). JUST_MS is the "same breath".
+const JUST_MS = 2 * 60000;
+function justNow(goal, { q, method, here, now = Date.now(), counted = [] }) {
+  const had = new Set(counted);
+  const recent = (goal?.tried?.entries || []).filter(e => e.q === q && e.method === method && e.outcome === 'blocked' && !e.held && !e.wait && !had.has(e) && now - (e.settledAt || e.at) < JUST_MS);
+  if (!recent.length) return null;
+  const last = recent.at(-1), off = last.place && here ? Math.round(dist(last.place, here)) : null;
+  const where = off === null ? '' : off <= NEAR ? ' about here' : ` ${off} blocks from here`;
+  const why = last.why ? `: ${String(last.why).replace(/\.$/, '')}` : ' (no new ground, nothing gained, no block dug or placed)';
+  return recent.length === 1 ? `Chosen ${ago(now - last.at)} ago${where}, and it came to nothing${why}.`
+    : `Chosen ${recent.length} times in the last ${ago(now - recent[0].at)}, the last ${ago(now - last.at)} ago${where}, and each came to nothing; the last${why}.`;
+}
+
 // The options as the ledger reads them, for decide: each option's blocked
 // tries said on it; those resting left out while another is on offer, and
 // said in the state. Questions whose answers are never left out (a stance,
@@ -392,7 +411,7 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.n
     // A stance, the body's way out, the shield: only their waits are read
     // (note 521: failedHereJustNow says their failures).
     const list = about(goal, { q, method: key, target: t, here, now }).filter(e => !sayOnly || e.wait);
-    const said = triedSays(list, { here, now, toward: !!t });
+    const said = [triedSays(list, { here, now, toward: !!t }), sayOnly ? null : justNow(goal, { q, method: key, here, now, counted: list })].filter(Boolean).join(' ') || null;
     const until = restsUntil(list, now);
     // Held by the repeat rule (decisions/repeats.js), and still held.
     const held = blockedOf(list).some(e => e.held && e.until > now);
@@ -826,5 +845,4 @@ function rungDue(goal, says, now = Date.now()) {
   return true;
 }
 
-module.exports = { answerNow, ownFailure, begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, leavesOf, leafAt, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays,
-  measuredBy, measureMark, measureOf, rungItems, sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS };
+module.exports = { answerNow, ownFailure, begin, record, settle, cut, spent, owed, workedOn, workBelowRung, sendBack, resumed, hold, about, read, leavesOf, leafAt, restsUntil, triedSays, escalate, escalationsFor, owner, markBlocked, latestOf, summary, placeBound, watchRung, rungDue, rungOf, rungSays, measuredBy, measureMark, measureOf, rungItems, sceneOf, sceneChanges, NEAR, WINDOW_MS, REST_AFTER, REST_MS, RUNG_MS, SCENE_RADIUS, SCENE_NEARER, WAIT_JUDGED_MS, justNow, JUST_MS };

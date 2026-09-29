@@ -48,6 +48,11 @@ function shotTargets(bot, danger, { minimum = 4, maximum = 20, any = false } = {
 // in use (shot-reflex.js shieldActive); a raise half a second old that the
 // server does not show is made again. Not sooner: a raise made again starts
 // the quarter second to block over.
+// A raised shield blocks only once it has been in use five ticks (the
+// 26.1.2 jar: the shield's blocks_attacks, block_delay_seconds 0.25), a
+// tick more for the raise to reach the server: a blow in that time lands
+// whole, as with the shield down (note 683).
+const SHIELD_BLOCKS_AFTER_MS = 300;
 function raiseShield(bot) {
   if (bot.inventory.slots?.[45]?.name !== 'shield') return false;
   if (bot._shieldRaised) {
@@ -254,4 +259,4 @@ async function defendNearby(bot, task, goal, save) {
   save(); return true;
 }
 
-module.exports = { critReady, strike, bystanders, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield };
+module.exports = { critReady, strike, bystanders, defenseWeapon, canStrike, strikeTarget, defendNearby, SHOOTERS, shooter, bowReady, aim, shotTargets, shoot, raiseShield, lowerShield, SHIELD_BLOCKS_AFTER_MS };

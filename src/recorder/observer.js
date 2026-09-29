@@ -27,6 +27,13 @@ function shieldUp(bot) {
   const f = bot.entity?.metadata?.[8];
   return typeof f === 'number' ? (f & 3) === 3 && bot.inventory?.slots?.[45]?.name === 'shield' : !!bot._shieldRaised;
 }
+// Up less than the quarter second a raised shield takes to block (combat.js
+// SHIELD_BLOCKS_AFTER_MS): a blow then lands whole. recent.js printed
+// "(shield up)" for such blows, and they read as the shield failing
+// (note 683).
+function shieldRising(bot, now = Date.now()) {
+  return !!bot._shieldRaised && now - (bot._shieldRaisedAt || 0) < require('../combat').SHIELD_BLOCKS_AFTER_MS;
+}
 
 function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, controls = {}, server = '', commit = loadedCommit(), arm = process.env.JEV_ARM || null } = {}) {
   let alive = true, world = null, worldAt = 0, route = [], previousDecision, previousAction;
@@ -60,8 +67,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       velocity: bot.entity?.velocity ? position(bot.entity.velocity) : undefined, onGround: bot.entity?.onGround,
       // The shield by the server's word where it has said (the bot's own
       // living entity flags): the code's flag stayed up through meals and
-      // draws that had ended the shield's use (note 676).
-      keys: bot.controlState ? [...Object.keys(bot.controlState).filter(k => bot.controlState[k]), ...(shieldUp(bot) ? ['shield'] : [])] : undefined,
+      // draws that had ended the shield's use (note 676); 'shield_rising'
+      // beside it in the quarter second before it blocks (note 683).
+      keys: bot.controlState ? [...Object.keys(bot.controlState).filter(k => bot.controlState[k]), ...(shieldUp(bot) ? ['shield', ...(shieldRising(bot) ? ['shield_rising'] : [])] : [])] : undefined,
       // Held behind the shield for a shot on its way (shot-reflex.js), and
       // why; or why a hold was refused a moment ago.
       ...(bot._shotHold ? { shotHold: bot._shotHold.why } : bot._shotRefused && Date.now() - bot._shotRefused.at < 1000 ? { shotRefused: bot._shotRefused.why } : {}),

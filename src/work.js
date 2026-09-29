@@ -250,7 +250,10 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot, { walksFailing });
   if (stall.layer === 'survival') {
     recordStill(stats, stall.key, STALL_MS, { now, detour: terrain ? 'work_free' : 'refused' }); save();
-    if (terrain) { await inCatch(task, goal, () => require('./unstuck').workFree(bot, task, goal, save, { client, dig })); return; }
+    // Not begun again unasked where a spell ended on a minute of moves that
+    // gained nothing (note 684): that went up to the question above.
+    const rests = terrain && require('./unstuck').spellRests(goal, bot.entity.position.floored(), now);
+    if (terrain && !rests) { await inCatch(task, goal, () => require('./unstuck').workFree(bot, task, goal, save, { client, dig })); return; }
     if (stall.strikes === 1) bot.chat?.(`${thing[0].toUpperCase()}${thing.slice(1)} isn't getting me anywhere. Something else, then.`);
     return;
   }
@@ -334,7 +337,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // sea none of the single blocks led anywhere.
   const rising = terrain ? (() => { try { const u = require('./unstuck'); return u.risePlan(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
   const risingSays = rising?.move ? ` One of its moves is a rise straight up through the rock over the head, ${rising.move.rise} blocks to open space at y ${rising.move.top}, about ${rising.move.seconds} seconds, with the blocks it lays taken from the pack and then the rock dug on the way.` : '';
-  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${risingSays}`,
+  const spellSays = terrain ? (() => { try { const r = require('./unstuck').spellRests(goal, bot.entity.position.floored()); return r ? ` The last: ${r}.` : ''; } catch (_) { return ''; } })() : '';
+  if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${risingSays}${spellSays}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the
@@ -783,6 +787,11 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
   try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.` }, 'upkeep'); }
   finally { if (chosen === 'carry_on') goal.step = step; }
+  // A pickaxe made is done: the work it was made for is the step again. Left
+  // as the craft, the next asking offered "carry on with the wooden pickaxe"
+  // a second after it was made, and read as the make never finished (25585,
+  // 19:18:26; note 682).
+  if (chosen === 'make_pickaxe' && !pickaxeNeeded(bot) && step) { goal.step = step; save(); }
   return chosen !== null && chosen !== 'carry_on';
 }
 // What upkeep has on offer from here, each with what it does and its run:

@@ -403,6 +403,11 @@ function escalateFrom(bot, goal, spec, why, { until = 0 } = {}) {
   throw new Stalled(raiseFor(bot, goal, says, Date.now(), { escalated: { from: spec.id, to, says, passed }, ...(until > Date.now() ? { until } : {}) }));
 }
 
+// The same from outside decide: a question whose asker judged its answers
+// came to nothing (unstuck.js, a minute of moves that gained nothing, note
+// 684). Throws the stall.
+function escalate(bot, goal, id, why) { return escalateFrom(bot, goal, question(id), why); }
+
 class NoSafeDefault extends Error {
   constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
 }
@@ -714,7 +719,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { escalate, withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

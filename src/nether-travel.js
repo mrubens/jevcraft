@@ -687,8 +687,16 @@ function hoglinsKnown(bot, goal) {
   const here = bot.entity.position;
   const inView = Object.values(bot.entities || {}).filter(e => e.name === 'hoglin' && e.isValid !== false && e.position && e.position.distanceTo(here) <= 32)
     .sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here));
-  const seen = require('./sightings').sighted(bot, goal, 'hoglin').filter(s => s.distance > 32 && s.distance <= 192);
-  return { inView, seen };
+  const all = require('./sightings').sighted(bot, goal, 'hoglin').filter(s => s.distance > 32 && s.distance <= 192);
+  // A place the walk to found no way to rests five minutes (nether-food.js
+  // huntHoglin): the hoglin there is seen again from afar at the next look,
+  // and on 25598 the hunt was chosen at it and failed the same way eight
+  // times in five minutes (note 682). Said, not hidden.
+  const now = Date.now(), resting = (goal?.netherFood?.noWay || []).filter(w => w.until > now);
+  const noWayAt = s => resting.find(w => Math.hypot(w.x - s.x, w.z - s.z) <= 24);
+  const seen = all.filter(s => !noWayAt(s));
+  const noWay = all.filter(s => noWayAt(s)).map(s => ({ ...s, walk: noWayAt(s) }));
+  return { inView, seen, noWay };
 }
 
 // One hoglin fought at the health the bot has, from the game's numbers

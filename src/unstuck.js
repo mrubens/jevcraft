@@ -410,6 +410,58 @@ function walkOffPlan(view, feet, from, { reach = WALK_OFF_REACH, nodes = WALK_OF
   return { path, lavaSide, to: found.c };
 }
 
+// The cell a move changes and how: a dig empties its cell, a block placed
+// or a pillar's block under the feet fills one. From a move as offered
+// (cell a Vec3 or its string) or as recorded. -> { cell, sense } or null
+function changeOf(m) {
+  if (!m?.cell || !['place', 'dig', 'pillar'].includes(m.kind)) return null;
+  return { cell: `${m.cell}`, sense: m.kind === 'dig' ? 'emptied' : 'filled' };
+}
+
+// The measure of the aim a spell of moves works toward: the height for the
+// surface, the distance from where it got stuck for off the spot, and for
+// out of the water none (a cell not stood on before is what counts).
+function measureOf(aim, feet) {
+  if (aim?.goal === 'sky') return feet.y;
+  if (aim?.goal === 'away' && aim.from) return Math.round(Math.hypot(feet.x - aim.from.x, feet.z - aim.from.z));
+  return null;
+}
+const JUDGE_MS = 60000, JUDGE_MOVES = 6, SPELL_REST_MS = 5 * 60000, SPELL_NEAR = 4;
+const measureSays = (aim, v) => aim?.goal === 'sky' ? `y ${v}` : `${v} blocks from where it got stuck`;
+// The last minute of a spell's moves judged by the aim's measure, not only
+// the move before: 25583 (mid-243-ge) made 25 moves in a minute that gained
+// two blocks of height and gave them back, each move judged against the
+// last alone (note 684). -> { moves, gained, spent, says }
+function judgeMinute(record, aim, now = Date.now()) {
+  const from = Math.max(now - JUDGE_MS, record.windowFrom || 0);
+  const all = (record.moves || []).filter(r => Number.isFinite(r.at));
+  const inWindow = all.filter(r => r.at >= from), before = all.filter(r => r.at < from);
+  const spanned = all.length && now - Math.max(all[0].at, record.windowFrom || 0) >= JUDGE_MS;
+  const measured = measureOf(aim, { x: 0, y: 0, z: 0 }) != null;
+  const vals = rs => rs.map(r => r.measure).filter(Number.isFinite);
+  let gained, says;
+  if (measured) {
+    const bestBefore = Math.max(...vals(before), ...(Number.isFinite(record.startMeasure) ? [record.startMeasure] : []));
+    const bestIn = Math.max(...vals(inWindow));
+    gained = !Number.isFinite(bestBefore) || (Number.isFinite(bestIn) && bestIn > bestBefore);
+    const first = vals(inWindow)[0], last = vals(inWindow).at(-1);
+    says = inWindow.length ? `${inWindow.length} move${inWindow.length === 1 ? '' : 's'} in the last ${Math.round((now - from) / 1000)} s: ${measureSays(aim, first)} to ${measureSays(aim, last)}, the best ${measureSays(aim, bestIn)}${Number.isFinite(bestBefore) ? `; the best before them ${measureSays(aim, bestBefore)}` : ''}` : null;
+  } else {
+    const fresh = inWindow.filter(r => r.fresh).length;
+    gained = fresh > 0;
+    says = inWindow.length ? `${inWindow.length} move${inWindow.length === 1 ? '' : 's'} in the last ${Math.round((now - from) / 1000)} s, ${fresh} onto a cell not stood on before` : null;
+  }
+  return { moves: inWindow.length, gained, spent: !!spanned && inWindow.length >= JUDGE_MOVES && !gained, says };
+}
+// A spell here that ended on a minute of moves gaining nothing, lately:
+// what it gained, said on the offer to work free, and the stall's own
+// working free not begun again unasked from about there. -> says or null
+function spellRests(goal, feet, now = Date.now()) {
+  const e = goal?.unstuck?.escalated;
+  if (!e || now - e.at > SPELL_REST_MS || !feet || Math.hypot(feet.x - e.where.x, feet.y - e.where.y, feet.z - e.where.z) > SPELL_NEAR) return null;
+  return `working free from about here ${Math.max(1, Math.round((now - e.at) / 60000))} min ago ended on a minute of moves that gained nothing: ${e.says}`;
+}
+
 // Every single move from here, each with its facts. `goal` is 'dry' (out
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
@@ -642,10 +694,17 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // No move that takes back the move before, from the same cell: a block
   // put there dug up again, or a cell just dug filled again, is where the
   // bot was two moves ago (mid-243-ga placed and dug the same cell three
-  // times running, note 671).
-  if (last?.cell && last.from === `${feet}` && ['place', 'dig'].includes(last.kind)) {
+  // times running, note 671). Judged by the cell the move changes, not the
+  // cell it is made from: a pillar puts its block under the feet and stands
+  // on it a cell up, and the dig underfoot from there takes it away again.
+  // 25583 (mid-243-ge) pillared and dug down, a cell up and back, eight
+  // times in a minute, each from the cell the move before had left it in
+  // (note 684).
+  const lastChange = last && !(Number.isFinite(last.at) && Date.now() - last.at > JUDGE_MS) ? changeOf(last) : null;
+  if (lastChange) {
     moves = moves.filter(m => {
-      if (!m.cell || `${m.cell}` !== last.cell || m.kind === last.kind || !['place', 'dig'].includes(m.kind)) return true;
+      const c = changeOf({ ...m, cell: m.kind === 'pillar' ? `${feet}` : m.cell && `${m.cell}` });
+      if (!c || c.cell !== lastChange.cell || c.sense === lastChange.sense) return true;
       notOffered.push(`${m.key.replaceAll('_', ' ')}: it takes back the move before (${last.move.replaceAll('_', ' ')}), back where the bot was`);
       return false;
     });
@@ -880,6 +939,11 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
   // area too, and the walk off leaves them all (walkOffPlan, note 685).
   const here0 = aim.from, stuckAt = (prior?.stuckAt || []).filter(p => !here0 || p.x !== here0.x || p.y !== here0.y || p.z !== here0.z).map(p => new Vec3(p.x, p.y, p.z));
   if (aim.goal === 'away' && here0) record.stuckAt = [...stuckAt.map(p => ({ x: p.x, y: p.y, z: p.z })), { x: here0.x, y: here0.y, z: here0.z }].slice(-6);
+  // Begun again where a spell ended gaining nothing (asked for: the stall's
+  // question offered it with that said): its minute starts now.
+  const startFeet = bot.entity.position.floored();
+  if (spellRests(goal, startFeet)) record.windowFrom = Date.now();
+  if (!Number.isFinite(record.startMeasure)) record.startMeasure = measureOf(aim, startFeet);
   bot.chat?.(`Stuck. Working my way ${aim.goal === 'dry' ? 'out of the water' : aim.goal === 'away' ? 'off this spot' : 'up'} one move at a time.`);
   let still = 0;
   const { checkThreats } = require('./danger');
@@ -894,8 +958,17 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const view = liveView(bot);
     const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
-    if (done || surfaced) { record.out = true; save(); return true; }
+    if (done || surfaced) { record.out = true; delete record.escalated; save(); return true; }
     if (!moves.length) return false;
+    // A minute of moves that gained nothing toward the aim: the question
+    // above is asked with it said, not another move (note 684).
+    const minute = judgeMinute(record, aim);
+    if (minute.spent) {
+      const says = `working free (${aim.aim}): ${minute.says}; nothing gained toward the aim in a minute of moves`;
+      record.escalated = { at: Date.now(), where: { x: feet.x, y: feet.y, z: feet.z }, says: minute.says };
+      save();
+      require('./decisions').escalate(bot, goal, 'unstuck_move', says);
+    }
     const failedHere = key => record.moves.filter(r => r.move === key && r.from === `${feet}` && !r.reached).length;
     // A shooter whose blast can push the bot over a drop that kills (a
     // ghast in sight): where it does so here, and at each move's end, said
@@ -907,7 +980,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }, { offWorld: !/overworld/.test(String(bot.game?.dimension || 'overworld')) }) + (push.moves.get(m.key) || '') }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
-      state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6), health: bot.health, food: bot.food,
+      state: { aim: aim.aim, here, carried: view.carried, recentMoves: record.moves.slice(-6).map(({ at, measure, fresh, ...r }) => r), ...(minute.says ? { lastMinute: minute.says } : {}), health: bot.health, food: bot.food,
         ...(view.corrections ? { serverCorrections: view.corrections } : {}),
         // The mobs about while it works free, seen or not (the decision
         // audit), and the shooters farther off whose fire reaches the bot.
@@ -942,11 +1015,16 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     // minutes, each recorded as got there, and each offered again as
     // "rises 1" with nothing said of the failures (2026-09-26).
     const reached = moveReached(m, feet, after, { failure, changed });
-    record.moves.push({ move: m.key, from: `${feet}`, ...(m.cell ? { cell: `${m.cell}`, kind: m.kind } : {}), reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
+    // The cell the move changed (a pillar's is the one under the feet it
+    // leaves), when it was made, and where it left the aim's measure.
+    const changed1 = m.kind === 'pillar' ? { cell: `${feet}`, kind: 'pillar' } : m.cell ? { cell: `${m.cell}`, kind: m.kind } : {};
+    const fresh = !record.visits[`${after}`];
+    const measure = measureOf(aim, after);
+    record.moves.push({ move: m.key, from: `${feet}`, ...changed1, at: Date.now(), ...(measure != null ? { measure } : {}), ...(fresh ? { fresh: true } : {}), reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
     save();
     if (still >= 4) return false;
   }
   return false;
 }
 
-module.exports = { walkOffPlan, lavaBeside, islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };
+module.exports = { changeOf, measureOf, judgeMinute, spellRests, JUDGE_MS, JUDGE_MOVES, walkOffPlan, lavaBeside, islandOf, groundRun, floorFacts, bridgeStock, pushFacts, walledSays, moveReached, dropBelow, dropInto, landsInLava, landed, waterAir, liveView, aimFor, perform, workFree, localMoves, risePlan, describeMove, atSurface, skyAbove, dryFooting, digEffects, DIRS, isWater, falls, open, solid };

@@ -246,3 +246,37 @@ test('with no head carried and too little wood, no pickaxe is offered or promise
   assert.match(wood.says, /a wooden pickaxe is made first from what is carried \(2 logs, 1 planks\)/);
   assert.equal(pickaxeFirst(wallBot({ items: [['oak_log', 2], ['blackstone', 5]] }).bot).item, 'stone_pickaxe');
 });
+
+// 25585 (mid-242-dh-fortress-22, 19:28:35 to 39Z, note 682): a fortress of
+// more than 4,096 bricks, left from one spot (keep_searching), was asked
+// about again two seconds later from the same spot over bricks thirty blocks
+// on, past the set-aside's extent, and fortress_leg then offered going back,
+// told of an older leave from elsewhere. Here the leave from the bot's spot
+// covers a few bricks only; an older one was made from elsewhere.
+test('a fortress left from here is not found again from here, nor offered back, whatever the extent set aside (25585, note 682)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const run = async shunned => {
+    const { bot } = wallBot();
+    const asked = [];
+    const client = { asked, systemOne: async ({ state, questions }) => {
+      const options = questions.branch_0.criteria;
+      if (options.go_in) return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } };
+      asked.push({ state, options });
+      return { answers: { branch_0: { choice: ['keep_searching', 'return_for_blocks'].find(k => options[k]) || Object.keys(options)[0], confidence: 0.9 } } };
+    } };
+    const now = Date.now();
+    const goal = { fortressSearch: { axis: 1, legs: 16, since: now - 60 * 60000, shunned: shunned(now) } };
+    await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {}, returnOverworld: async () => {} });
+    return { goal, client };
+  };
+  const older = now => ({ x: 135, z: -563, radius: 4, until: now + 360000, at: now - 240000, why: 'Jev chose to leave it and search on', from: { x: 150, y: 57, z: -560 }, left: ['walk route'] });
+  const fromHere = now => ({ x: 135, z: -563, radius: 4, until: now + 600000, at: now - 1000, why: 'Jev chose to leave it and search on', from: { x: 204, y: 47, z: -486 }, left: ['walk route', 'tunnel'] });
+  // Left only from elsewhere: the bricks past its few are the fortress found, and the way in is asked.
+  const away = await run(now => [older(now)]);
+  assert.notEqual(away.goal.decisions.at(-1).id, 'fortress_leg');
+  // Left from here a second ago: nothing of it is found from here, and going back is said, not offered.
+  const here = await run(now => [older(now), fromHere(now)]);
+  assert.equal(here.goal.decisions.at(-1).id, 'fortress_leg');
+  assert.equal(here.client.asked[0].options.back_to_fortress, undefined);
+  assert.match(JSON.stringify(here.client.asked[0].state), /set aside 0 minutes ago, for 10 minutes more: Jev chose to leave it and search on, from where the bot stands/);
+});

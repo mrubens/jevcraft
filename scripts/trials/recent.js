@@ -31,9 +31,14 @@ function asked(e) {
   const d = e.snapshot?.decision || {};
   return { id: d.id || null, judgments: d.judgments || null, options: d.options || null };
 }
+// The shield at the hurt (observer.js): up by the server's word, and
+// whether it was still in the quarter second before it blocks (note 683;
+// before note 683 the records do not say, and before note 676 'shield' was
+// only the bot's own flag).
+const shieldSaid = (keys = []) => !keys.includes('shield') ? '' : keys.includes('shield_rising') ? ' (shield rising, not yet blocking)' : ' (shield up)';
 const said = e => String(e.detail?.message ?? e.message ?? '');
 
-let lastHealth = null, lastDim = null;
+let lastHealth = null, lastDim = null, lastError = null, repeats = 0;
 for (const file of files) {
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line) continue;
@@ -59,11 +64,18 @@ for (const file of files) {
       if (withOptions && q.options) for (const [k, v] of Object.entries(q.options)) console.log(`      ${k}: ${String(text(v)).slice(0, 400)}`);
     } else if (e.kind === 'chat') {
       const m = said(e); if (m) console.log(`${t(e.at)} chat: ${m.slice(0, 160)}`);
+    } else if (e.kind === 'error' && e.label === lastError) {
+      // A step frame is an error frame while the goal's last error is
+      // still set (recorder/observer.js), so one error reads as one line a
+      // step for as long as it stands: 25597's one push preemption printed
+      // 34 times in six minutes (note 684). Said once, and counted.
+      repeats++;
     } else if (['error', 'no_route', 'navigation_stall'].includes(e.kind)) {
+      if (e.kind === 'error') { if (repeats) console.log(`      (the error before stood on ${repeats} more step frame${repeats === 1 ? '' : 's'})`); lastError = e.label; repeats = 0; }
       console.log(`${t(e.at)} ${pos(s)} ${e.kind}: ${String(e.label || '').slice(0, 120)}`);
     }
     if (s.health != null) {
-      if (lastHealth != null && s.health < lastHealth - 0.4) console.log(`${t(e.at)} ${pos(s)} HURT ${lastHealth.toFixed(1)} -> ${s.health.toFixed(1)}${(s.keys || []).includes('shield') ? ' (shield up)' : ''}`);
+      if (lastHealth != null && s.health < lastHealth - 0.4) console.log(`${t(e.at)} ${pos(s)} HURT ${lastHealth.toFixed(1)} -> ${s.health.toFixed(1)}${shieldSaid(s.keys)}`);
       lastHealth = s.health;
     }
   }

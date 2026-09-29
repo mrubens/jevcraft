@@ -219,6 +219,16 @@ function guardable(t) {
   return !!ce.MOBS[e.name] && !ce.MOBS[e.name].shoots;
 }
 
+// The swings of the mobs about, kept for the bot from the first guard on,
+// so a blow on the shield before a guard began counts in it: a guard run
+// for the moments a question is out begins many times a minute (note 683).
+function watchSwings(bot) {
+  if (bot._mobSwungAt) return bot._mobSwungAt;
+  const seen = bot._mobSwungAt = new Map();
+  bot.on?.('entitySwingArm', e => { if (e?.id != null && e !== bot.entity) seen.set(e.id, Date.now()); });
+  return seen;
+}
+
 // The shield up facing the biter, the sword swung right after its blow lands
 // on the shield or while it is within the sword's reach and out of its own,
 // the shield straight back up; nothing walked to. Until `until`, `stop()`, or
@@ -227,47 +237,43 @@ async function guard(bot, task, { until, radius = 8, stop = () => false, focus =
   const { threats } = require('./danger');
   const { canStrike, defenseWeapon, raiseShield, lowerShield, bystanders } = require('./combat');
   const { checkAir } = require('./vitals');
-  const swungAt = new Map();
-  const onSwing = e => { if (e?.id != null) swungAt.set(e.id, Date.now()); };
-  bot.on?.('entitySwingArm', onSwing);
+  const swungAt = watchSwings(bot);
   const weapon = defenseWeapon(bot), kind = weapon?.name.split('_').at(-1);
   const recharge = ce.SWING_MS[kind] || ce.SWING_MS.fist;
   const start = bot.health;
   let swings = 0, ended = 'time';
-  try {
-    while (Date.now() < until) {
-      task.check(); checkAir(bot);
-      if (stop()) { ended = 'stopped'; break; }
-      const near = threats(bot, radius).filter(inGuard);
-      if (!near.length) { ended = 'none left'; break; }
-      const me = bot.entity.position;
-      // The one to face: a biter at its reach first, else the one chosen
-      // against, else the nearest.
-      const facing = near.find(t => bladeReaches(t.entity, me)) || near.find(t => t.entity.id === focus) || near[0];
-      const ready = Date.now() - (bot._defenseAttackAt || 0) >= recharge;
-      const safe = t => !bladeReaches(t.entity, me) || Date.now() - (swungAt.get(t.entity.id) || 0) < AFTER_BLOW_MS;
-      // Only while every biter at its reach has just struck: a second one's
-      // blow would land in the swing's moment with the shield down.
-      const openNow = near.filter(t => bladeReaches(t.entity, me)).every(safe);
-      const target = ready && openNow ? near.find(t => canStrike(bot, t.entity) && !bystanders(bot, t.entity).length) : null;
-      if (target) {
-        lowerShield(bot);
-        if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
-        await bot.lookAt?.(target.entity.position.offset(0, (target.entity.height || ce.bodyHeight(target.entity.name)) * 0.6, 0), true);
-        if (canStrike(bot, target.entity)) {
-          bot.attack(target.entity); swings++;
-          bot._defenseAttackAt = bot._threatResponseAt = Date.now();
-          bot._struck = { id: target.entity.id, at: bot._defenseAttackAt };
-        }
-        raiseShield(bot);
-        continue;
+  while (Date.now() < until) {
+    task.check(); checkAir(bot);
+    if (stop()) { ended = 'stopped'; break; }
+    const near = threats(bot, radius).filter(inGuard);
+    if (!near.length) { ended = 'none left'; break; }
+    const me = bot.entity.position;
+    // The one to face: a biter at its reach first, else the one chosen
+    // against, else the nearest.
+    const facing = near.find(t => bladeReaches(t.entity, me)) || near.find(t => t.entity.id === focus) || near[0];
+    const ready = Date.now() - (bot._defenseAttackAt || 0) >= recharge;
+    const safe = t => !bladeReaches(t.entity, me) || Date.now() - (swungAt.get(t.entity.id) || 0) < AFTER_BLOW_MS;
+    // Only while every biter at its reach has just struck: a second one's
+    // blow would land in the swing's moment with the shield down.
+    const openNow = near.filter(t => bladeReaches(t.entity, me)).every(safe);
+    const target = ready && openNow ? near.find(t => canStrike(bot, t.entity) && !bystanders(bot, t.entity).length) : null;
+    if (target) {
+      lowerShield(bot);
+      if (weapon && bot.heldItem?.name !== weapon.name) await bot.equip(weapon, 'hand');
+      await bot.lookAt?.(target.entity.position.offset(0, (target.entity.height || ce.bodyHeight(target.entity.name)) * 0.6, 0), true);
+      if (canStrike(bot, target.entity)) {
+        bot.attack(target.entity); swings++;
+        bot._defenseAttackAt = bot._threatResponseAt = Date.now();
+        bot._struck = { id: target.entity.id, at: bot._defenseAttackAt };
       }
-      await bot.lookAt?.(facing.entity.position.offset(0, (facing.entity.height || ce.bodyHeight(facing.entity.name)) * 0.6, 0), true);
       raiseShield(bot);
-      await sleep(50);
+      continue;
     }
-  } finally { bot.removeListener?.('entitySwingArm', onSwing); }
+    await bot.lookAt?.(facing.entity.position.offset(0, (facing.entity.height || ce.bodyHeight(facing.entity.name)) * 0.6, 0), true);
+    raiseShield(bot);
+    await sleep(50);
+  }
   return { swings, hurt: Math.round(Math.max(0, start - bot.health) * 10) / 10, ended };
 }
 
-module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };
+module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, watchSwings, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };

@@ -407,6 +407,12 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // picked up). A stance whose point is to strike (STRIKING_STANCES) and was
 // held to its end with none of these failed; any stance that ended without
 // them, with nothing changed about it since, would end the same again.
+// Stances that stand behind the raised shield from their first moment.
+const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge']);
+// Hostiles that hop at a player they see rather than walk: slimes and
+// magma cubes (26.1.2 Slime's MoveControl, toward the nearest player in
+// range).
+const HOPPERS = new Set(['slime', 'magma_cube']);
 const STRIKING_STANCES = new Set(['fight', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'shield_guard', 'low_ceiling', 'close_in', 'charge_nearest']);
 // The work's steps that are the blaze hunt going at them: carrying on with
 // one of these is not said to gain nothing toward the rods (note 614).
@@ -1433,6 +1439,15 @@ async function guardFacing(bot) {
   if (!near.length) return false;
   const e = near[0].entity;
   try { await bot.lookAt?.(e.position.offset(0, (e.height || bodyHeight(e.name)) * 0.6, 0), true); return raiseShield(bot); } catch (_) { return false; }
+}
+// A shield stance was standing behind the raised shield and a biter it
+// guards against is at arm's length (its blade reaches, or within two
+// blocks); the bot is neither alight nor in lava (note 683).
+function keepShieldForStance(bot) {
+  if (!bot._shieldRaised || !SHIELD_STANCES.has(bot._stance?.choice) || !bot.entity?.position) return false;
+  if ((bot.entity.metadata?.[0] & 1) || inLava(bot)) return false;
+  const wg = require('./wither-guard');
+  try { return threats(bot, 4).some(t => wg.guardable(t) && (wg.bladeReaches(t.entity, bot.entity.position) || t.distance <= 2)); } catch (_) { return false; }
 }
 // Seconds between a biter's blows at its reach (a hoglin two, most one).
 const ce_blowEvery = name => require('./combat-estimate').MOBS[name]?.blowEvery || 1;
@@ -3275,7 +3290,11 @@ class Survival {
     // put it over a fifteen-block drop three blocks behind it (note 497).
     const spearing = mobs.filter(m => m.jab);
     const spearSays = spearing.length ? ` ${spearing.length === 1 ? `The ${spearing[0].name.replaceAll('_', ' ')} with a spear jabs` : `${spearing.length} of them have spears and jab`} from about ${spearing[0].reach} blocks, as far as a sword reaches and past an arm, about once a second for about ${Math.max(...spearing.map(m => m.jab))} each after armour, however often it is struck; each jab knocks the bot about ${spearing[0].knock === 1 ? 'a block' : `${spearing[0].knock} blocks`} back out of its swing, to be closed on again, so it takes about twice the swinging time. From the game's own rules: ${require('./combat-estimate').SPEAR_WAYS}.${edge && deepHere ? ` The drop ${deepHere.blocksAway ? `${deepHere.blocksAway} block${deepHere.blocksAway === 1 ? '' : 's'} off` : 'under the bot'} is ${Math.max(1, Math.ceil(deepHere.blocksAway / spearing[0].knock))} jab${Math.ceil(deepHere.blocksAway / spearing[0].knock) > 1 ? 's' : ''} away.` : ''}` : '';
-    const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage >= (bot.health ?? 20) / 2) && firmGround(bot, 16, { margin: 3 });
+    // Any drop within three blocks that a knock over it hurts, not only one
+    // costing half the health: the fall's cost is said, and weighing it is
+    // Jev's. 25597's hold beside an eleven-block drop (8 of 20) was offered
+    // no step back from it among thirteen magma cubes' knocks (note 684).
+    const groundBy = deepHere && (deepHere.into === 'lava' || deepHere.damage > 0) && firmGround(bot, 16, { margin: 3 });
     if (groundBy) {
       const far = Math.round(groundBy.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
       // The mobs with no way to the bot here, judged again from that
@@ -3502,8 +3521,16 @@ class Survival {
         // the fight ended there, was left out of the next asking, and the
         // meal taken in its place was the bot's death (note 601). It is held
         // for, facing it with the shield up, below.
+        // A slime or a magma cube hops at a player it sees within its follow
+        // range whatever it is doing this moment: its hops come in bursts,
+        // and between them it reads as not coming. 25597 (mid-242-gf) chose
+        // the fight at a big magma cube seven blocks off, 0.69; the run at it
+        // found no way (the bot on its own two-block perch), the cube read as
+        // not coming, and the fight ended at once, three times in four
+        // minutes, for a hold on the span that a hit knocked it off (note 684).
         const { WALKERS } = require('./walk-reach');
-        const comesOn = WALKERS.has(nearest.entity.name) && !shooter(nearest.entity) && coming.includes(nearest);
+        const hopsAt = HOPPERS.has(nearest.entity.name) && nearest.visible && nearest.distance <= followRange(nearest.entity.name);
+        const comesOn = (WALKERS.has(nearest.entity.name) || HOPPERS.has(nearest.entity.name)) && !shooter(nearest.entity) && (coming.includes(nearest) || hopsAt);
         if (!comesOn && bot._unreachable?.until > Date.now() && bot._unreachable.ids.includes(nearest.entity.id)) { this.state.stanceWhy = `nothing was struck${outOfSword}, and the run at ${said} found no way to it`; return false; }
         // A shooter does not come into reach: held, the fight stood in its
         // fire. mid-100-e held one at eleven blocks from 5.9 health to 4 and
@@ -4928,7 +4955,20 @@ class Survival {
         // while thinking: mid-227-i's fight with magma cubes was asked again
         // every two seconds, each answer two seconds with no swing, and the
         // cubes took it from seventeen to one (2026-09-27).
-        const guarding = (async () => { while (!answered) { try { if (!await this.backFromCreeper(task, () => answered) && !await defendNearby(bot, task, goal, save)) await sleep(100); } catch (_) { return; } } })();
+        // With a shield carried and a biter the guard answers at hand, the
+        // swings are the guard's (wither-guard.js): the shield up facing it,
+        // the sword swung after its blow lands on the shield. The swing
+        // reflex lowered the shield, readied a strike and raised it again,
+        // and the blow landed in that gap: 25598's first blow at 18:57:07.3
+        // came 17 ms after it; on a scratch server, a wither skeleton at arm's
+        // length for twenty seconds, 15 blows of 15 landed with the reflex,
+        // none with the guard (note 683).
+        const guardAsked = () => bot.inventory?.slots?.[45]?.name === 'shield' && threats(bot, 4).some(t => require('./wither-guard').inGuard(t) && (t.visible || t.distance <= 2));
+        const guarding = (async () => { while (!answered) { try {
+          if (await this.backFromCreeper(task, () => answered)) continue;
+          if (guardAsked()) { await require('./wither-guard').guard(bot, task, { until: Date.now() + 250, radius: 6, stop: () => answered }); continue; }
+          if (!await defendNearby(bot, task, goal, save)) await sleep(100);
+        } catch (_) { return; } } })();
         try { decision = await asking; } finally { answered = true; await guarding; }
       } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       // Stale: the moment moved on while Jev answered; the next tick asks
@@ -4958,7 +4998,13 @@ class Survival {
     // The reflexes see the stance too (the hurt watchdog, the shield, the
     // meal): they give way to it while it holds.
     const stance = bot._stance = this.state.stance;
-    if (!/^shoot_/.test(choice)) lowerShield(bot);
+    // Lowered for the stance's hands, but not for one that stands behind
+    // the shield itself: lowered and raised again, it blocks nothing for a
+    // quarter second (combat.js SHIELD_BLOCKS_AFTER_MS), and a wither
+    // skeleton at arm's length landed its blow in that gap at re-askings
+    // of shield_guard (25598, 18:57:08.7 and 09.8, 236 and 49 ms after the
+    // answer; note 683).
+    if (!/^shoot_/.test(choice) && !SHIELD_STANCES.has(choice)) lowerShield(bot);
     stance.running = true;
     let done;
     // A stance whose action is resting (set aside after it failed) is a stance
@@ -6368,7 +6414,7 @@ class Survival {
     const flank = sideFire + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
-      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
       run: async () => {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
@@ -7763,7 +7809,14 @@ class Survival {
     task.interruptCheck = undefined;
     // A shield raised to cover the last shot comes down at the next look:
     // every branch below may walk, and a raised shield is sneaking speed.
-    lowerShield(bot);
+    // Kept up where a shield stance stood behind it with a biter at arm's
+    // length and nothing burns: the stance is asked again with the shield
+    // still between them, and an answer that walks lowers it (note 683:
+    // lowered here, each re-asking of shield_guard was the question's time
+    // and a quarter second after it with no block, a blow in either landing
+    // whole; on a scratch server, a guard asked again every 2.5 seconds took
+    // 6 wither skeleton blows in five 20-second runs lowered, 1 kept up).
+    if (!keepShieldForStance(bot)) lowerShield(bot);
     if (bot.game.gameMode === 'creative') {
       await recoverItems(bot, task, this.state.recovery, save, this.actions.navigate);
       return false;
@@ -8950,4 +9003,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM };
+module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES };

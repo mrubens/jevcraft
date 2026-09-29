@@ -66,13 +66,18 @@ function known(bot, goal, kind, reach = 128) {
 }
 
 // Walk back to a flock; one not reached, or reached and gone, is forgotten.
-async function walkToSighting(bot, task, goal, save, kind, s, navigate) {
+// `out` is told how it ended: out.walk 'failed' with the walk's own error,
+// or 'arrived' (and out.why when none was there). The hunt's record had said
+// "walked to where ... and none was within thirty-two blocks" of walks that
+// found no way at all (note 682).
+async function walkToSighting(bot, task, goal, save, kind, s, navigate, out = {}) {
   const { goals } = require('mineflayer-pathfinder');
   const forget = () => { if (goal.sightings?.[kind]) goal.sightings[kind] = goal.sightings[kind].filter(f => Math.hypot(f.x - s.x, f.z - s.z) > 24); save(); };
   try { await navigate(bot, task, new goals.GoalNear(s.x, s.y, s.z, 6), { timeoutMs: 90000, stallMs: 10000 }); }
-  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; forget(); return false; }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; forget(); out.walk = 'failed'; out.why = String(err?.message || err).slice(0, 160); return false; }
   const there = Object.values(bot.entities || {}).some(e => e.name === kind && e.isValid !== false && e.position?.distanceTo(bot.entity.position) < 32);
-  if (!there) forget();
+  out.walk = 'arrived';
+  if (!there) { forget(); out.why = 'none was within thirty-two blocks'; }
   return there;
 }
 

@@ -119,8 +119,22 @@ function noteHunt(bot, goal, plan, why) {
   const meat = countOf(bot, 'porkchop') + countOf(bot, 'cooked_porkchop') - (plan.meatAtStart || 0);
   noteRoute(goal, { route: plan.method === 'pillar' ? 'hoglin_pillar' : 'hoglin_walk', kills: plan.kills || 0, meat: Math.max(0, meat), why: String(why).slice(0, 120), ...(plan.pillarFailed ? { pillarFailed: plan.pillarFailed } : {}), ...(plan.struck ? { struck: plan.struck } : {}) });
 }
+// An answer carried out that failed: its reason kept on the question's
+// latest answer (tried.js), so the next asking says it on that option
+// wherever the bot then stands (note 682). The hunt's answer had ended with
+// nothing thrown, and the ledger read it as "no new ground".
+function failAnswer(goal, method, why) {
+  const tried = require('./tried');
+  for (const q of ['restock_food', 'empty_spawner', 'fortress_visit']) {
+    const e = tried.latestOf(goal, q);
+    if (e && String(e.method).split('/').at(-1) === method && Date.now() - e.at < 5 * 60000) { tried.markBlocked(e, why); return; }
+  }
+}
+// A walk to a hoglin is the same walk whichever way the hunt is then made:
+// what came of one is said on both.
 function recordSays(goal, route) {
-  const list = (goal?.netherFood?.hunts || []).filter(h => h.route === route);
+  const walks = new Set(['hoglin_walk', 'hoglin_pillar']);
+  const list = (goal?.netherFood?.hunts || []).filter(h => h.route === route || (walks.has(route) && walks.has(h.route) && h.walk));
   if (!list.length) return route === 'hoglin_pillar' ? ' No hunt of a hoglin has been made from a pillar yet by this bot: nothing is measured of how one goes end to end (only the pillar stances against hoglins, above).' : ' None made yet in this trial.';
   const got = list.filter(h => h.meat > 0).length, last = list.at(-1), ago = Math.max(1, Math.round((Date.now() - last.at) / 60000));
   return ` Made in this trial: ${list.length}, ${got} brought meat (${list.reduce((n, h) => n + h.meat, 0)} porkchops in all); the last, ${ago} minute${ago === 1 ? '' : 's'} ago, ended: ${last.why}${last.pillarFailed ? ` (the pillar: ${last.pillarFailed})` : ''}.`;
@@ -138,9 +152,20 @@ function startFoodHunt(bot, goal, save, { kind = 'hoglin', method = 'walk' } = {
 }
 async function huntHoglin(bot, task, goal, save, known, { navigate, method = 'walk', survival = null } = {}) {
   if (!known.inView.length && known.seen[0] && navigate) {
-    const there = await require('./sightings').walkToSighting(bot, task, goal, save, 'hoglin', known.seen[0], navigate);
+    const s = known.seen[0], out = {};
+    const there = await require('./sightings').walkToSighting(bot, task, goal, save, 'hoglin', s, navigate, out);
     if (!there) {
-      noteRoute(goal, { route: method === 'pillar' ? 'hoglin_pillar' : 'hoglin_walk', kills: 0, meat: 0, why: `walked to where ${known.seen[0].says} and none was within thirty-two blocks` }); save?.();
+      // How it ended, as it ended: a walk that found no way is not one that
+      // arrived to find none (note 682). The place it found no way to rests.
+      const failed = out.walk === 'failed';
+      const why = failed ? `the walk to where ${s.says} found no way there: ${out.why}` : `walked to where ${s.says} and none was within thirty-two blocks`;
+      noteRoute(goal, { route: method === 'pillar' ? 'hoglin_pillar' : 'hoglin_walk', kills: 0, meat: 0, why, walk: failed ? 'failed' : 'none there' });
+      if (failed) {
+        const f = goal.netherFood ||= { hunts: [] }, now = Date.now();
+        f.noWay = [...(f.noWay || []).filter(w => w.until > now), { x: s.x, y: s.y, z: s.z, at: now, until: now + require('./tried').REST_MS, why: String(out.why || '').slice(0, 120) }].slice(-8);
+      }
+      failAnswer(goal, method === 'pillar' ? 'hoglin_pillar' : 'hoglin_walk', why);
+      save?.();
       return false;
     }
   }
@@ -232,6 +257,9 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
       routes.hoglin_pillar = { description: `Hunt the same hoglin from a pillar (${hoglin === known.inView[0] ? `${known.inView.length} in view, the nearest ${Math.round(known.inView[0].position.distanceTo(here))} blocks off` : known.seen[0].says}): walk to within ${PILLAR_FROM} blocks of it, put ${PILLAR_BLOCKS} of the ${laid} blocks carried that can be laid under the feet, and strike from the top what comes within the sword's reach; the same food, two to four raw porkchops. A hoglin's blow reaches sideways 1.4 blocks and not up (the jar), so on a pillar two up it does not land, and the sword reaches down to its back; ${p.stances} pillar stances against hoglins over ${p.day}'s trials lost ${p.lost} health on average, ${p.deaths} ended in a death. What it does not stop: a ghast's fireball or a blaze's, a piglin's crossbow, and a fall from the top (a push off it is a drop of two). The hoglin comes only once it has seen the bot; one that does not come within ${PILLAR_WAIT_MS / 1000} seconds ends the hunt, the bot then down on the ground again. The walk to it is the plain hunt's; fought on the ground instead, ${fight.says.charAt(0).toLowerCase()}${fight.says.slice(1)}${recordSays(goal, 'hoglin_pillar')}`,
         run: () => huntHoglin(bot, task, goal, save, known, { navigate: actions.navigate, survival, method: 'pillar' }) };
     } else notOffered.push(`the hunt from a pillar: ${laid} blocks carried that can be laid, ${PILLAR_BLOCKS} are needed`);
+  } else if (known.noWay?.length) {
+    const w = known.noWay[0], ago = Math.max(1, Math.round((Date.now() - w.walk.at) / 1000));
+    notOffered.push(`a hoglin: ${w.says}, but the walk there found no way ${ago} seconds ago (${w.walk.why}); that place rests five minutes from then`);
   } else notOffered.push('a hoglin: none in view and none seen in the last half hour within 192 blocks (they are found in the crimson forests and the bastions\' stables)');
 
   // The stew.

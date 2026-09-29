@@ -161,7 +161,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Stuck: which single move next (walk, climb, dig, place a block, pillar, swim up)?**
 
-- When: A stall while the bot is in water, or under cover on the way up (the survival layer's stall, or the work stall's work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, or four in a row change nothing. No move is offered that takes back the move before from the same cell (a block put there dug up again, a cell just dug filled again: note 671); said in here.notOffered.
+- When: A stall while the bot is in water, or under cover on the way up (the survival layer's stall, or the work stall's work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, four in a row change nothing, or a minute of moves gains nothing toward the aim (the height for the surface, the distance off the spot, a new cell out of water), which goes to the question above with what they gained (note 684). No move is offered that takes back the move before (a block put there or under the feet dug again, a cell just dug filled again: notes 671, 684); said in here.notOffered.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
