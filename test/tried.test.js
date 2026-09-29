@@ -324,7 +324,7 @@ test('a step that never asks its plan passes the plan over only after two failur
   assert.match(rung.options.keep_at_it, /The fortress leg question is asked next, with the ways not yet tried from here: fortress leg \(seek fortress height, restock blocks, return for blocks\)\./);
   assert.match(rung.options.keep_at_it, /Tried lately: /, 'what was tried is read from the rung\'s own work, not the step\'s');
   // What setting it aside would go on with is still said, for the question once the ways below are spent.
-  assert.match(s.setAsideGoesOnWith, /^Set aside, the ladder goes on with obtain ender pearls \(warped pearls, 16 ender pearl\); the nearest warped forest known is 114 blocks off and 4 up at \(-77, -4\), and the walk there is set aside: the walk there came no nearer than before \(114 blocks off to 114\): No path to the goal!; with the walk to it set aside, its work begins with a search for another\./);
+  assert.match(s.setAsideGoesOnWith, /^Set aside, the ladder goes on with obtain ender pearls \(warped pearls, 13 ender pearl\); the nearest warped forest known is 114 blocks off and 4 up at \(-77, -4\), and the walk there is set aside: the walk there came no nearer than before \(114 blocks off to 114\): No path to the goal!; with the walk to it set aside, its work begins with a search for another\./);
   assert.match(require('../src/tried').owed(goal, 'fortress_leg')?.at(-1) || '', /^the rung's question sent the work back here/);
 });
 

@@ -20,7 +20,16 @@
 // With --records <file>: every fight described (setting, gear, stance chain, kills,
 // damage, sight, the rod's timing; see describe) one JSON line each; with --wins
 // and --sequence: the rod fights against the deaths, and the stance chains.
-//   node scripts/blaze-record.js [--from 2026-09-28T00:00:00Z] [--to ISO] [--landings | --deaths | --by-commit | --records <file> | --wins | --sequence [--records-in <file>]] [--dir <flight dir>]
+// With --runs (note 648): the funnel per run, a run being one life of the bot
+// (a file's first frame, or the first frame after a respawn, to the death or the
+// end of the record): the most rods it carried (a rod made into two powder
+// counts as a rod), whether it was in the Nether, whether it died, and how long
+// after its last rod, with the count of runs reaching 1, 3, 6 and 7 rods, and
+// how many of those were alive at the end; a run that began with rods in hand (a
+// stage start from a save) counts in `reaching` and not in `gainingInTheRun`.
+// The seconds to a death are counted from the last rod, or from the run's start
+// when it was carrying its rods from the first frame.
+//   node scripts/blaze-record.js [--from 2026-09-28T00:00:00Z] [--to ISO] [--landings | --deaths | --by-commit | --runs | --records <file> | --wins | --sequence [--records-in <file>]] [--dir <flight dir>]
 const fs = require('fs');
 const path = require('path');
 
@@ -320,6 +329,56 @@ function sequenceTable(list, key) {
   return Object.entries(by).map(([k, v]) => ({ sequence: k, ...row(v.map(f => ({ died: f.died, rodsGain: f.rods }))), medianLost: round1(median(v.map(f => f.lost))) })).sort((a, b) => b.fights - a.fights);
 }
 
+// Lives in one connection's frames (sorted by time): { start, end, inNether,
+// died, startRods, maxRods, gained, lastRodAt, secondsFromLastRodToDeath }.
+// The rods counted are those carried (powder made of them counting half a rod
+// a piece), so a rod made into powder is not a rod lost.
+function runs(frames, { from = -Infinity, to = Infinity } = {}) {
+  const out = [];
+  let cur = null, prevHp = null, last = null;
+  const equivalent = inv => (inv.blaze_rod || 0) + Math.floor((inv.blaze_powder || 0) / 2);
+  const close = (t, died) => {
+    if (!cur) return;
+    Object.assign(cur, { end: t, died, gained: Math.max(0, cur.maxRods - cur.startRods), secondsFromLastRodToDeath: died ? Math.round((t - (cur.lastRodAt ?? cur.start)) / 1000) : null });
+    if (cur.seen) out.push(cur);
+    cur = null;
+  };
+  for (const x of frames) {
+    const t = x.at, s = x.snapshot || {};
+    if (!(t >= from && t <= to)) continue;
+    const hp = typeof s.health === 'number' ? s.health : null;
+    if (hp === 0 && prevHp > 0) { close(t, true); prevHp = 0; continue; }
+    if (hp === 0) { prevHp = 0; continue; }
+    // A frame with a health above zero after a death begins the next life; the
+    // frames of the death itself carry the last life's inventory or nothing.
+    const alive = hp == null ? prevHp !== 0 : hp > 0;
+    if (!alive) continue;
+    if (hp != null) prevHp = hp;
+    if (!cur) cur = { start: t, inNether: false, startRods: null, maxRods: 0, lastRodAt: null, seen: false };
+    cur.seen = true; last = t;
+    if (s.dimension === 'the_nether') cur.inNether = true;
+    if (s.inventory) {
+      const n = equivalent(s.inventory);
+      if (cur.startRods === null) { cur.startRods = n; cur.maxRods = n; }
+      else if (n > cur.maxRods) { cur.maxRods = n; cur.lastRodAt = t; }
+      else if (n > (cur.lastCount ?? 0)) cur.lastRodAt = t;
+      cur.lastCount = n;
+    }
+  }
+  if (cur) close(last ?? cur.start, false);
+  return out.map(({ lastCount, seen, ...r }) => r);
+}
+// The funnel: of the runs that went into the Nether, those that reached N rods,
+// and of those how many were alive at the end and how many died, with the
+// median seconds from the last rod to the death.
+function runsTable(list) {
+  const nether = list.filter(r => r.inNether);
+  const step = (n, by = r => r.maxRods) => { const a = nether.filter(r => by(r) >= n), dead = a.filter(r => r.died); return { reached: a.length, alive: a.length - dead.length, died: dead.length, medianSecondsToDeathAfterLastRod: median(dead.map(r => r.secondsFromLastRodToDeath)) }; };
+  const gained = nether.filter(r => r.gained > 0);
+  return { runs: list.length, inNether: nether.length, diedInNether: nether.filter(r => r.died).length, gainedARod: gained.length,
+    reaching: { 1: step(1), 3: step(3), 6: step(6), 7: step(7) }, gainingInTheRun: { 1: step(1, r => r.gained), 3: step(3, r => r.gained), 6: step(6, r => r.gained) }, mostRods: nether.reduce((m, r) => Math.max(m, r.maxRods), 0) };
+}
+
 if (require.main === module) {
   const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) => (a.startsWith('--') ? [...out, [a.slice(2), all[i + 1] && !all[i + 1].startsWith('--') ? all[i + 1] : true]] : out), []));
   const dir = args.dir || path.join(__dirname, '..', '.bot-state', 'flight');
@@ -353,6 +412,10 @@ if (require.main === module) {
     const bucket = v => v <= 4 ? 'to 4' : v <= 6.5 ? '4 to 6.5' : v <= 8 ? '6.5 to 8' : v <= 12 ? '8 to 12' : 'over 12';
     console.log(JSON.stringify({ deaths: all.length, byBlazeOrItsFire: blaze.length, damageOfTheirLastMinute: sum,
       lastLandingWithinFifteenSeconds: withBall.length, healthBeforeIt: withBall.reduce((m, d) => ({ ...m, [bucket(d.lastLandingHealth)]: (m[bucket(d.lastLandingHealth)] || 0) + 1 }), {}) }, null, 1));
+  } else if (args.runs) {
+    const all = [];
+    eachFile(dir, from, null, (frames, f) => all.push(...runs(frames, { from, to })), f => ({ at: f.at, kind: f.kind, snapshot: f.snapshot && { health: f.snapshot.health, dimension: f.snapshot.dimension, inventory: f.snapshot.inventory && { blaze_rod: f.snapshot.inventory.blaze_rod, blaze_powder: f.snapshot.inventory.blaze_powder } } }));
+    console.log(JSON.stringify(runsTable(all), null, 1));
   } else if (args['by-commit']) {
     const { commitsByRun, runKey } = require('./lib/flight-commit');
     const commits = commitsByRun(dir), by = {};
@@ -360,4 +423,4 @@ if (require.main === module) {
     console.log(JSON.stringify(Object.fromEntries(Object.entries(by).map(([c, list]) => [c, row(list)])), null, 1));
   } else console.log(JSON.stringify(tables(readFights(dir, from, to)), null, 1));
 }
-module.exports = { answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };
+module.exports = { runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };

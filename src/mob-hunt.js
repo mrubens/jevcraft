@@ -517,9 +517,16 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
 // code was ever reached, so the claim was never made and the blazes stayed
 // an emergency. Chicken, egg. The live arbiter stakes it before the claims
 // are read, whoever then gets the turn.
+// The count a hunt ends at: the ladder's own number for its blaze hunt
+// (blaze-stand.js rodsTarget, from eye-need.js), else the hunt's own.
+const huntTarget = (bot, goal) => goal.mobHunt?.entity === 'blaze' ? require('./blaze-stand').rodsTarget(bot, goal) : goal.mobHunt?.targetCount;
+const ladderRods = goal => goal.kind === 'win' && goal.gameProgress?.phase === 'obtain_blaze_rods';
+// What the goal wants in rods against what is carried, one sentence, on the
+// fortress questions (eye-need.js): the search is for these and no more.
+const rodsFact = (bot, goal, opts = { brief: true }) => ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal, opts) } : {};
 function stakeHunt(bot, goal) {
   const state = goal?.mobHunt;
-  if (!state || countOf(bot, state.item) >= state.targetCount) return false;
+  if (!state || countOf(bot, state.item) >= huntTarget(bot, goal)) return false;
   bot._huntingEntity = { name: state.entity, until: Date.now() + 5000 };
   return true;
 }
@@ -527,7 +534,7 @@ function stakeHunt(bot, goal) {
 async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
-  if (countOf(bot, state.item) >= state.targetCount) { delete goal.mobHunt; save(); return false; }
+  if (countOf(bot, state.item) >= huntTarget(bot, goal)) { delete goal.mobHunt; save(); return false; }
   const handler = handlers[state.entity] || {};
   stakeHunt(bot, goal);
   if (!canBegin(bot, handler)) return false;
@@ -554,6 +561,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // and nothing of what leaving them gains, which is nothing.
   const rodsNeed = state.entity === 'blaze' ? require('./blaze-stand').rodsNeeded(bot, goal) : 0;
   const { towardRods } = require('./blaze-stand');
+  const rodsOf = state.entity === 'blaze' ? require('./blaze-stand').rodsOf(bot, goal) : '';
   const liveCage = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
   const spawnerSays = cage ? ` A blaze spawner is ${Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position))} blocks off: while the bot is within sixteen of it, it makes up to four more every ten to forty seconds.` : '';
   for (const target of candidates.slice(0, 4)) {
@@ -605,7 +613,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // defer, and deferred four times in two minutes (note 557).
       // The one it goes at, by its own figures; the others' share is in the price.
       const gain = one?.fightHere ? { kills: 1, seconds: one.fightHere.seconds, dies: one.fightHere.healthAfter <= 0, all: true } : { kills: 1 };
-      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage }),
+      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage, of: rodsOf }),
         run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
@@ -623,7 +631,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // and left them four times (note 557).
   const blazesInSight = state.entity === 'blaze' ? threats(bot, 24).filter(t => t.entity.name === 'blaze') : [];
   if (blazesInSight.length && !isSetAside(goal, 'hunt_stand', 'blaze')) {
-    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed });
+    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed, of: rodsOf });
     for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, run: async () => {
       try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, o, { item: state.item, want: countOf(bot, state.item) + 1 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
@@ -644,13 +652,14 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // What leaving them came to in the arena, where it was measured: the
   // blazes stay, and so does their fire (blaze-stand.js MEASURED).
   const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
-  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage })} Left, these are not offered again for two minutes.` : '';
+  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.` : '';
   tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
   } };
-  const snapshot = { request: goal.request, resource: state.item, need: state.targetCount - countOf(bot, state.item),
+  const snapshot = { request: goal.request, resource: state.item, need: huntTarget(bot, goal) - countOf(bot, state.item),
+    ...(state.entity === 'blaze' && ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal) } : {}),
     ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot) } : {}),
     health: bot.health, food: bot.food, dimension: dimension(bot), riskNow: require('./risk').riskNow(bot),
     fitness: { ...fit, said: fitSaid },
@@ -712,7 +721,7 @@ function blazesSays(bot, goal, state) {
   const here = bot.entity.position;
   const dys = about.map(t => Math.round(t.entity.position.y - here.y));
   const spawner = (goal.fortressSearch?.map?.spawners || []).map(s => ({ ...s, off: Math.round(Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z)) })).sort((a, b) => a.off - b.off)[0];
-  const need = state.targetCount - countOf(bot, state.item);
+  const need = huntTarget(bot, goal) - countOf(bot, state.item);
   return `${about.length} blaze${about.length === 1 ? '' : 's'} within forty-eight blocks (${about.filter(t => t.visible).length} in sight, the rest heard through the walls)` +
     (about.length ? `, the nearest ${Math.round(about[0].distance)} blocks off, from ${Math.min(...dys)} to ${Math.max(...dys)} blocks above the bot's feet` : '') +
     `${spawner ? `; a spawner seen ${spawner.off} blocks off at (${spawner.x}, ${spawner.y}, ${spawner.z}), which keeps making them while the bot is within sixteen` : ''}` +
@@ -764,7 +773,7 @@ async function foodLeave(bot, task, goal, save, actions) {
   try { restock = require('./nether-food').restockFoodOption(bot, task, goal, save, { actions: foodActions(bot, task, goal, save, actions), client: actions.client || task.opportunityClient }); } catch (_) { restock = null; }
   if (restock) tree.restock_food = { description: restock.description };
   const decision = await decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
-    state: { for: 'food', health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot), ...(hits ? { whatAHitCosts: hits } : {}) } });
+    state: { for: 'food', ...rodsFact(bot, goal, {}), health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot), ...(hits ? { whatAHitCosts: hits } : {}) } });
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
   if (pick === 'restock_food') { await restock.run(); save(); return null; }
@@ -1603,7 +1612,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     seenSoFar: coverage.coverageSays(state, dim, here, FORTRESS_LEG),
     ...(left ? { waysLeft: left } : {}),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
-    ...(fortress ? { fortressInView: fortress.facts } : {}) };
+    ...(fortress ? { fortressInView: fortress.facts } : {}), ...rodsFact(bot, goal) };
   // Without Jev: the most ground unseen beside the leg's open air, then the
   // open air each heading's carried blocks reach.
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
@@ -1919,7 +1928,8 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   // The blazes lead: they are what the search is for, and the ones about
   // now may be nearer than the place asked about (note 570).
   const blazesSeen = blazesSeenFacts(bot, goal);
-  const facts = { ...(blazesSeen ? { blazesSeen } : {}), ...approaches.facts };
+  // The rods line goes after the rest: read first it moved recorded answers (eye-need.js).
+  const facts = { ...(blazesSeen ? { blazesSeen } : {}), ...approaches.facts, ...rodsFact(bot, goal) };
   if (stretch) {
     const what = stretch.what || 'a stretch of the fortress\'s floors';
     facts.stretch = `${what}, ${Math.round(flatTo(nearest, bot.entity.position))} blocks off; the walk there on foot failed: ${stretch.why}`;
@@ -2597,7 +2607,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
 // on its kind staked: that is huntObserved's, as it runs.
 function claim(bot, goal = {}) {
   const state = goal.mobHunt;
-  if (!state || !bot?.entity?.position || countOf(bot, state.item) >= state.targetCount) return null;
+  if (!state || !bot?.entity?.position || countOf(bot, state.item) >= huntTarget(bot, goal)) return null;
   const handler = handlers[state.entity] || {};
   if (!canBegin(bot, handler)) return null;
   const near = Object.values(bot.entities || {}).filter(e => e.name === state.entity && valid(bot, e) && e.position.distanceTo(bot.entity.position) < 24)
@@ -2605,7 +2615,7 @@ function claim(bot, goal = {}) {
   const target = near.find(e => isolated(bot, e, handler) && !isSetAside(goal, 'hunt_target', e.uuid || e.id));
   if (!target) return null;
   return { layer: 'hunt', action: 'hunt', urgency: 'routine', facts: { entity: target.name, distance: Math.round(target.position.distanceTo(bot.entity.position) * 10) / 10,
-    item: state.item, have: countOf(bot, state.item), want: state.targetCount, health: bot.health } };
+    item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
 module.exports = { crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress };

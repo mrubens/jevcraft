@@ -5,6 +5,7 @@ const { isSetAside, setAside, attemptsFor } = require('./progress');
 const { bedCarried, woolCarried, homeOf } = require('./home-base');
 const { restockStage, rungWants } = require('./home-stash');
 const { villageBedRung } = require('./villages');
+const { eyeTarget, rodsFor, EYES_WANTED } = require('./eye-need');
 
 const dimension = bot => String(bot.game?.dimension || '').replace(/^minecraft:/, '').replace(/^the_/, '');
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
@@ -569,7 +570,7 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   if (!standing) tree.search_on = { description: `Take the rods step up again now, its rest lifted: the fortress search goes on from here.${searched}` };
   if (stage.until) tree.wait_here = { description: `Other work in the Nether until the rods step's rest ends${rest}, then the rods again; what the work is, is asked then.` };
   const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
-    state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
+    state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, rodsTheGoalWants: require('./eye-need').says(bot, goal), ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
   goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now }; save();
@@ -603,13 +604,17 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // pending pickup gets a chance before deciding whether supplies are short.
   const portalNeed = m.stronghold_located && goal.endPortal?.neededEyes;
   if (where === 'overworld' && m.stronghold_located && (!Number.isInteger(portalNeed) || count(bot, 'ender_eye') >= portalNeed)) return { phase: 'enter_end', action: 'enter_end' };
-  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && (count(bot, 'ender_eye') >= 13 || goal.strongholdSearch.pendingPickup)) {
+  if (where === 'overworld' && !m.stronghold_located && goal.strongholdSearch && (count(bot, 'ender_eye') >= EYES_WANTED || goal.strongholdSearch.pendingPickup)) {
     return { phase: 'find_stronghold', action: 'find_stronghold' };
   }
-  // Carry a reserve for eye throws; execution always replans from inventory,
-  // so loss, crafting batches and partial pickups do not advance a fake counter.
-  const target = Number.isInteger(portalNeed) ? portalNeed : 16, eyes = count(bot, 'ender_eye');
-  const rods = Math.ceil(Math.max(0, target - eyes - count(bot, 'blaze_powder')) / 2);
+  // The one number of enough (eye-need.js): the twelve frames and the spare
+  // the stronghold search throws with, thirteen eyes, seven rods, thirteen
+  // pearls; the frames still empty once the portal is found. It was sixteen
+  // eyes and eight rods, said nowhere (note 648). Execution always replans
+  // from inventory, so loss, crafting batches and partial pickups do not
+  // advance a fake counter.
+  const target = eyeTarget(goal), eyes = count(bot, 'ender_eye');
+  const rods = rodsFor(target - eyes, count(bot, 'blaze_powder'));
   // Eyes, rods, powder and pearls in the stash chest are the chest's first:
   // the run set off for the fortress with six blaze rods left at home.
   if (where === 'overworld') {

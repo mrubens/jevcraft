@@ -27,17 +27,17 @@ test('the crossing kit wants food for the Nether stay the goal still needs, and 
   const bot = netherBot({ at: new Vec3(0.5, 64, 0.5), health: 20, food: 20, dimension: 'overworld', items: [item('cooked_beef', 5)] });
   const food = () => kitItems(bot).find(i => i.key === 'food');
   // Nothing of the rods or pearls yet: the practiced player's two hours, at forty hunger an hour.
-  assert.deepEqual(netherStay(bot), { minutes: 120, points: 80, rodsLeft: 6, pearlsLeft: 12 });
+  assert.deepEqual(netherStay(bot), { minutes: 120, points: 80, rodsLeft: 7, pearlsLeft: 13, rodsWanted: 7, pearlsWanted: 13, eyes: 13 });
   assert.equal(food().wants, 80); assert.equal(food().short, true, 'five steaks are forty points, half the stay');
-  assert.match(food().says, /^Food: 40 food points carried \(5 cooked beef\); the code would take 80, food for the whole stay\. The goal still needs 6 blaze rods and 12 ender pearls: a practiced player takes about 2 hours in the Nether for them/);
+  assert.match(food().says, /^Food: 40 food points carried \(5 cooked beef\); the code would take 80, food for the whole stay\. The goal still needs 7 blaze rods and 13 ender pearls \(it wants 7 rods and 13 pearls in all, for 13 eyes: .*the stronghold search throws with a thirteenth\): a practiced player takes about 2 hours in the Nether for them/);
   assert.match(food().says, /A stay spends about 40 hunger an hour .* so about 2 hours is about 80 food points, 10 cooked steaks or porkchops; raw meat counts at its raw points/);
   assert.match(food().says, /a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has/);
   // The rods carried: the pearls' hour is left.
-  bot.inventory.items = () => [item('cooked_beef', 5), item('blaze_rod', 6)];
+  bot.inventory.items = () => [item('cooked_beef', 5), item('blaze_rod', 7)];
   assert.equal(food().wants, 40); assert.equal(food().short, false);
-  assert.match(food().says, /The goal still needs 12 ender pearls: a practiced player takes about 60 minutes/);
+  assert.match(food().says, /The goal still needs 13 ender pearls \(it wants 7 rods and 13 pearls in all.*\): a practiced player takes about 60 minutes/);
   // Everything in hand: half an hour is still a stay.
-  bot.inventory.items = () => [item('ender_eye', 12)];
+  bot.inventory.items = () => [item('ender_eye', 13)];
   assert.equal(food().wants, 24);
   assert.match(food().says, /The goal needs nothing more from the Nether's fortress or barter: about 30 minutes is the stay counted/);
 });

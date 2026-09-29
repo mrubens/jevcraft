@@ -991,15 +991,37 @@ const BLAZE_WAYS = ` A blaze that sees the bot hangs back and shoots; one that l
 // kills its own figures make, a kill only if one comes to the sword, or
 // none. `gain`: { kills, seconds, dies } | 'comes' | 'none' | 'stops'.
 const ROD_CHANCE = 0.5;
+// The rods still needed, ONE number: for the ladder's own hunt (the win goal
+// on its rods rung) it is eye-need.js's, read from what is carried now; for
+// a hunt a request began ("get me 3 blaze rods") it is that hunt's own
+// count. The hunt's saved targetCount was the ladder's number at the moment
+// the step began, and read after a powder was made or a rod lost it was a
+// second number (note 648).
+const ladderHunt = goal => goal?.kind === 'win' && goal.gameProgress?.phase === 'obtain_blaze_rods';
 function rodsNeeded(bot, goal) {
   const h = goal?.mobHunt;
   if (!h || h.entity !== 'blaze' || !(h.targetCount > 0)) return 0;
+  if (ladderHunt(goal)) return require('./eye-need').need(bot, goal).rodsLeft;
   return Math.max(0, h.targetCount - require('./skills').countOf(bot, h.item || 'blaze_rod'));
 }
-function towardRods(need, gain, { spawner = false } = {}) {
+// The rods a hunt is done at: the number rodsNeeded counts to.
+function rodsTarget(bot, goal) {
+  const h = goal?.mobHunt;
+  if (!h) return 0;
+  if (h.entity === 'blaze' && ladderHunt(goal)) { const n = require('./eye-need').need(bot, goal); return n.rods + n.rodsLeft; }
+  return h.targetCount;
+}
+// What is carried against what the goal wants, for the "still needed" said
+// on each option: "the goal wants 7 in all, 5 carried".
+function rodsOf(bot, goal) {
+  if (!ladderHunt(goal)) return '';
+  const n = require('./eye-need').need(bot, goal);
+  return `the goal wants ${n.rodsWanted} in all for ${n.target} eyes, ${n.rods} carried`;
+}
+function towardRods(need, gain, { spawner = false, of = '' } = {}) {
   if (!(need > 0) || !gain) return '';
   // Short: said on every option (note 614's question grew by a fifth).
-  const still = `; ${need} rod${need === 1 ? '' : 's'} still needed`;
+  const still = `; ${need} rod${need === 1 ? '' : 's'} still needed${of ? ` (${of})` : ''}`;
   if (typeof gain === 'object') {
     const k = gain.kills || 0;
     if (gain.dies && !k) return ` Toward the rods: none, the health running out before a blaze is killed by these figures${still}.`;
@@ -1024,7 +1046,7 @@ const overSays = (cost, doing) => cost.setup ? `in the next ${cost.seconds} seco
 function withinSixteen(bot, danger) {
   try { return [...danger, ...require('./danger').threats(bot, 16).filter(t => t.entity.name === 'blaze' && !danger.some(d => d.entity?.id === t.entity.id))]; } catch (_) { return danger; }
 }
-function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, holds = [], need = 0 } = {}) {
+function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, holds = [], need = 0, of = '' } = {}) {
   const blazes = danger.filter(t => t.entity.name === 'blaze');
   const { defenseWeapon, shooter } = require('./combat');
   if (!blazes.length || !/_(sword|axe)$/.test(defenseWeapon(bot)?.name || '')) return {};
@@ -1155,7 +1177,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   if (hunted) for (const o of Object.values(options)) o.description += (TACTICS.has(o.kind) ? '' : ' Rods that fall near are picked up between volleys.') + (['close', 'charge', 'break', ...TACTICS].includes(o.kind) ? '' : holdSays(bot, o, holds));
   if (need > 0) {
     const cage = spawnerAt(bot), live = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
-    for (const o of Object.values(options)) o.description += towardRods(need, gainOf(o), { spawner: live });
+    for (const o of Object.values(options)) o.description += towardRods(need, gainOf(o), { spawner: live, of });
   }
   // What followed the answers of this kind in the played fights, in this
   // situation (blaze-record.js, note 645).
@@ -1567,4 +1589,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };
+module.exports = { spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };

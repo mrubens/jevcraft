@@ -55,6 +55,9 @@ function blazesInSight(bot) {
 }
 const hostileNear = (bot, radius = 24) => { try { return require('./danger').threats(bot, radius).filter(t => t.visible); } catch (_) { return []; } };
 
+// What the goal wants in rods, one number (eye-need.js), against what is carried.
+const eyeSays = (bot, goal) => require('./eye-need').says(bot, goal);
+
 // The state the question is asked with.
 function facts(bot, goal, ctx = {}) {
   const f = fitness(bot);
@@ -67,7 +70,7 @@ function facts(bot, goal, ctx = {}) {
     food: f.carried.length ? f.carried.map(c => c.says) : 'nothing to eat carried',
     healthComesBack: f.health >= 20 ? 'health is full' : f.healable ? `yes: ${f.hunger >= 18 ? `at hunger ${f.hunger}` : `once what is carried is eaten (hunger ${f.eatenTo})`}, about ${f.seconds} seconds to full` : `no: at hunger ${f.hunger}${f.points ? `, and eating all that is carried brings it only to ${f.eatenTo}` : ' with nothing to eat'}, under eighteen, none of it comes back`,
     worn: worn.length ? worn.map(words) : 'no armor', weapon: weapon ? words(weapon) : 'no sword or axe', shield: bot.inventory?.slots?.[45]?.name === 'shield',
-    ...(need != null ? { rodsStillNeeded: need } : {}),
+    ...(need != null ? { rodsStillNeeded: need, rodsTheGoalWants: eyeSays(bot, goal) } : {}),
     blazesInSightNow: blazesInSight(bot),
     playedRecord: recordSays(bot),
     aboutTheRecord: `One day's record (${DAY}'s trials, note 631). The health rows and the hunger rows were counted separately: there is no row for both. Each is what happened to bots that began a fight there, not what getting to a better row first would do; a bot that began healthy may differ in other ways.`,

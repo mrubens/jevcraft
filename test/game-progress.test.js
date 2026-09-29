@@ -38,19 +38,19 @@ test('progression resolves real carried eyes, powder, rods and pearls without sp
   const { bot, goal, give } = fixture(); observeProgress(bot, goal);
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
   bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
-  assert.equal(nextGameStage(bot, goal).count, 8);
+  assert.equal(nextGameStage(bot, goal).count, 7, 'thirteen eyes: seven rods (eye-need.js), not the eight the ladder once wanted unsaid');
+  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 1 });
+  assert.deepEqual(nextGameStage(bot, goal), { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: 2 });
   give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
-  assert.deepEqual(nextGameStage(bot, goal), { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: 3 });
-  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 3 });
   assert.equal(nextGameStage(bot, goal).action, 'warped_pearls', 'rods in hand: the pearls from the warped forest while here');
   require('../src/progress').setAside(goal, 'rung', 'warped_search', 'none found', 600000);
   assert.equal(nextGameStage(bot, goal).action, 'return_overworld');
   bot.game.dimension = 'overworld';
-  assert.equal(nextGameStage(bot, goal).item, 'ender_pearl'); assert.equal(nextGameStage(bot, goal).count, 10);
+  assert.equal(nextGameStage(bot, goal).item, 'ender_pearl'); assert.equal(nextGameStage(bot, goal).count, 7);
   assert.equal(nextGameStage(bot, goal).action, 'pearl_patrol', 'the warped search rested above: endermen on sight, something worth doing between');
-  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 3, ender_pearl: 10 });
-  assert.equal(nextGameStage(bot, goal).item, 'ender_eye'); assert.equal(nextGameStage(bot, goal).count, 16);
-  give({ ender_eye: 16 }); assert.equal(nextGameStage(bot, goal).action, 'find_stronghold');
+  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2, ender_pearl: 7 });
+  assert.equal(nextGameStage(bot, goal).item, 'ender_eye'); assert.equal(nextGameStage(bot, goal).count, 13);
+  give({ ender_eye: 13 }); assert.equal(nextGameStage(bot, goal).action, 'find_stronghold');
   give({ ender_eye: 6 }); assert.equal(nextGameStage(bot, goal).action, 'enter_nether', 'Lost supplies require real replacement');
 });
 
@@ -59,7 +59,7 @@ test('game steps call existing actions while retaining the original request and 
   const actions = { enter_nether: async (_b, _t, g) => { assert.equal(g, goal); bot.game.dimension = 'the_nether'; } };
   assert.equal(await gameStep(bot, task, goal, () => {}, actions), false);
   assert.equal(goal.kind, 'win'); assert.equal(goal.request, 'Jev beat Minecraft');
-  actions.acquireStep = async (_b, _t, item, count, g) => { assert.equal(item, 'blaze_rod'); assert.equal(count, 8); assert.equal(g, goal); };
+  actions.acquireStep = async (_b, _t, item, count, g) => { assert.equal(item, 'blaze_rod'); assert.equal(count, 7); assert.equal(g, goal); };
   assert.equal(await gameStep(bot, task, goal, () => {}, actions), false);
   assert.equal(goal.gameProgress.phase, 'obtain_blaze_rods');
   assert(goal.gameProgress.milestones.nether_entered);
@@ -241,12 +241,12 @@ test('the blaze rods set aside because their sources are in the Overworld: the l
   const { setAside, isSetAside } = require('../src/progress');
   const { bot, goal, task, give } = fixture();
   bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
-  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
+  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 1 });
   const why = 'No iron ore in the nether: it is only found in the overworld';
   goal.wrongDimension = { n: 3, at: Date.now(), error: why, phase: 'obtain_blaze_rods', block: 'iron_ore', to: 'overworld', step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', count: 5 } };
   setAside(goal, 'rung', 'obtain_blaze_rods', why, 600000);
   const stage = nextGameStage(bot, goal);
-  assert.notDeepEqual(stage, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: 3 });
+  assert.notDeepEqual(stage, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: 2 });
   assert.equal(stage.action, 'elsewhere'); assert.equal(stage.phase, 'obtain_blaze_rods'); assert.match(stage.why, /only found in the overworld/);
   // Asked: the Overworld for what is found there, or the warped forest's pearls here meanwhile.
   const asked = [], left = [];
@@ -300,7 +300,7 @@ test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why 
   const { bot, goal, task, give } = fixture();
   bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal);
   bot.time = { timeOfDay: 11000 };
-  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
+  give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 1 });
   goal.portals = [{ x: 20, y: 102, z: 7, dimension: 'nether' }];
   bot.entity.position = new Vec3(-2, 87, -15);
   setAside(goal, 'rung', 'obtain_blaze_rods', 'No measurable progress on find_fortress', 600000);
@@ -310,7 +310,8 @@ test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why 
   assert.equal(stage.action, 'rods_waiting'); assert.match(stage.why, /No measurable progress/);
   const asked = [], left = [];
   const picks = ['wait_here', 'go_back'];
-  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  const states = [];
+  const client = { systemOne: async ({ state, questions }) => { states.push(state); asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
   const holds = [];
   const actions = { client, return_overworld: async () => left.push('portal'), acquireStep: async () => assert.fail('the rods wait'), hold_for_rest: async (b, t, g, sv, opts) => holds.push(opts) };
   // Other work here till the rest ends: the stage's own work (note 605), and not asked again for the same rest.
@@ -319,6 +320,7 @@ test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why 
   assert.match(holds[0].why, /The blaze rods step waits \(No measurable progress on find_fortress\), taken up again in 10 minutes/);
   assert.equal(asked.length, 1);
   assert.deepEqual(Object.keys(asked[0]).sort(), ['go_back', 'search_on', 'wait_here']);
+  assert.match(states[0].rodsTheGoalWants, /^The goal wants 2 blaze rods in all for 13 eyes .* Carried: 1 blaze rod, 4 blaze powder, 6 eyes, 0 ender pearls; 1 rod still needed\.$/, 'the number the rods step is for, against what is carried (note 648)');
   assert.match(asked[0].go_back, /The nearest portal remembered is 31 blocks off, about 7 seconds at a walk/);
   assert.match(asked[0].go_back, /comes out in the Overworld at dusk/);
   assert.match(asked[0].go_back, /Back there the ladder's next step is the Nether again for the rods/);

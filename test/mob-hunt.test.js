@@ -2162,3 +2162,23 @@ test('a fight near a live spawner is priced with the blazes it puts in over the 
   // No cage seen: nothing added.
   assert.doesNotMatch(await ask(scene(false)), /the spawner puts in/);
 });
+
+test('the ladder\'s blaze hunt ends at its one number (note 648): seven rods carried end it though the saved count said nine, and short of it the question says the goal\'s number against what is carried', async () => {
+  const { bot, task, goal } = fixture('blaze');
+  goal.kind = 'win'; goal.gameProgress = { milestones: {}, phase: 'obtain_blaze_rods' };
+  goal.mobHunt.targetCount = 9;
+  const rods = n => { bot.inventory.items = () => [{ name: 'stone_sword', count: 1 }, { name: 'blaze_rod', count: n }]; };
+  let asked = null;
+  const client = { systemOne: async ({ state, questions }) => { asked = { state, options: questions.branch_0.criteria }; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  rods(7);
+  assert.equal(await huntObserved(bot, task, goal, () => {}, { navigate: async () => {} }, client), false);
+  assert.equal(goal.mobHunt, undefined, 'the hunt is over, with seven of the seven wanted');
+  assert.equal(asked, null, 'no question about blazes is asked once the rods are done');
+  goal.mobHunt = { entity: 'blaze', item: 'blaze_rod', targetCount: 9 };
+  rods(5);
+  await huntObserved(bot, task, goal, () => {}, { navigate: async () => {} }, client);
+  assert(asked, 'short of seven, the hunt asks');
+  assert.match(asked.state.rodsTheGoalWants, /^The goal wants 7 blaze rods in all for 13 eyes .*Carried: 5 blaze rods, 0 ender pearls; 2 rods still needed\.$/);
+  assert.match(asked.state.blazes, /: 2 blaze rods still needed, and nothing else gives them$/);
+  assert.match(asked.options.defer, /; 2 rods still needed \(the goal wants 7 in all for 13 eyes, 5 carried\)\. Left, these are not offered again/);
+});

@@ -3740,7 +3740,7 @@ class Survival {
       // back_to_wall read "about 0 damage ... none of them reaches it" with
       // a wither skeleton five blocks off round a corner, and it struck the
       // bot a second later (note 559).
-      const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function', need: rodsNeed, holds: goal?.mobHunt?.standResults || [] });
+      const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function', need: rodsNeed, of: require('./blaze-stand').rodsOf(bot, goal), holds: goal?.mobHunt?.standResults || [] });
       for (const key of Object.keys(stands)) standKeys.add(key);
       for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
         run: async () => {
@@ -4450,7 +4450,7 @@ class Survival {
       for (const [k, o] of Object.entries(options)) {
         if (standKeys.has(k) || k === 'none_good' || k.startsWith('shoot_') || (k === 'keep_working' && workHunts)) continue;
         const gain = k === 'fight' ? (noStep || noneCome || !fightBlazes ? 'comes' : { kills: fightBlazes, seconds: cost.seconds, dies: cost.healthAfter <= 0, all: true }) : STRIKING_STANCES.has(k) ? 'comes' : 'none';
-        o.description += require('./blaze-stand').towardRods(rodsNeed, gain, { spawner: live });
+        o.description += require('./blaze-stand').towardRods(rodsNeed, gain, { spawner: live, of: require('./blaze-stand').rodsOf(bot, goal) });
       }
     }
     // What followed each kind of answer in the played fights, in this

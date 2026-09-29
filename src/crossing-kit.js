@@ -27,20 +27,22 @@ const { safeFood } = require('./vitals');
 // health, hunger under eighteen and nothing to eat, most of those
 // stretches ending in a death (note 607).
 const NETHER_HUNGER_AN_HOUR = 40;
-const STAY_FOR = { rods: { count: 6, minutes: 60 }, pearls: { count: 12, minutes: 60 } };
-function netherStay(bot) {
-  const eyes = countOf(bot, 'ender_eye'), eyesLeft = Math.max(0, STAY_FOR.pearls.count - eyes);
-  const rodsLeft = Math.max(0, Math.ceil(Math.max(0, eyesLeft - countOf(bot, 'blaze_powder')) / 2) - countOf(bot, 'blaze_rod'));
-  const pearlsLeft = Math.max(0, eyesLeft - countOf(bot, 'ender_pearl'));
+const { need, rodsFor, EYES_WANTED } = require('./eye-need');
+// Six rods and twelve pearls were the stay's numbers while the ladder wanted
+// eight and sixteen; both read eye-need.js now (seven rods, thirteen pearls).
+const STAY_FOR = { rods: { count: rodsFor(EYES_WANTED), minutes: 60 }, pearls: { count: EYES_WANTED, minutes: 60 } };
+function netherStay(bot, goal = null) {
+  const wants = need(bot, goal);
+  const { rodsLeft, pearlsLeft } = wants;
   const minutes = Math.max(30, Math.round(STAY_FOR.rods.minutes * rodsLeft / STAY_FOR.rods.count + STAY_FOR.pearls.minutes * pearlsLeft / STAY_FOR.pearls.count));
   // Whole cooked steaks' worth: a steak or a cooked porkchop is eight.
   const points = Math.ceil(minutes / 60 * NETHER_HUNGER_AN_HOUR / 8) * 8;
-  return { minutes, points, rodsLeft, pearlsLeft };
+  return { minutes, points, rodsLeft, pearlsLeft, rodsWanted: wants.rodsWanted, pearlsWanted: wants.pearlsWanted, eyes: wants.target };
 }
 function staySays(stay) {
   const left = [stay.rodsLeft ? `${stay.rodsLeft} blaze rod${stay.rodsLeft === 1 ? '' : 's'}` : null, stay.pearlsLeft ? `${stay.pearlsLeft} ender pearl${stay.pearlsLeft === 1 ? '' : 's'}` : null].filter(Boolean);
   const hours = stay.minutes >= 90 ? `about ${Math.round(stay.minutes / 30) / 2} hours` : `about ${stay.minutes} minutes`;
-  return `${left.length ? `The goal still needs ${left.join(' and ')}: a practiced player takes ${hours} in the Nether for them (the rods at a fortress, the pearls by piglin barter or a warped forest's endermen, or the Overworld's endermen by night instead)` : `The goal needs nothing more from the Nether's fortress or barter: ${hours} is the stay counted`}. ` +
+  return `${left.length ? `The goal still needs ${left.join(' and ')} (it wants ${stay.rodsWanted} rod${stay.rodsWanted === 1 ? '' : 's'} and ${stay.pearlsWanted} pearls in all, for ${stay.eyes} eyes: an eye is a pearl and a blaze powder, a rod makes two powder, the portal takes twelve and the stronghold search throws with a thirteenth): a practiced player takes ${hours} in the Nether for them (the rods at a fortress, the pearls by piglin barter or a warped forest's endermen, or the Overworld's endermen by night instead)` : `The goal needs nothing more from the Nether's fortress or barter: ${hours} is the stay counted`}. ` +
     `A stay spends about ${NETHER_HUNGER_AN_HOUR} hunger an hour (the bot's own Nether time healed about 24 health an hour, a hunger point and a half each, besides the walking and fighting), so ${hours} is about ${stay.points} food points, ${stay.points / 8} cooked steaks or porkchops; raw meat counts at its raw points (three a beef or porkchop), and cooking it before the crossing makes it eight.`;
 }
 

@@ -562,7 +562,7 @@ test('the kit for the crossing is one question: every item said against what the
   assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true, 'crosses with what it has');
   assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_blocks', 'top_up_food', 'top_up_gold']);
   assert.match(asked.cross_now, /short of what the code would take in food, blocks/);
-  assert.match(asked.cross_now, /Food: 16 food points carried \(2 cooked beef\); the code would take 80, food for the whole stay\. The goal still needs 6 blaze rods and 12 ender pearls: a practiced player takes about 2 hours in the Nether for them .* so about 2 hours is about 80 food points, 10 cooked steaks or porkchops/);
+  assert.match(asked.cross_now, /Food: 16 food points carried \(2 cooked beef\); the code would take 80, food for the whole stay\. The goal still needs 7 blaze rods and 13 ender pearls \(it wants 7 rods and 13 pearls in all, for 13 eyes: .*\): a practiced player takes about 2 hours in the Nether for them .* so about 2 hours is about 80 food points, 10 cooked steaks or porkchops/);
   assert.match(asked.cross_now, /Health: 20 of 20; the code would step through at 16 or more/);
   assert.match(asked.cross_now, /Blocks: 30 carried for bridging and pillaring .*the code would take 128, two stacks/);
   assert.match(asked.cross_now, /Pickaxe: stone pickaxe carried, the best with 131 uses left/);
