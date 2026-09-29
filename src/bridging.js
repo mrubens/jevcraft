@@ -66,11 +66,17 @@ function guardFloor(bot, changed, what) {
   const h = floorDropsAt(bot, changed, from);
   if (h) throw new Error(`Not ${what} at ${changed}: ${require('./terrain').floorDropSays(h, from)}`);
 }
-async function clear(bot, task, p) {
+// A fortress's own wall (nether bricks, a fence) dug through where the way
+// is into the fortress (`wall`): a player breaks into a corridor through its
+// side. 25591 stood in the basalt between two corridors whose walls stood
+// between every crossing and their floors (note 694).
+const WALL = /^(nether_bricks|nether_brick_fence|cracked_nether_bricks)$/;
+const diggableHere = (block, wall) => block.diggable && (NATURAL.test(block.name) || (wall && WALL.test(block.name)));
+async function clear(bot, task, p, { wall = false } = {}) {
   const block = bot.blockAt(p);
   if (block && BURNS.test(block.name)) throw new Error(`Lava in the way at ${p}`);
   if (passable(block)) return;
-  if (!block.diggable || !NATURAL.test(block.name)) throw new Error(`The span is blocked by ${block.name}`);
+  if (!diggableHere(block, wall)) throw new Error(`The span is blocked by ${block.name}`);
   if (!require('./tunneling').safeExcavation(bot, p)) throw new Error(`Lava or water behind the ${block.name.replaceAll('_', ' ')} at ${p}`);
   guardFloor(bot, p, 'dug');
   await equipBestTool(bot, block); task.check();
@@ -92,10 +98,11 @@ function stepToward(here, target) {
 // carried running out). Up to `cells` cells. `tool`: the item type the
 // rock would be dug with, for a crossing made after a pickaxe is (null is
 // the hand); otherwise the cheapest carried.
-function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
+function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = null, wall = false } = {}) {
   const carried = blocks ?? blocksCarried(bot);
-  // From the block the bot rests on, where the span begins (stepOntoFooting).
-  const start = require('./terrain').restingCell(bot) || bot.entity.position.floored();
+  // From the block the bot rests on, where the span begins (stepOntoFooting),
+  // or `from`, the feet's cell it will stand in (a pillar's top, note 694).
+  const start = from || require('./terrain').restingCell(bot) || bot.entity.position.floored();
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
   const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
   let here = start, digMs = 0;
@@ -103,13 +110,14 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
     const step = stepToward(here, target);
     if (!step) { out.stoppedBy = null; break; }
     const next = here.plus(step);
-    let why = null, dig = 0; const before = digMs;
+    let why = null, dig = 0, walls = 0; const before = digMs;
     for (const p of [next, next.offset(0, 1, 0)]) {
       const b = bot.blockAt(p);
       if (!b) { why = 'unloaded ground ahead'; break; }
       if (BURNS.test(b.name)) { why = 'lava in the way'; break; }
       if (passable(b)) continue;
-      if (!b.diggable || !NATURAL.test(b.name)) { why = `${b.name.replaceAll('_', ' ')} in the way`; break; }
+      if (!diggableHere(b, wall)) { why = `${b.name.replaceAll('_', ' ')} in the way`; break; }
+      if (WALL.test(b.name)) walls++;
       if (!require('./tunneling').safeExcavation(bot, p)) { why = `lava or water behind the ${b.name.replaceAll('_', ' ')}`; break; }
       const drops = floorDropsAt(bot, p, here.offset(0, -1, 0));
       if (drops) { why = floorSays(drops, here); break; }
@@ -123,7 +131,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool } = {}) {
     const drops = !why && lay && floorDropsAt(bot, next.offset(0, -1, 0), here.offset(0, -1, 0));
     if (drops) why = floorSays(drops, here);
     if (why) { out.stoppedBy = why; digMs = before; break; }
-    out.cells++; out.dig += dig;
+    out.cells++; out.dig += dig; if (walls) out.wall = (out.wall || 0) + walls;
     if (lay) { out.bridge++; if (lavaBelow(bot, next.offset(0, -1, 0))) out.overLava++; }
     here = next;
   }
@@ -166,11 +174,11 @@ function underFire(bot) {
 // its survey saw.
 // While it is laid the bot is on the span (terrain.js onSpan): no reflex
 // swings at a mob or turns to one until it is done.
-async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlocks * 2 } = {}) {
+async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlocks * 2, wall = false } = {}) {
   const spanning = { target: { x: target.x, y: target.y, z: target.z }, since: Date.now() };
   bot._spanning = spanning;
   bot.setControlState('sneak', true);
-  try { return await span(bot, task, target, maxBlocks, maxSteps); }
+  try { return await span(bot, task, target, maxBlocks, maxSteps, { wall }); }
   finally {
     // The crouch let go only once the body has stopped: let go with the
     // walk, the step's way on carried mid-227-h off the end of its span, no
@@ -181,7 +189,7 @@ async function bridgeTo(bot, task, target, { maxBlocks = 64, maxSteps = maxBlock
     if (bot._spanning === spanning) bot._spanning = null;
   }
 }
-async function span(bot, task, target, maxBlocks, maxSteps) {
+async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {}) {
   let placed = 0;
   for (let steps = 0; steps < maxSteps; steps++) {
     task.check();
@@ -201,7 +209,7 @@ async function span(bot, task, target, maxBlocks, maxSteps) {
       if (!rest || rest.equals(here) || !await creepTo(bot, task, rest, 1500)) throw new Error('Nothing solid underfoot to bridge from');
       continue;
     }
-    await clear(bot, task, next); await clear(bot, task, next.offset(0, 1, 0));
+    await clear(bot, task, next, { wall }); await clear(bot, task, next.offset(0, 1, 0), { wall });
     if (!solid(bot.blockAt(next.offset(0, -1, 0)))) {
       if (placed >= maxBlocks) return placed;
       const item = material(bot);

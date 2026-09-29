@@ -202,6 +202,21 @@ function asideStands(bot, goal, phase, now = Date.now()) {
 }
 // Taking a rung back: its rest lifted, a "go on here" or a held way out of
 // the Nether for it dropped, and its clock started afresh.
+// A rung set aside, said on any option that would take it straight back
+// up (win_strategy's stage, the Nether now): when and why, what it was
+// stuck on, and when it comes back on its own. 25593 (mid-242-ig) set the
+// reach nether aside at the rung's question at 21:50:13 ("I keep getting
+// stuck on the reach nether") and win_strategy took it straight back 65
+// seconds later and twice more, its option saying only the kit (note 694).
+function rungAsideSays(goal, phase, now = Date.now()) {
+  const entry = attemptsFor(goal).of('rung', now)[phase];
+  if (!entry) return null;
+  const aside = goal.rungAside?.phase === phase ? goal.rungAside : null;
+  const minutes = Math.max(1, Math.ceil((entry.until - now) / 60000));
+  const at = new Date(entry.until).toISOString().slice(11, 16);
+  const stuck = aside?.why ? ` Stuck on: ${String(aside.why).slice(0, 160).replace(/\.$/, '')}.` : '';
+  return `The ${phase.replaceAll('_', ' ')} was set aside ${agoSays(now - entry.at)} ago (${String(entry.why).slice(0, 120)}).${stuck} It comes back on its own in ${minutes} minute${minutes === 1 ? '' : 's'} (${at}Z); taken now, that rest is cut short and what it was stuck on is before it again.`;
+}
 function takeBackRung(goal, phase) {
   if (goal.rungAside?.phase === phase) delete goal.rungAside;
   attemptsFor(goal).clear('rung', phase);
@@ -955,4 +970,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

@@ -790,6 +790,20 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
         await walkFloorToward(bot, task, goal, save, target.at, down, actions.navigate);
       } };
   }
+  // A fortress floor known overhead within a climb's reach: the climb with
+  // what is carried, or the blocks dug for it first, as the approach offers
+  // it. 25591 stood 15 under its fortress's bricks with 231 blocks and was
+  // asked this question five times with only a level crossing, a walk off
+  // and working free on offer (note 694).
+  if (actions.dig && goal.fortressSearch) {
+    const mh = require('./mob-hunt');
+    const overhead = mh.fortressOverhead(bot, goal);
+    if (overhead) {
+      const climb = mh.climbWays(bot, task, goal, save, actions, goal.fortressSearch, overhead);
+      for (const [k, o] of Object.entries(mh.climbOffers(climb, overhead, goal.fortressSearch))) answers[k] = { target: o.target, description: o.description, run: async () => { await o.run(); } };
+      if (climb.noPillar && answers.cross_toward) answers.cross_toward.description += ` Up to the fortress floor: ${climb.noPillar}.`;
+    }
+  }
   const food = foodReason(bot, goal);
   if (food && survival?.foodHunt) {
     const known = hoglinsKnown(bot, goal);

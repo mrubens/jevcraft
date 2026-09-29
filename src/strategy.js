@@ -344,8 +344,12 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       return `every hit lands on what is worn now (${worn.length ? worn.map(label).join(', ') : 'nothing'}, ${through.points} armour points): a blaze's fireball about ${round(afterArmour(MOBS.blaze.hit, through))}, a wither skeleton's blade about ${round(afterArmour(MOBS.wither_skeleton.hit, through))}, a piglin's about ${round(afterArmour(MOBS.piglin.hit, through))}, of 20 health; full iron would take about ${round(afterArmour(MOBS.blaze.hit, armourOf(['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'])))} of the fireball`;
     };
     const without = p => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(p) ? armourHits() : WITHOUT[p] || RUNG_WHY[p] || 'it waits';
+    // Going for the Nether takes up the reach nether if it was set aside:
+    // said, and its rest cut short when chosen (note 694).
+    const netherAside = require('./game-progress').rungAsideSays(goal, 'reach_nether');
     return {
-      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls. ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
+      ...(netherAside ? { takeBack: 'reach_nether' } : {}),
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       side: true, aside: true,
       run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
@@ -359,7 +363,12 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   // ladder's stage and the side trips. The dream run spent an afternoon
   // walking about after endermen with an ancient city never looked for.
   else if (LATER.has(stage.action) || stage.phase === 'obtain_ender_pearls') {
-    options[`stage_${stage.phase}`] = { description: `Go on to ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}${stage.action === 'enter_nether' ? require('./crossing-kit').kitSummary(bot, goal) : ''}`, stage, fallback: true };
+    // The ladder hands back a rung set aside when nothing else is left (the
+    // reach nether is not held by its rest at all): said, and taking it is
+    // taking it back, a choice of its own (note 694).
+    const asideSays = require('./game-progress').rungAsideSays(goal, stage.phase);
+    options[`stage_${stage.phase}`] = { description: `${asideSays ? `Take the ${label(stage.phase)} back up now after all.` : `Go on to ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.`}${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}${asideSays ? ` ${asideSays}` : ''}${stage.action === 'enter_nether' ? require('./crossing-kit').kitSummary(bot, goal) : ''}`, stage, fallback: true,
+      ...(asideSays ? { takeBack: stage.phase, says: `I'll take the ${label(stage.phase)} back up after all` } : {}) };
     // A step that may wait, back on the ladder after its time was up (the
     // ladder returns a set-aside step when nothing else is left): the
     // Nether first is on offer beside it too. mid-237-c was handed the
@@ -403,7 +412,9 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
   if (!immediateThreat(bot)) for (const [key, side] of Object.entries(sides)) {
     if (side?.anyTime && !options[key] && !isSetAside(goal, 'strategy_side', key)) options[key] = { description: side.description, says: side.says, run: side.run, side: true, trip: true };
   }
-  return Object.keys(options).length > 1 ? options : null;
+  // A rung set aside is not taken back unasked, even alone: the question
+  // goes out with it said (note 694).
+  return Object.keys(options).length > 1 || Object.values(options).some(o => o.takeBack && o.stage) ? options : null;
 }
 
 // The question as Jev sees it: the rungs, the Nether now, and one
@@ -473,6 +484,13 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }
   const option = options[choice];
+  // A rung set aside, taken back: its rest cut short and said (note 694).
+  if (option.takeBack) {
+    const gp = require('./game-progress');
+    const entry = attemptsFor(goal).of('rung')[option.takeBack];
+    gp.takeBackRung(goal, option.takeBack); save();
+    bot.chat?.(`Back to the ${label(option.takeBack)} after all${entry ? `: I set it aside ${gp.agoSays(Date.now() - entry.at)} ago` : ''}.`);
+  }
   if (option.stage) return null;
   // A step set aside to go without, taken up again now.
   if (option.takeUp) { attemptsFor(goal).clear('rung', option.rung.phase); delete goal.strategy; save(); return { stage: option.rung }; }

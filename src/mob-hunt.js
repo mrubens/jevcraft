@@ -1920,6 +1920,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     options.return_for_blocks = { description: returnForKitSays(bot, homeBy),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
+  // A fortress floor known overhead within a climb's reach: the climb with
+  // what is carried, or the blocks dug for it first (note 694).
+  const overhead = !onFortressFloors(bot, state) ? fortressOverhead(bot, goal) : null;
+  let climbFact = null;
+  if (overhead) {
+    const climb = climbWays(bot, task, goal, save, actions, state, overhead);
+    Object.assign(options, climbOffers(climb, overhead, state));
+    climbFact = climb.noPillar;
+  }
   // Every way from here rests or is gone: nothing to ask. The step says so
   // and the stall's own question takes it from there.
   const left = waysLeftSays(state, here);
@@ -1943,7 +1952,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     ...(left ? { waysLeft: left } : {}),
     structureRegions: regions.regionFacts(here, landmarks, state, dim), ...portalBackFact(goal, here),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot, goal), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
-    ...(fortress ? { fortressInView: fortress.facts } : {}), ...rodsFact(bot, goal) };
+    ...(fortress ? { fortressInView: fortress.facts } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
   // Without Jev: the most ground unseen beside the leg's open air, then the
   // open air each heading's carried blocks reach.
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
@@ -2160,6 +2169,201 @@ function handDigOf(bot, nearest, survey) {
   };
 }
 
+// The climb to a fortress floor overhead with what is carried, or dug here
+// first: a pillar from a column by the floor (within twelve across), else a
+// pillar where the bot stands and a span across at the floor's height to
+// it. One builder for every question asked with a known floor above
+// (fortress_approach, fortress_leg, and the stall's and rung's questions).
+// 25591 (mid-242-jb) stood 15 under its fortress's bricks and 18 across
+// with 231 blocks for five and a half minutes, asked the stall's question
+// five times with none good on top, and was offered only a crossing that
+// stayed level (note 694). -> { options, noPillar }
+const CLIMB_REACH = 32;
+function dropUnder(bot, p, deepest = 64) {
+  for (let d = 1; d <= deepest; d++) {
+    const b = bot.blockAt(p.offset(0, -d, 0));
+    if (!b) return { blocks: d - 1, into: null };
+    if (/lava/.test(b.name)) return { blocks: d - 1, into: 'lava' };
+    if (/water/.test(b.name)) return { blocks: d - 1, into: 'water' };
+    if (b.boundingBox === 'block') return { blocks: d - 1, into: null };
+  }
+  return { blocks: deepest, into: null };
+}
+// The rock over the column the pillar rises through, dug on the way up:
+// how many blocks, of what, and the seconds with the tool that would be
+// used (a hand's, where no pickaxe is carried).
+function columnDig(bot, site, topY) {
+  const out = { blocks: 0, seconds: 0, names: new Set() };
+  for (let y = site.y + 2; y <= topY + 1; y++) {
+    const b = bot.blockAt(new Vec3(site.x, y, site.z));
+    if (!b || b.boundingBox === 'empty') continue;
+    out.blocks++; out.names.add(b.name.replaceAll('_', ' '));
+    if (typeof b.digTime === 'function' && bot.inventory?.items) out.seconds += b.digTime(require('./skills').cheapestTool(bot, b)?.type ?? null, false, false, false, [], {}) / 1000;
+  }
+  out.seconds = Math.round(out.seconds);
+  out.says = out.blocks ? ` It digs ${out.blocks} block${out.blocks === 1 ? '' : 's'} of ${[...out.names].join(' and ')} over the head on the way up, about ${out.seconds} seconds${require('./block-stock').pickaxeCarried(bot) ? '' : ' by hand, none of which drops anything'}.` : '';
+  return out;
+}
+function climbWays(bot, task, goal, save, actions, state, nearest, { inView = threatsInView(bot) } = {}) {
+  const out = { options: {}, noPillar: null };
+  const here = bot.entity.position, dy = Math.round(nearest.y + 1 - here.y), flatNow = flatTo(nearest, here);
+  if (!(actions.dig && dy >= 2 && flatNow <= CLIMB_REACH && typeof bot.blockAt === 'function')) return out;
+  const { pillarSite, pillarUp, SCAFFOLD } = require('./pillar-recovery');
+  const scaffold = bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
+  // A column by the floor first; else one where the bot stands, the floor
+  // then reached by a span at its height.
+  const byFloor = flatNow <= 12 ? pillarSite(bot, nearest.y + 1, nearest, { radius: 5 }) : null;
+  const site = byFloor || pillarSite(bot, nearest.y + 1, null, { radius: 2 });
+  if (!site) {
+    if (flatNow > 12) out.noPillar = `a pillar up the ${dy} blocks toward the floor is not offered: no column within 2 blocks of here is clear of lava and water and of blocks the climb does not dig`;
+    return out;
+  }
+  const up = nearest.y + 1 - site.y, walk = Math.round(site.offset(0.5, 0, 0.5).distanceTo(here));
+  const across = Math.round(Math.hypot(nearest.x - site.x, nearest.z - site.z));
+  const floorAt = `(${nearest.x}, ${nearest.y + 1}, ${nearest.z})`;
+  // A push off the top lands beside the column, not on its foot: over
+  // whatever drop is beside the foot. mid-208-k-nether-3-fortress-1 was
+  // told "a fall of up to 9 blocks" from its pillar's top on a ledge of
+  // the lava sea; a ghast's fireball put it thirty-seven down into the
+  // lava (note 551).
+  const beside = require('./terrain').dropNear(bot, site, 3);
+  // A column dug up through rock has walls on every side: nothing there
+  // throws the bot off, and a push is a fall only from as high as the
+  // column stands open at a side (25591's rose through 16 of basalt from its
+  // own tunnel, note 694).
+  const openTop = (() => {
+    for (let y = nearest.y + 1; y > site.y; y--) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const h of [0, 1]) {
+      if (bot.blockAt(new Vec3(site.x + dx, y + h, site.z + dz))?.boundingBox !== 'block') return y;
+    }
+    return null;
+  })();
+  const rise = openTop === null ? 0 : openTop - site.y;
+  const fall = rise + (beside?.fallBlocks || 0), into = beside?.into === 'lava' ? 'lava' : beside?.into === 'water' ? 'water' : null;
+  const walled = openTop !== null && openTop < nearest.y + 1 ? `The column is walled by rock on every side above y ${openTop + 1}; below that a` : 'On top a';
+  const pushSays = openTop === null ? 'The column rises inside rock, walled on every side up to the floor\'s height: a push there has nowhere to throw the bot.'
+    : `${walled} push is a fall of up to ${fall} block${fall === 1 ? '' : 's'}${beside ? ` (the pillar's ${rise}, then a drop of ${beside.fallBlocks}, ${beside.blocksAway === 1 ? 'a block' : `${beside.blocksAway} blocks`} from its foot)` : ''}, ${into === 'lava' ? 'into lava' : into === 'water' ? 'into water, no harm' : fall <= 3 ? 'no harm' : `about ${fall - 3} health`}.`;
+  // What pushes up there: a shooter in view within its reach (a ghast
+  // sixty-four, a blaze forty-eight), whose shot that lands pushes.
+  const { RANGE } = require('./combat-estimate');
+  const pushers = inView.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
+  const pushersSay = pushers.length ? ` ${capital(mobsSaid(pushers))} can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall.` : '';
+  const sightSays = `${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`;
+  const toColumn = async () => {
+    if (site.distanceTo(bot.entity.position.floored()) >= 1 && actions.navigate) {
+      try { await actions.navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
+      catch (err) { task.check(); if (!retryable(err)) throw err; return `no way to the column at (${site.x}, ${site.y}, ${site.z}): ${err.message}`; }
+    }
+    return site.distanceTo(bot.entity.position.floored()) >= 1.5 ? `not at the column at (${site.x}, ${site.y}, ${site.z})` : null;
+  };
+  const carriedNow = () => bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
+  const gatherFirst = (need, climb) => {
+    const gather = pillarGather(bot, goal, need - scaffold);
+    // A pillar that stops short of the floor stands the bot on a column in
+    // the air, no way in: offered where what is dug here reaches it, else
+    // said.
+    if (gather && scaffold + gather.want < need) { out.noPillar = `${byFloor ? `a pillar up the ${need} blocks to the floor is not offered:` : `the climb to the floor is not offered: ${need} blocks wanted,`} ${scaffold} carried and ${gather.want} to be had here (${gather.kinds}), ${need - scaffold - gather.want} short`; return null; }
+    if (!gather) return null;
+    return { gather, run: async () => {
+      const got = await gather.run(bot, task, goal, save, actions, state);
+      if (carriedNow() <= scaffold) return `no blocks were dug for the pillar${got ? `: ${got}` : ''}`;
+      return climb();
+    } };
+  };
+  if (byFloor) {
+    // What lies between the top and the floor, at its height: a pillar
+    // beside the floor gets there; one some blocks off leaves a gap.
+    // mid-242-bb was offered "Pillar straight up 2 blocks ... the floor is
+    // then 6 blocks across", nothing said of the six (note 613).
+    const { stepToward } = require('./bridging');
+    let cell = new Vec3(site.x, nearest.y + 1, site.z), gap = 0;
+    for (let n = 0, step; n < 12 && (step = stepToward(cell, nearest)); n++) { cell = cell.plus(step); if (bot.blockAt(cell.offset(0, -1, 0))?.boundingBox !== 'block') gap++; }
+    const betweenSays = across <= 1 ? '' : gap ? `, with ${gap} of open air with no floor between the top and it at that height (a span, ${blocksCarried(bot)} blocks carried that a span is laid with)` : ', with ground between the top and it at that height';
+    const columnSays = `from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at ${floorAt} is then ${across} block${across === 1 ? '' : 's'} across${betweenSays}.${columnDig(bot, site, nearest.y + 1).says} ${pushSays}${sightSays}`;
+    const pillarRun = async () => {
+      const off = await toColumn(); if (off) return off;
+      const placed = await pillarUp(bot, task, nearest.y + 1, { dig: actions.dig });
+      return placed ? null : 'the pillar would not rise';
+    };
+    if (scaffold >= 1) out.options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}${require('./block-stock').afterSays({ noPickaxe: !require('./block-stock').pickaxeCarried(bot), left: scaffold - up }).replace(/^ /, '; ').replace(/\.$/, '')}), ${columnSays}`, run: pillarRun };
+    // The blocks for the whole pillar gathered here first, where those
+    // carried run out short of the floor (note 692).
+    if (scaffold < up && actions.mineAt && actions.navigate) {
+      const first = gatherFirst(up, pillarRun);
+      if (first) out.options.blocks_then_pillar = {
+        description: `${first.gather.says} Then pillar straight up ${up} blocks to the fortress floor's height with them (${scaffold} carried and ${first.gather.want} dug), ${columnSays} About ${Math.max(1, Math.round(((first.gather.seconds ?? 0) + up * 1.2) / 60))} minute${Math.round(((first.gather.seconds ?? 0) + up * 1.2) / 60) > 1 ? 's' : ''} in all.`,
+        run: first.run };
+    }
+    return out;
+  }
+  // The pillar where the bot stands, then a span at the floor's height:
+  // offered only where the span, surveyed from the top, reaches the floor.
+  const top = new Vec3(site.x, nearest.y + 1, site.z);
+  const span = surveyCrossing(bot, nearest, { from: top, cells: CLIMB_REACH + 8, blocks: 1e6, wall: true });
+  const endOff = Math.round(flatTo(nearest, span.end));
+  if (span.stoppedBy || endOff > 2) {
+    out.noPillar = `a pillar up the ${up} blocks here and a span across to the floor is not offered: at the floor's height the span stops ${span.cells} cells on, ${endOff} from the floor${span.stoppedBy ? ` (${span.stoppedBy})` : ''}`;
+    return out;
+  }
+  const need = up + span.bridge;
+  const cells = [];
+  { const { stepToward } = require('./bridging'); let c = top; for (let n = 0, step; n < span.cells && (step = stepToward(c, nearest)); n++) { c = c.plus(step); if (bot.blockAt(c.offset(0, -1, 0))?.boundingBox !== 'block') cells.push(c.offset(0, -1, 0)); } }
+  const drops = cells.map(c => dropUnder(bot, c));
+  const deepest = drops.reduce((m, d) => Math.max(m, d.blocks), 0), lava = drops.filter(d => d.into === 'lava').length;
+  const spanSays = span.bridge ? ` The span lays ${span.bridge} over open air${lava ? `, ${lava} of them over lava` : ''}, crouched, a drop of up to ${deepest + 1} under it: a hit on it is that fall.` : ' Nothing is laid across: it is floor or rock all the way.';
+  const column = columnDig(bot, site, nearest.y + 1);
+  const digSays = `${column.says}${span.dig ? ` Across, it digs ${span.dig} block${span.dig === 1 ? '' : 's'}${span.wall ? `, ${span.wall} of them the fortress's wall (nether bricks)` : ''}, about ${Math.round(span.digSeconds)} seconds.` : ''}`;
+  const seconds = Math.round(up * 1.2 + column.seconds + crossingSeconds(span));
+  const climbSays = `pillar straight up ${up} blocks ${walk ? `from a column ${walk} block${walk === 1 ? '' : 's'} from here` : 'where the bot stands'}, then span ${span.cells} cells across at that height to the fortress floor at ${floorAt}`;
+  const climbRun = async () => {
+    const off = await toColumn(); if (off) return off;
+    await pillarUp(bot, task, nearest.y + 1, { dig: actions.dig, maxBlocks: up + 2 });
+    const short = Math.round(nearest.y + 1 - bot.entity.position.y);
+    if (short >= 1) return `the pillar stopped ${short} short of the floor's height`;
+    await bridgeTo(bot, task, nearest, { maxBlocks: span.bridge + 2, maxSteps: span.cells + 2, wall: true });
+    const left = Math.round(flatTo(nearest, bot.entity.position));
+    return left <= 2 ? null : `the span stopped ${left} blocks from the floor`;
+  };
+  const whole = `${capital(climbSays)}: ${need} blocks laid`;
+  if (scaffold >= need) {
+    out.options.pillar_up = { description: `${whole} of ${scaffold} carried, about ${seconds} seconds.${digSays} ${pushSays}${spanSays}${sightSays}`, run: climbRun };
+  } else if (actions.mineAt && actions.navigate) {
+    const first = gatherFirst(need, climbRun);
+    if (first) out.options.blocks_then_pillar = {
+      description: `${first.gather.says} Then ${climbSays}: ${need} blocks laid (${scaffold} carried and ${first.gather.want} dug), about ${Math.max(1, Math.round(((first.gather.seconds ?? 0) + seconds) / 60))} minutes in all.${digSays} ${pushSays}${spanSays}${sightSays}`,
+      run: first.run };
+    else if (!out.noPillar) out.noPillar = `the climb to the floor is not offered: ${need} blocks wanted (${up} up, ${span.bridge} across), ${scaffold} carried and none to be had here`;
+  } else out.noPillar = `the climb to the floor is not offered: ${need} blocks wanted (${up} up, ${span.bridge} across), ${scaffold} carried`;
+  return out;
+}
+
+// The nearest known fortress floor overhead within a climb's reach: a floor
+// on the fortress map, else the brick the approach or the search found.
+// -> Vec3 of the brick (the floor is stood on a block above it) or null.
+function fortressOverhead(bot, goal) {
+  const here = bot.entity?.position, s = goal?.fortressSearch;
+  if (!here || !s || !/nether/.test(String(bot.game?.dimension || ''))) return null;
+  const within = p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z) && p.y + 1 - here.y >= 2 && flatTo(p, here) <= CLIMB_REACH;
+  const floors = Object.keys(s.map?.cells || {}).map(k => { const [x, y, z] = k.split(',').map(Number); return { x, y, z }; }).filter(within);
+  // The approach's target is a floor it chose; the search's first brick may
+  // be a pier's or a wall's.
+  const pick = floors.sort((a, b) => flatTo(a, here) - flatTo(b, here))[0] || [s.approach?.found, s.found].find(within);
+  return pick ? new Vec3(pick.x, pick.y, pick.z) : null;
+}
+
+// The climb as a way of its own outside the approach (the leg's, the
+// stall's and the rung's questions): its target the floor, the fortress
+// taken off the set-aside list when it is chosen (the choice is to go to
+// it), and a climb that ends short a failure with its why.
+function climbOffers(climb, overhead, state) {
+  const target = { x: overhead.x, y: overhead.y + 1, z: overhead.z };
+  return Object.fromEntries(Object.entries(climb.options).map(([k, o]) => [k, { ...o, target, run: async () => {
+    if (state?.shunned) state.shunned = state.shunned.filter(sh => Math.hypot(sh.x - overhead.x, sh.z - overhead.z) > (sh.radius || 16));
+    const why = await o.run();
+    if (why) throw new Error(`The climb to the fortress floor at (${target.x}, ${target.y}, ${target.z}) ended: ${why}`);
+    return 'climbed';
+  } }]));
+}
+
 // Each way to the fortress that can be tried from here, with what it
 // meets. `run` returns why it ended, when it did not throw.
 async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = [], record = state.approach) {
@@ -2231,73 +2435,9 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   // feet, from a column with no lava or water in or beside it. mid-235-p-
   // fortress-6 stood on its own span at y 49 beside the fortress's footing,
   // its corridors eight above, and every staircase up was refused for the
-  // drop beside its steps (note 523).
-  if (actions.dig && dy >= 2 && flatTo(nearest, here) <= 12 && typeof bot.blockAt === 'function') {
-    const { pillarSite, pillarUp, SCAFFOLD } = require('./pillar-recovery');
-    const site = pillarSite(bot, nearest.y + 1, nearest, { radius: 5 });
-    const scaffold = bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
-    if (site) {
-      const up = nearest.y + 1 - site.y, walk = Math.round(site.offset(0.5, 0, 0.5).distanceTo(here));
-      const across = Math.round(Math.hypot(nearest.x - site.x, nearest.z - site.z));
-      // A push off the top lands beside the column, not on its foot: over
-      // whatever drop is beside the foot. mid-208-k-nether-3-fortress-1 was
-      // told "a fall of up to 9 blocks" from its pillar's top on a ledge of
-      // the lava sea; a ghast's fireball put it thirty-seven down into the
-      // lava (note 551).
-      const beside = require('./terrain').dropNear(bot, site, 3);
-      const fall = up + (beside?.fallBlocks || 0), into = beside?.into === 'lava' ? 'lava' : beside?.into === 'water' ? 'water' : null;
-      // What lies between the top and the floor, at its height: a pillar
-      // beside the floor gets there; one some blocks off leaves a gap.
-      // mid-242-bb was offered "Pillar straight up 2 blocks ... the floor is
-      // then 6 blocks across", nothing said of the six (note 613).
-      const { stepToward } = require('./bridging');
-      let cell = new Vec3(site.x, nearest.y + 1, site.z), gap = 0;
-      for (let n = 0, step; n < 12 && (step = stepToward(cell, nearest)); n++) { cell = cell.plus(step); if (bot.blockAt(cell.offset(0, -1, 0))?.boundingBox !== 'block') gap++; }
-      const betweenSays = across <= 1 ? '' : gap ? `, with ${gap} of open air with no floor between the top and it at that height (a span, ${blocksCarried(bot)} blocks carried that a span is laid with)` : ', with ground between the top and it at that height';
-      const pushSays = `On top a push is a fall of up to ${fall} blocks${beside ? ` (the pillar's ${up}, then a drop of ${beside.fallBlocks}, ${beside.blocksAway === 1 ? 'a block' : `${beside.blocksAway} blocks`} from its foot)` : ''}, ${into === 'lava' ? 'into lava' : into === 'water' ? 'into water, no harm' : `about ${Math.max(0, fall - 3)} health`}.`;
-      // What pushes up there: a shooter in view within its reach (a ghast
-      // sixty-four, a blaze forty-eight), whose shot that lands pushes.
-      const { RANGE } = require('./combat-estimate');
-      const pushers = inView.filter(t => shooter(t.entity) && t.distance <= Math.max(16, RANGE[t.entity.name] || 0));
-      const pushersSay = pushers.length ? ` ${capital(mobsSaid(pushers))} can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall.` : '';
-      const columnSays = `from ${walk ? `a column ${walk} blocks from here` : 'where the bot stands'}, with no lava or water in or beside it; the floor at (${nearest.x}, ${nearest.y + 1}, ${nearest.z}) is then ${across} block${across === 1 ? '' : 's'} across${betweenSays}. ${pushSays}${inView.length ? ` In sight: ${mobsSaid(inView)}.` : ''}${pushersSay}`;
-      const pillarRun = async () => {
-        if (site.distanceTo(bot.entity.position.floored()) >= 1 && actions.navigate) {
-          try { await actions.navigate(bot, task, new goals.GoalBlock(site.x, site.y, site.z), { timeoutMs: 10000, stallMs: 3000 }); }
-          catch (err) { task.check(); if (!retryable(err)) throw err; return `no way to the column at (${site.x}, ${site.y}, ${site.z}): ${err.message}`; }
-        }
-        if (site.distanceTo(bot.entity.position.floored()) >= 1.5) return `not at the column at (${site.x}, ${site.y}, ${site.z})`;
-        const placed = await pillarUp(bot, task, nearest.y + 1, { dig: actions.dig });
-        return placed ? null : 'the pillar would not rise';
-      };
-      if (scaffold >= 1) options.pillar_up = { description: `Pillar straight up ${up} blocks to the fortress floor's height (jump and lay a block under the feet, ${scaffold} carried that can be laid${scaffold < up ? `: they run out ${scaffold} up` : `, ${scaffold - up} left after`}${require('./block-stock').afterSays({ noPickaxe: !require('./block-stock').pickaxeCarried(bot), left: scaffold - up }).replace(/^ /, '; ').replace(/\.$/, '')}), ${columnSays}`, run: pillarRun };
-      // The blocks for the whole pillar gathered here first, where those
-      // carried run out short of the floor: netherrack with a pickaxe
-      // (carried or made first), else what a bare hand digs that drops
-      // (soul sand, soul soil, wart blocks). 25581 (mid-242-dd-fortress-24)
-      // stood 2 blocks across and 27 under its fortress's floor with 6
-      // blocks, 146 netherrack to be dug round it and a pickaxe, offered a
-      // pillar that ran out 6 up and a crossing that stayed level, and left
-      // the fortress twice in four minutes (note 692).
-      if (scaffold < up && actions.mineAt && actions.navigate) {
-        const gather = pillarGather(bot, goal, up - scaffold);
-        // A pillar that stops short of the floor stands the bot on a column
-        // in the air, no way in: offered where what is dug here reaches it,
-        // else said.
-        if (gather && scaffold + gather.want < up) noPillar = `a pillar up the ${up} blocks to the floor is not offered: ${scaffold} carried and ${gather.want} to be had here (${gather.kinds}), ${up - scaffold - gather.want} short`;
-        else if (gather) {
-          options.blocks_then_pillar = {
-            description: `${gather.says} Then pillar straight up ${up} blocks to the fortress floor's height with them (${scaffold} carried and ${gather.want} dug), ${columnSays} About ${Math.max(1, Math.round(((gather.seconds ?? 0) + up * 1.2) / 60))} minute${Math.round(((gather.seconds ?? 0) + up * 1.2) / 60) > 1 ? 's' : ''} in all.`,
-            run: async () => {
-              const got = await gather.run(bot, task, goal, save, actions, state);
-              const now = bot.inventory?.items?.().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0) || 0;
-              if (now <= scaffold) return `no blocks were dug for the pillar${got ? `: ${got}` : ''}`;
-              return pillarRun();
-            } };
-        }
-      }
-    }
-  }
+  // drop beside its steps (note 523). Farther across, a pillar here and a
+  // span at the floor's height (note 694).
+  { const climb = climbWays(bot, task, goal, save, actions, state, nearest, { inView }); Object.assign(options, climb.options); noPillar = climb.noPillar; }
   // Straight at it with the blocks for the crossing mined here first,
   // where the blocks carried stop it short (note 591).
   if (actions.mineAt && actions.navigate) {
@@ -3200,4 +3340,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView };
+module.exports = { climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView };

@@ -29,7 +29,7 @@
 
 // The answers that start an action that takes time, by question.
 const TIMED = {
-  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|seek_fortress_height|blocks_then_cross)$/,
+  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
   fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|portal_trip)$/,
@@ -38,8 +38,8 @@ const TIMED = {
   restock_food: /^(hoglin_\w+|cook_meat|mushroom_stew|return_for_food)$/,
   empty_spawner: /^(stand_by_spawner|heal_first)$/,
   portal_way: /^(climb_here|around_\w+)$/,
-  stillness_detour: /^(return_for_food|restock_food|explore|cross_toward|floor_toward|fetch_stems|mine_nearby|night_mine|cook_food|stock_wood|pearls_\w+)$/,
-  rung_progress: /^(fetch_stems|cross_toward|floor_toward|restock_food|return_for_food|pearls_\w+)$/,
+  stillness_detour: /^(return_for_food|restock_food|explore|cross_toward|floor_toward|pillar_up|blocks_then_pillar|fetch_stems|mine_nearby|night_mine|cook_food|stock_wood|pearls_\w+)$/,
+  rung_progress: /^(fetch_stems|cross_toward|floor_toward|pillar_up|blocks_then_pillar|restock_food|return_for_food|pearls_\w+)$/,
 };
 // The questions about the plan that are not asked to replace an intention.
 const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid']);
@@ -101,7 +101,8 @@ const SAYS = [
   [/^fortress_leg\/unwalked_\d+$/, 'Crossing to a part of the fortress not yet walked', 'rods'],
   [/^fortress_leg\/seek_fortress_height$/, 'Digging to the height fortresses stand at', null],
   [/^(fortress_leg|fortress_approach)\/(restock_blocks|blocks_then_cross)$/, 'Digging netherrack for blocks to build with', 'blocks'],
-  [/^fortress_approach\/blocks_then_pillar$/, 'Digging blocks to pillar up to the fortress', 'blocks'],
+  [/\/blocks_then_pillar$/, 'Digging blocks to pillar up to the fortress', 'blocks'],
+  [/^(fortress_leg|stillness_detour|rung_progress)\/pillar_up$/, 'Pillaring up to the fortress floor', 'rods'],
   [/^(fortress_leg|fortress_approach)\/return_for_blocks$/, 'Going back through the portal for a pickaxe and blocks', 'kit'],
   [/\/fetch_stems$/, 'Fetching stems for a pickaxe', 'pickaxe'],
   [/^fortress_visit\/go_in$/, 'Going into the fortress', 'rods'],

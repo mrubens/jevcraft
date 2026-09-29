@@ -259,7 +259,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   }
   // In the Nether, the answers that meet it, read before the loose ends
   // are dropped (the leg's target among them): nether-travel.js.
-  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere, returnOverworld: returnFromNether, acquire: acquireStep, client,
+  const nether = require('./nether-travel').netherAnswers(bot, task, goal, save, { survival, actions: { navigate, portalHere, returnOverworld: returnFromNether, acquire: acquireStep, acquireStep, client, dig,
+      mineAt: (b, t, g, sv, p, block, drops) => mine(b, t, { action: 'mine', block, sources: [block], drops, count: 1 }, g, sv, p),
       mineOne: (p, block) => mine(bot, task, { action: 'mine', block, sources: [block], drops: block, count: 1 }, goal, save, p) } });
   // What the stall drops whatever the answer, said on the answers that
   // read as carrying on (note 677): "as it is going" had been said with the
