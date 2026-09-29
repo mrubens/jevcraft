@@ -12,7 +12,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) =>
 const since = args.since || new Date(Date.now() - 24 * 3600000).toISOString();
 const below = Number(args.below || 0.45);
 const dir = '.bot-state/flight';
-const GAMEPLAY = /^(encounter_stance|pocket_next|survival_priority|shelter_method|climb_out|night_mine_target|hunt_target|fortress_approach|fortress_leg|portal_method|crossing_kit|win_strategy|upkeep|sculk_work|corpse_run|stillness_detour|unstuck_move)$/;
+const GAMEPLAY = /^(encounter_stance|pocket_next|survival_priority|shelter_method|climb_out|night_mine_target|hunt_target|fortress_approach|fortress_leg|portal_method|crossing_kit|kit_food|win_strategy|upkeep|sculk_work|corpse_run|stillness_detour|unstuck_move)$/;
 
 const files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && (!args.port || f.includes(`-${args.port}-`)));
 const byQuestion = {};

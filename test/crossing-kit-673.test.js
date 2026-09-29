@@ -1,0 +1,144 @@
+'use strict';
+// The crossing's kit as rungs before the portal (note 673). At the crossing
+// the kit was one question answered cross_now 621 of 868 times: 42 of 168
+// crossings carried no food and 122 were short of the stay (note 664), five
+// of seven bots in the Nether had no pickaxe left (notes 654, 655), and spans
+// stopped where the blocks ran out (650, 655). Now a spare pickaxe, the blocks
+// and the food are each a rung of the ladder, last before the portal, said
+// with what they cost; each may wait, and one set aside stays aside.
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { Vec3 } = require('vec3');
+const { Task } = require('../src/skills');
+const registry = require('minecraft-data')('26.1');
+
+// A bot at the portal: the ladder's gear all carried, by day on the surface.
+const GEAR = { iron_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1 };
+function atPortal(carried = {}) {
+  const items = Object.entries({ ...GEAR, ...carried }).filter(([, n]) => n > 0).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 }));
+  return {
+    registry, health: 20, food: 20, oxygenLevel: 20,
+    game: { gameMode: 'survival', dimension: 'overworld', difficulty: 'normal' },
+    time: { timeOfDay: 6000 },
+    entity: { position: new Vec3(0.5, 64, 0.5), height: 1.8, width: 0.6, onGround: true },
+    entities: {},
+    inventory: { items: () => items, slots: [], emptySlotCount: () => 20 },
+    blockAt: p => { const q = p.floored(); const name = q.y < 64 ? 'grass_block' : 'air'; return { name, position: q, boundingBox: name === 'air' ? 'empty' : 'block', getProperties: () => ({}) }; },
+    findBlocks: () => [], world: { raycast: () => null }, pathfinder: { movements: {} },
+  };
+}
+const FED = { cooked_beef: 10, stone_pickaxe: 1, cobblestone: 128 };
+
+test('a bot at the portal with no food: the food rung is open, last before the portal, said with the stay it covers', () => {
+  const { openRungs, nextGameStage } = require('../src/game-progress');
+  const { rungOption } = require('../src/strategy');
+  const bot = atPortal({ ...FED, cooked_beef: 0 });
+  const goal = { kind: 'win' };
+  const rungs = openRungs(bot, goal);
+  assert.deepEqual(rungs.map(r => r.phase), ['nether_food']);
+  assert.equal(nextGameStage(bot, goal).phase, 'nether_food');
+  assert.deepEqual({ carried: rungs[0].carried, wants: rungs[0].wants }, { carried: 0, wants: 80 }, 'the whole stay, crossing-kit.js netherStay');
+  const said = rungOption(rungs[0], true, bot, goal).description;
+  assert.match(said, /^Get food carried for the Nether stay\. 0 food points carried, 80 wanted: the Nether stay the goal still needs, about 120 minutes for 7 blaze rods and 13 ender pearls, at about 40 hunger an hour\./);
+  assert.match(said, /At the crossing 42 of 168 carried no food and 122 were short of the stay \(note 664\)\./);
+  assert.match(said, /No food is known nearby: the home chest, the plot or a search for animals, asked when this is taken\./);
+  assert.match(said, /Until it is done, the Nether is entered with the food carried/);
+  // Fed, nothing more to get; in the Nether, or with the rods done, no kit at all.
+  assert.deepEqual(openRungs(atPortal(FED), goal), []);
+  const nether = atPortal({ ...FED, cooked_beef: 0 }); nether.game.dimension = 'the_nether';
+  assert.deepEqual(require('../src/crossing-kit').kitRungs(nether, goal), []);
+  assert.deepEqual(require('../src/crossing-kit').kitRungs(atPortal({ ...FED, cooked_beef: 0, blaze_rod: 7 }), goal), []);
+});
+
+test('with no spare pickaxe the spare is a rung: iron when three ingots are carried, else stone', () => {
+  const { openRungs } = require('../src/game-progress');
+  const { rungOption } = require('../src/strategy');
+  const goal = { kind: 'win' };
+  const iron = atPortal({ ...FED, stone_pickaxe: 0, iron_ingot: 5 });
+  const [rung] = openRungs(iron, goal);
+  assert.deepEqual([rung.phase, rung.item, rung.count], ['nether_pickaxe', 'iron_pickaxe', 2], 'one more than the one carried');
+  const said = rungOption(rung, true, iron, goal).description;
+  assert.match(said, /^Get a spare pickaxe for the Nether\. 1 of the 2 pickaxes the crossing takes are carried \(stone or better, 24 uses or more each\)/);
+  assert.match(said, /5 of 7 bots in the Nether had no pickaxe left \(notes 654, 655\)\. Iron: 3 of the 5 iron ingots carried, about 250 uses\./);
+  const stone = atPortal({ ...FED, stone_pickaxe: 0, iron_ingot: 1 });
+  assert.deepEqual(openRungs(stone, goal).map(r => [r.phase, r.item]), [['nether_pickaxe', 'stone_pickaxe']]);
+  // A pickaxe nearly worn is not the spare.
+  const worn = atPortal(FED);
+  worn.inventory.items().find(i => i.name === 'stone_pickaxe').durabilityUsed = 120;
+  assert.deepEqual(openRungs(worn, goal).map(r => r.phase), ['nether_pickaxe']);
+});
+
+test('with 10 blocks the blocks rung mines to the two stacks, said with what they are for and what they wear', () => {
+  const { openRungs } = require('../src/game-progress');
+  const { rungOption } = require('../src/strategy');
+  const goal = { kind: 'win' };
+  const bot = atPortal({ ...FED, cobblestone: 10 });
+  const rungs = openRungs(bot, goal);
+  assert.deepEqual(rungs.map(r => [r.phase, r.item, r.count]), [['nether_blocks', 'cobblestone', 128]]);
+  const said = rungOption(rungs[0], true, bot, goal).description;
+  assert.match(said, /^Get blocks for bridging and pillaring in the Nether\. 10 blocks carried of the 128 the crossing takes/);
+  assert.match(said, /spans stopped where the blocks ran out \(notes 650, 655\)\. Stone mined wears the pickaxe a use a block\./);
+  assert.match(said, /Until it is done, a bridge or a pillar stops where the blocks run out/);
+});
+
+test('all three short: each is open, in order, the Nether first beside them; taken, all wait and the portal is next', async () => {
+  const { openRungs, nextGameStage } = require('../src/game-progress');
+  const { strategyOptions } = require('../src/strategy');
+  const bot = atPortal({ cobblestone: 10 });
+  const goal = { kind: 'win' };
+  const stage = nextGameStage(bot, goal);
+  assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['nether_pickaxe', 'nether_blocks', 'nether_food']);
+  const options = strategyOptions(bot, goal, stage);
+  assert.deepEqual(Object.keys(options).filter(k => /^rung_|^nether_first$/.test(k)), ['rung_nether_pickaxe', 'rung_nether_blocks', 'rung_nether_food', 'nether_first']);
+  await options.nether_first.run();
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
+});
+
+test('a kit rung set aside for failing is not handed back when nothing else is left: the crossing goes on (no loop)', () => {
+  const { nextGameStage, preparationRung } = require('../src/game-progress');
+  const { setAside } = require('../src/progress');
+  const bot = atPortal({ ...FED, cooked_beef: 0 });
+  const goal = { kind: 'win' };
+  setAside(goal, 'rung', 'nether_food', 'ten working minutes on the food for the Nether without a point more', 1800000);
+  assert.equal(preparationRung(bot, goal), null, 'the other rungs set aside come back when nothing is left; the kit does not');
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
+  // Other rungs keep their rule: the shield set aside for failing comes back when it is all that is left.
+  const shieldless = atPortal({ ...FED, shield: 0 });
+  const g2 = { kind: 'win' };
+  setAside(g2, 'rung', 'shield', 'no iron', 1800000);
+  assert.equal(preparationRung(shieldless, g2)?.phase, 'shield');
+});
+
+test('the crossing question no longer offers the food, blocks or pickaxe: it says what the rungs left', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const bot = atPortal({ cobblestone: 10, golden_boots: 0 });
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  assert.equal(await crossingKitReady(bot, new Task('win'), { kind: 'win' }, () => {}, client), true);
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_gold']);
+  assert.match(asked.cross_now, /Left from the ladder's kit steps: food 0 of 80, blocks 10 of 128, pickaxe 1 of 2\./);
+  // Only the rungs' items short: not asked at all.
+  asked = null;
+  assert.equal(await crossingKitReady(atPortal({ cobblestone: 10 }), new Task('win'), { kind: 'win' }, () => {}, client), true);
+  assert.equal(asked, null);
+});
+
+test('the food rung taken: going without sets it aside as a choice, which the crossing offers back', async () => {
+  const { kitFoodStep } = require('../src/work');
+  const { nextGameStage, asideRungs } = require('../src/game-progress');
+  const { isSetAside } = require('../src/progress');
+  const bot = atPortal({ ...FED, cooked_beef: 0 });
+  const goal = { kind: 'win' };
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'go_without', confidence: 0.7 } } }; } };
+  assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, client), false);
+  assert.deepEqual(Object.keys(asked).sort(), ['go_without', 'top_up_food']);
+  assert.match(asked.go_without, /^Go on without more food for now: 0 of 80 points carried\./);
+  assert(isSetAside(goal, 'rung', 'nether_food'));
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
+  assert.deepEqual(asideRungs(bot, goal).map(r => r.phase), ['nether_food'], 'a take-up of its own at the portal');
+  // Met, the rung is done: nothing asked.
+  asked = null;
+  assert.equal(await kitFoodStep(atPortal(FED), new Task('win'), {}, () => {}, { wants: 80 }, client), true);
+  assert.equal(asked, null);
+});

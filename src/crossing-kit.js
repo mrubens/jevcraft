@@ -9,7 +9,7 @@
 // crosses with a stack of blocks, food for the stay and a pickaxe. Now each is a
 // fact said to Jev, and topping any of them up is Jev's choice (work.js
 // crossingKitReady, the crossing_kit question).
-const { countOf, pickaxeDurability, pickaxeTier } = require('./skills');
+const { countOf, pickaxeDurability } = require('./skills');
 const { foodSupply, lastResortSupply } = require('./foraging');
 const { safeFood } = require('./vitals');
 
@@ -54,8 +54,15 @@ const NETHER_HEALTH = 16;
 // while every leg of the fortress sweep failed (2026-09-26).
 const NETHER_BLOCKS = 128;
 const netherBlocks = bot => ['cobblestone', 'cobbled_deepslate', 'netherrack', 'blackstone', 'stone', 'deepslate', 'dirt'].reduce((n, name) => n + countOf(bot, name), 0);
-// The pickaxe that goes down must have enough left to come back up.
-const SPARE_PICKAXE_DURABILITY = 24;
+// The pickaxe that goes down must have enough left to come back up, and a
+// second goes with it: five of seven bots in the Nether had none left (notes
+// 654, 655).
+const SPARE_PICKAXE_DURABILITY = 24, PICKAXES_TAKEN = 2;
+const PICK_TIER = { stone: 2, iron: 3, diamond: 4, netherite: 5 };
+const soundPickaxes = bot => bot.inventory.items().filter(i => {
+  const m = /^(\w+)_pickaxe$/.exec(i.name), max = bot.registry?.itemsByName?.[i.name]?.maxDurability;
+  return m && PICK_TIER[m[1]] && (!max || max - (i.durabilityUsed || 0) >= SPARE_PICKAXE_DURABILITY);
+});
 // Eight logs: sticks for two tools and fuel for a dozen smelts.
 const EXPEDITION_LOGS = 8;
 const logsCarried = bot => bot.inventory.items().filter(i => /_log$/.test(i.name)).reduce((n, i) => n + i.count, 0);
@@ -89,7 +96,7 @@ function kitItems(bot) {
     const meals = bot.inventory.items().filter(i => safeFood(bot, i)).map(i => `${i.count} ${words(i.name)}`).join(', ');
     const lastSays = last.points ? ` Beside it, ${last.points} points in the last resort, not counted: ${last.says}.` : '';
     const stay = netherStay(bot);
-    items.push({ key: 'food', short: food < stay.points, carried: food, wants: stay.points,
+    items.push({ key: 'food', rung: 'nether_food', short: food < stay.points, carried: food, wants: stay.points,
       says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${stay.points}, food for the whole stay. ${staySays(stay)} ${require('./food-facts').regenSays(bot)} ${require('./food-facts').clockSays(bot)} ${require('./food-facts').recordSays(bot)} A fortress trip is fighting and running; in the Nether, hoglins are the meat (a mushroom stew and a bastion's chests are the only other food there, note 639), and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
     const health = Math.round(bot.health ?? 20), hunger = bot.food ?? 20;
     const back = health >= NETHER_HEALTH ? '' : hunger >= 18
@@ -99,14 +106,14 @@ function kitItems(bot) {
       says: `Health: ${health} of 20; the code would step through at ${NETHER_HEALTH} or more. The far side of a portal can be a fight at once. ${netherHitSays(bot)}${back}` });
   }
   const blocks = netherBlocks(bot);
-  items.push({ key: 'blocks', short: blocks < NETHER_BLOCKS, carried: blocks, wants: NETHER_BLOCKS,
+  items.push({ key: 'blocks', rung: 'nether_blocks', short: blocks < NETHER_BLOCKS, carried: blocks, wants: NETHER_BLOCKS,
     says: `Blocks: ${blocks} carried for bridging and pillaring (cobblestone, netherrack, dirt and the like); the code would take ${NETHER_BLOCKS}, two stacks. A portal can open on a ledge or an island over the lava sea, a bridge takes a block a step, and netherrack there is mined for more with any pickaxe.` });
   const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
-  const uses = pickaxeDurability(bot), tier = pickaxeTier(bot);
+  const uses = pickaxeDurability(bot);
   const best = Number.isFinite(uses) ? uses : null;
-  const shortPick = tier < 2 || (best !== null && best < SPARE_PICKAXE_DURABILITY);
-  items.push({ key: 'pickaxe', short: shortPick, carried: best ?? 0, wants: SPARE_PICKAXE_DURABILITY,
-    says: `Pickaxe: ${picks.length ? `${picks.map(i => words(i.name)).join(', ')} carried, the best with ${best ?? 'many'} uses left` : 'none carried'}; the code would take a stone one or better with at least ${SPARE_PICKAXE_DURABILITY} uses, or a spare: the way out of a pocket, a fortress wall or a buried portal is dug. A stone pickaxe is three cobblestone or blackstone and two sticks.` });
+  const sound = soundPickaxes(bot).length;
+  items.push({ key: 'pickaxe', rung: 'nether_pickaxe', short: sound < PICKAXES_TAKEN, carried: sound, wants: PICKAXES_TAKEN,
+    says: `Pickaxe: ${picks.length ? `${picks.map(i => words(i.name)).join(', ')} carried, the best with ${best ?? 'many'} uses left` : 'none carried'}; the code would take ${PICKAXES_TAKEN}, stone or better with at least ${SPARE_PICKAXE_DURABILITY} uses each, the one in use and a spare: the way out of a pocket, a fortress wall or a buried portal is dug. A stone pickaxe is three cobblestone or blackstone and two sticks.` });
   // A piece of gold worn: piglins leave a player wearing one be, and go for
   // one with none on sight. mid-242-g crossed in iron with no gold, a piglin
   // hit it from twenty to eight in two blows and the second threw it into
@@ -194,7 +201,7 @@ function kitSummary(bot, goal) {
   let short, valuables, all;
   try { all = kitItems(bot); short = all.filter(i => i.short); valuables = valuablesAt(bot, goal); } catch (_) { return ''; }
   const parts = short.map(i => i.key === 'wood' ? `${i.carried} of ${i.wants} logs${countOf(bot, 'crafting_table') ? '' : ' and no crafting table'}`
-    : i.key === 'pickaxe' ? `a pickaxe with ${i.carried} of ${i.wants} uses` : i.key === 'health' ? `${i.carried} of ${i.wants} health`
+    : i.key === 'pickaxe' ? `${i.carried} of ${i.wants} pickaxes` : i.key === 'health' ? `${i.carried} of ${i.wants} health`
       : i.key === 'gold' ? 'a piece of gold to wear (piglins go for a player with none)'
       : `${i.carried} of ${i.wants} ${i.key === 'food' ? 'food points' : 'blocks'}`);
   if (valuables) parts.push(`valuables carried (${valuables.what})${valuables.how === 'stash' ? `, the home chest ${valuables.far} blocks away` : ''}`);
@@ -204,4 +211,63 @@ function kitSummary(bot, goal) {
     : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
 }
 
-module.exports = { cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+// The kit as rungs of the ladder, before the one that enters the portal
+// (note 673). At the crossing the kit was a question answered cross_now 621
+// of 868 times: 42 of 168 crossings carried no food and 122 were short of the
+// stay (note 664), five of seven bots in the Nether had no pickaxe left
+// (notes 654, 655), and spans stopped where the blocks ran out (650, 655).
+// Now the spare pickaxe, the blocks and the food are each a rung Jev weighs
+// with the others, with what it costs, and each may wait (game-progress.js
+// DEFERRABLE): set aside by Jev or by a stall, it stays aside until its rest
+// ends, and the crossing goes on without it. Only while the goal still needs
+// blaze rods from the Nether, from the Overworld, in Survival.
+const KIT_PHASES = new Set(['nether_pickaxe', 'nether_blocks', 'nether_food']);
+function kitRungs(bot, goal = {}) {
+  // Food points and uses are the registry's: with none, nothing is counted.
+  if (bot?.game?.gameMode !== 'survival' || !/overworld/.test(String(bot.game?.dimension || '')) || !bot.registry) return [];
+  let stay;
+  try { stay = netherStay(bot, goal); } catch (_) { return []; }
+  if (!stay.rodsLeft) return [];
+  // Not while the crossing is not next: the Overworld's endermen chosen for
+  // the pearls (pearl-routes.js), or rods, powder or eyes in the home chest,
+  // which are fetched first (game-progress.js nextGameStage) and may be enough.
+  if (require('./game-progress').pearlRouteHeld(goal)?.pick === 'overworld') return [];
+  const stash = goal?.survival?.home?.stash?.contents || {};
+  if (['blaze_rod', 'blaze_powder', 'ender_eye'].some(n => stash[n] > 0)) return [];
+  const out = [];
+  const sound = soundPickaxes(bot).length;
+  if (sound < PICKAXES_TAKEN) {
+    const item = countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : 'stone_pickaxe';
+    out.push({ phase: 'nether_pickaxe', action: 'acquire', item, count: countOf(bot, item) + 1, kit: 'pickaxe', carried: sound, wants: PICKAXES_TAKEN });
+  }
+  const blocks = netherBlocks(bot);
+  if (blocks < NETHER_BLOCKS) out.push({ phase: 'nether_blocks', action: 'acquire', item: 'cobblestone', count: countOf(bot, 'cobblestone') + NETHER_BLOCKS - blocks, kit: 'blocks', carried: blocks, wants: NETHER_BLOCKS });
+  if (bot.game?.difficulty !== 'peaceful') {
+    const food = foodSupply(bot);
+    if (food < stay.points) out.push({ phase: 'nether_food', action: 'nether_food', kit: 'food', carried: food, wants: stay.points });
+  }
+  return out;
+}
+// What a kit rung is and costs, for the strategy question: short and plain.
+// The steps a pickaxe or the blocks take come beside it (strategy.js
+// rungTakes); the food's ways are priced here, the nearest first.
+function kitRungSays(bot, goal, rung) {
+  if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}`;
+  if (rung.kit === 'blocks') return ` ${rung.carried} blocks carried of the ${rung.wants} the crossing takes (cobblestone, netherrack, dirt and the like): a portal can open on a ledge or an island over lava, a bridge takes a block a step, and spans stopped where the blocks ran out (notes 650, 655). Stone mined wears the pickaxe a use a block.`;
+  if (rung.kit !== 'food') return '';
+  const stay = netherStay(bot, goal), c = require('./food-facts').RECORD.crossings;
+  const left = [stay.rodsLeft ? `${stay.rodsLeft} blaze rods` : null, stay.pearlsLeft ? `${stay.pearlsLeft} ender pearls` : null].filter(Boolean).join(' and ');
+  let ways = '';
+  try {
+    const work = require('./work');
+    const cook = work.cookable(bot);
+    const near = work.foodNearFrame(bot, goal, null, Math.max(1, rung.wants - rung.carried));
+    const parts = [];
+    if (cook?.ready) parts.push(`cooking the raw food carried, ${cook.now} points now, about ${cook.after} cooked, about ${cook.n * 10 + (cook.furnace ? 2 : 6)} seconds`);
+    if (near) parts.push(`the nearest known food, ${near.says}`);
+    ways = parts.length ? ` Ways from here: ${parts.join('; ')}; else the home chest, the plot or a search for animals, asked when this is taken.` : ' No food is known nearby: the home chest, the plot or a search for animals, asked when this is taken.';
+  } catch (_) { ways = ''; }
+  return ` ${rung.carried} food points carried, ${rung.wants} wanted: the Nether stay the goal still needs, about ${stay.minutes} minutes for ${left}, at about ${NETHER_HUNGER_AN_HOUR} hunger an hour. Health comes back only at hunger 18 or more, and in the Nether a hoglin is the only meat. At the crossing ${c.none} of ${c.n} carried no food and ${c.shortOfStay} were short of the stay (note 664).${ways}`;
+}
+
+module.exports = { KIT_PHASES, kitRungs, kitRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

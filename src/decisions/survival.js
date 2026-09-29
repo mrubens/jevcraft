@@ -276,31 +276,49 @@ define({
 // past (mid-220-a stood at thirty-nine for forty-four passes, 2026-09-26),
 // and five more stood behind it unsaid: sixteen health, a hundred and
 // twenty-eight blocks, a spare pickaxe, eight logs and a table, and the
-// valuables walked home (the decision review, 2026-09-26). One question now,
+// valuables walked home (the decision review, 2026-09-26). One question then,
 // every item said with what is carried against what the code would take.
-// The food is sized for the Nether stay the goal still needs and said so
-// (note 607).
+// The food, the blocks and the spare pickaxe are rungs of the ladder now,
+// before the portal (crossing-kit.js kitRungs, note 673): this question was
+// answered cross_now 621 of 868 times, and 122 of 168 crossings were short
+// of the stay's food (note 664). What is left here is the rest of the kit.
 define({
   id: 'crossing_kit', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?',
-  trigger: 'In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); held until what is on offer changes or for ten working minutes.',
+  question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (health, gold, wood, a cauldron) or leave the valuables behind?',
+  trigger: 'In the Overworld on the way through a portal, in Survival, with health, gold or wood short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); the food, blocks and spare pickaxe are the ladder\'s rungs and are only said here, as left from them; held until what is on offer changes or for ten working minutes.',
   source: 'src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)',
   options: [
-    { key: 'cross_now', label: 'cross with what is carried', when: 'always', level: 'root' },
-    { key: 'top_up_food', label: 'gather food first, enough for the Nether stay the goal needs', when: 'fewer food points carried than the stay the goal still needs takes (src/crossing-kit.js netherStay: the rods and pearls left, on the two hours a practiced player takes for all of them, at about forty hunger an hour; eighty points for the whole stay), monsters on; said with the stay, its hunger and what raw and cooked count for (note 607); said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594)', level: 'root' },
-    { key: 'top_up_food_near', label: 'gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here', when: 'food short and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594)', level: 'root' },
-    { key: 'top_up_cook', label: 'cook the raw food carried first, at a furnace put down here', when: 'food short, raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, and the seconds (note 594)', level: 'root' },
+    { key: 'cross_now', label: 'cross with what is carried', when: 'always; said with each item of the kit and what the ladder\'s kit rungs left short', level: 'root' },
     { key: 'top_up_health', label: 'wait and heal first, to sixteen', when: 'health under sixteen, monsters on', level: 'root' },
-    { key: 'top_up_blocks', label: 'mine stone first, up to two stacks of blocks', when: 'fewer than 128 building blocks carried', level: 'root' },
-    { key: 'top_up_pickaxe', label: 'make a stone pickaxe first, as the spare', when: 'no stone pickaxe or better, or the best has under 24 uses', level: 'root' },
     { key: 'top_up_gold', label: 'make golden boots first, a piece of gold worn so piglins leave the bot be', when: 'no piece of golden armour carried', level: 'root' },
     { key: 'top_up_wood', label: 'gather logs up to eight and make a crafting table first', when: 'fewer than eight logs or no crafting table carried', level: 'root' },
     { key: 'top_up_cauldron', label: 'make a cauldron and fill a bucket with water first, to put a fire out in the Nether', when: 'no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short, and is never the fallback; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634)', level: 'root' },
     { key: 'stash_valuables', label: 'walk home and leave the valuables in the stash chest first', when: 'the home stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'leave the valuables in a chest put down here first', when: 'home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
   ],
-  instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule: a player often crosses with a stack of blocks, a pickaxe and food for the stay: in the Nether nothing but a hoglin is food, and health comes back only at eighteen hunger or more, so the food carried is what the stay heals on. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
+  instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule. The food, blocks and spare pickaxe were steps of the ladder before this; what they left short is said. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
   fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'cross_now',
+});
+
+// The food rung before the portal, taken (src/work.js kitFoodStep,
+// crossing-kit.js kitRungs, note 673): which way to the food, or going on
+// without more. The crossing question's food top-ups, moved here: the known
+// food nearest (mid-244-ah walked six thousand blocks past a cow in view,
+// note 594) and the cook (with who is coming while the bot stands at the
+// furnace, note 628).
+define({
+  id: 'kit_food', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Food for the Nether stay: which way to it, or go on without more for now?',
+  trigger: 'In the Overworld on the ladder\'s food rung (fewer food points carried than the Nether stay the goal still needs, crossing-kit.js netherStay), in Survival with monsters on; held until what is on offer changes or for ten minutes. Ten working minutes with no food point more set the rung aside half an hour instead of asking.',
+  source: 'src/work.js (kitFoodStep), src/crossing-kit.js (kitRungs, netherStay)',
+  options: [
+    { key: 'go_without', label: 'go on without more food for now', when: 'always; the food rung is set aside half an hour and the ladder goes on, to the crossing if nothing else is left', level: 'root' },
+    { key: 'top_up_food', label: 'gather food: the home chest, the plot, or hunting animals', when: 'always; said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594)', level: 'root' },
+    { key: 'top_up_food_near', label: 'gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here', when: 'some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594)', level: 'root' },
+    { key: 'top_up_cook', label: 'cook the raw food carried first, at a furnace put down here', when: 'raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, the seconds, and who is coming meanwhile (notes 594, 628)', level: 'root' },
+  ],
+  instructions: { task: 'The bot is getting food before it goes into the Nether. Choose the way to it, or go on without more for now.', guidance: 'Each way says its trip, its seconds and what it gives, raw and cooked. `foodWanted` is the Nether stay the goal still needs, at about forty hunger an hour; in the Nether a hoglin is the only meat and health comes back only at hunger 18 or more. A way says the working minutes it has had and what they brought.' },
+  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'go_without',
 });
 
 // A step on the ladder whose sources are in another dimension

@@ -33,7 +33,7 @@ const RECORD = {
   // eating past 20 wastes the rest, and saturation is spent first).
   hungerLostPerHour: 22.8, pointsEatenPerHour: 33,
   // At the crossing: 168 crossings from the Overworld.
-  crossings: { n: 168, none: 42, few: 36, some: 44, many: 46, hungerUnder18: 50, medianPoints: 9 },
+  crossings: { n: 168, none: 42, few: 36, some: 44, many: 46, hungerUnder18: 50, medianPoints: 9, shortOfStay: 122 },
   // Where carried food went over the window: eaten, lost with a death, gone
   // some other way (cooked and raw meat dropped, stored, or out of the record's sight).
   wentEaten: 6254, wentDeath: 6216, wentOther: 6608, deaths: 150,

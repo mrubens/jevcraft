@@ -61,6 +61,10 @@ const RUNG_WHY = {
   bow: 'answers skeletons, blazes and the dragon\'s crystals from range',
   arrows: 'the bow is nothing without them; here they come only from skeletons, none to two a skeleton, and are spent as they are shot (feathers for crafting come from chickens, which the bot never hurts)',
   diamond_sword: 'ends a blaze or a piglin in two swings',
+  // The crossing's kit (crossing-kit.js kitRungs, note 673).
+  nether_pickaxe: 'a spare pickaxe for the Nether',
+  nether_blocks: 'blocks for bridging and pillaring in the Nether',
+  nether_food: 'food carried for the Nether stay',
   // The rest of the ladder, said as the others are (the decision audit,
   // 2026-09-25).
   stone_pickaxe: 'mines stone, coal and iron ore; a wooden one mines only stone and coal, and slowly',
@@ -83,6 +87,9 @@ const WITHOUT = {
   bow: 'shooters are answered only by closing on them',
   arrows: 'the bow cannot shoot',
   home_bed: 'a death respawns far from home',
+  nether_pickaxe: 'a pickaxe worn out in the Nether is made again only from what is carried',
+  nether_blocks: 'a bridge or a pillar stops where the blocks run out, and netherrack there is mined for more',
+  nether_food: 'the Nether is entered with the food carried; going back through the portal is the other way to more',
 };
 // Where each ore lies, said with a step that mines it.
 const ORE_DEPTH = { coal: [0, 95, 95], iron: [-24, 56, 16], copper: [-16, 112, 48], gold: [-64, 32, -16], redstone: [-64, 15, -59], lapis: [-64, 64, 0], diamond: [-64, 16, -59], emerald: [-16, 256, 100] };
@@ -225,16 +232,17 @@ function homeWhere(bot, goal, rung) {
   return ` It is done at the base${rung.phase === 'home_stash' ? ', the chest going by the bed' : ''}: ${d} blocks from here${Math.abs(dy) >= 3 ? `, ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}${flat > 6 ? `, about ${Math.round(flat / 4.3)} seconds at a walk${Math.abs(dy) >= 3 ? ' and the climb besides' : ''}` : ''}.${made}`;
 }
 function rungOption(rung, first, bot, goal, planFor = null) {
-  const what = rung.items?.length > 1 ? `${label(rung.phase)} (${rung.items.map(label).join(', ')})` : rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
+  const what = rung.kit ? RUNG_WHY[rung.phase] : rung.items?.length > 1 ? `${label(rung.phase)} (${rung.items.map(label).join(', ')})` : rung.item ? `${rung.count > 1 ? `${rung.count} ` : ''}${label(rung.item)}` : label(rung.phase);
   const piece = /^iron_(helmet|chestplate|leggings|boots)$/.test(rung.phase) ? 'iron_armour' : rung.phase;
-  const why = RUNG_WHY[rung.phase] || RUNG_WHY[piece];
+  const why = rung.kit ? null : RUNG_WHY[rung.phase] || RUNG_WHY[piece];
   const clock = goal?.rungClocks?.[rung.phase];
   const spent = clock?.activeMs >= 60000 ? ` Worked on for ${Math.round(clock.activeMs / 60000)} minutes so far.` : '';
   const without = WITHOUT[piece] ? ` Until it is done, ${WITHOUT[piece]}.` : '';
   // Said alike whichever rung is first: "the ladder's next step" beside
   // "ahead of the ladder's order" was a thumb on the scale (the critical
   // review, 2026-09-26). The first is still the fallback.
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+  const kit = rung.kit && bot ? require('./crossing-kit').kitRungSays(bot, goal || {}, rung) : '';
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
@@ -430,13 +438,14 @@ function strategyState(bot, goal, stage) {
     // hundred and ninety-six times over three hours and never went
     // (2026-09-26).
     beforeTheNether: (() => { const { DEFERRABLE, asideRungs } = require('./game-progress'); const left = openRungs(bot, goal).map(r => r.phase);
-      const needed = left.filter(p => !DEFERRABLE.has(p)), may = left.filter(p => DEFERRABLE.has(p));
+      const { KIT_PHASES } = require('./crossing-kit');
+      const needed = left.filter(p => !DEFERRABLE.has(p)), may = left.filter(p => DEFERRABLE.has(p) && !KIT_PHASES.has(p)), kit = left.filter(p => KIT_PHASES.has(p));
       // What Jev set aside to go without, said as that (mid-242-x, note 498).
       const aside = asideRungs(bot, goal).map(r => `${label(r.phase)} (${Math.max(1, Math.round((r.until - Date.now()) / 60000))} minutes more)`);
       // And the kit for the crossing, said: it was a second ladder of gates
       // at the portal that this line never mentioned (the decision review,
       // 2026-09-26).
-      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${aside.length ? ` Set aside by choice, to go without for now: ${aside.join(', ')}, each back on its own after that.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
+      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${kit.length ? ` The crossing's kit, last before the portal, each of which may be gone without: ${kit.map(p => RUNG_WHY[p]).join(', ')}.` : ''}${aside.length ? ` Set aside by choice, to go without for now: ${aside.join(', ')}, each back on its own after that.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
     riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
     recentPositions: require('./stillness').recentPositions(bot),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,

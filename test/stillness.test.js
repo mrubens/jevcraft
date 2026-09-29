@@ -294,32 +294,32 @@ test('at 3.5 health with hunger 13 and nothing to eat the stall\'s options say h
   assert.doesNotMatch(asked[0].differently, /does not come back at hunger/);
 });
 
-test('gathering food for the crossing never waits: a rested search is taken up again; without Jev a top-up worked twenty minutes is passed over unless none is carried', async () => {
-  const { crossingKitReady } = require('../src/work');
+test('gathering food for the crossing never waits: a rested search is taken up again; ten minutes without a point more set the food rung aside', async () => {
+  // The food is a rung before the portal now (work.js kitFoodStep, note 673): without Jev, its way is the
+  // search, and a search that brings nothing sets the rung aside rather than being passed over at the crossing.
+  const { kitFoodStep } = require('../src/work');
   let items = [];
   const bot = Object.assign(new EventEmitter(), { registry, inventory: { items: () => items }, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
     entity: { id: 1, position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, entities: {}, time: { timeOfDay: 3000 },
     findBlocks: () => [], blockAt: () => ({ name: 'air', boundingBox: 'empty' }), pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
-  const kit = goal => crossingKitReady(bot, new Task('kit'), goal, () => {}, null).catch(() => false);
+  const T = Date.now();
+  const kit = (goal, now = T) => kitFoodStep(bot, new Task('kit'), goal, () => {}, { wants: 80 }, null, now).catch(() => false);
   const goal = { kind: 'win', survival: {} };
   const { setAside, isSetAside } = require('../src/progress');
   setAside(goal, 'food_search', 'stock', 'five minutes of searching brought no food', 600000);
   assert.equal(await kit(goal), false);
-  assert.equal(goal.crossingKit.choice.pick, 'top_up_food', 'without Jev, food first');
+  assert.equal(goal.kitFood.choice.pick, 'top_up_food', 'without Jev, the search');
   assert.equal(isSetAside(goal, 'food_search', 'stock'), false, 'the animal search is not left resting');
   assert.equal(goal.step.action, 'hunt_food_for_nether');
   assert(goal.stockFood && goal.preparingNether);
-  // Twenty working minutes with nothing at all to eat: still food.
-  const later = () => { goal.crossingKit.workedMs += 11 * 60000; };
-  goal.crossingKit.spent.food.ms = 20 * 60000; later();
-  await kit(goal);
-  assert.equal(goal.crossingKit.choice.pick, 'top_up_food', 'with nothing to eat, twenty minutes is not a reason to pass it over');
-  // With something, twenty minutes passes it over for the next item short.
+  // Food found meanwhile is progress: not set aside.
   items = [{ name: 'bread', count: 2, type: registry.itemsByName.bread.id }];
-  goal.crossingKit.spent.food.ms = 20 * 60000; later();
-  await kit(goal);
-  assert.equal(goal.crossingKit.choice.pick, 'top_up_blocks');
-  assert.equal(goal.preparingNether, undefined, 'and the food reserve is no longer being stocked');
+  await kit(goal, T + 6 * 60000);
+  assert.equal(isSetAside(goal, 'rung', 'nether_food'), false);
+  // Ten minutes more without a point: the rung is set aside, with why.
+  await kit(goal, T + 17 * 60000);
+  assert.equal(isSetAside(goal, 'rung', 'nether_food'), true);
+  assert.match(require('../src/progress').attemptsFor(goal).why('rung', 'nether_food'), /ten working minutes on the food for the Nether without a point more/);
 });
 
 test('low on air with no rescue under way, the step is stopped and every check unwinds until the survival layer runs', () => {
@@ -560,14 +560,14 @@ test('the kit for the crossing is one question: every item said against what the
   const goal = { kind: 'win', survival: {} };
   const task = new Task('kit');
   assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true, 'crosses with what it has');
-  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_blocks', 'top_up_food', 'top_up_gold']);
-  assert.match(asked.cross_now, /short of what the code would take in food, blocks/);
-  assert.match(asked.cross_now, /Food: 16 food points carried \(2 cooked beef\); the code would take 80, food for the whole stay\. The goal still needs 7 blaze rods and 13 ender pearls \(it wants 7 rods and 13 pearls in all, for 13 eyes: .*\): a practiced player takes about 2 hours in the Nether for them .* so about 2 hours is about 80 food points, 10 cooked steaks or porkchops/);
+  // The food, the blocks and the spare pickaxe are the ladder's rungs before the portal (note 673): said here as left
+  // from them, not offered again.
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_gold']);
+  assert.match(asked.cross_now, /short of what the code would take in gold/);
+  assert.match(asked.cross_now, /Left from the ladder's kit steps: food 16 of 80, blocks 30 of 128, pickaxe 1 of 2\./);
+  assert.doesNotMatch(asked.cross_now, /Food: 16 food points carried/);
   assert.match(asked.cross_now, /Health: 20 of 20; the code would step through at 16 or more/);
-  assert.match(asked.cross_now, /Blocks: 30 carried for bridging and pillaring .*the code would take 128, two stacks/);
-  assert.match(asked.cross_now, /Pickaxe: stone pickaxe carried, the best with 131 uses left/);
   assert.match(asked.cross_now, /Wood: 8 logs and a crafting table carried/);
-  assert.match(asked.top_up_blocks, /^Mine stone first, up to two stacks of blocks\. Blocks: 30 carried.* Nothing has gone to it yet at this crossing\./);
   // mid-242-l was offered its gold as "undefined Gold: ...".
   for (const [k, v] of Object.entries(asked)) assert(!/undefined/.test(v), `${k}: ${v.slice(0, 80)}`);
   assert.match(asked.top_up_gold, /^Make golden boots first and wear them/);

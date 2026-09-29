@@ -87,6 +87,8 @@ test('underground with every rung after wanting the same climb, the ore in view 
   const items = [{ name: 'iron_pickaxe', count: 1, durabilityUsed: 201 }, { name: 'stone_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 },
     { name: 'white_bed', count: 1 }, { name: 'cobblestone', count: 64 }, { name: 'iron_ingot', count: 15 }];
   const { bot, blocks } = mine({ y: 40, items, ores: [{ p: new Vec3(3, 40, 0), name: 'iron_ore' }] });
+  // The crossing's kit rungs (note 673) are not this scene's: a peaceful world, and the blocks carried.
+  bot.game.difficulty = 'peaceful'; items[4].count = 128;
   const goal = { kind: 'win', gameProgress: { phase: 'iron_pickaxe', milestones: {} } };
   const task = new Task('win');
   const asked = [];

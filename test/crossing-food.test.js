@@ -12,6 +12,9 @@ const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
 const { Task } = require('../src/skills');
 
+// The ways to food were the crossing question's top-ups; they are the food
+// rung's question now, before the portal (work.js kitFoodStep, kit_food, note
+// 673), and each test asks it as the rung does.
 // The bot at 05:08:49 (the recorded crossing_kit asking): full health,
 // hunger 18, nothing to eat, the kit short of food, gold and wood; a cow ten
 // blocks off in view on the grass; four sheep remembered 77 blocks south.
@@ -45,12 +48,12 @@ function stubHunt(t) {
 }
 
 test('with no frame begun, the known food is offered as its own way, back here, and taken it hunts the cow in view', async t => {
-  const { crossingKitReady } = require('../src/work');
+  const { kitFoodStep } = require('../src/work');
   const hunted = stubHunt(t);
   const bot = crossingBot();
   const goal = { sightings: sheepSouth() };
   const log = {};
-  assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, answering('top_up_food_near', log)), false);
+  assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('top_up_food_near', log)), false);
   assert.match(log.offered.top_up_food_near, /^Gather food at the known food nearest by the trip there and back, then come back here: a cow in view, 10 blocks off: about \d+ seconds in all \(the walk there about 2 seconds, about 15 seconds for 1 cow, and back here about 2 seconds\), for about 6 of the 80 points short as raw meat, about 16 once cooked\./);
   assert.match(log.offered.top_up_food, /it hunts a grown cow, sheep, rabbit or mooshroom within 32 blocks when one is in view, and otherwise searches outward/);
   assert.deepEqual(hunted, ['cow']);
@@ -60,30 +63,30 @@ test('with no frame begun, the known food is offered as its own way, back here, 
 
 test('each way at food says its own minutes: the open search\'s twenty-two are not the known food\'s', async () => {
   // 05:21:06: "22 working minutes have gone to it at this crossing, from 2 to 0", all the open search's.
-  const { crossingKitReady } = require('../src/work');
+  const { kitFoodStep } = require('../src/work');
   const bot = crossingBot();
   bot.entities = {};
-  const goal = { sightings: sheepSouth(), crossingKit: { workedMs: 22 * 60000, spent: { food: { ms: 22 * 60000, from: 2 } }, lastAt: Date.now() } };
+  const goal = { sightings: sheepSouth(), kitFood: { spent: { food: { ms: 22 * 60000, from: 2 } }, lastAt: Date.now() } };
   const log = {};
-  await crossingKitReady(bot, new Task('win'), goal, () => {}, answering('cross_now', log));
-  assert.match(log.offered.top_up_food, /22 working minutes have gone to it at this crossing, from 2 to 0\.$/);
+  await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('go_without', log));
+  assert.match(log.offered.top_up_food, /22 working minutes have gone to it, from 2 to 0\.$/);
   assert.match(log.offered.top_up_food_near, /then come back here: 4 sheep seen just now/);
-  assert.match(log.offered.top_up_food_near, /Nothing has gone to it yet at this crossing\.$/);
+  assert.match(log.offered.top_up_food_near, /Nothing has gone to it yet\.$/);
 });
 
 test('the open search hunts an animal in view before it walks on', async t => {
-  const { crossingKitReady } = require('../src/work');
+  const { kitFoodStep } = require('../src/work');
   const hunted = stubHunt(t);
   const bot = crossingBot();
   const goal = { sightings: sheepSouth() };
-  assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, answering('top_up_food', {})), false);
+  assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('top_up_food', {})), false);
   assert.deepEqual(hunted, ['cow']);
   assert.equal(goal.step.action, 'hunt_food_for_nether');
   assert.equal(goal.step.hunting, 'cow');
 });
 
 test('a cow the hunt could not get to is kept two minutes, not offered in view, and not hunted again', async t => {
-  const { crossingKitReady } = require('../src/work');
+  const { kitFoodStep } = require('../src/work');
   const foraging = require('../src/foraging');
   const real = foraging.hunt;
   let tries = 0;
@@ -92,27 +95,27 @@ test('a cow the hunt could not get to is kept two minutes, not offered in view, 
   const bot = crossingBot();
   const goal = { sightings: sheepSouth() };
   const log = {};
-  await crossingKitReady(bot, new Task('win'), goal, () => {}, answering('top_up_food_near', log));
+  await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('top_up_food_near', log));
   assert.equal(tries, 1);
   assert(goal.survival.failedPrey['cow-41'] > Date.now() - 1000, 'kept as the survival layer keeps it');
-  delete goal.crossingKit;
-  await crossingKitReady(bot, new Task('win'), goal, () => {}, answering('cross_now', log));
+  delete goal.kitFood;
+  await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('go_without', log));
   assert.match(log.offered.top_up_food_near, /then come back here: 4 sheep seen just now/, 'the sheep are the known food now');
   assert.doesNotMatch(log.offered.top_up_food_near, /cow in view/);
 });
 
 test('raw meat carried with a furnace and coal: cooking it first is offered, with the points as carried and once cooked', async () => {
-  const { crossingKitReady } = require('../src/work');
+  const { kitFoodStep } = require('../src/work');
   // 05:36:10: nine beef carried, 27 points, the frame five blocks off.
   const bot = crossingBot({ beef: 9 });
   bot.entities = {};
   const goal = {};
   const log = {};
-  assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, answering('cross_now', log)), true);
+  assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('go_without', log)), false);
   assert.match(log.offered.top_up_cook, /^Cook the raw food carried first: 9 beef, 27 food points as carried, about 72 once cooked \(a steak or a cooked porkchop is eight, cooked mutton six, raw beef three\)\. The furnace carried is put down here, fuelled with the coal carried: about ten seconds an item, about 92 seconds in all, with no walk\./);
   // No fuel: no cooking on offer.
   const cold = crossingBot({ beef: 9, coal: 0 });
   cold.entities = {};
-  await crossingKitReady(cold, new Task('win'), {}, () => {}, answering('cross_now', log));
+  await kitFoodStep(cold, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log));
   assert.equal(log.offered.top_up_cook, undefined);
 });

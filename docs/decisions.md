@@ -4,7 +4,7 @@ Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit b
 
 Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
-97 questions: 47 decision trees and 50 batched questions.
+98 questions: 48 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -441,9 +441,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `crossing_kit`
 
-**Cross into the Nether with the kit carried now, or first top up one named item of it (food, health, blocks, a spare pickaxe, wood) or leave the valuables behind?**
+**Cross into the Nether with the kit carried now, or first top up one named item of it (health, gold, wood, a cauldron) or leave the valuables behind?**
 
-- When: In the Overworld on the way through a portal, in Survival, with some item of the kit short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); held until what is on offer changes or for ten working minutes.
+- When: In the Overworld on the way through a portal, in Survival, with health, gold or wood short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); the food, blocks and spare pickaxe are the ladder's rungs and are only said here, as left from them; held until what is on offer changes or for ten working minutes.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
@@ -452,18 +452,31 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `cross_now` | root | cross with what is carried | always |
-| `top_up_food` | root | gather food first, enough for the Nether stay the goal needs | fewer food points carried than the stay the goal still needs takes (src/crossing-kit.js netherStay: the rods and pearls left, on the two hours a practiced player takes for all of them, at about forty hunger an hour; eighty points for the whole stay), monsters on; said with the stay, its hunger and what raw and cooked count for (note 607); said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594) |
-| `top_up_food_near` | root | gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here | food short and some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594) |
-| `top_up_cook` | root | cook the raw food carried first, at a furnace put down here | food short, raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, and the seconds (note 594) |
+| `cross_now` | root | cross with what is carried | always; said with each item of the kit and what the ladder's kit rungs left short |
 | `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
-| `top_up_blocks` | root | mine stone first, up to two stacks of blocks | fewer than 128 building blocks carried |
-| `top_up_pickaxe` | root | make a stone pickaxe first, as the spare | no stone pickaxe or better, or the best has under 24 uses |
 | `top_up_gold` | root | make golden boots first, a piece of gold worn so piglins leave the bot be | no piece of golden armour carried |
 | `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
 | `top_up_cauldron` | root | make a cauldron and fill a bucket with water first, to put a fire out in the Nether | no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short, and is never the fallback; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634) |
 | `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |
+
+### `kit_food`
+
+**Food for the Nether stay: which way to it, or go on without more for now?**
+
+- When: In the Overworld on the ladder's food rung (fewer food points carried than the Nether stay the goal still needs, crossing-kit.js netherStay), in Survival with monsters on; held until what is on offer changes or for ten minutes. Ten working minutes with no food point more set the rung aside half an hour instead of asking.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Options built in: src/work.js (kitFoodStep), src/crossing-kit.js (kitRungs, netherStay)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `go_without` | root | go on without more food for now | always; the food rung is set aside half an hour and the ladder goes on, to the crossing if nothing else is left |
+| `top_up_food` | root | gather food: the home chest, the plot, or hunting animals | always; said with where it goes (the home chest, the plot, an animal in view hunted, or a search outward with no bound), the trip to food known, and the frame begun it leaves where it stands (notes 527, 594) |
+| `top_up_food_near` | root | gather food at the known food whose trip is shortest, on to the frame begun or, with none begun, back here | some food known (animals in view, a herd seen, a village, the home plot or chest); said with the walk there, the gathering, the walk on to the frame or back here, and what it gives raw and cooked (notes 527, 594) |
+| `top_up_cook` | root | cook the raw food carried first, at a furnace put down here | raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, the seconds, and who is coming meanwhile (notes 594, 628) |
 
 ### `rung_elsewhere`
 
@@ -550,7 +563,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, iron armour, golden boots, bow, arrows, diamond sword); pickaxes are never skipped. Each is said alike, with what it is for, what it takes from the pockets and what going without costs |
+| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, iron armour, golden boots, bow, arrows, diamond sword, and last before the portal, while blaze rods are still needed, the crossing kit: a spare pickaxe, blocks and food for the stay, crossing-kit.js kitRungs, note 673); pickaxes are never skipped. Each is said alike, with what it is for, what it takes from the pockets and what going without costs |
 | `stage_[a-z_]+` (pattern) | root | the ladder's later stage | past the preparation ladder in the Overworld (pearls, the crossing, the stronghold): the fallback |
 | `take_up_[a-z_]+` (pattern) | root | take up a rung set aside for the Nether after all | a rung Jev chose to go without before the Nether (nether_first) and still waiting (note 498); said with what it is for and when it would come back on its own |
 | `nether_first` | root | leave the steps that may wait and go for the Nether now | in the Overworld when every step left before the Nether may wait (DEFERRABLE); said with what going without each costs and the minutes spent on the step at hand |

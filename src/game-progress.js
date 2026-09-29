@@ -122,7 +122,8 @@ function preparationStage(bot, goal = {}) {
 // 2026-09-26). What going without costs is said with the Nether-first
 // option, hit by hit, for the mobs there.
 const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
-const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES]);
+// The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
+const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);
@@ -137,8 +138,13 @@ function preparationRung(bot, goal = {}, now = Date.now()) {
   // was handed the bow and then the diamond sword it had just left for the
   // Nether, chose the Nether first again five times a second, and stalled
   // (note 498).
-  return ladderRung(bot, goal, new Set(Object.keys(resting))) || ladderRung(bot, goal, goingWithout(resting));
+  // The crossing's kit is not handed back that way: a kit rung set aside for
+  // any reason waits out its rest, and the crossing goes on without it
+  // (note 673). Handed back, a food search that had stalled was the step
+  // again the moment it was set aside.
+  return ladderRung(bot, goal, new Set(Object.keys(resting))) || ladderRung(bot, goal, new Set([...goingWithout(resting), ...kitResting(resting)]));
 }
+const kitResting = resting => Object.keys(resting).filter(k => require('./crossing-kit').KIT_PHASES.has(k));
 const GOING_WITHOUT = /Nether first|fight with what is carried/;
 const goingWithout = resting => new Set(Object.keys(resting).filter(k => GOING_WITHOUT.test(resting[k].why || '')));
 // The rungs Jev set aside to go without, in ladder order, each with when it
@@ -317,6 +323,9 @@ function ladderRung(bot, goal, waiting) {
   // With the sword in hand and the sun up, the ladder is done for now: the
   // walk to the portal takes the day, and dusk brings the bow rung back.
   if (best('sword') < 4 && ready({ phase: 'diamond_sword' })) return another('diamond_sword');
+  // Last before the portal, the crossing's kit: a spare pickaxe, blocks and
+  // food for the stay (crossing-kit.js kitRungs, note 673).
+  for (const rung of require('./crossing-kit').kitRungs(bot, goal)) if (ready(rung)) return rung;
   return null;
 }
 
@@ -359,10 +368,11 @@ function carryBedRung(bot, goal = {}) {
 // The rungs that are the fighting kit: tools, shield, armour, and the
 // golden boots the Nether's piglins look for. The rest of the ladder (bed,
 // bucket, bow, the better sword) waits while supplies are in hand.
-const GEAR = /^(stone_pickaxe|stone_sword|iron_pickaxe|shield|iron_armour|iron_(helmet|chestplate|leggings|boots)|golden_boots)$/;
+// The crossing's kit with it, rods still to get (note 673), unless set aside.
+const GEAR = /^(stone_pickaxe|stone_sword|iron_pickaxe|shield|iron_armour|iron_(helmet|chestplate|leggings|boots)|golden_boots|nether_(pickaxe|blocks|food))$/;
 const NOT_GEAR = new Set(['iron_sword', 'bucket', 'bow', 'arrows', 'diamond_sword']);
 function gearStage(bot, goal) {
-  const rung = ladderRung(bot, goal, NOT_GEAR);
+  const rung = ladderRung(bot, goal, new Set([...NOT_GEAR, ...kitResting(attemptsFor(goal).of('rung'))]));
   if (!rung || !GEAR.test(rung.phase)) return null;
   const home = homeOf(bot, goal);
   if (home?.stash?.position) {
@@ -807,6 +817,10 @@ async function gameStep(bot, task, goal, save, actions) {
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save, { elsewhere: away => elsewhereStep(bot, task, goal, save, stage, away, actions) });
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
+  else if (stage.action === 'nether_food') {
+    if (!actions.nether_food) throw Object.assign(new Error('Game progression is blocked at the food for the Nether: the nether food action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
+    await actions.nether_food(bot, task, goal, save, stage);
+  }
   else if (stage.action === 'gather_wool') {
     if (!actions.gather_wool) throw Object.assign(new Error('Game progression is blocked at the bed: the gather wool action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.gather_wool(bot, task, goal, save, stage);

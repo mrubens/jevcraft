@@ -275,18 +275,16 @@ test('a ring search is turned to its next leg from the same origin, not dropped'
   assert.deepEqual(turned.enderman, { attempts: 0, origin: { x: -369, y: 59, z: -69 }, leg: 2 });
 });
 
-test('without Jev, the crossing kit\'s own walk gathers two stacks of blocks to bridge and pillar with', async () => {
-  // mid-87-k: out of its portal on an island in the lava sea with too few blocks to reach a shore.
-  const { gameHandlers } = require('../src/work');
+test('without Jev, the ladder gathers two stacks of blocks to bridge and pillar with before the portal', async () => {
+  // mid-87-k: out of its portal on an island in the lava sea with too few blocks to reach a shore. The blocks are a
+  // rung before the portal now (crossing-kit.js kitRungs, note 673), taken in the ladder's order without Jev.
+  const { kitRungs } = require('../src/crossing-kit');
   const registry = require('minecraft-data')('26.1');
-  const items = [{ name: 'cooked_beef', count: 10, type: registry.itemsByName.cooked_beef.id }, { name: 'cobblestone', count: 20, type: registry.itemsByName.cobblestone.id }];
+  const items = [{ name: 'cooked_beef', count: 10, type: registry.itemsByName.cooked_beef.id }, { name: 'cobblestone', count: 20, type: registry.itemsByName.cobblestone.id },
+    { name: 'iron_pickaxe', count: 1 }, { name: 'stone_pickaxe', count: 1 }];
   const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
     inventory: { items: () => items, emptySlotCount: () => 10, slots: [] }, entity: { position: { x: 0, y: 64, z: 0 } } };
-  const goal = { expeditionReady: true };
-  const seen = [];
-  const entered = await gameHandlers(bot).enter_nether(bot, new Task('cross'), goal, () => { if (goal.step) seen.push(goal.step.action); }).catch(() => false);
-  assert.equal(entered, false, 'not through the portal with twenty blocks');
-  assert(seen.includes('blocks_for_nether'), `the blocks come first: ${seen}`);
+  assert.deepEqual(kitRungs(bot, {}).map(r => [r.phase, r.item, r.count]), [['nether_blocks', 'cobblestone', 128]], 'twenty carried, a hundred and eight more');
 });
 
 test('an item left in the crafting grid with the pockets full is put away after room is made', async () => {

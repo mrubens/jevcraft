@@ -220,6 +220,9 @@ test('before the Nether the walk home with the valuables is the kit\'s to offer,
   const w = await establishedHome({ items: gear });
   const { bot, goal, save, actions } = w;
   const chest = chestAt(w, []);
+  // The crossing's kit rungs come first (note 673); gone without, the portal.
+  assert.equal(nextGameStage(bot, goal).phase, 'nether_blocks');
+  for (const r of require('../src/crossing-kit').KIT_PHASES) require('../src/progress').setAside(goal, 'rung', r, 'Jev chose the Nether first', 1800000);
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
   const ran = [];
   const handlers = { stash_valuables: (b, t, g, s) => stash.stashValuables(b, t, g, s, actions), prepare_combat: async () => { ran.push('prepare_combat'); return false; }, enter_nether: async () => { ran.push('enter_nether'); } };
@@ -327,7 +330,9 @@ test('blaze rods, powder and pearls left in the stash are fetched before the por
   assert.equal(stage.phase, 'restock_supplies');
   assert.deepEqual(byItem(stage.home.items), { blaze_rod: 6, ender_pearl: 3 });
   w.goal.survival.home.stash.contents = {};
-  assert.equal(nextGameStage(w.bot, w.goal).action, 'enter_nether', 'with nothing in the chest the portal is next');
+  assert.equal(nextGameStage(w.bot, w.goal).phase, 'nether_blocks', 'with nothing in the chest the crossing\'s kit is next (note 673)');
+  for (const r of require('../src/crossing-kit').KIT_PHASES) require('../src/progress').setAside(w.goal, 'rung', r, 'Jev chose the Nether first', 1800000);
+  assert.equal(nextGameStage(w.bot, w.goal).action, 'enter_nether', 'and gone without, the portal');
 });
 
 test('a restock makes room before it opens the chest, and a restock that takes nothing is not planned again at once', async () => {

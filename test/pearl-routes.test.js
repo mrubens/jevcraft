@@ -117,5 +117,8 @@ test('the Overworld\'s endermen chosen for the pearls: back through the portal f
   const asked = await askStall(t, bot, goal, 'pearls_nether');
   assert.match(asked[0].options.pearls_nether || '', /^Drop the Overworld's hunt chosen/);
   assert.equal(goal.pearlRoute, undefined);
+  // The crossing's kit first, last before the portal (note 673); gone without, the portal.
+  assert.match(nextGameStage(bot, goal).phase, /^nether_(pickaxe|blocks|food)$/);
+  for (const r of require('../src/crossing-kit').KIT_PHASES) setAside(goal, 'rung', r, 'Jev chose the Nether first', 1800000);
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
 });

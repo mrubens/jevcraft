@@ -56,10 +56,11 @@ test('a mob that would not be at the bot within the stretch is said and costs no
 });
 
 test('the cook is offered with what standing at the furnace costs here, and that the meat is not eaten meanwhile', async () => {
-  const { crossingKitReady } = require('../src/work');
+  // The cook is a way to the food rung's food now (work.js kitFoodStep, note 673).
+  const { crossingKitReady, kitFoodStep } = require('../src/work');
   const log = {};
   const bot = scene({ mobs: [{ name: 'zombie', at: 10 }, { name: 'zombie', at: 20 }, { name: 'skeleton', at: 30 }] });
-  assert.equal(await crossingKitReady(bot, new Task('win'), {}, () => {}, answering('cross_now', log)), true);
+  assert.equal(await kitFoodStep(bot, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log)), false);
   const cook = log.offered.top_up_cook;
   assert.match(cook, /^Cook the raw food carried first: 7 mutton/);
   assert.match(cook, /about 72 seconds in all, with no walk\./);
@@ -67,19 +68,20 @@ test('the cook is offered with what standing at the furnace costs here, and that
   assert.match(cook, /Standing at the furnace for those 72 seconds with 3 hostile mobs that can get to the bot within 24 blocks \(the shooters to 48\): a zombie 10 blocks off/);
   assert.match(cook, /a skeleton 30 blocks off, it has the bot in sight and fires at it from as far as \d+ blocks/);
   assert.match(cook, /The cook is stopped when one of them comes within eight blocks in sight or lands a hit, and the batch stays in the furnace to be collected\./);
-  // Waiting to heal says the same, and that at hunger 17 the wait has no end of its own.
+  // Waiting to heal (the crossing's) says the same, and that at hunger 17 the wait has no end of its own.
+  assert.equal(await crossingKitReady(bot, new Task('win'), {}, () => {}, answering('cross_now', log)), true);
   assert.match(log.offered.top_up_health, /At hunger 17 health does not come back, so this wait has no end of its own: a minute of it is counted\. Standing here for those 60 seconds with 3 hostile mobs/);
 });
 
 test('with no mob about the cook says nothing of them; at full hunger and health it says nothing of the meat', async () => {
-  const { crossingKitReady } = require('../src/work');
+  const { kitFoodStep } = require('../src/work');
   const log = {};
   const quiet = scene({ mobs: [] });
-  await crossingKitReady(quiet, new Task('win'), {}, () => {}, answering('cross_now', log));
+  await kitFoodStep(quiet, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log));
   assert.doesNotMatch(log.offered.top_up_cook, /Standing at the furnace/);
   assert.match(log.offered.top_up_cook, /not eaten, while it cooks/, 'hurt and under eighteen: still said');
   const fed = scene({ health: 20, food: 18, mobs: [] });
-  await crossingKitReady(fed, new Task('win'), {}, () => {}, answering('cross_now', log));
+  await kitFoodStep(fed, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log));
   assert.doesNotMatch(log.offered.top_up_cook || '', /not eaten, while it cooks/);
 });
 
