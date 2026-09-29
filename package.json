@@ -29,7 +29,7 @@
     "plan": "node scripts/try-plan.js",
     "live": "node scripts/live-test.js",
     "pretest": "node scripts/check-node.js",
-    "test": "JEV_NONE_GOOD=0 node --test test/*.test.js",
+    "test": "JEV_NONE_GOOD=0 nice -n 15 node --test test/*.test.js",
     "accept": "node scripts/acceptance.js",
     "build-followup": "node scripts/build-followup-test.js"
   },
