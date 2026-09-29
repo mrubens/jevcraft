@@ -46,7 +46,7 @@ for (const file of files) {
       const probs = j?.probabilities ? Object.entries(j.probabilities).sort((a, b) => b[1] - a[1]) : [];
       const runner = probs.find(([k]) => k !== e.label);
       console.log(`${t(e.at)} ${pos(s)} hp ${r(s.health ?? 0)} food ${s.food ?? '?'}  ${q.id || e.source || ''} -> ${e.label}${j?.confidence != null ? ` (${j.confidence})` : ''}${runner ? `, next ${runner[0]} ${runner[1]}` : ''}`);
-      if (withOptions && q.options) for (const [k, v] of Object.entries(q.options)) console.log(`      ${k}: ${String(v?.description || v).slice(0, 400)}`);
+      if (withOptions && q.options) for (const [k, v] of Object.entries(q.options)) console.log(`      ${k}: ${(typeof v === 'string' ? v : v?.description || v?.label || JSON.stringify(v)).slice(0, 400)}`);
     } else if (e.kind === 'chat') {
       const m = said(e); if (m) console.log(`${t(e.at)} chat: ${m.slice(0, 160)}`);
     } else if (['error', 'no_route', 'navigation_stall'].includes(e.kind)) {
