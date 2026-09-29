@@ -792,7 +792,23 @@ async function openWindow(bot, task, open, { block = null, what = 'the window', 
   return value;
 }
 
-module.exports = { openWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+// A block that opens a window (or turns, rings, lights) when clicked
+// standing up: placing against it clicks it instead.
+const INTERACTABLE = new Set(require('mineflayer-pathfinder/lib/interactable.json'));
+const opensOnClick = name => !!name && (INTERACTABLE.has(name) || /_(door|trapdoor|button|fence_gate|shulker_box|bed|sign|anvil)$|^(barrel|loom|cartography_table|grindstone|crafter|lectern|decorated_pot|chiseled_bookshelf)$/.test(name));
+
+// A window left open that nothing is working in: a click on a furnace while
+// placing a block opens it, and while it is open the server takes no click
+// in the pockets' own window (its crafting grid among them) and says
+// nothing (note 690). Closed, with what it was returned for the record.
+function closeStrayWindow(bot) {
+  const w = bot?.currentWindow;
+  if (!w || w === bot.inventory) return null;
+  try { bot.closeWindow(w); } catch (_) { /* gone */ }
+  return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
+}
+
+module.exports = { openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

@@ -17,6 +17,7 @@
 const { Vec3 } = require('vec3');
 const { natural } = require('./tunneling');
 const terrain = require('./terrain');
+const { opensOnClick, closeStrayWindow } = require('./skills');
 
 const DIRS = { north: new Vec3(0, 0, -1), east: new Vec3(1, 0, 0), south: new Vec3(0, 0, 1), west: new Vec3(-1, 0, 0) };
 const UP = new Vec3(0, 1, 0), DOWN = new Vec3(0, -1, 0);
@@ -897,9 +898,23 @@ async function perform(bot, task, m, { dig }) {
   if (m.kind === 'place') {
     await equipBlock(m.block);
     const faces = [DOWN, ...Object.values(DIRS)].map(f => [m.cell.plus(f), f.scaled(-1)]);
-    const anchor = faces.find(([p]) => solid(bot.blockAt(p)?.name));
+    // A block that opens on a click (a furnace, a table, a chest) is not
+    // placed against standing up: the click opens it. 25588 placed north
+    // against its own furnaces 95 times in an hour; the furnace's window
+    // stayed open, and every craft in the pockets' grid after it was
+    // refused by the server without a word, fourteen times (note 690).
+    // Another face first; where it is the only one, crouched, as a player.
+    const anchors = faces.filter(([p]) => solid(bot.blockAt(p)?.name));
+    const anchor = anchors.find(([p]) => !opensOnClick(bot.blockAt(p)?.name)) || anchors[0];
     if (!anchor) throw new Error('Nothing solid to place against');
-    await bot.placeBlock(bot.blockAt(anchor[0]), anchor[1]);
+    const crouch = opensOnClick(bot.blockAt(anchor[0])?.name) && !bot.getControlState?.('sneak');
+    try {
+      if (crouch) { bot.setControlState('sneak', true); await bot.waitForTicks?.(1); task.check(); }
+      await bot.placeBlock(bot.blockAt(anchor[0]), anchor[1]);
+    } finally {
+      if (crouch) bot.setControlState('sneak', false);
+      closeStrayWindow(bot);
+    }
     return;
   }
   if (m.kind === 'pillar') {

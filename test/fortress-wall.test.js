@@ -106,7 +106,12 @@ test('from the recorded spot, fortress_approach offers mining the blocks and cro
   // Its legs from here as they rested then: two at the gold ore, two out of blocks.
   const goal = { fortressSearch: { axis: 1, legs: 22, since: now - 146 * 60000,
     legRests: { east: rest('nether gold ore in the way'), south: rest('out of blocks (0 carried)'), west: rest('out of blocks (0 carried)'), north: rest('nether gold ore in the way') } } };
-  await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {} });
+  // The recorded spot's question as it was asked then, before the visit was
+  // asked first (note 638): a go_in chosen holds, and leaving is not offered
+  // with it (note 689, test/intention-689.test.js).
+  const visit = process.env.JEV_FORTRESS_VISIT; process.env.JEV_FORTRESS_VISIT = '0';
+  try { await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {} }); }
+  finally { if (visit === undefined) delete process.env.JEV_FORTRESS_VISIT; else process.env.JEV_FORTRESS_VISIT = visit; }
   assert.equal(client.asked.length, 1);
   assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
   const { options, state } = client.asked[0];

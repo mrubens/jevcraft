@@ -237,7 +237,7 @@ test('before the Nether the walk home with the valuables is the kit\'s to offer,
   assert.match(asked.cross_now, /and with the valuables carried/);
   // Chosen, the stash itself: once, and the next pass has nothing to leave.
   assert.equal(await stash.stashValuables(bot, new Task('win'), goal, save, actions), false);
-  assert.deepEqual(chest.stored(), { diamond: 3, iron_ingot: 4, gold_ingot: 2, iron_pickaxe: 1, iron_sword: 1, cooked_beef: 2 }, 'eight ingots stay for a tool; the rest, the diamonds, and the kit spares while there (the iron pickaxe behind the diamond one, the iron sword behind the diamond one, two steaks over the reserve) go in');
+  assert.deepEqual(chest.stored(), { diamond: 3, iron_ingot: 4, gold_ingot: 2, iron_pickaxe: 1, iron_sword: 1 }, 'eight ingots stay for a tool; the rest, the diamonds, and the kit spares while there (the iron pickaxe behind the diamond one, the iron sword behind the diamond one) go in; the steaks stay for the Nether (note 690)');
   assert(bot.inventory.items().some(i => i.name === 'diamond_pickaxe'), 'the pickaxe is a tool, not a valuable');
   assert.equal(await stash.stashValuables(bot, new Task('win'), goal, save, actions), true);
   assert.equal(chest.window.opened, 1);

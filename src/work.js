@@ -6,7 +6,7 @@ const { STALL_MS, GROUND, watchStalls, unwatchStalls, checkStall, takeStall, rec
 
 const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
-const { navigate, surveyRoute, equipBestTool, pickaxeTier, pickaxeDurability, countOf, shakeLoose, openWindow } = require('./skills');
+const { navigate, surveyRoute, equipBestTool, pickaxeTier, pickaxeDurability, countOf, shakeLoose, openWindow, closeStrayWindow } = require('./skills');
 const { MINEABLE, TOOL_TIERS } = require('./plan');
 const { houseBlueprint, verifyHouse } = require('./objectives');
 const { deliver } = require('./delivery');
@@ -2123,6 +2123,15 @@ async function workstation(bot, task, name, goal) {
 }
 
 async function craft(bot, task, step, goal) {
+  // A craft that made nothing twice in ten minutes rests, said (note 690).
+  const { noteCraftFailure, noteCraftMade, craftRest } = require('./craft-failures');
+  const rest = craftRest(bot, step.item);
+  if (rest) throw new Blocked(rest.says);
+  // No other window open: while one is, the server takes no click in the
+  // pockets' grid and says nothing (25588's furnace, opened by a block
+  // placed against it, note 690).
+  const stray = closeStrayWindow(bot);
+  if (stray) console.log(`[craft] closed a ${stray} window left open before crafting ${step.item}`);
   // Diagnostic for the dream run: a seventh furnace was crafted with six in
   // the pockets, and no planner path reproduces it offline.
   await settleCraftInventory(bot, task);
@@ -2168,11 +2177,14 @@ async function craft(bot, task, step, goal) {
     try { await waitFor(task, done, 4000); }
     catch (err) {
       task.check();
+      const open = closeStrayWindow(bot);
       try { await openWindow(bot, task, () => bot.craft(recipe, 1, table), { block: table, what: 'the crafting table', timeoutMs: 10000 }); }
       finally { task.check(); await settleCraftInventory(bot, task); }
-      await waitFor(task, done, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice`));
+      try { await waitFor(task, done, 4000, awaitedItem(bot, step.item, before + recipe.result.count * (n + 1), `crafting${table ? ' at a table' : ''}, twice${open ? `, a ${open} window found open between` : ''}`)); }
+      catch (failed) { task.check(); noteCraftFailure(bot, step.item, failed.message.replace(/^Timed out waiting for world\/inventory update: /, 'no output: ')); throw failed; }
     }
   }
+  noteCraftMade(bot, step.item);
   // Its own table comes back into the pack when it is the only one: trials
   // 47 and 51 left theirs where they were used, wore out the last pickaxe
   // underground, and with forty-four iron ingots could make nothing, with

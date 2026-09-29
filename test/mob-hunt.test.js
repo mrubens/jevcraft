@@ -39,6 +39,10 @@ function fixture(name = 'blaze') {
   return { bot, task, target, goal, slots, attacks, controls, movement };
 }
 
+// Tests of the approach's own words, whose stand-in Jev chose go_in at the
+// visit and then leaves: the intention's gate (note 689) is off for them.
+const noIntention = t => { process.env.JEV_INTENTION = '0'; t.after(() => { delete process.env.JEV_INTENTION; }); };
+
 test('the exact supported vanilla mob loot tables extend the Eyes of Ender recipe graph', () => {
   const sources = knowledge(registry).mobSources;
   assert.equal(sources.blaze_rod[0].entity, 'blaze'); assert(sources.blaze_rod[0].requiresPlayerKill);
@@ -566,7 +570,8 @@ function jevStub(picks) {
   } };
 }
 
-test('a fortress in view is Jev\'s to approach: each way with what it meets, the span\'s cells over lava and the hoglin in sight', async () => {
+test('a fortress in view is Jev\'s to approach: each way with what it meets, the span\'s cells over lava and the hoglin in sight', async t => {
+  noIntention(t);
   // mid-242-c (note 264) and mid-215-e (note 273) each went into the lava sea within a second of seeing a fortress, by a way the code chose alone.
   const { findFortressStep } = require('../src/mob-hunt');
   const { bot, laid } = fortressAcrossLava();
@@ -589,7 +594,8 @@ test('a fortress in view is Jev\'s to approach: each way with what it meets, the
   assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
 });
 
-test('note 641: a level crossing toward a fortress well above says the climb is still to be made from the end of the span', async () => {
+test('note 641: a level crossing toward a fortress well above says the climb is still to be made from the end of the span', async t => {
+  noIntention(t);
   // mid-242-bb-nether-1-fortress-*: "2 from it" was across; the span of 16 blocks ended 37 under the bricks, with none carried, over the lava.
   const { findFortressStep } = require('../src/mob-hunt');
   const bricks = Array.from({ length: 25 }, (_, i) => new Vec3(30 + i, 103, 0));
@@ -630,7 +636,8 @@ test('a fortress in view is asked whether the visit happens now before the way i
   assert.equal(g2.fortressSearch.shunned[0].why, 'Jev chose to leave it and search on');
 });
 
-test('the way chosen to a fortress holds while it makes ground, and a failure is asked again with what failed', async () => {
+test('the way chosen to a fortress holds while it makes ground, and a failure is asked again with what failed', async t => {
+  noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
   const { approachFallback } = require('../src/decisions/travel');
   const { bot } = fortressAcrossLava();
@@ -684,7 +691,7 @@ test('the next leg of the fortress search is Jev\'s: each heading surveyed for o
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 1); assert.equal(client.asked[0].kind, 'fortress');
   const { options, state } = client.asked[0];
-  assert.deepEqual(Object.keys(options).sort(), ['leg_east', 'leg_north', 'leg_south', 'leg_west', 'seek_fortress_height']);
+  assert.deepEqual(Object.keys(options).sort(), ['leg_east', 'leg_north', 'leg_south', 'leg_west', 'seek_fortress_height', 'widen_search']);
   assert.match(options.leg_east, /Go east 96 blocks at y 100: of the 96 cells ahead, 96 of rock to dig \(about 0\.8 seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it\); about 77 seconds/);
   // Each cell priced by its blocks' own dig times (the stub's 0.4 seconds a block), not one trial's six seconds a cell (note 677).
   assert.match(options.leg_south, /40 of open air \(40 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar\) and 56 of rock to dig/);
@@ -835,7 +842,8 @@ function fortressOverhead(position, length = 30) {
   return world;
 }
 
-test('a pillar up over the lava sea with a ghast in view says its push, and that the ghast can shoot the bot on top (mid-208-k-nether-3-fortress-1, note 551)', async () => {
+test('a pillar up over the lava sea with a ghast in view says its push, and that the ghast can shoot the bot on top (mid-208-k-nether-3-fortress-1, note 551)', async t => {
+  noIntention(t);
   // Pillared nine up from a ledge of the lava sea, told "a fall of up to 9 blocks"; a ghast came into view at 54 to 63
   // blocks and its fireball put the bot thirty-seven blocks down into the lava.
   const { findFortressStep } = require('../src/mob-hunt');
@@ -850,7 +858,8 @@ test('a pillar up over the lava sea with a ghast in view says its push, and that
   assert.match(asked.options.pillar_up, /into lava\. In sight: a ghast 51 blocks off\. A ghast 51 blocks off can shoot the bot on top, and a shot that lands pushes it, shield or not; the top has no wall\./);
 });
 
-test('bricks a block off with the fortress\'s floors seven blocks up are not the fortress entered: the way up is asked, a pillar among the ways, and the hunt\'s step is the search (mid-235-p-fortress-6, note 523)', async () => {
+test('bricks a block off with the fortress\'s floors seven blocks up are not the fortress entered: the way up is asked, a pillar among the ways, and the hunt\'s step is the search (mid-235-p-fortress-6, note 523)', async t => {
+  noIntention(t);
   // mid-235-p-fortress-6 stood on its own span beside the fortress's footing, "inside" by a brick a block off, and set out
   // for bricks eight blocks up that no step reached, two a second; each "pass" of that asked stay_in_fortress, and the
   // hunt's step and the search's traded names until the stall watch struck fifty times.
@@ -1688,7 +1697,8 @@ test('at the end of a span the crouch is let go only once the body has stopped',
   assert.equal(release, 'sneak:false:0.00', `the crouch let go at rest: ${log.slice(-4).join(' ')}`);
 });
 
-test('the ways to a fortress say the mobs at its bricks, seen or not', async () => {
+test('the ways to a fortress say the mobs at its bricks, seen or not', async t => {
+  noIntention(t);
   // mid-227-o dug down into its fortress told "none in view", onto a blaze two blocks off and six wither skeletons (2026-09-27).
   const { findFortressStep } = require('../src/mob-hunt');
   const { bot } = fortressAcrossLava();
@@ -1858,7 +1868,8 @@ test('crouched over an edge on the block beside, the bot steps back onto it befo
   assert(bot.entity.position.x >= 28, `across, at ${bot.entity.position}`);
 });
 
-test('leaving a fortress leaves all of it in view, not sixteen blocks of it: the next question is the leg, not the same fortress found again (note 533)', async () => {
+test('leaving a fortress leaves all of it in view, not sixteen blocks of it: the next question is the leg, not the same fortress found again (note 533)', async t => {
+  noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
   const { bot } = fortressFromLedge(new Vec3(-2.5, 65, 0.5));
   const client = pickFirst(['keep_searching']);
@@ -2004,7 +2015,7 @@ test('on a span over a walkable cavern floor, going down and walking the floor i
   assert.match(options.leg_east, /it needs 96 blocks laid.*the blocks run out at cell 12/);
   for (const k of ['floor_east', 'floor_south', 'floor_west', 'floor_north']) assert(options[k], `${k} offered`);
   const said = options.floor_east;
-  assert.match(said, /^Go down to the floor and walk it east 96 blocks, bridging only across the lava and open air on it\. The way down to the floor 17 blocks below \(y 57, seen under \d+ of the 64 columns round the bot\) is \d+ steps ending \d+ blocks across from here, dropping 3 \(no damage\): about \d+ seconds/);
+  assert.match(said, /^Unseen ahead: [^.]*\. .*Go down to the floor and walk it east 96 blocks, bridging only across the lava and open air on it\. The way down to the floor 17 blocks below \(y 57, seen under \d+ of the 64 columns round the bot\) is \d+ steps ending \d+ blocks across from here, dropping 3 \(no damage\): about \d+ seconds/);
   assert.match(said, /On the floor, of the 96 cells east: 93 of floor to walk, 3 of lava on the floor, all at y 57; about \d+ seconds\. The lava and open air need 3 blocks laid, 12 carried: 9 left after\./);
   assert.match(said, /By the floor that way: 2 piglins\./);
   assert.match(options.floor_west, /of wall to dig/);

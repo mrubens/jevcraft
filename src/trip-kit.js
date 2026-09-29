@@ -33,8 +33,11 @@ function tripKeep(bot, trip) {
   const foodPoints = name => bot.registry?.foodsByName?.[name]?.foodPoints || 0;
   const unsafe = /^(rotten_flesh|spider_eye|poisonous_potato|pufferfish|chicken)$/;
   let points = 0;
+  // In the Nether all of it goes along (food-keep.js, note 690): what is
+  // left in the chest is out of reach there, and nothing reliably gives more.
+  const allFood = /nether/.test(String(bot.game?.dimension || ''));
   for (const i of items.filter(i => foodPoints(i.name) > 0 && !unsafe.test(i.name)).sort((a, b) => foodPoints(b.name) - foodPoints(a.name))) {
-    const n = Math.min(i.count, Math.ceil((FOOD_POINTS - points) / foodPoints(i.name)));
+    const n = allFood ? i.count : Math.min(i.count, Math.ceil((FOOD_POINTS - points) / foodPoints(i.name)));
     if (n > 0) { add(i.name, n); points += n * foodPoints(i.name); }
   }
   // Gold for the piglins: every golden armour piece goes along to a bastion.
@@ -83,7 +86,8 @@ async function packLight(bot, task, goal, save, actions, trip, { now = Date.now(
       return done;
     });
     cache.contents = home.stash.contents || {}; save();
-    bot.chat?.(`Packing light for ${trip.replaceAll('_', ' ')}: ${stored.length} kinds of things left in a chest here. If I die out there, they wait for me.`);
+    const food = require('./food-keep').foodSays(bot, stored);
+    bot.chat?.(`Packing light for ${trip.replaceAll('_', ' ')}: ${stored.length} kinds of things left in a chest here${food ? `, food among them: ${food}` : ''}. If I die out there, they wait for me.`);
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
     setAside(goal, 'pack_light', trip, err, 20 * 60 * 1000); save();

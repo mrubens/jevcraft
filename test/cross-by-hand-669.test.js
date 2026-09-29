@@ -49,7 +49,12 @@ function jev(picks) {
   } };
 }
 
-test('with no pickaxe the crossing says its seconds by hand against a pickaxe\'s, the fact says rock is dug by hand, and making one is a way in (note 669)', async () => {
+// Tests of the approach's own words, whose stand-in Jev chose go_in at the
+// visit and then leaves: the intention's gate (note 689) is off for them.
+const noIntention = t => { process.env.JEV_INTENTION = '0'; t.after(() => { delete process.env.JEV_INTENTION; }); };
+
+test('with no pickaxe the crossing says its seconds by hand against a pickaxe\'s, the fact says rock is dug by hand, and making one is a way in (note 669)', async t => {
+  noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
   const items = [item('blackstone', 23), item('crafting_table', 1), item('oak_planks', 2), item('basalt', 146)];
   const { bot } = deltas(items);
@@ -79,7 +84,8 @@ test('with no pickaxe the crossing says its seconds by hand against a pickaxe\'s
   assert.match(again.state.pickaxe, /^stone pickaxe/);
 });
 
-test('with no pickaxe and no wood for one, the stems are a way in and the crossing says none can be made (note 669)', async () => {
+test('with no pickaxe and no wood for one, the stems are a way in and the crossing says none can be made (note 669)', async t => {
+  noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
   // The window's pockets: blackstone and a table, no planks, no sticks.
   const items = [item('blackstone', 23), item('crafting_table', 1), item('basalt', 146)];

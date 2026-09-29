@@ -136,6 +136,8 @@ function sourceDescription(decision, key) {
   return null;
 }
 
+// Which way the leg goes, so a person watching sees the search turn (note 689).
+const legHeading = goal => { const h = goal?.fortressSearch?.lastHeading; return Number.isInteger(h) && h >= 0 && h < 4 ? `, heading ${['east', 'south', 'west', 'north'][h]}` : ''; };
 const some = (count, value) => count > 1 ? `${count} ${plural(count, value)}` : `some ${plural(2, value)}`;
 function stepVariants(goal, step) {
   const detail = step.detail && typeof step.detail === 'object' ? step.detail : null;
@@ -156,7 +158,7 @@ function stepVariants(goal, step) {
     case 'strike_out': return ["Nothing here. I'll try somewhere new.", 'Time to look somewhere else.'];
     case 'stock_food_for_nether': return "I'm stocking up on food before the Nether.";
     case 'return_for_food': return "I'm out of food. Back through the portal to eat.";
-    case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?" : step.found ? "A fortress! I'm heading for it." : `I'm looking for a fortress (leg ${step.legs || 1}).`;
+    case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?" : step.found ? "A fortress! I'm heading for it." : `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
     case 'collect': return `I'm picking up the ${name(step.item || step.drops)}.`;
     case 'place': case 'build': case 'build_schematic': {
       const what = goal.kind === 'house' ? ' the house' : goal.design?.source?.name ? ` ${goal.design.source.name}` : '';

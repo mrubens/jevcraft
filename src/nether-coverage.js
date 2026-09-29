@@ -194,20 +194,51 @@ function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REV
   return { cells, unseen, unseenInView: upTo ? unseenInView : null, openCells: upTo ? upTo[length] : null, stood, seenLine, length, reveal };
 }
 const chunks = cells => Math.round(cells / 16);
+// What a leg is for, said first and short: the new ground it looks over.
+// Said after the cells and the blocks, a leg's value came last in 1,400
+// characters, and 324 of 1,232 legs chosen from 12:00Z on 2026-09-29 went
+// over ground more than half seen, 263 of them with a leg half unseen or
+// more on offer (note 688). "Unseen ahead" is the ground within 128 blocks
+// of the line, ahead and past its end, that no line from the eyes has
+// reached at fortress heights (the guidance says what that is).
 function headingSays(h, name) {
   if (!h.cells) return '';
   const all = chunks(h.cells), un = chunks(h.unseen);
-  const share = h.unseen / h.cells;
-  const ground = `of the ground within ${h.reveal} blocks of this leg's line ${name}, ahead and on past its end (about ${all} chunks), about ${un} chunk${un === 1 ? '' : 's'} ${un === 1 ? 'is' : 'are'} unseen at fortress heights (no line from the eyes has reached it through open air between y ${BAND_LOW} and ${BAND_HIGH - 1})`;
-  const view = h.unseenInView === null || !h.unseen ? '' : h.unseenInView === h.unseen ? '' :
-    !h.openCells ? `, and past its first ${NEAR} blocks the line is rock or lava at this height all the way, so none of it is seen from the leg itself` :
-    `, about ${chunks(h.unseenInView)} of them within ${h.reveal} blocks of the ${h.openCells} blocks of the line past its first ${NEAR} in open air (from inside the rock nothing is seen)`;
-  const walked = !h.stood ? '' : h.stood * 2 >= h.length ? ` The bot has stood on ${h.stood} of the ${h.length} blocks of this leg's own line before: it walks again ground already walked and looked at from, and what is unseen that way lies off to its sides and past its end.` :
-    ` The bot has stood on ${h.stood} of the ${h.length} blocks of this leg's own line before.`;
-  if (share <= 0.2) return ` Mostly seen: ${ground}, so this leg goes mostly over ground already looked over.${walked}`;
-  return ` ${capital(ground)}${view}.${walked}`;
+  const pct = Math.round(h.unseen / h.cells * 100);
+  const view = h.unseenInView === null || !h.unseen || h.unseenInView === h.unseen ? '' :
+    !h.openCells ? `; past its first ${NEAR} blocks the line is rock or lava at this height, so none of it is seen from the leg itself` :
+    `; about ${chunks(h.unseenInView)} of them lie beside the ${h.openCells} blocks of its line in open air`;
+  const walked = !h.stood ? '' : h.stood * 2 >= h.length ? ` The bot has stood on ${h.stood} of its ${h.length} blocks before: it walks again ground already walked and looked from, and what is unseen that way lies off to its sides and past its end.` :
+    ` The bot has stood on ${h.stood} of its ${h.length} blocks before.`;
+  return ` Unseen ahead: about ${un} of ${all} chunks (${pct}%)${pct <= 20 ? ', mostly seen already' : ''}${view}.${walked}`;
 }
-const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
+// A leg back over the last one, said plainly: how far back that leg began
+// and how much of this one goes over it. `from` is how far off the last
+// leg began (null where it is not known).
+function backSays(from, name, length = LEG) {
+  if (!(from >= 8)) return ' This is back the way the last leg came.';
+  return ` Back over the last leg's own line: that leg began ${from} blocks ${name} of here, and ${from >= length ? `all ${length} blocks of this one go` : `this one's first ${from} blocks go`} over the ground it just searched, already looked over from there.`;
+}
+
+// The search widened round where it began, a square spiral: each side goes
+// clockwise (east, south, west, north) along a ring round the start, and
+// the side north along the west turns out past the corner to the next ring,
+// RING blocks farther out. Read from where the bot stands, not a counter:
+// a side cut short is gone on from wherever the bot is. -> { heading (0
+// east, 1 south, 2 west, 3 north), length, end: { x, z }, ring, from (the
+// bot's distance from the start now), endFrom }.
+const RING = 96;
+function spiralSide(origin, here, { ring = RING, most = LEG * 2, least = 16 } = {}) {
+  const dx = here.x - origin.x, dz = here.z - origin.z;
+  const r = Math.max(Math.abs(dx), Math.abs(dz), ring / 2);
+  let h = -dz >= Math.abs(dx) ? 0 : dx >= Math.abs(dz) ? 1 : dz >= Math.abs(dx) ? 2 : 3;
+  const left = k => [r - dx, r - dz, r + dx, r + ring + dz][k];
+  for (let n = 0; n < 4 && left(h) < least; n++) h = (h + 1) % 4;
+  const length = Math.round(Math.max(least, Math.min(most, left(h))));
+  const [sx, sz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][h];
+  const end = { x: Math.round(here.x + sx * length), z: Math.round(here.z + sz * length) };
+  return { heading: h, length, end, ring: Math.round(r), from: Math.round(Math.hypot(dx, dz)), endFrom: Math.round(Math.hypot(end.x - origin.x, end.z - origin.z)) };
+}
 
 // Whether a place lies one heading's way from here: within forty-five
 // degrees of it.
@@ -241,4 +272,4 @@ function coverageSays(state, dim, here, radius = LEG) {
   return `seen at fortress heights (y ${BAND_LOW} to ${BAND_HIGH - 1}) through open air: about ${chunks(count(cov.seen))} chunks' worth of ground in all, and of the ground within ${radius} blocks of here about ${chunks(seen)} of ${chunks(cells)} chunks; stood on: ${count(cov.stood)} columns of 4 by 4 blocks`;
 }
 
-module.exports = { look, stand, watch, headingCoverage, headingSays, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, REVEAL, BAND_LOW, BAND_HIGH };
+module.exports = { look, stand, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };

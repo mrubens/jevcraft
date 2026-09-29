@@ -178,6 +178,11 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
   const client = task?.opportunityClient;
   if (!client) return null;
   const { decide } = require('./decisions');
+  // Food stays where it is all there is (food-keep.js, note 690): 25598
+  // dropped 12 cooked beef in a fortress for a chest's gold ingot.
+  const { foodStays, foodSays, isFood } = require('./food-keep');
+  goal ||= bot._goal || null;
+  const foodKept = foodStays(bot, goal);
   for (let round = 0; round < 3 && !room(); round++) {
     const counts = {};
     for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] || 0) + i.count;
@@ -189,7 +194,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // mid-83-a carried four, and two smelt a hundred and twenty-eight things.
     const cap = n => SURPLUS[n] ?? (n === 'coal' ? 128 : undefined);
     const over = n => cap(n) !== undefined && counts[n] > cap(n);
-    const stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name))
+    const stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)))
       .sort((a, b) => (NO_USE.test(b.name) || over(b.name) ? 1 : 0) - (NO_USE.test(a.name) || over(a.name) ? 1 : 0));
     if (!stacks.length) return false;
     const kind = n => (TOOL.test(n) && n.match(TOOL)[1]) || null;
@@ -269,7 +274,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     try {
       decision = await decide('inventory_drop', { client, bot, task, tree: asked,
         state: { roomFor: name, carriedKinds: Object.keys(counts).length, freeSlots: bot.inventory.emptySlotCount?.() ?? 0, keeping: [...keep],
-          ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}) } });
+          ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}), ...(foodKept ? { foodNotListed: `The food carried is kept: ${foodKept}.` } : {}) } });
     } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
     if (decision.stale) continue;
     // Jev unreachable: the tidy's own order.
@@ -282,6 +287,9 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     task?.check?.();
     try { await (bot.tossStack ? bot.tossStack(stack) : bot.toss(stack.type, null, stack.count)); }
     catch (err) { task?.check?.(); return null; }
+    // Food dropped is said: it left 25598's pockets with no word (note 690).
+    const dropped = foodSays(bot, [stack]);
+    if (dropped) bot.chat?.(`Dropping ${dropped} to make room for the ${name.replaceAll('_', ' ')}.`);
   }
   // Three rounds and still no room, without Jev ever saying "nothing": the
   // tidy's own order, not "no room". mid-79-a's diamond was refused four

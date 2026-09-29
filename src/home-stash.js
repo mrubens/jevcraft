@@ -185,14 +185,19 @@ function capped(home, name, count, moved) {
   return Math.max(0, Math.min(count, cap - (contentsOf(home)[name] || 0) - (moved[name] || 0)));
 }
 
-function stashDeposits(bot, home, { valuables = false, items = bot.inventory.items() } = {}) {
+// Food goes in only where it may leave the pockets (food-keep.js, note
+// 690): not in the Nether, not on the valuables trip before it, and not
+// while the crossing is ahead; there the food carried is the stay's.
+function stashDeposits(bot, home, { valuables = false, items = bot.inventory.items(), goal = bot._goal } = {}) {
   const moves = [], moved = {};
+  const foodKept = valuables || !!require('./food-keep').foodStays(bot, goal);
   const record = move => {
     const count = capped(home, move.item, move.count, moved);
     if (count <= 0) return;
     moves.push({ ...move, count }); moved[move.item] = (moved[move.item] || 0) + count;
   };
   for (const slot of SPARE_KIT) {
+    if (slot.food && foodKept) continue;
     let need = slot.count - storedIn(bot, home, slot);
     for (const spare of spares(bot, slot, items)) {
       if (need <= 0) break;
@@ -467,7 +472,7 @@ async function moveOut(bot, window, move) {
 // Put spares (and, before the Nether, valuables) in the chest. The moves
 // are worked out again against the real contents once the lid is open.
 async function stockStash(bot, task, goal, save, home, actions, { valuables = false, only = null } = {}) {
-  const planned = stashDeposits(bot, home, { valuables }).filter(m => !only || only(m));
+  const planned = stashDeposits(bot, home, { valuables, goal }).filter(m => !only || only(m));
   if (!planned.length) return [];
   const step = () => { goal.step = { action: valuables ? 'stash_valuables' : 'stock_stash', items: planned }; save(); };
   step();
@@ -475,13 +480,16 @@ async function stockStash(bot, task, goal, save, home, actions, { valuables = fa
     // The walk home has its own step; back at the chest, this is the step again.
     step();
     const stored = [];
-    for (const move of stashDeposits(bot, home, { valuables, items: window.items() }).filter(m => !only || only(m))) {
+    for (const move of stashDeposits(bot, home, { valuables, items: window.items(), goal }).filter(m => !only || only(m))) {
       task.check();
       // Only what fits: a free slot, or room in a stack of the same item.
       if (!chestRoomFor(bot, window, move.item)) continue;
       try { await moveIn(bot, window, move); stored.push(move); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
+    // Food put away is said, with what stays carried (note 690).
+    const food = require('./food-keep').foodSays(bot, stored);
+    if (food) bot.chat?.(`Put ${food} in the chest; ${require('./food-keep').carriedPoints(bot)} food points stay in my pockets.`);
     home.stash.stockedAt = new Date().toISOString();
     home.stash.slots = containerSlots(window);
     if (freeContainerSlots(window) === 0) home.stash.fullAt = new Date().toISOString(); else delete home.stash.fullAt;
@@ -600,7 +608,7 @@ function stashChores(bot, goal) {
   if (!home?.stash?.position) return {};
   const distance = Math.round(homeDistance(bot, home));
   if (distance > HOME_REACH) return {};
-  const moves = stashDeposits(bot, home);
+  const moves = stashDeposits(bot, home, { goal });
   if (!moves.length) return {};
   const holds = describeContents(contentsOf(home));
   const kit = describeMoves(moves.filter(m => m.slot)), keepsakes = describeMoves(moves.filter(m => m.keepsake));

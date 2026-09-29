@@ -155,6 +155,7 @@ const HEALING = 'healing is health, hunger, whether health comes back, the food 
 const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFood is the way back through the portal for food; hoglinHunt, the one food of the Nether.';
 const AGAIN = 'sameAnswerAgain, lastAnswersCameToNothing and answersThatCameToNothing are this question\'s recent answers that came to nothing; the same answer again seldom ends differently.';
 const LEDGER = 'An option tried from about here lately says how it ended; waysResting are options left out after coming to nothing here, and when they come back; whatFailedBelow is what the question below tried and why it ended.';
+const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet arrived, done or failed; lastIntention is how the last one ended.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 // Off the Overworld the clock is only minutes (note 677): no day comes to
 // end a wait, nothing burns off, and a wait in a sealed pocket ends only when
@@ -189,7 +190,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const { task, guidance = '' } = own;
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
-  const trail = state?.recentPositions ? ` ${TRAIL}` : '';
+  const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
   const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
@@ -462,12 +463,22 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (read.allResting) { resting = read.heldOut?.length ? read.heldOut : null; if (above?.says) state = { ...(state || {}), nothingAbove: above.says }; }
     below = tried.escalationsFor(goal, id);
   }
+  // One committed intention at a time (intention.js, note 689): while an
+  // answer that takes time holds, a question about the plan is asked without
+  // the options that would replace it, and says it.
+  let underWay = null, intentionEnded = null;
+  if (ledgered) {
+    const g = require('../intention').gate(bot, goal, id, tree);
+    tree = g.tree; underWay = g.underWay; intentionEnded = g.ended;
+    if (g.withheld.length) console.log(`[intention] ${id}: not offered while ${goal.intention?.choice} holds: ${g.withheld.join(', ')}`);
+  }
   const takeOne = (one, why = null) => {
     sayOnce(bot, id, one.path, Date.now(), why);
     const decision = { ...one, id, only: true };
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
     if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, one.path), offered: offeredOf(original, target) });
+    if (ledgered && !decision.stale) require('../intention').after(bot, goal, id, one.path, { target: decision.action?.target || target, state, chosen: false });
     return decision;
   };
   const one = oneWay(tree);
@@ -521,6 +532,13 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && id !== 'body_way' && !state.alight) {
     let alight = null; try { alight = require('../body').burningSays(bot); } catch (_) { /* no body */ }
     if (alight) state = { ...state, alight };
+  }
+  // A craft that made nothing lately, with every such question: 25588's
+  // stick craft failed fourteen times while the stone pickaxe, the upkeep
+  // and the detours each asked for it again (note 690).
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.craftingFailed) {
+    let failed = null; try { failed = require('../craft-failures').craftFailuresSay(bot); } catch (_) { /* no body */ }
+    if (failed) state = { ...state, craftingFailed: failed };
   }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.
@@ -586,6 +604,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (again || quickly || lately) state = { ...state, ...(again ? { sameAnswerAgain: again.says } : {}), ...(quickly ? { lastAnswersCameToNothing: quickly } : {}), ...(lately ? { answersThatCameToNothing: lately } : {}) };
   }
   if (state && typeof state === 'object' && (resting || below)) state = { ...state, ...(resting ? { waysResting: resting } : {}), ...(below ? { whatFailedBelow: below } : {}) };
+  if (state && typeof state === 'object' && (underWay || intentionEnded)) state = { ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
   // each question offers; test/decisions.test.js turns it back on).
   const offerNoneGood = process.env.JEV_NONE_GOOD !== '0' && !!client && GAMEPLAY_AREAS.has(spec.area) && Object.keys(tree).length >= 2 && !tree[NONE_GOOD_KEY];
@@ -671,6 +690,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
   }
   if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, decision.path), offered: offeredOf(original, target) });
+  if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state });
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');

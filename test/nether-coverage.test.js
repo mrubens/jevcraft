@@ -53,12 +53,13 @@ test('each leg says the ground it would show that is unseen and what seen before
   const client = { systemOne: async ({ state: facts, questions }) => { asked.push({ facts, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: 'leg_west', confidence: 0.9 } } }; } };
   await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} }, state);
   const { facts, options } = asked[0];
-  assert.match(options.leg_east, /Mostly seen: of the ground within 128 blocks of this leg's line east, ahead and on past its end \(about \d+ chunks\), about \d+ chunks? (is|are) unseen at fortress heights.*so this leg goes mostly over ground already looked over\. The bot has stood on 9[0-9] of the 96 blocks of this leg's own line before: it walks again ground already walked and looked at from, and what is unseen that way lies off to its sides and past its end\./);
-  assert.match(options.leg_west, /Of the ground within 128 blocks of this leg's line west, ahead and on past its end \(about \d+ chunks\), about \d+ chunks are unseen at fortress heights/);
-  assert.doesNotMatch(options.leg_west, /already looked over|has stood on/);
+  // The ground a leg looks over leads its words (note 688).
+  assert.match(options.leg_east, /^Unseen ahead: about \d+ of \d+ chunks \(\d+%\), mostly seen already\. The bot has stood on 9[0-9] of its 96 blocks before: it walks again ground already walked and looked from, and what is unseen that way lies off to its sides and past its end\. Its end is 96 blocks from where the search began \(the bot is 1 from there now\)\. Go east 96 blocks/);
+  assert.match(options.leg_west, /^Unseen ahead: about \d+ of \d+ chunks \([4-9]\d%\)/);
+  assert.doesNotMatch(options.leg_west, /mostly seen|has stood on/);
   assert.match(options.leg_west, /Seen before and lying this way: the blazes seen 5 times at \(-150, 60, 2\), 151 blocks off\./);
   assert.doesNotMatch(options.leg_east, /the blazes seen/);
-  assert.match(options.leg_north, /past its first 8 blocks the line is rock or lava at this height all the way, so none of it is seen from the leg itself/);
+  assert.match(options.leg_north, /past its first 8 blocks the line is rock or lava at this height, so none of it is seen from the leg itself/);
   assert.match(facts.seenSoFar, /seen at fortress heights \(y 48 to 79\) through open air: about \d+ chunks' worth of ground in all/);
   assert.match(options.go_to_blazes, /It lies west of here; the bot has not stood within 32 blocks of it, so whether it can be walked to is not known\./);
   assert.equal(state.heading, 2);

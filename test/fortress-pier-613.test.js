@@ -40,7 +40,12 @@ function jevStub(picks) {
     if (questions.branch_0.criteria.go_in) return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } };
     asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
 }
-test('under the bridge, the way in is asked about a floor of the fortress\'s own, not the bot\'s own bricks nor the stump of the pier it dug up (mid-242-bb, note 613)', async () => {
+// Tests of the approach's own words, whose stand-in Jev chose go_in at the
+// visit and then leaves: the intention's gate (note 689) is off for them.
+const noIntention = t => { process.env.JEV_INTENTION = '0'; t.after(() => { delete process.env.JEV_INTENTION; }); };
+
+test('under the bridge, the way in is asked about a floor of the fortress\'s own, not the bot\'s own bricks nor the stump of the pier it dug up (mid-242-bb, note 613)', async t => {
+  noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
   const bot = pierBot();
   assert(DUG.includes('-71,44,141') && DUG.includes('-72,45,140'), 'the shaft read from the ground');
@@ -103,7 +108,8 @@ test('bricks the bot lays are noted as they appear beside it, kept with the sear
   assert.ok(!own.ownSet(bot, state).has('2,62,0'), 'and not counted the bot\'s own');
 });
 
-test('a row of the bot\'s own bricks by the bot is not taken for the fortress\'s floor (note 613)', async () => {
+test('a row of the bot\'s own bricks by the bot is not taken for the fortress\'s floor (note 613)', async t => {
+  noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
   const bot = pierBot();
   const own = require('../src/own-blocks');

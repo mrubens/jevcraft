@@ -1190,7 +1190,9 @@ function fortressLegTarget(state, position) {
   // height; a level leg keeps its height between the sea and the roof.
   const y = state.legMode === 'descend' ? FORTRESS_Y : state.legMode === 'floor' && Number.isFinite(state.floorY) ? state.floorY : Math.max(40, Math.min(80, Math.round(position.y)));
   const [dx, dz] = HEADINGS[headingIndex(state)];
-  return new Vec3(Math.round(position.x + FORTRESS_LEG * dx), y, Math.round(position.z + FORTRESS_LEG * dz));
+  // A side of the widening spiral (chooseLeg's widen_search) is its own length.
+  const length = Number.isFinite(state.legLength) ? state.legLength : FORTRESS_LEG;
+  return new Vec3(Math.round(position.x + length * dx), y, Math.round(position.z + length * dz));
 }
 
 // How each heading's last leg ended no nearer, kept on that heading: noted
@@ -1653,8 +1655,25 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // 243-ch walked thirteen legs round a bastion's region, where no fortress
   // begins, never told so (note 652).
   const landmarks = goal.landmarks || [];
-  const headingSays = i => coverage.headingSays(seenThatWay[i], HEADING_NAMES[i]) + thatWay[i] + regions.headingRegionSays(here, HEADINGS[i], regions.known(landmarks), state, dim);
+  const headingSays = i => thatWay[i] + regions.headingRegionSays(here, HEADINGS[i], regions.known(landmarks), state, dim);
   const back = state.legFrom && Number.isInteger(state.lastHeading) ? (state.lastHeading + 2) % 4 : null;
+  // What a leg is for, first: the new ground it looks over, whether it goes
+  // back over the last leg's own line, and where it ends against where the
+  // search began. 25598 (mid-243-hb) at 21:07:55Z on 2026-09-29 went west 90
+  // blocks, ran out of blocks over the lava sea, and chose leg_east (0.2
+  // against 0.19) straight back over them to x -358: "back the way the last
+  // leg came" and "mostly seen" were said, 1,100 characters in, after the
+  // cells and the blocks (note 688).
+  state.origin ||= { x: Math.round(here.x), z: Math.round(here.z) };
+  const origin = state.origin;
+  const fromStart = p => Math.round(Math.hypot(p.x - origin.x, p.z - origin.z));
+  const endSays = (i, length = FORTRESS_LEG) => ` Its end is ${fromStart({ x: here.x + HEADINGS[i][0] * length, z: here.z + HEADINGS[i][1] * length })} blocks from where the search began (the bot is ${fromStart(here)} from there now).`;
+  const lastFrom = back === null ? null : Math.round(Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z));
+  // Said last in the leg's words and as the search's loss: said first as
+  // "ground just walked" it read as the one sure way, and the recorded
+  // question went leg_east 10 of 10 (seek_fortress_height 9 of 10 as now).
+  const backSays = i => i !== back ? '' : coverage.backSays(lastFrom, HEADING_NAMES[i], FORTRESS_LEG);
+  const legLead = i => `${coverage.headingSays(seenThatWay[i], HEADING_NAMES[i])}${endSays(i)}`.trim() + ' ';
   const { restingSays } = require('./tunneling');
   // Each way's staircase as the step would dig it (fortressLegTarget), and
   // whether it rests: a level leg digs one where the walk and the span give
@@ -1673,9 +1692,9 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const rest = legResting(state, HEADING_NAMES[i], here);
     if (rest) { resting.push(restSays(HEADING_NAMES[i], rest)); return; }
     if (surveys[i]?.stoppedAt === 0) { blocked.push(`leg ${HEADING_NAMES[i]}: closed at the first cell at y ${y}, ${surveys[i].stoppedBy}`); return; }
-    options[`leg_${HEADING_NAMES[i]}`] = { description: legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
-      (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, HEADING_NAMES[i], here) +
-      (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : '') + headingSays(i),
+    options[`leg_${HEADING_NAMES[i]}`] = { description: legLead(i) + legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
+      legHistorySays(state, HEADING_NAMES[i], here) +
+      (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : '') + headingSays(i) + backSays(i),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
   });
   // Down to the floor and along it: where the ground under the bot lies
@@ -1691,11 +1710,26 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const floor = walkFloor(bot, down.way.end, headingColumns(down.way.end, h, FORTRESS_LEG));
     if (floor.floor < FLOOR_WALKABLE) return;
     const fortressUp = down.y < 48 ? ` Fortress corridors stand mostly between y 48 and 75: from the floor at y ${down.y} they are seen above through open air, and reached by climbing to them.` : '';
-    options[key] = { description: `Go down to the floor and walk it ${HEADING_NAMES[i]} ${FORTRESS_LEG} blocks, bridging only across the lava and open air on it. ${wayDownSays(down)} ${floorWalkSays(floor, { along: HEADING_NAMES[i] })}${fortressUp}` +
-      (i === back ? ' This is back the way the last leg came.' : '') + legHistorySays(state, key, here) + headingSays(i),
+    options[key] = { description: `${legLead(i)}Go down to the floor and walk it ${HEADING_NAMES[i]} ${FORTRESS_LEG} blocks, bridging only across the lava and open air on it. ${wayDownSays(down)} ${floorWalkSays(floor, { along: HEADING_NAMES[i] })}${fortressUp}` +
+      legHistorySays(state, key, here) + headingSays(i) + backSays(i),
       run: () => { state.heading = i; state.legMode = 'floor'; state.floorY = down.y;
         state.descent = { x: down.way.end.x, y: down.way.end.y, z: down.way.end.z, floorY: down.y, maxDrop: down.way.maxDrop, dug: down.way.dug, path: down.way.path.map(p => ({ x: p.x, y: p.y, z: p.z })) }; return true; } };
   });
+  // The search widened, not turned back: the next side of a square spiral
+  // round where it began (nether-coverage.js spiralSide), a way of its own
+  // beside the legs, offered where the level leg that way is. Each side
+  // goes clockwise along a ring and the next ring is 96 blocks farther out,
+  // so no side goes back over another; the legs of ninety-six blocks from
+  // the compass went back and forth over the same ground (note 688).
+  const side = coverage.spiralSide(origin, here);
+  const sideLeg = `leg_${HEADING_NAMES[side.heading]}`;
+  let widenUnseen = null;
+  if (options[sideLeg]) {
+    const seen = coverage.headingCoverage(state, dim, here, HEADINGS[side.heading], { length: side.length, bot });
+    widenUnseen = seen.cells ? seen.unseenInView ?? seen.unseen : null;
+    options.widen_search = { description: `Widen the search: the next side of a square spiral round where it began at (${origin.x}, ${origin.z}), clockwise, each ring ${coverage.RING} blocks past the last, so no side goes back over another. From here: ${HEADING_NAMES[side.heading]} ${side.length} blocks, ending ${side.endFrom} blocks from the start.${coverage.headingSays(seen, HEADING_NAMES[side.heading])} Its first ${Math.min(FORTRESS_LEG, side.length)} blocks are as ${sideLeg} says.${backSays(side.heading)}`,
+      run: () => { state.heading = side.heading; state.legMode = 'level'; state.legLength = side.length; return true; } };
+  }
   const off = y - FORTRESS_Y;
   if (Math.abs(off) > FORTRESS_BAND && actions.tunnel) {
     // A heading whose staircase rests is not offered as a fresh one: mid-
@@ -1872,7 +1906,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const unseen = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, seenThatWay[i].cells ? seenThatWay[i].unseenInView ?? seenThatWay[i].unseen : null]));
   const stood = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, seenThatWay[i].stood]));
   const decision = await decide('fortress_leg', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree, state: facts,
-    context: { current: `leg_${HEADING_NAMES[current]}`, open, unseen, stood, passes: fortress?.passes || 0 } });
+    context: { current: `leg_${HEADING_NAMES[current]}`, open, unseen, stood, passes: fortress?.passes || 0, widen: options.widen_search ? { leg: sideLeg, unseen: widenUnseen } : null } });
   if (decision.stale) return false;
   return options[decision.path.at(-1)].run();
 }
@@ -1941,7 +1975,7 @@ async function restockStep(bot, task, goal, save, actions, state) {
 // The leg Jev chose begun from here.
 function beginLeg(state, here) {
   const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
-  state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError;
+  state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError; delete state.legLength;
   delete state.legBest; delete state.lastCrossStop;
 }
 // A direction the sweep cannot make ground in for several ticks is given
@@ -2987,15 +3021,24 @@ async function findFortressStep(bot, task, goal, save, actions) {
   if (along < LEG_REST_WITHIN) {
     restLeg(state, state.lastLegError || state.lastCrossStop, here, Math.round(along));
     delete state.target; state.legFails = 0; save();
-    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.('No way on in this direction from here. Choosing another.'); }
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.(noWaySays(state, 'Choosing another.')); }
     return;
   }
   // Short of blocks, the ways to more are Jev's beside the legs (chooseLeg:
   // restock_blocks, return_for_blocks), asked when the sweep turns.
   if (state.legFails >= 4 && Date.now() - (state.legSince || 0) >= 20000) {
     turnSweep(state); save();
-    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.('No way on in this direction. Turning the search.'); }
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.(noWaySays(state, 'Choosing another way.')); }
   }
+}
+// The turn said with its reason: "No way on in this direction" was said on
+// 25598 at 21:10:16Z when the leg had run out of blocks over the lava sea,
+// with no wall in the way (note 688). The reason is the leg's record's
+// (legEnded), its first clause.
+function noWaySays(state, then) {
+  const name = Number.isInteger(state.lastHeading) ? HEADING_NAMES[state.lastHeading] : null;
+  const why = String(state.lastLegError || state.lastCrossStop || '').split(/[;:.](?:\s|$)/)[0].trim();
+  return `No way on${name ? ` ${name}` : ' this way'} from here${why && why.length <= 60 ? `: ${why}` : ''}. ${then}`;
 }
 
 // What huntObserved would take the turn for (src/arbiter.js): a hunt on,
@@ -3016,4 +3059,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView };
+module.exports = { noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView };
