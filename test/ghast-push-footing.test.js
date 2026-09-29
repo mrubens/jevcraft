@@ -143,6 +143,25 @@ test('the ghast alone in sight 55 blocks off by the drop: the stance is asked wi
   assert.deepEqual(without.walks, ['-100,45,136 success'], 'found no route live, the edge refused');
 });
 
+// Note 643: "rail_span failed and rests three minutes: Cannot read properties
+// of undefined (reading 'run')" (and the same for fight_from_footing), seven
+// times on 2026-09-28: the stances that end in the fight called
+// options.fight.run(), and the caller deletes 'fight' from the options when
+// it ended here without acting and other ways are on offer.
+test('fight_from_footing and rail_and_fight still end in the fight when the fight was left out of the options', async () => {
+  const bot = bbBot();
+  const navigate = async (b, task, goal) => { b.entity.position = new Vec3(goal.x + 0.5, goal.y, goal.z + 0.5); };
+  const survival = new Survival(bot, { place: noop, dig: noop, navigate }, { state: { shelters: [] } });
+  survival.railSpan = async () => true;
+  const options = survival.stanceOptions(new Task('x'), { step: { action: 'find_fortress' } }, () => {}, threats(bot, 64), false);
+  assert.ok(options.fight_from_footing && options.fight, Object.keys(options).join(', '));
+  delete options.fight;
+  for (const k of ['fight_from_footing', 'rail_and_fight']) {
+    if (!options[k]) continue;
+    await options[k].run().catch(err => assert.doesNotMatch(String(err.message), /reading 'run'/, k));
+  }
+});
+
 const AC5 = require('./fixtures/span-ghast-mid-242-ac5.json');
 // 15:32:04: the bot at (-12.37, 72, 137.5) on its one-wide netherrack span at
 // y 71, the ghast 44.5 blocks off at (12.5, 61, 102.3) in sight, fifty

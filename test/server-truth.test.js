@@ -240,3 +240,19 @@ test('the ask_server move asks the server whichever cell the jittering body floo
   await perform(w.bot, new Task('test', 'ask'), move, { dig: async () => { throw new Error('no dig'); } });
   assert.deepEqual(move.result.corrected, [{ x: 23, y: 78, z: -5, was: 'air', now: 'dirt' }]);
 });
+
+// Note 643: 383 "dig unconfirmed" frames in five hours, every one for a block
+// named air: a cell the path planner or a tunnel step had planned to dig and
+// that was already open. Nothing to break, no word owed.
+test('a dig handed a cell that is already air neither waits for the server nor asks it nor throws', async () => {
+  const w = world({ view: { '23,78,-5': 0 }, server: { '23,78,-5': 0 } });
+  truth.confirmDigs(w.bot, { confirmMs: 400 });
+  const events = [];
+  w.bot.on('dig_unconfirmed', e => events.push(e));
+  const started = Date.now();
+  await w.bot.dig(w.bot.blockAt(new Vec3(23, 78, -5)));
+  assert(Date.now() - started < 300, 'no wait for a word that is not owed');
+  assert.equal(w.client.writes.length, 0, 'the server was not asked');
+  assert.equal(events.length, 0);
+  assert.equal(w.bot.dug.length, 1, 'the underlying dig ran as it always did');
+});

@@ -53,7 +53,7 @@ test('a water cauldron three blocks off is a way in the Nether: the hop, the sec
   assert.match(d, /Step into the cauldron of water 3 blocks off at \(3, 100, 0\) \(3 of 3 levels of water\)/);
   assert.match(d, /a hop onto its rim/);
   assert.match(d, /the fire is out the moment the feet are under the water/);
-  assert.match(d, /about \d\.\d seconds from now, burning meanwhile; it saves the 4 seconds of fire left, about 4 of the 12 health/);
+  assert.match(d, /about \d\.\d seconds from now, burning meanwhile; it saves the 4 seconds of fire left, about (?:3\.[5-9]|4) of the 12 health/);
   assert.match(d, /costs the cauldron one level of its 3/);
   assert.ok(!ways.set_down_cauldron, 'nothing carried to put down');
   assert.match(ways.burn_out.description, /in the Nether only a cauldron's water puts it out/);

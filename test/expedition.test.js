@@ -164,6 +164,30 @@ test('entering a portal stops inside it and stands still, instead of walking thr
   assert.equal(controls.forward, false);
 });
 
+test('one block from the sheet with the pathfinder refusing every cell beside the drop, the crouched step in is still taken (four arrivals of 2026-09-28)', async () => {
+  const { enterPortal } = require('../src/work');
+  const controls = {}, used = new Set();
+  const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, game: { dimension: 'the_nether' },
+    pathfinder: { setGoal() {}, movements: {}, goto: async () => {}, isMoving: () => false }, lookAt: async () => {},
+    setControlState: (key, on) => { controls[key] = on; if (on) used.add(key); }, clearControlStates() {},
+    blockAt: p => ({ name: p.x === 0 && p.z === -1 && (p.y === 64 || p.y === 65) ? 'nether_portal' : p.y < 64 ? 'netherrack' : 'air', position: p }) };
+  let inside = 0;
+  const tick = setInterval(() => {
+    if (controls.forward) bot.entity.position = bot.entity.position.offset(0, 0, controls.sneak ? -0.07 : -0.22);
+    inside = bot.blockAt(bot.entity.position.floored()).name === 'nether_portal' && !controls.forward ? inside + 1 : 0;
+    if (inside >= 6) bot.game.dimension = 'overworld';
+  }, 50);
+  const noRoute = async () => { throw Object.assign(new Error('No route from here to (0, 64, -1) (partial): the way passes along a drop that would kill'), { name: 'NoRoute' }); };
+  try {
+    await enterPortal(bot, new Task('portal'), new Vec3(0, 64, -1), () => bot.game.dimension === 'overworld', { walk: noRoute });
+  } finally { clearInterval(tick); }
+  assert(used.has('sneak'), 'the step is crouched');
+  assert.equal(bot.game.dimension, 'overworld', 'the portal took it');
+  // Far from the frame the refusal stands: nothing is stepped toward a sheet ten blocks off.
+  const far = { ...bot, entity: { position: new Vec3(20.5, 64, 0.5) }, game: { dimension: 'the_nether' } };
+  await assert.rejects(enterPortal(far, new Task('portal'), new Vec3(0, 64, -1), () => false, { walk: noRoute }), { name: 'NoRoute' });
+});
+
 test('afloat before a portal whose floor is a block up, the step in is a climb out of the water, not a crouch that sinks', async () => {
   // mid-242-ab (note 567): water before its portal's face, a hole under it. The walk ended afloat at the sheet,
   // the crouched step sank the bot to the bottom of the hole, and the step failed there every two seconds.

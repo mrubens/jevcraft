@@ -3489,7 +3489,7 @@ function lowestPortalBlock(bot) {
 // sneaking player does not walk off an edge), stop the moment the feet are
 // in the portal, and stand there.
 const inPortal = bot => [0, 1].some(dy => bot.blockAt?.(bot.entity.position.offset(0, dy, 0).floored())?.name === 'nether_portal');
-async function enterPortal(bot, task, portal, arrived) {
+async function enterPortal(bot, task, portal, arrived, { walk = navigate } = {}) {
   // Standing in the portal it just came through, the bot must step out
   // first: a player is not sent back until it has left the sheet.
   // Out of either face of the sheet: the one behind can be fire. mid-218-m-
@@ -3511,7 +3511,19 @@ async function enterPortal(bot, task, portal, arrived) {
   // where it is, and the step in is crouched (below). The way there keeps
   // off the lava's edge as every walk does (movement.js, note 516).
   const atFrame = c => Math.abs(c.x - portal.x) <= 2 && Math.abs(c.y - portal.y) <= 2 && Math.abs(c.z - portal.z) <= 2;
-  await navigate(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000, besideLava: atFrame });
+  // At the frame already, and the pathfinder finding no route to the sheet
+  // because every cell round the arrival's platform is beside a drop it
+  // refuses: the step in below is crouched (a sneaking player does not walk
+  // off an edge) and one block long, so it is taken. On 2026-09-28 four
+  // arrivals in the Nether (25583, 25588, 25593, 25595) chose the trip back
+  // for food from the portal they stood beside; each ended "No route from
+  // here to (x, y, z) (partial): the way passes along a drop that would
+  // kill", one block from the sheet, and the trip was never made (note 643).
+  try { await walk(bot, task, new goals.GoalNear(portal.x, portal.y, portal.z, 1), { timeoutMs: 20000, besideLava: atFrame }); }
+  catch (err) {
+    task.check();
+    if (err?.name !== 'NoRoute' || !atFrame(bot.entity.position.floored())) throw err;
+  }
   if (arrived()) return;
   bot.pathfinder.setGoal(null);
   if (!inPortal(bot)) {

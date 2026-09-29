@@ -232,6 +232,14 @@ function confirmDigs(bot, { confirmMs = CONFIRM_MS } = {}) {
   const confirmed = async function (block, ...rest) {
     const cell = block?.position;
     if (!cell) return dig.call(this ?? bot, block, ...rest);
+    // Air has nothing for the server to break, so no word will come and none
+    // is owed: the path planner and the tunnel steps hand over a cell they
+    // planned to dig that is already open, and the wait plus the question
+    // ended each in DigNotConfirmed, 383 times in five hours on 2026-09-28
+    // (all "air", a second each, from the frame 20:36Z on) with no block ever
+    // in question. What the server holds under an air view is asked about
+    // when the body is put back (resyncAround), not here.
+    if (/^(?:cave_|void_)?air$/.test(String(block.name))) return dig.call(this ?? bot, block, ...rest);
     let target = block;
     for (let attempt = 0; ; attempt++) {
       const was = target.stateId ?? target.type, name = target.name;

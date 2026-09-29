@@ -3018,6 +3018,14 @@ class Survival {
   // seconds, worked out the same way (stanceCost).
   stanceOptions(task, goal, save, danger, swung) {
     const bot = this.bot, options = {};
+    // The fight stance itself, kept where the stances that end in it can
+    // reach it after `options.fight` is left out (a stance that ended here
+    // without acting is not offered again until something changes) or was
+    // never built: fight_from_footing and rail_and_fight ran
+    // `options.fight.run()` and threw "Cannot read properties of undefined
+    // (reading 'run')" seven times on 2026-09-28, the step failed and rested
+    // three minutes with the bot standing where it had walked to.
+    let fightStance = null;
     // The walkers with no way to the bot (walk-reach.js): left out of what
     // reaches it, said with every stance. mid-205-v's column over a cave
     // floor had every stance priced with eight walkers at the bot in a
@@ -3264,7 +3272,7 @@ class Survival {
           finally { if (movements) movements.allow1by1towers = towers; }
           const at = feetCell(bot);
           if (Math.hypot(at.x - groundBy.x, at.z - groundBy.z) > 1.5) return false;
-          return options.fight.run();
+          return fightStance ? fightStance.run() : false;
         } };
       // Whether a blast's push from where it is carries the bot over a drop
       // from that ground too: three blocks from any drop is short of a
@@ -3428,7 +3436,7 @@ class Survival {
           : `${railing}, then fight here: ${leftOpen.length ? `a push from its shot stops at the wall; a knock toward ${sidesSaid(leftOpen)} still goes over` : 'a knock toward the drop stops at the wall'}.${creeperLeftOut}${edge}` + costSays(railCost, bot.health, mobs, { doing: railMade ? 'making the planks and walling' : 'walling', done: 'Walled' }) + hitsLeft,
         run: async () => {
           if (!await this.railSpan(task, goal, save, { blast: danger.some(t => t.entity.name === 'ghast') })) return false;
-          return noStep ? true : options.fight.run();
+          return noStep ? true : fightStance ? fightStance.run() : false;
         } };
     }
     options.fight = { expects: noStep || noneCome ? { damage: shotsIn15, seconds: 15, oneHit } : { damage: cost.damageTaken, seconds: cost.seconds, oneHit }, description: `Fight here${armed ? '' : ' with bare hands (no sword or axe)'}: swing at whatever comes into reach, and close on the nearest mob when it is within eight blocks and not at reach yet. ${noneCome ? 'None of them can get to the bot and none of them shoots: a fight here stands and waits for one that comes, with nothing to swing at meanwhile.' : noStep ? `${shootersOnly ? `None of them can be reached from here: ${apart.ids.size ? 'every one that can get to the bot' : 'every one'} shoots, none is at reach, and the ground toward the nearest carries no step.` : `The nearest, a ${nearest.entity.name.replaceAll('_', ' ')} ${Math.round(nearest.distance)} blocks off, shoots and cannot be run at from here (a drop beside the bot, too far, or too far up or down).`} ${shootersOnly ? '' : 'The rest are not at arm\'s length either. '}Fighting here is standing in their line of fire with nothing to swing at: about ${shotsIn15} damage from their shots in the next fifteen seconds, from ${cost.healthNow} health${shotsIn15 >= cost.healthNow ? ' (more than the bot has)' : ''}, and no end while they shoot.` : `Estimated for these mobs with this weapon and armour: about ${cost.seconds} seconds and ${cost.damageTaken} damage to kill ${killWhom}, from ${cost.healthNow} health${cost.healthAfter <= 0 ? ' (more than the bot has)' : ''}; about ${cost.inFifteenSeconds} of it in the first fifteen seconds.${cost.pace ? ` ${cost.pace}` : ''}${cost.poison ? ` ${cost.poison}` : ''}`}${atOnceNote}${creeperLeftOut}${nearestCreeper}${nearest && shooter(nearest.entity) && !inReach(nearest) ? (() => { const stop = chargeStopsAt(bot, nearest.entity); return stop ? ` The nearest shoots, and the ground straight at it stops a closing run after ${stop.blocks} block${stop.blocks === 1 ? '' : 's'}, ${stop.left} short, in its line of fire.` : ''; })() : ''}${nearest && !inReach(nearest) ? chargeSays(bot, nearest.entity) : ''}${unseen}${edge}${spearSays}${edgeHits}${hitsLeft}`,
@@ -3494,6 +3502,7 @@ class Survival {
         await sleep(250);
         return true;
       } };
+    fightStance = options.fight;
     // A walker below the bot's ground, struck from the edge above it, where
     // the sword reaches it and its blow does not reach up (strike-below.js,
     // note 596). mid-208-k-nether-4-fortress-1's hoglin stood two below a

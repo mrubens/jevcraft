@@ -62,3 +62,19 @@ test('gravel alone is no block to bridge with, and no floor is taken up where th
   const { moves } = localMoves(view, bot.entity.position.floored(), { goal: 'away', visits: {}, breathS: 15 });
   assert.ok(!moves.some(m => /^(bridge|take_floor)_/.test(m.key)), moves.map(m => m.key).join(', '));
 });
+
+// Note 643: take_floor and bridge shipped at 18:51Z without a declared option
+// pattern, and 89 "[bug] unstuck_move offered options it does not declare"
+// lines in twelve logs said so until the rise_through commit widened the
+// pattern in passing (21:14Z). Every key src/unstuck.js can build is declared.
+test('every move key src/unstuck.js builds is one unstuck_move declares', () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'unstuck.js'), 'utf8');
+  const spec = require('../src/decisions').question('unstuck_move');
+  const declared = key => spec.options.some(o => o.key === key || (o.pattern && new RegExp(`^(?:${o.pattern})$`).test(key)));
+  const keys = new Set();
+  for (const [, key] of src.matchAll(/\bkey: '([a-z_]+)'/g)) keys.add(key);
+  for (const [, prefix, tail] of src.matchAll(/\bkey: `([a-z_]+)_\$\{[a-z]+\}(_\$\{[a-z]+\})?`/g)) keys.add(`${prefix}_north${tail ? '_feet' : ''}`);
+  assert.ok(keys.size >= 10, [...keys].join(', '));
+  for (const key of keys) assert.ok(declared(key), `${key} is built by src/unstuck.js and not declared by the unstuck_move question`);
+});
