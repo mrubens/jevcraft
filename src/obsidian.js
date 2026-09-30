@@ -291,12 +291,26 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   const deep = descentTargets(here.floored(), LAVA_DEPTH).find(p => !staircaseResting(goal, p));
   const landmarkAt = l => new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z);
   const pool = l => !l.spent && !lavaResting(goal, landmarkAt(l));
+  // A deep dig already real steps into (resourceTunnelStep's own site,
+  // tunneling.js tunnelStep) is not left for a pool only nominally shorter:
+  // `deep` (and so `carry(deep)`) is recomputed from wherever the bot now
+  // stands on every call, so a dig that has moved forward can read as
+  // barely beaten by a pool whose own carry has not moved at all, and the
+  // pool can still fail to arrive. 25581 (mid-243-if) left a dig 55 steps
+  // in at (93, -54, 54) for a pool at (104, -33, 25) on 2026-09-30
+  // 05:37:56Z, stalled 15-16 blocks short of it for 89 seconds
+  // (05:38:49-05:40:18Z), and came back to the same dig, the round trip
+  // about eleven minutes for one bucket (note 748). Once the dig has 8 or
+  // more steps in it, a pool has to beat its carry by a third, not by any
+  // margin, so the next call's noise does not flip it back and forth.
+  const site = goal.miningSites?.[`${bot.game?.dimension || 'overworld'}:lava`];
+  const margin = (site?.steps || 0) >= 8 ? 1.5 : 1;
   if (to) {
     // Known lava that is a shorter carry than any in sight and the deep lava
     // below: walked to first, the nearest carry first. Not the pool in sight
     // itself, remembered: that one is scooped below.
     const bound = Math.min(surface.length ? Math.min(...surface.map(carry)) : Infinity, deep ? carry(deep) : Infinity);
-    const shorter = l => pool(l) && carry(landmarkAt(l)) < bound && !surface.some(p => Math.hypot(p.x - l.x, p.z - l.z) <= 16);
+    const shorter = l => pool(l) && carry(landmarkAt(l)) * margin < bound && !surface.some(p => Math.hypot(p.x - l.x, p.z - l.z) <= 16);
     if ((goal.landmarks || []).some(l => l.kind === 'lava_pool' && shorter(l))) {
       const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: l => carry(landmarkAt(l)) });
       if (arrived === false) return;
@@ -369,8 +383,9 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   const open = p => !staircaseResting(goal, p);
   const diggable = surface.filter(p => !lavaResting(goal, p));
   if (!diggable.length) {
-    // For a cast, not a pool farther to carry from than the deep lava.
-    const filter = to ? l => pool(l) && !(deep && carry(landmarkAt(l)) >= carry(deep)) : pool;
+    // For a cast, not a pool farther to carry from than the deep lava, the
+    // same margin as above once the dig has real steps in it.
+    const filter = to ? l => pool(l) && !(deep && carry(landmarkAt(l)) * margin >= carry(deep)) : pool;
     const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, ...(to ? { cost: l => carry(landmarkAt(l)) } : {}) });
     // On the way, or at a pool found dry. At one still holding lava, whose
     // every way rests, it is not done: the other ways below are.

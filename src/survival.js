@@ -8080,7 +8080,23 @@ class Survival {
     const floorGone = !!lastFloor && lastFloor.boundingBox !== 'block';
     if (last) ways.back_the_way_came = { description: `Back toward the last dry footing stood on, ${far(last)} blocks off ${routed(last) ? 'by the way through' : 'in a straight line, no way through seen'} at (${last.x}, ${last.y}, ${last.z})${floorGone ? `; nothing is under it now (${/lava/.test(lastFloor.name) ? 'lava' : 'open air'} where it stood), so it is no footing` : height(last)}, swimming up as it goes: about ${seconds(last)} seconds at the ${LAVA_BLOCKS_A_SECOND} blocks a second a body swims through lava${lastLava ? `; it is lava now itself (${lavaSpreads(bot)})` : lavaBy(last) ? `; lava beside it (${lavaSpreads(bot)})` : ''}${far(last) > 6 ? '; farther than any cell out seen from here' : ''}; ${costs(seconds(last))}.`,
       run: async () => { report('back_the_way_came', last); return walk(last, 'in lava with no dry cell in sight: up, and back the way the bot came'); } };
-    if (!Object.keys(ways).length) ways.swim_up = { description: 'Swim straight up in the lava: no cell out a swim reaches within six blocks and no dry footing known.', run: async () => { report('swim_up', null); return walk(null, 'in lava with nothing out in sight: up'); } };
+    // Straight up to the lava's own top, said beside back_the_way_came, not
+    // only where nothing else is offered at all: with no water, dry cell or
+    // pillar within six blocks, back_the_way_came was the one way a body
+    // deep in a lava sea was given, its own cost sometimes already saying
+    // "death before it is out" (the costs() branch above), and up was never
+    // said beside it to weigh. 25583 (mid-242-re, 2026-09-30 03:21:34-37Z)
+    // and 25591 (mid-242-qh, 2026-09-30 04:27:56-59Z) each chose
+    // back_the_way_came 13-14 blocks off after a fall into a lava sea and
+    // died in the four to five seconds it took; a straight rise to the
+    // lava's own top, a body already near, was never checked against it.
+    // Said now with its own honest seconds, whenever no closer dry footing
+    // is already known: a fact for Jev to weigh, not a hidden reflex.
+    if (!ways.to_water && !ways.to_dry_ground && !ways.pillar_out) {
+      const riseSeconds = Math.max(0.5, round(Math.max(0, reach - bot.entity.position.y) / LAVA_JUMP_RISE));
+      ways.swim_up = { description: `Swim straight up to the lava's own top${top !== null ? ` (y ${top + 1})` : ''}, no cell out a swim reaches within six blocks and no dry footing known there yet: about ${riseSeconds} second${riseSeconds === 1 ? '' : 's'} to reach it; ${costs(riseSeconds)}.`,
+        run: async () => { report('swim_up', null); return walk(null, "in lava with nothing dry in sight: up to the lava's own top first"); } };
+    }
     const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
     if (apple) ways.eat_golden_apple = { description: `Eat the enchanted golden apple (${countOf(bot, apple.name)} carried): about ${EAT_SECONDS} seconds eating in the lava first, then fire resistance for five minutes (the lava and burning no longer hurt), sixteen extra health as absorption and strong regeneration; the way out still to take after.`,
       run: async () => { report('eat_golden_apple', null); return eatApple(bot, task, apple); } };
