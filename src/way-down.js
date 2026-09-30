@@ -542,10 +542,20 @@ function oldOrderWay(ways) {
 // (a ring of the tower's own blocks, the block over a fall). True when it
 // came off, false when there was no top, nothing to offer, the walk's
 // goal is on the top or above it, or a way failed.
+const STAY_MS = 60000;
 async function comeDownFirst(bot, task, walkGoal, { client = task?.opportunityClient, goal = bot?._goal, save = () => {}, rounds = 4 } = {}) {
   if (!client || bot._wayDownRunning) return false;
   let perch = livePerch(bot);
   if (!perch || goalOnTop(walkGoal, perch)) return false;
+  // Stay up, as answered, while the mobs it was answered against are still
+  // below (the answer holds while nothing changes, note 764).
+  const stay = bot._wayDownStay;
+  if (stay?.until > Date.now()) {
+    let still = [];
+    try { still = require('./danger').threats(bot, 16).filter(t => stay.below.includes(t.entity.id)); } catch (_) { still = []; }
+    if (still.length) throw Object.assign(new Error(`Staying up on the top as answered ${Math.round((Date.now() - (stay.until - STAY_MS)) / 1000)} seconds ago: ${still.length} of the mobs below still there`), { name: 'NoRoute', stayUp: true });
+    delete bot._wayDownStay;
+  }
   bot._wayDownRunning = true;
   try {
     for (let round = 0; perch && round < rounds; round++) {
@@ -566,6 +576,20 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   const now = Date.now();
   const tried = (bot._wayDownTried || []).filter(t => now - t.at < TRIED_MS);
   const tree = Object.fromEntries(Object.entries(ways).map(([k, w]) => [k, { description: w.description + creepersAtEnd(bot, w.plan) }]));
+  // Staying up, beside the ways down, where mobs are below that have no way
+  // up: 25583 (20:35:01 to 20:35:31Z) was offered only ways down from a
+  // pillar seven up with a creeper and two zombies under it, answered
+  // dig_down, then step_off at 0.08 whose own words said it landed 5.5
+  // blocks from the creeper, and died below (note 752i).
+  let below = [];
+  try { const d = require('./danger'), { shooter } = require('./mob-policy'); below = d.threats(bot, 16).filter(t => !shooter(t.entity) && t.entity.position && t.entity.position.y < perch.feet.y - 1); } catch (_) { below = []; }
+  // A climber (a spider) comes up the side: no stay is offered as if it could not.
+  const climbs = below.some(t => /spider/.test(t.entity.name));
+  if (below.length && !climbs) {
+    const who = below.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off`).join(', ');
+    const food = bot.food ?? 20, heals = food >= 18;
+    tree.stay_up = { description: `Stay up on the top for now: below are ${who}${below.length > 4 ? ` and ${below.length - 4} more` : ''}, none of them able to climb to it; the walk ${walkGoal ? 'this was for ' : ''}waits, and this is asked again in a minute or once they go. Health ${Math.round(health * 10) / 10}${heals ? ', coming back at this hunger' : `, not coming back at hunger ${food}`}.` };
+  }
   const point = Number.isFinite(walkGoal?.x) && Number.isFinite(walkGoal?.z) ? walkGoal : walkGoal?.entity?.position;
   const state = { top: perchSays(perch), health: Math.round(health), food: bot.food,
     ...(point ? { walkingTo: `${where({ x: Math.round(point.x), y: Math.round(Number.isFinite(point.y) ? point.y : perch.feet.y), z: Math.round(point.z) })}, ${Math.round(Math.hypot(point.x - perch.feet.x, point.z - perch.feet.z))} blocks off` } : {}),
@@ -576,6 +600,10 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   const decision = await decide('way_down', { client, bot, task, goal, save, tree, state, context: { oldOrder: oldOrderWay(ways) } });
   if (decision.stale) return false;
   const choice = decision.path.at(-1), way = ways[choice];
+  if (choice === 'stay_up') {
+    bot._wayDownStay = { until: Date.now() + STAY_MS, below: below.map(t => t.entity.id) };
+    throw Object.assign(new Error('Staying up on the top: the mobs below have no way up and the way down is into them'), { name: 'NoRoute', stayUp: true });
+  }
   if (!way) return false;
   const before = bot.entity.position.clone();
   try {

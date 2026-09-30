@@ -376,6 +376,18 @@ function noWayIds(bot, list = null) {
 // knock, a gap it fits). What it holds is its own: a crossbow piglin
 // shoots, and walk-reach judges no shooter.
 const WALKERS_JUDGED = { has: name => require('./walk-reach').WALKERS.has(name) };
+// A creeper the alert was raised for (arbiter.js observeReflexes), kept as
+// the threat out of sight while it is alive and under CREEPER_MARK_REACH
+// (one in sight counts to eight already), for CREEPER_MARK_MS after it was
+// last within the alert's line: the work does not resume beside it (note
+// 752i, 25597's death at 19:49:12Z: out of sight at 4.6, round the corner at
+// 1.7). Past five out of sight it is note 696's creeper behind the rock.
+const CREEPER_MARK_MS = 30000, CREEPER_MARK_REACH = 5;
+function markCreeper(bot, t, now = Date.now()) { if (bot && t?.entity?.id != null) (bot._creeperMarks ||= {})[t.entity.id] = now; }
+function creeperMarked(bot, t, now = Date.now()) {
+  const e = t?.entity;
+  return !!e && e.name === 'creeper' && e.isValid !== false && t.distance < CREEPER_MARK_REACH && (bot?._creeperMarks?.[e.id] || 0) > now - CREEPER_MARK_MS;
+}
 // A mob that has stood off for held-off.js's STANDOFF_MS (note 752): never
 // at its reach, no nearer, no hit from its kind in that time, a shooter
 // out of sight all the while. It is said with that fact (reachSays) and is
@@ -444,7 +456,10 @@ function reachSays(bot, t, { list = null, now = Date.now() } = {}) {
   const hitAt = Math.max(bot?._hurtById?.[e.id] || 0, bot?._hurtBy?.[e.name] || 0);
   const hit = hitAt ? `its kind hit the bot ${Math.max(1, Math.round((now - hitAt) / 1000))} seconds ago` : null;
   const far = require('./held-off').FAR_SIGHT[e.name];
-  if (off && far && shoots) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, in sight, no hit from its kind in that time: in the played record, of the ${e.name.replaceAll('_', ' ')}'s shots coming at the bot from ${far.blocks} blocks and more ${far.landed} of ${far.of} landed (from under ${far.near}, ${far.nearLanded} of ${far.nearOf}); not a threat that stops the work while that holds, and one again the moment it comes within ${far.blocks} or its kind lands a hit`);
+  const noShots = off && shoots && t.visible && !(far && off.nearest > far.blocks);
+  if (noShots) { const i = parts.indexOf('in sight: it can shoot the bot from where it is'); if (i >= 0) parts.splice(i, 1); }
+  if (noShots) parts.push(`in sight by the look for ${off.seconds} seconds and within its reach, yet no shot has come at the bot in that time, landed or not: its line is not one it can shoot along (a wall of the bot's own, or it is not shooting); not a threat that stops the work while that holds, and one again the moment a shot comes or its kind lands a hit`);
+  else if (off && far && shoots) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, in sight, no hit from its kind in that time: in the played record, of the ${e.name.replaceAll('_', ' ')}'s shots coming at the bot from ${far.blocks} blocks and more ${far.landed} of ${far.of} landed (from under ${far.near}, ${far.nearLanded} of ${far.nearOf}); not a threat that stops the work while that holds, and one again the moment it comes within ${far.blocks} or its kind lands a hit`);
   else if (off?.noRun) parts.push('it has not hit the bot since: not a threat that stops the work while that holds, and one again the moment it lands a hit, comes to its reach, or the bot moves off');
   else if (off && e.name === 'creeper') parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and never within ${require('./held-off').CREEPER_NEAR} (its lighting distance and a second's walk), not walking at the bot: not a threat that stops the work while that holds, and one again the moment it walks at the bot or comes within ${require('./held-off').CREEPER_NEAR}`);
   else if (off) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and no hit from its kind in that time: not a threat that stops the work while that holds, and one again the moment it comes nearer, to its reach, or its kind lands a hit`);
@@ -549,7 +564,7 @@ function threatScan(bot, keepStoodOff = false) {
   // skeleton's first blow took 6.7 (note 559).
   let close;
   const unseenNear = t => { if (!close) close = new Set(unseenClose(bot, about).map(u => u.entity.id)); return close.has(t.entity.id); };
-  const seen = t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24) ||
+  const seen = t => t.visible || (t.entity.name === 'creeper' && (t.distance <= 4 || creeperMarked(bot, t))) || (t.entity.name === 'warden' && t.distance <= 24) ||
     (t.distance <= 3.5 && !shooter(t.entity) && edge()) || (t.distance <= UNSEEN_CLOSE && !shooter(t.entity) && unseenNear(t));
   // A shooter is a threat within its own reach: a ghast fires from forty
   // blocks. mid-244-e walked a ledge at y 89 with one in sight at seventeen
@@ -899,4 +914,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { markCreeper, creeperMarked, CREEPER_MARK_MS, noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

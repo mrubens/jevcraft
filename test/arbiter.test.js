@@ -584,7 +584,7 @@ test('a mob held by a stance chosen against it is said with the stance, which go
   bot._stance = { choice: 'pillar', ids: [11], at: Date.now() - 1000, ranAt: Date.now(), health: 17.4, expects: { damage: 14.8, seconds: 15 } };
   const held = claim(bot, {});
   assert.equal(held.action, 'escape_threat');
-  assert.deepEqual(held.facts.stance, { choice: 'pillar', secondsAgo: 1 });
+  assert.deepEqual(held.facts.stance, { choice: 'pillar', secondsAgo: 1, noHitSeconds: 1 });
   assert.match(arbiter.claimSays(held), /^Answer the zombie 8\.2 blocks off \(out of sight\): the pillar chosen against it 1 second ago goes on \(asked again when it fails/);
 });
 

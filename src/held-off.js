@@ -113,14 +113,24 @@ function stoodOff(bot, t, { now = Date.now(), ms = STANDOFF_MS, shoots = false }
   for (let i = 1; i < win.length; i++) if (win[i].t - win[i - 1].t > GAP_MS) return null;
   if (now - win.at(-1).t > GAP_MS) return null;
   const nearest = Math.min(t.distance, ...win.map(s => s.d)), farthest = Math.max(t.distance, ...win.map(s => s.d));
-  if (nearest <= (creeper ? CREEPER_NEAR : ARM) || nearest < win[0].d - NEARER) return null;
+  // A shooter's reach is its line, not arm's length (a skeleton does not
+  // strike): judged by its shots below.
+  if (nearest <= (creeper ? CREEPER_NEAR : shoots ? 0 : ARM) || nearest < win[0].d - NEARER) return null;
   // A shooter in sight stands off only where its shots land so seldom that
   // a line is not a hit: kept past FAR_SIGHT for its kind the whole while,
   // no hit from its kind. A ghast 44 to 60 blocks off in sight re-asked
   // 25584's hide twelve times in ninety seconds at 7.6 health (18:19:37 to
   // 18:21:10Z), no hit from its kind (note 752g).
   const far = FAR_SIGHT[kind]?.blocks;
-  if (shoots && (t.visible || win.some(s => s.v)) && !(far && nearest > far)) return null;
+  // Or in sight by the look for the whole minute and in its reach, yet no
+  // shot came at the bot in that time, landed or not (hit-log.js's shot
+  // record): the line the look reads is not one it shoots along. 25592
+  // (20:08 to 20:17Z) sat boxed in its own cobbled deepslate with a
+  // skeleton 1.6 blocks off "in sight" for nine minutes, no shot, the take
+  // cover held on and on (note 752i).
+  const shotsIn = (bot?._shotLog || []).filter(x => now - x.at <= ms).length;
+  const quietLine = shoots && bot?._shotLog !== undefined && shotsIn === 0;
+  if (shoots && (t.visible || win.some(s => s.v)) && !(far && nearest > far) && !quietLine) return null;
   return { seconds: Math.round((now - m.since) / 1000), nearest: Math.round(nearest * 10) / 10, farthest: Math.round(farthest * 10) / 10, inSight: !!t.visible };
 }
 // How long a mob has been about by the record, its nearest and farthest,

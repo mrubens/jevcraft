@@ -49,6 +49,11 @@ function install(bot) {
     last = hp;
   };
   bot.on('health', bot._hitLogHealth);
+  // Every shot seen coming at the bot (shot-reflex.js's 'shot' event),
+  // landed or not: a shooter "in sight" with none coming for a minute has
+  // no line in truth (held-off.js stoodOff, note 752i).
+  bot._shotLog ||= [];
+  bot.on('shot', s => { const now = Date.now(); bot._shotLog = [...(bot._shotLog || []).filter(x => now - x.at < KEEP_MS * 2), { at: now, name: s?.name || null, landed: !!s?.landed }]; });
 }
 function noteDrop(bot, from, to, now = Date.now()) {
   bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: !!bot._shieldRaised }];

@@ -100,7 +100,7 @@ test('with a stance held, a threat claim says that stance goes on, not "the stan
   bot._stance = { choice: 'hold_on_span', ids: [999], kinds: 'hoglin', at: T0 - 5000, running: true, health: 20 };
   const c = claim(bot, { kind: 'win', survival: {} }, { state: {}, currentShelter: () => null });
   assert.equal(c.action, 'escape_threat');
-  assert.deepEqual(c.facts.stance, { choice: 'hold_on_span', secondsAgo: 5, other: true });
+  assert.deepEqual(c.facts.stance, { choice: 'hold_on_span', secondsAgo: 5, noHitSeconds: 5, other: true });
   const says = arbiter.claimSays(c);
   assert.doesNotMatch(says, /asked next/);
   assert.match(says, /^Answer the hoglin 3\.9 blocks off: the hold on span chosen 5 seconds ago \(against the mobs about then\) goes on \(asked again when it fails/);
@@ -114,13 +114,17 @@ test('sealed in a pocket with the wait for daylight chosen, the pocket claim say
     entity: { position: origin.offset(0.5, 0, 0.5) }, entities: {}, time: { timeOfDay: 14000 }, inventory: { items: () => [] },
     blockAt: p => (p.x === origin.x && p.z === origin.z && (p.y === origin.y || p.y === origin.y + 1)) ? { name: 'air', boundingBox: 'empty', position: p } : { name: 'stone', boundingBox: 'block', position: p } };
   const refuge = { kind: 'pocket', origin: { x: origin.x, y: origin.y, z: origin.z }, dimension: 'overworld', verifiedAt: new Date(T0 - 3000).toISOString() };
-  const state = { sealedWait: { until: T0 + 600000 } };
+  // Under rock the wait for daylight is not held (note 752i): the pocket's
+  // own held answer is.
+  const dawn = claim(bot, { kind: 'win', survival: { sealedWait: { until: T0 + 600000 } } }, { state: { sealedWait: { until: T0 + 600000 } }, currentShelter: () => refuge });
+  assert.equal(dawn.facts.pocketHeld, undefined, 'no dawn wait held under rock');
+  const state = { pocketPlan: { choice: 'stay', key: 'k', at: T0 - 5000, until: T0 + 85000 } };
   const c = claim(bot, { kind: 'win', survival: state }, { state, currentShelter: () => refuge });
   assert.equal(c.action, 'pocket_next');
   assert.equal(c.facts.pocketHeld.choice, 'stay');
   const says = arbiter.claimSays(c);
   assert.doesNotMatch(says, /asked next/);
-  assert.match(says, /: stay goes on, as chosen \(the wait for daylight chosen sealed \(survival priority\), until dawn or hunger eighteen\), about 600 seconds more before whether to stay, leave or do something else there is asked again\./);
+  assert.match(says, /: stay goes on, as chosen \(pocket next's own answer, held while the pocket and what is about stay as they were\) 5 seconds ago, nothing having hurt the bot in the \d+ seconds in it, about 85 seconds more before whether to stay, leave or do something else there is asked again\./);
   assert.match(says, /Underground here: daylight does not come down to it, and mobs spawn in the dark by day as by night\./);
   // With nothing held, the pocket's question is what comes, and it is said so.
   const free = claim(bot, { kind: 'win', survival: {} }, { state: {}, currentShelter: () => refuge });

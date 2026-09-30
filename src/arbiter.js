@@ -163,7 +163,13 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   // about ten times, once every ten seconds, "the stance is asked next", for
   // a creeper 6 to 9 blocks off through the rock; no stance came (note 696).
   const creeperLine = CREEPER_REACH + (was.has('creeper') ? HYSTERESIS : 0);
-  const creepers = mobs.filter(t => t.entity?.name === 'creeper' && t.distance <= creeperLine && (t.visible || t.distance <= 4));
+  // One the alert was raised for stays in it out of sight while within its
+  // line and alive (danger.js creeperMarked, note 752i): 25597 (19:49:09 to
+  // 19:49:12Z) was preempted for a creeper 6.5 blocks off, it stepped out of
+  // sight at 4.6, nothing backed from it, the work was asked about again,
+  // and it came round to 1.7 and went off, 20 to none.
+  const marked = t => { try { return require('./danger').creeperMarked(bot, t); } catch (_) { return false; } };
+  const creepers = mobs.filter(t => t.entity?.name === 'creeper' && t.distance <= creeperLine && (t.visible || t.distance <= 4 || marked(t)));
   let apart = new Set();
   if (creepers.length) { try { apart = look.noWay?.(bot, mobs) || new Set(); } catch (_) { apart = new Set(); } }
   // Nor one that has stood off (danger.js standsOff, note 752b): parked past
@@ -171,7 +177,8 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   // walking at the bot. It is the claim's, beside the work, with that said.
   const stood = t => { try { return !!require('./danger').standsOff(bot, t); } catch (_) { return false; } };
   const creeper = creepers.filter(t => !apart.has(t.entity.id) && !stood(t)).sort((a, b) => a.distance - b.distance)[0];
-  if (creeper) add('creeper', { creeper: Math.round(creeper.distance * 10) / 10, seen: !!creeper.visible, lightsAt: LIGHTS_AT, blocksASecond: APPROACH, fuse: FUSE });
+  if (creeper) { try { require('./danger').markCreeper(bot, creeper); } catch (_) { /* unmarked */ }
+    add('creeper', { creeper: Math.round(creeper.distance * 10) / 10, seen: !!creeper.visible, lightsAt: LIGHTS_AT, blocksASecond: APPROACH, fuse: FUSE }); }
   const armLine = ARM + (was.has('arm') ? HYSTERESIS : 0);
   // At the stance's six health or under, or with no more than BLOWS_LEFT of
   // the blows that mob strikes at arm's length between the bot and its end.
@@ -547,7 +554,7 @@ function claimSays(c) {
     // Whether it can reach the bot, said of it (danger.js reachSays, note
     // 752): 25595's hoglin was answered every minute for twelve with
     // nothing said of the no route and no hit.
-    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.other ? '' : 'against it '}${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago${f.stance.other ? ' (against the mobs about then)' : ''} goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : notAsked(f) || 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.threat?.canReach ? ` Whether it can reach the bot: ${f.threat.canReach}.` : ''}${f.edge ? ` ${f.edge}` : ''}${f.push ? ` ${f.push}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.other ? '' : 'against it '}${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago${f.stance.other ? ' (against the mobs about then)' : ''} goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)${f.stance.noHitSeconds !== undefined ? `; nothing has hurt the bot in the ${f.stance.noHitSeconds} seconds since it was chosen` : ''}` : notAsked(f) || 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.threat?.canReach ? ` Whether it can reach the bot: ${f.threat.canReach}.` : ''}${f.edge ? ` ${f.edge}` : ''}${f.push ? ` ${f.push}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on` : notAsked(f) || 'the stance is asked next'}. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     // Said with the biters walking up while it eats, standing still (note 552).
@@ -562,7 +569,7 @@ function claimSays(c) {
     // With its minutes so far and what it was sealed against (note 584).
     // A pocket answer held is carried out without asking (survival.js
     // pocketHeldOf): said so, not "asked next" (25594, note 752).
-    case 'pocket_next': return `In a sealed pocket${f.inPocketMinutes !== undefined ? `, ${f.inPocketMinutes} minutes so far` : ''}${f.sealedAgainst ? `, sealed against ${f.sealedAgainst}` : ''}: ${f.pocketWaysRest ? `every way it had there rests (${f.pocketWaysRest.says}), the first back in about ${f.pocketWaysRest.forSeconds} seconds; given the turn meanwhile, it waits sealed and nothing there is asked, while the work, given it, goes on from here (its walk digs through the pocket's own blocks first)` : f.pocketHeld ? `${String(f.pocketHeld.choice).replaceAll('_', ' ')} goes on, as chosen (${f.pocketHeld.why})${f.pocketHeld.secondsAgo !== undefined ? ` ${f.pocketHeld.secondsAgo} seconds ago` : ''}, about ${f.pocketHeld.forSeconds} seconds more before whether to stay, leave or do something else there is asked again` : notAsked(f) || 'whether to stay, leave or do something else there is asked next'}.${f.waitingFor ? ` The wait there waits for ${f.waitingFor}${f.staysForNothing ? `; stay chosen ${f.staysForNothing} time${f.staysForNothing === 1 ? '' : 's'} in it, nothing changed in any` : ''}.` : ''}${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
+    case 'pocket_next': return `In a sealed pocket${f.inPocketMinutes !== undefined ? `, ${f.inPocketMinutes} minutes so far` : ''}${f.sealedAgainst ? `, sealed against ${f.sealedAgainst}` : ''}: ${f.pocketWaysRest ? `every way it had there rests (${f.pocketWaysRest.says}), the first back in about ${f.pocketWaysRest.forSeconds} seconds; given the turn meanwhile, it waits sealed and nothing there is asked, while the work, given it, goes on from here (its walk digs through the pocket's own blocks first)` : f.pocketHeld ? `${String(f.pocketHeld.choice).replaceAll('_', ' ')} goes on, as chosen (${f.pocketHeld.why})${f.pocketHeld.secondsAgo !== undefined ? ` ${f.pocketHeld.secondsAgo} seconds ago` : ''}${f.pocketHeld.noHitSeconds !== undefined ? `, nothing having hurt the bot in the ${f.pocketHeld.noHitSeconds} seconds in it` : ''}, about ${f.pocketHeld.forSeconds} seconds more before whether to stay, leave or do something else there is asked again` : notAsked(f) || 'whether to stay, leave or do something else there is asked next'}.${f.waitingFor ? ` The wait there waits for ${f.waitingFor}${f.staysForNothing ? `; stay chosen ${f.staysForNothing} time${f.staysForNothing === 1 ? '' : 's'} in it, nothing changed in any` : ''}.` : ''}${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
     // Under the rock the night is no reason (note 755): 25594 read "Shelter
     // for the night" at y 7 in a geode while pocket_next said nightfall
     // changes nothing there. Said by what it is, the reason first (the
