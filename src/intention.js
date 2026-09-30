@@ -38,6 +38,12 @@ const TIMED = {
   restock_food: /^(hoglin_\w+|cook_meat|mushroom_stew|return_for_food)$/,
   empty_spawner: /^(stand_by_spawner|heal_first)$/,
   portal_way: /^(climb_here|around_\w+)$/,
+  // Building or casting a portal frame is a stand at one spot over minutes
+  // (note 714): 25581 was asked portal_method twice within a second and
+  // chose cast_frame then cast_at_lava, and surface_trip's climb sent it back
+  // up to daylight in the same second it chose to work by the lava.
+  portal_method: /^(build_new|cast_frame|cast_at_lava|cast_here|into_cave|other_lava|new_site|ruin_\d+)$/,
+  surface_trip: /^(climb|mine_first|dig_site)$/,
   stillness_detour: /^(return_for_food|restock_food|explore|cross_toward|floor_toward|pillar_up|blocks_then_pillar|fetch_stems|mine_nearby|night_mine|cook_food|stock_wood|pearls_\w+)$/,
   rung_progress: /^(fetch_stems|cross_toward|floor_toward|pillar_up|blocks_then_pillar|restock_food|return_for_food|pearls_\w+)$/,
   // Upkeep's fetch too (note 703): 25589 chose it at 00:05:38Z, a wither
@@ -50,7 +56,7 @@ const TIMED = {
 // fetch_stems (note 703).
 const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks)$/;
 // The questions about the plan that are not asked to replace an intention.
-const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid']);
+const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
 // is under way: a timed answer of theirs replaces it.
 const AT_A_CHANGE = new Set(['stillness_detour', 'rung_progress']);
@@ -70,6 +76,12 @@ const WAYS = [
   // it the intention goes on. 25591's walk back to the portal was turned
   // round by nether_gather's legs and its without (note 678).
   { q: 'nether_gather', of: /./, drops: /^without$/ },
+  // Climbing to the surface, or mining ore on the way there, undoes a stand
+  // just taken to build or cast a portal (note 714): 25581's surface_trip
+  // sent it "back to daylight" in the same second it chose cast_at_lava.
+  // Digging a site for the frame out of the rock, or leaving the step with
+  // the ladder's next one, does not: both stay where the portal work is.
+  { q: 'surface_trip', of: /^portal_method\/(build_new|cast_frame|cast_at_lava|cast_here|into_cave|other_lava|new_site|ruin_\d+)$/, drops: /^(climb|mine_first)$/ },
 ];
 const NEAR = 16;          // a target this near the intention's serves it
 const ARRIVED = 4;
@@ -134,6 +146,13 @@ const SAYS = [
   [/^nether_gather\/portal_trip$/, 'Going back through the portal for wood', 'pickaxe'],
   [/^nether_gather\/(walk_to|cross_to|floor_to)_\d+$|^nether_gather\/wood_in_view$/, 'Going for', 'for'],
   [/^empty_spawner\/stand_by_spawner$/, 'Standing by the spawner for blazes', 'rods'],
+  [/^portal_method\/build_new$/, 'Building a portal frame from obsidian', null],
+  [/^portal_method\/(cast_frame|cast_at_lava|cast_here|other_lava|new_site)$/, 'Casting a portal frame from lava and water', null],
+  [/^portal_method\/into_cave$/, 'Going down into the cave under the way to the lava', null],
+  [/^portal_method\/ruin_\d+$/, 'Finishing and lighting the remembered ruined portal', null],
+  [/^surface_trip\/climb$/, 'Climbing to open sky', null],
+  [/^surface_trip\/mine_first$/, 'Mining the ore in view before climbing', null],
+  [/^surface_trip\/dig_site$/, 'Digging a portal site out of the rock here', null],
 ];
 function whySays(bot, goal, kind, state) {
   try {
@@ -300,7 +319,19 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   const i = holding(bot, goal, now);
   if (i && DROP.test(choice)) { end(goal, `dropped: Jev chose ${words(choice)} (${words(q)})`, now); return null; }
   if (i && q !== i.q && (wayOf(q, i) || !committing(q, choice) || (choice === i.choice && ERRANDS.test(choice)) || (P(target) && i.target && dist(P(target), i.target) <= NEAR))) {
-    if (committing(q, choice)) { i.way = `${q}/${choice}`; i.wayAt = now; }
+    if (committing(q, choice)) {
+      i.way = `${q}/${choice}`; i.wayAt = now;
+      // A sub-need of the intention (the wood its trip needs), said as part
+      // of it, not asked as a new plan (note 714): 25583's return_for_blocks
+      // said nothing when nether_gather sent it after wood instead. Said
+      // whether Jev chose it or it was the one way left after the
+      // intention's own filtering (note 693's silence is for narrating a new
+      // intention as Jev's choice; this says only what is happening, not who
+      // decided it).
+      const line = `${words(choice)} (${words(q)}), part of ${words(i.choice)} (${words(i.q)}): back to it after.`;
+      const said = bot ? (bot._intentionWaySaid ||= {}) : {};
+      if (typeof bot?.chat === 'function' && !(said.line === line && now - said.at < SAID_MS)) { said.line = line; said.at = now; try { bot.chat(line); } catch (_) { /* said in the record */ } }
+    }
     return i;
   }
   if (!committing(q, choice) || !chosen) return i;

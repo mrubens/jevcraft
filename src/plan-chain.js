@@ -49,6 +49,11 @@ const SIDES = [
     away: /^nether_gather\/without$/, towardSays: 'get a pickaxe', awaySays: 'go on without a pickaxe' },
   { topic: 'overworld', toward: /^(fortress_visit|leave_nether)\/go_back$|^(fortress_leg|fortress_approach|nether_food_kit|restock_food)\/return_for_(food|blocks)$/,
     away: /^fortress_visit\/go_in$|^leave_nether\/search_on$/, towardSays: 'go back through the portal', awaySays: 'stay in the Nether and go on' },
+  // 25581 chose cast_at_lava (portal_method) and in the same second chose
+  // climb (surface_trip), undoing the stand it had just taken to work by the
+  // lava (note 714).
+  { topic: 'portal_site', toward: /^portal_method\/(build_new|cast_frame|cast_at_lava|cast_here|into_cave|other_lava|new_site|ruin_\d+)$/,
+    away: /^surface_trip\/(climb|mine_first)$/, towardSays: 'work here on the portal', awaySays: 'climb to open sky' },
 ];
 function sidesOf(path) {
   const out = [];
