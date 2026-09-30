@@ -72,12 +72,18 @@ test('a pool dug toward is held against the deep lava from farther off, and the 
   const fresh = { landmarks: [{ ...pool }] };
   setAside(fresh, 'landmark_trip', 'lava_pool:120,0', 'no nearer', 1800000);
   await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, fresh, () => {}, actions);
-  assert.equal(dug[0].y, LAVA_DEPTH, 'not held: 122 blocks off is past the dig\'s reach');
-  assert.match(chat.at(-1), /the pool known at \(120, 20, 0\) is passed: 122 blocks off, too far to dig to/);
+  // Note 763: no flat 96-block reach; 122 blocks across and 25 down is a
+  // shorter dig and carry back than the deep lava 101 down and up again.
+  assert.deepEqual([dug[0].x, dug[0].y, dug[0].z], [120, 21, 0], 'not held, and still the shorter way: dug toward the pool');
+  const far = { ...pool, x: 320 }, farGoal = { landmarks: [far] };
+  setAside(farGoal, 'landmark_trip', 'lava_pool:320,0', 'no nearer', 1800000);
+  await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, farGoal, () => {}, actions);
+  assert.equal(dug.at(-1).y, LAVA_DEPTH, 'not held: 320 blocks across is a longer dig and carry back than the deep lava');
+  assert.match(chat.at(-1), /the pool known at \(320, 20, 0\) is passed: 320 blocks off, a longer dig and carry back \(about \d+ seconds\) than the deep lava's \(about \d+\)/);
   const held = { landmarks: [{ ...pool }], lavaFetch: { way: 'dig', lava: { x: 120, y: 20, z: 0 }, dest: { x: 120, y: 21, z: 0 }, since: Date.now(), carried: 0, dimension: 'overworld', switches: 0 } };
   setAside(held, 'landmark_trip', 'lava_pool:120,0', 'no nearer', 1800000);
   await collectLava(bot, new Task('lava'), { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, held, () => {}, actions);
-  assert.deepEqual([dug[1].x, dug[1].y, dug[1].z], [120, 21, 0], 'held: dug on toward the pool');
+  assert.deepEqual([dug.at(-1).x, dug.at(-1).y, dug.at(-1).z], [120, 21, 0], 'held: dug on toward the pool');
 });
 
 test('a lava source just scooped is not stepped into on the walk away (25584 mid-244-gc 15:21:15-19Z, note 753c)', async () => {

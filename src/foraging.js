@@ -243,7 +243,9 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
   const walkFacts = (distance, to = null) => {
     const seconds = Math.round(distance / 4.3), tod = bot.time?.timeOfDay ?? 6000;
     const dark = tod >= DAY.DARK && tod < DAY.DAWN;
-    return { walkSeconds: seconds, ...passes(to), ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
+    // A walk at the surface from under cover is a climb first (note 763).
+    const leg = require('./levels').surfaceLeg(bot, { back: false });
+    return { walkSeconds: seconds, ...(leg.seconds ? { climbFirst: `about ${leg.depth} blocks up to the surface first, ${leg.says.replace(/^the climb to open sky first, \d+ blocks up, /, '')}` } : {}), ...passes(to), ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
       healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}) };
   };
   const home = homeFood(bot, goal);
@@ -307,7 +309,9 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     const { climbToSurface, climbMinutes, surfaceObserver } = require('./surface');
     let underground = false, climb = 0;
     try { underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position); climb = underground ? climbToSurface(bot, bot.entity.position) : 0; } catch (_) {}
-    if (underground) facts.climbFirst = climb != null ? `about ${climb} blocks up to the surface first, roughly ${climbMinutes(climb)} minutes` : 'up to the surface first, how far not known';
+    if (underground && !facts.climbFirst) facts.climbFirst = climb != null ? `about ${climb} blocks up to the surface first, roughly ${climbMinutes(climb)} minutes` : 'up to the surface first, how far not known';
+    // What is owed at each level, the climb at the bot's own pace (note 763).
+    if (underground) { const owed = require('./levels').levelsSays(bot, goal, { going: 'up' }).trim(); if (owed) facts.owedByLevel = owed; }
     const about = require('./danger').hostileEntities(bot, 24);
     if (about.length) facts.hostilesWithin24 = [...new Set(about.map(e => e.name))].map(n => `${about.filter(e => e.name === n).length} ${n.replaceAll('_', ' ')}`).join(', ');
     return facts;

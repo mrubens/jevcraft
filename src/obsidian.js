@@ -307,7 +307,10 @@ function holdLava(bot, goal, save, { way, lava, dest = lava, why = '' }) {
   if (same) return held;
   const dy = Math.round(lava.y - here.y), across = Math.round(Math.hypot(lava.x - here.x, lava.z - here.z));
   const height = dy <= -4 ? `, ${-dy} blocks down` : dy >= 4 ? `, ${dy} blocks up` : '';
-  const takes = minutesSays(waySeconds(here, dest, way === 'pool' || way === 'to_lava' ? 'walk' : 'dig'));
+  // A walk said at the bot's measured pace (note 763): "147 blocks off, about
+  // 35 seconds" at 4.3 blocks a second took three to nine minutes.
+  const walking = way === 'pool' || way === 'to_lava';
+  const takes = minutesSays(walking ? require('./levels').walkSeconds(Math.hypot(dest.x - here.x, dest.z - here.z)) + (Math.abs(dest.y - here.y) > 8 ? require('./levels').upSeconds(Math.abs(dest.y - here.y)) : 0) : waySeconds(here, dest, 'dig'));
   const at = `(${Math.round(lava.x)}, ${Math.round(lava.y)}, ${Math.round(lava.z)})`;
   const line = way === 'deep' ? `Digging down for the deep lava at y ${Math.round(lava.y)}${height}, ${takes} by staircase${why}.`
     : way === 'pool' ? `Walking to the lava pool at ${at}, ${across} blocks off${height}, ${takes}${why}.`
@@ -351,14 +354,33 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // went for pools 350 and 460 blocks off and then dug to the deep lava
   // below where it stood, 135 blocks down: forty minutes for one bucket
   // (note 524).
+  // With no frame to carry to, the lava comes back to about where the fetch
+  // is made from (a frame cast in place goes down where the bot stands):
+  // the way back up counts (note 763). Carried one way only, a pool 28
+  // blocks down and the deep lava 102 down read alike to a dig, and 25584
+  // (mid-244-hf, 2026-09-30 19:18-19:28Z) dug for the deep lava at y -56,
+  // "the pool known at (132, 18, 108) is passed: 107 blocks", pacing six
+  // blocks for ten minutes as heading after heading was set aside.
   const to = castTo(bot, goal), here = bot.entity.position;
-  const carry = p => carrySeconds(here, p, to);
+  const back = to || (goal.portalMethod?.near ? null : here);
+  const carry = p => carrySeconds(here, p, back);
+  // A dig's own seconds there and the carry back: the dig toward a pool
+  // whose walk failed and the dig for the deep lava weighed alike.
+  const digCarry = p => waySeconds(here, p, 'dig') + (back ? legSeconds(p, back) : 0);
   // A heading whose staircase from this landing rests is not the deep lava
   // either: read by the target's area alone, a heading resting from here was
   // chosen and thrown on at once, four in nine seconds on 25590 (mid-239-ce,
   // 2026-09-30 17:16:01-10Z, "paced the same few cells about (223, -1, 40)"
   // said of each), and the fetch was called stuck (note 753d).
-  const deep = descentTargets(here.floored(), LAVA_DEPTH).find(p => !staircaseResting(goal, p) && !isSetAside(goal, 'staircase_from', require('./tunneling').landingKey(here.floored(), p)));
+  const headings = descentTargets(here.floored(), LAVA_DEPTH);
+  const headingResting = p => staircaseResting(goal, p) || isSetAside(goal, 'staircase_from', require('./tunneling').landingKey(here.floored(), p));
+  const deep = headings.find(p => !headingResting(p));
+  // The deep lava failing from here (note 763): two or more of its headings
+  // from about here set aside is the dig itself failing where the bot
+  // stands, not one bad heading, and the next heading's staircase met the
+  // same: 25584 set sixteen aside in ten minutes pacing the same cells. A
+  // pool known is then taken before it, however its carry compares.
+  const deepFailing = headings.filter(headingResting).length >= 2;
   const landmarkAt = l => new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z);
   const pool = l => !l.spent && !lavaResting(goal, landmarkAt(l));
   // A deep dig already real steps into (resourceTunnelStep's own site,
@@ -512,9 +534,14 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // off for the deep lava, three times round (note 753c).
   const heldPool = l => !!held && /^(dig|pool)$/.test(held.way) && sameLava(landmarkAt(l), held.lava);
   const candidates = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && pool(l) && l.y !== undefined);
-  const passedWhy = l => !open(lavaWay(landmarkAt(l))) ? 'its way rests' : landmarkAt(l).distanceTo(here) > (heldPool(l) ? 192 : 96) ? `${Math.round(landmarkAt(l).distanceTo(here))} blocks off, too far to dig to`
-    : deep && carry(landmarkAt(l)) >= carry(deep) * (heldPool(l) ? HOLD_MARGIN : 1) ? `a longer carry (about ${Math.round(carry(landmarkAt(l)))} seconds) than the deep lava's (about ${Math.round(carry(deep))})` : null;
-  const knownPools = nearest ? [] : candidates.filter(l => !passedWhy(l)).sort((a, b) => carry(landmarkAt(a)) - carry(landmarkAt(b)));
+  // A pool is passed for the deep lava only where the deep lava's dig and
+  // carry back are shorter (note 763): the flat 96 blocks "too far to dig
+  // to" passed 25584's pool 107 blocks off and 28 down for the deep lava
+  // 102 down. With no deep heading open, or the deep dig failing from here,
+  // no pool is passed for it.
+  const passedWhy = l => !open(lavaWay(landmarkAt(l))) ? 'its way rests'
+    : deep && !deepFailing && digCarry(landmarkAt(l)) >= digCarry(deep) * (heldPool(l) ? HOLD_MARGIN : 1) ? `${Math.round(landmarkAt(l).distanceTo(here))} blocks off, a longer dig and carry back (about ${Math.round(digCarry(landmarkAt(l)))} seconds) than the deep lava's (about ${Math.round(digCarry(deep))})` : null;
+  const knownPools = nearest ? [] : candidates.filter(l => !passedWhy(l)).sort((a, b) => digCarry(landmarkAt(a)) - digCarry(landmarkAt(b)));
   const poolDig = knownPools.find(heldPool) || knownPools[0];
   // The deep lava is the first heading whose staircase is not resting. A
   // scooping spot dug toward is held the same way as the lava.
@@ -529,7 +556,8 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   else {
     // Said with the pool known and why it is passed, not "no pool known".
     const passed = candidates.slice().sort((a, b) => landmarkAt(a).distanceTo(here) - landmarkAt(b).distanceTo(here))[0];
-    const why = passed ? `, no lava in sight; the pool known at (${passed.x}, ${passed.y}, ${passed.z}) is passed: ${passedWhy(passed) || 'not dug to'}` : ', no lava in sight and no pool known';
+    const failing = headings.filter(headingResting).length;
+    const why = `${passed ? `, no lava in sight; the pool known at (${passed.x}, ${passed.y}, ${passed.z}) is passed: ${passedWhy(passed) || 'not dug to'}` : ', no lava in sight and no pool known'}${failing ? `; ${failing} of the ${headings.length} headings down from about here are set aside` : ''}`;
     holdLava(bot, goal, save, { way: 'deep', lava: dest, why });
   }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();

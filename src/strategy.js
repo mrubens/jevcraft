@@ -255,7 +255,13 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // by this option that the Nether was the thing waiting on it).
   let netherCost = '';
   if (bot && goal && rung.phase !== 'reach_nether') { try { const s = require('./game-progress').rungAsideSays(goal, 'reach_nether'); if (s) netherCost = ` ${s}`; } catch (_) { netherCost = ''; } }
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${netherCost}`, rung, ladderNext: first };
+  // Its level from here and its record (note 763): a rung whose gathering
+  // is at the surface said with the climb and what is owed below, and what
+  // the trials that chose it spent on it and what the stays that had it
+  // came to, the same facts the Nether now says of going without it.
+  const level = bot && goal ? require('./levels').rungLevelSays(bot, goal, rung.phase) : '';
+  const record = require('./kit-record').rungRecordSays(rung.phase, bot?.entity?.position?.y);
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${level}${record}${netherCost}`, rung, ladderNext: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
@@ -357,12 +363,21 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       return `every hit lands on what is worn now (${worn.length ? worn.map(label).join(', ') : 'nothing'}, ${through.points} armour points): a blaze's fireball about ${round(afterArmour(MOBS.blaze.hit, through))}, a wither skeleton's blade about ${round(afterArmour(MOBS.wither_skeleton.hit, through))}, a piglin's about ${round(afterArmour(MOBS.piglin.hit, through))}, of 20 health; full iron would take about ${round(afterArmour(MOBS.blaze.hit, armourOf(['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'])))} of the fireball`;
     };
     const without = p => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(p) ? armourHits() : WITHOUT[p] || RUNG_WHY[p] || 'it waits';
+    // What the rung left would have taken from here, and its record.
+    const priced = p => {
+      const phase = p === 'iron_armour' ? (left.find(q => /^iron_/.test(q)) || p) : p;
+      const level = require('./levels').rungLevelSays(bot, goal, phase).replace(/^ Its gathering/, ' Its gathering from here');
+      return `${level}${require('./kit-record').rungRecordSays(p, bot?.entity?.position?.y)}`;
+    };
     // Going for the Nether takes up the reach nether if it was set aside:
     // said, and its rest cut short when chosen (note 694).
     const netherAside = require('./game-progress').rungAsideSays(goal, 'reach_nether');
     return {
       ...(netherAside ? { takeBack: 'reach_nether' } : {}),
-      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
+      // Entered with the kit carried now, each rung left priced (note 763):
+      // what it would take from here (its level, the climb) and what the
+      // trials that chose it spent and the stays that had it came to.
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now, with the kit carried now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.${priced(p)}`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       // Said whole: "Before the diamond sword, I'll leave the diamond sword
       // for later" named the rung skipped as the one done first (25592
@@ -370,7 +385,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       // live critic's report of 11:57Z, note 753).
       chat: `I'll leave the ${left.map(label).join(' and the ')} for later and go for the Nether now.`,
       side: true, aside: true,
-      run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
+      run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); if (left.includes('nether_food')) delete goal.foodTrip; },
     };
   };
   if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
@@ -483,6 +498,20 @@ function lastStrategyFact(bot, goal, now = Date.now()) {
   return { choice, rungPhase: phase, at, open, resting, why, says: `${label(choice)} was chosen ${agoWords(now - at)} ago: ${gained}.` };
 }
 
+// Work under way that a held win_strategy answer began (note 763): the
+// lava fetch holding its lava (obsidian.js heldLava), a cast frame being
+// filled, a climb to open sky chosen and not yet at the top, a food trip for
+// the Nether taken within its hold. Null when none is.
+function errandUnderWay(bot, goal, now = Date.now()) {
+  try { const lava = require('./obsidian').heldLava(bot, goal); if (lava) return 'the lava fetch under way'; } catch (_) { /* none held */ }
+  const f = goal.portalFrame;
+  if (f && !f.ruin && f.cast && f.origin && goal.portalMethod?.kind === 'cast' && dimension(bot) === 'overworld') return `the cast of the frame at (${f.origin.x}, ${f.origin.y}, ${f.origin.z})`;
+  if (goal.surfaceReturn && goal.surfaceTrip?.pick === 'climb') return `the climb to open sky for ${goal.surfaceTrip.need || 'the work'}`;
+  const k = goal.kitFood?.choice;
+  if (k && k.pick !== 'go_without' && now - k.at < 10 * 60000) return 'the food trip for the Nether';
+  return null;
+}
+
 function strategyState(bot, goal, stage, extra = {}) {
   const clock = goal.rungClocks?.[stage.phase];
   const t = bot.time?.timeOfDay ?? 0;
@@ -511,6 +540,9 @@ function strategyState(bot, goal, stage, extra = {}) {
       // at the portal that this line never mentioned (the decision review,
       // 2026-09-26).
       return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${kit.length ? ` The crossing's kit, last before the portal, each of which may be gone without: ${kit.map(p => RUNG_WHY[p]).join(', ')}.` : ''}${aside.length ? ` Set aside by choice, to go without for now: ${aside.join(', ')}, each back on its own after that.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
+    // What is owed at the surface and at depth from here, and the climb
+    // between them at the bot's own pace (note 763).
+    ...((() => { const says = require('./levels').levelsSays(bot, goal).trim(); return says ? { byLevel: says } : {}; })()),
     riskNow: require('./risk').riskNow(bot), deathWouldCost: require('./risk').deathCost(bot, goal),
     recentPositions: require('./stillness').recentPositions(bot),
     health: bot.health, food: bot.food, experienceLevel: bot.experience?.level ?? 0,
@@ -583,6 +615,32 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     if (key && !newlyOpen && (!held.dimension || held.dimension === dim)) { choice = key; heldOption = options[key]; }
   } else if (same && held?.ladderNext === stage.phase && now() - held.at < HOLD_MS && options[held.choice]) {
     choice = held.choice; heldOption = options[choice];
+  }
+  // Not asked again mid-errand (note 763): a lava fetch, a cast, a climb or
+  // a food trip the held answer began goes on to its end, a rung the work's
+  // own wear or spend opens (a pickaxe worn under the spare's uses on the
+  // dig, the food eaten, the blocks laid) waiting for it. 25583 and 25590
+  // turned win_strategy every 10 to 60 seconds, the lava fetch restarted
+  // each time; 142 of the turns on the hard worlds came mid lava fetch.
+  // The errand ends on its own terms (the bucket filled, the frame lit, the
+  // top reached, the food trip's hold out) or the ten minutes of the hold
+  // do; the question is asked then, with what opened said.
+  let errand = null;
+  if (!choice && held && now() - held.at < HOLD_MS && (errand = errandUnderWay(bot, goal, now()))) {
+    const opened = openRungs(bot, goal, now()).filter(r => !(held.openPhases || []).includes(r.phase)).map(r => label(r.phase));
+    if (held.rungPhase) {
+      const rung = openRungs(bot, goal, now()).find(r => r.phase === held.rungPhase);
+      if (rung && rungStatus(bot, goal, held.rungPhase, now()).open) { choice = held.choice; heldOption = { rung }; }
+    } else if (options[held.choice] && held.choice !== 'nether_first') { choice = held.choice; heldOption = options[held.choice]; }
+    else if (/^(stage_reach_nether|nether_first)$/.test(held.choice) && stage.phase !== 'reach_nether' && dimension(bot) === 'overworld'
+      && openRungs(bot, goal, now()).every(r => require('./game-progress').DEFERRABLE.has(r.phase))) {
+      console.log(`[strategy] held through ${errand}: ${label(held.choice)} goes on${opened.length ? `, the ${opened.join(', ')} opened meanwhile waiting for its end` : ''}`);
+      return { stage: { phase: 'reach_nether', action: 'enter_nether' } };
+    }
+    if (choice) {
+      if (!held.errand) { held.errand = errand; save(); }
+      if (opened.length) console.log(`[strategy] held through ${errand}: ${label(held.choice)} goes on, the ${opened.join(', ')} opened meanwhile waiting for its end`);
+    }
   }
   if (!choice) {
     // What the last answer brought, said so the next one is not asked blind
@@ -657,4 +715,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };
+module.exports = { errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };

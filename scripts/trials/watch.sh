@@ -35,7 +35,10 @@ while :; do
   for p in $(ports "$@"); do
     if [ "$TRIAL" = midgame ]; then V=$(MIDGAME_PORT=$p limit node scripts/midgame.js verdict 2>/dev/null </dev/null)
     else V=$(FIRST_DAYS_PORT=$p limit node scripts/first-days.js verdict 2>/dev/null </dev/null); fi
-    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);const noNether=!/fortress|nether/.test(v.world||'')&&(v.playedMinutes||0)>=60&&!(v.reachedAtMinute||{}).nether;const r=v.reachedAtMinute||{};const noFortress=!/fortress/.test(v.world||'')&&r.nether!=null&&!r.fortress&&(v.playedMinutes||0)-r.nether>=60;process.exit(v.done||noNether||noFortress||(v.reasons||[]).some(r=>/death|loop|stranded/.test(r))?0:1)}catch{process.exit(1)}})"; then
+    # The hour's cuts are the verdict's own reasons ("cut: no Nether in 60
+    # minutes played", "cut: no fortress in 60 minutes after the Nether",
+    # midgame.js cutReasons, note 763): the trial record says why it ended.
+    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(v.done||(v.reasons||[]).some(r=>/death|loop|stranded|^cut: /.test(r))?0:1)}catch{process.exit(1)}})"; then
       echo "attention on $p"; echo "$V" | head -30; exit 0
     fi
   done

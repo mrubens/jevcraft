@@ -518,6 +518,25 @@ function flipPlace(changes, here) {
   }
   return null;
 }
+// Two steps of the portal's own work trading the turn in the reach-nether
+// rung (note 763), judged against one fact of the portal's state
+// (portal-state.js): a side whose claim on the turn does not hold (the
+// ladder's label enter_nether with no portal lit, written before every pass
+// of the crossing, note 748) is not a trade, and the pair is not a flip;
+// both holding, the flip is Jev's question about the portal (portal_method,
+// the flip named), not a rest and a detour list. 25583 (mid-242-ai,
+// 2026-09-30 19:40-19:49Z, and 20:08-20:13Z at nine of ten standing) was
+// rested as "cast portal and enter nether", answered the stall's question 32
+// times with detours, and set the reach nether aside at nine of ten.
+// -> null (not a portal pair), 'label' (not a flip), or { fact } (ask).
+function portalPair(bot, goal, names) {
+  const PS = require('./portal-state');
+  const rung = goal?.rungTime?.phase || goal?.gameProgress?.phase;
+  if (rung !== 'reach_nether' || ![...names].every(n => PS.PORTAL_STEPS.test(n)) || !/overworld/.test(String(bot?.game?.dimension || 'overworld'))) return null;
+  const fact = PS.portalFact(bot, goal);
+  if (![...names].every(n => PS.claimHolds(n, fact))) return 'label';
+  return { fact };
+}
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
   const here = bot.entity?.position;
@@ -543,7 +562,7 @@ function flipWatch(bot, goal, now = Date.now()) {
     // goes to the question above as the first raise did.
     if (layer === 'work' && changed && changes.length >= 2 && !stalls.stall) {
       const prev = changes.at(-2).a;
-      const pairs = require('./flip-pairs'), e = prev !== a ? pairs.resting(goal, [prev, a], here, now) : null;
+      const pairs = require('./flip-pairs'), e = prev !== a && !portalPair(bot, goal, new Set([prev, a])) ? pairs.resting(goal, [prev, a], here, now) : null;
       if (e) {
         const action = actionOf({ ...goal, survivalAction: null }, now);
         const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
@@ -558,6 +577,8 @@ function flipWatch(bot, goal, now = Date.now()) {
     const first = changes[0], names = new Set(changes.map(c => c.a));
     const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
     if (names.size !== 2 || now - first.t > FLIP_MS) continue;
+    const portal = layer === 'work' ? portalPair(bot, goal, names) : null;
+    if (portal === 'label') continue;
     // Two fight moves trading places (a fight and a raised shield) are one fight.
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
     const place = flipPlace(changes, here);
@@ -602,6 +623,16 @@ function flipWatch(bot, goal, now = Date.now()) {
     // return to the surface and sealed shelter traded turns through eight
     // strikes (2026-09-26).
     if (layer === 'survival') { const { setAside } = require('./progress'); for (const n of names) if (!EMERGENCIES.has(n)) setAside(goal, 'flip', `survival:${n}`, why, FLIP_REST_MS); }
+    // The portal's own pair, each side's claim holding: asked of Jev as the
+    // way the portal is made, with the flip and the portal's fact named; no
+    // rest, no detour list (note 763).
+    if (portal && goal.portalMethod) {
+      stalls.changes = {};
+      const before = goal.portalMethod.flips || 0;
+      goal.portalMethod.flipped = { pair: [...names], trades: FLIP_CHANGES - 1, seconds, why, fact: portal.fact.says, at: now, times: before + 1 };
+      goal.portalMethod.flips = before + 1;
+      return null;
+    }
     if (layer === 'work') {
       flipFailed(bot, goal, action, why, now);
       // The work's pair rests together from here, counted with its trades
@@ -740,5 +771,5 @@ function recordStill(state, reason, ms, { now = Date.now(), detour } = {}) {
   return bucket;
 }
 
-module.exports = { flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, stepWait, waitEnds, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
+module.exports = { portalPair, flipped, flipWatch, noteTrail, recentPositions, airWatch, STALL_MS, STILL_MS, GROUND, HOLDS, EMERGENCIES, RESULTS, excused, FILLER, permittedWait, stepWait, waitEnds, actionOf, stillReason, look, watchStalls, unwatchStalls, raise, raiseFor, worth,
   Stalled, checkStall, preempted, takeStall, deferStall, refused, recordStill };

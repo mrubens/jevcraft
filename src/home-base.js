@@ -965,7 +965,10 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const nightNow = tod >= DAY.DARK && tod < DAY.DAWN;
   const toDawn = Math.round(((DAY.DAWN - tod + 24000) % 24000) / 1200);
   const nightSays = nightNow ? ` It is night: the surface's mobs are out until dawn, about ${toDawn} real minutes off, and the walk to look comes out among them.` : '';
-  if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.${nightSays}` };
+  // With what is still owed at each level and the climb at the bot's own
+  // measured pace (note 763: 239's trials climbed for sheep 22 times from
+  // the home bed's wool hunt, 54.6 minutes, before the Nether).
+  if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.${nightSays}${require('./levels').levelsSays(bot, goal, { going: 'up' })}` };
   else tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
   if (nightNow) tree.until_day = { description: `Leave the sheep until day, about ${toDawn} real minutes to dawn: the bed's search rests until then and the ladder's other work goes on meanwhile${underground ? ' down here, where the dark is the same at any hour (a night mine chosen from a pocket holds until dawn)' : ''}; taken up again at dawn.` };
   if (webs.length >= 2 && stringWanted) {

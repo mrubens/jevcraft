@@ -122,7 +122,7 @@ test('the cast option says what it needs against what is carried, the trips to l
   assert.match(says, new RegExp(`about ${cast.plannedWalls()} ordinary blocks for the temporary walls.*\\(20 carried\\)`));
   assert.match(says, /flint and steel or a fire charge \(none carried\)/);
   assert.match(says, /with 4 buckets that is about 2 trips to lava/, 'seven to fetch, four at a time');
-  assert.match(says, /43 blocks away \(a lava pool remembered\): about 20 seconds there and back a trip, 40 seconds in all/);
+  assert.match(says, /43 blocks away \(a lava pool remembered\): about 2 minutes there and back a trip, 4 minutes in all/);
   const bare = cast.castSays({ walls: 44 });
   assert.match(bare, /With no bucket carried one has to be made first; .* 10 trips to lava/);
   assert.match(bare, /No lava is known nearby/);
@@ -372,8 +372,8 @@ test('the way into the Nether is asked again every twenty working minutes, with 
   assert.match(offered.craft_buckets, /Make 2 more buckets first from the iron ingots carried \(three each, 6 of the 8\)/);
   // mid-244-j: each trip's time said, either way; from the frame, the climb in it (note 470).
   // The same trip, in the same words, as the cast's (note 553).
-  assert.match(offered.craft_buckets, /about 4 trips \(about 28 minutes of trips\), against 10 \(about 69 minutes of trips\).*A trip to the nearest known lava, 120 blocks from the frame, is about 7 minutes there and back a trip: the walk 56 seconds, and the lava 118 blocks below, a staircase of about 6 minutes each trip\./);
-  assert(offered.cast_frame.includes('about 7 minutes there and back a trip: the walk 56 seconds, and the lava 118 blocks below, a staircase of about 6 minutes each trip, 69 minutes in all'), offered.cast_frame);
+  assert.match(offered.craft_buckets, /about 4 trips \(about 63 minutes of trips\), against 10 \(about 159 minutes of trips\).*A trip to the nearest known lava, 120 blocks from the frame, is about 16 minutes there and back a trip: the walk 6 minutes, and the lava 118 blocks below, a staircase of about 10 minutes each trip\./);
+  assert(offered.cast_frame.includes('about 16 minutes there and back a trip: the walk 6 minutes, and the lava 118 blocks below, a staircase of about 10 minutes each trip, 159 minutes in all'), offered.cast_frame);
   // Moved beside the lava: the frame up here is left, and the new one goes down there.
   assert.equal(goal.portalMethod.kind, 'cast');
   assert.deepEqual(goal.portalMethod.near, { x: 20, y: -54, z: 40 });
@@ -563,7 +563,7 @@ test('the cast option counts the frame already standing and says when the lava i
   assert.match(says, /7 of the ten to cast \(3 standing, 0 obsidian carried/);
   assert.match(says, /about 7 trips to lava/);
   // The climb is in each trip, not beside it (note 470).
-  assert.match(says, /136 blocks away \(a lava pool remembered\): about 8 minutes there and back a trip: the walk 63 seconds, and the lava 136 blocks below, a staircase of about 7 minutes each trip, 56 minutes in all/);
+  assert.match(says, /136 blocks away \(a lava pool remembered\): about 18 minutes there and back a trip: the walk 7 minutes, and the lava 136 blocks below, a staircase of about 11 minutes each trip, 127 minutes in all/);
 });
 
 test('a stand no walk reaches is built up to with the blocks carried, as a player pillars beside a frame', async () => {
@@ -736,10 +736,10 @@ test('at the lava with the frame far above, the cast beside the lava is offered 
   assert.match(offered.cast_at_lava, /The frame begun, 5 of ten standing, is left as it stands and all ten are cast down there/);
   assert.match(offered.cast_frame, /5 of the ten to cast \(5 standing/);
   // The trips made are the price of a trip, the reckoning beside them (note 553).
-  assert.match(offered.cast_frame, /124 blocks from the frame \(a lava pool remembered\): about 25 minutes a trip, as the 2 trips for lava made so far took in working time \(from leaving the frame to pouring\), against about 7 minutes there and back reckoned: the walk 58 seconds, and the lava 122 blocks below, a staircase of about 6 minutes each trip, 125 minutes in all/);
+  assert.match(offered.cast_frame, /124 blocks from the frame \(a lava pool remembered\): about 25 minutes a trip, as the 2 trips for lava made so far took in working time \(from leaving the frame to pouring\), against about 16 minutes there and back reckoned: the walk 6 minutes, and the lava 122 blocks below, a staircase of about 10 minutes each trip, 125 minutes in all/);
   assert.doesNotMatch(offered.cast_frame, /about \d+ seconds there and back/);
   // The diamond route, with the same trip to set against the cast's.
-  assert.match(offered.build_new, /the 5 obsidian wanted are about 60 seconds of pouring and mining there, all carried to the frame at once: the bot is beside that lava now, so one way to the frame, about 6 minutes with a staircase of about 6 minutes/);
+  assert.match(offered.build_new, /the 5 obsidian wanted are about 60 seconds of pouring and mining there, all carried to the frame at once: the bot is beside that lava now, so one way to the frame, about 10 minutes with a staircase of about 10 minutes/);
   assert.match(offered.build_new, /The cast fetches a bucket a block: 5 trips of the same, about 125 minutes/);
 });
 
@@ -770,7 +770,7 @@ test('every way prices the lava trip alike: from the frame to the lava that serv
   const task = new Task('nether');
   task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_at_lava', confidence: 0.6 } } }; } };
   await portalMethod(bot, task, goal, () => {});
-  const trip = 'about 4 minutes a trip, as the 10 trips for lava made so far took in working time (from leaving the frame to pouring), against about 19 seconds there and back reckoned';
+  const trip = 'about 4 minutes a trip, as the 10 trips for lava made so far took in working time (from leaving the frame to pouring), against about 2 minutes there and back reckoned';
   for (const key of ['cast_at_lava', 'cast_frame', 'build_new', 'craft_buckets']) assert(offered[key].includes(trip), `${key}: ${offered[key]}`);
   assert.doesNotMatch(offered.cast_at_lava, /few seconds/);
   assert.match(offered.cast_at_lava, /the frame stays where it stands, .*lava chosen before .*that lava has no source left to scoop .*: each bucket is fetched from the nearest lava that serves, 40 blocks from the frame begun, about 4 minutes a trip/);

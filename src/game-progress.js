@@ -343,9 +343,17 @@ function ladderRung(bot, goal, waiting) {
   if (best('sword') < 4 && ready({ phase: 'diamond_sword' })) return another('diamond_sword');
   // Last before the portal, the crossing's kit: a spare pickaxe, blocks and
   // food for the stay (crossing-kit.js kitRungs, note 673).
-  for (const rung of require('./crossing-kit').kitRungs(bot, goal)) if (ready(rung)) return rung;
+  // Back through the portal for food (return_for_food, chosen in the
+  // Nether): the food rung is handed on arrival whatever rest it had, the
+  // errand the answer promised (note 763: 25584 mid-244-ak, 20:36:04Z, came
+  // out at hunger 18 with some food carried, the food rung resting from an
+  // earlier go_without, and the ladder sent it straight back in with none
+  // gathered). Taken off once the food is met or thirty minutes pass.
+  const trip = goal.foodTrip && Date.now() - goal.foodTrip.at < FOOD_TRIP_MS;
+  for (const rung of require('./crossing-kit').kitRungs(bot, goal)) if (ready(rung) || (trip && rung.phase === 'nether_food')) return rung;
   return null;
 }
+const FOOD_TRIP_MS = 30 * 60000;
 
 // How a bed is had, the first one or one to carry: three wool of a colour
 // carried is a craft; a remembered village with beds is a walk of known
@@ -931,6 +939,10 @@ async function gameStep(bot, task, goal, save, actions) {
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
   const progress = observeProgress(bot, goal);
   await require('./mob-policy').wearBestArmour(bot);
+  // Out of the Nether on a food trip (note 763): kept until the food rung
+  // is met or set aside by choice, or thirty minutes pass.
+  if (dimension(bot) === 'overworld' && goal.step?.action === 'return_for_food' && !goal.foodTrip) { goal.foodTrip = { at: Date.now() }; save(); }
+  if (goal.foodTrip && (Date.now() - goal.foodTrip.at >= FOOD_TRIP_MS || !require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_food'))) { delete goal.foodTrip; save(); }
   let stage = nextGameStage(bot, goal);
   // Back for what the last death dropped, before anything else: close to
   // the respawn its drops have five minutes (corpse-run.js).

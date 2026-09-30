@@ -75,6 +75,7 @@ const climbMinutes = blocks => Math.max(1, Math.round(blocks * 3 / 60));
 // a second a stair for the walking. Three digs a block of height also wore
 // the pickaxes out on the way up: two of mid-72-b's climbs went on by hand
 // from y 65 and y 58 after the last pickaxe broke on them (2026-09-26).
+const WOOD_FIRST_REST_MS = 10 * 60000;
 const STAIR_STEP_SECONDS = 1.2, PILLAR_RISE_SECONDS = 1, HAND_STONE_SECONDS = 7.5, PICKAXE_STONE_SECONDS = 0.6;
 const falls = block => ['sand', 'red_sand', 'gravel'].includes(block?.name) || /_concrete_powder$/.test(block?.name || '');
 const liquid = block => /^(water|lava|bubble_column|flowing_water|flowing_lava)$/.test(block?.name || '') || [true, 'true'].includes(block?.getProperties?.().waterlogged);
@@ -226,7 +227,7 @@ function walkedColumn(bot, feet, usesLeft, hereSeconds, { exclude = [] } = {}) {
 }
 
 // The two ways out by digging, each with what it costs and leaves, for Jev.
-function climbOptions(bot, target, column, { landing = false, rests = null, walkedAway = [], goal = null } = {}) {
+function climbOptions(bot, target, column, { landing = false, rests = null, walkedAway = [], goal = null, woodFirstFailed = null } = {}) {
   const feet = bot.entity.position.floored(), picks = pickaxesCarried(bot);
   const usesLeft = picks.reduce((n, p) => n + (p.usesLeft ?? 64), 0);
   const tools = picks.length ? picks.map(p => `${p.name.replaceAll('_', ' ')}${p.usesLeft != null ? ` (${p.usesLeft} uses left)` : ''}`).join(', ') : 'no pickaxe';
@@ -286,7 +287,13 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
   if (!picks.length) {
     let wood = null;
     try { wood = require('./pickaxe-budget').nearestWood(bot, goal || {}); } catch (_) { wood = null; }
-    if (wood && wood.distance <= 32) {
+    // Not wood at the surface the climb itself reaches, nor again soon after
+    // a fetch that came back with no pickaxe (note 763): 25590 (mid-239-da,
+    // 2026-09-30 ~20:00Z) under seven blocks of sand chose wood_first four
+    // times for "oak log 8 blocks off, 7 up", the log up top, each fetch
+    // back at once with nothing ("wood_first changed nothing 0.2s ago").
+    const pastTheClimb = wood && Number.isFinite(wood.up) && wood.up >= rises - 1;
+    if (wood && wood.distance <= 32 && !pastTheClimb && !woodFirstFailed) {
       const count = n => bot.inventory?.items?.().filter(i => i.name === n).reduce((s, i) => s + i.count, 0) || 0;
       const cobble = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((s, n) => s + count(n), 0) >= 3;
       const table = count('crafting_table') > 0;
@@ -559,6 +566,9 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
         // The pickaxe made, the climb is asked again with it (note 754e).
         delete state.climb; save();
         if (actions.woodFirst) await actions.woodFirst();
+        // Back with no pickaxe: kept, so the next ask does not offer it
+        // again at once (note 763).
+        if (!pickaxesCarried(bot).length) { state.woodFirstFailed = { at: Date.now() }; save(); }
         return;
       }
       if (climb.method === 'straight_up') { await climbStraightUp(bot, task, goal, save, state, climb.column, start, actions); return; }
@@ -626,7 +636,9 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   const column = state.climb?.failedColumn === here ? null : straightUpColumn(bot, feet);
   const kept = state.climb?.method && state.climb.tools === tools && (state.climb.method !== 'straight_up' || column?.cells) && (state.climb.method !== 'walk_then_up' || state.climb.walkTo);
   const offered = state.climb?.offered || [];
-  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing, rests, walkedAway: state.walkedAway || [], goal });
+  const woodFirstFailed = state.woodFirstFailed && Date.now() - state.woodFirstFailed.at < WOOD_FIRST_REST_MS ? state.woodFirstFailed : null;
+  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing, rests, walkedAway: state.walkedAway || [], goal, woodFirstFailed });
+  if (woodFirstFailed) facts.woodFirstFailed = `a pickaxe made from wood first was tried ${Math.max(1, Math.round((Date.now() - woodFirstFailed.at) / 1000))} seconds ago and came back with no pickaxe; not offered again for ${WOOD_FIRST_REST_MS / 60000} minutes`;
   // A way kept that has run to twice what it was said to take (and two
   // minutes at least) is asked about again, with what it has done: a
   // staircase said as four minutes that has risen twelve blocks in fourteen

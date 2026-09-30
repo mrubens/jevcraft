@@ -79,6 +79,19 @@ function reached(frames) {
   return { at, best };
 }
 
+// The watcher's cuts (scripts/trials/watch.sh), said as reasons (note 763):
+// a fresh world an hour played with no Nether, and an hour in the Nether
+// with no fortress, were ended by the watcher with `reasons: []`, so 44 of
+// 108 endings since 2026-09-30 10Z were missing from the loop and death
+// rates. -> the reasons, none when neither cut applies.
+const CUT_MINUTES = 60;
+function cutReasons(world, playedMinutes, reachedAtMinute = {}) {
+  const out = [];
+  if (!/fortress|nether/.test(world || '') && playedMinutes >= CUT_MINUTES && reachedAtMinute.nether == null) out.push(`cut: no Nether in ${CUT_MINUTES} minutes played`);
+  if (!/fortress/.test(world || '') && reachedAtMinute.nether != null && reachedAtMinute.fortress == null && playedMinutes - reachedAtMinute.nether >= CUT_MINUTES) out.push(`cut: no fortress in ${CUT_MINUTES} minutes after the Nether`);
+  return out;
+}
+
 function verdict(trial, { now = Date.now() } = {}) {
   const from = Date.parse(trial.startedAt), to = Math.min(now, from + LIMIT_MS);
   const a = analyse({ identity: IDENTITY, from, to });
@@ -106,7 +119,8 @@ function verdict(trial, { now = Date.now() } = {}) {
   // half an hour inside a dozen blocks with the way off answered none good.
   const stranded = all ? null : strandedFromFrames(a.frames, { now: to });
   const reasons = [...(deaths.length ? [`${deaths.length} death(s)`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
-    ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : [])];
+    ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
+    ...(all ? [] : cutReasons(trial.world, Math.round((windowMs - absentMs) / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, minute(t)]))))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
     playedMinutes: Math.round((windowMs - absentMs) / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
@@ -203,4 +217,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { reached, counts, verdict, MILESTONES };
+module.exports = { reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };

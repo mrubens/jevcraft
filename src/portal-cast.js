@@ -222,7 +222,11 @@ function lavaTrip(from, lava) {
   if (!from || !lava?.at) return null;
   const distance = Math.round(Math.hypot(lava.at.x - from.x, lava.at.y - from.y, lava.at.z - from.z));
   const rise = Math.round(Math.abs(from.y - lava.at.y)), below = Math.round(from.y - lava.at.y);
-  const walk = Math.round(distance * 2 / 4.3), climb = rise > 8 ? require('./surface').climbMinutes(rise) * 60 : 0;
+  // The walk at the bot's measured pace to lava (note 763: 38.5 blocks a
+  // minute over 592 walks; at 4.3 blocks a second "147 blocks off, about 35
+  // seconds" took three to nine minutes), the climb at its measured pace.
+  const L = require('./levels');
+  const walk = L.walkSeconds(distance * 2), climb = rise > 8 ? L.upSeconds(rise) : 0;
   return { distance, rise, below, walk, climb, seconds: walk + climb };
 }
 const duration = s => s < 120 ? `${s} seconds` : `${Math.round(s / 60)} minutes`;
@@ -250,7 +254,7 @@ function tripsSoFar(method) {
 // one question, three prices for the same fetch (note 553).
 function fetchTrip(from, lava, method = null) {
   if (!lava) return null;
-  const walk = Math.round(lava.distance * 2 / 4.3);
+  const walk = require('./levels').walkSeconds(lava.distance * 2);
   const trip = lavaTrip(from, lava) || { distance: lava.distance, rise: 0, below: 0, walk, climb: 0, seconds: walk };
   const t = method?.lavaTrips;
   if (!t?.n) return trip;

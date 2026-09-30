@@ -2091,6 +2091,8 @@ async function surfaceStep(bot, task, goal, save) {
 // first three minutes of stairs and the rest by hand, made the pickaxe in
 // twenty seconds at the top and was back down within twenty minutes; the
 // climbs were 100 of its 180 minutes, none of them asked (note 511).
+const SITE_BY_LAVA = 12;
+const siteByLava = (siteDig, lava) => !lava || !siteDig?.origin || Math.hypot(siteDig.origin.x - lava.x, siteDig.origin.y - lava.y, siteDig.origin.z - lava.z) <= SITE_BY_LAVA;
 async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava = null, cast = null } = {}) {
   const held = goal.surfaceTrip;
   // Chosen, the climb holds to the top: not asked again at each stair. Only
@@ -2177,7 +2179,12 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
       }
     }
   }
-  if (siteDig && client && pickaxeTier(bot) >= 1) {
+  // The frame's site is at the lava when the plan is to cast beside it
+  // (note 763): 25588 said "I'll cast the portal down by the lava", then took
+  // dig_site at (62, 13, 128), 65 blocks from its nearest lava, every bucket
+  // a trip. A dug site farther than the cast's own reach of that lava (the
+  // twelve blocks it walks to the lava within) is not offered.
+  if (siteDig && client && pickaxeTier(bot) >= 1 && siteByLava(siteDig, lava)) {
     const o = siteDig.origin, n = siteDig.cells.length;
     const off = Math.round(bot.entity.position.floored().distanceTo(o));
     tree.dig_site = { description: `Dig a site for the frame out of the rock here instead: the frame's cells and a walkway either side of it, four across and five high, ${n ? `${n} blocks to dig (${siteDig.kinds.join(', ')}), about ${Math.max(5, Math.round(n * 1.5))} seconds and ${n} pickaxe uses` : 'already open'}, at ${o.x}, ${o.y}, ${o.z} ${off <= 4 ? 'where the bot stands' : `${off} blocks from where the bot stands`}; the floor under it is solid and no water, lava or falling block is beside it. The frame goes down there${lava ? `, ${Math.round(Math.hypot(lava.x - o.x, lava.y - o.y, lava.z - o.z))} blocks from the lava chosen` : ''}.${castSiteSays(o, cast)}` };
@@ -2203,6 +2210,11 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
       tree.climb.description += ` Water known from here: ${known.says}${known.kind === 'source' ? '; no dry place beside it to fill from was reached by a route searched from here, nor was the bucket filled wading into it where it is shallow' : ''}.`;
     } catch (_) { /* said without it */ }
   }
+  // What is still owed up there and down here, and the climb at the bot's
+  // own measured pace (note 763): mid-237-bc climbed 86 blocks for sheep
+  // with the diamonds it was mining and the portal's lava still owed below.
+  const levelFacts = require('./levels').levelsSays(bot, goal, { going: 'up' });
+  if (levelFacts) for (const k of ['climb', 'stay_below']) if (tree[k]) tree[k].description += levelFacts;
   let pick = 'climb', asked = false;
   if (tree.stay_below || tree.dig_site || tree.mine_first) {
     const decision = await require('./decisions').decide('surface_trip', { client, bot, task, goal, save, tree,
@@ -3467,6 +3479,13 @@ const DETOUR_MEMORY_MS = 30 * 60000;
 async function decideAction(bot, task, goal, save, client, onStep, tree, context = {}, id = 'resource_source', { above } = {}) {
   const observation = decisionObservation(bot, goal);
   const state = { ...observation, ...context };
+  // On the reach nether with a frame begun, the portal's state is said with
+  // every work question (note 763): 25584 (mid-244-ak, 20:30-20:34Z) smelted,
+  // fetched planks and looted a minecart between six passes of its cast's
+  // wall clearing, its frame ten of ten cast thirteen blocks off.
+  if ((goal.rungTime?.phase || goal.gameProgress?.phase) === 'reach_nether' && goal.portalFrame && !goal.portalFrame.ruin && dimension(bot) === 'overworld' && !state.portal) {
+    try { state.portal = require('./portal-state').portalFact(bot, goal).says; } catch (_) { /* said without it */ }
+  }
   const fingerprint = () => decisionFingerprint(bot, { inventory: planningInventory, immediateThreat, needsAir });
   const initial = fingerprint();
   const decision = await decide(id, { client, bot, task, goal, save, tree, state, context: state, isFresh: () => fingerprint() === initial, above });
@@ -4640,7 +4659,28 @@ const PORTAL_BUDGET_MS = 20 * 60000;
 // it failed (portalStep, note 470), and so is a way back to the frame
 // that fails (buildPortalFrame, note 481).
 // And so is a part-cast frame failing at its site (note 527).
-const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || !!method.siteFailed || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
+const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || !!method.siteFailed || !!method.nearFar || !!method.flipped || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
+// The lava a cast beside was chosen for, become far (note 763): 25581
+// (mid-243-mg, 2026-09-30 19:14-19:28Z) held cast_at_lava for the lava at
+// (21, 67, -4) from about 250 blocks off, its staircase set aside round
+// after round ("attempt 20"), the stall's detours asked thirty times with
+// none good on top, and no way to other lava on offer. Once another known
+// lava is nearer than the held one by a third (the hold's own margin, note
+// 753), and no frame is begun, the way is asked again with that lava
+// offered, both distances said; kept, it is not asked again for this until
+// the held lava is a third farther again.
+const FAR_MARGIN = 1.5;
+function flagFarLava(bot, goal) {
+  const method = goal.portalMethod;
+  if (!method?.near || method.nearFar || (goal.portalFrame && !goal.portalFrame.ruin) || !bot.entity?.position) return false;
+  const here = bot.entity.position, near = new Vec3(method.near.x, method.near.y, method.near.z);
+  const held = Math.round(here.distanceTo(near));
+  const other = nearestLava(bot, goal);
+  if (!other?.at || new Vec3(other.at.x, other.at.y, other.at.z).distanceTo(near) <= 16) return false;
+  if (!(other.distance * FAR_MARGIN < held) || (method.nearFarKept && held < method.nearFarKept * FAR_MARGIN)) return false;
+  method.nearFar = { held, other: other.distance, at: Date.now() };
+  return true;
+}
 // The frame that cannot be got back to, as the fact every way is weighed
 // with: where, how far, and what each way ended in.
 function frameFailedSays(f) {
@@ -4719,7 +4759,7 @@ function portalFacts(bot, goal, ruins, lava = nearestLava(bot, goal)) {
   // (note 630: a river seventy-two blocks off was in the state and never in
   // the way's words).
   const water = countOf(bot, 'water_bucket') ? '' : ` Water, for a bucket of it: ${waterKnown(bot).says}.`;
-  return ` Known for every way: ${lava ? `the nearest known lava is ${lava.distance} blocks away (${lava.how}), about ${Math.round(lava.distance / 4.3)} seconds' walk` : 'no lava is known nearby'}.${water} ${depth} Diamond ore needs an iron pickaxe or better (${pickaxeTier(bot) >= 3 ? 'one carried' : 'none carried'}); a diamond pickaxe is three diamonds (${diamondPickaxeCarried(bot) ? 'one carried' : `${countOf(bot, 'diamond')} diamonds carried`}). ` +
+  return ` Known for every way: ${lava ? `the nearest known lava is ${lava.distance} blocks away (${lava.how}), about ${(s => s < 90 ? `${s} seconds'` : `${Math.round(s / 60)} minutes'`)(require('./levels').walkSeconds(lava.distance))} walk at the bot's measured pace` : 'no lava is known nearby'}.${water} ${depth} Diamond ore needs an iron pickaxe or better (${pickaxeTier(bot) >= 3 ? 'one carried' : 'none carried'}); a diamond pickaxe is three diamonds (${diamondPickaxeCarried(bot) ? 'one carried' : `${countOf(bot, 'diamond')} diamonds carried`}). ` +
     `Carried: ${countOf(bot, 'obsidian')} obsidian, ${plural(countOf(bot, 'bucket'), 'empty bucket')}, ${countOf(bot, 'water_bucket')} of water and ${countOf(bot, 'lava_bucket')} of lava, ${countOf(bot, 'iron_ingot')} iron ingots (three make a bucket). ` +
     // Each lava bucket takes a slot of its own, where empty ones stack:
     // mid-244-v filled nine with every slot full and kept one (note 470).
@@ -4795,7 +4835,12 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const made = goal.portalBucketsMade && Date.now() - goal.portalBucketsMade.at < 120000 ? goal.portalBucketsMade : null;
   const madeAgo = made ? Math.max(1, Math.round((Date.now() - made.chosenAt) / 1000)) : 0;
   const madeSays = made ? ` Asked again because the buckets chosen ${madeAgo} second${madeAgo === 1 ? '' : 's'} ago are made: ${made.carried} carried now, against ${made.before} when they were chosen.` : '';
-  const facts = portalFacts(bot, goal, ruins, lava) + madeSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
+  // Two of the portal's own steps traded the turn, each holding its claim
+  // against the portal's state (stillness.js portalPair, note 763): asked
+  // here, the flip and the state named, in place of a rest and detours.
+  const flipped = due && method?.flipped ? method.flipped : null;
+  const flipSays = flipped ? ` Asked again because the portal's own steps were ${flipped.why}${flipped.times > 1 ? ` (a flip asked about ${flipped.times} times on this way)` : ''}: no rest, the way is chosen again from what stands. ${flipped.fact}` : '';
+  const facts = portalFacts(bot, goal, ruins, lava) + madeSays + flipSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
   const current = due ? methodKey(method, ruins, goal) : null;
   // Trips for lava are measured from the frame, where each one starts and
   // ends, not from the bot: mid-244-v, standing at its lava with the frame
@@ -4918,11 +4963,14 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const level = cave.standY - method.near.y;
     tree.into_cave = { description: `Go down into the cave the staircase met: the stair at (${cave.at.x}, ${cave.at.y}, ${cave.at.z}) is dug open and the bot drops ${cave.fall} blocks to ${cave.into === 'water' ? 'water' : `its floor at y ${cave.floorY}`}, ${damage ? `about ${damage} of the ${health} health lost in the fall` : 'a fall that does no harm'}. Standing there it is ${level > 0 ? `${level} blocks above the lava's level` : level < 0 ? `${-level} blocks below the lava's level` : "level with the lava"}, ${Math.round(Math.hypot(cave.at.x - method.near.x, cave.at.z - method.near.z))} blocks from it across; the staircase toward the lava goes on from the cave floor, its rest lifted.` + facts };
   }
-  const otherLava = heldResting && lava && !(lava.at.x === method.near.x && lava.at.y === method.near.y && lava.at.z === method.near.z) ? lava : null;
+  const farHeld = current === 'cast_at_lava' && method.nearFar ? method.nearFar : null;
+  const otherLava = (heldResting || farHeld) && lava && !(lava.at.x === method.near.x && lava.at.y === method.near.y && lava.at.z === method.near.z) ? lava : null;
   if (otherLava) {
     const dy = Math.round(otherLava.at.y - bot.entity.position.y);
-    tree.other_lava = { description: `Cast a frame of its own beside another lava instead, its way not resting: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The lava chosen before is left.` + facts };
+    tree.other_lava = { description: `Cast a frame of its own beside another lava instead, ${farHeld && !heldResting ? 'nearer than the lava chosen before' : 'its way not resting'}: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The lava chosen before is left.` + facts };
   }
+  // The held lava become far, said on keeping it (note 763).
+  if (farHeld && tree.cast_at_lava) tree.cast_at_lava.description = `Asked again because the lava chosen before is now ${farHeld.held} blocks off (the walks, detours and trips since took the bot there), and other lava is known ${farHeld.other} blocks off. ` + tree.cast_at_lava.description;
   if (heldResting && !tree.cast_here) {
     tree.cast_here = { description: `Cast a new frame of its own here, where the bot stands, the lava chosen before left while its way rests. ` + castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0,
       iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: bot.entity.position, frameBegun: false }) + facts };
@@ -4964,6 +5012,10 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
       ...(current ? { wayHeld: current, minutesOnWay: Math.round((method.activeMs || 0) / 60000) } : {}),
       ...(made ? { bucketsJustMade: made.carried } : {}),
+      ...(flipped ? { flipped: `${flipped.pair.join(' and ')}: ${flipped.why}` } : {}),
+      // What is owed at the surface and at depth, a cast down by the lava or
+      // up top weighed with it (note 763).
+      ...((() => { const says = require('./levels').levelsSays(bot, goal).trim(); return says ? { byLevel: says } : {}; })()),
       riskNow: require('./risk').riskNow(bot) } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
@@ -4976,6 +5028,8 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const f = goal.portalFrame.siteFailed, top = Object.entries(f.whys || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     method.keptAtFailure = { n: f.n, cast: f.cast, why: top.split(':')[0] };
   }
+  if (method?.nearFar) { if (pick === current) method.nearFarKept = method.nearFar.held; delete method.nearFar; save(); }
+  if (method?.flipped) { delete method.flipped; save(); }
   if (method?.nearFailed || method?.frameFailed || method?.siteFailed) { delete method.nearFailed; delete method.frameFailed; delete method.siteFailed; save(); }
   // A new site: the frame begun passed over and left as it stands, the way
   // held going on from none there.
@@ -5241,6 +5295,7 @@ async function portalStep(bot, task, goal, save, client) {
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
       ![...(goal.portalFrame.supports || []), ...(goal.portalFrame.castTemp || [])].some(p => bot.blockAt(pos(p))?.name === p.material) &&
       !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
+  if (flagFarLava(bot, goal)) save();
   if ((!goal.portalFrame || portalDue(goal.portalMethod)) && !await portalMethod(bot, task, goal, save, client)) return false;
   if (!goal.portalFrame) {
     // Cast in place (portal-cast.js), the obsidian is made in its slots.
@@ -6232,7 +6287,14 @@ function portalJobs(bot, goal) {
     const frame = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame : null;
     if (frame) {
       const o = pos(frame.origin);
-      if (here.distanceTo(o) > 16) {
+      // Not while the cast rests at its frame (note 763): "the cast goes on
+      // there" was a walk out and back to a step resting, nine times on
+      // 25583 (mid-242-ai, 19:40-19:49Z).
+      const castRests = () => {
+        if (require('./flip-pairs').restingWith(goal, 'cast_portal', o)) return true;
+        try { const tried = require('./tried'); return !!tried.restsUntil(tried.about(goal, { q: 'step', method: 'cast_portal', here: o, now: Date.now() }), Date.now()); } catch (_) { return false; }
+      };
+      if (here.distanceTo(o) > 16 && !castRests()) {
         const placed = frame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length;
         jobs.push({ key: 'to_portal_frame', description: `The portal's own work: go back to the portal frame begun at (${o.x}, ${o.y}, ${o.z}), ${walkSays(o)}${frame.placedSeen !== undefined || placed ? `, ${placed || frame.placedSeen || 0} of ten standing` : ''}; the cast goes on there.`,
           run: (t, save) => navigate(bot, t, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 120000, stallMs: 8000, sprint: true }) });
@@ -6674,6 +6736,14 @@ function foodTrips(bot, goal, pending, short) {
   const { foodSources, MEAT_POINTS, RAW_MEAT_POINTS } = require('./healing');
   const back = pending ? pending.at : bot.entity.position;
   const named = s => String(s).replaceAll('_', ' ');
+  // Food at the surface, the bot under cover: the climb first, and back
+  // down after where the trip ends at this depth (note 763: mid-237-bc, 86
+  // blocks down, was told "about 62 seconds in all" for sheep at the top of
+  // a climb its own record puts at seven minutes).
+  const levels = require('./levels');
+  const depth = levels.depthHere(bot), here = bot.entity.position;
+  const top = depth >= levels.UNDER ? here.y + depth : null;
+  const leg = top === null ? null : levels.surfaceLeg(bot, { back: back.y < top - levels.UNDER });
   return foodSources(bot, goal).map(src => {
     const onward = src.at ? Math.round(Math.hypot(src.at.x - back.x, (src.at.y ?? back.y) - back.y, src.at.z - back.z)) : src.distance;
     const raw = src.animal ? RAW_MEAT_POINTS[src.animal] ?? 3 : 0, cooked = src.animal ? MEAT_POINTS[src.animal] || 6 : 0;
@@ -6682,10 +6752,12 @@ function foodTrips(bot, goal, pending, short) {
     const cookedGives = raw ? Math.min(short, animals * cooked) : 0;
     const gather = raw ? animals * 15 : src.kind === 'home_chest' ? 10 : 60;
     const there = Math.round(src.distance / 4.3), on = Math.round(onward / 4.3);
+    const climb = leg && (src.at?.y === undefined || src.at.y >= top - levels.UNDER) ? leg : null;
+    const seconds = there + gather + on + (climb ? climb.seconds : 0);
     const gatherSays = raw ? `about ${duration(gather)} for ${animals} ${named(src.animal)}${animals === 1 || src.animal === 'sheep' ? '' : 's'}`
       : src.kind === 'home_chest' ? 'the chest emptied' : `about ${duration(gather)} for the harvest and the bread`;
-    const says = `${src.says}${pending ? `, ${onward} blocks from the frame` : ''}: about ${duration(there + gather + on)} in all (the walk there about ${duration(there)}, ${gatherSays}, and ${pending ? 'on to the frame' : 'back here'} about ${duration(on)}), for about ${gives} of the ${short} points short${raw ? ` as raw meat, about ${cookedGives} once cooked` : ''}`;
-    return { ...src, onward, seconds: there + gather + on, gives, cookedGives, says };
+    const says = `${src.says}${pending ? `, ${onward} blocks from the frame` : ''}: about ${duration(seconds)} in all (${climb ? `${climb.says}, ` : ''}the walk there about ${duration(there)}, ${gatherSays}, and ${pending ? 'on to the frame' : 'back here'} about ${duration(on)}), for about ${gives} of the ${short} points short${raw ? ` as raw meat, about ${cookedGives} once cooked` : ''}`;
+    return { ...src, onward, seconds, gives, cookedGives, says, ...(climb ? { climb } : {}) };
   });
 }
 // The raw food carried that cooking makes more of, with what it comes to and
@@ -6913,6 +6985,7 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
     kit.choice = { pick, keys, at: now }; save();
   }
   if (pick === 'go_without') {
+    delete goal.foodTrip;
     setAside(goal, 'rung', 'nether_food', 'Jev chose the Nether first, without more food', RUNG_WAIT_MS);
     unwatch(goal, 'rung', 'nether_food'); delete goal.kitFood; delete goal.preparingNether; delete goal.strategy; save();
     return false;
@@ -7580,4 +7653,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk };
+module.exports = { siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk };
