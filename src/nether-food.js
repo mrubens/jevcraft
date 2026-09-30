@@ -327,6 +327,19 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
 // The step offered where the ladder or a stall asks: one option that opens
 // the question of the ways, said with what is carried, why it is on offer
 // and what each way yields. null when the Nether stay is not short or no way
+// The hunts of a hoglin made in this trial and the choices of one, said on
+// the food trip's list (note 752g). -> { hunts, since, huntsSaid }
+function huntsSays(goal, now = Date.now()) {
+  const hunts = (goal?.netherFood?.hunts || []).filter(h => ['hoglin_walk', 'hoglin_pillar'].includes(h.route));
+  // Chosen and never come to a hunt: 25584's hoglin_pillar was chosen seven
+  // times and no hunt was made (the blaze hunt and restarts took the turn).
+  const since = goal?.netherFood?.chosen?.filter(c => ['hoglin_walk', 'hoglin_pillar'].includes(c.route) && now - c.at < 30 * 60000) || [];
+  const cameTo = since.length ? hunts.filter(h => h.at >= since[0].at).length : 0;
+  const chosenSaid = since.length ? `; chosen ${since.length} time${since.length === 1 ? '' : 's'} in the last ${Math.max(1, Math.round((now - since[0].at) / 60000))} minutes, ${cameTo ? `coming to ${cameTo} hunt${cameTo === 1 ? '' : 's'}` : 'none of them coming to a hunt: something else took the turn each time'}` : '';
+  const huntsSaid0 = hunts.length ? `${hunts.length} hunt${hunts.length === 1 ? '' : 's'} of a hoglin made in this trial, ${hunts.filter(h => h.meat > 0).length} bringing meat, the last ${Math.max(1, Math.round((now - hunts.at(-1).at) / 60000))} minute${Math.round((now - hunts.at(-1).at) / 60000) === 1 ? '' : 's'} ago: ${String(hunts.at(-1).why).slice(0, 100)}` : 'none of these hunts made yet';
+  const huntsSaid = huntsSaid0 + chosenSaid;
+  return { hunts, since, huntsSaid };
+}
 // is real from here.
 function restockFoodOption(bot, task, goal, save, { actions = {}, survival = null, client = null } = {}) {
   const need = foodNeed(bot, goal);
@@ -335,7 +348,12 @@ function restockFoodOption(bot, task, goal, save, { actions = {}, survival = nul
   const keys = Object.keys(found.routes);
   if (!keys.length) return null;
   const stay = stayFacts(bot);
-  const list = keys.map(k => ({ hoglin_walk: 'a hoglin hunted on foot (2 to 4 raw porkchops, 6 to 12 points raw, 16 to 32 cooked)', hoglin_pillar: 'the same hoglin hunted from a pillar two blocks up (the pillar stances measured 0.1 health lost, none of these hunts made yet)',
+  // The hunts made in this trial, said: "none of these hunts made yet" was
+  // said of hoglin_pillar through seven tries in ten minutes that brought
+  // nothing (25584, 18:05 to 18:14Z, each walk to a hoglin seen 77 to 98
+  // blocks off; note 752g).
+  const { hunts, since, huntsSaid } = huntsSays(goal);
+  const list = keys.map(k => ({ hoglin_walk: `a hoglin hunted on foot (2 to 4 raw porkchops, 6 to 12 points raw, 16 to 32 cooked${hunts.length || since.length ? `; ${huntsSaid}` : ''})`, hoglin_pillar: `the same hoglin hunted from a pillar two blocks up (the pillar stances measured 0.1 health lost; ${huntsSaid})`,
     mushroom_stew: 'mushroom stew from the mushrooms in view (6 points a stew)', raid_bastion: 'the food in a bastion\'s chests (a hoglin stable\'s chest about 17 points, the others about 12, piglins and brutes at the lids; never tried by this bot)', cook_meat: `the raw meat carried cooked (+${found.stock.cookedGain} points)`, return_for_food: 'the trip back through the portal for food (at the pace the Nether walks measured)' }[k])).join('; ');
   return { description: `Get food here before going on, the way asked next with each priced: ${list}. On offer because ${need.why}. ${staySays(bot, stay)} Health does not come back at hunger under eighteen, and the Nether has little else to eat: what its bastions' chests hold and the stew are the rest.`,
     run: () => askRestockFood(bot, task, goal, save, { actions, survival, client, found }) };
@@ -370,6 +388,11 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   const decision = await require('./decisions').decide('restock_food', { client: client || actions.client || task.opportunityClient, bot, task, goal, save, tree, state, context: {} });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
+  // Each choice kept, for what the next offer says of it beside the hunts
+  // it came to (note 752g).
+  const f = goal.netherFood ||= { hunts: [] };
+  f.chosen = [...(f.chosen || []).filter(c => Date.now() - c.at < 30 * 60000), { at: Date.now(), route: pick }].slice(-24);
+  save?.();
   await options[pick].run();
   return true;
 }
@@ -457,5 +480,5 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   return pick;
 }
 
-module.exports = { foodStock, foodNeed, stayFacts, staySays, foodRoutes, restockFoodOption, askRestockFood, askStayKit, kitEndsTrip, makeCauldron, stayKitDue, startFoodHunt, huntHoglin, pillarHuntStep, noteHunt, noteRoute, recordSays, mushroomsIn,
+module.exports = { huntsSays, foodStock, foodNeed, stayFacts, staySays, foodRoutes, restockFoodOption, askRestockFood, askStayKit, kitEndsTrip, makeCauldron, stayKitDue, startFoodHunt, huntHoglin, pillarHuntStep, noteHunt, noteRoute, recordSays, mushroomsIn,
   HUNGER_AN_HOUR, LOW_POINTS, STAY_KIT_MS, PILLAR_RECORD, PILLAR_FROM, PILLAR_WAIT_MS, PILLAR_BLOCKS, CHEST_FOOD, NOT_FOOD, RAW_MEAT };

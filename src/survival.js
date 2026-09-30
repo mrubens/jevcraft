@@ -432,6 +432,8 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // them, with nothing changed about it since, would end the same again.
 // Stances that stand behind the raised shield from their first moment.
 const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge']);
+// How long a shooter seen stays in the stance's danger out of sight (note 752g).
+const SHOOTER_KEPT_MS = 10000;
 // Hostiles that hop at a player they see rather than walk: slimes and
 // magma cubes (26.1.2 Slime's MoveControl, toward the nearest player in
 // range).
@@ -2635,7 +2637,19 @@ class Survival {
   // (2026-09-27).
   encounterDanger() {
     const bot = this.bot;
-    const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24));
+    // A shooter seen within the last ten seconds, still within its own
+    // reach, stays in the stance's danger when it steps out of sight: it
+    // shoots again the moment it has a line. 25588 (18:39:05.9Z) chose
+    // take_cover from a skeleton 9 blocks off; 0.6 seconds later the
+    // skeleton was behind a block, the stance was asked again with no
+    // take_cover, out_of_sight, nook or charge_shooter on offer, and the
+    // cover was never built (61 stance questions in ten minutes, note 752g).
+    const now = Date.now(), seenShooters = bot._shootersSeen ||= new Map();
+    const all = threats(bot, 48);
+    for (const t of all) if (t.visible && shooter(t.entity)) seenShooters.set(t.entity.id, now);
+    for (const [id, at] of seenShooters) if (now - at > SHOOTER_KEPT_MS) seenShooters.delete(id);
+    const keptShooter = t => shooter(t.entity) && seenShooters.has(t.entity.id) && t.distance <= (RANGE[t.entity.name] || 15);
+    const danger = all.filter(t => (t.distance <= 24 || keptShooter(t)) && (t.visible || keptShooter(t) || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24)));
     const urgent = require('./danger').immediateThreat(bot) || require('./danger').immediateThreat(bot, { stoodOff: true });
     if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
     // A ghast in sight past the twenty-four looked at, whose push can put
@@ -4736,7 +4750,20 @@ class Survival {
     // of "the spider 18 blocks off, the hardest hitter" while a skeleton six
     // blocks off landed every hit.
     const hitSays = require('./hit-log').says(bot, danger);
-    const lead = [hitSays, blows].filter(Boolean).join(' ');
+    // A shooter with the bot in its reach, seen lately, named before a biter
+    // ranked by its blow: 25588's options all opened "The zombie 15 blocks
+    // off, out of sight, the hardest hitter ..." with a skeleton 9 blocks
+    // off shooting (note 752g). Not one the hit log already names.
+    let hitNames = new Set();
+    try { hitNames = new Set(require('./hit-log').hitters(bot, danger).map(h => h.name)); } catch (_) { hitNames = new Set(); }
+    const shootersNow = danger.filter(t => shooter(t.entity) && !hitNames.has(t.entity.name) && t.distance <= (RANGE[t.entity.name] || 15) && (t.visible || bot._shootersSeen?.has(t.entity.id)))
+      .slice(0, 2).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? ', in sight' : ', seen a moment ago'} (it fires from as far as ${RANGE[t.entity.name] || 15})`);
+    // Only where the blow's lead would name a biter farther off or out of
+    // sight while the shooter is nearer and in sight: the case it misled.
+    const nearestShooter = danger.filter(t => shooter(t.entity) && (t.visible || bot._shootersSeen?.has(t.entity.id))).sort((a, b) => a.distance - b.distance)[0];
+    const biterNearer = danger.some(t => !shooter(t.entity) && t.entity.name !== 'creeper' && t.visible && nearestShooter && t.distance <= nearestShooter.distance);
+    const shootSays = shootersNow.length && blows && nearestShooter && !biterNearer ? `Shooting at the bot from here: ${shootersNow.join('; ')}.` : '';
+    const lead = [hitSays, shootSays, blows].filter(Boolean).join(' ');
     if (lead) for (const o of Object.values(options)) o.description = `${lead} ${o.description}`;
     // Every mob here with a fact worth telling (combat-estimate.js MOBS'
     // own `note`: an enderman's 2.9 blocks and the two-high pocket that
@@ -4939,7 +4966,9 @@ class Survival {
     // asked of again.
     const hid = held?.hidden;
     const offSpot = !!hid && hid.cell !== `${feet}`;
-    const lineAgain = hid && !offSpot ? require('./bunker').seenFrom(bot, danger.filter(t => shooter(t.entity)).map(t => t.entity), feet).filter(e => !hid.seenBy.includes(e.id)) : [];
+    // Not a shooter that stands off (a ghast kept past forty, no hit from its
+    // kind: danger.js standsOff, note 752g): its line is not the hide failing.
+    const lineAgain = hid && !offSpot ? require('./bunker').seenFrom(bot, danger.filter(t => shooter(t.entity) && !require('./danger').standsOff(bot, t)).map(t => t.entity), feet).filter(e => !hid.seenBy.includes(e.id)) : [];
     // A block in a creeper's line is held while the line stays stopped and
     // the creeper stands; the moment it walks, or has a line again, it is
     // asked again (note 547).
@@ -6122,11 +6151,26 @@ class Survival {
     return route.status;
   }
 
+  // A seal that failed, kept and said (note 755b): the place rested ten
+  // minutes, the way chosen rested three, the night's plan let go, and the
+  // next question (survival_priority, turn_priority, stay_up's chat) says
+  // it. 25581 (17:30Z) went from "Closing myself in till morning" to "I'm
+  // staying up tonight" with nothing said of the shelter that failed.
+  shelterFailed(goal, save, refuge, why, method = null) {
+    const origin = refuge?.origin ? { ...refuge.origin } : null;
+    if (origin) setAside(this, 'seal_here', `${pos(origin)}`, why, 600000);
+    if (refuge) refuge.avoidUntil = Date.now() + 600000;
+    if (method) setAside(this, 'shelter_method', method, why, 180000);
+    delete this.state.nightPlan;
+    this.state.shelterFailed = { at: Date.now(), why, ...(origin ? { origin } : {}) };
+    this.report(goal, save, { action: 'seal_failed', ...(origin ? { at: origin } : {}), error: why }); save();
+  }
+
   // The reason a seal would be made here now, and none said as that
   // (seal-reason.js, note 755). `toward`: those coming at the bot.
   sealWhy(toward = []) {
     const bot = this.bot;
-    const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+    const underground = underRock(bot, this.currentShelter?.());
     return require('./seal-reason').sealReason({ health: bot.health ?? 20, food: bot.food ?? 20, underground, night: shelterNeeded(bot),
       overworld: /overworld/.test(String(bot.game?.dimension || 'overworld')), minutesToDawn: minutesToDawn(bot),
       hostiles: threats(bot, 24).map(t => ({ name: t.entity.name, distance: t.distance, visible: !!t.visible })), coming: toward, sleepDebt: !!this.sleepDebt() });
@@ -6257,7 +6301,7 @@ class Survival {
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description }]));
       const decision = Object.keys(tree).length === 1 ? { path: [Object.keys(tree)[0]] }
         : await this.decide(task, goal, save, { id: 'shelter_method', tree, state: { timeOfDay: bot.time?.timeOfDay, health: bot.health, food: bot.food, buildingBlocks: stock, darkHere: darkHere(bot), torches: countOf(bot, 'torch'),
-          underground: !surfaceObserver(bot)(bot.entity.position), pickaxe: bot.inventory.items().find(i => /_pickaxe$/.test(i.name))?.name || null,
+          underground: underRock(bot, refuge), pickaxe: bot.inventory.items().find(i => /_pickaxe$/.test(i.name))?.name || null,
           ...(!options.night_mine && this.nightMineOff() ? { nightMineOff: this.nightMineOff() } : {}),
           nearbyThreats: threats(bot).filter(t => t.distance < 24).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })),
           ...(toward.length ? { comingAtTheBot: comingFacts(toward) } : {}),
@@ -6436,7 +6480,17 @@ class Survival {
       this.report(goal, save, { action: 'seal_failed', at: { ...refuge.origin }, error: why }); save();
       return false;
     }
-    if (!shelter.inside(bot, refuge) || !shelter.sealed(bot, refuge)) throw new Error('Shelter verification failed');
+    // Not sealed with nothing left to place is a shell this pass cannot
+    // finish from here: said with why, the place rested, the night's plan
+    // let go so the way is asked again with it (note 755b). Thrown, it
+    // rested ten seconds and the held plan ran the same pass again: 25588
+    // did so every five seconds for nine minutes, "Closing myself in till
+    // morning" over and over.
+    if (!shelter.inside(bot, refuge) || !shelter.sealed(bot, refuge)) {
+      const why = shellUnfinishedSays(bot, refuge);
+      this.shelterFailed(goal, save, refuge, why, method);
+      return false;
+    }
     refuge.verifiedAt = new Date().toISOString();
     this.report(goal, save, { action: 'sheltered', origin: refuge.origin, health: bot.health });
   }
@@ -7527,14 +7581,18 @@ class Survival {
         while (Date.now() - started < 15000 && !jumped() && !(refused && Date.now() - started > 6000)) { task.check(); await sleep(200); }
         slept = jumped();
         if (bot.isSleeping) { try { await bot.wake(); } catch (_) {} }
-        if (!slept && refused) throw new Error(`The server refused the sleep: ${refused}`);
+        // In words, not the game's key: 25588 said "I can't sleep: bed.no
+        // sleep" (18:15:46Z, note 755b).
+        if (!slept && refused) throw Object.assign(new Error(`The server refused the sleep: ${sleepRefusalSays(refused, bot)}`), { refusal: refused });
         if (!slept) throw new Error('The night did not pass in bed');
       } finally { bot.removeListener?.('message', onMessage); }
     } catch (err) {
       task.check();
       // A refusal the server named (monsters near, not safe) waits out ten
       // minutes; a sleep that simply did not take is tried again in two.
-      setAside(this, 'sleep', 'bed', err, /refused|monsters|not night|can only sleep/i.test(err.message) ? 600000 : 120000);
+      // "Only at night" is over once the night comes: tried again in half a
+      // minute, not ten (note 755b).
+      setAside(this, 'sleep', 'bed', err, /no_sleep/.test(err.refusal || '') ? 30000 : /refused|monsters|not night|can only sleep/i.test(err.message) ? 600000 : 120000);
       this.state.lastSleepError = err.message; this.report(goal, save, { action: 'sleep_failed', reason: err.message });
     }
     finally {
@@ -8190,6 +8248,10 @@ class Survival {
         console.log(`[survival] ${says}`);
         return false;
       }
+      // A seal that threw (a block the server refused, the material gone)
+      // is kept as the shelter's failure and said on the next question and
+      // in the chat that follows it (note 755b: 25581, 17:30Z).
+      if (/^(seal_shelter|dig_in|shaft_pocket|gather_shelter_materials)$/.test(name || '')) this.state.shelterFailed = { at: Date.now(), why: `${name.replaceAll('_', ' ')} failed: ${String(err.message).slice(0, 160)}` };
       if (!name || EMERGENCIES.has(name) || Date.now() - Date.parse(recent.at || 0) > 60000) throw err;
       // A hold that failed (the swing's walk timing out) rests ten seconds,
       // not three minutes: mid-211-q's defend failed once on "took too long
@@ -8737,7 +8799,7 @@ class Survival {
       // it: mid-202-q mined fifty minutes of nights, the portal its rung,
       // each night told the ore and never the minutes or the work (note 531).
       const waiting = workWaiting(goal, bot);
-      const below = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+      const below = underRock(bot, refuge);
       const nightCost = night ? ` Until dawn is about ${minutesToDawn(bot)} real minutes of the run${waiting ? `, with ${waiting} waiting` : ''}.` : '';
       if (night && !watcher && !refused(this, 'survival:night_mine') && this.canNightMine(goal))
         options.night_mine = { description: `Mine from the pocket through the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter too. ${rockHolds(bot, feetCell(bot), attemptsFor(this))}${nightCost}${outside}`, run: () => this.nightMine(task, goal, save) };
@@ -9280,7 +9342,7 @@ class Survival {
     // sleep, or stay up armed because the dark is what the request needs.
     const bed = bedCarried(bot), homeBed = bedToSleepIn(bot, goal);
     const routeBlocked = failedWithin(this, 'bed_route', 'home', 120000);
-    const underground = bot.game.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+    const underground = underRock(bot, refuge);
     const bedReady = (!!bed || (!!homeBed && !routeBlocked)) && bot.game.dimension === 'overworld' && !sleepWaiting(this);
     // Dusk with a bed at home: head there before bedtime rather than start
     // the walk from the bottom of a shaft at 12541. The second run chose the
@@ -9536,7 +9598,7 @@ class Survival {
             // No daylight to spend off the Overworld (note 677).
             : !/overworld/.test(String(bot.game?.dimension || 'overworld')) ? `Spend the next action on ${waiting || 'the player request'}. No day or night comes here: what it is weighed against is the hunger and the health, which comes back only at hunger eighteen or more.${nowAbout}${healing}${require('./last-hit').riskSays(bot)}`
             : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
-        run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
+        run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed, ...(this.state.shelterFailed && Date.now() - this.state.shelterFailed.at < 180000 ? { shelterFailed: this.state.shelterFailed.why } : {}) }); } } },
     };
     if (stayUp) {
       for (const [key, o] of Object.entries(this.huntOptions(goal))) tree[key] = { description: o.description,
@@ -9555,8 +9617,25 @@ class Survival {
       const seconds = Math.round(distance / 4.3) + (climb || 0) * 3;
       const arrives = Math.round(bot.time.timeOfDay + seconds * 20);
       const arrival = arrives >= DAY.NIGHT ? `arriving about ${arrives % 24000}, after nightfall at ${DAY.NIGHT}` : `arriving about ${arrives}, before nightfall at ${DAY.NIGHT}`;
-      tree.go_home_for_night = { description: `Walk home to the bed ${distance} blocks away${underground ? `, climbing out of the mine first (${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'})` : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, ${arrival}, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
+      // A bed seen (a village's) is not home: said as what it is (note 755b).
+      tree.go_home_for_night = { description: `${homeBed.observed ? 'Walk to the bed in view (not the bot\'s own: a village\'s or another\'s)' : 'Walk home to the bed'} ${distance} blocks away${underground ? `, climbing out of the mine first (${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'})` : ''}, about ${Math.round(distance / 4.3)} seconds at a walk, ${arrival}, and wait there for bedtime (sleep is possible from ${SLEEP_FROM}; it is ${Math.round(bot.time.timeOfDay)} now). Held until the bot is there.`,
         run: async () => { this.state.nightPlan = { plan: 'home', until: Date.now() + 120000 }; await this.goHomeForNight(task, goal, save, homeBed, underground); } };
+    }
+    // A village remembered with beds, when no bed is in view or carried:
+    // offered for the night, with the walk (note 755b: 25588 sealed itself
+    // in for nine minutes beside a village it knew had beds). Walked to its
+    // centre; a bed seen there is then the bed in view, offered as one.
+    if (nightNow && !homeBed && !bed && !sleepWaiting(this) && !isSetAside(this, 'village_bed', 'walk')) {
+      const v = require('./villages').knownVillages(bot, goal, 160).find(x => (x.village.beds || 0) > 0);
+      if (v) {
+        const secs = Math.round(v.distance / 4.3), ticks = bot.time?.timeOfDay ?? 0;
+        tree.village_bed = { description: `Walk to the village ${v.distance} blocks off (seen with ${v.village.beds} bed${v.village.beds === 1 ? '' : 's'}), about ${secs} seconds at a walk${underground ? ', climbing out first' : ''}, and sleep in one of its beds from ${SLEEP_FROM} (it is ${Math.round(ticks)} now): the night passes in seconds, nothing built. ${ticks >= DAY.DARK ? 'It is dark: mobs spawn along the way.' : ticks + secs * 20 >= DAY.DARK ? 'It arrives after dark.' : 'It arrives before dark.'} A bed a villager lies in is taken, and sleep is refused while a monster is within about eight blocks of it.`,
+          run: async () => {
+            this.report(goal, save, { action: 'village_bed', distance: v.distance });
+            try { await this.actions.navigate(bot, task, new goals.GoalNear(v.village.x, v.village.y ?? bot.entity.position.y, v.village.z, 6), { timeoutMs: Math.max(30000, v.distance * 400) }); }
+            catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(this, 'village_bed', 'walk', `the walk to the village failed: ${err.message}`, 300000); save(); }
+          } };
+      }
     }
     // A creeper about and how soon it could go off beside the bot, on every
     // way to spend the night: mid-243-p chose the bed with a creeper eleven
@@ -9632,6 +9711,10 @@ class Survival {
     // 755): 25594 sealed at 20 and 18 under the rock, told "before hostile
     // mobs spawn at night", and dug out again eight seconds later.
     const sealWhy = this.sealWhy(toward);
+    // The shelter that just failed, said (note 755b).
+    const failedNow = this.state.shelterFailed && Date.now() - this.state.shelterFailed.at < 180000 ? this.state.shelterFailed : null;
+    const failedSays = failedNow ? ` The shelter tried ${Math.max(1, Math.round((Date.now() - failedNow.at) / 1000))} seconds ago failed: ${failedNow.why}.` : '';
+    if (failedNow) state.shelterFailed = failedSays.trim();
     const sealLead = `${sealWhy.says}${require('./seal-reason').sealCostSays({ minutesToDawn: minutesToDawn(bot), waiting, log: this.state.sealLog, none: sealWhy.none })} `;
     if ((needsShelter || woundedBelow) && !sealedNow && !shelterRests) tree.secure_shelter = { description: sealLead + (woundedBelow
       ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}${threatFightSays}`
@@ -9642,6 +9725,7 @@ class Survival {
       // secure_shelter's own text (note 747).
       : `${underground ? 'Prepare and enter a sealed shelter here under the rock.' : 'Prepare and enter a sealed shelter before hostile mobs spawn at night.'} Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? (sealWhy.none ? BELOW_NIGHT_SURFACE : ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}`) : ''} Health ${Math.round(bot.health * 10) / 10} of 20, ${kitSaysNow}.${nowAbout}${threatFightSays}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; require('./seal-reason').noteSeal(this.state, sealWhy, { how: 'secure_shelter' }); await this.refugeStep(task, goal, save); } };
+    if (failedSays) for (const k of ['continue_request', 'secure_shelter']) if (tree[k]) tree[k].description += failedSays;
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
     // Said with the hunger, the points carried and what the reserve is for
@@ -9805,7 +9889,48 @@ function pocketRestsOf(state, refuge, now = Date.now()) {
   return { says: r.says, forSeconds: Math.max(1, Math.round((r.until - now) / 1000)) };
 }
 
-// What this layer would claim of the turn (src/arbiter.js), read from the
+// Under the rock: no open sky over the bot past its own pocket's lid (note
+// 755b). 25588 sealed in beside a village at y 73 read "A sealed pocket
+// under the rock ... the night up top changes nothing" for nine minutes: the
+// column's top block was its own roof. Open water under open sky is not
+// under the rock either (openSkyOver, note 753c).
+function underRock(bot, refuge = null) {
+  if (bot.game?.dimension !== 'overworld' || !bot.entity?.position) return false;
+  const p = bot.entity.position;
+  if (surfaceObserver(bot)(p) || openSkyOver(bot, p)) return false;
+  // A shaft pocket is dug down into the ground: below, as note 752 has it.
+  const own = refuge || null;
+  if (!own || own.shaft || !shelter.inside(bot, own)) return true;
+  // Over the pocket's lid (its origin two up), the column as it is.
+  return !openSkyOver(bot, pos(own.origin).offset(0, 2, 0));
+}
+
+// The game's refusal of a sleep, in words (its translation keys, vanilla's
+// English), with the clock where it is the clock's.
+const SLEEP_REFUSALS = { no_sleep: 'the game lets a player sleep only at night or in a thunderstorm', not_safe: 'monsters are nearby', too_far_away: 'the bed is too far away',
+  obstructed: 'the bed is obstructed', occupied: 'the bed is occupied', not_valid: 'the bed is missing or obstructed' };
+function sleepRefusalSays(key, bot = null) {
+  const k = (String(key || '').match(/bed\.([a-z_]+)/) || [])[1];
+  const words = SLEEP_REFUSALS[k] || String(key || 'refused').replace(/^block\.minecraft\./, '').replaceAll('_', ' ');
+  return k === 'no_sleep' && Number.isFinite(bot?.time?.timeOfDay) ? `${words} (${Math.round(bot.time.timeOfDay)} by the bot's clock; sleep from about ${SLEEP_FROM})` : words;
+}
+
+// Why a shell with nothing left to place is not sealed, in words (note// Why a shell with nothing left to place is not sealed, in words (note
+// 755b): the bot out of its cell, cells still open, the floor or the cells
+// the body takes not what a pocket needs.
+function shellUnfinishedSays(bot, refuge) {
+  const o = pos(refuge.origin), at = `(${o.x}, ${o.y}, ${o.z})`;
+  if (!shelter.inside(bot, refuge)) { const f = feetCell(bot); return `the pocket at ${at} did not seal: the bot is at (${f.x}, ${f.y}, ${f.z}), not in its cell`; }
+  const parts = [];
+  const open = shelter.missingShell(bot, refuge);
+  if (open.length) parts.push(`${open.length} cell${open.length === 1 ? '' : 's'} of its shell still open (${open.slice(0, 3).map(p => `${p.x}, ${p.y}, ${p.z}: ${bot.blockAt(p)?.name || 'not loaded'}`).join('; ')})`);
+  const floor = bot.blockAt(o.offset(0, -1, 0));
+  if (floor?.boundingBox !== 'block') parts.push(`no solid floor under it (${floor?.name || 'not loaded'})`);
+  for (const [cell, what] of [[o, 'its feet cell'], [o.offset(0, 1, 0), 'its head cell']]) { const b = bot.blockAt(cell); if (!shelter.replaceable(b)) parts.push(`${what} holds ${b?.name || 'nothing loaded'}`); }
+  return `the pocket at ${at} did not seal: ${parts.join(', ') || 'its shell reads closed but not sealed'}`;
+}
+
+// What this layer would claim of the turn (src/arbiter.js), read from the// What this layer would claim of the turn (src/arbiter.js), read from the
 // same conditions stepOnce acts on and without acting: nothing is walked,
 // searched, reported or set aside here. A plan that failed or rests is a
 // fact on the claim, not the claim's end: stepOnce returned false for one,
@@ -9891,7 +10016,7 @@ function claim(bot, goal = {}, survival = null) {
   if (atArm.length) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(t => ({ ...mob(t), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), canReach: 'at its reach of the bot now' })), ...edgeFact, ...pocket });
   const refuge = survival?.currentShelter?.();
   // Not in water with open sky over it (openSkyOver, note 753c).
-  const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position) && !openSkyOver(bot, bot.entity.position);
+  const underground = underRock(bot, refuge);
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
   const insideRefuge = refuge && shelter.inside(bot, refuge);
@@ -10013,6 +10138,13 @@ function claim(bot, goal = {}, survival = null) {
   const stockRests = rests('food_search', 'stock'), fills = errands.fillsHunger(bot, supply);
   // Met, as the layer reads it: hunger eighteen or more with food carried (note 761).
   const needsFood = !errands.met(bot, supply) && supply < desiredFood && ((hungry && !(stockRests && fills)) || (stockDriven && !stockRests));
+  // A night mine Jev chose from a pocket holds the turn under the rock until
+  // dawn or until it ends, as a chosen stance does (note 755b): with the
+  // night "free" below, survival claimed nothing, the work's sheep search
+  // took the turn and climbed 25590 out of it three times at 18:43Z, and the
+  // next pocket chose the mine again.
+  if (!needsShelter && shelterNeeded(bot) && nightMineOn(bot, state.nightMine) && !threat) return make('night_mine', 'routine', {
+    nightMine: { minutes: Math.round((now - (state.nightMine.startedAt || now)) / 60000), mined: state.nightMine.mined || 0 }, minutesToDawn: minutesToDawn(bot) });
   if (!needsShelter && !needsFood) return null;
   // "Carry on" is Jev's own answer, held: the work's turn by his choice.
   const carryOn = state.carryOnPlan;
@@ -10042,4 +10174,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

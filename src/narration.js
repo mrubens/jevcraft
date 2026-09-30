@@ -51,8 +51,11 @@ const SURVIVAL = {
   wait_for_bedtime: ['Home before dark. Just waiting for bedtime now.', 'Made it home. Bed soon.', "Home! I'll wait here till it's dark enough to sleep."],
   evening_chore: (goal, action) => `Home before dark, so I'll ${({ stock_stash: 'stock the chest', harvest_and_bake: 'harvest and bake some bread', tend_farm: 'tend the field', breed_cows: 'breed the cows', light_home: 'put some torches up', wall_home: 'put a wall round home' })[action.chore] || 'do a chore'} before bed.`,
   grow_plot: ['Home before dark. I could use a bigger field; one more row tomorrow.', "I'll make the field a row bigger tomorrow."],
-  sleep_failed: (goal, action) => `I can't sleep: ${String(action.reason || '').replace(/^The server refused the sleep: /, '').replaceAll('_', ' ').replace(/^block\.minecraft\./, '')}.`,
-  stay_up: ["I'm staying up tonight. There's work I can do in the dark.", 'No sleep for me tonight. Too much to do.', "I'll pull an all-nighter."],
+  sleep_failed: (goal, action) => `I can't sleep: ${/\bbed\.[a-z_]+/.test(String(action.reason || '')) ? require('./survival').sleepRefusalSays(String(action.reason)) : String(action.reason || '').replace(/^The server refused the sleep: /, '').replace(/ \(\d+ by the bot's clock; sleep from about \d+\)$/, '')}.`,
+  // With the shelter that just failed, when one did (note 755b: 25581 went
+  // from "Closing myself in till morning" to this with nothing said of it).
+  stay_up: ["I'm staying up tonight. There's work I can do in the dark.", 'No sleep for me tonight. Too much to do.', "I'll pull an all-nighter."]
+    .map(line => (goal, action) => action?.shelterFailed ? `My shelter didn't work (${String(action.shelterFailed).replace(/\.$/, '')}), so I'm staying up tonight.` : line),
   leave_shelter: [(goal, action) => action.reason || 'Morning! Back to it.', (goal, action) => action.reason || "Sun's up. Let's go!", (goal, action) => action.reason || 'Good morning! Where was I?'],
   escape_threat: [
     (goal, action) => names(action).length ? `Yikes, a ${names(action).join(' and a ')}! I'm getting out of here.` : "Something's after me! I'm getting out of here.",
@@ -61,7 +64,9 @@ const SURVIVAL = {
   hold_defensive_position: ["I'm cornered. I'll hold here and fight.", 'Nowhere to go. I stand my ground here.'],
   dig_in_bunker: (goal, action) => `Too many of them out here (${[...new Set(action.threats || [])].join(', ')}). I'll dig into the rock and take them one at a time.`,
   fight: [(goal, action) => `Come on then, ${names(action).join(' and ')}!`, (goal, action) => `Take that, ${names(action).join(' and ')}!`, (goal, action) => `Fighting the ${names(action).join(' and the ')}!`],
-  charge: (goal, action) => `Nowhere to run, so I'm going for the ${name(action.target)}!`,
+  // Not "nowhere to run": said with the retreat on offer beside it (25590,
+  // note 752g).
+  charge: (goal, action) => `Going for the ${name(action.target)}!`,
   // Named when known: "something is shooting" was said of a blaze in plain
   // sight, and read as the bot not seeing it (the user, 2026-09-24).
   // Nothing seen: said as such, not guessed at.
@@ -103,6 +108,9 @@ const SURVIVAL_ELSEWHERE = {
 // Morning only where it is morning: a pocket left at night on the Overworld
 // said "Good morning!" too.
 const SURVIVAL_BY_NIGHT = {
+  // Not "back to daylight" at night (note 755b: 25590 said it climbing out
+  // at 18:43Z).
+  return_to_surface: ["I'm heading back up to the surface. It's night up there.", 'Climbing back up top, into the dark.', 'Up to the surface. Night out there, so eyes open.'],
   leave_shelter: [(goal, action) => action.reason || 'Out I go. Back to it.', (goal, action) => action.reason || "Right, let's go!", (goal, action) => action.reason || 'Opening up. Where was I?'],
 };
 const OVERWORLD_ONLY = new Set(['gather_shelter_materials', 'sleep', 'go_home_for_night', 'wait_for_bedtime', 'evening_chore', 'grow_plot', 'sleep_failed', 'stay_up']);

@@ -137,7 +137,13 @@ function missingShell(bot, shelter) {
 }
 function inside(bot, shelter) {
   if (shelter.dimension !== bot.game.dimension) return false;
-  const feet = bot.entity.position.floored(), o = position(shelter.origin);
+  // The cell the body is in, by what it rests on (terrain.js feetCell): on
+  // farmland or a path block the floored feet are that block's own cell,
+  // and 25588 (18:14Z, note 755b), standing in its pocket at y 72.9 on
+  // farmland, read as outside it: every pass walked "1 block" to it, placed
+  // nothing and threw "Shelter verification failed", every five seconds
+  // for nine minutes.
+  const feet = require('./terrain').feetCell(bot), o = position(shelter.origin);
   return shelter.kind === 'house' ? Math.abs(feet.x - o.x) <= 1 && Math.abs(feet.z - o.z) <= 1 && feet.y >= o.y && feet.y < o.y + 2 : feet.equals(o);
 }
 function sealed(bot, shelter) {

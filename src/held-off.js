@@ -35,6 +35,11 @@ const SAMPLE_MS = 5000, GONE_MS = 60000;
 // the work while it holds; it is one again the moment it comes nearer, to
 // its reach, or its kind lands a hit.
 const STANDOFF_MS = 60000, ARM = 3, GAP_MS = 15000;
+// Past this, in the played record, a shooter's shots coming at the bot
+// seldom landed (the flight records' shot frames of 2026-09-26 to 30, the
+// nearest ghast's distance at each: from 40 blocks and more 9 of 149
+// fireballs landed, under 24 blocks 9 of 56). Said with it (note 752g).
+const FAR_SIGHT = { ghast: { blocks: 40, landed: 9, of: 149, nearLanded: 9, nearOf: 56, near: 24 } };
 // Its lighting distance and a second's walk (combat-estimate LIGHTS_AT 3,
 // APPROACH 3 blocks a second).
 const CREEPER_NEAR = 6;
@@ -109,7 +114,13 @@ function stoodOff(bot, t, { now = Date.now(), ms = STANDOFF_MS, shoots = false }
   if (now - win.at(-1).t > GAP_MS) return null;
   const nearest = Math.min(t.distance, ...win.map(s => s.d)), farthest = Math.max(t.distance, ...win.map(s => s.d));
   if (nearest <= (creeper ? CREEPER_NEAR : ARM) || nearest < win[0].d - NEARER) return null;
-  if (shoots && (t.visible || win.some(s => s.v))) return null;
+  // A shooter in sight stands off only where its shots land so seldom that
+  // a line is not a hit: kept past FAR_SIGHT for its kind the whole while,
+  // no hit from its kind. A ghast 44 to 60 blocks off in sight re-asked
+  // 25584's hide twelve times in ninety seconds at 7.6 health (18:19:37 to
+  // 18:21:10Z), no hit from its kind (note 752g).
+  const far = FAR_SIGHT[kind]?.blocks;
+  if (shoots && (t.visible || win.some(s => s.v)) && !(far && nearest > far)) return null;
   return { seconds: Math.round((now - m.since) / 1000), nearest: Math.round(nearest * 10) / 10, farthest: Math.round(farthest * 10) / 10, inSight: !!t.visible };
 }
 // How long a mob has been about by the record, its nearest and farthest,
@@ -141,4 +152,4 @@ function says(bot, quietList) {
   return ` Held off: ${each.join('; ')}. ${one ? 'It has' : 'Each has'} been about ${one ? 'that long' : 'as long as said'} without coming nearer, coming into sight or hurting the bot, so ${one ? 'it is' : 'they are'} priced at what ${one ? 'it has' : 'they have'} done, nothing, on every option here that does not go at ${one ? 'it' : 'them'}, the hold and the ways off alike; a fight that goes at ${one ? 'it' : 'them'} is priced as that fight.`;
 }
 
-module.exports = { observe, quiet, quietOf, says, stoodOff, recordOf, QUIET_MS, NEARER, STANDOFF_MS, CREEPER_NEAR };
+module.exports = { observe, quiet, quietOf, says, stoodOff, recordOf, QUIET_MS, NEARER, STANDOFF_MS, CREEPER_NEAR, FAR_SIGHT };

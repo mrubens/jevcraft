@@ -47,7 +47,7 @@ const dist = (a, b) => a && b ? Math.hypot(a.x - b.x, (a.y ?? 0) - (b.y ?? 0), a
 const POS = /"position":\{"x":(-?[\d.e-]+),"y":(-?[\d.e-]+),"z":(-?[\d.e-]+)\}/;
 
 async function readFile(file, { since = -Infinity, to = Infinity } = {}) {
-  const out = { decisions: [], survival: [], positions: [], works: [] };
+  const out = { decisions: [], survival: [], positions: [], works: [], chats: [], tods: [] };
   const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
   for await (const line of rl) {
     if (!line) continue;
@@ -60,6 +60,8 @@ async function readFile(file, { since = -Infinity, to = Infinity } = {}) {
     if (p && /"dimension":"overworld"/.test(head)) out.positions.push({ t, p });
     if (kind === 'survival') out.survival.push({ t, label: (head.match(/"label":"([^"]*)"/) || [])[1] || '' });
     else if (kind === 'action') out.works.push(t);
+    if (kind === 'chat') { const m = line.match(/"message":"((?:[^"\\]|\\.)*)"/); if (m && /"from":"Jev"/.test(line)) out.chats.push({ t, message: m[1] }); }
+    { const tm = line.match(/"timeOfDay":(\d+)/); if (tm && (out.tods.length === 0 || t - out.tods.at(-1).t > 10000)) out.tods.push({ t, tod: +tm[1] }); }
     if (kind !== 'decision') continue;
     if (!/"id":"(survival_priority|shelter_method|pocket_next|turn_priority|rung_progress|stillness_detour)"/.test(line)) continue;
     let o; try { o = JSON.parse(line); } catch (_) { continue; }
@@ -100,9 +102,9 @@ function flightFiles(dir, { since, to, port }) {
 }
 
 function merge(parts) {
-  const out = { decisions: [], survival: [], positions: [], works: [] };
+  const out = { decisions: [], survival: [], positions: [], works: [], chats: [], tods: [] };
   for (const p of parts) for (const k of Object.keys(out)) out[k].push(...p[k]);
-  for (const k of ['decisions', 'survival', 'positions']) out[k].sort((a, b) => a.t - b.t);
+  for (const k of ['decisions', 'survival', 'positions', 'chats', 'tods']) out[k].sort((a, b) => a.t - b.t);
   out.works.sort((a, b) => a - b);
   return out;
 }
@@ -189,6 +191,33 @@ function analyse(tr, { examples = 0, simulate = false } = {}) {
     if (r.travelExamples.length < examples) r.travelExamples.push({ at: new Date(d.t).toISOString(), id: d.id, choice: d.path.at(-1), start: start && `${Math.round(start.x)},${Math.round(start.y)},${Math.round(start.z)}`, step: step ? `${step.action} ${step.block || ''} ${step.count || ''}`.trim() : null, needsAtStart, back, walked: Math.round(walked), net: Math.round(net) });
   }
   r.travelWalked = Math.round(r.travelWalked); r.travelNet = Math.round(r.travelNet);
+  // Seal passes that go round (note 755b): "seal shelter" reported again
+  // within 15 s of the last with no "sheltered" between, the spell's minutes.
+  r.sealSpells = 0; r.sealSpellMin = 0; r.sealSpellPasses = 0;
+  const passes = tr.survival.filter(x => x.label === 'seal shelter' || x.label === 'sheltered');
+  for (let i = 0; i < passes.length;) {
+    if (passes[i].label !== 'seal shelter') { i++; continue; }
+    let j = i;
+    while (j + 1 < passes.length && passes[j + 1].label === 'seal shelter' && passes[j + 1].t - passes[j].t <= 15000) j++;
+    if (j - i + 1 >= 5) { r.sealSpells++; r.sealSpellPasses += j - i + 1; r.sealSpellMin += (passes[j].t - passes[i].t) / 60000; }
+    i = j + 1;
+  }
+  r.sealSpellMin = round(r.sealSpellMin);
+  // Chat that said a game key, or daylight at night.
+  const todAt = t => { let v = null; for (const x of tr.tods) { if (x.t > t) break; v = x.tod; } return v; };
+  r.rawKeys = tr.chats.filter(c => /\b(bed\.[a-z]+|block\.minecraft\.)/.test(c.message)).length;
+  r.daylightAtNight = tr.chats.filter(c => /daylight/i.test(c.message) && (() => { const v = todAt(c.t); return v != null && v >= 12000 && v < 23000; })()).length;
+  // A night mine chosen from a pocket, then climbed out of by the work
+  // before dawn (note 755b: 25590's sheep search, 18:43Z).
+  r.nightMines = 0; r.nightMinesClimbed = 0;
+  for (const d of ds.filter(x => x.id === 'pocket_next' && x.path[0] === 'night_mine')) {
+    r.nightMines++;
+    if (tr.chats.some(c => c.t > d.t && c.t <= d.t + 600000 && /Climbing to the surface|back to daylight|heading back up to the surface|Climbing back up top/i.test(c.message) && (() => { const v = todAt(c.t); return v != null && v >= 12000 && v < 23000; })())) r.nightMinesClimbed++;
+  }
+  r.stayUpAfterFailedSeal = 0;
+  for (const c of tr.chats.filter(c => /staying up tonight|No sleep for me|all-nighter/.test(c.message))) {
+    if (tr.chats.some(o => o.t < c.t && c.t - o.t <= 30000 && /Closing myself in|Walling myself in|Sealing up/.test(o.message))) r.stayUpAfterFailedSeal++;
+  }
   return r;
 }
 
@@ -196,6 +225,7 @@ function total(rows) {
   const t = { seals: 0, byReason: {}, followed: {}, noneFollowed: {}, sealedMin: {}, noneSealedMin: 0, noneNotNightMine: 0, simNone: 0, simRoutine: 0, simRoutineMin: 0, oldNamedReason: 0,
     travel: 0, travelNeedsAtStart: 0, travelReturned: 0, travelReturnedNeeds: 0, travelWalked: 0, travelNet: 0, travelById: {}, travelSimNamed: 0 };
   for (const r of rows) {
+    for (const k of ['sealSpells', 'sealSpellMin', 'sealSpellPasses', 'rawKeys', 'daylightAtNight', 'stayUpAfterFailedSeal', 'nightMines', 'nightMinesClimbed']) t[k] = round((t[k] || 0) + (r[k] || 0));
     for (const k of ['seals', 'noneSealedMin', 'noneNotNightMine', 'simNone', 'simRoutine', 'simRoutineMin', 'oldNamedReason', 'travel', 'travelNeedsAtStart', 'travelReturned', 'travelReturnedNeeds', 'travelWalked', 'travelNet', 'travelSimNamed']) t[k] = round(t[k] + r[k]);
     for (const f of ['byReason', 'followed', 'noneFollowed', 'sealedMin']) for (const [k, v] of Object.entries(r[f])) t[f][k] = round((t[f][k] || 0) + v);
     for (const [k, b] of Object.entries(r.travelById)) { const a = t.travelById[k] ||= { n: 0, needsAtStart: 0, returned: 0 }; for (const f of Object.keys(a)) a[f] += b[f]; }
@@ -233,6 +263,9 @@ async function main() {
   console.log(`  After a seal with no reason: ${list(all.noneFollowed)}.`);
   console.log(`Bot-minutes from seal to its end (at most 15 min), by reason: ${list(all.sealedMin)}; with no reason named (the way not the night mine): ${all.noneSealedMin} over ${all.noneNotNightMine} seals.`);
   if (simulate) console.log(`Simulated: the rule's words on each recorded seal say "No reason to seal" on ${all.simNone} of ${all.seals}; every other one opens with its reason. Under the rock with none, the turn's claim is routine, not pressing: ${all.simRoutine} seals, ${all.simRoutineMin} bot-minutes sealed after them.`);
+  console.log(`Seal passes going round (5+ "seal shelter" each within 15 s of the last, no "sheltered"): ${all.sealSpells} spells, ${all.sealSpellPasses} passes, ${all.sealSpellMin} bot-minutes.`);
+  console.log(`Night mines chosen from a pocket: ${all.nightMines}; climbed out of at night within 10 minutes: ${all.nightMinesClimbed}.`);
+  console.log(`Chat: a game key said raw ${all.rawKeys} times; "daylight" said at night ${all.daylightAtNight} times; "staying up" within 30 s of "closing myself in" ${all.stayUpAfterFailedSeal} times.`);
   console.log(`\nTravel answers (rung_progress, stillness_detour: travel_*, look_around, explore): ${all.travel}; ${Object.entries(all.travelById).map(([k, b]) => `${k} ${b.n} (needs at start ${b.needsAtStart}, back within 16 blocks in 10 min ${b.returned})`).join('; ')}.`);
   console.log(`  The stalled step's need was within 8 blocks of the start (or named by mine_nearby): ${all.travelNeedsAtStart} (${pct(all.travelNeedsAtStart, all.travel)}); back at the start within 10 minutes: ${all.travelReturned}, ${all.travelReturnedNeeds} of them with the need there.`);
   console.log(`  Walked ${all.travelWalked} blocks in the 10 minutes after, for ${all.travelNet} net.`);

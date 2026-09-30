@@ -957,8 +957,17 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // the surface was about 67 blocks up, none good Jev's likeliest at 22 of
   // them, and no option was the climb. It is offered on its own, with its
   // cost; the walk on from here is then the search on the surface.
-  if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.` };
+  // At night, the time until day and the leaving of it till then (note
+  // 755b): 25590 (18:39 to 18:45Z) chose climb_first four times in two
+  // minutes, was shot on the surface 20 to 13, sealed, night-mined down to y
+  // 47, and was climbed back up by this search three times more, "Up I go,
+  // back to daylight", at night.
+  const nightNow = tod >= DAY.DARK && tod < DAY.DAWN;
+  const toDawn = Math.round(((DAY.DAWN - tod + 24000) % 24000) / 1200);
+  const nightSays = nightNow ? ` It is night: the surface's mobs are out until dawn, about ${toDawn} real minutes off, and the walk to look comes out among them.` : '';
+  if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.${nightSays}` };
   else tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
+  if (nightNow) tree.until_day = { description: `Leave the sheep until day, about ${toDawn} real minutes to dawn: the bed's search rests until then and the ladder's other work goes on meanwhile${underground ? ' down here, where the dark is the same at any hour (a night mine chosen from a pocket holds until dawn)' : ''}; taken up again at dawn.` };
   if (webs.length >= 2 && stringWanted) {
     const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     const webDy = Math.round(nearWeb.y - bot.entity.position.y);
@@ -985,6 +994,12 @@ async function searchForSheep(bot, task, goal, save, actions) {
   if (pick === 'craft_from_string') {
     bot.chat?.(`Making wool from string.`);
     await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
+    return;
+  }
+  if (pick === 'until_day') {
+    const ms = Math.max(60000, Math.round(((DAY.DAWN - tod + 24000) % 24000) * 50));
+    setAside(goal, 'bed_search', 'wool', 'left for the night: sheep are looked for by day (Jev chose until_day)', ms); save();
+    bot.chat?.('The sheep can wait till morning.');
     return;
   }
   const way = ways[pick] || {};
