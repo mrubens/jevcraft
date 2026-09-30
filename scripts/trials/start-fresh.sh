@@ -20,7 +20,7 @@ SRC=".trial-sources/first-days-$N"
 [ -f "$ROOT/$SRC.archive" ] || { echo "no source $SRC"; exit 1; }
 cd "$ROOT" || exit 1
 for A in a b c d e f g h i j k m n p q r s t u v w x y z; do
-  for B in "" a b c d e f g h; do
+  for B in "" a b c d e f g h i j k m n p q r s t u v w x y z; do
     W="mid-$N-$A$B"
     [ -f "artifacts/midgame/$W.json" ] && continue
     ls -d .clean-run*/"$W" >/dev/null 2>&1 && continue
