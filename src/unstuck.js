@@ -641,7 +641,18 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   }
   if (inWater && isWater(view.name(feet.plus(UP)))) moves.push({ key: 'swim_up', does: 'Swim up a block.', kind: 'move', to: feet.plus(UP), ...where(feet.plus(UP)) });
   const block = PLACEABLE.find(n => (view.carried?.[n] || 0) > 0);
-  if (block && !inWater && headroom && solid(view.name(feet.plus(DOWN)))) moves.push({ key: 'pillar', does: `Jump and put a ${block.replaceAll('_', ' ')} under the feet: up a block where it stands.`, kind: 'pillar', block, to: feet.plus(UP), ...where(feet.plus(UP)) });
+  // Standing on solid ground under water (a shallow flooded cell, not a
+  // deep column) still has a floor to place against: the block goes into
+  // the water at the feet, reached through it against the solid top face
+  // below, and the bot rises out onto it a block at a time, same as the
+  // pillar on dry ground. In water the space risen into only needs to be
+  // open, not dry: the next pillar (or a swim up) carries on from there.
+  // 25584 sat in the flooded cast at the portal frame for over four
+  // minutes, every unstuck_move a none_good, the pillar never offered
+  // because it stood in water, though the floor under it was solid the
+  // whole time (note 735).
+  const waterHeadroom = inWater && open(view.name(feet.plus(UP))) && !isLava(view.name(feet.plus(UP)));
+  if (block && (headroom || waterHeadroom) && solid(view.name(feet.plus(DOWN)))) moves.push({ key: 'pillar', does: `Jump and put a ${block.replaceAll('_', ' ')} under the feet: up a block${inWater ? ', filling the water there' : ''} where it stands.`, kind: 'pillar', block, to: feet.plus(UP), ...where(feet.plus(UP)) });
   const rising = risePlan(view, feet);
   if (rising?.move) moves.push(rising.move);
   else if (rising?.blocked) notOffered.push(rising.blocked);

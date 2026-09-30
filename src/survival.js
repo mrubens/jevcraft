@@ -7785,8 +7785,13 @@ class Survival {
       task.check();
       if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
       mine.failures++; mine.lastError = err.message;
-      // A filter that rules out every step toward the ore says so at once.
-      if (err.name === 'NoSafeWay' || mine.failures >= 3 || /not gaining/.test(err.message)) this.abandonTarget(mine, err.message);
+      // A filter that rules out every step toward the ore says so at once,
+      // and so does no route to it at all: waiting for three failures first
+      // (25589, note 735) asked night_mine_target for a new ore_0 as soon as
+      // the target above it was abandoned, picked a fresh ore each of the
+      // three times before it was, and never had a chance to rest the one
+      // that had already said "no route" once.
+      if (err.name === 'NoSafeWay' || err.name === 'NoRoute' || mine.failures >= 3 || /not gaining/.test(err.message)) this.abandonTarget(mine, err.message);
     }
     save();
     return true;
