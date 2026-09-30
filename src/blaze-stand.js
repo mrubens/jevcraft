@@ -245,6 +245,19 @@ function spawnerSite(bot, spawner = spawnerAt(bot), { steps = 24, avoid = [] } =
   return found && { ...found, spawner, off: round(found.cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
 }
 
+// Whether a walk can reach within four blocks of the cage at all (no
+// ceiling or backed-wall test, only that some standable cell is there to
+// walk to): spawnerSite failing says only "no covered cell"; without this,
+// stand_by_spawner was offered and run on the strength of that same failed
+// walk (25591, mid-242-vd, note 732), and the pathfinder's own walk to the
+// cage then came back "no route" a second after the option was taken.
+function spawnerReach(bot, spawner = spawnerAt(bot), { steps = 24, avoid = [] } = {}) {
+  if (!spawner) return null;
+  const centre = spawner.offset(0.5, 0.5, 0.5);
+  const ok = c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= 4;
+  return walkTo(bot, ok, { steps, avoid });
+}
+
 // Where a blaze hovers once it has a target, read from the 26.1.2 server
 // jar (Blaze.customServerAiStep): it rises only while the target's eyes are
 // more than its allowedHeightOffset above its own, and otherwise sinks,
@@ -1309,6 +1322,19 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     }
   }
   Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs }));
+  // Each fight is said against leaving to heal, not only its own number:
+  // 25589 (mid-242-va, note 732) was never told what leave_and_heal's own
+  // damage estimate came to while it picked a fight that took it from 20 to
+  // 0 in three seconds. Said once, on every fight-kind option, from
+  // leave_and_heal's own expects (kept as its own choice regardless).
+  const FIGHT_KINDS = new Set(['spawner', 'wall', 'close', 'charge', 'break', 'hole', 'window']);
+  if (options.leave_and_heal) {
+    const away = options.leave_and_heal.expects;
+    for (const o of Object.values(options)) {
+      if (o === options.leave_and_heal || !FIGHT_KINDS.has(o.kind) || !o.expects) continue;
+      o.description += ` Going away to heal instead is estimated at about ${away.damage} damage${away.heals ? ` and heals about ${away.heals}` : ' (no health comes back at this hunger)'}, against this fight's ${o.expects.damage}.`;
+    }
+  }
   // The box and the corner are holds as the stands are: what the holds made
   // from about here came to, said on them in the hunt and the stance alike
   // (note 620).
@@ -1826,4 +1852,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS };
+module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS };

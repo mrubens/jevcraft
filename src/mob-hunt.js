@@ -2776,7 +2776,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       // way in weighed and left in the one question and the fortress taken
       // back in the next (note 541). The one set-aside (fortress-hold.js).
       const ways = Object.keys(options).filter(k => k !== 'keep_searching').map(k => k.replaceAll('_', ' '));
-      require('./fortress-hold').leave(bot, state, { anchor, radius: Math.max(anchor === nearest ? 0 : anchor.extent || 0, Math.ceil(flatTo(nearest, anchor)) + extent), left: ways, save });
+      require('./fortress-hold').leave(bot, state, { anchor, radius: Math.max(anchor === nearest ? 0 : anchor.extent || 0, Math.ceil(flatTo(nearest, anchor)) + extent), left: ways, save, goal });
       return null;
     } };
   // What waits at the bricks, seen or not: mid-227-o dug down ten blocks
@@ -3422,7 +3422,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const walked = why => { if (w.go) (state.goToEnded ||= {})[`spawner:${w.x},${w.y},${w.z}`] = { why, at: Date.now() }; };
     if (!(w.until > Date.now())) {
       state.spawnerWaitEnded = w.go ? `the walk's ${Math.round(SPAWNER_GO_MS / 60000)} minutes ran out ${Math.round(off)} blocks from it` : w.startedAt ? `waited ${Math.round((Date.now() - w.startedAt) / 1000)} seconds, ${came}` : 'waited its minutes';
-      walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save();
+      // The wait ending is not a leave (note 721 rule 4: a way failing is
+      // said on the next asking, never a leave): the fortress kept as
+      // state.approach.found stays the step's found, so narration does not
+      // read this as "leaving the fortress" off a stale, unrelated shunned
+      // entry (note 732, 25591 at 07:31:57Z: pillar_up was Jev's choice
+      // here, not a leave, and yet "Leaving the fortress" was said).
+      walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait;
+      goal.step = { action: 'find_fortress', ...(state.approach?.found ? { found: state.approach.found } : {}), legs: state.legs || 0 }; save();
       // Ended here, not fallen through into the bricks search below: with the
       // wait just deleted, the next tick re-asks fresh from the top of this
       // function, where the cage/fortress-extent gate above runs again with
@@ -3484,7 +3491,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
         if (ended) why = ended;
         if (!far()) return;
       }
-      if (far()) { state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save(); }
+      if (far()) {
+        state.spawnerWaitEnded = `no way to it: ${why || 'came no nearer'}`; walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait;
+        // Same as above (note 721 rule 4, note 732): a failed walk to the
+        // spawner is not a leave, so the fortress found earlier stays found.
+        goal.step = { action: 'find_fortress', ...(state.approach?.found ? { found: state.approach.found } : {}), legs: state.legs || 0 }; save();
+      }
       return;
     }
   }
@@ -3582,7 +3594,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
         reach: (() => { let said = null; return () => (said ??= hold.reachSays(bot, goal, { target, anchor })); })(),
         // The whole fortress, by its one place and extent (note 706), the
         // one set-aside (fortress-hold.js).
-        leave: () => hold.leave(bot, state, { anchor, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), left: ['the visit itself'], save }) });
+        leave: () => hold.leave(bot, state, { anchor, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), left: ['the visit itself'], save, goal }) });
       if (visit !== 'go_in') return;
       await approachFortress(bot, task, goal, save, actions, state, target, bricks); return;
     }
@@ -3693,7 +3705,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // (chooseLeg); the compass's own heading is the outage default.
     state.since ||= Date.now();
     if (await chooseLeg(bot, task, goal, save, actions, state, setAside) !== true) return;
-    if (leftOnLeg) require('./fortress-hold').leave(bot, state, { ...leftOnLeg, left: ['its ways in from here, then a leg away'], save });
+    if (leftOnLeg) require('./fortress-hold').leave(bot, state, { ...leftOnLeg, left: ['its ways in from here, then a leg away'], save, goal });
     beginLeg(state, here);
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
@@ -3813,4 +3825,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}) } };
 }
 
-module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays };
+module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

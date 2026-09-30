@@ -379,7 +379,15 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // escalation): said, with how far into them.
   const byEscalation = rungQuestion && !stall.rung;
   const worked = rung && rungQuestion ? tried.workedOn(goal, { work, here: bot.entity.position, now, escalated: byEscalation }) : null;
-  const instead = rung && rungQuestion ? await nextRungSays(bot, task, goal, rung, now) : null;
+  const nextRung = rung && rungQuestion ? await nextRungSays(bot, task, goal, rung, now) : null;
+  const instead = nextRung?.text || null;
+  // Nothing else the ladder could go on with (every other rung already
+  // resting, or none left): the option's own promise, "go on with the next
+  // thing", cannot be kept. 25581 (mid-243-if) chose set_aside_rung twice in
+  // three minutes with only the reach nether not resting, and came straight
+  // back each time, "I set it aside 7 seconds ago" then "1 second ago",
+  // 167 minutes without a milestone (critic 08:17Z, note 736).
+  const nothingElseToRunWith = nextRung?.nothingElse === true;
   // Every way below resting until a time (an escalation, decisions/index.js
   // escalateFrom): when the first comes off rest.
   const restUntil = stall.until > now ? stall.until : 0;
@@ -393,7 +401,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // thirty minutes (note 605). Its ten minutes running out still offers it.
   const untriedBelow = byEscalation && worked?.openBelow?.length ? worked.openBelow : null;
   const untriedSays = untriedBelow ? untriedBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ') : '';
-  const setAsideNotOffered = untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}` : null;
+  const setAsideNotOffered = untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}`
+    : nothingElseToRunWith ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: every other rung is already resting, so there is nothing else for the ladder to go on with; it would come straight back` : null;
   // Not offered for the rods while the bot is at a live spawner that still
   // owes them (cage-hold.js cageFight): the game is handing them over right
   // there, so leaving them for thirty minutes is not a real choice (25589,
@@ -584,12 +593,17 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
 // from here, read from a copy of the goal with the rung left: the next
 // rung, where its work is (a warped forest known, how far, and how the last
 // walk there ended), and what the ledger holds of it from here.
+// Returns null when this cannot be worked out from here (not a win goal, or
+// the probe failed); otherwise { nothingElse: true } when leaving the rung
+// aside would not change what the ladder does (every other rung is already
+// resting, so the next stage computed is this same rung, or none at all), or
+// { text } with what it would go on with instead.
 async function nextRungSays(bot, task, goal, rung, now = Date.now()) {
   if (goal.kind !== 'win') return null;
   let next = null;
   try { const probe = JSON.parse(JSON.stringify(goal)); setAside(probe, 'rung', rung, 'left for now', RUNG_WAIT_MS); next = nextGameStage(bot, probe); }
   catch (_) { return null; }
-  if (!next?.phase || next.phase === rung) return null;
+  if (!next?.phase || next.phase === rung) return { nothingElse: true };
   const words = v => String(v || '').replaceAll('_', ' ');
   const here = bot.entity.position;
   const parts = [`Set aside, the ladder goes on with ${words(next.phase)}${next.action && next.action !== next.phase ? ` (${words(next.action)}${next.item ? `, ${next.count || ''} ${words(next.item)}`.replace(/ +/g, ' ') : ''})` : next.item ? ` (${next.count || ''} ${words(next.item)})`.replace(/ +/g, ' ') : ''}`];
@@ -623,7 +637,7 @@ async function nextRungSays(bot, task, goal, rung, now = Date.now()) {
   }
   const lately = require('./tried').summary(goal, { work: `step:rung:${next.phase}`, now });
   if (lately) parts.push(`tried for it lately: ${lately.slice(0, 3).join('; ')}`);
-  return `${parts.join('; ')}.`;
+  return { text: `${parts.join('; ')}.` };
 }
 // Where a rung taken back would go first, from here: the rods' fortress,
 // how far, and whether the search has left it for now.
@@ -730,8 +744,28 @@ async function gatherWood(bot, task, goal, save) {
   const species = (bot._catalogObservation?.nearby || []).find(name => /_log$/.test(name)) || 'oak_log';
   goal.step = { action: 'wood_reserve', item: species, have };
   goal.surfaceTrip = { need: 'wood', pick: 'climb', asked: true, by: 'upkeep', at: new Date().toISOString() }; save();
-  try { await acquireStep(bot, task, species, countOf(bot, species) + Math.ceil(WOOD_RESERVE + 1 - have), goal, save); }
+  // Round after round until the reserve is met or a round gains nothing: one
+  // call to acquireStep is one log (or a craft along the way), not the whole
+  // reserve, and a single call left upkeep re-asked after each with the wood
+  // carried barely moved. 25581 (mid-243-if) asked upkeep 18 times in three
+  // minutes, wood_reserve and spare_pickaxe repeating while the reach nether
+  // rung's own portal distance grew (critic 08:17Z, note 736): the shape
+  // gatherBlocks had before note 423, now fixed here the same way.
+  try {
+    for (let round = 0; round < WOOD_RESERVE + 1 && woodUnits(bot) < WOOD_RESERVE; round++) {
+      const before = woodUnits(bot);
+      await acquireStep(bot, task, species, countOf(bot, species) + Math.ceil(WOOD_RESERVE + 1 - woodUnits(bot)), goal, save);
+      if (woodUnits(bot) <= before) break;
+    }
+  }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'block_reserve', 'wood', err, 600000); }
+  finally {
+    const gained = woodUnits(bot) - have;
+    const tries = (goal.woodRounds || []).filter(r => Date.now() - r.at < 600000);
+    goal.woodRounds = [...tries, { at: Date.now(), gained }].slice(-6);
+    if (gained <= 0 && tries.filter(r => r.gained <= 0).length >= 1) setAside(goal, 'block_reserve', 'wood', 'wood sought twice in ten minutes and none gained', 600000);
+    save();
+  }
   return true;
 }
 async function gatherBlocks(bot, task, goal, save, { acquire = acquireStep } = {}) {
@@ -6882,4 +6916,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft };
+module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood };

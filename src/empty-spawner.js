@@ -113,18 +113,30 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
   const healthSays = `Health ${round(f.health)}${f.health >= 20 ? '' : f.healable ? ', coming back meanwhile' : ', not coming back'}: a blaze fires three fireballs a volley, one that lands costs ${hit} and sets the bot alight, so ${lands === 1 ? 'one that lands is the end' : `about ${lands} that land are the end`}.${row}`;
   if (!resting) {
     const site = standSite(bot, cage);
+    // spawnerSite (standSite) failing says only "no cell under a ceiling or
+    // backed by rock was found"; it does not say a walk can reach the cage
+    // at all. 25591 (mid-242-vd, note 732) was offered "within four blocks
+    // of the cage" on that failure alone, its run tried the pathfinder's
+    // own walk there, and it came back "no route" at once: no reachable
+    // cell of any kind was within range, not just no covered one. Without
+    // a covered site, a plain reachable one is checked before the option is
+    // offered at all; with neither, nothing here has a walk to the cage, and
+    // that is said instead of offered.
+    const reach = site ? null : (() => { try { return require('./blaze-stand').spawnerReach(bot, cage); } catch (_) { return null; } })();
     // What the stand's cell sees of where the blazes come (note 708).
     const line = site ? (() => { try { return require('./blaze-tactics').standLine(bot, site.cell, cage); } catch (_) { return null; } })() : null;
     const where = site
       ? `a cell ${site.off} blocks from the cage, ${site.steps ? `a ${site.steps}-block walk` : 'where the bot stands'}, ${bot.blockAt(site.cell.offset(0, 2, 0))?.boundingBox === 'block' ? 'under a ceiling' : 'rock at its back'}`
-      : `within four blocks of the cage (${off} off now; no covered cell found near it)`;
+      : reach ? `within four blocks of the cage (${off} off now; no covered cell found near it, but the walk there is open)`
+      : `within four blocks of the cage (${off} off now; no covered cell found near it, and no plain one either: nothing standable was found on a walk there from here, so the wait may find no way and be asked again)`;
     const sees = line ? ` There it sees ${require('./blaze-tactics').lineWords(line)}.` : '';
+    const goCell = site ? site.cell : reach ? reach.cell : null;
     tree.stand_by_spawner = { description: quiet
       ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built.${sees} ${healthSays.replace(row, '')}`
       : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail.${sees} ${healthSays}`,
       run: () => {
         const fs = goal.fortressSearch ||= { legs: 0 };
-        fs.spawnerWait = { x: cage.x, y: cage.y, z: cage.z, until: now + STAND_MS, startedAt: now, chosen: 'empty_spawner', ...(site ? { cell: P(site.cell) } : {}) };
+        fs.spawnerWait = { x: cage.x, y: cage.y, z: cage.z, until: now + STAND_MS, startedAt: now, chosen: 'empty_spawner', ...(goCell ? { cell: P(goCell) } : {}) };
         delete fs.spawnerWaitEnded; save?.();
       } };
   }

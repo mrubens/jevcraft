@@ -91,7 +91,12 @@ function reachSays(bot, goal, { target, anchor = null, offered = {}, facts = {} 
   const mh = require('./mob-hunt'), bs = require('./block-stock');
   const across = round(Math.hypot(target.x + 0.5 - here.x, target.z + 0.5 - here.z)), dy = round(target.y + 1 - here.y);
   const place = anchor || target;
-  const lead = `The fortress at ${at3(place)} is ${across} blocks across${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} from here, and stays the search's target unless leaving it is chosen.`;
+  // Rods owed, said with the distance: 25588 (rb-fortress-3, note 732) chose
+  // keep_searching on a fortress 24 blocks off with nothing said of what it
+  // still owed, and "Leaving the fortress ... for now" read as free of cost.
+  let rods = null; try { rods = require('./blaze-stand').rodsNeeded(bot, goal); } catch (_) { rods = null; }
+  const owed = rods ? ` ${rods} blaze rod${rods === 1 ? '' : 's'} still needed; this fortress is what is known of where to find them.` : '';
+  const lead = `The fortress at ${at3(place)} is ${across} blocks across${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''} from here, and stays the search's target unless leaving it is chosen.${owed}`;
   const needs = [], ways = [];
   const inv = !!bot.inventory?.items;
   // The pickaxe: rock is dug several times faster with one and dug rock
@@ -135,12 +140,17 @@ function reachSays(bot, goal, { target, anchor = null, offered = {}, facts = {} 
 // was left and over which ways, said in chat with where it is.
 const LEAVE_FOR_MS = 10 * 60000;
 const LEFT_FROM_MS = 60 * 60000;
-function leave(bot, state, { anchor, radius = 16, left = [], why = 'Jev chose to leave it and search on', save = () => {}, now = Date.now() }) {
+function leave(bot, state, { anchor, radius = 16, left = [], why = 'Jev chose to leave it and search on', save = () => {}, now = Date.now(), goal = null }) {
   const p = bot.entity.position, from = { x: round(p.x), y: round(p.y), z: round(p.z) };
   state.leftFrom = [...(state.leftFrom || []).filter(l => now - l.at < LEFT_FROM_MS), { at: now, ...from }].slice(-16);
   (state.shunned ||= []).push({ x: anchor.x, z: anchor.z, radius, until: now + LEAVE_FOR_MS, at: now, why, from, left });
   delete state.target; save();
-  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${round(Math.hypot(anchor.x - p.x, anchor.z - p.z))} blocks off. Searching on for another.`);
+  // Rods owed, said plainly with the leave itself (note 732, 25588 and
+  // 25592): the question's own facts already say this (reachSays above),
+  // but the chat line a person actually sees said only the distance.
+  let rods = null; try { rods = goal ? require('./blaze-stand').rodsNeeded(bot, goal) : null; } catch (_) { rods = null; }
+  const owed = rods ? ` ${rods} blaze rod${rods === 1 ? '' : 's'} still needed.` : '';
+  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${round(Math.hypot(anchor.x - p.x, anchor.z - p.z))} blocks off. Searching on for another.${owed}`);
 }
 
 // 5. A fetch of stems chosen under the fortress work and still holding: it

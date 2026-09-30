@@ -104,6 +104,19 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null, dug 
   // speared the bot from 1.3 blocks across and 1.6 below (note 586).
   const { holdsSpear, SPEAR_MOB_REACH } = require('./danger');
   const sideways = walkers.some(t => holdsSpear(t.entity)) ? Math.max(SIDEWAYS, 0.6 + SPEAR_MOB_REACH) : SIDEWAYS;
+  // A walker whose real, continuous position already satisfies this same
+  // touch test has a way to the bot now, whatever the ground search below
+  // found or missed of its cell: standable() refuses magma, ice-and-such
+  // are not tested for at all, and any odd footing can make a mob's own
+  // spot fail it though the mob plainly touches the bot from there. 25589
+  // (mid-242-va, note 732) was told "2 wither skeletons have no way to the
+  // bot" the same second one was "Preempted by reach: a wither_skeleton
+  // came within its reach" — the reach test the preemption answers on and
+  // this one agree on distance; the ground search must not overrule them.
+  // Judged only for the bot's own stance (`at` null): a hypothetical
+  // stance's reach is not the bot's now, so the plain search still applies.
+  const touchesNow = p => Math.abs(p.x - here.x) <= sideways && Math.abs(p.z - here.z) <= sideways && p.y >= lo && p.y <= here.y + ABOVE;
+  const alreadyThere = at === null ? new Set(walkers.filter(t => touchesNow(t.entity.position)).map(t => t.entity.id)) : new Set();
   for (let dx = -reachX; dx <= reachX; dx++) for (let dz = -reachX; dz <= reachX; dz++) for (let y = feet.y - reachX; y <= feet.y + reachX; y++) {
     const c = new Vec3(feet.x + dx, y, feet.z + dz);
     const touches = Math.abs(c.x + 0.5 - here.x) <= sideways && Math.abs(c.z + 0.5 - here.z) <= sideways && y >= lo && y <= here.y + ABOVE;
@@ -141,7 +154,7 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null, dug 
   }
   // A chunk not loaded: the walkers are not said to be kept off.
   if (unknown) return none;
-  const kept = walkers.filter(t => { const cells = pending.get(t.entity.id); return cells.length && !cells.some(k => seen.has(k)); });
+  const kept = walkers.filter(t => !alreadyThere.has(t.entity.id) && (() => { const cells = pending.get(t.entity.id); return cells.length && !cells.some(k => seen.has(k)); })());
   if (!outside) return { ids: new Set(kept.map(t => t.entity.id)), mobs: kept, radius, round: [] };
   // The search left its bounds: a walker inside them that it did not reach
   // has no way to the bot within them, and any way it has goes out past

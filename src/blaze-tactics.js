@@ -739,8 +739,15 @@ async function holdCorner(bot, task, goal, save, site, { navigate, seconds = 30,
 // four seconds, and with saturation at full hunger one every half second
 // (FoodData). The blazes stay, and a spawner makes more meanwhile.
 function healSite(bot, blazes, { steps = 14, avoid = [] } = {}) {
+  // A cell whose walk just failed (leaveAndHeal's noteSiteFailed) is not
+  // offered again at once: leave_and_heal picked the same unreachable cell
+  // twice running on 25591 (mid-242-vd, note 732), each answered "no route"
+  // by the pathfinder a second after the option said "walk N blocks to
+  // (cell) ... and stay until the health is full" as if it would arrive.
+  const { siteFailedNear } = require('./blaze-stand');
   let best = null;
   for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
+    if (siteFailedNear(bot, cell)) continue;
     if (seeing(bot, blazes, cell).length) continue;
     const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
     if (near < 4) continue;
@@ -785,7 +792,13 @@ async function leaveAndHeal(bot, task, goal, save, site, { navigate, seconds = 6
     try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 5000, stallMs: 1500, onFoot: true, sprint: true, stopWhen: () => stand.volleyComing(bot) }); }
     catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
   }
-  if (!feetCell(bot).equals(c)) throw Object.assign(new Error(`the walk out of their sight to (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+  if (!feetCell(bot).equals(c)) {
+    // Remembered against the cell (siteFailedNear, note 732): healSite does
+    // not offer this same cell again for a while, the way spawnerSite,
+    // wallSite and holeSite already withhold theirs.
+    stand.noteSiteFailed(bot, c, 'did not get there');
+    throw Object.assign(new Error(`the walk out of their sight to (${c.x}, ${c.y}, ${c.z}) did not get there`), { name: 'StanceFailed' });
+  }
   if (site.build?.length) await buildBox(bot, task, goal, save, { cell: c, walls: site.build, window: site.open[1] }, { navigate });
   try {
     const biter = biterWatch(bot), arrived = Date.now();

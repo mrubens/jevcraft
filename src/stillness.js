@@ -152,6 +152,16 @@ function stepWait(bot, goal, now = Date.now()) {
   // fight at the spawner for its minute, whatever the hunt's step is named
   // meanwhile (a stalk, a door, cover), while the bot stays about the spot.
   try { if (require('./cage-hold').holding(bot, goal, now)) return 'staying at the spawner'; } catch (_) { /* no hold */ }
+  // Standing at a fortress it already knows, asking what to do next, is not
+  // "no measurable progress": 25588 (rb-fortress-3, note 732) was told "No
+  // measurable progress on find_fortress" with the fortress 1 block away,
+  // right after keep_searching had walked it off and the search found the
+  // same bricks again. The unchanged-passes count (work.js) is about moving
+  // toward an unfound target, not about a bot already there and deciding.
+  if (action === 'find_fortress' && goal?.step?.found && bot?.entity?.position) {
+    const f = goal.step.found;
+    if (Math.hypot(f.x - bot.entity.position.x, f.z - bot.entity.position.z) <= 8 && Math.abs(f.y - bot.entity.position.y) <= 8) return 'at a known fortress';
+  }
   return null;
 }
 

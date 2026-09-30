@@ -60,7 +60,23 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     // return the progress watch calls "No measurable progress" (note 583).
     if (!arrived && !tripOpen(goal, known.landmark, now())) {
       const l = known.landmark, w = l.lastWalk;
-      const why = `The walk to the warped forest at (${l.x}, ${l.z}), ${Math.round(known.distance)} blocks off, came no nearer${w?.why ? `: ${w.why}` : ''}; that walk rests half an hour`;
+      const noRoute = /no route/i.test(w?.why || '');
+      // A hard "No route" (the pathfinder found none at all, not a stall a
+      // second leg might close through the walk's own digging): the
+      // staircase the sweep tries for a heading it cannot walk, tried here
+      // too, toward a forest already known, before its trip rests. 25595
+      // (mid-242-vh) had two known forests end "No route" one after the
+      // other and fell straight to the blind sweep, four navigation stalls
+      // in, never digging toward either forest it already had (critic
+      // 08:17Z, note 736).
+      if (noRoute && actions.tunnel) {
+        const target = new Vec3(l.x, Number.isFinite(l.y) ? l.y : bot.entity.position.y, l.z);
+        const before = bot.entity.position.distanceTo(target);
+        try { await actions.tunnel(bot, task, goal, save, target, { within: goal.step }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        if (bot.entity.position.distanceTo(target) < before - 4) { save(); return true; }
+      }
+      const why = `The walk to the warped forest at (${l.x}, ${l.z}), ${Math.round(known.distance)} blocks off, came no nearer${w?.why ? `: ${w.why}` : ''}${noRoute ? `; tried and unreachable on foot${actions.tunnel ? ', a staircase toward it gaining no ground either' : ''}` : ''}; that walk rests half an hour`;
       require('./tried').record(bot, goal, { q: 'step', method: 'warped_pearls', target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z }, outcome: 'blocked', why });
       throw new Error(why);
     }

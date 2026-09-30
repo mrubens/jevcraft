@@ -8541,7 +8541,30 @@ class Survival {
       const blazeMid = blazesAbout.length ? require('./bunker').centroid(blazesAbout) : null;
       const fromBlazes = !fromSpawner && !passage && !fromWatcher && blazeMid && digging
         ? this.passageOut({ entity: { position: blazeMid } }, { clear: Math.hypot(bot.entity.position.x - blazeMid.x, bot.entity.position.z - blazeMid.z) + 8, max: 24 }) : null;
-      const outCells = p => `one wide and two high, ${p.cells} blocks${p.down ? `, a stair down a block each step to ${p.down} below the pocket's floor (${p.blocks} blocks dug)` : ''}, about ${Math.round((p.blocks || p.cells * 2) * 1.25)} seconds`;
+      // Dug with a pickaxe, about 1.25 s a block (the figure this was
+      // measured at with one carried); by hand it is the game's own rule
+      // (hand-dig.js: netherrack about 2 s, blackstone 7.5, and so on by
+      // hardness), not the pickaxe's pace. 25589 (mid-242-va, note 732) was
+      // told a passage of 7 blocks took "about 18 seconds" (the pickaxe
+      // figure) with no pickaxe carried, digging by hand beside a wither
+      // skeleton at three blocks the whole time.
+      const noPickaxe = !(bot.inventory?.items() || []).some(i => /_pickaxe$/.test(i.name));
+      const outCells = p => {
+        let secs;
+        if (noPickaxe && p.path) {
+          const { handSeconds } = require('./hand-dig');
+          let total = 0, unknown = false;
+          for (const c of p.path) for (const q of c.dig) {
+            const b = bot.blockAt(q);
+            if (!b || b.boundingBox !== 'block') continue;
+            const s = handSeconds(bot, b);
+            if (s == null) { unknown = true; break; }
+            total += s;
+          }
+          secs = unknown ? Math.round((p.blocks || p.cells * 2) * 1.25) : Math.round(total);
+        } else secs = Math.round((p.blocks || p.cells * 2) * 1.25);
+        return `one wide and two high, ${p.cells} blocks${p.down ? `, a stair down a block each step to ${p.down} below the pocket's floor (${p.blocks} blocks dug)` : ''}, about ${secs} seconds${noPickaxe ? ' by hand (no pickaxe carried)' : ''}`;
+      };
       // Where it goes from the passage's end: the trip back for food Jev
       // chose, while it is held (note 597), else the work.
       const outThen = foodTrip ? `from its end ${foodTrip.to}.${foodTrip.says}` : null;
@@ -9256,8 +9279,20 @@ function claim(bot, goal = {}, survival = null) {
   const refuge = survival?.currentShelter?.();
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
-  const shutOpen = refuge && shelter.inside(bot, refuge) && !shelter.sealed(bot, refuge) ? shelter.closedIn(bot, refuge) : null;
-  if (refuge && shelter.inside(bot, refuge) && (shelter.sealed(bot, refuge) || shutOpen)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot), ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : {}),
+  const insideRefuge = refuge && shelter.inside(bot, refuge);
+  const sealedNow = insideRefuge && shelter.sealed(bot, refuge);
+  const shutOpen = insideRefuge && !sealedNow ? shelter.closedIn(bot, refuge) : null;
+  // Sealed once before (refuge.verifiedAt) and standing in it now, even with
+  // a wall open that is neither whole nor only a fluid gap (closedIn's own
+  // case): its own mining or working free opened it, not a shelter never
+  // begun, so this is still the pocket's question, not a fresh "shelter for
+  // the night" read as if none existed. 25589 (mid-242-wb) had turn_priority
+  // read "Shelter for the night... asked next" nine times in under three
+  // minutes while sitting and working in a pocket sealed once already
+  // (critic 08:17Z, note 736).
+  const openedSinceSealed = insideRefuge && !sealedNow && !shutOpen && refuge.verifiedAt;
+  if (insideRefuge && (sealedNow || shutOpen || openedSinceSealed)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
+    ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : openedSinceSealed ? { pocketNotWhole: 'shut before, but not now: a wall was opened since it was last sealed (its own mining, or working free)' } : {}),
     ...(require('./pocket-wait').pocketWaitSays(bot, state, goal, { near: threats(bot, 64), night: shelterNeeded(bot),
       // Whether the wait waits for nothing, as the pocket's own question
       // reads it (note 679): nothing to eat, and no spawner in reach.
