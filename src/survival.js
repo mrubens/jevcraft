@@ -30,7 +30,7 @@ const { deflect } = require('./projectile-guard');
 const { takeTurn } = require('./turn');
 const { reservedForConstruction } = require('./build-sites');
 const { reachShore } = require('./shore');
-const { surfaceObserver } = require('./surface');
+const { surfaceObserver, openSkyOver } = require('./surface');
 const { tunnelStep } = require('./tunneling');
 const { thinking } = require('./speech');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -2389,6 +2389,8 @@ class Survival {
     // A blaze spawner's tries, seen as they come, for the lull's clock (note 691).
     require('./spawner-clock').watch(bot);
     if (encounterJudgments(this) || !bot._shotSurvival?.client) bot._shotSurvival = this;
+    // Every fall of health too, whatever source was named (note 752d).
+    try { require('./hit-log').install(bot); } catch (_) { /* no log */ }
     if (!bot._survivalHurtListener) {
       bot._survivalHurtListener = (entity, source) => {
         if (entity !== bot.entity) return;
@@ -3767,7 +3769,9 @@ class Survival {
       : 'Go two blocks straight up on placed blocks and fight from there: hoglins, zombies, piglins and other walkers of a player\'s height cannot reach a player two up, but the sword still reaches them; shooters still can hit.';
     const pillarSays = up && noCover ? pillarOpens.replace('Go two blocks straight up on placed blocks and fight from there.', 'Hold on the pillar\'s top and fight from there.') : pillarOpens;
     const knockSays = topReachers.length ? ` A blow that lands knocks the bot back (the game's knockback, with a hop): on a top one block wide the first leaves it at the edge and the next puts it off, two blocks down among them, where it is the fight here.` : '';
-    if ((scaffold >= 2 && headroom && !pillarStop) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, description: pillarSays + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge) + (holdSays?.hold || ''),
+    // Up out of what walks, with its time, among the ways out of the hits
+    // (note 752d: 25598 between two zombies, one behind, at 7 health).
+    if ((scaffold >= 2 && headroom && !pillarStop) || up) options.pillar = { expects: { damage: pillarCost.damage, seconds: pillarCost.seconds, oneHit }, ...(!up && !topReachers.length ? { quick: { seconds: PILLAR_SECONDS, says: `two blocks up on placed blocks, about ${PILLAR_SECONDS} seconds, out of the reach of what walks` } } : {}), description: pillarSays + ledgeSays + besideSays + (spears.length ? ` A spear reaches past an arm: the ${[...new Set(spears.map(t => t.entity.name.replaceAll('_', ' ')))].join(' and ')} with a spear still reach${spears.length === 1 ? 'es' : ''} the bot two up.` : '') + (up ? '' : buildCost) + pillarBlocked + creeperNote + climbers(coming) + (up ? '' : above(bot, coming)) + knockSays + witchNote + costSays(pillarCost, bot.health, mobs, { doing: up ? null : 'going up', done: notRising ? `Not up while ${inCell.length === 1 ? 'it stands' : 'they stand'} there` : 'Two up' }) + (noStep && shootersOnly ? ` With only shooters about, none at reach, there is nothing ${up ? 'up here' : 'two up'} to swing at: held, it is standing in their line of fire, and they shoot with no end while it holds.` : '') + (edge && heavyHitters(coming, 16).length ? edge.replace(/ A drop of/, ' Two up, a hoglin\'s toss still reaches the bot, and a drop of') : edge) + (holdSays?.hold || ''),
       // Held up there, the stance is kept: facing the nearest, the swing and
       // the shield (the tick's own, before this) taking what comes. Returned
       // at once, it ran twenty passes a second with nothing reported, and the
@@ -6892,9 +6896,19 @@ class Survival {
     const kinds = [...new Set(flanking.map(m => m.name.replaceAll('_', ' ')))];
     const sideFire = flanking.length ? ` The shield faces the ${name}: ${flanking.length === 1 ? `the ${kinds[0]}` : `${flanking.length} ${kinds.length === 1 ? `${kinds[0]}s` : 'shooters'}`} here ${flanking.length === 1 ? 'is' : 'are'} more than ${SHIELD_COVER} degrees off that way, so ${flanking.length === 1 ? 'its shots land' : 'their shots land'} as if it were down${kinds.includes('blaze') ? ', each fireball with five seconds alight' : ''}, counted below.` : '';
     const flank = sideFire + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
+    // Each other biter at hand outside the shield's cover as it faces this
+    // one, by name, with what it has landed lately (hit-log.js, note 752d):
+    // 25598 (15:00:41 to 15:00:47Z) chose shield_guard at 0.96 at 7 health
+    // between two zombies, one behind, told only that "a blow from the side
+    // or behind is not blocked".
+    let hitsBy = new Map();
+    try { hitsBy = new Map(require('./hit-log').hitters(bot, coming).filter(h => h.id != null).map(h => [h.id, h])); } catch (_) { hitsBy = new Map(); }
+    const behind = coming.filter(t => t.entity !== e && !shooter(t.entity) && t.distance <= 4 && t.entity.position && off(t.entity.position) > SHIELD_COVER)
+      .map(t => { const h = hitsBy.get(t.entity.id); return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off, ${Math.round(off(t.entity.position))} degrees from the way the shield faces${h ? `, which has landed ${h.hits} hit${h.hits === 1 ? '' : 's'} in the last 20 seconds` : ''}`; });
+    const behindSays = behind.length ? ` Outside the shield's cover as it faces the ${name}: ${behind.join('; ')}; its blows land whole.` : '';
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
-      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${behindSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
       run: async () => {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
@@ -9175,8 +9189,8 @@ class Survival {
     // the work six times at 12 then 8 health, and the next fireball ended
     // it (note 541).
     else if (hunt && !immediateThreat(bot) && await this.huntStep(task, goal, save)) { onStep(goal); return true; }
-    if (!shelterNeeded(bot)) delete this.state.nightMine;
-    else if (this.state.nightMine && !immediateThreat(bot) && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0)) &&
+    if (!shelterNeeded(bot) || (this.state.nightMine && !nightMineOn(bot, this.state.nightMine))) delete this.state.nightMine;
+    else if (this.state.nightMine && !immediateThreat(bot) &&
         await this.nightMine(task, goal, save)) { onStep(goal); return true; }
     // Or one that has stood off, whose claim Jev gave the turn to (note
     // 752): answered as any, by the stance.
@@ -9723,6 +9737,21 @@ function pocketRestsOf(state, refuge, now = Date.now()) {
 // and mid-231-o's turn fell to the work at 0.9 health (notes 465, 466).
 // The edge step (off_the_edge) is left out: its drop and ground searches
 // are not cheap.
+// The night mine chosen from a pocket is under way while the bot is still
+// under the rock and about where it began: left for open sky or more than
+// 24 blocks off, it is over, not a claim to say or a step to resume. It
+// stayed on the state until dawn: 25589 (mid-243-kd, 2026-09-30 14:56:27Z
+// on) climbed out, went to its portal cast in open water at y 68, and was
+// told "the night mine from the pocket, chosen 3 minutes ago (3 mined),
+// goes on under the rock" for six minutes (note 753c).
+function nightMineOn(bot, mine) {
+  if (!mine) return false;
+  const p = bot.entity.position;
+  if (surfaceObserver(bot)(p.offset(0, 1, 0)) || openSkyOver(bot, p)) return false;
+  const o = mine.origin;
+  return !o || Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z) <= 24;
+}
+
 function claim(bot, goal = {}, survival = null) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const state = survival?.state || goal.survival || {};
@@ -9770,7 +9799,8 @@ function claim(bot, goal = {}, survival = null) {
   const atArm = require('./danger').atReach(bot, threats(bot, 8));
   if (atArm.length) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(t => ({ ...mob(t), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), canReach: 'at its reach of the bot now' })), ...edgeFact, ...pocket });
   const refuge = survival?.currentShelter?.();
-  const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+  // Not in water with open sky over it (openSkyOver, note 753c).
+  const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position) && !openSkyOver(bot, bot.entity.position);
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
   const insideRefuge = refuge && shelter.inside(bot, refuge);
@@ -9904,7 +9934,7 @@ function claim(bot, goal = {}, survival = null) {
   // shelter is asked (stepOnce): said so, not "the way is asked next". Of
   // 608 secure_shelter wins since 2026-09-29 23Z, 360 saw no shelter
   // question in the next 30 seconds, 169 of them mining (note 752).
-  const mining = needsShelter && state.nightMine && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0))
+  const mining = needsShelter && nightMineOn(bot, state.nightMine)
     ? { nightMine: { minutes: Math.round((now - (state.nightMine.startedAt || now)) / 60000), mined: state.nightMine.mined || 0 } } : {};
   // Under the rock with no reason to seal (seal-reason.js: nothing in sight,
   // near or coming, health whole, and the night nothing there), the shelter
@@ -9919,4 +9949,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD };
+module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

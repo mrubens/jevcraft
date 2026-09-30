@@ -295,7 +295,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   })();
   looseEnds(goal, now);
   const answers = {};
-  const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block);
+  // A patch of a resource is the stalled work's own only when the stall is
+  // that mine's: at the rung's stall, a mine the upkeep was on (wood for
+  // sticks, say) is not the rung's work. 25589 (mid-243-kd, 15:24:11Z) was
+  // offered "leave this patch of oak log" for its portal rung, the lava
+  // fetch stalled (note 753c).
+  const mine = [goal.step, goal.lastStruggleStep].find(step => step?.action === 'mine' && step.block && !(/^rung:/.test(String(stall.key || '')) && !String(stall.key).includes(step.block)));
   // Kept with the world's survival state, as the heading is.
   const turn = goal.survival || goal;
   // The last "another way" that reached no fresh ground, said: mid-230-s's

@@ -348,10 +348,42 @@ async function takeWaterBack(bot, task, frame, save, navigate) {
   await scoopSource(bot, task, w, navigate, err => { frame.castWaterError = err.message; save(); });
   if (!sourceWater(bot.blockAt(w))) { delete frame.castWater; save(); }
 }
-async function scoopSource(bot, task, w, navigate, failed) {
+// A dry place to stand within reach of a block: feet and head in air (not
+// water), a floor under them, the eyes within reach. The walk to a water
+// source the cast must scoop or fill went to within two blocks of it, into
+// the water the source spreads, and stalled there: 25589 (mid-243-kd,
+// 2026-09-30 14:56:44-15:03Z) walked for the source at (13, 70, -5) over its
+// frame about 25 times, each a navigation stall in the flow at (15, 68, -9),
+// was worked out of the water by unstuck_move 22 times, and walked straight
+// back in (note 753c). Null when none; `here` when the bot stands in one.
+function dryReach(bot, target, avoid = []) {
+  const keys = new Set(avoid.map(key)), aim = target.offset(0.5, 0.5, 0.5);
+  const air = c => { const b = bot.blockAt(c); return !!b && AIR.test(b.name); };
+  const dry = c => air(c) && air(c.plus(UP)) && bot.blockAt(c.plus(DOWN))?.boundingBox === 'block' && !/water/.test(bot.blockAt(c.plus(DOWN))?.name || '') && !keys.has(key(c)) && !keys.has(key(c.plus(UP)));
+  const reach = c => c.offset(0.5, EYE, 0.5).distanceTo(aim) <= REACH - 0.3;
+  const feet = bot.entity.position.floored();
+  if (dry(feet) && reach(feet)) return 'here';
+  const out = [];
+  for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -3; dy <= 2; dy++) {
+    const c = target.offset(dx, dy, dz);
+    if (reach(c) && dry(c)) out.push(c);
+  }
+  return out.sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0] || null;
+}
+// To a dry place in reach of `target`, walked; throws with why when there is
+// none or the walk does not get there.
+async function toDryReach(bot, task, target, navigate, avoid = []) {
+  const stand = dryReach(bot, target, avoid);
+  if (stand === 'here') return;
+  if (!stand) throw new Error(`No dry place to stand within reach of ${target}: every cell in reach is water or has no floor`);
+  if (navigate) await navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z), { timeoutMs: 20000, stallMs: 5000 });
+  if (!bot.entity.position.floored().equals(stand)) throw new Error(`Did not reach the dry place at ${stand} beside ${target}`);
+}
+async function scoopSource(bot, task, w, navigate, failed, avoid = []) {
   try {
     const eye = bot.entity.position.offset(0, EYE, 0);
-    if (navigate && eye.distanceTo(w.offset(0.5, 0.5, 0.5)) > REACH - 0.5) await navigate(bot, task, new goals.GoalNear(w.x, w.y, w.z, 2), { timeoutMs: 20000, stallMs: 5000 });
+    const wet = /water/.test(bot.blockAt(bot.entity.position.floored())?.name || '');
+    if (navigate && (wet || eye.distanceTo(w.offset(0.5, 0.5, 0.5)) > REACH - 0.5)) await toDryReach(bot, task, w, navigate, avoid);
     await fillWaterBucket(bot, task, w, { guard: () => checkThreats(bot) });
   } catch (err) { task.check(); if (fatal(err)) throw err; failed(err); }
 }
@@ -425,16 +457,23 @@ async function castFrame(bot, task, goal, save, actions) {
           // tried to scoop a source inside its own walls round after round
           // until the loop watch ended the trial (note 453).
           const scoopFailed = feeder && frame.castWaterFailedAt?.key === `${feeder}` && frame.castWaterFailedAt.n >= 1;
+          // Filled or scooped from a dry place in reach of it (toDryReach),
+          // and after two tries that came to nothing there, the cast's failure
+          // at its site, said, not a walk back into the water every pass.
+          const avoid = [...frame.blocks.map(at), p, p.plus(UP)];
+          const fillFailed = feeder && frame.feederFailedAt?.key === `${feeder}` ? frame.feederFailedAt : null;
+          if (fillFailed?.n >= 2) { delete frame.feederFailedAt; save(); throw new Error(`The water source at ${feeder} running into the frame slot at ${p} could not be stopped: ${fillFailed.why}`); }
+          const feederFailed = err => { frame.castWaterError = err.message; frame.feederFailedAt = { key: `${feeder}`, n: (fillFailed?.n || 0) + 1, why: String(err.message).slice(0, 120) }; save(); };
           if (feeder && material && (scoopFailed || !countOf(bot, 'bucket'))) {
             stepIs(p, 'fill_source', { source: { x: feeder.x, y: feeder.y, z: feeder.z } });
-            try { await place(bot, task, feeder, material); track(feeder, material); delete frame.castWaterFailedAt; save(); }
-            catch (err) { task.check(); if (fatal(err)) throw err; frame.castWaterError = err.message; save(); }
+            try { await toDryReach(bot, task, feeder, navigate, avoid); await place(bot, task, feeder, material); track(feeder, material); delete frame.castWaterFailedAt; delete frame.feederFailedAt; save(); }
+            catch (err) { task.check(); if (fatal(err)) throw err; feederFailed(err); }
             return false;
           }
           if (feeder && countOf(bot, 'bucket')) {
             stepIs(p, 'stop_water', { source: { x: feeder.x, y: feeder.y, z: feeder.z } });
             const had = countOf(bot, 'water_bucket');
-            await scoopSource(bot, task, feeder, navigate, err => { frame.castWaterError = err.message; save(); });
+            await scoopSource(bot, task, feeder, navigate, feederFailed, avoid);
             if (countOf(bot, 'water_bucket') <= had && sourceWater(bot.blockAt(feeder))) {
               const prev = frame.castWaterFailedAt?.key === `${feeder}` ? frame.castWaterFailedAt.n : 0;
               frame.castWaterFailedAt = { key: `${feeder}`, n: prev + 1 }; save();
@@ -739,4 +778,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { standWays, castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };
+module.exports = { dryReach, toDryReach, scoopSource, standWays, castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };

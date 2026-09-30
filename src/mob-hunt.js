@@ -2856,6 +2856,28 @@ function bridgeFirstOrder(options, { bridgeReady = false } = {}) {
     ? Object.fromEntries([...ready.map(k => [k, options[k]]), ...Object.entries(options).filter(([k]) => !ready.includes(k))])
     : options;
 }
+// The staircase from a cell beside the bot on its own floor, where none
+// begins from the cell it stands in (a gap's edge): the cells round the feet
+// at their height with a whole block under them, room for the body and no
+// liquid, each surveyed as the staircase would be from there (tunneling.js
+// stairFromHere), the one gaining with the fewest steps. -> { cell, stair }
+// or null.
+function stairBeside(bot, goal, target) {
+  const feet = bot.entity.position.floored(), was = bot.entity.position;
+  const open = b => !!b && b.boundingBox === 'empty' && !/lava|water|fire/.test(b.name || '');
+  let best = null;
+  try {
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const c = feet.offset(dx, 0, dz), under = bot.blockAt(c.offset(0, -1, 0));
+      if (!under || under.boundingBox !== 'block' || /lava|magma/.test(under.name || '') || !open(bot.blockAt(c)) || !open(bot.blockAt(c.offset(0, 1, 0)))) continue;
+      bot.entity.position = c.offset(0.5, 0, 0.5);
+      const stair = require('./tunneling').stairFromHere(bot, goal, target);
+      if (stair?.gains && (!best || stair.steps < best.stair.steps)) best = { cell: { x: c.x, y: c.y, z: c.z }, stair };
+    }
+  } finally { bot.entity.position = was; }
+  return best;
+}
+
 async function fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks = [], record = state.approach) {
   const here = bot.entity.position.clone(), flat = Math.round(flatTo(nearest, here)), dy = Math.round(nearest.y + 1 - here.y);
   const where = `${flat} blocks off${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} blocks ${dy > 0 ? 'up' : 'down'}` : ''}`;
@@ -3004,7 +3026,31 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const stairByHand = actions.tunnel && !require('./block-stock').pickaxeCarried(bot)
     ? require('./block-stock').handWaySays(bot, stair, require('./block-stock').handLine(bot, nearest))
     : stair && !stair.gains && !stair.pushed ? { offered: false, says: `no step toward it can be dug from here (${stair.blocked || 'nothing nearer can be dug'})` } : { offered: true, says: '' };
-  if (actions.tunnel && !stairByHand.offered) noStair = `the staircase is not offered: ${stairByHand.says}`;
+  // No step from the cell the bot stands in, but from one beside it on the
+  // same floor: the staircase begins there, a step back from the edge. 25581
+  // (mid-243-kc, 14:55:35Z) walked to (-248, 45, -243), a gap's edge under its
+  // fortress 27 up, and from there no stair step had a floor ("no floor to
+  // step onto: 6 of the steps nearer"); from (-247, 45, -242), a step back,
+  // the staircase went, and it had been offered a moment before. With the
+  // walk and the crossing gone too, keep_searching was the one option left,
+  // and the leg question took leg_south (note 750c).
+  let stairFrom = null;
+  if (actions.tunnel && !stairByHand.offered && require('./block-stock').pickaxeCarried(bot) && typeof bot.blockAt === 'function') {
+    stairFrom = stairBeside(bot, goal, nearest);
+    if (stairFrom) noStair = null;
+  }
+  if (actions.tunnel && !stairByHand.offered && !stairFrom) noStair = `the staircase is not offered: ${stairByHand.says}`;
+  if (stairFrom) {
+    const c = stairFrom.cell, rest = require('./tunneling').restingSays(goal, nearest, c);
+    options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, from (${c.x}, ${c.y}, ${c.z}), a step back onto the floor beside the bot (from where it stands no step toward it has a floor: ${stair?.blocked || 'nothing nearer can be dug'}): a step at a time with rock round the bot, no block dug with lava or water behind it, and it stops where every step nearer would be one; about ${stairFrom.stair.steps} steps, about ${stairFrom.stair.seconds} seconds.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairDigs(bot, goal, nearest)}`,
+      run: async () => {
+        if (actions.navigate) {
+          try { await actions.navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 8000, stallMs: 3000, onFoot: true }); }
+          catch (err) { task.check(); if (!retryable(err)) throw err; return `the step back to (${c.x}, ${c.y}, ${c.z}) failed: ${err.message}`; }
+        }
+        await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null;
+      } };
+  }
   if (actions.tunnel && stairByHand.offered) {
     const rest = require('./tunneling').restingSays(goal, nearest, here);
     options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairByHand.says}${stairDigs(bot, goal, nearest)}`,

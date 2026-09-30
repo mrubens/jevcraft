@@ -81,6 +81,17 @@ function loneWhy(q, k, kept = []) {
   return null;
 }
 
+// A key that leaves the fortress in this question: a leave, or, where the
+// question's facts say what leaving it leaves (`leaving`: the fortress is in
+// view or being approached), a leg of the search away (findFortressStep:
+// "Every leg, widen_search and seek_fortress_height leaves it").
+function leavesHere(q, key, state = null) {
+  const k = String(key || '').split('/').at(-1);
+  if (!require('./intention').GATED.has(q)) return false;
+  if (isLeave(k)) return true;
+  return !!(state?.leaving || state?.fortressInView?.leaving) && q === 'fortress_leg' && /^(leg_|floor_|widen_search$|seek_fortress_height$)/.test(k);
+}
+
 // 2. What leaving says: where the fortress is from here, what reaching it
 // needs, and the ways to that as they stand. `offered`: the options of the
 // question it is said in (a way on offer is named, not described again);
@@ -176,4 +187,4 @@ function errandHolding(bot, goal) {
   return i;
 }
 
-module.exports = { isLeave, loneWhy, reachSays, leave, errandHolding, LEAVE_FOR_MS, LEFT_FROM_MS };
+module.exports = { isLeave, leavesHere, loneWhy, reachSays, leave, errandHolding, LEAVE_FOR_MS, LEFT_FROM_MS };

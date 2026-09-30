@@ -566,9 +566,21 @@ async function arbitrate(bot, claims, ctx = {}) {
       state: { health: bot?.health, food: bot?.food, claims: live.map(c => c.layer), why,
         mobs: mobsSaid(mobsNow),
         ...(held ? { hasTheTurn: { layer: held.layer, action: held.action, seconds: Math.round((now - held.since) / 1000) } } : {}) } });
+    // A creeper within its alert while the question is out: the bot backs
+    // from it meanwhile, as the stance question does (survival.js
+    // backFromCreeper). 25585 (14:56:35Z) stood still through three
+    // preemptions and this question with a creeper 3.5 blocks off, and its
+    // blast took 20 to 6.3 at 14:56:36.8, before any stance was asked
+    // (note 752d).
+    let answered = false;
+    const sv = bot?._shotSurvival;
+    const backing = live.some(c => c.alert === 'creeper') && sv?.backFromCreeper && ctx.task ? (async () => {
+      while (!answered) { try { if (!await sv.backFromCreeper(ctx.task, () => answered)) await new Promise(r => setTimeout(r, 100)); } catch (_) { return; } }
+    })() : null;
     let out;
     try { out = await answerOrCut(bot, asking, { task: ctx.task, askedAt, ms: ctx.askMs ?? ASK_MS }); }
     catch (err) { setAside = true; throw err; }
+    finally { answered = true; if (backing) await backing; }
     if (out.cut) setAside = true;
     const decision = out.decision;
     if (decision?.stale) return { winner: null, by: 'stale', ask: true, why };

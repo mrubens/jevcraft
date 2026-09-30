@@ -35,6 +35,28 @@ function note(bot, source, now = Date.now()) {
   bot._hitLog = [...(bot._hitLog || []).filter(h => now - h.at < KEEP_MS), entry];
 }
 
+// Every fall of health, whatever the server named as its source (note
+// 752d): 25598 (15:00:36 to 15:00:41Z) fell 19.1 to 6.7 in nine blows of
+// 1.4 with the shield up, two zombies about, one behind; the stance was
+// told "2 hits in the last 20 seconds" of the one named. The hurt event
+// names a source only where the server's damage event came with one.
+function install(bot) {
+  if (!bot || bot._hitLogHealth || typeof bot.on !== 'function') return;
+  let last = bot.health;
+  bot._hitLogHealth = () => {
+    const hp = bot.health, now = Date.now();
+    if (Number.isFinite(last) && Number.isFinite(hp) && hp < last - 0.05) noteDrop(bot, last, hp, now);
+    last = hp;
+  };
+  bot.on('health', bot._hitLogHealth);
+}
+function noteDrop(bot, from, to, now = Date.now()) {
+  bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: !!bot._shieldRaised }];
+}
+function drops(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
+  return (bot?._dropLog || []).filter(d => now - d.at <= ms);
+}
+
 function recent(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
   return (bot?._hitLog || []).filter(h => now - h.at <= ms);
 }
@@ -60,7 +82,12 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 // did not face, said as a second attacker. '' when nothing hit lately.
 function says(bot, list = [], { now = Date.now(), ms = RECENT_MS } = {}) {
   const hs = hitters(bot, list, { now, ms });
-  if (!hs.length) return '';
+  const ds = drops(bot, { now, ms });
+  const named = hs.reduce((n, h) => n + h.hits, 0);
+  // The blows by the health itself, where more fell than were named.
+  const r1 = v => Math.round(v * 10) / 10;
+  const fell = ds.length > named ? ` Health fell ${ds.length} times in the last ${Math.round(ms / 1000)} seconds, ${r1(ds[0].from)} to ${r1(ds.at(-1).to)} health${ds.every(d => d.shield) ? ', every one with the shield up' : ds.some(d => d.shield) ? `, ${ds.filter(d => d.shield).length} with the shield up` : ''}${named ? `; the server named the source of ${named}` : ''}.` : '';
+  if (!hs.length) return fell ? `Hitting the bot now:${fell}` : '';
   const each = hs.slice(0, 3).map(h => {
     const where = h.t ? `${Math.round(h.t.distance * 10) / 10} blocks off${h.t.visible === false ? ', out of sight' : ''}` : 'not in view now';
     const sides = h.sides.size ? `, from ${[...h.sides].join(' and ')}` : '';
@@ -69,7 +96,7 @@ function says(bot, list = [], { now = Date.now(), ms = RECENT_MS } = {}) {
   });
   const shieldedBehind = recent(bot, { now, ms }).filter(h => h.shield && h.side && h.side !== 'in front');
   const second = shieldedBehind.length ? ` A hit landed with the shield up from ${[...new Set(shieldedBehind.map(h => h.side))].join(' and ')}: the shield covers only the side the bot faces, so something there is striking too.` : '';
-  return `Hitting the bot now: ${each.join('; ')}.${second}`;
+  return `Hitting the bot now: ${each.join('; ')}.${fell}${second}`;
 }
 
-module.exports = { note, recent, hitters, says, sideOf, RECENT_MS };
+module.exports = { install, note, noteDrop, drops, recent, hitters, says, sideOf, RECENT_MS };

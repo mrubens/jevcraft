@@ -29,6 +29,24 @@ function surfaceObserver(bot) {
   };
 }
 
+// Open sky over a point with nothing solid between: water and air let the
+// sky through, as they do for a swimmer in a lake. surfaceObserver counts a
+// lake's top as the surface, so a body swimming in it read as underground:
+// 25589 (mid-243-kd, 2026-09-30 14:56-15:03Z) at y 68 in the open water of
+// its own portal cast was told "a sealed pocket under the rock ...
+// Underground here" (note 753c). Unloaded above counts as open.
+function openSkyOver(bot, point) {
+  const maximum = (bot.game?.minY ?? -64) + (bot.game?.height ?? 384);
+  const x = Math.floor(point.x), z = Math.floor(point.z);
+  for (let y = Math.floor(point.y) + 1; y < maximum; y++) {
+    const block = bot.blockAt(new Vec3(x, y, z));
+    if (!block) return true;
+    if (/_leaves$|_log$|_wood$/.test(block.name)) continue;
+    if (block.boundingBox === 'block') return false;
+  }
+  return true;
+}
+
 // How many blocks up to open sky over a point's column (canopies ignored,
 // as above): 0 on the surface, null where the column is not loaded. Said
 // with the choices that mean a climb out (the decision audit, 2026-09-25):
@@ -708,4 +726,4 @@ function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } 
   return lid;
 }
 
-module.exports = { climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, stairwayCost, walkedColumns, walkedColumn, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { openSkyOver, climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, stairwayCost, walkedColumns, walkedColumn, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

@@ -383,7 +383,7 @@ function goalGuardPlugin(bot) {
 // frame, 12:59:38 to 13:06:06Z, each stall the watchdog's eight seconds or
 // more and a recovery (note 753b). Kept on the bot, by dimension; a spot is
 // forgotten after STALL_SPOT_MS.
-const STALL_SPOT_MS = 15 * 60000, STALL_SPOT_NEAR = 3, STALL_SPOT_TIMES = 2, STALL_SPOT_COST = 40;
+const SCOOPED_COST = 1000, STALL_SPOT_MS = 15 * 60000, STALL_SPOT_NEAR = 3, STALL_SPOT_TIMES = 2, STALL_SPOT_COST = 40;
 function noteStallSpot(bot, position, now = Date.now()) {
   if (!position) return null;
   const dim = String(bot.game?.dimension || 'overworld'), cell = new Vec3(Math.floor(position.x), Math.floor(position.y), Math.floor(position.z));
@@ -444,8 +444,18 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // Round a bad step remembered (noteStallSpot): the cells within a block of
   // it cost more to step into.
   const bad = movements ? badSteps(bot, goal) : [];
+  // And a lava source just scooped: the cell and those beside it at the
+  // pool's level are not stepped into for twenty seconds, the flow comes
+  // back into them. 25584 (mid-244-gc, 2026-09-30 15:21:15-17Z) filled a
+  // bucket from (162, 19, 95), and the walk on stepped down into the pool
+  // at (162, 18, 96): 20 health to 9.4 (note 753c).
+  const scooped = (bot._scoopedLava || []).filter(e => Date.now() - e.at < 20000);
+  if (movements && scooped.length) bad.push(...scooped.map(e => ({ x: e.x, y: e.y, z: e.z, lava: true })));
   const hadAreas = bad.length && Object.hasOwn(movements, 'exclusionAreasStep'), areasWere = bad.length ? movements.exclusionAreasStep : undefined;
-  if (bad.length) movements.exclusionAreasStep = [...(areasWere || []), block => bad.some(s => Math.abs(block.position.x - s.x) <= 1 && Math.abs(block.position.y - s.y) <= 1 && Math.abs(block.position.z - s.z) <= 1) ? STALL_SPOT_COST : 0];
+  if (bad.length) movements.exclusionAreasStep = [...(areasWere || []), block => {
+    const near = bad.filter(s => Math.abs(block.position.x - s.x) <= 1 && Math.abs(block.position.y - s.y) <= 1 && Math.abs(block.position.z - s.z) <= 1);
+    return near.some(s => s.lava && block.position.y === s.y) ? SCOOPED_COST : near.some(s => !s.lava) ? STALL_SPOT_COST : 0;
+  }];
   // The goal's height, for the climb rule (movement.js climbOverFall).
   const hadGoalY = !!movements && Object.hasOwn(movements, 'walkGoalY'), walkGoalY = hadGoalY ? movements.walkGoalY : undefined;
   if (movements) movements.walkGoalY = goalPoint(goal)?.y;
@@ -863,7 +873,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { noteStallSpot, badSteps, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { SCOOPED_COST, noteStallSpot, badSteps, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

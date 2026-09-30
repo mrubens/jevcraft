@@ -410,7 +410,9 @@ test('the cast\'s water left standing is walked back to and scooped, from out of
   const walked = [];
   const go = actions.navigate; actions.navigate = async (b, t, g) => { walked.push(g); await go(b, t, g); };
   await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
-  assert(walked.length && walked[0].x === left.x && walked[0].z === left.z, 'walked back to the water');
+  // Walked back to a dry place in reach of it, not into it (note 753c).
+  assert(walked.length && new Vec3(walked[0].x + 0.5, walked[0].y + 1.62, walked[0].z + 0.5).distanceTo(left.offset(0.5, 0.5, 0.5)) <= 4.5, `walked back to the water: ${JSON.stringify(walked[0])}`);
+  assert.notEqual(w.nameAt(new Vec3(walked[0].x, walked[0].y, walked[0].z)), 'water', 'to a dry cell, not into it');
   assert.notEqual(w.nameAt(left), 'water', 'and scooped it');
   assert.equal(goal.portalFrame.castWater, undefined);
 });

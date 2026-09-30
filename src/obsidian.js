@@ -372,6 +372,12 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   const held = heldLava(bot, goal);
   // A dig held (note 753) is a dig under way however few its steps.
   const margin = (site?.steps || 0) >= 8 || (held && /^(deep|dig)$/.test(held.way)) ? HOLD_MARGIN : 1;
+  // The pool walked to is held as the dig is: another is taken over it only
+  // at a third less. 25588 (mid-242-zh, 15:23:23-15:24:16Z) turned between
+  // the pools at (2, 86, 199) and (-5, 40, 233) each pass as it moved, the
+  // carry from where it stood tipping one way and back (note 753c).
+  const heldPoolAt = held && held.way === 'pool' ? at(held.lava) : null;
+  const poolCost = l => (to ? carry(landmarkAt(l)) : landmarkAt(l).distanceTo(here)) / (heldPoolAt && sameLava(landmarkAt(l), heldPoolAt) ? HOLD_MARGIN : 1);
   if (to) {
     // Known lava that is a shorter carry than any in sight and the deep lava
     // below: walked to first, the nearest carry first. Not the pool in sight
@@ -379,7 +385,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     const bound = Math.min(surface.length ? Math.min(...surface.map(carry)) : Infinity, deep ? carry(deep) : Infinity);
     const shorter = l => pool(l) && carry(landmarkAt(l)) * margin < bound && !surface.some(p => Math.hypot(p.x - l.x, p.z - l.z) <= 16);
     if ((goal.landmarks || []).some(l => l.kind === 'lava_pool' && shorter(l))) {
-      const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: l => carry(landmarkAt(l)),
+      const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: poolCost,
         onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
       if (arrived === false) return;
       // Arrived and no lava of its own there: that pool is spent.
@@ -461,7 +467,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     // For a cast, not a pool farther to carry from than the deep lava, the
     // same margin as above once the dig has real steps in it.
     const filter = to ? l => pool(l) && !(deep && carry(landmarkAt(l)) * margin >= carry(deep)) : pool;
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, ...(to ? { cost: l => carry(landmarkAt(l)) } : {}),
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, cost: poolCost,
       onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
     // On the way, or at a pool found dry. At one still holding lava, whose
     // every way rests, it is not done: the other ways below are.
@@ -481,10 +487,18 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // a pool at (96, 18, 64) 27 blocks off, dug past for the deep lava). Not
   // one whose way into it rests, and only where its carry is shorter than
   // the deep lava's (note 753).
-  const knownPools = nearest ? [] : (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && pool(l) && l.y !== undefined
-    && open(lavaWay(landmarkAt(l))) && landmarkAt(l).distanceTo(here) <= 96 && !(deep && carry(landmarkAt(l)) >= carry(deep)))
-    .sort((a, b) => carry(landmarkAt(a)) - carry(landmarkAt(b)));
-  const poolDig = knownPools.find(l => held && held.way === 'dig' && sameLava(landmarkAt(l), held.lava)) || knownPools[0];
+  // The pool held (walked or dug toward) keeps its place against the deep
+  // lava until the deep lava beats it by a third, and from farther off: a
+  // detour back toward the frame put it past 96 blocks and behind the deep
+  // lava's carry from there, and 25589 (mid-243-kd, 15:16-15:25Z) walked
+  // 130 blocks to it, dug toward it from nine short, went back east and set
+  // off for the deep lava, three times round (note 753c).
+  const heldPool = l => !!held && /^(dig|pool)$/.test(held.way) && sameLava(landmarkAt(l), held.lava);
+  const candidates = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && pool(l) && l.y !== undefined);
+  const passedWhy = l => !open(lavaWay(landmarkAt(l))) ? 'its way rests' : landmarkAt(l).distanceTo(here) > (heldPool(l) ? 192 : 96) ? `${Math.round(landmarkAt(l).distanceTo(here))} blocks off, too far to dig to`
+    : deep && carry(landmarkAt(l)) >= carry(deep) * (heldPool(l) ? HOLD_MARGIN : 1) ? `a longer carry (about ${Math.round(carry(landmarkAt(l)))} seconds) than the deep lava's (about ${Math.round(carry(deep))})` : null;
+  const knownPools = nearest ? [] : candidates.filter(l => !passedWhy(l)).sort((a, b) => carry(landmarkAt(a)) - carry(landmarkAt(b)));
+  const poolDig = knownPools.find(heldPool) || knownPools[0];
   // The deep lava is the first heading whose staircase is not resting. A
   // scooping spot dug toward is held the same way as the lava.
   const openSpots = spots.filter(s => open(s.feet));
@@ -495,7 +509,12 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw noLavaWay(bot, goal, surface); }
   if (spot || nearest || poolDig) holdLava(bot, goal, save, { way: 'dig', lava: spot ? spot.offset(0, -1, 0) : nearest || landmarkAt(poolDig), dest,
     why: poolDig && !spot && !nearest ? ', a pool known there whose walk did not get there' : '' });
-  else holdLava(bot, goal, save, { way: 'deep', lava: dest, why: ', no lava in sight and no pool known nearer' });
+  else {
+    // Said with the pool known and why it is passed, not "no pool known".
+    const passed = candidates.slice().sort((a, b) => landmarkAt(a).distanceTo(here) - landmarkAt(b).distanceTo(here))[0];
+    const why = passed ? `, no lava in sight; the pool known at (${passed.x}, ${passed.y}, ${passed.z}) is passed: ${passedWhy(passed) || 'not dug to'}` : ', no lava in sight and no pool known';
+    holdLava(bot, goal, save, { way: 'deep', lava: dest, why });
+  }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
 }

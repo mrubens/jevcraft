@@ -38,7 +38,13 @@ async function fillBucket(bot, task, position, { fluid = 'water', timeoutMs = 25
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       check();
-      if (countOf(bot, full) === before + 1 && countOf(bot, 'bucket') === emptyBefore - 1) return;
+      if (countOf(bot, full) === before + 1 && countOf(bot, 'bucket') === emptyBefore - 1) {
+        // A lava source just taken leaves a cell the flow round it fills
+        // again: remembered a while, so the walk away does not step into it
+        // (skills.js navigate, note 753c).
+        if (fluid === 'lava') bot._scoopedLava = [...(bot._scoopedLava || []).filter(e => Date.now() - e.at < 20000), { x: position.x, y: position.y, z: position.z, at: Date.now() }].slice(-16);
+        return;
+      }
       await sleep(25);
     }
     throw new Error(`No ${fluid}-bucket inventory conversion was confirmed`);

@@ -314,6 +314,20 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   let path, passedOver = null, why = safety.why;
   if (why) { path = down(safety.key).path; console.log(`[none good] ${id}: took ${safety.key}, not the next by weight: ${why}`); }
   else ({ path, passedOver } = leastBad.choose(id, keys, weights, last, k => down(k).path));
+  // Leaving a fortress is Jev's, asked (fortress-hold.js, note 721), so not
+  // the code's least bad when none of the options was good: the best listed
+  // way that does not leave it is taken instead, where one is on offer. 25581
+  // (mid-243-kc, 14:55:53Z) was asked the leg question under its fortress,
+  // none good 0.33 on top, and leg_south (0.28) was taken, "Leaving the
+  // fortress ... 9 blocks off", 106 blocks away five minutes later, with
+  // back_to_fortress and return_for_blocks on offer (note 750c).
+  if (!why) {
+    const leaves = k => require('../fortress-hold').leavesHere(id, k, state);
+    if (leaves(path[0])) {
+      const stay = keys.filter(k => k !== NONE_GOOD_KEY && !leaves(k)).sort((a, b) => (weights[b] || 0) - (weights[a] || 0))[0];
+      if (stay) { passedOver = `${passedOver ? `${passedOver}; ` : ''}${path[0].replaceAll('_', ' ')} leaves the fortress, and leaving is not taken for none good: ${stay.replaceAll('_', ' ')}, the best listed that does not, was taken`; path = down(stay).path; }
+    }
+  }
   // None good far above the best listed (note 749c): the listed are not
   // Jev's choice in any sense, and the least bad taken on a sliver of weight
   // is a guess acted on. 25598 at 14:15:14Z: none_good 0.83, take_up_nether_
@@ -543,6 +557,19 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // while it is out, for the flight frames; on the decision's record after.
   const trace = { id, t0: performance.now(), at: new Date().toISOString(), stages: [{ stage: 'queued', ms: 0 }] };
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  // A creeper within its alert (arbiter.js observeReflexes: it can walk to
+  // its lighting distance and go off within its fuse): no question but the
+  // fight's and the turn's is asked meanwhile; it comes back stale, and the
+  // turn goes to the creeper's claim. 25598 (15:21:22Z) was asked
+  // shelter_method with a creeper 2.7 blocks off, answered seal_here, and
+  // its blast took 16.1 to 10.6 a second later (note 752d).
+  if (bot?.entity?.position && !aside && spec.area !== 'combat' && !CREEPER_ASKS.has(id)) {
+    let creeper = null;
+    // The creeper alone: the body's own looks (the fire's hold among them,
+    // body.js held) are left to their own askers, untouched here.
+    try { const a = require('../arbiter'); creeper = a.observeReflexes(bot, undefined, { ...a.probe, inLava: () => false, burning: () => false, headInBlock: () => false, hotFloor: () => null, burnLeft: () => false }).find(r => r.key === 'creeper') || null; } catch (_) { creeper = null; }
+    if (creeper) { console.log(`[creeper] ${id} not asked: a creeper ${creeper.facts?.creeper} blocks off is the turn's first`); return { id, stale: true, creeperFirst: creeper.facts || true }; }
+  }
   // No question while the body is in lava with nothing to keep it from
   // burning: the way out is the body's safety rule, taken at once
   // (lava-escape.js, note 756). Thrown as the lava's own safety stop, which
@@ -1106,6 +1133,9 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   return decision;
 }
+// Asked with a creeper about all the same: the turn's own question, the
+// body's physics, and the shot's (note 752d).
+const CREEPER_ASKS = new Set(['turn_priority', 'body_way', 'shot_answer']);
 // The questions that are the body's own, not the work's (note 752c).
 const BODY_QUESTIONS = new Set(['turn_priority', 'survival_priority', 'shelter_method', 'pocket_next', 'body_way', 'unstuck_move', 'way_down', 'climb_out']);
 
