@@ -956,7 +956,7 @@ async function upkeepOffers(bot, task, goal, save) {
   // seconds a block that dropped nothing (note 655).
   const pick = pickaxeNeeded(bot) ? require('./mob-hunt').pickaxeFirst(bot) : null;
   const makeable = pick && !pick.carried && !pick.none && pick.item ? pick : null;
-  if (makeable && reserveWeather(bot)) options.make_pickaxe = { description: makePickaxeSays(bot, makeable), run: () => makePickaxe(bot, task, goal, save, makeable.item) };
+  if (makeable && reserveWeather(bot)) options.make_pickaxe = { description: `${makePickaxeSays(bot, makeable)}${craftRoomSays(bot)}`, run: () => makePickaxe(bot, task, goal, save, makeable.item) };
   // Wood in the Nether is its forests' stems: the planks' worth wanted for
   // the pickaxe to make now and a spare after it, against what is carried,
   // the nearest stems known and the way there. 25583 stood with thirty
@@ -994,7 +994,7 @@ async function upkeepOffers(bot, task, goal, save) {
   if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), ${netherSpare.smelted ? 'about half a minute with the smelting' : 'a few seconds'} at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}`; },
     run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`);
       goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: netherSpare.item || 'pickaxe' }].slice(-10); save(); } };
-  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand: ${require('./hand-dig').handPaceSays(bot)}.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
+  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand: ${require('./hand-dig').handPaceSays(bot)}.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}${craftRoomSays(bot)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
@@ -2453,6 +2453,9 @@ async function craft(bot, task, step, goal) {
 
 // A free slot in the pockets for a craft's click (note 754).
 const craftSlotFree = bot => (bot.inventory.emptySlotCount?.() ?? 1) > 0;
+// Said on an offer that crafts, with the pockets full (note 754b): the craft
+// asks what to drop before its click.
+const craftRoomSays = bot => craftSlotFree(bot) ? '' : ' The pockets are full (no free slot): a craft takes one, so what to drop for it is asked first.';
 async function settleCraftInventory(bot, task) {
   task.check();
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
@@ -2635,6 +2638,9 @@ async function collectSideFurnaces(bot, task, goal, save, item) {
     }
     const block = bot.blockAt(p);
     if (block?.name !== 'furnace') { forget(); continue; }
+    // A free slot for the output before the window opens (note 754b).
+    if ((bot.inventory.emptySlotCount?.() ?? 1) <= 0) await require('./inventory-tidy').makeRoom(bot, task, item, { away: p, room: () => (bot.inventory.emptySlotCount?.() ?? 1) > 0, purpose: `the ${item.replaceAll('_', ' ')} in the furnace beside the batch` });
+    if ((bot.inventory.emptySlotCount?.() ?? 1) <= 0) continue;
     const furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
     let empty = false;
     try {
@@ -2736,8 +2742,12 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   const free = () => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart)
     ? furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).filter(i => !i).length
     : (bot.inventory.emptySlotCount?.() ?? 1);
-  const roomInWindow = () => free() > 0 || (Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart) &&
-    furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).some(i => i?.name === step.item && i.count < (i.stackSize || 64)));
+  // A free slot, always, as for a craft (note 754): the output is taken to
+  // the cursor and put back, and with none free the server confirmed
+  // nothing whatever partial stack it could have merged into. Every one of
+  // the 49 "timed out ... after smelting" in the flight records had 0 free
+  // slots (note 754b; 25594 at 15:17-15:25Z).
+  const roomInWindow = () => free() > 0;
   // Another batch's output is taken out first: it is the bot's own ingots
   // or food from an earlier smelt, and refusing the furnace over it held the
   // dream run at one furnace for half an hour ("Furnace contains a
@@ -2757,7 +2767,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       try { if (bot._syncWindow) await bot._syncWindow(furnace); } catch (_) { /* best effort */ }
       furnace.close();
       try { if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* best effort */ }
-      await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position });
+      await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position, room: () => (bot.inventory.emptySlotCount?.() ?? 1) > 0, purpose: `the ${step.item.replaceAll('_', ' ')} waiting in the furnace` });
       furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
       if (!furnace.outputItem()) return;
     }

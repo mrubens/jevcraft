@@ -157,7 +157,9 @@ test('in the lava sea under the gravel beach, no cell out is one a swim reaches,
   assert.equal(ways.to_dry_ground, undefined, `no swim onto the gravel: ${ways.to_dry_ground?.description}`);
   assert.match(ways.pillar_out.description, /^Press against the netherrack at \(-232, 31, 55\) holding jump, .* put a block into the lava under the feet at \(-232, 31, 56\) as they clear it: about [\d.]+ seconds in the lava, about [\d.]+ health in the lava at [\d.]+ a second, then up to 15 burning after it \(no water to put it out in the Nether\)/);
   assert.match(ways.pillar_out.description, /standing on it at the lava's top the body is out of the lava, and a step up from it is dry ground at \(-232, 33, 57\)/);
-  assert.match(ways.back_the_way_came.description, /at \(-232, 33, 56\); nothing is under it now \(open air where it stood\), so it is no footing/);
+  // Its footing gone into the lava, the last dry cell is no way out, and is
+  // not offered as one (note 754b; 25584 took it at 15:21:25Z).
+  assert.equal(ways.back_the_way_came, undefined);
   assert.equal(Object.keys(ways)[0], 'pillar_out', 'the fallback takes the block');
 });
 

@@ -160,7 +160,9 @@ test('a craft with the pockets full and sticks on the cursor makes room as Jev c
   assert.equal(bot.inventory.selectedItem, null, 'the sticks are off the cursor');
   assert(slots.some(s => s?.name === 'stick' && s.count === 4), 'the sticks are in the pockets');
   assert(slots.some(s => s?.name === 'acacia_planks' && s.count === 4), 'the planks were made');
-  assert.deepEqual(tossed, ['dirt', 'white_terracotta']);
+  // Terracotta by the stack is dug again in seconds, offered before the
+  // dirt that is the block reserve (note 754b).
+  assert.deepEqual(tossed, ['white_terracotta', 'white_terracotta']);
   assert.match(asked[1].drop, /make room for the 4 acacia planks/);
 });
 
@@ -180,7 +182,7 @@ test('a craft with no free slot asks for room even where its ingredient stack wo
   // 0 free slots, 1,129 of them "have 0 of 4": the slot a last log would
   // free was not room the server gave the output.
   const registry = require('minecraft-data')('26.1');
-  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_dirt'] });
+  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_white_terracotta'] });
   slots[9].count = 1;
   const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
   await acquireStep(bot, task, 'acacia_planks', 4, {}, () => {});
@@ -194,7 +196,7 @@ test('a craft resting for want of a free slot goes to the drop question, not the
   // slots" thirty-six times running, the drop question never asked.
   const registry = require('minecraft-data')('26.1');
   const { noteCraftFailure, craftRest } = require('../src/craft-failures');
-  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_dirt'] });
+  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_white_terracotta'] });
   for (let n = 0; n < 2; n++) noteCraftFailure(bot, 'acacia_planks', 'no output: acacia planks after crafting, twice (have 0 of 4, 0 free slots)');
   assert(craftRest(bot, 'acacia_planks'), 'the craft rests');
   const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;

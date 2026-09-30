@@ -92,6 +92,10 @@ const out = {
     daylightUnderground: 0, handSevenAndHalfDeep: 0, handDigFigures: {} },
   pocketsFull: { lines: 0, attempts: 0, maxAttempt: 0, byPort: {} },
   craftRests: 0,
+  // Note 754b: what the drop question gave up, the tidy's spare pickaxes,
+  // smelts with no free slot, the lava way out with no footing, and the
+  // Nether food kit's trip home with raw meat it could cook.
+  b: { hardDrops: 0, hardDropsBesideCheap: 0, hardDropNames: {}, tidyPickaxes: 0, smeltNoSlot: 0, noFootingOffered: 0, noFootingChosen: 0, kitShortRawCookable: 0, kitReturnWithCook: 0 },
   climbs: { handClimbs: 0, preempted: 0, preemptedClimbing: 0, preemptedRising: 0, byQuestion: {}, blocksPerMinute: [] },
   // Spells of a minute or more in the Overworld under y 16 with no pickaxe
   // and no wood (log, planks or stick) carried, until either is carried
@@ -155,6 +159,7 @@ for (const f of files) {
     if (climb && o.pos && o.t - climb.t0 <= 10 * 60000) { climb.tNow = o.t; climb.yNow = Math.max(climb.yNow, o.pos.y); }
     if (o.kind === 'chat') {
       const msg = String(o.detail?.message || '');
+      if (/leaving \d+ [a-z ]*pickaxe/i.test(msg)) out.b.tidyPickaxes++;
       if (/pockets are full/i.test(msg)) {
         out.pocketsFull.lines++; count(out.pocketsFull.byPort, p);
         const m = msg.match(/attempt (\d+)/); if (m) { out.pocketsFull.attempts++; out.pocketsFull.maxAttempt = Math.max(out.pocketsFull.maxAttempt, +m[1]); }
@@ -162,6 +167,19 @@ for (const f of files) {
       continue;
     }
     if (o.kind === 'error' && /made nothing (twice|\d+ times)/.test(String(o.label || ''))) out.craftRests++;
+    if (o.kind === 'error' && /after smelting.*\b0 free slots/.test(String(o.label || ''))) out.b.smeltNoSlot++;
+    if (o.kind === 'decision') {
+      const d = o.s.decision || {}, opts = d.options || {};
+      if (d.id === 'inventory_drop') {
+        const chosen = String(d.path?.at(-1) || o.label || '');
+        const kids = Object.keys(opts.drop?.children || {});
+        const HARD = /^drop_(golden_apple|enchanted_golden_apple|flint_and_steel|fire_charge|water_bucket|\w+_pickaxe|\w+_sword|shield)/;
+        const CHEAP = /^drop_(cobblestone|cobbled_deepslate|dirt|stone|andesite|diorite|granite|tuff|deepslate|netherrack|smooth_basalt|basalt|blackstone|gravel|sand|\w*terracotta)/;
+        if (HARD.test(chosen)) { out.b.hardDrops++; count(out.b.hardDropNames, chosen.replace(/_slot\d+$/, '')); if (kids.some(k => CHEAP.test(k))) out.b.hardDropsBesideCheap++; }
+      }
+      if (opts.back_the_way_came && /so it is no footing/.test(String(opts.back_the_way_came.description || ''))) { out.b.noFootingOffered++; if (o.label === 'back_the_way_came') out.b.noFootingChosen++; }
+      if (d.id === 'nether_food_kit' && /the raw meat cooked/.test(String(opts.restock_food?.description || '')) && !opts.cook_meat) { out.b.kitShortRawCookable++; if (o.label === 'return_for_food') out.b.kitReturnWithCook++; }
+    }
     if (o.kind !== 'decision') continue;
     const d = o.s.decision || {};
     const q = d.id, choice = o.label;
@@ -239,6 +257,22 @@ for (const f of files) {
   }
 }
 
+// The drop question's answers are not in the flight records: read from the
+// trials' logs (artifacts/*.log changed since --since), "[room] for X: Jev
+// chose drop_Y (N Y)".
+{
+  const HARD = /^(golden_apple|enchanted_golden_apple|flint_and_steel|fire_charge|water_bucket|\w+_pickaxe|\w+_sword|shield)$/;
+  let logs = [];
+  try { logs = fs.readdirSync(path.join(ROOT, 'artifacts')).filter(f => f.endsWith('.log')).map(f => path.join(ROOT, 'artifacts', f)).filter(f => fs.statSync(f).mtimeMs >= since); } catch (_) { logs = []; }
+  out.b.roomAnswers = 0;
+  for (const f of logs) {
+    let text; try { text = fs.readFileSync(f, 'utf8'); } catch (_) { continue; }
+    for (const m of text.matchAll(/^\[room\] for (\w+): Jev chose drop_\w+ \(\d+ (\w+)\)/gm)) {
+      out.b.roomAnswers++;
+      if (HARD.test(m[2])) { out.b.hardDrops++; count(out.b.hardDropNames, `drop_${m[2]}`); }
+    }
+  }
+}
 const round = m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, Math.round(v * 10) / 10]));
 out.lostMinutes = Math.round(out.lostMinutes * 10) / 10;
 out.lostByCause = round(out.lostByCause); out.lostByOption = round(out.lostByOption);
@@ -269,6 +303,9 @@ console.log(`questions saying daylight below y 0: ${of.daylightUnderground}; say
 console.log(`by-hand seconds a block said: ${topOf(of.handDigFigures, 12).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
 console.log(`"pockets are full" chat lines: ${out.pocketsFull.lines} (with "attempt N": ${out.pocketsFull.attempts}, highest attempt ${out.pocketsFull.maxAttempt}); by port ${topOf(out.pocketsFull.byPort).map(([k, v]) => `${k}:${v}`).join(' ')}`);
 console.log(`craft rests said ("made nothing twice"): ${out.craftRests}`);
+const b = out.b;
+console.log(`754b: of ${b.roomAnswers} drop answers in the trials' logs, ${b.hardDrops} gave up a golden apple, lighter, water bucket, pickaxe, sword or shield (${Object.entries(b.hardDropNames).map(([k, v]) => `${k.slice(5)} ${v}`).join(', ')})`);
+console.log(`754b: the tidy leaving a pickaxe: ${b.tidyPickaxes}; smelts timed out with 0 free slots: ${b.smeltNoSlot}; back_the_way_came offered with no footing: ${b.noFootingOffered} (chosen ${b.noFootingChosen}); nether_food_kit asked short at raw points with the cook one question down: ${b.kitShortRawCookable} (return_for_food chosen ${b.kitReturnWithCook})`);
 const c = out.climbs;
 console.log(`hand-dig climbs chosen (climb_out, no pickaxe): ${c.handClimbs}; stillness_detour/rung_progress asked within 3 min of one: ${c.preempted} (${c.preemptedClimbing} with the bot higher than the climb began, ${c.preemptedRising} with it a block or more higher than 60 to 90 s before); median climb ${c.medianBlocksPerMinute} blocks a minute`);
 for (const [k, v] of topOf(c.byQuestion, 8)) console.log(`  ${v}\t${k}`);

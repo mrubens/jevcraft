@@ -412,11 +412,21 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
       ? `Go on with the stay on what is carried: ${stay.carried} food points, about ${stay.lasts} minutes of it at ${HUNGER_AN_HOUR} an hour, against the ${stay.minutes} minutes the goal still wants; ${stay.short} points short. Nothing is done about food now; it is asked again in an hour, and when health and hunger say so the food step is offered at the stalls.`
       : `Go on with the stay as it is: ${stay.carried} food points carried, about ${stay.lasts} minutes of it at ${HUNGER_AN_HOUR} an hour, ${stay.minutes} minutes wanted, so food is not short. Nothing is made now; it is asked again in an hour.` },
   };
+  // The raw meat carried, cooked here, counted against the stay (note
+  // 754b): 25585 (mid-239-cb, 15:22:30Z) arrived at hunger 19 with 14 raw
+  // beef and a furnace and coal, was told "12 points short" at the raw
+  // points, and chose return_for_food; the cook (+74) was one question
+  // further down, under restock_food. Offered beside the trip, first.
+  const cook = stay.short ? found.routes.cook_meat : null;
+  const gain = cook ? foodStock(bot).cookedGain : 0;
+  const cookCovers = cook ? `The raw meat carried, cooked here (cook_meat, about ${Math.round(foodStock(bot).raw.reduce((n, m) => n + m.n, 0) * 10 / 60 * 10) / 10} minutes at a furnace), is ${gain} points more: ${stay.carried + gain} in all, ${stay.carried + gain >= stay.points ? `the stay's ${stay.points} and ${stay.carried + gain - stay.points} over` : `${stay.points - stay.carried - gain} short of the stay's ${stay.points}`}.` : '';
+  if (cook) tree.cook_meat = { description: `${cook.description} ${cookCovers}` };
+  if (cook) tree.go_on.description += ` ${cookCovers}`;
   // Food ways only when food is short: a stay with enough is not offered a trip for more.
   if (stay.short) {
-    if (found.routes.return_for_food) tree.return_for_food = { description: found.routes.return_for_food.description };
+    if (found.routes.return_for_food) tree.return_for_food = { description: `${found.routes.return_for_food.description}${cookCovers ? ` ${cookCovers}` : ''}` };
     if (found.routes.raid_bastion) tree.raid_bastion = { description: found.routes.raid_bastion.description };
-    const others = Object.keys(found.routes).filter(k => !['return_for_food', 'raid_bastion'].includes(k));
+    const others = Object.keys(found.routes).filter(k => !['return_for_food', 'raid_bastion', ...(cook ? ['cook_meat'] : [])].includes(k));
     if (others.length) {
       const hunger = bot.food ?? 20, health = r1(bot.health ?? 20);
       const already = `${stay.carried} food points already carried (about ${stay.lasts} minutes of it), hunger ${hunger} and health ${health}${hunger >= 20 && health >= 20 ? ' (both full now: this is for the stay ahead, not this moment)' : ''}.`;
@@ -442,6 +452,7 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   if (pick === 'return_for_food') { await found.routes.return_for_food.run(); return pick; }
   if (pick === 'restock_food') { await askRestockFood(bot, task, goal, save, { actions, survival, client, found }); return pick; }
   if (pick === 'raid_bastion') { await found.routes.raid_bastion.run(); return pick; }
+  if (pick === 'cook_meat') { await found.routes.cook_meat.run(); return pick; }
   if (pick === 'top_up_cauldron') { await makeCauldron(bot, task, goal, save, actions); return pick; }
   return pick;
 }

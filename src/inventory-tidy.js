@@ -62,7 +62,16 @@ function spares(bot, keep = new Set()) {
       const worn = bot.inventory.slots?.[WORN[kind]];
       const keepOne = worn ? list.filter(i => tier(i.name) > tier(worn.name)).slice(0, 1) : list.slice(0, 1);
       out.push(...list.filter(i => !keepOne.includes(i)));
-    } else out.push(...list.slice(kind === 'pickaxe' ? 2 : 1));
+    } else if (kind === 'pickaxe') {
+      // A pickaxe with a spare's uses is not the tidy's to throw: how many
+      // are carried is the pickaxe budget's and Jev's (upkeep's
+      // spare_pickaxe). 25597 (mid-241-cd, 15:21:05Z) chose spare_pickaxe six
+      // times, made a stone pickaxe (131 uses) beside an iron one (111) and
+      // another stone one, and the tidy left it on the floor at the next
+      // step, "My pockets are full, so I'm leaving 1 stone pickaxe here",
+      // with 53 orange terracotta carried (note 754b). Worn ones past two go.
+      out.push(...list.slice(2).filter(i => !sound(i)));
+    } else out.push(...list.slice(1));
   }
   // The weakest first.
   return out.sort((a, b) => tier(a.name) - tier(b.name));
@@ -236,8 +245,17 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // flower alone would give the room, that is what is offered; a valuable,
     // a life-saver or a tool is only asked about once no junk is left.
     const junkOnly = stacks.filter(i => junk(i.name));
-    if (junkOnly.length) stacks = junkOnly;
     const kind = n => (TOOL.test(n) && n.match(TOOL)[1]) || null;
+    // With no junk, what is dug again in seconds goes next, offered alone:
+    // building blocks past the reserve, gravel, sand, terracotta (note 754b);
+    // the rest is asked about only once none of that is left. 25584
+    // (mid-244-gc, 15:21Z) made room for eight lava buckets one at a time and
+    // was offered its flint and steel and its two golden apples beside 64
+    // cobblestone, 32 smooth basalt and 32 dirt, and dropped both: notes 722
+    // and 730 held only while some junk was left.
+    const cheap = i => (BUILDING.test(i.name) && blockStock(bot) - i.count >= BLOCK_RESERVE) || /^(gravel|sand|red_sand|smooth_basalt|soul_sand|soul_soil|calcite|mud|clay|.*terracotta)$/.test(i.name);
+    const tiers = [junkOnly, stacks.filter(cheap)];
+    stacks = tiers.find(t => t.length) || stacks;
     // What each stack is to the work in hand and the ladder's next step,
     // and the stacks that matter most when gone: the only food, the only
     // weapon, the water bucket, the valuables (the decision audit,

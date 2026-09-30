@@ -89,7 +89,9 @@ function seaBot({ health = 15 } = {}) {
   return Object.assign(new EventEmitter(), {
     game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health, food: 20, entities: {},
     entity: { position: new Vec3(0.5, 27, 0.5), onGround: false }, inventory: { items: () => [], slots: {} },
-    blockAt: p => ({ position: p, name: p.y <= 31 ? 'lava' : 'air', boundingBox: 'empty' }),
+    // The netherrack the last dry footing stood on, far off (note 754b:
+    // a footing with nothing under it is no way out).
+    blockAt: p => p.x === -30 && p.y === 41 && p.z === -60 ? { position: p, name: 'netherrack', boundingBox: 'block' } : ({ position: p, name: p.y <= 31 ? 'lava' : 'air', boundingBox: 'empty' }),
     setControlState: () => {}, getControlState: () => false, lookAt: async () => {},
   });
 }

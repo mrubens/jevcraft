@@ -50,7 +50,8 @@ test('crowded with nothing over the caps, spare gear goes: the best tool stays, 
   const b = { registry, inventory: { items: () => stacks, emptySlotCount: () => free, slots: { 5: { name: 'iron_helmet' }, 8: { name: 'iron_boots' } } },
     tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
   const { spares } = require('../src/inventory-tidy');
-  assert.deepEqual(spares(b).map(i => i.name).sort(), ['flint_and_steel', 'iron_helmet', 'iron_pickaxe', 'iron_sword', 'shield'].sort());
+  // A third pickaxe with a spare's uses is not the tidy's (note 754b).
+  assert.deepEqual(spares(b).map(i => i.name).sort(), ['flint_and_steel', 'iron_helmet', 'iron_sword', 'shield'].sort());
   await tidyInventory(b, null);
   assert(!tossed.includes('diamond_sword') && !tossed.includes('diamond_boots') && !tossed.includes('bucket'));
   assert.equal(free >= 4, true, 'until there is room');
@@ -168,7 +169,8 @@ test('more of a vein than the step asked for is Jev\'s call; without Jev it is t
 
 test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes without', async () => {
   const { makeRoom } = require('../src/inventory-tidy');
-  let items = [{ name: 'stone_pickaxe', count: 1, type: 1 }, { name: 'dirt', count: 20, type: 2 }, { name: 'cobblestone', count: 10, type: 3 }];
+  // Under the 16-block reserve together, so neither is past it (note 754b).
+  let items = [{ name: 'stone_pickaxe', count: 1, type: 1 }, { name: 'dirt', count: 10, type: 2 }, { name: 'cobblestone', count: 5, type: 3 }];
   const tossed = [];
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => (items.length < 3 ? 1 : 0) }, entity: { position: { x: 0, y: 64, z: 0 } },
     tossStack: async stack => { tossed.push(stack.name); items = items.filter(i => i !== stack); } };

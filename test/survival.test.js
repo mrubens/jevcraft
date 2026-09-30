@@ -1556,7 +1556,7 @@ test('in lava with no dry cell in sight the bot swims up and back toward its las
   const held = new Set(); let looked = null;
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 15, food: 20,
     entity: { position: new Vec3(.5, 27, .5), onGround: false }, entities: {}, inventory: { items: () => [], slots: {} },
-    blockAt: p => ({ position: p, name: p.y <= 31 ? 'lava' : 'air', boundingBox: 'empty' }),
+    blockAt: p => p.x === -30 && p.y === 41 && p.z === -60 ? { position: p, name: 'netherrack', boundingBox: 'block' } : ({ position: p, name: p.y <= 31 ? 'lava' : 'air', boundingBox: 'empty' }),
     setControlState: (key, on) => { if (on) held.add(key); }, getControlState: () => false, lookAt: async p => { looked = p; } });
   const survival = new Survival(bot, {}, { state: { shelters: [], lastDry: { x: -30, y: 42, z: -60 } } });
   const goal = {};
