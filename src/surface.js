@@ -226,7 +226,7 @@ function walkedColumn(bot, feet, usesLeft, hereSeconds, { exclude = [] } = {}) {
 }
 
 // The two ways out by digging, each with what it costs and leaves, for Jev.
-function climbOptions(bot, target, column, { landing = false, rests = null, walkedAway = [] } = {}) {
+function climbOptions(bot, target, column, { landing = false, rests = null, walkedAway = [], goal = null } = {}) {
   const feet = bot.entity.position.floored(), picks = pickaxesCarried(bot);
   const usesLeft = picks.reduce((n, p) => n + (p.usesLeft ?? 64), 0);
   const tools = picks.length ? picks.map(p => `${p.name.replaceAll('_', ' ')}${p.usesLeft != null ? ` (${p.usesLeft} uses left)` : ''}`).join(', ') : 'no pickaxe';
@@ -276,6 +276,30 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
   if (crossing?.bridge > 0 && crossing.gain >= 4) {
     estimate.bridge = crossing.cells * 2 + crossing.digSeconds;
     options.bridge = { description: `Lay a level span of blocks across the open cave toward the way up, ${crossing.cells} cells (${crossing.bridge} blocks laid of ${crossing.carried} carried${crossing.dig ? `, ${crossing.dig} dug` : ''}), crouched the whole way, ${Math.round(crossing.gain)} blocks nearer; then the way up is looked for again from its end.${crossing.overLava ? ` ${crossing.overLava} of the cells are over lava.` : ''}${crossing.stoppedBy ? ` It stops at ${crossing.stoppedBy}.` : ''} One block wide over the drop: a hit's knockback is a fall.`, crossing };
+  }
+  // With no pickaxe and wood in reach (a mineshaft's planks, a log), a
+  // pickaxe made first and the climb at its pace, priced beside the climbs
+  // by hand (note 754e). 25583 (mid-244-he, 18:54Z), its pickaxe worn out in
+  // a mineshaft, was offered only ways by hand, took the staircase ("about 8
+  // minutes with bare hands") and dug y 40 to 60 in nine minutes, the
+  // mineshaft's planks a few blocks off.
+  if (!picks.length) {
+    let wood = null;
+    try { wood = require('./pickaxe-budget').nearestWood(bot, goal || {}); } catch (_) { wood = null; }
+    if (wood && wood.distance <= 32) {
+      const count = n => bot.inventory?.items?.().filter(i => i.name === n).reduce((s, i) => s + i.count, 0) || 0;
+      const cobble = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((s, n) => s + count(n), 0) >= 3;
+      const table = count('crafting_table') > 0;
+      const planks = (cobble ? 2 : 5) + (table ? 0 : 4);
+      const plank = /_planks$/.test(wood.name);
+      const blocks = plank ? planks : Math.ceil(planks / 4);
+      const pickSeconds = cobble ? PICKAXE_STONE_SECONDS : 1.15;
+      const withPick = Math.min(stairs.digs * pickSeconds + (rises + level) * STAIR_STEP_SECONDS,
+        column?.cells && !column.blocked ? column.cells.length * pickSeconds + column.up * PILLAR_RISE_SECONDS : Infinity);
+      const fetch = wood.distance * 2 / 4.3 + blocks * 3 + 5;
+      estimate.wood_first = fetch + withPick;
+      options.wood_first = { description: `Make a pickaxe first: ${wood.says}; break ${blocks} ${plank ? `plank block${blocks === 1 ? '' : 's'}` : `log${blocks === 1 ? '' : 's'}`} (about 3 seconds each by hand, and they drop), craft ${cobble ? 'a stone pickaxe from the cobblestone carried' : 'a wooden pickaxe'}${table ? ' at the crafting table carried' : ' and a crafting table'}: ${duration(fetch)} there and back with the crafting; then the climb with it, ${duration(withPick)}: ${duration(estimate.wood_first)} in all, against the climbs by hand beside it. The way there is walked as the pathfinder finds it, not surveyed here.` };
+    }
   }
   const state = { blocksToOpenSky: climbToSurface(bot, feet), pickaxes: tools, pickaxeUsesLeft: usesLeft,
     ...(column?.blocked ? { straightUpBlocked: column.blocked } : {}) };
@@ -531,6 +555,12 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // Which way to dig out is Jev's: a staircase, or straight up the
       // column overhead, each said with what it costs and leaves.
       const climb = await chooseClimb(bot, task, goal, save, state, target, { landing: !!open[0] });
+      if (climb.method === 'wood_first') {
+        // The pickaxe made, the climb is asked again with it (note 754e).
+        delete state.climb; save();
+        if (actions.woodFirst) await actions.woodFirst();
+        return;
+      }
       if (climb.method === 'straight_up') { await climbStraightUp(bot, task, goal, save, state, climb.column, start, actions); return; }
       if (climb.method === 'walk_then_up' && climb.walkTo) { await walkToColumn(bot, task, goal, save, state, climb.walkTo, start, actions); return; }
       if (climb.method === 'bridge') {
@@ -596,7 +626,7 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   const column = state.climb?.failedColumn === here ? null : straightUpColumn(bot, feet);
   const kept = state.climb?.method && state.climb.tools === tools && (state.climb.method !== 'straight_up' || column?.cells) && (state.climb.method !== 'walk_then_up' || state.climb.walkTo);
   const offered = state.climb?.offered || [];
-  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing, rests, walkedAway: state.walkedAway || [] });
+  const { options, estimate, state: facts } = climbOptions(bot, target, column, { landing, rests, walkedAway: state.walkedAway || [], goal });
   // A way kept that has run to twice what it was said to take (and two
   // minutes at least) is asked about again, with what it has done: a
   // staircase said as four minutes that has risen twelve blocks in fourteen

@@ -1821,6 +1821,8 @@ async function miningCandidates(bot, task, step, goal) {
   const options = { matching: ids, maxDistance: 48, count: 32,
     useExtraInfo: b => (!step.properties || Object.entries(step.properties).every(([key, value]) => String(b.getProperties()[key]) === String(value))) &&
       (step.minimumY === undefined || b.position.y >= step.minimumY) && !reservedForConstruction(goal, b.position) &&
+      // Planks the world put there, not the bot's own (note 754e).
+      !(/_planks$/.test(b.name) && (() => { try { return !!require('./own-blocks').laidAt(bot, b.position, goal); } catch (_) { return true; } })()) &&
       (step.drops !== 'dirt' || (b.position.y >= bot.entity.position.floored().y - 1 && air(bot.blockAt(b.position.offset(0, 1, 0))))) &&
       // Opening a block with lava against it lets the lava in: the drop
       // burns and the bot walks into the cell to collect it. Diamonds beside
@@ -2062,12 +2064,21 @@ async function surfaceStep(bot, task, goal, save) {
     const step = plan[0];
     // Craft from carried wood/stone. When the missing ingredient is wood, which
     // only the surface has, climb with what is in hand rather than wait here.
-    if (!step || (step.action === 'mine' && isSurfaceResource(step.block))) {
+    // Wood down here (a mineshaft's planks, a log in a cave) is fetched only
+    // as climb_out's wood_first, priced beside the climbs by hand (note 754e).
+    if (!step || (step.action === 'mine' && (isSurfaceResource(step.block) || /_log$|_planks$|_stem$/.test(step.block || '')))) {
       if (!goal.surfaceReturn?.byHand) { goal.surfaceReturn ||= {}; goal.surfaceReturn.byHand = true; save(); bot.chat?.("No pickaxe worth the name and no wood for one, so I'm digging out by hand."); }
       return true;
     }
     await executeAcquisition(bot, task, step, goal, save);
     return false;
+  }, woodFirst: async () => {
+    // The pickaxe from the wood in reach, a step at a time, until one is
+    // carried or ten steps have gone.
+    const item = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((n, k) => n + countOf(bot, k), 0) >= 3 ? 'stone_pickaxe' : 'wooden_pickaxe';
+    goal.step = { action: 'pickaxe_before_climb', item }; save();
+    for (let i = 0; i < 10 && pickaxeTier(bot) < 1; i++) { task.check(); if (await acquireStep(bot, task, item, countOf(bot, item) + 1, goal, save)) break; }
+    if (pickaxeTier(bot) < 1) throw new Error(`No ${item.replaceAll('_', ' ')} made from the wood in reach`);
   } });
 }
 
@@ -3124,9 +3135,12 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
   if (bot.game?.gameMode === 'creative') return outputs.filter(output => (stock[output.item] || 0) < output.count)
     .map(({ item, count }) => ({ action: 'creative_inventory', item, count: count - (stock[item] || 0), consumes: {}, produces: { [item]: count - (stock[item] || 0) } }));
   if (!bot._catalogObservation || Date.now() - bot._catalogObservation.at > 5000 || bot.entity.position.distanceTo(pos(bot._catalogObservation.position)) > 8) {
-    const ids = bot.registry.blocksArray.filter(b => /(_log|_wood|_ore)$|^(stone|sand|gravel|dirt|poppy|cornflower)$/.test(b.name)).map(b => b.id);
+    const ids = bot.registry.blocksArray.filter(b => /(_log|_wood|_ore|_planks)$|^(stone|sand|gravel|dirt|poppy|cornflower)$/.test(b.name)).map(b => b.id);
+    // Planks only where the world put them, not the bot's own (a house, a
+    // pocket's lid) nor a build's (note 754e).
+    const ownPlank = b => /_planks$/.test(b.name) && (() => { try { return !!require('./own-blocks').laidAt(bot, b.position, goal) || reservedForConstruction(goal || {}, b.position); } catch (_) { return true; } })();
     const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
-      useExtraInfo: b => faces.some(f => air(bot.blockAt(b.position.plus(f)))) });
+      useExtraInfo: b => faces.some(f => air(bot.blockAt(b.position.plus(f)))) && !ownPlank(b) });
     rememberResources(bot, goal, positions);
     const nearby = positions.map(p => bot.blockAt(p)?.name).filter(Boolean);
     bot._catalogObservation = { at: Date.now(), position: { ...bot.entity.position }, nearby };

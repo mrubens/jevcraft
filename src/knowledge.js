@@ -116,9 +116,13 @@ function planOutputs(registry, outputs, inventory = {}, { nearby = [], tools = [
   // A drop table describes what breaking a block yields, not where that
   // block can be found. Never plan an unobserved crafted object as a raw
   // resource deposit (for example ender chests as a source of obsidian).
+  // Placed planks seen (a mineshaft's supports, a ruin's floor) are planks
+  // for the breaking, a plank a block (note 754e): 25583 stood in a
+  // mineshaft with no pickaxe and no wood carried and was told the nearest
+  // wood was an oak log 54 blocks off.
   const usableSource = (name, source) => !name.endsWith('_concrete') &&
     !(data.recipes[source.block] && !/(ore|log|stem|hyphae|wood)$/.test(source.block) &&
-      (source.block === name || !observed.has(source.block)));
+      (source.block === name ? !(/_planks$/.test(name) && observed.has(source.block)) : !observed.has(source.block)));
   // These costs rank real acquisition methods; they do not authorize actions.
   // Evaluate the recipe graph in bounded passes instead of recursively
   // expanding every repeated ingredient/alternative on the game event loop.

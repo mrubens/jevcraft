@@ -89,8 +89,11 @@ function nearestWood(bot, goal) {
   const found = [];
   try {
     if (typeof bot.findBlocks === 'function' && bot.registry?.blocksArray) {
-      const ids = bot.registry.blocksArray.filter(b => LOG.test(b.name)).map(b => b.id);
-      for (const p of bot.findBlocks({ matching: ids, maxDistance: 64, count: 4 }) || []) found.push({ p, name: bot.blockAt?.(p)?.name, how: 'seen' });
+      // Placed planks the world put there are wood too, a plank a block
+      // (a mineshaft's supports, note 754e); the bot's own are not.
+      const ids = bot.registry.blocksArray.filter(b => LOG.test(b.name) || /_planks$/.test(b.name)).map(b => b.id);
+      const own = p => { try { return !!require('./own-blocks').laidAt(bot, p, goal); } catch (_) { return false; } };
+      for (const p of bot.findBlocks({ matching: ids, maxDistance: 64, count: 8 }) || []) { const name = bot.blockAt?.(p)?.name; if (/_planks$/.test(name || '') && own(p)) continue; found.push({ p, name, how: 'seen' }); }
     }
   } catch (_) { /* nothing in view */ }
   const dim = bot.game?.dimension || 'overworld';
@@ -102,7 +105,7 @@ function nearestWood(bot, goal) {
   if (!near) return null;
   const rise = Math.round(near.p.y - here.y);
   return { distance: Math.round(near.p.distanceTo(here)), up: rise, name: near.name || 'log', how: near.how,
-    says: `the nearest wood known is ${words(near.name || 'a log')} ${Math.round(near.p.distanceTo(here))} blocks off${rise >= 2 ? `, ${rise} up` : rise <= -2 ? `, ${-rise} down` : ''} (${near.how === 'seen' ? 'in the world loaded about here' : 'seen earlier'})` };
+    says: `the nearest wood known is ${words(near.name || 'a log')} ${Math.round(near.p.distanceTo(here))} blocks off${rise >= 2 ? `, ${rise} up` : rise <= -2 ? `, ${-rise} down` : ''} (${near.how === 'seen' ? 'in the world loaded about here' : 'seen earlier'})${/_planks$/.test(near.name || '') ? ': placed planks, one plank a block, about 3 seconds each by hand; a wooden pickaxe is five with a crafting table carried, nine without' : ''}` };
 }
 
 function pickaxeBudget(bot, goal = {}, { look = true } = {}) {
