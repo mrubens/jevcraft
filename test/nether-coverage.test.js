@@ -54,7 +54,8 @@ test('each leg says the ground it would show that is unseen and what seen before
   await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => {}, tunnel: async () => {} }, state);
   const { facts, options } = asked[0];
   // The ground a leg looks over leads its words (note 688).
-  assert.match(options.leg_east, /^Unseen ahead: about \d+ of \d+ chunks \(\d+%\), mostly seen already\. The bot has stood on 9[0-9] of its 96 blocks before: it walks again ground already walked and looked from, and what is unseen that way lies off to its sides and past its end\. Its end is 96 blocks from where the search began \(the bot is 1 from there now\)\. Go east 96 blocks/);
+  // Its open air all stood on, it opens nothing (note 751).
+  assert.match(options.leg_east, /^Unseen ahead: about \d+ of \d+ chunks \(\d+%\), mostly seen already; it opens none of it: its \d+ blocks in open air have all been stood on, the looks from them taken as they were walked, and what they did not reach is behind walls from there\. The bot has stood on 9[0-9] of its 96 blocks before: it walks again ground already walked and looked from, and what is unseen that way lies off to its sides and past its end\. Its end is 96 blocks from where the search began \(the bot is 1 from there now\)\. Go east 96 blocks/);
   assert.match(options.leg_west, /^Unseen ahead: about \d+ of \d+ chunks \([4-9]\d%\)/);
   assert.doesNotMatch(options.leg_west, /mostly seen|has stood on/);
   assert.match(options.leg_west, /Seen before and lying this way: the blazes seen 5 times at \(-150, 60, 2\), 151 blocks off\./);

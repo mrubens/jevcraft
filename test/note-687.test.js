@@ -172,7 +172,7 @@ test('wear is a fact before the pickaxe breaks: 25589\'s iron pickaxe, 117 uses 
   const w = wearOf(bot, goal, t0 + 10 * 60000);
   assert.equal(w.uses, 3);
   assert(w.rate > 10 && w.lastsMinutes < 1, JSON.stringify(w));
-  assert.match(wearSays(bot, goal, t0 + 10 * 60000), /^iron pickaxe, 3 uses left \(the only one carried\); \d+ used in the last 10 minutes, at which rate it lasts about 1 minute more; no other can be made from the pockets$/);
+  assert.match(wearSays(bot, goal, t0 + 10 * 60000), /^iron pickaxe, 3 uses left \(the only one carried\); \d+ used in the last 10 minutes, at which rate it lasts about 1 minute more; a fortress search's leg spends about 26 uses in the record; no other can be made from the pockets$/);
   // A leg digging 40 blocks with it.
   assert.match(lastPickaxeSays(bot, 40), /It digs about 40 blocks with the one pickaxe carried, 3 uses left, no other to be made from the pockets: it breaks on the way, the rest dug by hand and dropping nothing\./);
   // A new pickaxe starts the samples again.
@@ -195,7 +195,7 @@ test('in the Nether with one pickaxe and the makings of another, the upkeep offe
   mh.makePickaxe = async (b, t, g, s, actions, pick) => { made = pick.item; stacks.push({ name: pick.item, count: 1, type: 0 }); return null; };
   try { await upkeepStep(bot, { check() {} }, goal, () => {}, client); } finally { mh.makePickaxe = was; }
   const { options } = client.asked[0];
-  assert.match(options.spare_pickaxe, /^Make a wooden pickaxe now as a spare, from what is carried \(8 planks, a crafting table\), a few seconds at a crafting table: wooden pickaxe, 12 uses left \(the only one carried\); the pockets make another \(wooden pickaxe from 8 planks, a crafting table\)\. In the Nether rock is dug and blocks come back only with a pickaxe/);
+  assert.match(options.spare_pickaxe, /^Make a wooden pickaxe now as a spare, from what is carried \(8 planks, a crafting table\), a few seconds at a crafting table: wooden pickaxe, 12 uses left \(the only one carried\); a fortress search's leg spends about 26 uses in the record; the pockets make another \(wooden pickaxe from 8 planks, a crafting table\)\. In the Nether rock is dug and blocks come back only with a pickaxe/);
   assert.equal(made, 'wooden_pickaxe');
 });
 

@@ -1331,7 +1331,38 @@ function fortressLegTarget(state, position) {
   const [dx, dz] = HEADINGS[headingIndex(state)];
   // A side of the widening spiral (chooseLeg's widen_search) is its own length.
   const length = Number.isFinite(state.legLength) ? state.legLength : FORTRESS_LEG;
-  return new Vec3(Math.round(position.x + length * dx), y, Math.round(position.z + length * dz));
+  // A leg round what stopped a heading's line (round_<heading>) runs from a
+  // step to the side: its end is shifted by that step.
+  const sx = state.legShift?.x || 0, sz = state.legShift?.z || 0;
+  return new Vec3(Math.round(position.x + sx + length * dx), y, Math.round(position.z + sz + length * dz));
+}
+
+// The same heading from a step to either side, where its own line stops
+// short (chooseLeg's round_<heading>, note 751): for each side and each step
+// of 8, 16, 24 and 32 blocks, the step itself surveyed (it must get there
+// with the blocks carried) and the heading's line from its end; the one
+// whose line goes farthest before anything stops it, where that is farther
+// than the straight line goes, the shorter step on a tie. Null otherwise.
+const ROUND_STEPS = [8, 16, 24, 32];
+function roundLeg(bot, straight, i) {
+  if (!straight?.stoppedBy || !Number.isInteger(straight.stoppedAt) || /unloaded/.test(straight.stoppedBy)) return null;
+  const reachOf = sv => Math.min(Number.isInteger(sv.stoppedAt) ? sv.stoppedAt : sv.cells, Number.isInteger(sv.runsOut) ? sv.runsOut : Infinity);
+  const carried = straight.carried ?? blocksCarried(bot);
+  let best = null;
+  for (const side of [(i + 1) % 4, (i + 3) % 4]) {
+    for (const off of ROUND_STEPS) {
+      const step = surveyLeg(bot, HEADINGS[side], { cells: off, blocks: carried });
+      if (!step || Number.isInteger(step.stoppedAt) || Number.isInteger(step.runsOut) || step.cells < off) break;
+      const line = surveyLeg(bot, HEADINGS[i], { cells: FORTRESS_LEG, from: new Vec3(step.end.x, step.end.y, step.end.z), blocks: carried - (step.lay || 0) });
+      if (!line) continue;
+      const reach = reachOf(line);
+      if (reach > straight.stoppedAt && (!best || reach > best.reach)) {
+        const parts = [step.open && `${step.open} open`, step.rock && `${step.rock} of rock to dig`, step.lay && `${step.lay} to lay a block on`].filter(Boolean).join(', ');
+        best = { side, off, reach, line, from: step.end, seconds: (step.seconds || 0) + (line.seconds || 0), sideSays: `${parts || 'open'}, about ${step.seconds} seconds` };
+      }
+    }
+  }
+  return best;
 }
 
 // How each heading's last leg ended no nearer, kept on that heading: noted
@@ -1345,7 +1376,9 @@ function fortressLegTarget(state, position) {
 // said nothing of its own failure (note 500).
 // A leg down to the floor and along it (floor_<heading>) is kept apart as
 // well: its failure is the way down's or the floor's, not the level leg's.
-const legKey = (i, mode) => mode === true || mode === 'descend' ? `seek_${HEADING_NAMES[i]}` : mode === 'floor' ? `floor_${HEADING_NAMES[i]}` : HEADING_NAMES[i];
+// A leg round what stopped a heading's line (round_<heading>) is kept apart
+// too: its failure is the side step's line, not the straight one (note 751).
+const legKey = (i, mode) => mode === true || mode === 'descend' ? `seek_${HEADING_NAMES[i]}` : mode === 'floor' ? `floor_${HEADING_NAMES[i]}` : mode === 'round' ? `round_${HEADING_NAMES[i]}` : HEADING_NAMES[i];
 function legEnded(state, why, seeking = false) {
   const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
   const history = state.legHistory ||= {};
@@ -1461,7 +1494,12 @@ function bestMakeable(bot) {
   // Four planks for a table unless one is carried, two for sticks (four of
   // them) unless two are carried, and three more for a wooden head.
   const wood = logs * 4 + planks, frame = (table ? 0 : 4) + (sticks >= 2 ? 0 : 2);
-  const head = PICK_HEADS.map(([item, said, re]) => ({ item, said, n: sum(re) })).find(h => h.n >= 3 && wood >= frame) ||
+  // Raw iron with a furnace and fuel carried is an iron head too, smelted
+  // first (pickaxe-budget.js smeltableIron, note 751).
+  const smelt = require('./pickaxe-budget').smeltableIron(bot);
+  const heads = PICK_HEADS.map(([item, said, re]) => ({ item, said, n: sum(re) }));
+  if (smelt.ingots && heads[0].n < 3) Object.assign(heads[0], { n: heads[0].n + smelt.ingots, said: heads[0].n ? `iron ingots and ${smelt.says}` : smelt.says, smelted: true });
+  const head = heads.find(h => h.n >= 3 && wood >= frame) ||
     (wood >= frame + 3 ? { item: 'wooden_pickaxe', said: 'planks', n: 0 } : null);
   const woodSaid = [logs && `${logs} log${logs === 1 ? '' : 's'}`, planks && `${planks} planks`, sticks && `${sticks} stick${sticks === 1 ? '' : 's'}`, table && 'a crafting table'].filter(Boolean).join(', ');
   // None to be made: what it is short of, so a fetch that supplies it can
@@ -1469,7 +1507,7 @@ function bestMakeable(bot) {
   // of the sticks, and fetch_stems said "none can be made from what is
   // carried" (critic-20260930T0034Z item 1, note 705).
   if (!head) {
-    const headCarried = PICK_HEADS.map(([item, said, re]) => ({ item, said, n: sum(re) })).find(h => h.n >= 3);
+    const headCarried = heads.find(h => h.n >= 3);
     const planksShort = Math.max(1, (headCarried ? frame : frame + 3) - wood), stems = Math.ceil(planksShort / 4);
     const parts = [!table && 'a crafting table', sticks < 2 && 'the sticks', !headCarried && 'the head'].filter(Boolean);
     const then = headCarried ? `${/^iron/.test(headCarried.item) ? 'an' : 'a'} ${headCarried.item.replace('_', ' ')} from the ${headCarried.said} carried` : 'a wooden pickaxe';
@@ -1478,9 +1516,9 @@ function bestMakeable(bot) {
       says: `No pickaxe is carried and none can be made yet: short of ${planksShort} planks (${stems} log${stems === 1 ? '' : 's'} or stem${stems === 1 ? '' : 's'}) for ${short.for || 'it'}, then ${then}. Netherrack dug by hand drops nothing. ` };
   }
   const name = head.item.replace('_', ' '), a = /^iron/.test(head.item) ? 'an' : 'a';
-  const from = head.n ? `3 of the ${head.n} ${head.said}${woodSaid ? `; ${woodSaid}` : ''}` : woodSaid;
+  const from = head.smelted ? `3 of the ${head.said}${woodSaid ? `; ${woodSaid}` : ''}` : head.n ? `3 of the ${head.n} ${head.said}${woodSaid ? `; ${woodSaid}` : ''}` : woodSaid;
   return { carried: false, item: head.item, tool: bot.registry?.itemsByName?.[head.item]?.id ?? null, name: `${a} ${name}`,
-    from, says: `No pickaxe is carried, and netherrack dug by hand drops nothing: ${a} ${name} is made first from what is carried (${from}), a few seconds, and the rock is dug with it. ` };
+    from, ...(head.smelted ? { smelted: true } : {}), says: `No pickaxe is carried, and netherrack dug by hand drops nothing: ${a} ${name} is made first from what is carried (${from}), ${head.smelted ? 'about half a minute with the smelting' : 'a few seconds'}, and the rock is dug with it. ` };
 }
 // The pickaxe pickaxeFirst said, made from what is carried: the craft
 // steps one at a time (planks, the table, sticks, the pickaxe). Null when it
@@ -1665,9 +1703,9 @@ function restLeg(state, why, here, made = 0, now = Date.now()) {
   return key;
 }
 function restSays(key, r, now = Date.now()) {
-  const [kind, name] = key.startsWith('seek_') ? ['seek', key.slice(5)] : key.startsWith('floor_') ? ['floor', key.slice(6)] : ['level', key];
+  const [kind, name] = key.startsWith('seek_') ? ['seek', key.slice(5)] : key.startsWith('floor_') ? ['floor', key.slice(6)] : key.startsWith('round_') ? ['round', key.slice(6)] : ['level', key];
   const mins = Math.max(1, Math.round((r.until - now) / 60000));
-  return `${kind === 'seek' ? `the staircase toward the fortress heights heading ${name}` : kind === 'floor' ? `the floor below, heading ${name}` : `leg ${name}`}: ended ${Math.round((now - r.at) / 60000)} minutes ago ${r.made ? `${r.made} block${r.made === 1 ? '' : 's'} from where it began` : 'where it began'}, no way on (${r.why}); not offered from here for ${mins} more minute${mins === 1 ? '' : 's'}`;
+  return `${kind === 'seek' ? `the staircase toward the fortress heights heading ${name}` : kind === 'floor' ? `the floor below, heading ${name}` : kind === 'round' ? `the leg round what stops the line ${name}` : `leg ${name}`}: ended ${Math.round((now - r.at) / 60000)} minutes ago ${r.made ? `${r.made} block${r.made === 1 ? '' : 's'} from where it began` : 'where it began'}, no way on (${r.why}); not offered from here for ${mins} more minute${mins === 1 ? '' : 's'}`;
 }
 // The pickaxe carried, as the ways that dig need it said. mid-242-ac-
 // nether-1's staircase rested "no tool for nether bricks", said only
@@ -1834,6 +1872,10 @@ function sightingsThatWay(bot, goal, state, here, heading) {
 async function chooseLeg(bot, task, goal, save, actions, state, fortress = null) {
   const here = bot.entity.position, y = Math.round(here.y);
   const current = headingIndex(state);
+  // What the last leg cost the pickaxes, kept for the budget said below
+  // (pickaxe-budget.js legBudgetSays, note 751).
+  const budget = require('./pickaxe-budget');
+  budget.noteLegWear(bot, state);
   const surveys = HEADINGS.map(h => surveyLeg(bot, h, { cells: FORTRESS_LEG }));
   // What each heading would show that has not been seen, and what seen
   // before lies that way (nether-coverage.js): a leg into air already
@@ -1841,13 +1883,15 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // seen (note 572). A full look from here first.
   const dim = coverage.dimOf(bot);
   coverage.look(bot, state);
-  const seenThatWay = HEADINGS.map(h => coverage.headingCoverage(state, dim, here, h, { length: FORTRESS_LEG, bot }));
-  const thatWay = HEADINGS.map(h => sightingsThatWay(bot, goal, state, here, h));
   // Where fortresses can begin (nether-regions.js): each heading says where
   // it leaves the region the bot stands in and what is known past it. mid-
   // 243-ch walked thirteen legs round a bastion's region, where no fortress
-  // begins, never told so (note 652).
+  // begins, never told so (note 652). What a leg opens there is said apart
+  // (note 751).
   const landmarks = goal.landmarks || [];
+  const barren = regions.barrenAt(landmarks);
+  const seenThatWay = HEADINGS.map(h => coverage.headingCoverage(state, dim, here, h, { length: FORTRESS_LEG, bot, barren }));
+  const thatWay = HEADINGS.map(h => sightingsThatWay(bot, goal, state, here, h));
   const headingSays = i => thatWay[i] + regions.headingRegionSays(here, HEADINGS[i], regions.known(landmarks), state, dim);
   const back = state.legFrom && Number.isInteger(state.lastHeading) ? (state.lastHeading + 2) % 4 : null;
   // What a leg is for, first: the new ground it looks over, whether it goes
@@ -1890,6 +1934,28 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : '') + headingSays(i) + backSays(i),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
   });
+  // Round what stops a heading's line: where lava, rock with lava or water
+  // behind it, or rock no hand breaks stops the line short of its ninety-
+  // six blocks, the same heading from a step to either side (8 to 32
+  // blocks), offered where that line goes farther than the straight one
+  // (roundLeg). 25593 (mid-242-xd, 11:12:33Z on 2026-09-30) went north 70
+  // blocks to "lava or water behind the netherrack", was offered only the
+  // four headings from there, and took leg_south back over the 67 blocks
+  // it had just walked; a player steps along the wall and goes on (note 751).
+  HEADINGS.forEach((h, i) => {
+    const key = `round_${HEADING_NAMES[i]}`;
+    const rest = legResting(state, key, here);
+    if (rest) { resting.push(restSays(key, rest)); return; }
+    const round = roundLeg(bot, surveys[i], i);
+    if (!round) return;
+    const at = new Vec3(round.from.x + 0.5, round.from.y, round.from.z + 0.5);
+    const seen = coverage.headingCoverage(state, dim, at, h, { length: FORTRESS_LEG, bot, barren });
+    const sideName = HEADING_NAMES[round.side];
+    const roundEnd = { x: round.from.x + h[0] * FORTRESS_LEG, z: round.from.z + h[1] * FORTRESS_LEG };
+    options[key] = { description: `${coverage.headingSays(seen, HEADING_NAMES[i]).trim()} Its end is ${fromStart(roundEnd)} blocks from where the search began (the bot is ${fromStart(here)} from there now). Go round what stops the line ${HEADING_NAMES[i]} (${surveys[i].stoppedBy} at cell ${surveys[i].stoppedAt}): ${round.off} blocks ${sideName} first (${round.sideSays}), then ${HEADING_NAMES[i]} ${FORTRESS_LEG} blocks from there, a line ${round.off} blocks ${sideName} of this heading's: ${legSays(round.line, { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y: round.from.y })} Its line goes ${round.reach} cells before anything stops it, against ${surveys[i].stoppedAt} for the straight one; about ${round.seconds} seconds in all.` +
+      legHistorySays(state, key, here) + headingSays(i),
+      run: () => { state.heading = i; state.legMode = 'round'; state.legShift = { x: HEADINGS[round.side][0] * round.off, z: HEADINGS[round.side][1] * round.off }; state.sidestep = { ...round.from, key }; return true; } };
+  });
   // Down to the floor and along it: where the ground under the bot lies
   // four or more below and a way down to it is found, each heading's floor
   // walked from the foot of that way (nether-travel.js). mid-244-ad-nether-2
@@ -1914,6 +1980,9 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // goes clockwise along a ring and the next ring is 96 blocks farther out,
   // so no side goes back over another; the legs of ninety-six blocks from
   // the compass went back and forth over the same ground (note 688).
+  // The leg back over the last one comes after the ways past what stopped
+  // it and the other headings, said as what it is (backSays, note 751).
+  if (back !== null && options[`leg_${HEADING_NAMES[back]}`]) { const o = options[`leg_${HEADING_NAMES[back]}`]; delete options[`leg_${HEADING_NAMES[back]}`]; options[`leg_${HEADING_NAMES[back]}`] = o; }
   const side = coverage.spiralSide(origin, here);
   const sideLeg = `leg_${HEADING_NAMES[side.heading]}`;
   let widenUnseen = null;
@@ -2096,7 +2165,10 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // away (note 693's "no bandaids"). 25591 was told "for stone" while
   // standing on netherrack with a pickaxe; returnForKitSays now says what
   // is actually short and what restock_blocks itself found here (`plan`).
-  const homeBy = short && actions.returnOverworld ? portalBack(bot, goal, here) : null;
+  // With no pickaxe and none to be made from the pockets, the trip home is a
+  // way to one too (iron, stone and wood there), priced beside the stems
+  // (note 751): 25593 fetched stems for nineteen wooden pickaxes in two hours.
+  const homeBy = (short || pickaxeFirst(bot).none) && actions.returnOverworld ? portalBack(bot, goal, here) : null;
   const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
   if (homeBy && !homeStart.ok) blocked.push(`back through the portal (${homeBy.says}): ${homeStart.why}`);
   if (homeBy && homeStart.ok) {
@@ -2133,12 +2205,12 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const facts = { ...(lead ? { withoutAPickaxe: lead } : {}), ...(blazesSeen ? { blazesSeen } : {}), height: y, fortressHeights: 'corridors and bridges mostly between y 48 and 75, over the lava sea at y 31; bricks are seen within 128 blocks, and only through open air',
     legsSoFar: state.legs || 0, minutesSearching: state.since ? Math.round((Date.now() - state.since) / 60000) : 0,
     lastLeg: Number.isInteger(state.lastHeading) ? (() => { const seeking = state.legMode === 'descend', h = state.legHistory?.[legKey(state.lastHeading, state.legMode)];
-      return `${seeking ? 'a staircase toward the fortress heights ' : state.legMode === 'floor' ? 'down to the floor and along it ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
+      return `${seeking ? 'a staircase toward the fortress heights ' : state.legMode === 'floor' ? 'down to the floor and along it ' : state.legMode === 'round' ? 'round what stopped the line ' : ''}${HEADING_NAMES[state.lastHeading]}${h ? `, ended no nearer: ${h.ended}` : ''}`; })() : null,
     ...(resting.length ? { legsResting: resting } : {}), ...(blocked.length ? { legsClosed: blocked } : {}),
     seenSoFar: coverage.coverageSays(state, dim, here, FORTRESS_LEG),
     ...(left ? { waysLeft: left } : {}),
     structureRegions: regions.regionFacts(here, landmarks, state, dim), ...portalBackFact(goal, here),
-    blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot, goal), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
+    blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot, goal), pickaxeBudget: budget.legBudgetSays(bot, state), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     // Hurt or hungry, the search's own state does not say what going on
     // costs: it names the height fortresses stand at and the blocks
     // carried, never health, food carried or what fights begun this hurt
@@ -2397,7 +2469,7 @@ async function restockStep(bot, task, goal, save, actions, state) {
 // The leg Jev chose begun from here.
 function beginLeg(state, here) {
   const next = fortressLegTarget(state, here); state.target = { x: next.x, y: next.y, z: next.z }; state.legs++; state.legSince = Date.now();
-  state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError; delete state.legLength;
+  state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) }; state.lastHeading = headingIndex(state); delete state.lastLegError; delete state.legLength; delete state.legShift;
   delete state.legBest; delete state.lastCrossStop;
 }
 // A direction the sweep cannot make ground in for several ticks is given
@@ -3872,7 +3944,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // A leg walked to its end: whatever was left behind may be seen again,
     // and that heading's failure is history.
     if (state.target && !state.rememberedTarget) delete state.leaving;
-    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) { for (const mode of ['level', 'descend', 'floor']) delete state.legHistory[legKey(state.lastHeading, mode)]; }
+    if (state.target && Number.isInteger(state.lastHeading) && state.legHistory) { for (const mode of ['level', 'descend', 'floor', 'round']) delete state.legHistory[legKey(state.lastHeading, mode)]; }
     delete state.rememberedTarget;
     // A leg begun again where the last one began got nowhere, however the
     // step was cut short: mid-83-f began five legs south from one spot in
@@ -3887,6 +3959,23 @@ async function findFortressStep(bot, task, goal, save, actions) {
     beginLeg(state, here);
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();
+  // A leg round what stopped a heading (round_<heading>) steps to the side
+  // first: on foot, else straight across as the crossing goes; then the
+  // leg's own line from there. Whether or not the step gets there, it is
+  // not tried again: the leg's walk then goes as any leg does.
+  if (state.sidestep) {
+    const s0 = state.sidestep, to = new Vec3(s0.x, s0.y, s0.z);
+    delete state.sidestep; save();
+    if (Math.hypot(to.x - here.x, to.z - here.z) > 2) {
+      let reached = false;
+      if (actions.navigate) {
+        try { await actions.navigate(bot, task, new goals.GoalNear(to.x, to.y, to.z, 1), { timeoutMs: 20000, stallMs: 6000, passing: true }); reached = bot.entity.position.distanceTo(to) <= 3; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+      if (!reached) { try { await crossToward(bot, task, goal, save, to, { what: 'the step round what stopped the leg' }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; } }
+      return;
+    }
+  }
   const leg = new Vec3(state.target.x, state.target.y, state.target.z);
   const flat = p => Math.hypot(leg.x - p.x, leg.z - p.z);
   const before = flat(here);

@@ -35,7 +35,7 @@ function coverageOf(text) {
   return { unseen, all, stood: stood ? +stood[1] : null, back };
 }
 const seenShare = c => Number.isFinite(c.unseen) && c.all ? 1 - c.unseen / c.all : null;
-const isLeg = k => /^(leg|floor)_|^widen_search$/.test(k || '');
+const isLeg = k => /^(leg|floor|round)_|^widen_search$/.test(k || '');
 
 async function main() {
   const tsOf = f => { const m = f.match(/-Jev-(\d{4}-\d\d-\d\dT\d\d)-(\d\d)-(\d\d)/); return m ? new Date(`${m[1]}:${m[2]}:${m[3]}Z`).getTime() : 0; };

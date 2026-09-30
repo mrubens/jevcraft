@@ -99,4 +99,12 @@ function regionFacts(here, landmarks, state, dim) {
   return { rule: RULE, standingIn: regionSays(r, k, state, dim), ...(others.length ? { otherRegionsKnown: others } : {}) };
 }
 
-module.exports = { REGION, STARTS, regionOf, bounds, owners, known, seenShare, regionSays, headingRegion, headingRegionSays, regionFacts, RULE };
+// Where no fortress begins, from what is known: a point in a region settled
+// as holding a bastion (note 751). Null where none is known.
+function barrenAt(landmarks = []) {
+  const bastions = known(landmarks).settled.filter(e => e.kind === 'bastion').map(e => e.region);
+  if (!bastions.length) return null;
+  return (x, z) => { const r = regionOf(x, z); return bastions.some(b => sameRegion(b, r)); };
+}
+
+module.exports = { barrenAt, REGION, STARTS, regionOf, bounds, owners, known, seenShare, regionSays, headingRegion, headingRegionSays, regionFacts, RULE };

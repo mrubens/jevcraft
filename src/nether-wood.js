@@ -65,7 +65,9 @@ function woodCarried(bot) {
 function woodWanted(bot) {
   const picked = items(bot).some(i => /_pickaxe$/.test(i.name));
   const picks = (picked ? 0 : 1) + 1;
-  const iron = Math.floor(sum(bot, /^iron_ingot$/) / 3), stone = Math.floor(sum(bot, /^(cobblestone|cobbled_deepslate|blackstone)$/) / 3);
+  // Raw iron smelted in a furnace carried is an iron head (note 751).
+  const ingotHeads = Math.floor(sum(bot, /^iron_ingot$/) / 3);
+  const iron = Math.floor((sum(bot, /^iron_ingot$/) + require('./pickaxe-budget').smeltableIron(bot).ingots) / 3), stone = Math.floor(sum(bot, /^(cobblestone|cobbled_deepslate|blackstone)$/) / 3);
   const heads = [...Array(iron).fill('iron'), ...Array(stone).fill('stone')].slice(0, picks);
   while (heads.length < picks) heads.push('wooden');
   const carried = woodCarried(bot);
@@ -75,7 +77,7 @@ function woodWanted(bot) {
   const tablePlanks = carried.table ? 0 : TABLE;
   const want = tablePlanks + stickPlanks + headPlanks;
   const short = Math.max(0, want - carried.planks);
-  const named = heads.map((h, i) => `${i === 0 && !picked ? 'the pickaxe to make now' : 'a spare'} (${h === 'iron' ? 'iron, from the ingots carried' : h === 'stone' ? 'stone, from the cobblestone or blackstone carried' : 'wooden, its head three planks'})`);
+  const named = heads.map((h, i) => `${i === 0 && !picked ? 'the pickaxe to make now' : 'a spare'} (${h === 'iron' ? (i < ingotHeads ? 'iron, from the ingots carried' : 'iron, from the raw iron carried, smelted in the furnace carried') : h === 'stone' ? 'stone, from the cobblestone or blackstone carried' : 'wooden, its head three planks'})`);
   const parts = [tablePlanks && `a crafting table (${TABLE} planks)`, stickPlanks && `the sticks for ${plural(picks, 'pickaxe')} (${STICKS_PER_PICK * picks} sticks, ${carried.sticks ? `${carried.sticks} carried, ` : ''}${stickPlanks} planks)`,
     headPlanks && `${headPlanks / HEAD === 1 ? 'a wooden head' : `${headPlanks / HEAD} wooden heads`} (${headPlanks} planks)`].filter(Boolean);
   return { picked, picks, heads, carried, want, short, stems: Math.ceil(short / 4),

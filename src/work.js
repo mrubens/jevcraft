@@ -205,7 +205,9 @@ function looseEnds(goal, now = Date.now()) {
 // (Survival.report), which falls through to its next answer; nothing more
 // is needed here.
 const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No path to the goal|No reachable surveyed ground/i.test(errors.filter(Boolean).join(' '));
-const thingOf = key => key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ');
+// A key with no thing named in it ("rung:none") is the work in hand: said
+// "Keep at the none" to 25591 on its islet (critic 11:36Z item 1, note 751).
+const thingOf = key => { const t = key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ').trim(); return !t || /^none\b/.test(t) ? 'work in hand' : t; };
 // The rung's own question (note 571): its budget ran ten minutes with no
 // new best (tried.js watchRung), or a way below had nothing left to try and
 // escalated to it. Asked as the stall's question is, with the rung's best,
@@ -958,7 +960,7 @@ async function upkeepOffers(bot, task, goal, save) {
   const wear = require('./pickaxe-budget');
   if (worn.length && goal.kind === 'win') wear.wearOf(bot, goal);
   const netherSpare = inNetherNow(bot) && goal.kind === 'win' && bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0) === 1 && reserveWeather(bot) && !spareDue(bot, budget) ? require('./mob-hunt').bestMakeable(bot) : null;
-  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), a few seconds at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}`; },
+  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), ${netherSpare.smelted ? 'about half a minute with the smelting' : 'a few seconds'} at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}`; },
     run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`);
       goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: netherSpare.item || 'pickaxe' }].slice(-10); save(); } };
   else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };

@@ -221,6 +221,7 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
     out.cells++; here = next;
   }
   out.seconds = Math.round(seconds);
+  out.end = { x: here.x, y: here.y, z: here.z };
   return out;
 }
 

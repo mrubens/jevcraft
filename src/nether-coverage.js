@@ -177,15 +177,23 @@ function lineOpen(bot, here, [dx, dz], length) {
   } catch (_) { return null; }
   return out;
 }
-function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REVEAL, bot = null } = {}) {
+function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REVEAL, bot = null, barren = null } = {}) {
   const [dx, dz] = heading;
   const cov = coverageOf(state, dim);
   const open = bot ? lineOpen(bot, here, heading, length) : null;
+  // Whether a cell of the line has been stood on (within a block of it).
+  const stoodAt = n => { const lx = here.x + dx * n, lz = here.z + dz * n; return [-1, 0, 1].some(o => has(cov.stood, Math.floor((lx + dz * o) / CELL), Math.floor((lz + dx * o) / CELL))); };
   // Open cells of the line up to each point, to ask whether any lies
   // within `reveal` of a column. The first blocks of the line see what the
   // bot sees from here, already looked at: only the open air past them
-  // counts.
-  const upTo = open && Array.from(open).reduce((acc, v, i) => { acc.push((acc[i - 1] || 0) + (i >= NEAR ? v : 0)); return acc; }, []);
+  // counts. Nor does open air already stood on: the looks from there were
+  // taken as it was walked, and what they did not reach stays unseen from
+  // there. 25593 (mid-242-xd, 11:12:33Z on 2026-09-30) was told of the leg
+  // back over the 67 blocks it had just walked "about 82 of them lie beside
+  // the 60 blocks of its line in open air", chose it, and saw 11 new columns
+  // in fifteen minutes (note 751).
+  const upTo = open && Array.from(open).reduce((acc, v, i) => { acc.push((acc[i - 1] || 0) + (i >= NEAR && v && !stoodAt(i) ? 1 : 0)); return acc; }, []);
+  const openAll = open ? Array.from(open).reduce((n, v, i) => n + (i >= NEAR ? v : 0), 0) : null;
   const inView = (along, across) => {
     if (!upTo) return true;
     const w = Math.sqrt(Math.max(0, reveal * reveal - across * across));
@@ -193,7 +201,9 @@ function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REV
     return hi >= lo && upTo[hi] - upTo[lo - 1] > 0;
   };
   const hx = Math.floor(here.x / CELL), hz = Math.floor(here.z / CELL), r = Math.ceil((length + reveal) / CELL);
-  let cells = 0, unseen = 0, unseenInView = 0;
+  // `barren` (x, z) says where no fortress begins (a region holding a
+  // bastion: nether-regions.js); unseen ground there is counted apart.
+  let cells = 0, unseen = 0, unseenInView = 0, barrenInView = 0;
   for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) {
     const x = (hx + i + 0.5) * CELL - here.x, z = (hz + j + 0.5) * CELL - here.z;
     const along = x * dx + z * dz, across = Math.abs(x * dz - z * dx);
@@ -202,7 +212,7 @@ function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REV
     cells++;
     if (has(cov.seen, hx + i, hz + j)) continue;
     unseen++;
-    if (inView(along, across)) unseenInView++;
+    if (inView(along, across)) { unseenInView++; if (barren && barren((hx + i + 0.5) * CELL, (hz + j + 0.5) * CELL)) barrenInView++; }
   }
   // Stood on within a block to either side of the line: a span walked
   // runs a block off the line from its far end as often as not, and read
@@ -215,7 +225,7 @@ function headingCoverage(state, dim, here, heading, { length = LEG, reveal = REV
     if ([-1, 0, 1].some(o => has(cov.stood, Math.floor((lx + dz * o) / CELL), Math.floor((lz + dx * o) / CELL)))) stood++;
     if (has(cov.seen, cx, cz)) seenLine++;
   }
-  return { cells, unseen, unseenInView: upTo ? unseenInView : null, openCells: upTo ? upTo[length] : null, stood, seenLine, length, reveal };
+  return { cells, unseen, unseenInView: upTo ? unseenInView : null, barrenInView, openCells: upTo ? upTo[length] : null, openAll, stood, seenLine, length, reveal };
 }
 const chunks = cells => Math.round(cells / 16);
 // What a leg is for, said first and short: the new ground it looks over.
@@ -229,12 +239,16 @@ function headingSays(h, name) {
   if (!h.cells) return '';
   const all = chunks(h.cells), un = chunks(h.unseen);
   const pct = Math.round(h.unseen / h.cells * 100);
-  const view = h.unseenInView === null || !h.unseen || h.unseenInView === h.unseen ? '' :
+  // What it opens: the unseen ground in view from open air on its line not
+  // stood on before (headingCoverage), in columns of 4 by 4 and chunks.
+  const view = h.unseenInView === null || !h.unseen ? '' :
+    !h.openCells && h.openAll ? `; it opens none of it: its ${h.openAll} blocks in open air have all been stood on, the looks from them taken as they were walked, and what they did not reach is behind walls from there` :
     !h.openCells ? `; past its first ${NEAR} blocks the line is rock or lava at this height, so none of it is seen from the leg itself` :
-    `; about ${chunks(h.unseenInView)} of them lie beside the ${h.openCells} blocks of its line in open air`;
+    `; it opens about ${h.unseenInView} new columns of 4 by 4 (${chunks(h.unseenInView)} chunks) to view from the ${h.openCells} blocks of its line in open air not stood on before${h.openAll > h.openCells ? ` (${h.openAll - h.openCells} more in open air were stood on already)` : ''}`;
+  const barren = h.barrenInView && h.openCells ? ` Of what it opens, about ${h.barrenInView} columns lie in a region holding a bastion, where no fortress begins (one begun in a region beside can reach a little way in).` : '';
   const walked = !h.stood ? '' : h.stood * 2 >= h.length ? ` The bot has stood on ${h.stood} of its ${h.length} blocks before: it walks again ground already walked and looked from, and what is unseen that way lies off to its sides and past its end.` :
     ` The bot has stood on ${h.stood} of its ${h.length} blocks before.`;
-  return ` Unseen ahead: about ${un} of ${all} chunks (${pct}%)${pct <= 20 ? ', mostly seen already' : ''}${view}.${walked}`;
+  return ` Unseen ahead: about ${un} of ${all} chunks (${pct}%)${pct <= 20 ? ', mostly seen already' : ''}${view}.${barren}${walked}`;
 }
 // A leg back over the last one, said plainly: how far back that leg began
 // and how much of this one goes over it. `from` is how far off the last

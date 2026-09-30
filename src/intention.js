@@ -29,10 +29,10 @@
 
 // The answers that start an action that takes time, by question.
 const TIMED = {
-  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
+  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|round_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
   fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
-  nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|portal_trip)$/,
+  nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|dig_in_reach|portal_trip)$/,
   nether_food_kit: /^(restock_food|return_for_food)$/,
   leave_nether: /^(go_back|restock_food|heal_first)$/,
   restock_food: /^(hoglin_\w+|cook_meat|mushroom_stew|return_for_food)$/,
@@ -147,7 +147,7 @@ const SAID_MS = 60000;
 // Only the walks: a wait by a spawner, a heal or a cook yields nothing by
 // this measure while it does what it is for.
 const YIELD_MS = 3 * 60000;
-const WALKS = /^(leg_\w+|floor_\w+|back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|walk_route|cross_level|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|go_in|go_back|return_for_\w+|portal_trip|explore|cross_toward|floor_toward|back_to_ground|top_up_food|top_up_food_near)$/;
+const WALKS = /^(leg_\w+|floor_\w+|round_\w+|back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|walk_route|cross_level|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|go_in|go_back|return_for_\w+|portal_trip|explore|cross_toward|floor_toward|back_to_ground|top_up_food|top_up_food_near)$/;
 
 const P = v => v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? { x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z) } : null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);

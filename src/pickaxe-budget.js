@@ -18,6 +18,27 @@ const HEADS = { iron_pickaxe: /^iron_ingot$/, stone_pickaxe: /^(cobblestone|cobb
 // (surface.js climbOptions): the 24 seconds a stair mid-231-r climbed at.
 const HAND_STAIR_SECONDS = 24;
 
+// Raw iron carried is iron ingots wherever a furnace and fuel are carried:
+// a furnace set down smelts three in about thirty seconds, so an iron head
+// (250 uses) is in the pockets, not only the ingots. 25593 (mid-242-xd,
+// 2026-09-30) carried 15 raw iron, two furnaces and 150 coal through two
+// hours of the fortress search and made nineteen wooden pickaxes (59 uses
+// each), fetching stems for them between legs; of 952 Nether minutes with
+// no pickaxe since 2026-09-29 23Z, 485 were with raw iron, a furnace and
+// fuel carried (scripts/search-efficiency.js, note 751).
+const FUEL = /^(coal|charcoal|coal_block|lava_bucket)$/;
+const inNether = bot => /nether/.test(String(bot?.game?.dimension || ''));
+const SMELT_SECONDS = 10;
+function smeltableIron(bot) {
+  const items = bot?.inventory?.items?.() || [];
+  const sum = re => items.filter(i => re.test(i.name)).reduce((n, i) => n + i.count, 0);
+  const raw = sum(/^raw_iron$/), furnace = sum(/^furnace$/) > 0, fuel = items.filter(i => FUEL.test(i.name));
+  if (raw < 3 || !furnace || !fuel.length) return { raw, ingots: 0, furnace, fuel: fuel.map(i => i.name), says: '' };
+  const fuelSaid = words(fuel[0].name);
+  return { raw, ingots: raw, furnace, fuel: fuel.map(i => i.name),
+    says: `${raw} raw iron, smelted in the furnace carried with the ${fuelSaid} carried (about ${SMELT_SECONDS} seconds an ingot)` };
+}
+
 function usesOf(bot, item) {
   const max = bot.registry?.itemsByName?.[item.name]?.maxDurability;
   return max ? max - (item.durabilityUsed || 0) : Infinity;
@@ -34,6 +55,7 @@ function makeable(bot) {
   const plankUnits = planks + logs * 4 - (table ? 0 : 4);
   const stickPairs = plankUnits < 0 ? 0 : Math.floor((sticks + Math.floor(plankUnits / 2) * 4) / 2);
   const heads = Object.fromEntries(Object.entries(HEADS).map(([k, re]) => [k, Math.floor(sum(re) / 3)]));
+  heads.iron_pickaxe = Math.floor((sum(HEADS.iron_pickaxe) + smeltableIron(bot).ingots) / 3);
   const kinds = Object.keys(HEADS).filter(k => heads[k] > 0);
   const count = Math.min(stickPairs, heads.iron_pickaxe + heads.stone_pickaxe);
   // The wood short of the first one, in planks: a table (four) unless one
@@ -150,7 +172,11 @@ function wearSays(bot, goal, now = Date.now()) {
   const rate = w.rate ? `; ${w.spent} used in the last ${mins(Math.max(1, Math.round(w.minutes)))}, at which rate ${w.count === 1 ? 'it lasts' : 'they last'} about ${mins(Math.max(1, Math.round(w.lastsMinutes)))} more` : '';
   const more = spare && !spare.none ? `the pockets make another (${spare.name.replace(/^an? /, '')} from ${spare.from})` : 'no other can be made from the pockets';
   const picks = (bot.inventory.items() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => { const u = usesOf(bot, i); return `${words(i.name)}${Number.isFinite(u) ? `, ${u} uses left` : ''}`; });
-  return `${picks.join('; ')}${w.count === 1 ? ' (the only one carried)' : `, ${w.uses} uses in all`}${rate}; ${more}`;
+  // What the fortress search's legs cost, its own record where it has one,
+  // else the fleet's (note 751).
+  const legs = (goal?.fortressSearch?.legWear || []).filter(Number.isFinite);
+  const legSays = inNether(bot) ? (legs.length ? `; the search's last ${legs.length} leg${legs.length === 1 ? '' : 's'} spent about ${Math.round(legs.reduce((a, b) => a + b, 0) / legs.length)} uses each` : `; a fortress search's leg spends about ${LEG_WEAR_RECORD.perLeg} uses in the record`) : '';
+  return `${picks.join('; ')}${w.count === 1 ? ' (the only one carried)' : `, ${w.uses} uses in all`}${rate}${legSays}; ${more}`;
 }
 // On a way that digs with the last pickaxe, none other to be made: the
 // blocks it digs against the uses left. '' otherwise.
@@ -166,4 +192,45 @@ function lastPickaxeSays(bot, digs) {
   return ` It digs about ${digs} blocks with the one pickaxe carried, ${uses} uses left, no other to be made from the pockets${digs >= uses ? `: it breaks on the way, the rest dug by hand and dropping nothing` : `: ${uses - digs} left after`}.`;
 }
 
-module.exports = { pickaxeBudget, makeable, stepDigs, nearestWood, wearOf, wearSays, lastPickaxeSays, HAND_STAIR_SECONDS };
+// What the fortress search's legs cost the pickaxes, in the record and in
+// this search's own: the uses carried said against them, and what each way
+// to another pickaxe gives (note 751, the reviewer's check-in of 2026-09-30
+// 11:02Z: tools are a budget). Measured over the flight records since
+// 2026-09-29 23Z (scripts/search-efficiency.js): 32,339 uses over 1,263 legs,
+// a mean of 26 a leg (three in four under 23, the rest through rock), 12.9
+// a minute of leg walked; and 153 wooden pickaxes made in the Nether, 66 of
+// them with raw iron, a furnace and fuel carried.
+const LEG_WEAR_RECORD = { perLeg: 26, perMinute: 13, legs: 1263, since: '2026-09-29 23Z' };
+const USES = { wooden_pickaxe: 59, golden_pickaxe: 32, stone_pickaxe: 131, copper_pickaxe: 190, iron_pickaxe: 250, diamond_pickaxe: 1561, netherite_pickaxe: 2031 };
+const usesCarried = bot => (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => { const u = usesOf(bot, i); return n + (Number.isFinite(u) ? u : 0); }, 0);
+// Kept on the search's state at each leg asked: what the last one spent (the
+// uses carried when it began against now; a pickaxe made meanwhile makes it
+// unknown and it is not kept), the last eight.
+function noteLegWear(bot, state) {
+  const now = usesCarried(bot);
+  if (Number.isFinite(state.legUsesFrom) && state.legUsesFrom >= now) {
+    (state.legWear ||= []).push(state.legUsesFrom - now);
+    state.legWear = state.legWear.slice(-8);
+  }
+  state.legUsesFrom = now;
+  return now;
+}
+function legBudgetSays(bot, state = {}) {
+  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  const uses = usesCarried(bot);
+  const own = (state.legWear || []).filter(Number.isFinite);
+  const mean = own.length ? Math.round(own.reduce((a, b) => a + b, 0) / own.length) : null;
+  const perLeg = mean ?? LEG_WEAR_RECORD.perLeg;
+  const carried = picks.length ? `${uses} pickaxe uses carried (${picks.map(i => { const u = usesOf(bot, i); return `${words(i.name)} ${Number.isFinite(u) ? u : '?'}`; }).join(', ')})` : 'No pickaxe carried';
+  const record = own.length ? `this search's last ${own.length} leg${own.length === 1 ? '' : 's'} spent ${own.join(', ')} uses (about ${mean} a leg)` :
+    `the fortress search's legs have spent about ${LEG_WEAR_RECORD.perLeg} uses a leg in the record (${LEG_WEAR_RECORD.perMinute} a minute walked, ${LEG_WEAR_RECORD.legs} legs since ${LEG_WEAR_RECORD.since})`;
+  const lasts = picks.length ? (perLeg > 0 ? `: at that the uses carried last about ${Math.max(0, Math.round(uses / perLeg * 10) / 10)} leg${uses / perLeg === 1 ? '' : 's'}` : ': the legs lately dug nothing') : '';
+  let spare = null;
+  try { spare = require('./mob-hunt').bestMakeable(bot); } catch (_) { spare = null; }
+  const next = spare && !spare.none && spare.item ? ` The pockets make ${spare.name} next (${spare.from}), about ${USES[spare.item] || '?'} uses.` : spare?.short ? ` None can be made from the pockets: short of ${spare.short.planks} plank${spare.short.planks === 1 ? '' : 's'} for ${spare.short.for || 'it'}, then ${spare.short.then}.` : '';
+  const iron = smeltableIron(bot), ingots = (bot?.inventory?.items?.() || []).filter(i => i.name === 'iron_ingot').reduce((n, i) => n + i.count, 0);
+  const ironSays = ingots + iron.ingots >= 3 ? ` Iron for ${Math.floor((ingots + iron.ingots) / 3)} iron pickaxe${Math.floor((ingots + iron.ingots) / 3) === 1 ? '' : 's'} is carried (${[ingots && `${ingots} ingots`, iron.ingots && iron.says].filter(Boolean).join(', ')}), 250 uses each against 59 for a wooden one; each wants two sticks (a plank's worth).` : '';
+  return `${carried}; ${record}${lasts}.${next}${ironSays}`;
+}
+
+module.exports = { LEG_WEAR_RECORD, USES, usesCarried, noteLegWear, legBudgetSays, smeltableIron, SMELT_SECONDS, pickaxeBudget, makeable, stepDigs, nearestWood, wearOf, wearSays, lastPickaxeSays, HAND_STAIR_SECONDS };

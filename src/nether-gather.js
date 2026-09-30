@@ -60,6 +60,16 @@ const PART_WAY = 8;
 const WAY_REST_MS = 5 * 60000;
 // The wood within reach: looked for within this, walked to within this.
 const WOOD_REACH = 24, WOOD_WALK = 32, WOOD_MOST = 16;
+// The most of a resource dug in reach in one go (dig_in_reach).
+const IN_REACH_MOST = 32;
+const ago = at => { const sec = Math.max(1, Math.round((Date.now() - at) / 1000)); return sec < 90 ? `${sec} second${sec === 1 ? '' : 's'}` : `${Math.round(sec / 60)} minutes`; };
+// Whether the tools carried make a block drop what it is dug for: a block
+// with harvest tools drops only to one of them.
+function dropsWith(bot, name) {
+  const b = bot.registry?.blocksByName?.[name];
+  if (!b?.harvestTools) return true;
+  return (bot.inventory?.items?.() || []).some(i => b.harvestTools[i.type] || b.harvestTools[bot.registry?.itemsByName?.[i.name]?.id]);
+}
 // A leg of the search where nothing is known: its length.
 const LEG = 64, LEG_FIRST = 4;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
@@ -437,6 +447,33 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     else if (Object.keys(found.unreachable).length) facts.woodOutOfReach = `within ${WOOD_REACH} blocks but not to be dug from ground walked to from here: ${talliedSays(found.unreachable)}`;
   }
 
+  // Any other resource within reach, dug where it lies: a fetch walked to the
+  // block and never dug what was already in reach. 25591 (mid-244-eg,
+  // 11:16 to 11:37Z on 2026-09-30) stood on a two-block islet in the lava
+  // sea with two wooden pickaxes, netherrack 3 blocks west, and was told "No
+  // way to netherrack from here ... the pathfinder's route there is 0 steps
+  // ... came no nearer; it rests" for twenty minutes; db66b8a6 dug in reach
+  // for span blocks only (note 751). Offered where the tools carried make
+  // the block drop.
+  if (!wood && mineAt) {
+    const found = spanBlockSources(bot, { reach: WOOD_REACH, walk: WOOD_WALK, names: names.filter(n => dropsWith(bot, n)), skip: p => isSetAside(goal, 'reach', p) });
+    const countOf = b => (b.inventory?.items?.() || []).filter(i => names.includes(i.name) || i.name === resource).reduce((n, i) => n + i.count, 0);
+    if (found.sources.length) {
+      const first = found.sources[0], most = Math.min(found.sources.length, IN_REACH_MOST);
+      options.dig_in_reach = { description: `Dig the ${words(resource)} within reach here: ${talliedSays(found.reachable)}, the nearest ${Math.round(first.p.distanceTo(here))} blocks off at ${at3(first.p)}, dug from ${first.walk ? `a walk of ${plural(first.walk, 'block')}` : 'where the bot stands'}, up to ${most} one after another, with the ${(bot.inventory?.items?.() || []).find(i => /_pickaxe$/.test(i.name))?.name.replaceAll('_', ' ') || 'hand'}. ${plural(countOf(bot), words(resource))} carried now.${Object.keys(found.unreachable).length ? ` Within ${WOOD_REACH} blocks but not to be dug from ground walked to from here: ${talliedSays(found.unreachable)}.` : ''}`,
+        run: async () => {
+          goal.step = { action: 'nether_gather', way: 'dig_in_reach', what: talliedSays(found.reachable) }; save();
+          const done = await gatherSpanBlocks(bot, task, countOf(bot) + most, { navigate, reach: WOOD_REACH, walk: WOOD_WALK, names: names.filter(n => dropsWith(bot, n)), carried: countOf, what: words(resource),
+            skip: p => isSetAside(goal, 'reach', p), mineAt: x => mineAt(x.p, x.name) });
+          if (!done.gained) {
+            const why = `The ${words(resource)} within reach gave nothing${done.why ? `: ${done.why}` : ''}`;
+            for (const x of found.sources) setAside(goal, 'reach', x.p, why, WAY_REST_MS);
+            save(); throw new Error(why);
+          }
+        } };
+    } else if (Object.keys(found.unreachable).length) facts.outOfReach = `within ${WOOD_REACH} blocks but not to be dug from ground walked to from here: ${talliedSays(found.unreachable)}`;
+  }
+
   // Each place it is known, and the ways there. A crossing is not offered
   // while the span's own check refuses it (bridging.js spanRefused): said.
   const refused = require('./bridging').spanRefused(bot);
@@ -525,7 +562,16 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const seen = coverage.headingCoverage(state, dim, here, h, { length: LEG, bot });
     const unseen = seen.cells ? ` Of the ground within ${seen.reveal} blocks of its line, about ${Math.round(seen.unseen / 16)} of ${Math.round(seen.cells / 16)} chunks are unseen (no line from the eyes has reached it through open air).${seen.stood ? ` The bot has stood on ${seen.stood} of its ${LEG} blocks before.` : ''}` : '';
     const forestSays = !wood ? '' : forests.length ? ` The Nether forests that way at this height, as far as loaded: ${forests.map(s => `${words(s.biome)} from ${s.from} to ${s.to} blocks`).join(', ')}.` : ' No Nether forest lies that way at this height as far as loaded.';
-    options[`leg_${name}`] = { description: `Search ${name}: ${travel.legSays(survey, { direction: name, length: LEG, y: Math.round(here.y) })} Walked by the pathfinder first, then straight across where the walk gives out.${forestSays}${unseen}`,
+    // A leg that ended short this way lately, once is enough to say, and
+    // the leg that came here from there: 25595 (mid-242-ya, 11:35Z on
+    // 2026-09-30) went leg_east, leg_west, leg_east, leg_west between x 562
+    // and 579 at 8 health with no pickaxe and no block, each ending at the
+    // same netherrack with lava behind it, the legs saying nothing of it
+    // (note 751).
+    const lastEnd = (goal.gatherEnds || []).filter(e => e.key === `leg_${name}` && Date.now() - e.at < END_WINDOW_MS && aheadOn(here, h, LEG)(e)).at(-1);
+    const cameFrom = (goal.gatherEnds || []).filter(e => e.key === `leg_${HEADING_NAMES[(i + 2) % 4]}` && Date.now() - e.at < END_WINDOW_MS && nearEnd(e, here)).at(-1);
+    const walkedSays = `${lastEnd ? ` The last leg ${name} ended ${ago(lastEnd.at)} ago at ${at3(lastEnd)}, ${Math.round(flat(lastEnd, here))} blocks ahead${lastEnd.why ? ` (${lastEnd.why})` : ''}: walked again from here it meets the same, having searched nothing new up to there.` : ''}${cameFrom ? ` The bot came here ${ago(cameFrom.at)} ago on a leg ${HEADING_NAMES[(i + 2) % 4]} that ended here${cameFrom.why ? ` (${cameFrom.why})` : ''}: this one goes back over it.` : ''}`;
+    options[`leg_${name}`] = { description: `Search ${name}: ${travel.legSays(survey, { direction: name, length: LEG, y: Math.round(here.y) })} Walked by the pathfinder first, then straight across where the walk gives out.${walkedSays}${forestSays}${unseen}`,
       run: async () => {
         const target = here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), before = flat(target, bot.entity.position);
         goal.step = { action: 'nether_gather', way: `leg_${name}`, what: words(resource), target: { x: target.x, y: target.y, z: target.z } }; save();
@@ -556,6 +602,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   if (!Object.keys(options).length) throw new Error(`No way to ${words(resource)} from here: ${[...(Array.isArray(facts.knownPlaces) ? facts.knownPlaces : [facts.knownPlaces]), ...notOffered, facts.portal, ...legsClosed, facts.without].filter(Boolean).join('; ')}`.slice(0, 600));
 
   facts.blocksCarried = blocksCarried(bot);
+  // No pickaxe and no block: said plainly as what the ways here can and
+  // cannot do (note 751, 25595 at 8 health pacing between two walls).
+  if (!facts.blocksCarried && !(bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name))) facts.withNeither = 'No pickaxe and no block carried: rock dug by hand drops nothing and no gap or lava can be spanned, so from here the bot goes only where the ground is walkable; a way that needs a block laid or rock kept ends where the walkable ground does.';
   facts.pickaxe = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => words(i.name)).join(', ') || 'none: rock is dug by hand, slowly, and netherrack dug by hand drops nothing';
   if (forItem) facts.for = words(forItem);
   facts.health = bot.health; facts.food = bot.food;
