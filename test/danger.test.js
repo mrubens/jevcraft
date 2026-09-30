@@ -227,9 +227,12 @@ test('a held stance keeps a ghast it was chosen against out to its sixty-four, a
   const registry = require('minecraft-data')('26.1');
   const ghast = { id: 21, name: 'ghast', type: 'hostile', position: new Vec3(38.5, 70, 0.5), height: 4, width: 4, isValid: true };
   const zombie = { id: 11, name: 'zombie', type: 'hostile', position: new Vec3(0.5, 64, 30.5), height: 1.95, width: 0.6, isValid: true };
-  // Rock everywhere but the bot's cell: nothing in sight.
+  // An open pocket round the bot, rock beyond it: nothing in sight, but
+  // not a box shut all round (note 741's stanceMobs check reads the
+  // cells at the feet and head, not a wall of terrain far off).
   const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 64, 0.5) }, registry, health: 15.3, food: 16, time: { timeOfDay: 6000 },
-    world: { raycast: from => ({ position: from.floored(), intersect: from }) }, blockAt: p => ({ position: p, name: 'netherrack', boundingBox: 'block' }),
+    world: { raycast: from => ({ position: from.floored(), intersect: from }) },
+    blockAt: p => ({ position: p, name: p.distanceTo(new Vec3(0.5, 64, 0.5)) < 3 ? 'air' : 'netherrack', boundingBox: p.distanceTo(new Vec3(0.5, 64, 0.5)) < 3 ? 'empty' : 'block' }),
     entities: { 21: ghast, 11: zombie }, inventory: { items: () => [], slots: [] } };
   assert.equal(stanceReach(ghast), 64);
   assert.equal(stanceReach({ name: 'blaze' }), 48);

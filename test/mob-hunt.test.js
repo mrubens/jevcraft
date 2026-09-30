@@ -1301,6 +1301,35 @@ test('after six empty patrols the sweep leaves along the fortress, and the secti
   assert(!goal.step.found);
 });
 
+test('defer at a known spawner does not send the hunt off to an old sighting instead (note 740)', async () => {
+  // 25590 (mid-242-xb) chose defer against a blaze at its own cage, and the
+  // only candidate set aside, the hunt's own fallback (rememberedSpot)
+  // picked a sighting from earlier in the trial, 35 blocks off, and walked
+  // there ("return_to_blazes"), abandoning the spawner it still owed a rod
+  // to; a newcomer blaze then preempted the walk and the search fell into
+  // find_fortress. The spawner at hand is the work: with it known and rods
+  // still owed, the hunt goes back to it, not an old memory.
+  const { bot, goal, task } = fixture('blaze');
+  const cage = new Vec3(3, 64, 0);
+  goal.fortressSearch = { axis: 1, legs: 0, map: { spawners: [{ x: cage.x, y: cage.y, z: cage.z }] } };
+  const blockAt = bot.blockAt;
+  bot.blockAt = p => (p.x === cage.x && p.y === cage.y && p.z === cage.z) ? { name: 'spawner', position: p, boundingBox: 'block' } : blockAt(p);
+  // The only blaze about is the one defer just set aside (isSetAside on
+  // 'hunt_target' is exactly how huntObserved's own defer leaves it).
+  const { setAside } = require('../src/progress');
+  setAside(goal, 'hunt_target', bot.entities[7].uuid || bot.entities[7].id, 'Jev chose to leave it for now', 120000);
+  // An old, busier sighting far off: rememberedSpot picks this over
+  // anything within 12 blocks of the bot, which is exactly the cage's own
+  // distance here.
+  goal.mobHunt.sightings = [{ x: 40, y: 64, z: 40, dimension: 'the_nether', at: Date.now() - 60000, seen: 6, inSight: 6 }];
+  const navigated = [];
+  const actions = { navigate: async (_b, _t, g) => { navigated.push(g); }, tunnel: async () => { navigated.push('tunnel'); } };
+  await prepareMobHunt(bot, task, { entity: 'blaze', item: 'blaze_rod', count: 1 }, goal, () => {}, actions);
+  assert.notEqual(goal.step.action, 'return_to_blazes', 'not a walk toward the old sighting while a known spawner is at hand');
+  assert.equal(goal.step.action, 'at_spawner', 'the spawner still owed a rod is the work');
+  assert.deepEqual(navigated, [], 'no walk off toward the old sighting');
+});
+
 test('blaze sightings are remembered by place and the hunt walks back to the busiest one', () => {
   const { rememberSighting, rememberedSpot } = require('../src/mob-hunt');
   const { Vec3 } = require('vec3');

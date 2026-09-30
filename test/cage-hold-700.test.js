@@ -73,6 +73,7 @@ test('the stall at the cage offers a slit toward it through the bot\'s own roof 
   const answers = ch.stallAnswers(bot, { check() {} }, goal, () => {}, ch.cageFight(bot, goal), { dig: async (b, t, p) => { dug.push(`${p}`); } });
   assert.deepEqual(Object.keys(answers), ['open_slit', 'stay_and_fight']);
   assert.match(answers.open_slit.description, /^Open a slit toward the cage: dig the block on the line from the eyes to it \(the netherrack at \(-203, 55, -152\), laid by the bot at 22:50Z\), then stay a minute and fight what comes into that line\./);
+  assert.doesNotMatch(answers.open_slit.description, /spawn range/, '5 blocks off: outside the four-block spawn range');
   assert.match(answers.stay_and_fight.description, /^Stay here, 5 blocks from the cage, a minute and fight what comes\. No try of the spawner's has been seen since the bot came near, so the next can come any moment up to 40 seconds from now\. .*7 rods still needed\.$/);
   assert.equal(stillness.stepWait(bot, goal), null, 'nothing chosen yet');
   await answers.open_slit.run();
@@ -224,4 +225,35 @@ test('the heal box says a blaze standing in its cells: no block goes in there, a
   const inside = blazeAt(4, new Vec3(beside.x + 0.5, beside.y, beside.z + 0.5));
   const site = T.healSite(bot, [...far, inside]);
   assert.equal(site.inCells, 1);
+});
+
+test('defer says this cage\'s own record, not only an arena row from elsewhere (note 740, the coordinator\'s 25585: 16 blazes in sword reach, defer priced from "1 killed, 21 damage" with nothing said of 32 minutes of nothing at this cage)', async () => {
+  const { huntObserved } = require('../src/mob-hunt');
+  const { bot } = cageBot({ mobs: [['blaze', new Vec3(-205.5, 55, -148.5)]] });
+  bot.oxygenLevel = 20;
+  bot.pathfinder = { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] }, setGoal: () => {}, getPathTo: () => ({ status: 'success', path: [] }) };
+  bot.clearControlStates = () => {}; bot.lookAt = async () => {}; bot.activateItem = () => {}; bot.deactivateItem = () => {};
+  bot.equip = async () => {}; bot.attack = () => {};
+  const goal = rodsGoal();
+  // Held at this cage 32 minutes already, nothing gained: cage-yield's own
+  // record, seeded as it would be by that long a stay.
+  goal.cageYield = { cage: { x: -204, y: 57, z: -150 }, since: Date.now() - 32 * 60000, lastAt: Date.now() - 1000,
+    kills: 0, rods: 0, lost: 0, spent: 0, health: 20, yieldAt: Date.now() - 32 * 60000, lastKills: 0, lastRods: 0 };
+  let asked = null;
+  const client = { systemOne: async req => { asked = req.questions.branch_0.criteria; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
+  await huntObserved(bot, { check() {} }, goal, () => {}, { navigate: async () => {} }, client);
+  assert(asked, 'asked');
+  assert.match(asked.defer, /At this cage 32 minutes so far: 0 blazes killed, 0 rods, 0 health lost\./);
+});
+
+test('open_slit inside the spawner\'s own spawn range says a blaze can spawn already at the wall behind it (note 740)', () => {
+  const ch = require('../src/cage-hold');
+  const { bot } = cageBot({ mobs: [['blaze', new Vec3(-205.5, 55, -148.5)]] });
+  const goal = rodsGoal({ step: { action: 'stalk_mob', entity: 'blaze' } });
+  const fight = ch.cageFight(bot, goal);
+  const dug = [];
+  const close = ch.slitOption(bot, { check() {} }, goal, () => {}, { ...fight, off: 3 }, { dig: async (b, t, p) => { dug.push(`${p}`); } });
+  assert.match(close.description, /It is inside the spawner's own spawn range \(up to four blocks across\): a blaze can spawn already at the wall behind the slit, not only come into the line dug through it\./);
+  const far = ch.slitOption(bot, { check() {} }, goal, () => {}, { ...fight, off: 6 }, { dig: async () => {} });
+  assert.doesNotMatch(far.description, /spawn range/);
 });

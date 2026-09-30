@@ -682,7 +682,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // and left them four times (note 557).
   const blazesInSight = state.entity === 'blaze' ? threats(bot, 24).filter(t => t.entity.name === 'blaze') : [];
   if (blazesInSight.length && !isSetAside(goal, 'hunt_stand', 'blaze')) {
-    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed, of: rodsOf });
+    const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed, of: rodsOf, goal });
     for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, ...(o.expects ? { expects: o.expects } : {}), run: async () => {
       try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, { ...o, key }, { item: state.item, want: countOf(bot, state.item) + 1 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
@@ -720,11 +720,28 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // blazes stay, and so does their fire (blaze-stand.js MEASURED).
   const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
   const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.${capNow ? ` ${capNow}` : ''}${deferStreakSays}` : '';
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  // Where the work goes next: at a known spawner still owed rods, it stays
+  // there (the spawner is the work), not a silent switch to searching for
+  // another fortress (note 740). 25590 chose defer at its own cage with a
+  // rod still owed and, its only candidate set aside, walked 35 blocks
+  // toward an old sighting from earlier in the trial, then into a fortress
+  // search, without this ever being said or chosen.
+  const deferNext = liveCage ? ` Left, the work stays at this spawner: it is still owed and known, so the next turn asks it again, not a search for another.`
+    : rodsNeed ? ` Left, the work goes to find another blaze or a fortress to make one: none is known this close.` : '';
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${deferNext} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
   } };
+  // What the stay at this cage has itself come to (kills, rods, health lost
+  // since the bot came near), said on defer and on every hold beside it
+  // (cage-yield.js HOLDS, note 702): defer's own arena row (a fight begun
+  // elsewhere, at some other health) can read as safe on its own, and this
+  // cage's own record is the fact that says whether staying here has
+  // actually been (note 740, the coordinator's 25585: 16 blazes in sword
+  // reach, defer answered twice against a row of "1 killed, 21 damage" with
+  // nothing said of this cage's own 32 minutes of nothing).
+  if (state.entity === 'blaze') { try { require('./cage-yield').annotate(bot, goal, tree); } catch (_) { /* no cage */ } }
   const snapshot = { request: goal.request, resource: state.item, need: huntTarget(bot, goal) - countOf(bot, state.item),
     ...(state.entity === 'blaze' && ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal) } : {}),
     ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot), blazeCounts: (() => { try { return require('./blaze-record').entryFacts(bot, { cage: require('./blaze-stand').spawnerAt(bot) }).says; } catch (_) { return undefined; } })() } : {}),
@@ -1192,7 +1209,16 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // keeps its room full. After a death the bot swept from the portal as if
   // it had never been there. Head back to the freshest sighting first.
   // Not while a walk to a spawner Jev chose is under way (note 686).
-  const spot = !goal.fortressSearch?.spawnerWait?.go && rememberedSpot(state, bot);
+  //
+  // Not while the bot is at a known spawner still owed rods, either (note
+  // 740): rememberedSpot explicitly skips a sighting within 12 blocks of
+  // here, so a hunt_target defer that set the cage's only blaze aside found
+  // no `near` candidate and this then picked an old, far-off sighting to
+  // walk toward instead of the cage the bot was standing at. The spawner at
+  // hand is the work; findFortressStep below already returns to it
+  // (cage-hold.js cageFight) when the bot is this close.
+  const atKnownSpawner = state.entity === 'blaze' ? (() => { try { return require('./cage-hold').cageFight(bot, goal); } catch (_) { return null; } })() : null;
+  const spot = !goal.fortressSearch?.spawnerWait?.go && !atKnownSpawner && rememberedSpot(state, bot);
   if (spot && actions.navigate) {
     spot.triedAt = Date.now(); spot.tries = (spot.tries || 0) + 1; save();
     goal.step = { action: 'return_to_blazes', target: { x: spot.x, y: spot.y, z: spot.z }, seen: spot.seen }; save();

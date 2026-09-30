@@ -168,7 +168,14 @@ function slitOption(bot, task, goal, save, fight, { dig, about = null } = {}) {
     const l = T.spawnLine(bot, bot.entity.position.floored(), fight.cage, { open: slit.cells.map(x => x.cell) });
     then = ` Then it sees ${T.lineWords(l)}.`;
   } catch (_) { then = ''; }
-  return { description: `Open a slit toward the cage: dig ${slit.cells.length === 1 ? 'the block' : `the ${slit.cells.length} blocks`} on the line from the eyes to it (${slit.says}), then stay a minute and fight what comes into that line.${then}${about}`,
+  // Inside the spawner's own spawn range (blaze-tactics.js BOX_NEAR, note
+  // 740) a blaze can spawn already at the wall the slit is dug through, not
+  // only come into the line once it is open: said, since the slit does not
+  // move the bot to a cell picked for that, only opens where it already
+  // stands.
+  const inRange = (() => { try { return fight.off <= require('./blaze-tactics').SPAWN_RANGE; } catch (_) { return false; } })();
+  const rangeSays = inRange ? ' It is inside the spawner\'s own spawn range (up to four blocks across): a blaze can spawn already at the wall behind the slit, not only come into the line dug through it.' : '';
+  return { description: `Open a slit toward the cage: dig ${slit.cells.length === 1 ? 'the block' : `the ${slit.cells.length} blocks`} on the line from the eyes to it (${slit.says}), then stay a minute and fight what comes into that line.${then}${rangeSays}${about}`,
     run: async () => {
       bot.chat?.(`Opening a slit toward the spawner and staying to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`);
       for (const x of slit.cells) { task.check(); await dig(bot, task, x.cell, { requireDrops: false }); }

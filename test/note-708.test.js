@@ -57,7 +57,7 @@ test('the box 25591 held sees none of the cells round the cage where the spawner
   const here = T.standLine(bot, IN_BOX.floored(), CAGE);
   assert.equal(here.per100, 0);
   assert.equal(T.lineWords(here), 'where fewer than 1 in 100 of the spawner\'s blazes come');
-  assert.equal(T.windowSays({ cells: 0, of: 83, per100: 0 }), ' Its window sees none of where the spawner\'s blazes come: it holds for none of them.');
+  assert.equal(T.windowSays({ cells: 0, of: 83, per100: 0 }), ' Its window sees none of where the spawner\'s blazes come: it gains no rod this way, none of the spawner\'s blazes ever crossing it.');
 });
 
 test('empty_spawner at 25591\'s box: where the bot stands is said against where the blazes come, the box with no line is not held "for its next blazes", and a slit toward the cage is offered with what it then sees', async () => {
@@ -67,7 +67,7 @@ test('empty_spawner at 25591\'s box: where the bot stands is said against where 
   assert.equal(done, true);
   const { state, options } = client.asked[0];
   assert.equal(state.lineHere, 'From here, 6 blocks from the cage, it sees where fewer than 1 in 100 of the spawner\'s blazes come; the blaze within 16 out of sight.');
-  assert.match(options.box_here, /^Where the bot stands, 6\.4 blocks from the cage: wall it in, \d+ blocks? of the 64 carried, one open at head height toward the spawner, and hold it\. Its window sees none of where the spawner's blazes come: it holds for none of them\./);
+  assert.match(options.box_here, /^Where the bot stands, 6\.4 blocks from the cage: wall it in, \d+ blocks? of the 64 carried, one open at head height toward the spawner, and hold it\. Its window sees none of where the spawner's blazes come: it gains no rod this way, none of the spawner's blazes ever crossing it\./);
   assert.doesNotMatch(options.box_here, /for its next blazes/);
   assert.match(options.box_at_spawner, /hold it for its next blazes: only a blaze in line with the window sees in, from the front\. Its window sees where about \d+ in 100 of the spawner's blazes come\./);
   assert.match(options.open_slit, /^Open a slit toward the cage: dig the 2 blocks on the line from the eyes to it \(the nether brick fence at \(-105, 78, 152\); the nether brick fence at \(-106, 78, 152\)\), then stay a minute and fight what comes into that line\. Then it sees where fewer than 1 in 100 of the spawner's blazes come\./);

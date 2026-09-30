@@ -610,7 +610,17 @@ function stanceMobs(bot, now = Date.now()) {
   if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
   if (s.hold?.extended ? now >= s.hold.until : now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
   if ((bot.health ?? 0) <= s.health - STANCE_HEALTH) return [];
-  return threats(bot, 64).filter(t => s.ids.includes(t.entity.id) && t.distance <= stanceReach(t.entity) && !combatTarget(bot, t.entity)).map(t => ({ ...t, stance: s.choice }));
+  // Every side closed at the feet or the head (unstuck.js walledOf): a box
+  // shut all round, not a mob stepping out of sight for a tick mid-fight
+  // in the open (this comment's own case above, kept unchanged for that).
+  // A mob out of sight then has no line through the rock either, walker or
+  // shooter, and is not still held against the bot (note 741, 25588: a
+  // blaze 1.9 blocks off through such a box was "kept" twenty-one
+  // turn_priority asks running, take_cover and box_here doing nothing
+  // against a wall already shut, while the box could not be touched).
+  let sealed;
+  const walledAllRound = () => { if (sealed === undefined) { try { const u = require('./unstuck'); sealed = !!u.walledOf(u.liveView(bot), bot.entity.position.floored()); } catch (_) { sealed = false; } } return sealed; };
+  return threats(bot, 64).filter(t => s.ids.includes(t.entity.id) && t.distance <= stanceReach(t.entity) && !combatTarget(bot, t.entity) && (t.visible || !walledAllRound())).map(t => ({ ...t, stance: s.choice }));
 }
 // How far a mob a stance was chosen against is kept: the twenty-four a
 // stance counts, and a shooter as far as it fires from (a ghast's sixty-

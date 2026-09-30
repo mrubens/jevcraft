@@ -145,3 +145,54 @@ test('the heal chosen eats what is carried and waits, and is not asked again mea
   assert.equal(goal.step.action, 'heal_at_spawner');
   assert.equal(require('../src/stillness').stepWait(bot, goal), 'recovering');
 });
+
+test('in the lull, stand_by_spawner keeps the trials\' health-cost row: box options have their own safety said, and this one is not left bare beside them (note 740)', () => {
+  // 25583 (mid-242-wf) was offered stand_by_spawner seeing 97 in 100 of the
+  // spawner's blazes against box_here's 3 in 100, and box_here (0.7) won:
+  // stand_by_spawner's own text said only "Nothing is built" where box_here
+  // said "Arena: took no damage" -- the lull branch stripped stand_by_spawner's
+  // own died%/rod% row, so the one option that actually fights had no cost
+  // beside the one that barely does.
+  const bot = frameBot(), goal = frameGoal();
+  const known = es.knownSpawner(bot, goal);
+  known.lull = { cage: known.cage, off: known.off, within16: 0, next: {}, says: 'No blaze sees the bot now', short: 'No blaze in sight.' };
+  const tree = es.options(bot, task(), goal, () => {}, { returnOverworld: async () => {}, navigate: async () => {}, dig: async () => {} }, known);
+  assert.match(tree.stand_by_spawner.description, /^Take a stand in the open at/, 'the lull\'s own short form');
+  assert.match(tree.stand_by_spawner.description, /Of the trials' fights begun at under 8 health, 29: 62% died, 3% brought a rod\./, 'the health-cost record is kept, not stripped, in the lull');
+});
+
+test('box_in_line says its own safety, as box_here and box_at_spawner do, not left bare beside them (note 740)', () => {
+  const bot = frameBot({ health: 20, food: 20 }), goal = frameGoal();
+  const known = es.knownSpawner(bot, goal);
+  known.lull = { cage: known.cage, off: known.off, within16: 0, next: {}, says: 'No blaze sees the bot now', short: 'No blaze in sight.' };
+  const tree = es.options(bot, task(), goal, () => {}, { returnOverworld: async () => {}, navigate: async () => {}, dig: async () => {} }, known);
+  assert.ok(tree.box_in_line && tree.box_at_spawner, Object.keys(tree).join(','));
+  assert.match(tree.box_in_line.description, /Arena: as box_here's is, once whole, 45-second holds took no damage with six to ten blazes about\./);
+  assert.match(tree.box_at_spawner.description, /Arena: built among four blazes it lost 3 runs of 5, never whole in those\./);
+  // 6 blocks off here (outside the four-block spawn range, note 740): no
+  // false positive on a box that is not actually in the spawner's own range.
+  assert.doesNotMatch(tree.box_in_line.description, /spawn range/);
+});
+
+test('a box built inside the spawner\'s own spawn range says a blaze can spawn already at its wall (note 740, 25588)', () => {
+  const { Vec3: V } = require('vec3');
+  const registry = require('minecraft-data')('26.1');
+  const cage = new V(0, 64, 0);
+  const cells = new Map();
+  for (let x = -2; x <= 2; x++) for (let z = -2; z <= 2; z++) { cells.set(`${x},63,${z}`, 'nether_bricks'); cells.set(`${x},64,${z}`, 'air'); cells.set(`${x},65,${z}`, 'air'); }
+  for (let x = -3; x <= 3; x++) for (let z = -3; z <= 3; z++) for (const y of [63, 64, 65]) if (Math.abs(x) > 2 || Math.abs(z) > 2) cells.set(`${x},${y},${z}`, 'nether_bricks');
+  cells.set('0,64,0', 'spawner');
+  const blockAt = p => { const f = p.floored(); const name = cells.get(`${f.x},${f.y},${f.z}`) ?? 'nether_bricks'; const b = registry.blocksByName[name]; return { name, position: f, boundingBox: name === 'air' || name === 'spawner' ? (name === 'spawner' ? 'block' : 'empty') : 'block', hardness: b?.hardness, harvestTools: b?.harvestTools, type: b?.id }; };
+  const { EventEmitter } = require('events');
+  const bot = Object.assign(new EventEmitter(), { registry, health: 20, food: 20, game: { dimension: 'the_nether', gameMode: 'survival' },
+    entity: { position: new V(1.5, 64, 0.5), onGround: true }, entities: {}, inventory: { items: () => [{ name: 'netherrack', count: 64, type: registry.itemsByName.netherrack.id }, { name: 'iron_sword', count: 1, type: registry.itemsByName.iron_sword.id }, { name: 'iron_pickaxe', count: 1, type: registry.itemsByName.iron_pickaxe.id }], slots: { 45: { name: 'shield' } } },
+    world: { raycast: () => null }, blockAt, findBlocks: () => [], chat() {} });
+  const goal = { kind: 'win', survival: { deaths: [] }, mobHunt: { item: 'blaze_rod', entity: 'blaze', targetCount: 7 },
+    fortressSearch: { legs: 0, map: { cells: {}, failed: {}, spawners: [{ x: cage.x, y: cage.y, z: cage.z }], chests: [] } } };
+  const known = es.knownSpawner(bot, goal);
+  known.lull = { cage: known.cage, off: known.off, within16: 0, next: {}, says: 'x', short: 'y' };
+  const tree = es.options(bot, { check() {} }, goal, () => {}, { returnOverworld: async () => {}, navigate: async () => {}, dig: async () => {} }, known);
+  const boxed = tree.box_here || tree.box_in_line;
+  assert(boxed, Object.keys(tree).join(','));
+  assert.match(boxed.description, /It is inside the spawner's own spawn range \(up to four blocks across\): a blaze can spawn already at the box's own wall or window there, not only fly in through it, so "only a blaze in line with the window sees in" does not hold this close\./);
+});

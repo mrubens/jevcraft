@@ -181,9 +181,20 @@ function boxFits(bot, plan) {
   if (dig && (win.diggable === false || /bedrock|obsidian|spawner/.test(win.name))) return null;
   return { ...plan, place, dig, blocks: place.length };
 }
+// A cell inside the spawner's own spawn range (BOX_NEAR: 2 to 4.5 blocks
+// across from the cage) is scored worse when the box is not deliberately
+// built there for that reason (box_at_spawner passes `cage`; a plain
+// box_here or box_in_line passes only `sightOf`, to read the window's line,
+// not to sit in the spawn zone on purpose): 25588 built box_here 1.4 blocks
+// from a live cage, well inside the range, and was struck at one block
+// inside the box it had just walled, "only a blaze in line with the window
+// sees in" not holding there (note 740). Scored, not forbidden: a cramped
+// room may have nothing else.
+const IN_RANGE_PENALTY = 6;
 function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [], sightOf = null } = {}) {
   const carried = blocksCarried(bot);
   const centre = cage ? cage.offset(0.5, 0.5, 0.5) : null;
+  const spawnCentre = !centre && sightOf ? sightOf.offset(0.5, 0.5, 0.5) : null;
   const fits = [];
   for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
     if (centre) {
@@ -194,8 +205,14 @@ function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [], sightO
     if (!fit || fit.blocks > carried) continue;
     // Over air (the roof), only a block that does not fall.
     if (fit.place.filter(c => !solid(bot.blockAt(c.offset(0, -1, 0))) && !fit.place.some(q => q.equals(c.offset(0, -1, 0)))).length > blocksCarried(bot, { standing: true })) continue;
-    const score = n + fit.blocks * 0.5 + (fit.dig ? 2 : 0);
-    fits.push({ ...fit, steps: n, score, cage, off: centre ? round(Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z)) : null });
+    // The game's own spawn range (SPAWN_RANGE, below: up to four blocks
+    // across from the cage, including closer than BOX_NEAR's own 2 to 4.5
+    // window a deliberate box_at_spawner is walked to): 25588's box_here
+    // sat 1.4 blocks from its cage, inside SPAWN_RANGE but under BOX_NEAR's
+    // own floor, and was struck at one block inside it (note 740).
+    const inSpawnRange = spawnCentre ? Math.hypot(cell.x + 0.5 - spawnCentre.x, cell.z + 0.5 - spawnCentre.z) <= SPAWN_RANGE : false;
+    const score = n + fit.blocks * 0.5 + (fit.dig ? 2 : 0) + (inSpawnRange ? IN_RANGE_PENALTY : 0);
+    fits.push({ ...fit, steps: n, score, cage, inSpawnRange, off: centre ? round(Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z)) : null });
   }
   fits.sort((a, b) => a.score - b.score);
   // A box held for a spawner's blazes is held for those its window sees
@@ -239,10 +256,16 @@ const standLine = (bot, cell, cage) => spawnLine(bot, cell, cage);
 // In words: what a cell sees of where they come.
 const lineWords = l => !l.cells ? 'none of where the spawner\'s blazes come'
   : `where ${l.per100 ? `about ${l.per100}` : 'fewer than 1'} in 100 of the spawner's blazes come`;
-// For a box's option.
+// For a box's option. A window that crosses none of the spawn cells (cells
+// === 0) never brings a rod, not "holds for none of them" as though it were
+// merely unlucky: said plainly, so it does not read as a way to get rods at
+// all (note 740, the coordinator's 25585: box_here's own window saw none of
+// where the spawner's blazes come, and nothing in its words said that meant
+// no rod, ever, this way).
 function windowSays(line) {
   if (!line) return '';
-  return ` Its window sees ${lineWords(line)}${line.per100 > 0 ? '' : `: it holds for ${line.cells ? 'hardly any' : 'none'} of them`}.`;
+  if (!line.cells) return ` Its window sees ${lineWords(line)}: it gains no rod this way, none of the spawner's blazes ever crossing it.`;
+  return ` Its window sees ${lineWords(line)}${line.per100 > 0 ? '' : ': hardly any rod comes this way'}.`;
 }
 // How far the box where the bot stands may be walked to: the nearest ground
 // a box fits on (a span over a drop takes none).

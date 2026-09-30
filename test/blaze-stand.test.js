@@ -312,6 +312,65 @@ test('break_spawner is priced as the close-in is, the walk to the cage and the d
   assert.doesNotMatch(o.description, /as measured\./);
 });
 
+test('break_spawner says the rods still owed and that breaking ends every one of them, first, before the walk and the digging (note 740)', () => {
+  // 25590 (mid-242-xb) chose break_spawner (0.45) with a wooden pickaxe and
+  // one rod still owed, on an option whose own text buried "1 rod still
+  // needed" at the very end, after the walk, the digging, the arena's rows
+  // and the toward-the-rods figure; it read as free ("Broken, it makes no
+  // more, ever") because the cost came last.
+  const bot = brickWorld(openFloor, { spawner: new Vec3(8, 64, 0) });
+  bot.entities = { 1: blazeAt(1, 10.5, 66, 0.5) };
+  const goal = { fortressSearch: { map: { spawners: [] } } };
+  const options = stand.blazeStands(bot, threats(bot, 24), { need: 1, of: 'the goal wants 7 in all for 13 eyes, 6 carried', goal });
+  const o = options.break_spawner;
+  assert(o, Object.keys(options).join(','));
+  assert.match(o.description, /^1 rod still owed at this spawner \(the goal wants 7 in all for 13 eyes, 6 carried\), and breaking it ends every one of them it would ever give, for good: no other spawner is known yet\. Break the blaze spawner:/);
+});
+
+test('break_spawner names the nearest other known spawner\'s distance, when one is known, instead of "none known" (note 740)', () => {
+  const bot = brickWorld(openFloor, { spawner: new Vec3(8, 64, 0) });
+  bot.entities = { 1: blazeAt(1, 10.5, 66, 0.5) };
+  const goal = { fortressSearch: { map: { spawners: [{ x: 8, y: 64, z: 0 }, { x: 32, y: 64, z: 0 }] } } };
+  const options = stand.blazeStands(bot, threats(bot, 24), { need: 2, goal });
+  const o = options.break_spawner;
+  assert.match(o.description, /the nearest other known spawner is about 31\.5 blocks off/);
+});
+
+test('break_spawner says nothing extra up front when no rods are needed (note 740)', () => {
+  const bot = brickWorld(openFloor, { spawner: new Vec3(8, 64, 0) });
+  bot.entities = { 1: blazeAt(1, 10.5, 66, 0.5) };
+  const options = stand.blazeStands(bot, threats(bot, 24));
+  const o = options.break_spawner;
+  assert.match(o.description, /^Break the blaze spawner:/, 'no rods owed said, and the plain text leads as before');
+});
+
+test('box_here inside the spawner\'s own spawn range says a blaze can spawn already at its wall, not only fly in through the window (note 740)', () => {
+  // 25588 (mid-242-...) built box_here 1.4 blocks from a live cage and was
+  // struck at one block inside the box it had just walled: "only a blaze
+  // in line with the window sees in" does not hold that close, since the
+  // game's spawn range (up to four blocks across) can place a blaze
+  // already at the box's own wall, not flying in from further out.
+  const wallAt = p => p.y === 63 || Math.abs(p.x) > 2 || Math.abs(p.z) > 2;
+  const bot = brickWorld(wallAt, { spawner: new Vec3(0, 64, 0) });
+  bot.entity.position = new Vec3(1.5, 64, 0.5);
+  bot.entities = { 1: blazeAt(1, 1.5, 66, 2.5) };
+  const options = stand.blazeStands(bot, threats(bot, 24));
+  const o = options.box_here;
+  assert(o, Object.keys(options).join(','));
+  assert.equal(o.site.inSpawnRange, true, 'boxed well within the four-block spawn range');
+  assert.match(o.description, /this cell is inside the spawner's own spawn range \(up to four blocks across\): a blaze can spawn already at the box's own wall or window there, not only fly in through it once built, so "only a blaze in line with the window sees in" does not hold this close\./);
+});
+
+test('box_here well outside the spawner\'s own spawn range says nothing of it (note 740)', () => {
+  const bot = brickWorld(openFloor, { spawner: new Vec3(8, 64, 0) });
+  bot.entities = { 1: blazeAt(1, 10.5, 66, 0.5) };
+  const options = stand.blazeStands(bot, threats(bot, 24));
+  const o = options.box_here;
+  assert(o, Object.keys(options).join(','));
+  assert.equal(o.site.inSpawnRange, false);
+  assert.doesNotMatch(o.description, /spawn range/);
+});
+
 test('break_spawner is priced at the cage with the blazes out of sight round it: mid-242-bc-fortress-2 read 7.8 damage from one blaze in sight and lost 12.6 in three seconds (note 623)', () => {
   // 25587, 17:56:27: one blaze in sight 4.3 off, five more out of sight
   // eight to ten off, hovering round the cage five blocks' walk away; the

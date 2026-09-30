@@ -138,8 +138,15 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
       : `within four blocks of the cage (${off} off now; no covered cell found near it, and no plain one either: nothing standable was found on a walk there from here, so the wait may find no way and be asked again)`;
     const sees = line ? ` There it sees ${require('./blaze-tactics').lineWords(line)}.` : '';
     const goCell = site ? site.cell : reach ? reach.cell : null;
+    // The trials' row (died%, brought a rod%, at this health band) is the
+    // health cost the code has for this stand: kept even in the lull, not
+    // stripped for brevity (note 740). 25583 was offered stand_by_spawner
+    // seeing 97 in 100 of the spawner's blazes against box_here's 3 in 100,
+    // with no cost said for either beyond "Nothing is built" versus box_here's
+    // own "Arena: took no damage": the two safety facts were not on the same
+    // footing, and box_here (0.7) beat the option that actually fights.
     tree.stand_by_spawner = { description: quiet
-      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built.${sees} ${healthSays.replace(row, '')}${openRisk}`
+      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built.${sees} ${healthSays}${openRisk}`
       : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail.${sees} ${healthSays}${openRisk}`,
       run: () => {
         const fs = goal.fortressSearch ||= { legs: 0 };
@@ -212,7 +219,14 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // Held for the blazes its window sees (note 708): a window with no line
     // to where they come holds for none of them, and is said so.
     const sees = !b.line || b.line.per100 > 0;
-    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : 'the box whole already'}, one open at head height toward the spawner, and hold it${sees ? ' for its next blazes: only a blaze in line with the window sees in, from the front' : ''}.${T.windowSays(b.line)}${clock.jobSays(quiet, secs)}` };
+    // Not built at the cage on purpose (box_at_spawner, whose own boxSite
+    // call passes `cage`, never sets this): a cell this close still inside
+    // the spawner's own spawn range lets a blaze spawn already at the
+    // box's own wall, not fly in through the window first (note 740, 25588:
+    // box_here 1.4 blocks from a live cage, struck at one block inside the
+    // box just walled).
+    const inRange = b.inSpawnRange ? ' It is inside the spawner\'s own spawn range (up to four blocks across): a blaze can spawn already at the box\'s own wall or window there, not only fly in through it, so "only a blaze in line with the window sees in" does not hold this close.' : '';
+    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : 'the box whole already'}, one open at head height toward the spawner, and hold it${sees ? ' for its next blazes: only a blaze in line with the window sees in, from the front' : ''}.${inRange}${T.windowSays(b.line)}${clock.jobSays(quiet, secs)}` };
   };
   const box = (key, site) => ({ description: site.words, secs: site.secs,
     run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'box', site: site.b, key }, site.secs) });
@@ -225,7 +239,12 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // The nearest box whose window sees more of where they come, where the
     // nearest sees less (note 708).
     const inLine = here?.inLine;
-    if (inLine && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says, secs: w.secs }); }
+    // box_in_line is box_here's own box, walled the same way, at whichever
+    // cell gives the window the widest line: its safety is box_here's own,
+    // not left unsaid beside box_here's (note 740: box_in_line had no
+    // "Arena:" line at all, so its near-zero kill rate stood with no cost
+    // beside it, unlike box_here and box_at_spawner which both had one).
+    if (inLine && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says + ' Arena: as box_here\'s is, once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
     // A hole in the rock beside the cage, its mouth toward it: rock behind,
     // beside and over, only the front open. Not gated on a pickaxe carried:
     // netherrack, basalt, blackstone and nether bricks all break by hand
