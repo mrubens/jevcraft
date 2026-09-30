@@ -6714,15 +6714,23 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
     // stay in the Nether, not a meal (note 755: 25588 at hunger 19).
     top_up_food: { description: `Gather food: the home chest, the farm plot if there is one, or hunting animals. ${carried} of ${want} points carried for the Nether; hunger ${bot.food} of 20 now${(bot.food ?? 0) >= 18 ? ', nothing to eat for' : ''}.${foodTopUpSays(bot, goal, pending, item)}${soFar('food')}` },
   };
+  // The raw food carried, cooked here, counted against the want on every
+  // food option (note 754d, as 754b did for the Nether's kit): 25581
+  // (mid-243-mb, 17:52Z) was "56 of 80, 24 short" with 8 raw mutton, a
+  // furnace's cobblestone and 135 coal (+32 cooked, 88 in all), and went for
+  // a cow near the frame for five minutes.
+  const cook = cookable(bot);
+  const cookGain = cook?.ready ? Math.round(cook.after - cook.now) : 0;
+  const cookCovers = cookGain ? ` Cooking the raw food carried here (top_up_cook) adds ${cookGain}: ${carried + cookGain} of ${want}${carried + cookGain >= want ? ', the want covered with nothing gathered' : `, ${want - carried - cookGain} short after it`}.` : '';
+  tree.top_up_food.description += cookCovers;
   const nearFood = foodNearFrame(bot, goal, pending, want - carried);
   if (nearFood) tree.top_up_food_near = { description: pending
-    ? `Gather food at the known food whose trip on to the frame is shortest, then back to the ${pending.frame.cast ? 'cast' : 'frame'}: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then.${soFar('food_near')}`
-    : `Gather food at the known food nearest by the trip there and back, then come back here: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then.${soFar('food_near')}` };
+    ? `Gather food at the known food whose trip on to the frame is shortest, then back to the ${pending.frame.cast ? 'cast' : 'frame'}: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then.${soFar('food_near')}${cookCovers}`
+    : `Gather food at the known food nearest by the trip there and back, then come back here: ${nearFood.says}. Nothing farther is searched: when it is spent or gone, this is asked again with what is known then.${soFar('food_near')}${cookCovers}` };
   // The raw food carried, cooked here: the points it adds for the minutes at a furnace.
-  const cook = cookable(bot);
   if (cook?.ready) {
     const secs = cook.n * 10 + (cook.furnace ? 2 : 6);
-    tree.top_up_cook = { description: `Cook the raw food carried first: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried, about ${cook.after} once cooked (a steak or a cooked porkchop is eight, cooked mutton six, raw beef three). ${cook.furnace ? `The ${cook.furnace} carried is` : `A furnace is made from eight of the ${cook.stone.replaceAll('_', ' ')} carried and`} put down here, fuelled with the ${cook.fuel.replaceAll('_', ' ')} carried: about ten seconds an item, about ${duration(secs)} in all, with no walk.${cookStandsSays(bot, cook, secs)}${soFar('food_cook')}` };
+    tree.top_up_cook = { description: `Cook the raw food carried first: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried, about ${cook.after} once cooked (a steak or a cooked porkchop is eight, cooked mutton six, raw beef three). ${cook.furnace ? `The ${cook.furnace} carried is` : `A furnace is made from eight of the ${cook.stone.replaceAll('_', ' ')} carried and`} put down here, fuelled with the ${cook.fuel.replaceAll('_', ' ')} carried: about ten seconds an item, about ${duration(secs)} in all, with no walk.${cookStandsSays(bot, cook, secs)}${soFar('food_cook')}${cookCovers}` };
   }
   const keys = Object.keys(tree).sort().join(',');
   let pick = kit.choice && kit.choice.keys === keys && now - kit.choice.at < KIT_HOLD_MS && tree[kit.choice.pick] ? kit.choice.pick : null;

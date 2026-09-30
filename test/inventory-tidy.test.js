@@ -179,7 +179,9 @@ test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes w
   const pick = choice => ({ check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: choice === 'none' ? 'none' : 'drop', confidence: 0.6 }, branch_1: { choice: choice === 'none' ? 'drop_stone_pickaxe' : choice, confidence: 0.6 } } }; } } });
   assert.equal(await makeRoom(bot, pick('none'), 'raw_iron'), false, 'Jev chose to go without');
   assert.deepEqual(tossed, []);
-  assert.match(offered.drop_stone_pickaxe, /the only pickaxe/);
+  // The last pickaxe is never offered (note 754d).
+  assert.equal(offered.drop_stone_pickaxe, undefined);
+  assert.match(offered.none, /Not offered: stone pickaxe \(the last pickaxe\)/);
   assert.match(offered.drop_dirt, /part of the 16-block reserve/);
   assert.equal(await makeRoom(bot, pick('drop_dirt'), 'raw_iron'), true);
   assert.deepEqual(tossed, ['dirt'], 'Jev\'s pick went');
@@ -385,7 +387,9 @@ test('making room says the flint and steel lights the Nether portal on the way t
   const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', requires: { iron_pickaxe: 1 } } };
   await makeRoom(bot, { check() {}, opportunityClient: client }, 'stick', { goal });
   assert.match(offered, /1 flint and steel.*lights the Nether portal.*the only lighter carried/);
-  assert.match(offered, /1 iron pickaxe.*needed by the step in hand/);
+  // The tool the step needs is not offered at all, and said so (note 754d).
+  assert.doesNotMatch(offered, /Drop 1 iron pickaxe/);
+  assert.match(offered, /Not offered: iron pickaxe \(the tool the step in hand needs\)/);
   assert.doesNotMatch(offered, /stone pickaxe[^\n]*needed by the step in hand/);
 });
 

@@ -231,7 +231,20 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     const cap = capOf;
     const over = n => cap(n) !== undefined && counts[n] > cap(n);
     const junk = n => NO_USE.test(n) || over(n);
-    let stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)))
+    // Never offered (note 754d): the tool the step in hand needs (its tool,
+    // what it requires) and the last pickaxe carried. 25593 (mid-237-bf,
+    // 17:08Z, y -54) was asked what to drop for the cobblestone its mine
+    // step (requires iron_pickaxe) was digging, was offered that pickaxe,
+    // its only one, and dropped it; then climbed 78 stairs with a stone axe.
+    const stepTools = new Set();
+    for (const st of [goal?.step, goal?.step?.detail].filter(Boolean)) {
+      if (typeof st.tool === 'string') stepTools.add(st.tool);
+      for (const k of Object.keys(st.requires || {})) if (TOOL.test(k)) stepTools.add(k);
+    }
+    const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
+    const heldBack = i => stepTools.has(i.name) || (picks.length === 1 && picks[0] === i);
+    const withheld = [...new Set(bot.inventory.items().filter(heldBack).map(i => i.name))];
+    let stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)) && !heldBack(i))
       .sort((a, b) => (junk(b.name) ? 1 : 0) - (junk(a.name) ? 1 : 0));
     if (!worthMoreThanFood) {
       const withoutFood = stacks.filter(i => !ordinaryFood(i.name));
@@ -253,7 +266,12 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // was offered its flint and steel and its two golden apples beside 64
     // cobblestone, 32 smooth basalt and 32 dirt, and dropped both: notes 722
     // and 730 held only while some junk was left.
-    const cheap = i => (BUILDING.test(i.name) && blockStock(bot) - i.count >= BLOCK_RESERVE) || /^(gravel|sand|red_sand|smooth_basalt|soul_sand|soul_soil|calcite|mud|clay|.*terracotta)$/.test(i.name);
+    // Blocks the crossing's kit counts are cheap only past what it wants:
+    // 25593 dropped its 128 cobblestone for lava buckets and the next step
+    // mined 64 back for the kit (note 754d).
+    const ck = require('./crossing-kit'), kitWants = ck.kitBlocksWanted(bot, goal), kitHas = kitWants ? ck.netherBlocks(bot) : 0;
+    const KIT_KIND = /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt)$/;
+    const cheap = i => (BUILDING.test(i.name) && blockStock(bot) - i.count >= BLOCK_RESERVE && !(kitWants && KIT_KIND.test(i.name) && kitHas - i.count < kitWants)) || /^(gravel|sand|red_sand|smooth_basalt|soul_sand|soul_soil|calcite|mud|clay|.*terracotta)$/.test(i.name);
     const tiers = [junkOnly, stacks.filter(cheap)];
     stacks = tiers.find(t => t.length) || stacks;
     // What each stack is to the work in hand and the ladder's next step,
@@ -288,6 +306,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       const k = kind(stack.name);
       if (k && !bot.inventory.items().some(i => i !== stack && kind(i.name) === k)) notes.push(`the only ${k}`);
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
+      if (kitWants && KIT_KIND.test(stack.name) && kitHas - stack.count < kitWants) notes.push(`blocks the crossing's kit counts for the Nether (${kitHas} carried of ${kitWants}): dropped, ${Math.min(stack.count, kitWants - (kitHas - stack.count))} are mined again for it before the crossing`);
       if (LIFESAVER.test(stack.name)) {
         const enchanted = stack.name === 'enchanted_golden_apple';
         const only = !bot.inventory.items().some(i => i !== stack && LIFESAVER.test(i.name));
@@ -328,7 +347,8 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       tree[keyOf(stack, n)] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
     });
     const unlisted = stacks.length - Math.min(stacks.length, 24);
-    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.${NO_USE.test(name) ? ` The ${name.replaceAll('_', ' ')} itself has no use on the way to the dragon.` : ''}${unlisted ? ` ${unlisted} more stack${unlisted === 1 ? ' is' : 's are'} carried and not listed here.` : ''}` };
+    const keptSays = withheld.length ? ` Not offered: ${withheld.map(n => n.replaceAll('_', ' ')).join(', ')} (${withheld.map(n => stepTools.has(n) ? 'the tool the step in hand needs' : 'the last pickaxe').join('; ')}).` : '';
+    tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.${keptSays}${NO_USE.test(name) ? ` The ${name.replaceAll('_', ' ')} itself has no use on the way to the dragon.` : ''}${unlisted ? ` ${unlisted} more stack${unlisted === 1 ? ' is' : 's are'} carried and not listed here.` : ''}` };
     // Two questions, asked together: whether to drop anything, and which
     // stack if so. Asked as one, the stacks split the vote: mid-83-b's
     // pointed dripstone, dripstone and mushroom took 0.15, 0.14 and 0.05,

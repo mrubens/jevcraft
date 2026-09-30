@@ -119,3 +119,13 @@ test('raw meat carried with a furnace and coal: cooking it first is offered, wit
   await kitFoodStep(cold, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log));
   assert.equal(log.offered.top_up_cook, undefined);
 });
+
+test('the raw meat carried, cooked, is counted against the want on every food option (25581, note 754d)', async () => {
+  const { kitFoodStep } = require('../src/work');
+  // Nine beef, 27 points as carried, 72 cooked, against 80.
+  const bot = crossingBot({ beef: 9 });
+  bot.entities = {};
+  const log = {};
+  await kitFoodStep(bot, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log));
+  for (const k of ['top_up_food', 'top_up_cook']) assert.match(log.offered[k], /Cooking the raw food carried here \(top_up_cook\) adds 45: \d+ of 80/, k);
+});

@@ -148,7 +148,14 @@ function cauldronSet(bot) {
   const need = [];
   if (!cauldrons) need.push(`a cauldron (${CAULDRON_IRON} iron ingots in a U at a crafting table, ${iron} carried, one slot)`);
   if (!water) need.push(`a bucket of water (${empty} empty ${empty === 1 ? 'bucket' : 'buckets'} carried, filled at water in the Overworld, one slot)`);
-  return { offer: true, cauldrons, says: `Cauldron: ${parts.join(' and ')} carried; the set is ${need.join(' and ')} short of complete. ${how} Its cost is ${cauldrons ? '' : `${CAULDRON_IRON} iron ingots (the bot carries ${iron}; an iron pickaxe is three) and `}a slot or two.` };
+  // What the iron would buy instead, in buckets and trips to lava (note
+  // 754d): 25581 (mid-243-mb, 17:29:41Z) spent 7 iron on a cauldron with
+  // one bucket for lava, then walked 60 to 100 blocks to lava for each block
+  // of a portal cast.
+  const lavaBuckets = empty + countOf(bot, 'lava_bucket'), more = Math.floor(CAULDRON_IRON / 3);
+  const trips = n => Math.ceil(10 / Math.max(1, n));
+  const instead = cauldrons ? '' : ` The same ${CAULDRON_IRON} ingots make ${more} bucket${more === 1 ? '' : 's'} (three each): with ${lavaBuckets} bucket${lavaBuckets === 1 ? '' : 's'} for lava carried, a portal cast of ten lava blocks is ${lavaBuckets ? `${trips(lavaBuckets)} round trip${trips(lavaBuckets) === 1 ? '' : 's'} to the lava` : 'no trip until a bucket is made'}, ${trips(lavaBuckets + more)} with ${more} more.`;
+  return { offer: true, cauldrons, says: `Cauldron: ${parts.join(' and ')} carried; the set is ${need.join(' and ')} short of complete. ${how} Its cost is ${cauldrons ? '' : `${CAULDRON_IRON} iron ingots (the bot carries ${iron}; an iron pickaxe is three) and `}a slot or two.${instead}` };
 }
 
 // The cauldron set as it can be made INSIDE the Nether (note 649). At the
@@ -232,20 +239,32 @@ function chestWood(bot) {
   const planks = items.filter(i => /_planks$/.test(i.name)).reduce((n, i) => n + i.count, 0) + 4 * items.filter(i => /_(log|stem|wood|hyphae)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
   return { carried: false, planks, wants: CHEST_PLANKS + (countOf(bot, 'crafting_table') ? 0 : TABLE_PLANKS) };
 }
-function kitRungs(bot, goal = {}) {
+// Whether the crossing's kit is counted now: the stay it is for, or null.
+function kitCounted(bot, goal = {}) {
   // Food points and uses are the registry's: with none, nothing is counted.
-  if (bot?.game?.gameMode !== 'survival' || !/overworld/.test(String(bot.game?.dimension || '')) || !bot.registry) return [];
+  if (bot?.game?.gameMode !== 'survival' || !/overworld/.test(String(bot.game?.dimension || '')) || !bot.registry) return null;
   let stay;
-  try { stay = netherStay(bot, goal); } catch (_) { return []; }
+  try { stay = netherStay(bot, goal); } catch (_) { return null; }
   // Rods left in a chest in the Nether are counted there, and the crossing
   // to take them is a crossing still (note 704).
-  if (!stay.rodsLeft && !goal?.rodStashes?.some(c => !c.lostAt && !c.unreachable && (c.contents?.blaze_rod || 0) > 0)) return [];
+  if (!stay.rodsLeft && !goal?.rodStashes?.some(c => !c.lostAt && !c.unreachable && (c.contents?.blaze_rod || 0) > 0)) return null;
   // Not while the crossing is not next: the Overworld's endermen chosen for
   // the pearls (pearl-routes.js), or rods, powder or eyes in the home chest,
   // which are fetched first (game-progress.js nextGameStage) and may be enough.
-  if (require('./game-progress').pearlRouteHeld(goal)?.pick === 'overworld') return [];
+  if (require('./game-progress').pearlRouteHeld(goal)?.pick === 'overworld') return null;
   const stash = goal?.survival?.home?.stash?.contents || {};
-  if (['blaze_rod', 'blaze_powder', 'ender_eye'].some(n => stash[n] > 0)) return [];
+  if (['blaze_rod', 'blaze_powder', 'ender_eye'].some(n => stash[n] > 0)) return null;
+  return stay;
+}
+// The blocks the crossing's kit counts, while it is counted (note 754d): a
+// stack of them dropped is mined again for the nether_blocks rung.
+function kitBlocksWanted(bot, goal = {}) {
+  if (goal?.kind !== 'win') return 0;
+  try { return kitCounted(bot, goal) ? NETHER_BLOCKS : 0; } catch (_) { return 0; }
+}
+function kitRungs(bot, goal = {}) {
+  const stay = kitCounted(bot, goal);
+  if (!stay) return [];
   const out = [];
   const sound = soundPickaxes(bot).length;
   if (sound < PICKAXES_TAKEN) {
@@ -295,4 +314,4 @@ function kitRungSays(bot, goal, rung) {
   return ` ${rung.carried} food points carried, ${rung.wants} wanted: the Nether stay the goal still needs, about ${stay.minutes} minutes for ${left}, at about ${NETHER_HUNGER_AN_HOUR} hunger an hour. Health comes back only at hunger 18 or more, and in the Nether a hoglin is the only meat. At the crossing ${c.none} of ${c.n} carried no food and ${c.shortOfStay} were short of the stay (note 664).${ways}`;
 }
 
-module.exports = { SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { kitBlocksWanted, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
