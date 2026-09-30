@@ -558,6 +558,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (read.allResting) { resting = read.heldOut?.length ? read.heldOut : null; if (above?.says) state = { ...(state || {}), nothingAbove: above.says }; }
     below = tried.escalationsFor(goal, id);
   }
+  // More than a few plan answers in a row from one spot, none of which took
+  // any time: not asked on, the rung's question asked once with the chain
+  // said (plan-chain.js, note 705). After the ledger's own reading, whose
+  // escalation of a way resting comes first.
+  if (ledgered) {
+    const chain = require('../plan-chain').check(bot, goal, id);
+    if (chain) { const { raiseFor, Stalled } = require('../stillness'); throw new Stalled(raiseFor(bot, goal, chain.says, Date.now(), { escalated: { from: id, to: 'rung_progress', says: chain.says } })); }
+  }
   // One committed intention at a time (intention.js, note 689): while an
   // answer that takes time holds, a question about the plan is asked without
   // the options that would replace it, and says it.
@@ -574,6 +582,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
     if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, one.path), offered: offeredOf(original, target) });
     if (ledgered && !decision.stale) require('../intention').after(bot, goal, id, one.path, { target: decision.action?.target || target, state, chosen: false });
+    if (ledgered && !decision.stale) require('../plan-chain').note(bot, goal, id, one.path);
     return decision;
   };
   const one = oneWay(tree);
@@ -718,6 +727,13 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (atOnce) state = { ...state, failedAtOnce: atOnce };
   }
   if (state && typeof state === 'object' && (underWay || intentionEnded)) state = { ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
+  // The plan answers just given from here, a reversal among them, and the
+  // options that would turn back on the last (plan-chain.js, note 705).
+  if (ledgered && state && typeof state === 'object') {
+    const pf = require('../plan-chain').facts(bot, goal, id, tree);
+    if (pf.recent || pf.reversal) state = { ...state, ...(pf.recent ? { planAnswersJustNow: pf.recent } : {}), ...(pf.reversal ? { reversal: pf.reversal } : {}) };
+    for (const [key, said] of Object.entries(pf.tags)) tree = leastBad.sayOn(tree, key, said.trim());
+  }
   // On unless JEV_NONE_GOOD=0 (the test runner, whose tests name the options
   // each question offers; test/decisions.test.js turns it back on).
   const offerNoneGood = process.env.JEV_NONE_GOOD !== '0' && !!client && GAMEPLAY_AREAS.has(spec.area) && Object.keys(tree).length >= 2 && !tree[NONE_GOOD_KEY];
@@ -807,6 +823,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, decision.path), offered: offeredOf(original, target) });
   // The least bad is not Jev's choice: it begins no intention (note 693).
   if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state, chosen: !decision.noneGood });
+  if (ledgered && !decision.stale && decision.path) require('../plan-chain').note(bot, goal, id, decision.path);
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');

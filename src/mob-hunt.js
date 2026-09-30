@@ -1325,7 +1325,19 @@ function bestMakeable(bot) {
   const head = PICK_HEADS.map(([item, said, re]) => ({ item, said, n: sum(re) })).find(h => h.n >= 3 && wood >= frame) ||
     (wood >= frame + 3 ? { item: 'wooden_pickaxe', said: 'planks', n: 0 } : null);
   const woodSaid = [logs && `${logs} log${logs === 1 ? '' : 's'}`, planks && `${planks} planks`, sticks && `${sticks} stick${sticks === 1 ? '' : 's'}`, table && 'a crafting table'].filter(Boolean).join(', ');
-  if (!head) return { carried: false, none: true, tool: null, says: 'No pickaxe is carried and none can be made from what is carried: netherrack dug by hand drops nothing. ' };
+  // None to be made: what it is short of, so a fetch that supplies it can
+  // say so. 25589 carried cobblestone and a table and was one stem short
+  // of the sticks, and fetch_stems said "none can be made from what is
+  // carried" (critic-20260930T0034Z item 1, note 705).
+  if (!head) {
+    const headCarried = PICK_HEADS.map(([item, said, re]) => ({ item, said, n: sum(re) })).find(h => h.n >= 3);
+    const planksShort = Math.max(1, (headCarried ? frame : frame + 3) - wood), stems = Math.ceil(planksShort / 4);
+    const parts = [!table && 'a crafting table', sticks < 2 && 'the sticks', !headCarried && 'the head'].filter(Boolean);
+    const then = headCarried ? `${/^iron/.test(headCarried.item) ? 'an' : 'a'} ${headCarried.item.replace('_', ' ')} from the ${headCarried.said} carried` : 'a wooden pickaxe';
+    const short = { planks: planksShort, stems, for: parts.join(', '), then };
+    return { carried: false, none: true, tool: null, short,
+      says: `No pickaxe is carried and none can be made yet: short of ${planksShort} planks (${stems} log${stems === 1 ? '' : 's'} or stem${stems === 1 ? '' : 's'}) for ${short.for || 'it'}, then ${then}. Netherrack dug by hand drops nothing. ` };
+  }
   const name = head.item.replace('_', ' '), a = /^iron/.test(head.item) ? 'an' : 'a';
   const from = head.n ? `3 of the ${head.n} ${head.said}${woodSaid ? `; ${woodSaid}` : ''}` : woodSaid;
   return { carried: false, item: head.item, tool: bot.registry?.itemsByName?.[head.item]?.id ?? null, name: `${a} ${name}`,
@@ -1537,7 +1549,7 @@ function stairDigs(bot, goal, target) {
 function pickaxeSays(bot, goal = null) {
   const picks = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
   if (picks.length && goal && /nether/.test(String(bot.game?.dimension || ''))) { const w = require('./pickaxe-budget').wearSays(bot, goal); if (w) return w; }
-  if (!picks.length) return `none carried: rock is dug by hand and drops nothing, ${handDigSays(bot)}; the staircase digs by hand only rock softer than basalt (netherrack) and stops at harder`;
+  if (!picks.length) return `none carried: rock is dug by hand and drops nothing, ${handDigSays(bot)}; the staircase and the legs dig it by hand at those times`;
   const left = i => { const max = bot.registry?.itemsByName?.[i.name]?.maxDurability; return max ? max - (i.durabilityUsed || 0) : null; };
   return picks.map(i => `${i.name.replaceAll('_', ' ')}${left(i) === null ? '' : `, ${left(i)} uses left`}`).join('; ');
 }
@@ -1785,9 +1797,9 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     const most = surveys.every(s => !s) && open.includes(current) ? current : open.map(i => [surveys[i]?.open || 0, i]).sort((a, b) => b[0] - a[0] || (a[1] === current ? -1 : b[1] === current ? 1 : 0))[0][1];
     const passed = HEADINGS.map((h, i) => i).filter(i => seekRests[i] && i !== most).map(i => ` Not heading ${HEADING_NAMES[i]}: ${seekRests[i]}.`).join('');
     const seekRest = legResting(state, legKey(most, true), here);
-    // With no pickaxe the staircase digs by hand only rock softer than
-    // basalt: from where no step toward the heights can be so dug it is
-    // not a way, said among the closed; else it says so. 25585 was offered
+    // With no pickaxe the staircase digs its rock by hand at the game's
+    // times (note 705): from where no step toward the heights gains it is
+    // not a way, said among the closed; else it says the seconds. 25585 was offered
     // it with no pickaxe over and over and it ended "no route" (note 687).
     const byHand = require('./block-stock').pickaxeCarried(bot) ? { offered: true, says: '' }
       : (() => { const to = fortressLegTarget({ heading: most, legMode: 'descend' }, here), bs = require('./block-stock');
@@ -1898,7 +1910,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // never offered making one, and answered none_good (note 654).
   const pick = pickaxeFirst(bot);
   if (!pick.carried && !pick.none && actions.acquireStep) {
-    options.make_pickaxe = { description: `Make ${pick.name} here from what is carried (${pick.from}), a few seconds at a crafting table: with it rock is dug and the netherrack dug comes back as blocks to lay, so the legs through rock, the staircase toward the fortress heights and the blocks for a span open again. Without it rock and netherrack dug by hand drop nothing and ${blocksCarried(bot)} block${blocksCarried(bot) === 1 ? '' : 's'} can be laid. The leg is chosen again after.`,
+    options.make_pickaxe = { description: `Make ${pick.name} here from what is carried (${pick.from}), a few seconds at a crafting table: with it rock is dug several times faster and the netherrack dug comes back as blocks to lay, for spans and pillars. Without it rock is dug by hand, slowly, dropping nothing, and ${blocksCarried(bot)} block${blocksCarried(bot) === 1 ? '' : 's'} can be laid. The leg is chosen again after.`,
       run: async () => {
         const unmade = await makePickaxe(bot, task, goal, save, actions, pick);
         if (unmade) throw new Error(`The pickaxe was not made: ${unmade}`);
@@ -1954,7 +1966,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // At the fight by a spawner with a sword carried, the pickaxe is not what
   // the rods need now: said, not put first (cage-hold.js, note 700).
   const swordThere = require('./cage-hold').swordNotPickaxe(bot, goal);
-  const lead = swordThere ? null : bs.pickaxeLead(bot, PICKAXE_WAYS.filter(k => options[k]), blocked.filter(b => /no pickaxe|no hand digs/.test(b)).map(b => b.split(':')[0]));
+  const lead = swordThere ? null : bs.pickaxeLead(bot, PICKAXE_WAYS.filter(k => options[k]), blocked.filter(b => /no pickaxe|does not break/.test(b)).map(b => b.split(':')[0]));
   if (swordThere) { if (options.fetch_stems) options.fetch_stems.description += ` ${swordThere.leaves}`; if (options.make_pickaxe) options.make_pickaxe.description += ` ${swordThere.makes}`; }
   const tree = Object.fromEntries(Object.entries(lead ? bs.pickaxeFirstOrder(options) : options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.waits ? { waits: o.waits } : {}) }]));
   const blazesSeen = blazesSeenFacts(bot, goal);
@@ -2025,7 +2037,7 @@ function portalTripStart(bot, goal, homeBy) {
   if (pickaxeTier(bot) >= 1 || !pickaxeFirst(bot).none) return { ok: true };
   const t = require('./tunneling');
   if (Math.hypot(p.x - here.x, p.z - here.z) <= t.STAIR_ACROSS && t.stairFromHere(bot, goal, p)?.gains) return { ok: true };
-  closed.push('a stair to it needs a pickaxe, and none is carried or can be made from what is carried');
+  closed.push(`no stair to it by hand from here (${Math.hypot(p.x - here.x, p.z - here.z) > t.STAIR_ACROSS ? `more than ${t.STAIR_ACROSS} blocks across` : 'no step toward it gains'}), and no pickaxe is carried or can be made from what is carried`);
   return { ok: false, why: `the way back to it cannot begin from here: ${closed.join('; ')}` };
 }
 // How far a search on from here goes with what is carried, each heading at
@@ -2042,9 +2054,9 @@ function searchReachSays(bot) {
     if (!s) continue;
     const goes = Math.min(...[s.stoppedAt, s.runsOut, s.cells].filter(Number.isInteger));
     const why = Number.isInteger(s.runsOut) && s.runsOut === goes ? 'a gap with no block to lay' : s.stoppedBy;
-    said.push(`${HEADING_NAMES[i]} ${goes} block${goes === 1 ? '' : 's'}${why && goes < FORTRESS_LEG ? ` (then ${String(why).replace(/,? which no hand digs.*$/, ', which no hand digs')})` : ''}`);
+    said.push(`${HEADING_NAMES[i]} ${goes} block${goes === 1 ? '' : 's'}${why && goes < FORTRESS_LEG ? ` (then ${why})` : ''}`);
   }
-  return said.length ? ` At this height from here, with nothing to dig or lay, the legs go: ${said.join('; ')}.` : '';
+  return said.length ? ` At this height from here, with no pickaxe, the legs go (rock dug by hand on the way): ${said.join('; ')}.` : '';
 }
 // Searching on chosen from about here before, and the bot here again: what
 // the choice came to. 25585 left its fortress from the same few blocks

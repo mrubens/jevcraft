@@ -180,7 +180,10 @@ test('at 5 health with a blaze in line, the bot walks out of every line before t
   assert.equal(survival.state.stance.lethalKnown, true);
 });
 
-test('with a blaze in line and food a meal helps with, the eat says whether it is done before a shot here, and stepping out of every line then eating is offered (note 701)', () => {
+test('with a blaze in line and food a meal helps with, the eat says whether it is done before a shot here, and stepping out of every line then eating is offered (note 701)', t => {
+  // The shot timing is read against the clock: held still, so a loaded
+  // machine's lost time does not move the next shot past the meal.
+  const held = Date.now(); t.mock.method(Date, 'now', () => held);
   const { Task } = require('../src/skills');
   const { Survival } = require('../src/survival');
   const walls = new Set(['2,65,1', '2,66,1', '2,67,1', '2,65,2', '2,66,2', '2,67,2', '2,65,3', '2,66,3', '2,67,3']);

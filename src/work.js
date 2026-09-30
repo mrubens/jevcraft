@@ -4159,8 +4159,8 @@ async function portalHere(bot, task, goal, save) {
 // one. The bot stood by its broken pickaxe with eight logs and a stack of
 // cobblestone, so make the tool first.
 async function tunnelToward(bot, task, goal, save, target, key) {
-  // No pickaxe: the stair digs by hand what a hand digs (a block under
-  // hardness one: netherrack, 2 seconds a block, no drops), and the pickaxe
+  // No pickaxe: the stair digs its rock by hand (the game's times, no
+  // drops: netherrack 2 seconds a block, basalt 6.25), and the pickaxe
   // is made only where no step from here gains without one. 25591 stood 10
   // blocks above its portal in netherrack and went for wood for a pickaxe
   // it did not need, the trip back never made (note 678). A short stair,
@@ -4170,11 +4170,16 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   // the pickaxe is wanted for is kept while it is got (wantedFor), so a
   // question asked on the way does not offer the very trip that wants it.
   const tunneling = require('./tunneling');
-  const byHand = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) <= tunneling.STAIR_ACROSS && tunneling.stairFromHere(bot, goal, target)?.gains;
+  // A pickaxe the pockets make is made first, a few seconds, and the rock
+  // then drops and is dug in a fraction of the time (note 705: every rock
+  // now digs by hand, slowly, so the stair by hand is not a reason to skip it).
+  const made = () => { try { const p = require('./mob-hunt').pickaxeFirst(bot); return p.none ? null : p.item; } catch (_) { return null; } };
+  const byHand = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) <= tunneling.STAIR_ACROSS && !made() && tunneling.stairFromHere(bot, goal, target)?.gains;
   if (pickaxeTier(bot) < 1 && bot.game?.gameMode !== 'creative' && !byHand()) {
-    const before = bot._wantedFor;
-    bot._wantedFor = { item: 'stone_pickaxe', what: /^portal_/.test(key) ? 'the stair to the portal' : `the stair to the ${String(key).replaceAll('_', ' ')}`, target: { x: target.x, y: target.y, z: target.z } };
-    try { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); } finally { bot._wantedFor = before; }
+    const before = bot._wantedFor, item = made() || 'stone_pickaxe';
+    bot._wantedFor = { item, what: /^portal_/.test(key) ? 'the stair to the portal' : `the stair to the ${String(key).replaceAll('_', ' ')}`, target: { x: target.x, y: target.y, z: target.z } };
+    const have = bot.inventory.items().filter(i => i.name === item).reduce((n, i) => n + i.count, 0);
+    try { await acquireStep(bot, task, item, have + 1, goal, save); } finally { bot._wantedFor = before; }
     return;
   }
   // Straight overhead and out of the stairs' reach: up by a pillar first.

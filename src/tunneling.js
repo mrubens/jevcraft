@@ -209,10 +209,14 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
       if (!natural.test(cell.name) || !cell.diggable) { why = `${cell.name.replaceAll('_', ' ')} in the way`; return false; }
       if (reservedForConstruction(goal, p, { from: feet })) { why = 'a building in the way'; return false; }
       if (!safeExcavation(bot, p)) { why = 'water or lava behind the rock'; return false; }
-      // A block soft enough to dig by hand in a moment is dug without its
-      // tool: the tool is for the drop, and a stair wants the room, not the
-      // drop. mid-231-j's stairs up a mountain were "no tool for snow block"
-      // and rested ten minutes (2026-09-27).
+      // A block is dug without its tool where the hand breaks it (the
+      // game's rule, hand-dig.js: every block with a hardness, slowly where
+      // it wants a tool, dropping nothing): the tool is for the drop, and a
+      // stair wants the room, not the drop. mid-231-j's stairs up a
+      // mountain were "no tool for snow block" and rested ten minutes
+      // (2026-09-27); basalt and blackstone were "no hand digs" until note
+      // 705 (6.25 and 7.5 seconds by hand). The seconds are the stair's own
+      // (stairFromHere, digSeconds).
       if (byHand || require('./block-stock').handDigs(bot, cell)) return true;
       why = `no tool for ${cell.name.replaceAll('_', ' ')}`; return false;
     });
@@ -245,8 +249,8 @@ function digSeconds(bot, block) {
 }
 
 // The staircase toward `target`, looked at from here before it is begun:
-// whether a step from here gains ground with what is carried (a block under
-// hardness one is dug without its tool, netherrack among them), and roughly
+// whether a step from here gains ground with what is carried (rock is dug
+// by hand without its tool, at the game's times, dropping nothing), and roughly
 // what the stair takes: a step for each block of height or across, whichever
 // is more, each dug as the first one is. mid-242-ch-fortress-10 (25591,
 // note 678) stood on netherrack 10 blocks straight above its portal with no

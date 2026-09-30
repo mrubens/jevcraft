@@ -303,8 +303,13 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   if (!committing(q, choice) || !chosen) return i;
   if (i && i.q === q && i.path === path) { i.health = bot?.health ?? i.health; return i; }
   if (i) end(goal, `replaced: Jev chose ${words(choice)} (${words(q)})`, now);
-  const to = P(target) || (THROUGH_PORTAL.test(choice) ? portalBack(bot, goal) : null);
-  const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null };
+  // A trip back through the portal in the Nether goes to the portal, not to
+  // the question's own target: 25588's fortress_visit go_back said "Going
+  // back through the portal for food at (-328, 73, -293)", the fortress's
+  // floor, with the portal at (3, 42, 8) (note 705).
+  const viaPortal = THROUGH_PORTAL.test(choice) && /nether/.test(dim(bot)) ? portalBack(bot, goal) : null;
+  const to = viaPortal || P(target) || (THROUGH_PORTAL.test(choice) ? portalBack(bot, goal) : null);
+  const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null, ...(Number.isFinite(bot?.food) ? { food: bot.food } : {}) };
   goal.intention = next;
   yieldLook(bot, goal, next, now);
   const line = startSays(bot, goal, next, state);

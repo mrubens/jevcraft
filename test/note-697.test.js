@@ -84,7 +84,11 @@ test('working free offers its own netherrack by hand at the game\'s two seconds,
   assert.match(brick.does, /\(about 10 s by hand, and it drops nothing\)/);
   // With a pickaxe, as before.
   assert.equal(u.digSeconds('netherrack', { ...view, pickaxe: 'stone_pickaxe' }, false), 0.6);
-  assert.equal(u.digSeconds('stone', view, false, new Vec3(0, 0, 0)), null, 'not its own, and not netherrack: not by hand');
+  // Any rock breaks by hand at the game's time (note 705): stone 7.5 s,
+  // basalt 6.3, blackstone 7.5; bedrock not at all.
+  assert.equal(u.digSeconds('stone', view, false, new Vec3(0, 0, 0)), 7.5);
+  assert.equal(u.digSeconds('basalt', view, false), 6.3);
+  assert.equal(u.digSeconds('blackstone', view, false), 7.5);
 });
 
 const answers = (pick, seen = []) => ({ systemOne: async ({ state, questions }) => {

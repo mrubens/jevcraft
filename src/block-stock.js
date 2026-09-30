@@ -72,21 +72,21 @@ function stockSays(bot) {
   };
 }
 
-// A block the staircase, the legs and the crossings dig with no pickaxe for
-// it: one with no harvest tool, one the tools carried harvest, or one softer
-// than hardness one (netherrack 0.4, magma, soul sand's kind), dug by hand
-// for the room and dropping nothing (tunneling.js stairChoices keeps the
-// same rule). Basalt, blackstone, nether bricks, stone and ore are not.
+// A block the staircase, the legs and the crossings can dig with no
+// pickaxe: by the game's rule (hand-dig.js) every block with a hardness
+// breaks by hand, slowly where it wants a tool, and then drops nothing.
+// Notes 687 and 692 had basalt, blackstone and nether bricks as blocks no
+// hand digs; each breaks by hand in 6.25 to 10 seconds (note 705).
 function handDigs(bot, block) {
   if (!block || block.boundingBox !== 'block') return true;
-  if (!block.harvestTools) return true;
-  if ((bot?.inventory?.items?.() || []).some(i => block.harvestTools[i.type])) return true;
-  return (block.hardness ?? Infinity) < 1;
+  if ((bot?.inventory?.items?.() || []).some(i => block.harvestTools?.[i.type])) return true;
+  return require('./hand-dig').handRule(bot, block).breaks;
 }
 
-// What the rock here is that no hand digs, by the dimension: the words
-// every way that needs a pickaxe says it with.
-const hardRock = bot => inNether(bot) ? 'basalt, blackstone or nether bricks' : 'stone, deepslate or ore';
+// The rock here by hand, by the dimension: the words every way that digs
+// without a pickaxe says it with ("netherrack about 2 s, basalt about
+// 6.25 s, ... a block by hand, dropping nothing").
+const hardRock = bot => require('./hand-dig').rockByHand(bot, inNether(bot));
 
 // What going on without a pickaxe for `minutes` leaves the bot unable to
 // do, said on the choice to go on (upkeep's carry_on) where it bites.
@@ -97,16 +97,14 @@ const hardRock = bot => inNether(bot) ? 'basalt, blackstone or nether bricks' : 
 function goingOnSays(bot, minutes = 5) {
   if (!bot?.inventory?.items || bot.game?.gameMode === 'creative' || pickaxeCarried(bot)) return '';
   const laid = require('./bridging').blocksCarried(bot);
-  const cannot = [`dig or stair through ${hardRock(bot)}`, ...(laid ? [] : ['pillar or span a gap'])];
-  const soft = inNether(bot) ? '; netherrack is dug by hand (about 2 seconds a block) and drops nothing' : '';
-  return ` No pickaxe is carried: the next ${minutes} minutes cannot ${cannot.join(', or ')}${soft}${laid ? `, and a span or pillar has only the ${laid} block${laid === 1 ? '' : 's'} carried` : ''}.`;
+  return ` No pickaxe is carried: for the next ${minutes} minutes rock is dug by hand (${hardRock(bot)})${laid ? `, and a span or pillar has only the ${laid} block${laid === 1 ? '' : 's'} carried` : ', and no block is carried to pillar or span a gap'}.`;
 }
 
 // The straight line from the feet to `target` as a staircase with no
-// pickaxe digs it: the feet's and the head's cells in order, the rock a
-// hand digs and its seconds (hardness x 5), up to the first cell no hand
-// digs. -> { steps, handSeconds, stopAt, stopName } (stopAt: blocks along
-// the line to it, null where the line is clear of such rock).
+// pickaxe digs it: the feet's and the head's cells in order, the rock and
+// its seconds by hand (hand-dig.js), up to the first cell that does not
+// break at all (bedrock). -> { steps, handSeconds, stopAt, stopName }
+// (stopAt: blocks along the line to it, null where the line is clear).
 function handLine(bot, target, { cells = 128 } = {}) {
   const from = bot?.entity?.position?.floored?.();
   if (!from || !target || typeof bot.blockAt !== 'function') return null;
@@ -121,26 +119,27 @@ function handLine(bot, target, { cells = 128 } = {}) {
       seen.add(key);
       const b = bot.blockAt(new (require('vec3').Vec3)(x, y + h, z));
       if (!b || b.boundingBox !== 'block') continue;
-      if (!handDigs(bot, b)) return { steps: n, handSeconds: Math.round(handSeconds), stopAt: i, stopName: String(b.name || 'rock').replaceAll('_', ' ') };
-      handSeconds += 5 * (b.hardness ?? 0);
+      const rule = require('./hand-dig').handRule(bot, b);
+      if (!rule.breaks) return { steps: n, handSeconds: Math.round(handSeconds), stopAt: i, stopName: String(b.name || 'rock').replaceAll('_', ' ') };
+      handSeconds += rule.seconds;
     }
   }
   return { steps: n, handSeconds: Math.round(handSeconds), stopAt: null, stopName: null };
 }
 
-// A way that digs, said with what digging by hand does to it: where its
-// first step (tunneling.js stairFromHere) or the first few blocks of its
-// line (handLine) meet rock no hand digs, it is not a way (the caller does
-// not offer it); else the words it carries. 25585's staircase up from
-// y 36 through basalt was offered with no pickaxe and ended "no route"
-// (note 687).
+// A way that digs, said with what digging by hand does to it: where no
+// first step toward it gains (tunneling.js stairFromHere) or its line meets
+// a block that does not break within a few blocks, it is not a way (the
+// caller does not offer it); else the words it carries, the seconds by
+// hand said. 25585's staircase up from y 36 was offered with no step
+// that gained and ended "no route" (note 687).
 const HAND_LINE_MIN = 3;
 function handWaySays(bot, stair, line = null) {
   if (!bot?.inventory?.items || pickaxeCarried(bot)) return { offered: true, says: '' };
-  if (stair && !stair.gains) return { offered: false, says: `no pickaxe carried, and no step toward it can be dug by hand from here (${stair.blocked || 'nothing nearer can be dug'})` };
-  if (line?.stopName && line.stopAt < HAND_LINE_MIN) return { offered: false, says: `no pickaxe carried, and ${line.stopName} ${line.stopAt} block${line.stopAt === 1 ? '' : 's'} along the straight line to it, which no hand digs` };
-  if (line?.stopName) return { offered: true, says: ` No pickaxe is carried: rock is dug by hand, dropping nothing (about ${line.handSeconds} seconds before it), and the straight line to it meets ${line.stopName} about ${line.stopAt} blocks along, which no hand digs: there it stops.` };
-  return { offered: true, says: ` No pickaxe is carried: it digs by hand only rock softer than ${hardRock(bot)}, dropping nothing${line ? ` (about ${line.handSeconds} seconds on the straight line to it)` : ''}, and stops at the first of those.` };
+  if (stair && !stair.gains) return { offered: false, says: `no pickaxe carried, and no step toward it can be dug from here (${stair.blocked || 'nothing nearer can be dug'})` };
+  if (line?.stopName && line.stopAt < HAND_LINE_MIN) return { offered: false, says: `${line.stopName} ${line.stopAt} block${line.stopAt === 1 ? '' : 's'} along the straight line to it, which does not break` };
+  const secs = line ? ` (about ${line.handSeconds} seconds of digging on the straight line to it${line.stopName ? `, up to ${line.stopName} about ${line.stopAt} blocks along, which does not break` : ''})` : '';
+  return { offered: true, says: ` No pickaxe is carried: rock is dug by hand, ${hardRock(bot)}${secs}.` };
 }
 
 // The question's first line where no pickaxe is carried and a way to one is
@@ -150,7 +149,7 @@ function handWaySays(bot, stair, line = null) {
 function pickaxeLead(bot, ways = [], closed = [], { closedSays = 'not offered for want of one' } = {}) {
   if (!ways.length || !bot?.inventory?.items || pickaxeCarried(bot)) return null;
   const laid = require('./bridging').blocksCarried(bot);
-  return `No pickaxe is carried: no ${hardRock(bot)} is dug, no block comes back, and ${laid ? `a span or pillar has only the ${laid} carried` : 'no block that holds is carried to span or pillar with'}${closed.length ? `; ${closedSays}: ${closed.join('; ')}` : ''}. ${ways.join(' and ')} get${ways.length === 1 ? 's' : ''} one first.`;
+  return `No pickaxe is carried: rock is dug only by hand (${hardRock(bot)}), and ${laid ? `a span or pillar has only the ${laid} carried` : 'no block that holds is carried to span or pillar with'}${closed.length ? `; ${closedSays}: ${closed.join('; ')}` : ''}. ${ways.join(' and ')} get${ways.length === 1 ? 's' : ''} one first.`;
 }
 // The tree with the ways to a pickaxe first, the rest in their order.
 function pickaxeFirstOrder(options, ways = ['make_pickaxe', 'fetch_stems']) {
@@ -193,10 +192,10 @@ function handGather(bot, { reach = 16, walk = 32 } = {}) {
   try { found = require('./bridging').spanBlockSources(bot, { reach, walk, names: HAND_BLOCKS }); } catch (_) { /* nothing looked at */ }
   const n = found.sources.length;
   const kinds = Object.entries(found.reachable).map(([k, c]) => `${c} ${k.replaceAll('_', ' ')}`).join(', ');
-  const rule = 'netherrack dug by hand takes about 2 seconds a block and drops nothing, and basalt, blackstone and nether bricks drop nothing by hand either (the game\'s rule: they drop only to a pickaxe)';
+  const rule = `rock is dug by hand, ${hardRock(bot)} (the game's rule: rock drops only to a pickaxe)`;
   const says = n
     ? `By hand here: ${rule}; what a hand does get is ${kinds} within ${reach} blocks, dug from ground walked to (they drop by hand and can be laid).`
-    : `Nothing a hand digs within ${reach} blocks drops a block: ${rule}, and no soul sand, soul soil or wart block can be dug from ground walked to here (gravel drops, but falls, and is not laid).`;
+    : `Nothing dug by hand within ${reach} blocks drops a block that can be laid: ${rule}, and no soul sand, soul soil or wart block can be dug from ground walked to here (gravel drops, but falls, and is not laid).`;
   return { n, sources: found.sources, found, says };
 }
 

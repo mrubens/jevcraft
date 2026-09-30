@@ -72,15 +72,30 @@ function guardFloor(bot, changed, what) {
 // between every crossing and their floors (note 694).
 const WALL = /^(nether_bricks|nether_brick_fence|cracked_nether_bricks)$/;
 const diggableHere = (block, wall) => block.diggable && (NATURAL.test(block.name) || (wall && WALL.test(block.name)));
+// A cell dug with gravel or sand over it is dug again as the column comes
+// down into it, until it stays open: the crossing does not step its head
+// into a cell the column fills. 25588 (mid-243-hf, 00:26Z on 2026-09-30)
+// crossed through a gravel seam, dug the head's cell, stepped in and was
+// buried as the gravel over it fell, three times from 8.2 health to 1.2; each
+// step aside out of it worked, and the crossing walked back in (note 705).
+const FALLS = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel|\w+_concrete_powder)$/;
+const FALL_COLUMN = 12;
 async function clear(bot, task, p, { wall = false } = {}) {
-  const block = bot.blockAt(p);
-  if (block && BURNS.test(block.name)) throw new Error(`Lava in the way at ${p}`);
-  if (passable(block)) return;
-  if (!diggableHere(block, wall)) throw new Error(`The span is blocked by ${block.name}`);
-  if (!require('./tunneling').safeExcavation(bot, p)) throw new Error(`Lava or water behind the ${block.name.replaceAll('_', ' ')} at ${p}`);
-  guardFloor(bot, p, 'dug');
-  await equipBestTool(bot, block); task.check();
-  await bot.dig(block, true);
+  for (let n = 0; n < FALL_COLUMN; n++) {
+    const block = bot.blockAt(p);
+    if (block && BURNS.test(block.name)) throw new Error(`Lava in the way at ${p}`);
+    if (passable(block)) return;
+    if (!diggableHere(block, wall)) throw new Error(`The span is blocked by ${block.name}`);
+    if (!require('./tunneling').safeExcavation(bot, p)) throw new Error(`Lava or water behind the ${block.name.replaceAll('_', ' ')} at ${p}`);
+    guardFloor(bot, p, 'dug');
+    const column = FALLS.test(bot.blockAt(p.offset(0, 1, 0))?.name || '');
+    await equipBestTool(bot, block); task.check();
+    await bot.dig(block, true);
+    if (!column) return;
+    // The column comes down into the cell: waited for, and dug again.
+    for (let t = 0; t < 30 && passable(bot.blockAt(p)); t++) { task.check(); await sleep(50); }
+  }
+  throw new Error(`Gravel or sand keeps falling into ${p} (more than ${FALL_COLUMN} blocks of it)`);
 }
 
 // The next cell of a straight crossing: along whichever axis has farther to
@@ -124,6 +139,13 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = n
       dig++;
       // With the tool the dig would take (skills.js cheapestTool).
       if (typeof b.digTime === 'function' && bot.inventory?.items) { const type = tool !== undefined ? tool : require('./skills').cheapestTool(bot, b)?.type ?? null; digMs += b.digTime(type, false, false, false, [], {}); }
+    }
+    // A head's cell dug under a column of gravel or sand: the column comes
+    // down into it and is dug too, a block at a time (clear).
+    if (!why && !passable(bot.blockAt(next.offset(0, 1, 0)))) {
+      let col = 0;
+      for (let y = 2; y < 2 + FALL_COLUMN && FALLS.test(bot.blockAt(next.offset(0, y, 0))?.name || ''); y++) col++;
+      if (col) { dig += col; digMs += col * 1000 * (require('./hand-dig').handSeconds(bot, 'gravel') ?? 0.9); }
     }
     const floor = bot.blockAt(next.offset(0, -1, 0));
     const lay = !solid(floor);
@@ -453,4 +475,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

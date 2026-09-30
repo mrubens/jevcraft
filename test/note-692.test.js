@@ -50,7 +50,7 @@ test('under its fortress with no pickaxe, wood or blocks: what a hand gets here 
   assert(asked, 'the way in was asked');
   const { options, state } = asked;
   assert.equal(state.fortress.height, 26, 'the floor is 26 up, not the pier\'s bricks 2 down');
-  assert.match(state.byHand, /^Nothing a hand digs within 16 blocks drops a block: netherrack dug by hand takes about 2 seconds a block and drops nothing, and basalt, blackstone and nether bricks drop nothing by hand either \(the game's rule: they drop only to a pickaxe\), and no soul sand, soul soil or wart block can be dug from ground walked to here/);
+  assert.match(state.byHand, /^Nothing dug by hand within 16 blocks drops a block that can be laid: rock is dug by hand, netherrack about 2 s, basalt about 6\.25 s, blackstone about 7\.5 s, nether bricks about 10 s a block by hand, dropping nothing \(the game's rule: rock drops only to a pickaxe\), and no soul sand, soul soil or wart block can be dug from ground walked to here/);
   assert.equal(state.pillar, undefined, 'no pillar to be had here at all');
   assert.match(options.return_for_blocks, /^Go back through the portal \(the nearest known \d+ blocks off at 4, 50, 13\) for a pickaxe, blocks and wood: every way on here needs one of them\. Here a hand gets no block: netherrack dug by hand drops nothing; a span or pillar needs blocks \(0 carried\); a pickaxe needs wood \(none carried\)\. /);
   assert.match(options.return_for_blocks, /Walks back like this made 17 to 30 blocks a minute \(about 31 to 55 minutes\); of 181 over 60 blocks, 22 came out, 18 died/);
@@ -78,7 +78,7 @@ test('a hand gets soul sand: dug by hand for the pillar, said as dropping where 
   for (const [dx, dz] of [[1, 0], [-1, 0], [0, 2]]) bot.changed.set(`${943 + dx},41,${73 + dz}`, 'soul_sand');
   const hand = bs.handGather(bot);
   assert(hand.n >= 1, JSON.stringify(hand.found));
-  assert.match(hand.says, /^By hand here: netherrack dug by hand takes about 2 seconds a block and drops nothing.*what a hand does get is \d+ soul sand/);
+  assert.match(hand.says, /^By hand here: rock is dug by hand, netherrack about 2 s.*dropping nothing.*what a hand does get is \d+ soul sand/);
 });
 
 test('a leg that ends at the same place twice rests fifteen minutes from anywhere short of it, said with where and why (25585\'s east and west legs, note 692)', async () => {

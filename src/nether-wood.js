@@ -153,8 +153,10 @@ async function fetchStemsOffer(bot, task, goal) {
       where = `The nearest stems: ${place.n ? `${plural(place.n, words(place.name))} known` : `none known yet in ${place.forest}`} at ${at3(place.at)}, ${off} blocks ${compass(here, place.at)}${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}, ${FOREST_SAYS[kind]}${mobs ? `; about it now: ${mobs}` : ''}.` +
         route + (places[1] ? ` Next nearest: ${words(places[1].name)}s ${Math.round(places[1].at.distanceTo(here))} blocks ${compass(here, places[1].at)}.` : '');
     } else where = 'No stem is known: none seen within 128 blocks or remembered, and no crimson or warped forest noticed or in the loaded ground. The fetch then asks the legs of the gathering\'s search, each said with the Nether forests that way as far as loaded.';
+    // What the pickaxe is short of, which this fetch brings (note 705).
+    const short = stranded ? require('./mob-hunt').pickaxeFirst(bot).short : null;
     const pick = wanted.picked ? '' : stranded
-      ? ' No pickaxe is carried and none can be made from what is carried: rock and netherrack dug by hand drop nothing, so no block comes back to lay, and every leg through rock is dug by hand.'
+      ? ` No pickaxe is carried: it is short of ${short ? `${short.planks} planks (${plural(short.stems, 'stem')}) for ${short.for || 'it'}, which this fetch brings; then ${short.then}` : 'wood, which this fetch brings'}. Until then rock is dug by hand and drops nothing.`
       : ' No pickaxe is carried.';
     const later = LATER;
     const makes = wanted.picked ? '' : ' The pickaxe is made as soon as the wood for it is carried.';

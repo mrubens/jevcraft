@@ -130,24 +130,20 @@ function floorFacts(view, feet, island) {
     ? `; the nearest ground that is not part of it is ${found.cells} cell${found.cells === 1 ? '' : 's'} of gap from the floor cell at (${found.from.x}, ${found.from.y}, ${found.from.z})${along ? `, ${along} step${along === 1 ? '' : 's'} along it from here` : ', the cell stood on'}, at (${found.to.x}, ${found.to.y}, ${found.to.z})`
     : '; no ground that is not part of it within 24 cells of open air of any of its cells'}`;
 }
-// Stone and ore take a pickaxe; the rest comes away in the hand.
-// By hand a block that wants a pickaxe takes the game's five times its
-// hardness and drops nothing: offered so for the bot's own blocks, for
-// netherrack (two seconds) and for the fortress's bricks (ten). mid-242-jb
-// (25591, 22:37Z on 2026-09-29) stood walled in by its own netherrack with no
-// pickaxe, offered only the fortress's bricks "about 0.5 s" each (ten by
-// hand), and never its own netherrack (note 697).
-const HAND_HARDNESS = { netherrack: 0.4, nether_bricks: 2, red_nether_bricks: 2, nether_brick_fence: 2, nether_brick_stairs: 2, nether_brick_slab: 2, nether_brick_wall: 2,
-  basalt: 1.25, polished_basalt: 1.25, smooth_basalt: 1.25, blackstone: 1.5, stone: 1.5, cobblestone: 2, andesite: 1.5, diorite: 1.5, granite: 1.5, tuff: 1.5, deepslate: 3, cobbled_deepslate: 3.5, end_stone: 3 };
+// Stone and ore take a pickaxe for the drop; by hand they break at the
+// game's time, five times the hardness, and drop nothing (hand-dig.js).
+// mid-242-jb (25591, 22:37Z on 2026-09-29) stood walled in by its own
+// netherrack with no pickaxe, offered only the fortress's bricks "about
+// 0.5 s" each (ten by hand), and never its own netherrack (note 697); the
+// rest (basalt, blackstone, stone) was not offered at all by hand, as if
+// no hand broke it (note 705).
 const needsPickaxe = name => /stone|deepslate|granite|diorite|andesite|tuff|calcite|terracotta|basalt|netherrack|^(red_)?nether_brick/.test(name) || ORE.test(name);
 function digSeconds(name, view, inWater, cell = null) {
   const stony = needsPickaxe(name);
   if (stony && !view.pickaxe) {
-    const own = !!cell && !!laidOf(view, cell);
-    if (!own && !/^netherrack$|^(red_)?nether_brick/.test(name)) return null;
-    const h = cell && Number.isFinite(view.block?.(cell)?.hardness) ? view.block(cell).hardness : HAND_HARDNESS[name];
-    if (!Number.isFinite(h)) return null;
-    return Math.round(h * 5 * (inWater ? 5 : 1) * 10) / 10;
+    const hd = require('./hand-dig'), b = cell ? view.block?.(cell) : null;
+    const s = hd.handSeconds(null, name, { inWater }) ?? (b && Number.isFinite(b.hardness) ? hd.handSeconds(null, b, { inWater }) : null);
+    return s === null ? null : Math.round(s * 10) / 10;
   }
   // Wood by hand is slow: a plank is three seconds without an axe (note 615).
   const woody = /_planks$|_log$|_wood$|_stem$|_hyphae$|_fence$|_slab$|_stairs$/.test(name) && !/^nether_brick/.test(name);
@@ -345,7 +341,7 @@ function risePlan(view, feet, { reach = 48 } = {}) {
   for (const r of rock) {
     const withTool = left > 0 && view.pickaxe;
     if (withTool) { left--; if (funds.has(r.name)) drops++; }
-    seconds += withTool ? (digSeconds(r.name, view, false) ?? 1.2) : /netherrack|basalt|blackstone|_nylium|soul|dirt|gravel|sand/.test(r.name) ? 2 : 7.5;
+    seconds += withTool ? (digSeconds(r.name, view, false) ?? 1.2) : (require('./hand-dig').handSeconds(null, r.name) ?? 7.5);
   }
   const kinds = [...new Set(rock.map(r => r.name.replaceAll('_', ' ')))].slice(0, 3).join(', ');
   const tool = view.pickaxe ? `the ${view.pickaxe.replaceAll('_', ' ')}${Number.isFinite(view.pickaxeUses) ? ` (${view.pickaxeUses} uses left${view.pickaxeUses < rock.length ? `, the last ${rock.length - view.pickaxeUses} by hand, which drop nothing` : ''})` : ''}` : 'bare hands (nothing dropped)';

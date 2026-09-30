@@ -37,7 +37,8 @@ test('25589 at 20:08:20Z: carry_on says what the five minutes cannot do with no 
   assert(options.fetch_stems, `offered: ${Object.keys(options)}`);
   // The recorded words said only "see to this later; asked again in five minutes".
   assert.match(frame.options.carry_on, /^Carry on with the find fortress and see to this later; asked again in five minutes, or sooner if what is due here changes\.$/);
-  assert.match(options.carry_on, /or a way chosen fails for want of a pickaxe\. No pickaxe is carried: the next 5 minutes cannot dig or stair through basalt, blackstone or nether bricks, or pillar or span a gap; netherrack is dug by hand \(about 2 seconds a block\) and drops nothing\./);
+  // Every rock breaks by hand, slowly, dropping nothing (note 705).
+  assert.match(options.carry_on, /or a way chosen fails for want of a pickaxe\. No pickaxe is carried: for the next 5 minutes rock is dug by hand \(netherrack about 2 s, basalt about 6\.25 s, blackstone about 7\.5 s, nether bricks about 10 s a block by hand, dropping nothing\), and no block is carried to pillar or span a gap\./);
   assert.match(JSON.stringify(state), /"situation":"No pickaxe is carried: fetch_stems gets one first\. Something the bot keeps/);
   assert.equal(goal.upkeepHold.noPickaxe, true);
   // Held: not asked again while the five minutes run and nothing failed.
@@ -70,47 +71,42 @@ test('the carry-on hold ends at the first way chosen that fails for want of a pi
   assert.equal(pickaxeWanted(bot, goal, { method: 'leg_east', why: 'out of blocks (0 carried)' }), true);
 });
 
-test('with no pickaxe a leg stops at the first basalt, blackstone or bricks, and its rock is said by hand, not "with the tools carried"', () => {
+test('with no pickaxe a leg digs basalt, blackstone and bricks by hand at the game\'s times, dropping nothing, and stops only at a block that does not break (note 705; was note 687\'s stop at bricks)', () => {
   const { surveyLeg, legSays } = require('../src/nether-travel');
   const block = (name, p) => name === 'air' ? { name, position: p, boundingBox: 'empty' }
     : { name, position: p, boundingBox: 'block', hardness: registry.blocksByName[name].hardness, harvestTools: registry.blocksByName[name].harvestTools, digTime: () => 1000 * 5 * registry.blocksByName[name].hardness };
-  // Netherrack for 10 cells east at the feet and head, then nether bricks; a floor under all of it.
-  const at = p => p.y === 63 ? block('netherrack', p) : (p.y === 64 || p.y === 65) && p.x >= 1 ? block(p.x <= 10 ? 'netherrack' : 'nether_bricks', p) : block('air', p);
+  // Netherrack for 10 cells east at the feet and head, then nether bricks to 20, then bedrock; a floor under all of it.
+  const at = p => p.y === 63 ? block('netherrack', p) : (p.y === 64 || p.y === 65) && p.x >= 1 ? block(p.x <= 10 ? 'netherrack' : p.x <= 20 ? 'nether_bricks' : 'bedrock', p) : block('air', p);
   const bot = frameBot({ position: { x: 0.5, y: 64, z: 0.5 }, blockAt: at });
   const survey = surveyLeg(bot, [1, 0], { cells: 32 });
-  assert.equal(survey.rock, 10);
-  assert.equal(survey.stoppedAt, 10);
-  assert.match(survey.stoppedBy, /^nether bricks, which no hand digs \(no pickaxe carried\)$/);
+  assert.equal(survey.rock, 20);
+  assert.equal(survey.stoppedAt, 20);
+  assert.equal(survey.stoppedBy, 'bedrock, which does not break');
+  // Ten cells of netherrack (2 x 2 s) and ten of bricks (2 x 10 s): 12 s a cell.
+  assert.equal(Math.round(survey.rockSeconds), 240);
   const says = legSays(survey, { direction: 'east', length: 96, y: 64 });
-  assert.match(says, /10 of rock to dig \(about \d+(\.\d)? seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it\)/);
-  assert.doesNotMatch(says, /with the tools carried/);
-  // The same leg with a pickaxe digs the bricks.
-  const armed = frameBot({ items: { stone_pickaxe: 1 }, position: { x: 0.5, y: 64, z: 0.5 }, blockAt: at });
-  const dug = surveyLeg(armed, [1, 0], { cells: 32 });
-  assert.equal(dug.stoppedAt, null);
-  assert.match(legSays(dug, { direction: 'east', length: 96, y: 64 }), /seconds a cell with the pickaxe carried/);
+  assert.match(says, /20 of rock to dig \(about 12 seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it\)/);
+  assert.doesNotMatch(says, /no hand digs|with the tools carried/);
 });
 
-test('a staircase with no pickaxe is offered only where a step toward it is dug by hand, and said so', () => {
+test('a staircase with no pickaxe is offered where a step toward it gains, its rock by hand said with the seconds (note 705; was note 687\'s softer-than-basalt rule)', () => {
   const { handWaySays, handDigs } = require('../src/block-stock');
   const bot = frameBot();
   const b = name => ({ name, boundingBox: 'block', hardness: registry.blocksByName[name].hardness, harvestTools: registry.blocksByName[name].harvestTools });
-  assert.equal(handDigs(bot, b('netherrack')), true);
-  for (const name of ['basalt', 'blackstone', 'nether_bricks']) assert.equal(handDigs(bot, b(name)), false, name);
-  assert.equal(handDigs(bot, b('soul_sand')), true);
-  const closed = handWaySays(bot, { gains: false, blocked: 'no tool for basalt' });
+  for (const name of ['netherrack', 'basalt', 'blackstone', 'nether_bricks', 'soul_sand']) assert.equal(handDigs(bot, b(name)), true, name);
+  assert.equal(handDigs(bot, b('bedrock')), false);
+  const closed = handWaySays(bot, { gains: false, blocked: 'lava or water in the way' });
   assert.equal(closed.offered, false);
-  assert.match(closed.says, /no pickaxe carried, and no step toward it can be dug by hand from here \(no tool for basalt\)/);
+  assert.match(closed.says, /no pickaxe carried, and no step toward it can be dug from here \(lava or water in the way\)/);
   const open = handWaySays(bot, { gains: true, steps: 30, seconds: 60, byHand: ['netherrack'] }, { steps: 30, handSeconds: 24, stopAt: null, stopName: null });
   assert.equal(open.offered, true);
-  assert.match(open.says, /No pickaxe is carried: it digs by hand only rock softer than basalt, blackstone or nether bricks, dropping nothing \(about 24 seconds on the straight line to it\), and stops at the first of those\./);
-  // Its line meets basalt two blocks along: not a way; twenty along: said where it stops.
-  const near = handWaySays(bot, { gains: true }, { steps: 30, handSeconds: 2, stopAt: 2, stopName: 'basalt' });
+  assert.equal(open.says, ' No pickaxe is carried: rock is dug by hand, netherrack about 2 s, basalt about 6.25 s, blackstone about 7.5 s, nether bricks about 10 s a block by hand, dropping nothing (about 24 seconds of digging on the straight line to it).');
+  // Bedrock two blocks along: not a way; twenty along: said where it stops.
+  const near = handWaySays(bot, { gains: true }, { steps: 30, handSeconds: 2, stopAt: 2, stopName: 'bedrock' });
   assert.equal(near.offered, false);
-  assert.match(near.says, /basalt 2 blocks along the straight line to it, which no hand digs/);
-  const far = handWaySays(bot, { gains: true }, { steps: 30, handSeconds: 40, stopAt: 20, stopName: 'nether bricks' });
+  const far = handWaySays(bot, { gains: true }, { steps: 30, handSeconds: 40, stopAt: 20, stopName: 'bedrock' });
   assert.equal(far.offered, true);
-  assert.match(far.says, /the straight line to it meets nether bricks about 20 blocks along, which no hand digs: there it stops\./);
+  assert.match(far.says, /up to bedrock about 20 blocks along, which does not break\)/);
   assert.deepEqual(handWaySays(frameBot({ items: { iron_pickaxe: 1 } }), { gains: false }), { offered: true, says: '' });
 });
 
@@ -139,7 +135,7 @@ test('"I haven\'t found it yet" is not said of a fortress the stalled step has f
   assert.equal(friendlyProblem(bare), "I haven't found it yet. We may need to look farther away.");
 });
 
-test('fortress_leg with no pickaxe leads with getting one: its first fact what the ways lack, the ways to one first, the basalt legs and the staircase not offered', async () => {
+test('fortress_leg with no pickaxe leads with getting one: its first fact what the ways lack, the ways to one first, the basalt legs and the staircase offered by hand with their seconds (note 705)', async () => {
   const { findFortressStep } = require('../src/mob-hunt');
   const { Task } = require('../src/skills');
   // 25585's ledge at y 36: basalt round it but a strip of floor east at the feet.
@@ -153,14 +149,14 @@ test('fortress_leg with no pickaxe leads with getting one: its first fact what t
   assert.equal(client.asked.length >= 1, true);
   const { options, state } = client.asked[0];
   assert.equal(Object.keys(options)[0], 'make_pickaxe');
-  assert(!options.seek_fortress_height, 'no staircase where no hand digs');
-  assert(options.leg_east, 'the floor east');
-  assert(!options.leg_north && !options.leg_west && !options.leg_south, `offered: ${Object.keys(options)}`);
+  // Every heading is offered, its rock said by hand with the seconds, and the
+  // staircase too (note 705: basalt breaks by hand, 6.25 s, dropping nothing).
+  assert(options.seek_fortress_height, 'the staircase by hand');
+  assert(options.leg_east && options.leg_north && options.leg_west && options.leg_south, `offered: ${Object.keys(options)}`);
+  assert.match(options.leg_north, /96 of rock to dig \(about 12\.5 seconds a cell by hand, no pickaxe carried, dropping nothing/);
   const facts = JSON.stringify(state);
-  assert.match(facts, /^\{"withoutAPickaxe":"No pickaxe is carried: no basalt, blackstone or nether bricks is dug, no block comes back, and no block that holds is carried to span or pillar with; not offered for want of one: leg south; leg west; leg north; the staircase toward the fortress heights heading east\. make_pickaxe gets one first\."/);
-  // Why each is closed is in legsClosed.
-  assert.match(facts, /leg north: closed at the first cell at y 36, basalt, which no hand digs \(no pickaxe carried\)/);
-  assert.match(facts, /the staircase toward the fortress heights heading east: no pickaxe carried, and basalt 2 blocks along the straight line to it, which no hand digs/);
+  assert.match(facts, /^\{"withoutAPickaxe":"No pickaxe is carried: rock is dug only by hand \(netherrack about 2 s, basalt about 6\.25 s, blackstone about 7\.5 s, nether bricks about 10 s a block by hand, dropping nothing\), and no block that holds is carried to span or pillar with\. make_pickaxe gets one first\."/);
+  assert.doesNotMatch(facts, /no hand digs/);
 });
 
 test('wear is a fact before the pickaxe breaks: 25589\'s iron pickaxe, 117 uses to 3 in ten minutes on the search, said with its rate and whether another can be made', () => {

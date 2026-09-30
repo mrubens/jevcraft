@@ -236,8 +236,8 @@ test('with no pickaxe and one to be made, the legs offer making it, said with wh
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { client, navigate: async () => { throw new Error('No path to the goal!'); }, mineAt: async () => {}, tunnel: async () => {}, returnOverworld: async () => {}, acquireStep: pickaxeMade(inv) });
   assert.equal(goal.decisions.at(-1).id, 'fortress_leg');
   const { options } = client.asked[0];
-  assert.match(options.make_pickaxe, /^Make an iron pickaxe here from what is carried \(3 of the 12 iron ingots; 2 logs, 4 planks\), a few seconds at a crafting table: with it rock is dug and the netherrack dug comes back as blocks to lay/);
-  assert.match(options.make_pickaxe, /Without it rock and netherrack dug by hand drop nothing and 0 blocks can be laid\./);
+  assert.match(options.make_pickaxe, /^Make an iron pickaxe here from what is carried \(3 of the 12 iron ingots; 2 logs, 4 planks\), a few seconds at a crafting table: with it rock is dug several times faster and the netherrack dug comes back as blocks to lay/);
+  assert.match(options.make_pickaxe, /Without it rock is dug by hand, slowly, dropping nothing, and 0 blocks can be laid\./);
   assert.match(options.restock_blocks || '', /an iron pickaxe is made first/);
   assert.deepEqual(goal.made, ['iron_pickaxe'], 'chosen, it is made');
 });
