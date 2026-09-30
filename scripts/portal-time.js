@@ -229,6 +229,14 @@ function lavaFetch(frames) {
     if (next && next.t - f.t <= GAP_MS) castWaterMs += next.t - f.t;
     if (f.stall) castWaterStalls++;
   }
+  // A walk to a pool that got there, followed within thirty seconds by the
+  // dig for the deep lava while still within twelve blocks of the pool: the
+  // pass read from where the walk began (note 753d).
+  let arrivedThenDeep = 0, lastPool = null;
+  for (const f of over) {
+    if (f.action === 'go_to_landmark' && f.target) { lastPool = { at: f.target, t: f.t }; continue; }
+    if (lastPool && f.action === 'fill_bucket' && f.phase === 'tunnel' && f.target && f.target.y <= LAVA_DEPTH + 2 && f.pos && f.t - lastPool.t < 30000 && near3(f.pos, lastPool.at, 12)) { arrivedThenDeep++; lastPool = null; }
+  }
   let flips = 0;
   for (let i = 1; i < answers.length; i++) if (answers[i].answer !== answers[i - 1].answer && answers[i].t - answers[i - 1].t < 60000) flips++;
   // The scooping spots' route search before each pass's phase (a
@@ -269,7 +277,7 @@ function lavaFetch(frames) {
   }
   return { buckets, minutes: round(fetchMs / 60000), byPhase: Object.fromEntries(Object.entries(byPhase).map(([k, ms]) => [k, ms / 60000])), deepMinutes: round(deepMs / 60000), deepWithPoolMinutes: round(deepPoolMs / 60000),
     switches, climbed: Math.round(climbed), descended: Math.round(descended), poolsFound: pools.length, portalMethodAnswers: answers.length, portalMethodFlips: flips,
-    castWaterMinutes: round(castWaterMs / 60000), castWaterStalls, stalls, repeatStalls, detoursWithPool, detoursToPool, surveys: surveys.length, surveyMinutes: round(surveyMs / 60000), surveySkippableMinutes: round(skippableMs / 60000), caveLegs, caveLegMinutes: round(caveLegMs / 60000) };
+    arrivedThenDeep, castWaterMinutes: round(castWaterMs / 60000), castWaterStalls, stalls, repeatStalls, detoursWithPool, detoursToPool, surveys: surveys.length, surveyMinutes: round(surveyMs / 60000), surveySkippableMinutes: round(skippableMs / 60000), caveLegs, caveLegMinutes: round(caveLegMs / 60000) };
 }
 
 function main() {
@@ -307,6 +315,7 @@ function main() {
   console.log(`  Height while fetching: ${sum('climbed')} climbed, ${sum('descended')} descended (${per(sum('climbed') + sum('descended'), buckets)} a bucket).`);
   console.log(`  portal_method: ${sum('portalMethodAnswers')} answers, ${sum('portalMethodFlips')} changed within a minute of the one before.`);
   console.log(`  Route searches before a phase: ${sum('surveys')}, ${round(sum('surveyMinutes'))} min; at most ${round(sum('surveySkippableMinutes'))} min of them repeated within six blocks and a minute with no scoop (note 753's memo).`);
+  console.log(`  Pool walks that got there and then dug for the deep lava within 30 s, within 12 blocks of the pool: ${sum('arrivedThenDeep')} (note 753d).`);
   console.log(`  The cast held up by water in its slot (stop_water, fill_source, drain): ${round(sum('castWaterMinutes'))} min, ${sum('castWaterStalls')} stalls meanwhile (note 753c).`);
   console.log(`  Navigation stalls before the Nether: ${sum('stalls')}, ${sum('repeatStalls')} of them at a spot stalled at twice already in fifteen minutes (note 753b).`);
   console.log(`  Stall questions answered with a pool found within 128 blocks: ${sum('detoursWithPool')}, ${sum('detoursToPool')} of them going to it or to the frame (note 753b).`);

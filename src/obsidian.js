@@ -240,7 +240,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   // The lake already found comes before a new shaft: chased off by a
   // creeper, the bot stood at its base sixty blocks from its own crust.
   const remembered = works.lastPour && open(at(works.lastPour)) ? at(works.lastPour) : null;
-  const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(open);
+  const deep = require('./tunneling').descentTargets(here.floored(), LAVA_DEPTH).find(p => open(p) && !isSetAside(goal, 'staircase_from', require('./tunneling').landingKey(here.floored(), p)));
   const dest = spots.find(s => open(s.feet))?.feet || (nearest ? lavaWay(nearest) : remembered || deep);
   if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw noLavaWay(bot, goal, surface); }
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
@@ -353,7 +353,12 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // (note 524).
   const to = castTo(bot, goal), here = bot.entity.position;
   const carry = p => carrySeconds(here, p, to);
-  const deep = descentTargets(here.floored(), LAVA_DEPTH).find(p => !staircaseResting(goal, p));
+  // A heading whose staircase from this landing rests is not the deep lava
+  // either: read by the target's area alone, a heading resting from here was
+  // chosen and thrown on at once, four in nine seconds on 25590 (mid-239-ce,
+  // 2026-09-30 17:16:01-10Z, "paced the same few cells about (223, -1, 40)"
+  // said of each), and the fetch was called stuck (note 753d).
+  const deep = descentTargets(here.floored(), LAVA_DEPTH).find(p => !staircaseResting(goal, p) && !isSetAside(goal, 'staircase_from', require('./tunneling').landingKey(here.floored(), p)));
   const landmarkAt = l => new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z);
   const pool = l => !l.spent && !lavaResting(goal, landmarkAt(l));
   // A deep dig already real steps into (resourceTunnelStep's own site,
@@ -385,11 +390,21 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     const bound = Math.min(surface.length ? Math.min(...surface.map(carry)) : Infinity, deep ? carry(deep) : Infinity);
     const shorter = l => pool(l) && carry(landmarkAt(l)) * margin < bound && !surface.some(p => Math.hypot(p.x - l.x, p.z - l.z) <= 16);
     if ((goal.landmarks || []).some(l => l.kind === 'lava_pool' && shorter(l))) {
+      const walkedFrom = bot.entity.position.clone();
       const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: poolCost,
         onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
       if (arrived === false) return;
       // Arrived and no lava of its own there: that pool is spent.
       if (arrived && !ownLava(bot, arrived)) { arrived.spent = new Date().toISOString(); save(); return; }
+      // Arrived after a walk: the pass ends, and the next reads the lava,
+      // the spots and the pools from where the bot now stands. Read from
+      // where the walk began, this pass went on with the lava in sight from
+      // there (none, 118 blocks off) and the pool's distance from there:
+      // 25583 (mid-244-gh, 2026-09-30 17:09:21Z) stood six blocks from the
+      // pool at (392, 23, -47) and was told "no lava in sight; the pool
+      // known ... is passed: 118 blocks off, too far to dig to", and dug for
+      // the deep lava (note 753d).
+      if (arrived && bot.entity.position.distanceTo(walkedFrom) > 2) return;
     }
   }
   const spots = scoopSpots(bot, surface, { want: step.count || 1 });
@@ -467,12 +482,14 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     // For a cast, not a pool farther to carry from than the deep lava, the
     // same margin as above once the dig has real steps in it.
     const filter = to ? l => pool(l) && !(deep && carry(landmarkAt(l)) * margin >= carry(deep)) : pool;
+    const walkedFrom = bot.entity.position.clone();
     const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, cost: poolCost,
       onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
     // On the way, or at a pool found dry. At one still holding lava, whose
     // every way rests, it is not done: the other ways below are.
     if (arrived === false) return;
     if (arrived && !ownLava(bot, arrived)) { arrived.spent = new Date().toISOString(); save(); return; }
+    if (arrived && bot.entity.position.distanceTo(walkedFrom) > 2) return;
   }
   const rank = (a, b) => to ? carry(a) - carry(b) : a.distanceTo(here) - b.distanceTo(here);
   let nearest = diggable.sort(rank)[0];

@@ -433,6 +433,7 @@ class WaysResting extends Error {
   constructor(message, until) { super(message); this.name = 'WaysResting'; this.until = until; }
 }
 
+const RESUME_MS = 15000;
 async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place = null, approach = false, strict = false, within = null, retreat = retreatForTunnel }) {
   if (staircaseResting(goal, target)) throw staircaseStillResting(goal, save, target, 'staircase', area(target));
   const from = bot.entity.position.floored();
@@ -522,8 +523,18 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
     return;
   }
   tunnel.noWay = 0; tunnel.retreatsWithoutStep = 0;
-  noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
-  tunnel.visited[`${choice.destination}`] = (tunnel.visited[`${choice.destination}`] || 0) + 1;
+  // The same stair chosen again after the work was away a while (a smelt, a
+  // craft, a fight) is the staircase taken up again, not a pace: counted as
+  // one, four returns to one landing read as pacing it, and 25590
+  // (mid-239-ce, 17:14:54-17:15:59Z, three rung_nether_pickaxe smelts
+  // between stairs) had its staircase set aside for it (note 753d).
+  const destKey = `${choice.destination}`, now = Date.now();
+  const resumed = tunnel.lastDest === destKey && now - (tunnel.lastStepAt || 0) > RESUME_MS;
+  if (!resumed) {
+    noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
+    tunnel.visited[destKey] = (tunnel.visited[destKey] || 0) + 1;
+  }
+  tunnel.lastDest = destKey; tunnel.lastStepAt = now;
   tunnel.steps++;
   // A round that gains nothing starts again, but keeps its best and the map
   // of cells it has walked. Both used to be reset: each round measured
