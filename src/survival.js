@@ -4595,6 +4595,22 @@ class Survival {
     // reaches the bot its way.
     const blows = blowsSay(mobs, bot.health);
     if (blows) for (const o of Object.values(options)) o.description = `${blows} ${o.description}`;
+    // Every mob here with a fact worth telling (combat-estimate.js MOBS'
+    // own `note`: an enderman's 2.9 blocks and the two-high pocket that
+    // keeps it out, a spider's poison, a wither skeleton's wither, a wolf's
+    // pack, a goat's ram), said once with every stance. The fact was
+    // already known and already used to weigh a hunt's approach
+    // (mob-hunt.js) and the figures above (hitsLeft, blazeLands), but never
+    // reached the stance itself: the single enderman fought or sealed out
+    // by name in code, below, knew its own height; a second or third one,
+    // handed to Jev as a stance question instead, was not (note 713 - the
+    // crowd's own seal was offered with no word that an enderman cannot
+    // enter it, and every other mob's own fact was silent here the same
+    // way, general to all of them, not just the one this drill happened to
+    // measure).
+    const mobNotes = [...new Map(mobs.filter(m => m.note).map(m => [m.name, m.note])).values()];
+    const notesSay = mobNotes.length ? ` ${mobNotes.map(n => `${n[0].toUpperCase()}${n.slice(1)}.`).join(' ')}` : '';
+    if (notesSay) for (const o of Object.values(options)) o.description += notesSay;
     return options;
   }
 

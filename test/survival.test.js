@@ -3938,6 +3938,25 @@ test('the run from an enderman says it teleports after the bot', () => {
   assert.match(options.retreat.description, /An enderman after the bot runs at about 8\.7 blocks a second, faster than the bot sprints \(5\.6\), and teleports toward it once it is more than sixteen blocks off: a run from one ends with it beside the bot again/);
 });
 
+test('a crowd of endermen is told the fact a lone one is only ever fought or sealed on: a two-high pocket keeps it out', () => {
+  // Note 713: survival.js's single-enderman fast path knows (in code) that
+  // an enderman is 2.9 tall and cannot enter a two-high pocket or hole, but
+  // that fact never reached Jev once a second enderman put the crowd on
+  // the general stance question instead of the fast path. The fact was
+  // already sitting in combat-estimate.js's own MOBS table and already
+  // said to the hunt's approach question (mob-hunt.js); it was only silent
+  // here, at the stance itself.
+  const bot = crowdBot({ health: 14 });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const crowd = [crowdMob(1, 'enderman', 4), crowdMob(2, 'enderman', -5), crowdMob(3, 'enderman', 0, 6)];
+  const options = survival.stanceOptions(new Task('t'), {}, () => {}, crowd, false);
+  const fact = /it is 2\.9 tall and cannot come into a space under three blocks high, so a two-high pocket or hole keeps it out/;
+  assert.match(options.seal.description, fact, 'seal: ' + options.seal.description);
+  assert.match(options.fight.description, fact, 'fight: ' + options.fight.description);
+  // Said once, not three times over, for the three endermen of one name.
+  assert.equal(options.seal.description.match(/2\.9 tall/g)?.length, 1);
+});
+
 test('held on a span with a shot on its way and no walls or ground to be had, the shield comes up', async () => {
   // mid-227-l held still on a fortress bridge under two blazes' fire and burned from 7.5 to none.
   const blaze = { id: 4, name: 'blaze', type: 'hostile', position: new Vec3(0.5, 66, 10.5), height: 1.8, isValid: true };
