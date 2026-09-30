@@ -3237,9 +3237,23 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // "I'm looking for a fortress (leg 4)" from beside its cage. The step
   // names the cage; the stall's question comes with the stay, the slit and
   // the ways off. A wait or a walk to a spawner Jev chose runs as it does.
+  //
+  // A flat eight blocks from the cage was not the fortress's own reach: 25594
+  // rose into its own box by the cage (nine off by that count) and was asked
+  // fortress_approach a second after answering stand_by_spawner, taking
+  // cross_level "toward the fortress, 6 blocks off" while at its spawner; and
+  // 25589 said "I'm looking for a fortress (leg 6, heading east)" three
+  // blocks from the cage (note 717). Held instead against the fortress's own
+  // extent (fortressAnchor's reach, mob-hunt.js), the one place it is already
+  // known to run to: within it, with the cage's own fortress and rods
+  // wanted, the bot is still where the search is for however far the box or
+  // the wait stands from the cage itself.
   const atCage = !state.spawnerWait && !state.goTo ? require('./cage-hold').cageFight(bot, goal) : null;
-  if (atCage && atCage.off <= GO_TO_NEAR) {
-    if (goal.step?.action !== 'at_spawner') console.log(`[fortress] at the spawner at (${atCage.cage.x}, ${atCage.cage.y}, ${atCage.cage.z}), ${atCage.off} blocks off, ${atCage.need} rods wanted: no visit, approach or leg asked from here`);
+  const fa = state.fortressAt;
+  const cageExtent = atCage && fa && Math.hypot(atCage.cage.x - fa.x, atCage.cage.z - fa.z) <= Math.max(fa.extent || 0, GO_TO_NEAR)
+    ? Math.hypot(bot.entity.position.x - fa.x, bot.entity.position.z - fa.z) <= Math.max(fa.extent || 0, GO_TO_NEAR) : false;
+  if (atCage && (atCage.off <= GO_TO_NEAR || cageExtent)) {
+    if (goal.step?.action !== 'at_spawner') console.log(`[fortress] at the spawner at (${atCage.cage.x}, ${atCage.cage.y}, ${atCage.cage.z}), ${atCage.off} blocks off${cageExtent ? `, within the fortress's own ${Math.max(fa.extent || 0, GO_TO_NEAR)} blocks` : ''}, ${atCage.need} rods wanted: no visit, approach or leg asked from here`);
     goal.step = { action: 'at_spawner', target: { x: atCage.cage.x, y: atCage.cage.y, z: atCage.cage.z }, off: atCage.off, legs: state.legs || 0 }; save();
     await sleep(1000); task.check(); return;
   }
@@ -3283,6 +3297,13 @@ async function findFortressStep(bot, task, goal, save, actions) {
     if (!(w.until > Date.now())) {
       state.spawnerWaitEnded = w.go ? `the walk's ${Math.round(SPAWNER_GO_MS / 60000)} minutes ran out ${Math.round(off)} blocks from it` : w.startedAt ? `waited ${Math.round((Date.now() - w.startedAt) / 1000)} seconds, ${came}` : 'waited its minutes';
       walked(state.spawnerWaitEnded); state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; goal.step = { action: 'find_fortress', legs: state.legs || 0 }; save();
+      // Ended here, not fallen through into the bricks search below: with the
+      // wait just deleted, the next tick re-asks fresh from the top of this
+      // function, where the cage/fortress-extent gate above runs again with
+      // the current state. Falling through in the same tick was how the leg
+      // question and its "I'm looking for a fortress" chat fired a second
+      // after a stand_by_spawner answer, still at the cage (note 717).
+      return;
     }
     else if (w.go && off <= GO_TO_NEAR) {
       // There: the walk ends, and with no blaze near the stand is asked

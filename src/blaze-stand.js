@@ -28,6 +28,27 @@ const solid = b => b?.boundingBox === 'block';
 const WALK = 4.3; // blocks a second
 const KNOCK = ce.FIREBALL.knock;
 const SPAWNER_NEAR = 3, SPAWNER_SEARCH = 24;
+
+// A stand or hole's own cell (holeSite, spawnerHoleSite, spawnerSite,
+// wallSite) is chosen by a walkability model of this file's own
+// (standable, walkTo): floor solid, feet and head passable, no lava or
+// fire. It does not run the real pathfinder navigate() then walks, so a
+// cell it calls reachable can still come back "No path" or "came no
+// nearer" from the real walk (25589 mid-242-pc-fortress-2, 2026-09-30
+// 02:59-03:09Z: every short walk at the cage failed this way for ten
+// minutes, dig_in_at_spawner among them, the same site recomputed and
+// offered again each time since nothing remembered the failure). Kept on
+// the bot itself (as _stance, _buildCommit and _wavedOff already are),
+// not the goal: it is what this body just tried, not a plan to save.
+const SITE_FAILED_MS = 90000;
+function noteSiteFailed(bot, cell, why) {
+  if (!bot || !cell) return;
+  const now = Date.now();
+  bot._sitesFailed = [...(bot._sitesFailed || []).filter(s => now - s.at < SITE_FAILED_MS), { x: cell.x, y: cell.y, z: cell.z, at: now, why }].slice(-8);
+}
+function siteFailedNear(bot, c, within = 1.4, now = Date.now()) {
+  return (bot?._sitesFailed || []).some(s => now - s.at < SITE_FAILED_MS && Math.hypot(s.x - c.x, s.y - c.y, s.z - c.z) <= within);
+}
 const round = n => Math.round(n * 10) / 10;
 const words = s => String(s || '').replaceAll('_', ' ');
 const seconds = n => `${n} second${n === 1 ? '' : 's'}`;
@@ -79,6 +100,10 @@ function holeSite(bot, from, { within = bunker.WALK_TO_WALL } = {}) {
   let best = null;
   for (const stand of stands) {
     if (!stand.equals(feet) && !bunker.standable(bot, stand)) continue;
+    // A stand the real walk just failed at is not tried again while that
+    // stands (note 717: this file's own walkability model is not the
+    // pathfinder's, and a cell it calls reachable can come back "No path").
+    if (!stand.equals(feet) && siteFailedNear(bot, stand)) continue;
     const walkMs = stand.equals(feet) ? 0 : stand.distanceTo(here) * 250;
     for (const side of SIDES) {
       const hole = stand.plus(side);
@@ -133,7 +158,7 @@ function spawnerHoleSite(bot, cage = spawnerAt(bot), { steps = 30, avoid = [] } 
     }
     return best;
   };
-  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_HOLE + 1 && knockLands(bot, c) && !!beside(c), { steps, avoid });
+  const found = walkTo(bot, c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_HOLE + 1 && !siteFailedNear(bot, c) && knockLands(bot, c) && !!beside(c), { steps, avoid });
   if (!found) return null;
   const h = beside(found.cell);
   const walkMs = found.steps * 250;
@@ -193,7 +218,7 @@ function awayFrom(c, from) {
   return Math.abs(dx) >= Math.abs(dz) ? new Vec3(Math.sign(dx) || 1, 0, 0) : new Vec3(0, 0, Math.sign(dz) || 1);
 }
 function wallSite(bot, from, { steps = 8, avoid = [] } = {}) {
-  const ok = c => { const back = awayFrom(c, from); return !!back && solid(bot.blockAt(c.plus(back))) && solid(bot.blockAt(c.plus(back).offset(0, 1, 0))) && knockLands(bot, c); };
+  const ok = c => { const back = awayFrom(c, from); return !!back && solid(bot.blockAt(c.plus(back))) && solid(bot.blockAt(c.plus(back).offset(0, 1, 0))) && !siteFailedNear(bot, c) && knockLands(bot, c); };
   const found = walkTo(bot, ok, { steps, avoid });
   return found && { ...found, back: awayFrom(found.cell, from) };
 }
@@ -215,7 +240,7 @@ function spawnerSite(bot, spawner = spawnerAt(bot), { steps = 24, avoid = [] } =
   // the shield faces (the fortress drill's spawner stands on an open floor
   // by a wall, as the trials' did, and a ceiling was never there).
   const backed = c => { const back = awayFrom(c, centre); return !!back && solid(bot.blockAt(c.plus(back))) && solid(bot.blockAt(c.plus(back).offset(0, 1, 0))); };
-  const ok = c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_NEAR && (solid(bot.blockAt(c.offset(0, 2, 0))) || backed(c)) && knockLands(bot, c);
+  const ok = c => c.offset(0.5, 0.5, 0.5).distanceTo(centre) <= SPAWNER_NEAR && (solid(bot.blockAt(c.offset(0, 2, 0))) || backed(c)) && !siteFailedNear(bot, c) && knockLands(bot, c);
   const found = walkTo(bot, ok, { steps, avoid });
   return found && { ...found, spawner, off: round(found.cell.offset(0.5, 0.5, 0.5).distanceTo(centre)) };
 }
@@ -1658,6 +1683,12 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
     }
     if (at(bot, cell)) return true;
     const off = round(cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
+    // Remembered on the bot (note 717): the next site search does not pick
+    // this same cell again while the walk to it just failed (25589 was
+    // offered dig_in_at_spawner, box_here and the like at the same
+    // unreachable cell for ten minutes straight, each "No path" or a
+    // stall forgotten the moment it was asked again).
+    noteSiteFailed(bot, cell, why || `ended ${off} blocks short`);
     throw Object.assign(new Error(`the walk to its cell at (${cell.x}, ${cell.y}, ${cell.z}) ended ${off} blocks short${why ? `: ${why}` : ''}`), { name: 'StanceFailed' });
   };
   if (kind === 'break') {
@@ -1769,4 +1800,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS };
+module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS };

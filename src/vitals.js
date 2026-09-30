@@ -1465,6 +1465,15 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   task.check();
   const before = bot.food;
   let watcher;
+  // A meal on (bot._meal, meal.js note 701) is what keeps the shot reflex
+  // and the shield guard from raising or lowering the shield through this
+  // same eat: the server keeps one use of the hand at a time, so a raise or
+  // a release while the bite is in progress ends the bite with nothing
+  // eaten. That was fixed for the stance-chosen meal (meal.js eatThrough)
+  // but not this routine one: 25594 chose to eat at food 17 mid-fight and
+  // "Eating did not restore hunger" (note 717) is the same collision, here
+  // unguarded. Marking the meal here gets it the same deference.
+  const meal = bot._meal = { item: food.name, at: Date.now(), endsAt: Date.now() + require('./meal').EAT_MS + 400, cut: null };
   try {
     const cancelled = new Promise((_, reject) => {
       watcher = setInterval(() => {
@@ -1477,7 +1486,7 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     if (bot.heldItem === null) throw new Error('The food was not in hand to eat');
     await Promise.race([bot.consume(), cancelled]);
     await until(task, () => bot.food > before, 3000, 'Eating did not restore hunger');
-  } finally { clearInterval(watcher); bot.deactivateItem(); }
+  } finally { clearInterval(watcher); bot.deactivateItem(); if (bot._meal === meal) bot._meal = null; }
   return true;
 }
 

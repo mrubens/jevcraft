@@ -147,6 +147,24 @@ test('eating uses safe food and verifies restored hunger', async () => {
   assert.equal(await maintainVitals(bot, new Task('test', 'full')), false);
 });
 
+// Note 717: this routine eat did not mark bot._meal, so the shot reflex's
+// shield raise or its release-on-lower (combat.js, note 701) could collide
+// with the bite mid-consume and the food never rose ("Eating did not
+// restore hunger", 25594 mid-242-qe). While the bite is in progress the
+// same meal.mealOn(bot) guard combat.js already checks must see it on.
+test('eating through maintainVitals marks a meal on, as the stance-chosen eat does', async () => {
+  const { mealOn } = require('../src/meal');
+  let sawMealDuringConsume = null;
+  const bot = { food: 12, health: 18, entity: {}, registry: { foodsByName: { apple: { effectiveQuality: 6.4 } } },
+    inventory: { items: () => [{ name: 'apple', count: 1 }] },
+    equip: async () => {},
+    consume: async () => { sawMealDuringConsume = mealOn(bot); bot.food = 16; },
+    deactivateItem: () => {} };
+  assert(await maintainVitals(bot, new Task('test', 'eat')));
+  assert(sawMealDuringConsume, 'a meal was on (bot._meal) while the bite was in progress');
+  assert.equal(bot._meal, null, 'cleared once the eat is done');
+});
+
 test('eating can be cancelled while waiting for the server', async () => {
   let stopped = false;
   const task = new Task('test', 'eat');
