@@ -5600,7 +5600,13 @@ function sideTrips(bot, goal, client) {
     says: "I'll breed these cows", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'cow', { navigate }) };
   if (breeding.breedReady(bot, goal, 'sheep')) trips.breed_sheep = { description: 'Breed the two sheep in view with two wheat: the lamb is grown in about twenty real minutes, a wool a shearing (three from killing) for the next bed, and one to two mutton, six hunger a piece cooked.',
     says: "I'll breed these sheep", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'sheep', { navigate }) };
-  if (breeding.breedReady(bot, goal, 'chicken')) trips.breed_chickens = { description: 'Breed the two chickens in view with two seeds: more chickens near here are feathers for arrows.',
+  // Never beside a food search: chickens are never hurt, so breeding them
+  // is never for food, and offered while the Nether food kit is short or
+  // being worked (goal.stockFood) it reads as a food answer that is not
+  // one (mid-242-tf, note 728). Held back there; offered any other time.
+  const seekingNetherFood = !!goal.stockFood || (goal.kind === 'win' && /overworld/.test(String(bot.game?.dimension || 'overworld')) &&
+    (() => { try { return foodSupply(bot) < require('./crossing-kit').netherStay(bot, goal).points; } catch (_) { return false; } })());
+  if (breeding.breedReady(bot, goal, 'chicken') && !seekingNetherFood) trips.breed_chickens = { description: 'Breed the two chickens in view with two seeds: more chickens near here are feathers for arrows.',
     says: "I'll breed these chickens", run: (b, t, g, sv) => breeding.breedNearby(b, t, g, sv, 'chicken', { navigate }) };
   // A cache from an earlier trip, far enough off that passing will not
   // bring it back: fetch it.
@@ -6069,8 +6075,14 @@ function foodTopUpSays(bot, goal, pending, item) {
   const trips = foodTrips(bot, goal, pending, short);
   const first = trips.find(t => t.kind === 'home_chest') || trips.find(t => t.kind === 'home_plot');
   const others = trips.filter(t => t !== first).slice(0, 3);
+  // A real target, named, or said missing (note 728): a cow, sheep, rabbit
+  // or mooshroom in view or remembered is the target; with none of those
+  // known, the search says so plainly rather than promising an unbounded
+  // walk (mid-242-tf walked laps for fifteen minutes on "no bound on how
+  // far", never told there was nothing to walk toward).
   const route = first ? ` It goes to ${first.kind === 'home_chest' ? "home's chest" : 'the home plot'} first: ${first.says}.`
-    : ` With no home chest or plot of food to go to, it hunts a grown cow, sheep, rabbit or mooshroom within 32 blocks when one is in view, and otherwise searches outward from here for animals, heading by heading, on foot, swimming or by boat, with no bound on how far: how far and how long is not known until animals are seen.${others.length ? ` The food known (the search does not walk to what is out of view first): ${others.map(t => t.says).join('; ')}.` : ' No food is known nearby.'}`;
+    : others.length ? ` With no home chest or plot of food to go to, the food known (nearest first; the search does not walk to what is out of view first): ${others.map(t => t.says).join('; ')}.`
+    : ' With no home chest or plot of food to go to, and no cow, sheep, rabbit, mooshroom or fish known in view or remembered, no food target is known right now: the search walks outward a leg at a time, heading by heading, and names one as soon as it is seen.';
   const left = pending ? ` Meanwhile ${frameSays(pending)}, is left where it stands: nothing keeps the ${first ? 'trip' : 'search'} near it, and the ${pending.frame.cast ? 'cast' : 'frame'} is taken up again only when the bot has walked back to it.` : '';
   return route + left;
 }
@@ -6171,8 +6183,20 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
   const item = { key: 'food', carried, wants: want };
   const soFar = key => { const s = kit.spent[key]; return s?.ms >= 60000 ? ` ${Math.round(s.ms / 60000)} working minutes have gone to it, from ${s.from} to ${carried}.` : ' Nothing has gone to it yet.'; };
   const pending = framePending(bot, goal);
+  // What carried alone covers, cooked or baked, so going on with it is a
+  // real priced option and not just a number short of 80 (note 728: 25597
+  // was told only "25 of 80" for fifteen minutes, never what the 25 and
+  // what could be made of it were worth).
+  const onHandMore = () => {
+    const parts = [];
+    const cook = cookable(bot);
+    if (cook && cook.after > cook.now) parts.push(`cooking the ${cook.items.map(i => `${i.n} raw ${i.raw.replaceAll('_', ' ')}`).join(', ')} carried would add ${Math.round(cook.after - cook.now)} more (${Math.round(cook.after)} in all)`);
+    const wheat = countOf(bot, 'wheat'), loaves = Math.floor(wheat / 3);
+    if (loaves > 0) parts.push(`${wheat} wheat carried bakes ${loaves} bread, ${loaves * 5} points`);
+    return parts.length ? ` ${parts.join('; ')}.` : '';
+  };
   const tree = {
-    go_without: { description: `Go on without more food for now: ${carried} of ${want} points carried. The food step is set aside half an hour and the ladder goes on, to the crossing if nothing else is left.` },
+    go_without: { description: `Go on without more food for now: ${carried} of ${want} points carried.${onHandMore()} The food step is set aside half an hour and the ladder goes on, to the crossing if nothing else is left.` },
     top_up_food: { description: `Gather food: the home chest, the farm plot if there is one, or hunting animals.${foodTopUpSays(bot, goal, pending, item)}${soFar('food')}` },
   };
   const nearFood = foodNearFrame(bot, goal, pending, want - carried);

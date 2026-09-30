@@ -130,7 +130,7 @@ test('a rung set aside is said on the option that takes it back, with why and un
   const o = options.stage_reach_nether;
   assert.equal(o.takeBack, 'reach_nether');
   assert.match(o.description, /^Take the reach nether back up now after all\./);
-  assert.match(o.description, /The reach nether was set aside 65 seconds ago \(Jev set it aside at the rung's question, worked on 11 minutes\)\. Stuck on: the lava bucket: No route from here to the lava pool \(noPath\)\. It comes back on its own in 29 minutes \(\d\d:\d\dZ\); taken now, that rest is cut short and what it was stuck on is before it again\./);
+  assert.match(o.description, /The reach nether was set aside 65 seconds ago \(Jev set it aside at the rung's question, worked on 11 minutes\)\. Stuck on, as it stood when set aside: the lava bucket: No route from here to the lava pool \(noPath\)\. It comes back on its own in 29 minutes \(\d\d:\d\dZ\); taken now, that rest is cut short and what it was stuck on is before it again\./);
   // Not set aside: as before, and not asked alone.
   assert.equal(strategyOptions(overworld(), { version: 1, kind: 'win' }, stage), null);
 });

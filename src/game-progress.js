@@ -214,7 +214,10 @@ function rungAsideSays(goal, phase, now = Date.now()) {
   const aside = goal.rungAside?.phase === phase ? goal.rungAside : null;
   const minutes = Math.max(1, Math.ceil((entry.until - now) / 60000));
   const at = new Date(entry.until).toISOString().slice(11, 16);
-  const stuck = aside?.why ? ` Stuck on: ${String(aside.why).slice(0, 160).replace(/\.$/, '')}.` : '';
+  // Said as of when it was set aside, not as now: the tried counts inside
+  // it (mine nearby, tried N times) are that moment's, and may no longer
+  // hold by the time this is read again, minutes into the rest (note 728).
+  const stuck = aside?.why ? ` Stuck on, as it stood when set aside: ${String(aside.why).slice(0, 160).replace(/\.$/, '')}.` : '';
   return `The ${phase.replaceAll('_', ' ')} was set aside ${agoSays(now - entry.at)} ago (${String(entry.why).slice(0, 120)}).${stuck} It comes back on its own in ${minutes} minute${minutes === 1 ? '' : 's'} (${at}Z); taken now, that rest is cut short and what it was stuck on is before it again.`;
 }
 function takeBackRung(goal, phase) {

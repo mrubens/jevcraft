@@ -745,6 +745,12 @@ function placeBound(goal, { work = null, now = Date.now() } = {}) {
 // a wait that something is bringing to an end (stillness.js waitEnds:
 // sleep, a batch cooking, health coming back, daylight coming).
 const RUNG_ITEMS = { obtain_blaze_rods: ['blaze_rod'], obtain_ender_pearls: ['ender_pearl', 'ender_eye'], craft_eyes: ['ender_eye'], reach_nether: ['obsidian', 'flint_and_steel'] };
+// The kit rungs (crossing-kit.js KIT_PHASES) are not counted by a pseudo
+// item named after themselves: nether_food's own measure is food points
+// (rung-measure.js always carries `food`), and a phantom "nether food"
+// item, forever zero, only muddied its no-yield words with "no nether
+// food" beside the real "no food gained" (note 728).
+const RUNG_NO_ITEMS = new Set(['nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_KINDS = new Set(['win', 'nether', 'obtain', 'craft']);
 // A rung set aside is not the rung in hand while its rest lasts: the ladder
 // is on other work, or waits it out (the rods' rods_waiting). Its budget
@@ -763,7 +769,7 @@ function rungItems(goal, rung) {
   if (RUNG_ITEMS[rung]) return RUNG_ITEMS[rung];
   if (goal.kind !== 'win') return [goal.item].filter(Boolean);
   const step = goal.step?.action === 'combined_request' ? goal.step.detail : goal.step;
-  return [step?.item, step?.drops, rung].filter(Boolean);
+  return [step?.item, step?.drops, RUNG_NO_ITEMS.has(rung) ? null : rung].filter(Boolean);
 }
 function rungTarget(bot, goal) {
   const fs = goal.fortressSearch;

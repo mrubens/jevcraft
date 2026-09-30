@@ -55,7 +55,7 @@ test('with no frame begun, the known food is offered as its own way, back here, 
   const log = {};
   assert.equal(await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('top_up_food_near', log)), false);
   assert.match(log.offered.top_up_food_near, /^Gather food at the known food nearest by the trip there and back, then come back here: a cow in view, 10 blocks off: about \d+ seconds in all \(the walk there about 2 seconds, about 15 seconds for 1 cow, and back here about 2 seconds\), for about 6 of the 80 points short as raw meat, about 16 once cooked\./);
-  assert.match(log.offered.top_up_food, /it hunts a grown cow, sheep, rabbit or mooshroom within 32 blocks when one is in view, and otherwise searches outward/);
+  assert.match(log.offered.top_up_food, /With no home chest or plot of food to go to, the food known \(nearest first; the search does not walk to what is out of view first\): a cow in view, 10 blocks off/);
   assert.deepEqual(hunted, ['cow']);
   assert.equal(goal.step.action, 'food_known');
   assert.equal(goal.step.source, 'in_view');

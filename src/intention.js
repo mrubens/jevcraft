@@ -50,13 +50,24 @@ const TIMED = {
   // skeleton's preemption cut it a tenth of a second in, and the work came
   // back to the fortress leg with nothing held; the stems were never fetched.
   upkeep: /^fetch_stems$/,
+  // The crossing's food rung's own search (work.js kitFoodStep, note 673):
+  // an open search or a walk to known food is a walk like any other, and
+  // must yield by the rung's own measure (food points carried) or end (note
+  // 699). Before this it committed no intention at all (TIMED had no entry
+  // for kit_food), so nothing here ever judged it: 25597 (mid-242-tf, note
+  // 728) walked laps for fifteen minutes at "25 of 80", the ground it
+  // covered read as motion and never as a stall by note 724's answer-memo
+  // (its position changes every lap), while notes 699 and 702's rests never
+  // saw it either, both keyed to questions this one never touched. Cooking
+  // (top_up_cook) is a stand, not a walk, and is not timed here.
+  kit_food: /^(top_up_food|top_up_food_near)$/,
 };
 // An errand is the same errand whichever question offers it: the fetch
 // chosen at upkeep is carried on by fortress_leg's or the approach's
 // fetch_stems (note 703).
 const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks)$/;
 // The questions about the plan that are not asked to replace an intention.
-const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip']);
+const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip', 'kit_food']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
 // is under way: a timed answer of theirs replaces it. Held ordinarily open
 // (not GATED) so a real change can freely redirect a walk in progress; but
@@ -109,7 +120,7 @@ const SAID_MS = 60000;
 // Only the walks: a wait by a spawner, a heal or a cook yields nothing by
 // this measure while it does what it is for.
 const YIELD_MS = 3 * 60000;
-const WALKS = /^(leg_\w+|floor_\w+|back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|walk_route|cross_level|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|go_in|go_back|return_for_\w+|portal_trip|explore|cross_toward|floor_toward|back_to_ground)$/;
+const WALKS = /^(leg_\w+|floor_\w+|back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|walk_route|cross_level|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|go_in|go_back|return_for_\w+|portal_trip|explore|cross_toward|floor_toward|back_to_ground|top_up_food|top_up_food_near)$/;
 
 const P = v => v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? { x: Math.round(v.x), y: Math.round(v.y), z: Math.round(v.z) } : null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -273,7 +284,10 @@ function endOf(bot, goal, i, now) {
   const y = yieldLook(bot, goal, i, now);
   if (y && WALKS.test(i.choice) && now - y.gainAt >= YIELD_MS) {
     const RM = require('./rung-measure');
-    const nothing = RM.says(RM.judge({ before: y.best, parts: y.parts || {}, store: null }).nothing, y.net);
+    // The food rung's own search is a question about food (note 728): its
+    // yield is said as that, not as the pseudo-item rungItems names after
+    // the rung itself when no dedicated one is listed for it.
+    const nothing = RM.says(RM.judge({ before: y.best, parts: y.parts || {}, store: null }).nothing, y.net, { food: i.q === 'kit_food' });
     return `no yield: ${ago(now - y.gainAt)} with ${nothing || 'nothing gained on the rung'}`;
   }
   return null;
