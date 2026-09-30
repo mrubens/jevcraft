@@ -48,7 +48,7 @@ const CLIMB_MS = 3 * 60000;
 
 const INTERRUPT = /^(Threat nearby|Preempted by|The bot died|Low air|Interrupted|Cancelled|The detour has had its time)/;
 const CAUSES = [
-  ['no_room', /free slot|inventory is full|pockets are full/i],
+  ['no_room', /free slot|inventory is full|pockets are full|no room to take it/i],
   ['made_nothing', /made nothing|after crafting|inventory update: [a-z ]+ after crafting/i],
   ['missing_input', /missing ingredient|No usable recipe|Missing harvest tool|no tool for|not enough [a-z_ ]+ to craft|no sticks can be made/i],
   ['no_route', /No route|noPath|No path|No way to|No way on|No leg from here|No reachable|No existing route|cannot be reached from|came no nearer/i],
@@ -95,7 +95,7 @@ const out = {
   // Note 754b: what the drop question gave up, the tidy's spare pickaxes,
   // smelts with no free slot, the lava way out with no footing, and the
   // Nether food kit's trip home with raw meat it could cook.
-  b: { hardDrops: 0, hardDropsBesideCheap: 0, hardDropNames: {}, tidyPickaxes: 0, smeltNoSlot: 0, noFootingOffered: 0, noFootingChosen: 0, kitShortRawCookable: 0, kitReturnWithCook: 0 },
+  b: { hardDrops: 0, hardDropsBesideCheap: 0, hardDropNames: {}, tidyPickaxes: 0, smeltNoSlot: 0, noFootingOffered: 0, noFootingChosen: 0, kitShortRawCookable: 0, kitReturnWithCook: 0, otherOutputNoRoom: 0, otherOutputNoRoomAfter754b: 0 },
   climbs: { handClimbs: 0, preempted: 0, preemptedClimbing: 0, preemptedRising: 0, byQuestion: {}, blocksPerMinute: [] },
   // Spells of a minute or more in the Overworld under y 16 with no pickaxe
   // and no wood (log, planks or stick) carried, until either is carried
@@ -168,6 +168,7 @@ for (const f of files) {
     }
     if (o.kind === 'error' && /made nothing (twice|\d+ times)/.test(String(o.label || ''))) out.craftRests++;
     if (o.kind === 'error' && /after smelting.*\b0 free slots/.test(String(o.label || ''))) out.b.smeltNoSlot++;
+    if (o.kind === 'error' && /Furnace contains a different output and there is no room/.test(String(o.label || ''))) { out.b.otherOutputNoRoom++; if (o.t >= Date.parse('2026-09-30T16:45:42Z')) out.b.otherOutputNoRoomAfter754b++; }
     if (o.kind === 'decision') {
       const d = o.s.decision || {}, opts = d.options || {};
       if (d.id === 'inventory_drop') {
@@ -305,6 +306,7 @@ console.log(`"pockets are full" chat lines: ${out.pocketsFull.lines} (with "atte
 console.log(`craft rests said ("made nothing twice"): ${out.craftRests}`);
 const b = out.b;
 console.log(`754b: of ${b.roomAnswers} drop answers in the trials' logs, ${b.hardDrops} gave up a golden apple, lighter, water bucket, pickaxe, sword or shield (${Object.entries(b.hardDropNames).map(([k, v]) => `${k.slice(5)} ${v}`).join(', ')})`);
+console.log(`754c: "Furnace contains a different output and there is no room to take it": ${b.otherOutputNoRoom} (${b.otherOutputNoRoomAfter754b} after 754b went live at 16:45:42Z)`);
 console.log(`754b: the tidy leaving a pickaxe: ${b.tidyPickaxes}; smelts timed out with 0 free slots: ${b.smeltNoSlot}; back_the_way_came offered with no footing: ${b.noFootingOffered} (chosen ${b.noFootingChosen}); nether_food_kit asked short at raw points with the cook one question down: ${b.kitShortRawCookable} (return_for_food chosen ${b.kitReturnWithCook})`);
 const c = out.climbs;
 console.log(`hand-dig climbs chosen (climb_out, no pickaxe): ${c.handClimbs}; stillness_detour/rung_progress asked within 3 min of one: ${c.preempted} (${c.preemptedClimbing} with the bot higher than the climb began, ${c.preemptedRising} with it a block or more higher than 60 to 90 s before); median climb ${c.medianBlocksPerMinute} blocks a minute`);

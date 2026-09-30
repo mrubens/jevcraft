@@ -145,7 +145,10 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     const amount = Math.min(count(bot, input), target > 12 ? 8 : 4, Math.max(1, Math.ceil((target - foodSupply(bot)) / Math.max(1, gain))));
     const targetCount = count(bot, output) + amount;
     choices[`cook_${output}`] = { description: { action: 'Cook carried ingredients into safe food using the recipe dependencies; gather a furnace, tool and fuel if needed.',
-      input, carried: count(bot, input), output, amount, safeToEatRaw: safeFood(bot, { name: input }), pointsAdded: amount * gain, cookSeconds: amount * 10 },
+      input, carried: count(bot, input), output, amount, safeToEatRaw: safeFood(bot, { name: input }), pointsAdded: amount * gain, cookSeconds: amount * 10,
+      // With no free slot the cooked food has nowhere to go: the drop
+      // question comes first (note 754c).
+      ...((bot.inventory.emptySlotCount?.() ?? 1) <= 0 ? { pocketsFull: 'no free slot: what to drop for the cooked food is asked first' } : {}) },
     valid: () => count(bot, input) >= amount,
     run: async () => {
       goal.survivalAction = { action: 'cook_food', input, output, amount, at: new Date().toISOString() }; save();

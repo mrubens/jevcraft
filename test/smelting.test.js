@@ -417,3 +417,41 @@ test('side furnaces out of reach do not hold up a new batch, and are let go afte
   for (let i = 0; i < 2; i++) await smelt(bot, new Task('smelt', 'test'), { item: 'iron_ingot', from: 'raw_iron', count: 1 }, goal).catch(() => {});
   assert.equal(goal.smeltingSides.length, 0, 'let go after three failed walks');
 });
+
+test('a furnace holding another batch\'s output with the pockets full makes room for it first, not an error (25592, note 754c)', { timeout: 3000 }, async () => {
+  // 25592 (mid-237-be, 16:54:21Z): cooked mutton at a furnace holding
+  // another batch, 0 free slots; "Furnace contains a different output and
+  // there is no room to take it", five times, no question asked.
+  // A part stack of cooked mutton carried: room "for cooked mutton" was
+  // read as there, and none was made for the iron left in the furnace.
+  const pockets = [{ name: 'mutton', count: 2 }, { name: 'coal', count: 8 }, { name: 'cobblestone', count: 40 }, { name: 'cooked_mutton', count: 3 }, { name: 'dirt', count: 30 },
+    ...Array.from({ length: 31 }, (_, i) => ({ name: `keeper_${i}`, count: 1 }))];
+  let output = { name: 'iron_ingot', count: 3 }, loaded = 0, opens = 0;
+  const window = () => ({
+    get slots() { return [null, null, null, ...pockets.map(p => ({ ...p, stackSize: 64 })), ...Array(Math.max(0, 36 - pockets.length)).fill(null)]; },
+    inventoryStart: 3, inventoryEnd: 39,
+    outputItem: () => output || (loaded ? { name: 'cooked_mutton', count: loaded } : null),
+    takeOutput: async () => {
+      assert(pockets.length < 36, 'a free slot when an output is taken');
+      if (output) { pockets.push({ name: output.name, count: output.count }); output = null; } else { pockets.push({ name: 'cooked_mutton', count: loaded }); loaded = 0; }
+    },
+    inputItem: () => null, fuelItem: () => ({ name: 'coal', count: 1 }), fuel: .5,
+    putInput: async (type, meta, count) => { pockets[0].count -= count; if (!pockets[0].count) pockets.shift(); loaded += count; },
+    putFuel: async () => {}, close: () => {},
+  });
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0), yaw: 0 },
+    inventory: { items: () => pockets, emptySlotCount: () => 36 - pockets.length },
+    registry: { blocksByName: { furnace: { id: 1 } }, itemsByName: { mutton: { id: 5 }, coal: { id: 6 }, cooked_mutton: { id: 7, stackSize: 64 }, iron_ingot: { id: 8, stackSize: 64 } } },
+    findBlocks: () => [new Vec3(1, 64, 0)], blockAt: p => ({ name: 'furnace', position: p }),
+    world: { raycast: () => ({ position: new Vec3(1, 64, 0) }) },
+    pathfinder: { movements: {}, goto: async () => {}, setGoal: () => {} },
+    lookAt: async () => {}, tossStack: async item => { pockets.splice(pockets.indexOf(item), 1); },
+    openFurnace: async () => { opens++; return window(); },
+  };
+  await smelt(bot, new Task('smelt', 'test'), { item: 'cooked_mutton', from: 'mutton', count: 2, fuelItem: 'coal' }, {});
+  assert(pockets.some(p => p.name === 'iron_ingot'), 'the other batch\'s ingots were taken');
+  assert(pockets.some(p => p.name === 'cooked_mutton'), 'and the mutton cooked');
+  assert(opens >= 1);
+  assert(!pockets.some(p => p.name === 'dirt'), 'the dirt made the room');
+});

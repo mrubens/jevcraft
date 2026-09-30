@@ -2725,9 +2725,14 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed, startedAt: Date.now() };
     save();
   }
-  // The same for the furnace's output, before the window opens.
+  // The same for the furnace's output, before the window opens: a free slot,
+  // not a partial stack of the output to merge into, which the take does not
+  // honor (note 754b), nor room for another batch's output left in the
+  // furnace. 25592 carried a part stack of cooked mutton, so no room was
+  // made, and the take of the iron left in the furnace failed (note 754c).
   const keepForSmelt = new Set([step.from, plannedFuel]);
-  if (!roomFor(bot, step.item)) await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position });
+  const slotFree = () => (bot.inventory.emptySlotCount?.() ?? 1) > 0;
+  if (!slotFree()) await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position, room: slotFree, purpose: `the ${step.item.replaceAll('_', ' ')} to come out of the furnace` });
   let furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
   // While a container is open Mineflayer updates that window's player slots;
   // bot.inventory can still contain the pre-transfer counts until it closes.
@@ -2752,10 +2757,30 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   // or food from an earlier smelt, and refusing the furnace over it held the
   // dream run at one furnace for half an hour ("Furnace contains a
   // different output", a hundred and sixty-six times).
+  // Room for what waits in the furnace, asked of Jev (the drop question),
+  // the window shut meanwhile and opened again after: every take of an
+  // output goes this way, the batch's own and another's (note 754c).
+  const roomFirst = async name => {
+    try { if (bot._syncWindow) await bot._syncWindow(furnace); } catch (_) { /* best effort */ }
+    furnace.close();
+    try { if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* best effort */ }
+    await makeRoom(bot, task, name, { keep: keepForSmelt, away: block.position, room: () => (bot.inventory.emptySlotCount?.() ?? 1) > 0, purpose: `the ${name.replaceAll('_', ' ')} waiting in the furnace` });
+    furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
+  };
+  // Another batch's output: taken with room made for it first. 25592
+  // (mid-237-be, 16:54:21Z, after 754b) cooked mutton at a furnace holding
+  // another batch with the pockets full, and the cook ended "Furnace
+  // contains a different output and there is no room to take it" with no
+  // question asked, five times between survival_priority's answers.
   const clearOther = async () => {
-    const other = furnace.outputItem();
+    let other = furnace.outputItem();
     if (!other || other.name === step.item) return;
-    if (!roomInWindow()) throw new Error('Furnace contains a different output and there is no room to take it');
+    if (!roomInWindow()) {
+      await roomFirst(other.name);
+      other = furnace.outputItem();
+      if (!other || other.name === step.item) return;
+      if (!roomInWindow()) throw new Blocked(`The furnace holds ${other.count} ${other.name.replaceAll('_', ' ')} from another batch and the pockets are full: nothing was dropped for it`);
+    }
     await furnace.takeOutput();
   };
   const collect = async () => {
@@ -2764,11 +2789,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     if (!output) return;
     if (output.name !== step.item) throw new Error('Furnace contains a different output');
     if (!roomInWindow()) {
-      try { if (bot._syncWindow) await bot._syncWindow(furnace); } catch (_) { /* best effort */ }
-      furnace.close();
-      try { if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* best effort */ }
-      await makeRoom(bot, task, step.item, { keep: keepForSmelt, away: block.position, room: () => (bot.inventory.emptySlotCount?.() ?? 1) > 0, purpose: `the ${step.item.replaceAll('_', ' ')} waiting in the furnace` });
-      furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
+      await roomFirst(step.item);
       if (!furnace.outputItem()) return;
     }
     const amount = output.count;
