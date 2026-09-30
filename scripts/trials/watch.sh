@@ -5,7 +5,11 @@
 # nothing else ends it, and the three hours are not worth waiting out). A
 # first-days milestone missed by its minute is a pace note, not a reason to
 # stop: the world can still be a midgame source if it gets there with no
-# death or loop.
+# death or loop. A fresh world (not a fortress or Nether save) an hour
+# played with no Nether is ended too: past that it has shown what it
+# shows, and the port is worth more on a new start (Fable 08:01Z,
+# 2026-09-30: 69.6 of 94.5 fresh bot-hours went to trials that never
+# reached a blaze fight).
 #   sh scripts/trials/watch.sh 25582 25583 ...   (or auto)
 # Midgame trials by default; TRIAL=first-days for first-days trials.
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -30,7 +34,7 @@ while :; do
   for p in $(ports "$@"); do
     if [ "$TRIAL" = midgame ]; then V=$(MIDGAME_PORT=$p limit node scripts/midgame.js verdict 2>/dev/null </dev/null)
     else V=$(FIRST_DAYS_PORT=$p limit node scripts/first-days.js verdict 2>/dev/null </dev/null); fi
-    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);process.exit(v.done||(v.reasons||[]).some(r=>/death|loop|stranded/.test(r))?0:1)}catch{process.exit(1)}})"; then
+    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);const noNether=!/fortress|nether/.test(v.world||'')&&(v.playedMinutes||0)>=60&&!(v.reachedAtMinute||{}).nether;process.exit(v.done||noNether||(v.reasons||[]).some(r=>/death|loop|stranded/.test(r))?0:1)}catch{process.exit(1)}})"; then
       echo "attention on $p"; echo "$V" | head -30; exit 0
     fi
   done
