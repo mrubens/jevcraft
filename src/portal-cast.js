@@ -375,7 +375,14 @@ function dryReach(bot, target, avoid = []) {
 async function toDryReach(bot, task, target, navigate, avoid = []) {
   const stand = dryReach(bot, target, avoid);
   if (stand === 'here') return;
-  if (!stand) throw new Error(`No dry place to stand within reach of ${target}: every cell in reach is water or has no floor`);
+  // None dry: waded to where the water is shallow, as a player fills a
+  // bucket standing in it (note 753e); dry ground first, the flow of the
+  // cast's own water having held 25589 in it for six minutes (note 753c).
+  if (!stand && require('./water').wadeable(bot, target)) {
+    if (navigate) await navigate(bot, task, new goals.GoalNear(target.x, target.y, target.z, 2), { timeoutMs: 20000, stallMs: 5000 });
+    return;
+  }
+  if (!stand) throw new Error(`No dry place to stand within reach of ${target}, and the water there is too deep to wade: every cell in reach is water or has no floor`);
   if (navigate) await navigate(bot, task, new goals.GoalBlock(stand.x, stand.y, stand.z), { timeoutMs: 20000, stallMs: 5000 });
   if (!bot.entity.position.floored().equals(stand)) throw new Error(`Did not reach the dry place at ${stand} beside ${target}`);
 }
@@ -530,7 +537,7 @@ async function castFrame(bot, task, goal, save, actions) {
       if (!walls) throw new Error(`Nothing to build the walls round the frame slot at ${p} against`);
       const supplies = portalSupports(bot);
       if (supplies.count < walls.length) {
-        const material = supplies.material || 'cobblestone';
+        const material = require('./work').supportMaterialHere(bot);
         stepIs(p, 'wall_blocks', { needed: walls.length, carried: supplies.count });
         await acquireStep(bot, task, material, countOf(bot, material) + walls.length - supplies.count, goal, save);
         return false;

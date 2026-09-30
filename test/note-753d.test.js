@@ -55,6 +55,6 @@ test('the deep lava is not a heading whose staircase rests from this landing (25
 
 test('a stair chosen again after the work was away a while is taken up again, not counted as pacing (25590 17:14:54-17:15:59Z, note 753d)', () => {
   const src = require('fs').readFileSync(require.resolve('../src/tunneling'), 'utf8');
-  assert.match(src, /const resumed = tunnel\.lastDest === destKey && now - \(tunnel\.lastStepAt \|\| 0\) > RESUME_MS;/);
+  assert.match(src, /const resumed = tunnel\.lastDest === destKey && \(now - \(tunnel\.lastStepAt \|\| 0\) > RESUME_MS \|\| survivalSince\);/);
   assert.match(src, /if \(!resumed\) \{\n\s+noteProgress\(tunnel, target, bot\.entity\.position\.distanceTo\(target\)\);\n\s+tunnel\.visited\[destKey\]/);
 });

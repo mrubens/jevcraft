@@ -83,7 +83,33 @@ async function collectWater(bot, task, goal, save, { navigate, explore }) {
       }
     }
   } finally { movement.restore(); }
+  // No dry place beside any: into the water, and the bucket filled from
+  // there, as a player wades in. With only the dry shore allowed, 25595
+  // (mid-243-md, 2026-09-30 17:56:15Z), its frame 4 of ten cast, climbed 21
+  // blocks for water in view 5 blocks off (note 753e). Shallow water only:
+  // a source with air or another water block over it and ground within
+  // two under it, so the head stays out or a step gets it out; and the bot
+  // leaves once it is filled, as the air check watches meanwhile.
+  const wade = sources.filter(p => wadeable(bot, p)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  for (const p of wade.slice(0, 3)) {
+    task.check(); checkThreats(bot);
+    goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', wade: true }; save();
+    try {
+      if (bot.entity.position.offset(0, 1.62, 0).distanceTo(p.offset(0.5, 0.5, 0.5)) > 4) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 20000, stallMs: 6000 });
+      await fillWaterBucket(bot, task, p, { guard: () => checkThreats(bot) });
+      if (goal.search?.water) goal.search.water.attempts = 0;
+      goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', confirmed: true, wade: true }; save(); return;
+    } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
   await explore(bot, task, goal, save, 'water', { surfaceOnly: true });
+}
+// A water source a body can wade to: its floor within two below and open
+// air within two above, so the head is out or a step from it.
+function wadeable(bot, p) {
+  const at = dy => bot.blockAt(p.offset(0, dy, 0));
+  const floor = [-1, -2].some(dy => at(dy)?.boundingBox === 'block');
+  const air = [1, 2].some(dy => /^(air|cave_air)$/.test(at(dy)?.name || ''));
+  return floor && air;
 }
 
 // A biome seen that holds water to fill a bucket at (not a cave's, where it
@@ -107,4 +133,4 @@ function waterKnown(bot) {
   if (biome) return { kind: 'biome', distance: biome.distance, says: `no water in view within 48 blocks; the nearest seen is the ${biome.biome.replaceAll('_', ' ')} ${biome.distance} blocks ${biome.direction} (${biome.has})` };
   return { kind: 'none', distance: null, says: 'no water is known: none in view within 48 blocks and no biome seen with water' };
 }
-module.exports = { sourceWater, fillBucket, fillWaterBucket, collectWater, waterKnown, holdsWater };
+module.exports = { wadeable, sourceWater, fillBucket, fillWaterBucket, collectWater, waterKnown, holdsWater };

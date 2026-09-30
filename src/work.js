@@ -2141,7 +2141,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   if (/^water$/.test(need)) {
     try {
       const known = require('./water').waterKnown(bot);
-      tree.climb.description += ` Water known from here: ${known.says}${known.kind === 'source' ? '; no dry place beside it to fill from was reached by a route searched from here' : ''}.`;
+      tree.climb.description += ` Water known from here: ${known.says}${known.kind === 'source' ? '; no dry place beside it to fill from was reached by a route searched from here, nor was the bucket filled wading into it where it is shallow' : ''}.`;
     } catch (_) { /* said without it */ }
   }
   let pick = 'climb', asked = false;
@@ -3941,10 +3941,21 @@ async function movementStep(bot, task, goal, save) {
   return goal.kind === 'come' && target.position.distanceTo(bot.entity.position) <= 3;
 }
 
+// The blocks the cast's walls are made of are any ordinary full block
+// (build-sites.js portalSupportBlocks): the shortfall is made up in what the
+// ground where the bot stands gives, not in the kind carried most. Topped up
+// in the kind carried most, 25598 (mid-241-db, 2026-09-30 17:55-17:57:10Z),
+// just up at y 37 from y -15, went back down to y 7 for "4 cobbled
+// deepslate", then up again for food (note 753e). Deepslate lies below
+// y 0; above it, stone gives cobblestone.
+function supportMaterialHere(bot) {
+  const y = bot.entity?.position?.y ?? 64;
+  return /nether/.test(String(bot.game?.dimension || '')) ? 'netherrack' : y < 0 ? 'cobbled_deepslate' : 'cobblestone';
+}
 async function preparePortalSupports(bot, task, goal, save, needed) {
   const carried = portalSupports(bot);
   if (carried.count >= needed) return true;
-  const material = carried.material || 'cobblestone';
+  const material = supportMaterialHere(bot);
   await acquireStep(bot, task, material, countOf(bot, material) + needed - carried.count, goal, save);
   return false;
 }
@@ -7392,4 +7403,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS };
+module.exports = { supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS };

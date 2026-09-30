@@ -529,7 +529,13 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
   // (mid-239-ce, 17:14:54-17:15:59Z, three rung_nether_pickaxe smelts
   // between stairs) had its staircase set aside for it (note 753d).
   const destKey = `${choice.destination}`, now = Date.now();
-  const resumed = tunnel.lastDest === destKey && now - (tunnel.lastStepAt || 0) > RESUME_MS;
+  // Or the survival layer took the turn between (a shield held against a
+  // zombie at four blocks, a fight): 25593 (mid-237-bh, 2026-09-30
+  // 17:54:30-17:55:55Z) was held by shield_guard over and over at (84, 21,
+  // 71) and its staircase toward the lava at (96, 18, 64) was set aside for
+  // "pacing" the cells it was pinned in (note 753e).
+  const survivalSince = Date.parse(goal.survivalAction?.at || '') > (tunnel.lastStepAt || 0);
+  const resumed = tunnel.lastDest === destKey && (now - (tunnel.lastStepAt || 0) > RESUME_MS || survivalSince);
   if (!resumed) {
     noteProgress(tunnel, target, bot.entity.position.distanceTo(target));
     tunnel.visited[destKey] = (tunnel.visited[destKey] || 0) + 1;
