@@ -589,7 +589,21 @@ const STANCE_SHOTS = {
 const stanceShotsOf = choice => Object.keys(STANCE_SHOTS).find(k => STANCE_SHOTS[k].has(choice)) || null;
 // The answer the stance in force gives this warning, or null (asked).
 // 'reflex': no hold for the warning; a shot on its way that hits meets the shield.
+// A body_way run out of fire in flight (vitals.js outOfFire, note 709/723):
+// its own keys are the way out, chosen and held to already; behind_cover
+// would walk the body somewhere else instead, off the route and often back
+// toward the flame it just started leaving. 25597 answered out_of_fire
+// three times running, each undone the same way, caught fire again each
+// time and ate on fire at 11 health. Read the same as a closing stance:
+// the shield answers a shot on the way or about to fire, never a walk.
+const BODY_WAY_MS = 3000;
+function bodyWayHeld(bot, now = Date.now()) {
+  const r = bot?._bodyWayRunning;
+  return r && r.action === 'out_of_fire' && now - r.at <= BODY_WAY_MS ? r : null;
+}
 function stanceAnswer(bot, tree, now = Date.now()) {
+  const body = bodyWayHeld(bot, now);
+  if (body) return tree.shield_up ? { choice: 'shield_up', stance: body.action, how: 'closing', closing: true } : { choice: 'reflex', stance: body.action, how: 'closing' };
   const s = require('./danger').stanceHeld(bot, now);
   const how = s?.choice ? stanceShotsOf(s.choice) : null;
   if (!how) return null;

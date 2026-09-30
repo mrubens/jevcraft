@@ -559,6 +559,22 @@ function standHeld(bot, now = Date.now()) {
   const s = bot?._standHold;
   return s && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
 }
+// defer, chosen a moment ago and near here: hunt_target's own answer that
+// the observed situation is unsuitable to hunt right now (note 723). A
+// closing stance (shot-reflex.js STANCE_SHOTS.closing) chosen against the
+// same mobs a second later reverses it without either question having seen
+// the other's answer, as plan-chain.js reads a reversal among the plan's
+// own questions (note 705): 25597 answered hunt_target defer at 04:59:17
+// and, ten seconds later, encounter_stance answered charge_nearest against
+// the blazes just left alone, took fireballs, and died.
+const DEFER_NEAR = 12, DEFER_MS = 30000;
+function huntAnswerJustNow(goal, bot, now = Date.now()) {
+  const d = goal?.lastHuntDefer;
+  if (!d || now - d.at > DEFER_MS) return null;
+  const here = bot?.entity?.position;
+  if (!here || Math.hypot(here.x - d.position.x, here.y - d.position.y, here.z - d.position.z) > DEFER_NEAR) return null;
+  return { at: d.at, secondsAgo: Math.round((now - d.at) / 1000) };
+}
 function stanceHeld(bot, now = Date.now()) {
   const s = bot?._stance;
   if (s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH) return s;
@@ -760,4 +776,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

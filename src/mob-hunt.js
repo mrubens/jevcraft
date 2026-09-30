@@ -704,6 +704,15 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     catch (err) { task.check(); if (err.name === 'CombatInterrupted') return false; throw err; }
   }
   if (decision.stale) return false;
+  // Kept for encounter_stance to hear, a question asked by a different
+  // layer a second later (note 723): 25597 answered hunt_target defer at
+  // 04:59:27 and, one second later, encounter_stance answered charge_nearest
+  // against the same blazes, not told defer had just been chosen. defer
+  // means the observed situation is unsuitable to hunt right now; a closing
+  // stance chosen moments after against the mobs just left alone reverses
+  // it, and is said so (danger.js huntAnswerJustNow).
+  if (decision.path[0] === 'defer') goal.lastHuntDefer = { at: Date.now(), position: { ...bot.entity.position } };
+  else delete goal.lastHuntDefer;
   await decision.action.run();
   return decision.path[0] !== 'defer';
 }

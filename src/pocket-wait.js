@@ -191,20 +191,35 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
     const t = near.find(x => x.entity?.id === id);
     return (t ? t.distance : e.position.distanceTo(bot.entity.position)) <= GONE_BEYOND || !!t?.visible;
   });
+  // Or within sixteen still, but out of sight for the whole wait (at least
+  // a minute of it, HELD_MS, the same span held-off.js reads a mob as no
+  // longer coming): a piglin that never closes and is never seen wastes the
+  // wait the same as one that walked off past sixteen does. mid-242-sd's
+  // 25590 sealed against one 15 blocks off, out of sight, for seven minutes
+  // straight; it never crossed sixteen so againstGone never read it gone,
+  // and stay went on being offered as if the piglin might yet reach the
+  // door (note 723). Read from the pocket's own per-mob record (w.mobs),
+  // not from `near`'s single look, so a mob out of sight now that was in
+  // sight a moment ago still counts as about.
+  const againstUnseen = !!w.against?.mobs?.length && !!(w.against.ids || []).length && (w.against.ids || []).every(id => {
+    const m = w.mobs[id];
+    return !!m && !m.seen && now - m.since >= HELD_MS;
+  });
   const noGain = starving || (!night && hp >= 20);
   // Or nothing about at all: no mob within sixteen and none in sight, the
   // pocket's own record of what it was sealed against or not (note 698: in
   // the Nether, stays with nothing within twenty blocks and nothing to gain).
   const noneAbout = !near.some(t => t.distance <= GONE_BEYOND || t.visible);
-  const waitsForNothing = noDay && noGain && (againstGone || noneAbout) && !spawner;
+  const waitsForNothing = noDay && noGain && (againstGone || againstUnseen || noneAbout) && !spawner;
   const goneKinds = [...new Set((w.against?.mobs || []).map(m => name(m.name)).filter(Boolean))];
-  const goneSays = againstGone ? `the ${goneKinds.length === 1 ? goneKinds[0] : 'mobs'} it was sealed against ${goneKinds.length === 1 && w.against.mobs.length === 1 ? 'is' : 'are'} gone` : 'no mob is within 16 blocks or in sight';
+  const goneSays = againstGone ? `the ${goneKinds.length === 1 ? goneKinds[0] : 'mobs'} it was sealed against ${goneKinds.length === 1 && w.against.mobs.length === 1 ? 'is' : 'are'} gone`
+    : againstUnseen ? `the ${goneKinds.length === 1 ? goneKinds[0] : 'mobs'} it was sealed against ${goneKinds.length === 1 && w.against.mobs.length === 1 ? 'has' : 'have'} not been seen since the seal, ${minutesSays(now - w.since)} ago` : 'no mob is within 16 blocks or in sight';
   const nothingComes = waitsForNothing
     ? ` Nothing this wait could wait for is coming: ${goneSays}, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}. Staying is standing idle.`
     : noDay && starving
       ? (spawner ? ` Neither daylight nor health comes to this wait, and the mobs outside do not move off: the ${spawnerKind} ${spawner.distance} blocks off makes more of them while the bot is within its 16 blocks.` : ` Neither daylight nor health comes to this wait: the bot goes out at ${Math.round(hp * 10) / 10} health whenever it goes, so a stay buys only the chance that the mobs outside move off${near.some(t => t.entity?.name === 'blaze') ? ', and blazes keep about the fortress they spawn in' : ''}, and each minute of it is a minute of the run.`) : '';
   if (nothingComes && spawner) facts.waitingFor = `nothing: no daylight, no health without food, and the ${spawnerKind} ${spawner.distance} blocks off makes more while the bot is within 16`;
-  if (waitsForNothing) facts.waitingFor = `nothing: ${againstGone ? 'what it was sealed against is gone' : 'no mob within 16 or in sight'}, no daylight, and ${starving ? 'no health without food' : 'health full'}`;
+  if (waitsForNothing) facts.waitingFor = `nothing: ${againstGone ? 'what it was sealed against is gone' : againstUnseen ? 'what it was sealed against has not been seen since the seal' : 'no mob within 16 or in sight'}, no daylight, and ${starving ? 'no health without food' : 'health full'}`;
   // The rung, and how long since it last got anywhere.
   const { rungOf, rungSays } = require('./tried');
   const r = goal?.tried?.rung, rung = rungOf(goal);

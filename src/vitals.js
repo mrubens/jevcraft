@@ -511,6 +511,14 @@ function fireRouteSeconds(bot, route) {
 async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot)) {
   onAction({ action: 'out_of_fire', steps: route?.length ?? null, health: bot.health });
   if (!route) return false;
+  // Held while this runs, for shot_answer to read (shot-reflex.js
+  // bodyWayRunning, note 709/723): out_of_fire chose the route out and its
+  // own keys; 25597 answered out_of_fire three times in a row, undone each
+  // time by shot_answer's own behind_cover walking it somewhere else while
+  // the run out was still on its way, and the fire it was trying to leave
+  // caught it again. Cleared in the finally below whether the run finished,
+  // stopped at a fall, or threw.
+  bot._bodyWayRunning = { action: 'out_of_fire', at: Date.now() };
   // Walked cell by cell on the keys: the path search will not start from
   // a cell of fire or cross one, and handed the route it returned at once
   // (the arena: burned in place three times out of three). A mob in a
@@ -541,25 +549,28 @@ async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot))
     bot.clearControlStates?.();
     throw new Error(`Left the cells of the run out of fire at (${c.x}, ${c.y}, ${c.z}), by a fall that kills; stopped`);
   };
-  for (const [i, { cell, crouched }] of fireSteps(bot, route).entries()) {
-    const target = cell.offset(0.5, 0, 0.5);
-    // At a sprint the cells on the way are passed through, not stood on:
-    // held to a third of a block, each one overshot and was turned back to.
-    // Crouched beside the fall, each is stood on.
-    const near = i === route.length - 1 || crouched ? 0.45 : 0.8;
-    const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < near && Math.abs(here.y - cell.y) < 0.6; };
-    const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
-    const look = target.offset(0, 1.6, 0);
-    try {
-      await move(bot, task, crouched
-        ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there, guard }
-        : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there, guard });
-    } catch (err) {
-      if (!/^Left the cells of/.test(err.message || '')) throw err;
-      console.log(`[vitals] ${err.message}`);
-      break;
+  try {
+    for (const [i, { cell, crouched }] of fireSteps(bot, route).entries()) {
+      bot._bodyWayRunning = { action: 'out_of_fire', at: Date.now() };
+      const target = cell.offset(0.5, 0, 0.5);
+      // At a sprint the cells on the way are passed through, not stood on:
+      // held to a third of a block, each one overshot and was turned back to.
+      // Crouched beside the fall, each is stood on.
+      const near = i === route.length - 1 || crouched ? 0.45 : 0.8;
+      const there = () => { const here = bot.entity.position; return Math.hypot(target.x - here.x, target.z - here.z) < near && Math.abs(here.y - cell.y) < 0.6; };
+      const up = cell.y > Math.floor(bot.entity.position.y + 0.01);
+      const look = target.offset(0, 1.6, 0);
+      try {
+        await move(bot, task, crouched
+          ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there, guard }
+          : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there, guard });
+      } catch (err) {
+        if (!/^Left the cells of/.test(err.message || '')) throw err;
+        console.log(`[vitals] ${err.message}`);
+        break;
+      }
     }
-  }
+  } finally { if (bot._bodyWayRunning?.action === 'out_of_fire') delete bot._bodyWayRunning; }
   leftFire(bot, from);
   return !inFire(bot);
 }

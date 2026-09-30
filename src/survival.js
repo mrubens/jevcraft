@@ -5093,6 +5093,19 @@ class Survival {
         state.hoglinIsFood = hoglinFood.trim();
         for (const k of ['fight', 'strike_from_above', 'fight_from_footing']) if (typeof options[k]?.description === 'string') options[k].description += hoglinFood;
       }
+      // hunt_target answered defer a moment ago from about here: the
+      // observed situation was unsuitable to hunt, and a closing stance
+      // (fight, charge_nearest and the rest of shot-reflex.js STANCE_SHOTS.
+      // closing) chosen against the same mobs now reverses that without
+      // ever hearing it (note 723). Said on every closing option and in the
+      // state, not refused: the stance is Jev's, told what was just chosen.
+      const huntDefer = require('./danger').huntAnswerJustNow(goal, bot);
+      if (huntDefer) {
+        state.huntAnswerJustNow = `defer (hunt target), chosen ${huntDefer.secondsAgo} second${huntDefer.secondsAgo === 1 ? '' : 's'} ago from about here: the observed situation was unsuitable to hunt.`;
+        const closing = require('./shot-reflex').STANCE_SHOTS.closing;
+        for (const k of Object.keys(options)) if (closing.has(k) && typeof options[k].description === 'string')
+          options[k].description += ` This reverses defer (hunt target), chosen ${huntDefer.secondsAgo} second${huntDefer.secondsAgo === 1 ? '' : 's'} ago from about here: the hunt read the situation as unsuitable then.`;
+      }
       // Each stance's price rides with it (not in its words): what the code
       // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.expects ? { expects: o.expects } : {}) }]));
@@ -8631,9 +8644,27 @@ class Survival {
       // twenty seconds by hand each, the seal going back between, never
       // asked again; the third opening let in the fireballs (note 548).
       if (OPENS_ON_MOBS.has(choice)) delete this.state.pocketPlan;
-      if (!(await (options[choice] || foodWays[choice]).run())) {
+      // A leave (or any pocket option) whose walk finds no route throws
+      // NoRoute rather than returning false: thrown here, it skipped both
+      // the delete of pocketPlan below and the fall back to stay, and left
+      // the choice held for the rest of its ninety seconds. Every pass after
+      // rethrew the same NoRoute from stepOnce's own try, which only rests a
+      // fact and returns false, so turn_priority kept asking again for
+      // survival (its claim still said pocket_next, that being the pocket
+      // it is in) while stepOnce quietly retried the same failing leave and
+      // no pocket_next question came: 25590 read "whether to stay, leave or
+      // do something else there is asked next" at 04:51:32 and 04:52:32 with
+      // none asked between, sealed the whole time against a piglin 15 blocks
+      // off out of sight (note 723). Caught here as any other run's failure
+      // is, so the plan is always cleared and stay always runs meanwhile,
+      // and the next pass asks pocket_next fresh rather than holding a dead
+      // choice.
+      let ranOk = false, why = null;
+      try { ranOk = await (options[choice] || foodWays[choice]).run(); }
+      catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} way out`); else if (err.name !== 'SetAside') throw err; ranOk = false; }
+      if (!ranOk) {
         delete this.state.pocketPlan;
-        if (choice !== 'stay') { setAside(this, 'pocket_option', choice, `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket${this.state.leaveRefused ? ` (${this.state.leaveRefused.charAt(0).toLowerCase()}${this.state.leaveRefused.slice(1)})` : ''}`, 60000); delete this.state.leaveRefused; save(); }
+        if (choice !== 'stay') { setAside(this, 'pocket_option', choice, why || `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket${this.state.leaveRefused ? ` (${this.state.leaveRefused.charAt(0).toLowerCase()}${this.state.leaveRefused.slice(1)})` : ''}`, 60000); delete this.state.leaveRefused; save(); }
         await options.stay.run();
       }
       onStep(goal); return true;
@@ -8786,6 +8817,11 @@ class Survival {
     if (needsShelter && plan?.plan === 'shelter' && !(bedReady && sleepable(bot))) {
       plan.until = Date.now() + 120000;
       if (await this.refugeStep(task, goal, save) !== false) { onStep(goal); return true; }
+      // refugeStep found no way to shelter here and rested it (`refuge`,
+      // `anywhere`, 180 seconds): the plan it was held for is let go, so
+      // this held shortcut and secure_shelter below both stop calling it
+      // again on every tick until the rest is up (note 723).
+      if (isSetAside(this, 'refuge', 'anywhere')) delete this.state.nightPlan;
     }
     if (!needsShelter && this.state.recovery?.status === 'pending') {
       this.report(goal, save, { action: 'recover_items', origin: this.state.recovery.position });
@@ -8975,7 +9011,24 @@ class Survival {
       : ` The shelter ${refuge.verifiedAt ? 'used before' : 'begun before'} is ${refugeAt} blocks off; whether there is a way to it from here is not known (the route search ran out of time).`;
     // And what the place is, beside the wait for dawn: a spawner's mobs do
     // not leave at daylight (mid-220-g, note 476).
-    if (needsShelter || woundedBelow) tree.secure_shelter = { description: (woundedBelow
+    // Already sealed in the shelter this would build, or refugeStep's own
+    // "no way to shelter here" rest standing (`refuge`/`anywhere`, 180
+    // seconds): not offered, so it is not asked again at once for a run
+    // that can only decline or do nothing. mid-242-tb and mid-242-sg (note
+    // 723) asked secure_shelter 38 and 45 times in seven and eight seconds,
+    // already sealed, each run of refugeStep quietly returning without
+    // building anything while survival_priority kept asking as if one more
+    // try might. The [repeat] catch (repeats.js) is built for a question
+    // whose facts and answer repeat; it caught this only after about forty
+    // askings because refugeStep's own block placements (while it still had
+    // work to do) counted as something coming of the answer each time, so
+    // the run judged as unchanged only began once the shell was already
+    // whole and nothing was left to place.
+    const sealedNow = refuge && shelter.inside(bot, refuge) && shelter.sealed(bot, refuge);
+    const shelterRests = isSetAside(this, 'refuge', 'anywhere');
+    if (shelterRests && (needsShelter || woundedBelow)) state.secureShelterNotOffered = 'no way to shelter here (rests a while)';
+    else if (sealedNow && (needsShelter || woundedBelow)) state.secureShelterNotOffered = 'already sealed in the shelter it would build';
+    if ((needsShelter || woundedBelow) && !sealedNow && !shelterRests) tree.secure_shelter = { description: (woundedBelow
       ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}`
       : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}` : ''}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
