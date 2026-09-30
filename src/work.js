@@ -6540,7 +6540,26 @@ function workClaim(goal, bot = null) {
     ...(goal.step?.item || goal.step?.block ? { item: goal.step.item || goal.step.block } : {}), failures: goal.failures || 0, stalls: goal.stalls || 0,
     ...(goal.lastError ? { lastError: String(goal.lastError).slice(0, 160) } : {}), ...(goal.lastErrorAt ? { lastErrorAt: goal.lastErrorAt } : {}),
     // What the step is, in words, for turn_priority (mid-218-n, note 490).
-    ...(goal.step?.action ? { doing: stepSays(goal.step, bot) } : {}) } };
+    ...(goal.step?.action ? { doing: stepSays(goal.step, bot, goal) } : {}) } };
+}
+// An interrupted step resumed is said with what it has already got, not
+// just its name and phase: a cast portal step resumed after a threat is
+// said with the frame's own progress (how many of the ten are cast) and
+// what is carried toward the next one (a lava or water bucket already in
+// hand), so a "casting the portal frame" announcement right after an
+// interruption reads as picking the cast back up, not starting it over.
+// Without this, 25584 and 25591 (trial notes 738) went "Off to a lava pool
+// with my buckets" every time a mob interrupted a cast in progress, and
+// nothing said whether that was the frame's first bucket or its ninth.
+function castProgressSays(step, goal, bot) {
+  const frame = goal?.portalFrame;
+  if (step.action !== 'cast_portal' || !frame || frame.ruin || !bot) return '';
+  const cast = frame.blocks.filter(p => bot.blockAt?.(pos(p))?.name === 'obsidian').length;
+  const carried = [];
+  const lava = countOf(bot, 'lava_bucket'), water = countOf(bot, 'water_bucket');
+  if (lava) carried.push(`${lava} lava bucket${lava === 1 ? '' : 's'}`);
+  if (water) carried.push(`${water} water bucket${water === 1 ? '' : 's'}`);
+  return `: ${cast} of ten cast, ${carried.length ? `${carried.join(' and ')} carried toward the next` : 'nothing carried toward the next'}`;
 }
 // A fortress already in reach is not "find fortress" as if none were
 // known: 25592 sealed itself three blocks from the bricks while turn_priority
@@ -6550,10 +6569,10 @@ function workClaim(goal, bot = null) {
 // view: said, with the distance, when the bot is not already on its floors
 // (`walking` is set instead, and needs no restating here).
 const stepFortressAt = step => step.action === 'find_fortress' && !step.walking ? (step.found || step.fortress) : null;
-const stepSays = (step, bot = null) => {
+const stepSays = (step, bot = null, goal = null) => {
   const at = stepFortressAt(step);
   const near = at && bot?.entity?.position ? Math.round(Math.hypot(at.x - bot.entity.position.x, at.z - bot.entity.position.z)) : null;
-  return `${String(step.action).replaceAll('_', ' ')}${step.item || step.block ? ` (${String(step.item || step.block).replaceAll('_', ' ')})` : ''}${step.phase ? `, ${String(step.phase).replaceAll('_', ' ')}` : ''}${at ? ` (a fortress in reach at (${Math.round(at.x)}, ${Math.round(at.y)}, ${Math.round(at.z)})${Number.isFinite(near) ? `, ${near} blocks off` : ''})` : ''}`;
+  return `${String(step.action).replaceAll('_', ' ')}${step.item || step.block ? ` (${String(step.item || step.block).replaceAll('_', ' ')})` : ''}${step.phase ? `, ${String(step.phase).replaceAll('_', ' ')}` : ''}${at ? ` (a fortress in reach at (${Math.round(at.x)}, ${Math.round(at.y)}, ${Math.round(at.z)})${Number.isFinite(near) ? `, ${near} blocks off` : ''})` : ''}${castProgressSays(step, goal, bot)}`;
 };
 
 // The arbiter in shadow (src/arbiter.js): what it would give this pass to,
