@@ -4536,7 +4536,24 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       ? buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - obsidian), trip: hereTrip, atLava: !!lava && lava.distance <= 16, frameBegun: false })
       : castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0, iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: here, frameBegun: false });
     const leftHere = castTrips(castCount);
-    tree.new_site = { description: `Leave the frame at (${siteFailed.origin.x}, ${siteFailed.origin.y}, ${siteFailed.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and ${byHand ? 'build' : 'cast'} a new frame at another site near here, that one passed over. Kept, ${leftHere.cast} of ten are still to ${byHand ? 'place' : 'cast'} there; a new frame starts from none. ` + afresh + facts };
+    // What leaving costs against retrying, said plainly (note 742): 25589
+    // left a frame four of ten cast, its lava already found seven blocks
+    // off, for one navigation failure since the last block went in ("the
+    // work was turning between fill bucket and cast portal... with nothing
+    // gained"), and the new site it moved to found no lava at all in the
+    // next eight minutes. new_site is offered on the first failure once
+    // obsidian is in (note 527, so a bad site is not retried ninety-five
+    // times), but said only the raw counts before; here the trade is put
+    // in words: the blocks already cast, the lava already found (or not),
+    // and whether the failure or failures said in `facts` below read as
+    // the site itself or a passing one (a navigation stall, a mob in the
+    // way) that retrying meets no differently at a new site.
+    const fails = siteFailed.siteFailed || { n: 0, whys: {} };
+    const [topWhy, topN] = Object.entries(fails.whys || {}).sort((a, b) => b[1] - a[1])[0] || [];
+    const transient = /navigation|nowhere to stand|stand to pour/i.test(topWhy || '');
+    const nearHere = current === 'cast_at_lava' ? castBy : lava;
+    const costSays = ` Against retrying: ${placed} of ten already cast here${nearHere?.at ? `, its lava already found ${nearHere.distance} blocks off (a new site starts with no lava found, a fresh search or walk before the first bucket)` : ', no lava yet found here either'}.${topWhy ? ` What failed here ${fails.n <= 1 ? 'once' : `${fails.n} times`} was "${topWhy}"${topN > 1 && topN < fails.n ? `, ${topN} of them` : ''}${transient ? ': not the site itself, and a new site meets the same kind of failure no less often' : ''}.` : ''}`;
+    tree.new_site = { description: `Leave the frame at (${siteFailed.origin.x}, ${siteFailed.origin.y}, ${siteFailed.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and ${byHand ? 'build' : 'cast'} a new frame at another site near here, that one passed over. Kept, ${leftHere.cast} of ten are still to ${byHand ? 'place' : 'cast'} there; a new frame starts from none.${costSays} ` + afresh + facts };
     if (tree[current]) tree[current].description += ` Kept, the ${byHand ? 'frame' : 'cast'} goes on at this frame, the slot it failed at tried again.`;
   }
   // The lava held, its staircase resting: the ways a player has from there,

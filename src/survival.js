@@ -7843,7 +7843,13 @@ class Survival {
       // the target above it was abandoned, picked a fresh ore each of the
       // three times before it was, and never had a chance to rest the one
       // that had already said "no route" once.
-      if (err.name === 'NoSafeWay' || err.name === 'NoRoute' || mine.failures >= 3 || /not gaining/.test(err.message)) this.abandonTarget(mine, err.message);
+      // A stalled walk toward it is let go the same way (note 742): 25597's
+      // walk to an ore stalled twice (skills.js NavigationStall, "navigation
+      // timed out without reaching new ground") and night_mine_target kept
+      // flipping between ore_0 and ore_1, neither ever rested, because a
+      // stall was not one of the failures counted here until three of them
+      // had piled up on whichever ore was picked last.
+      if (err.name === 'NoSafeWay' || err.name === 'NoRoute' || mine.failures >= 3 || /not gaining|navigation timed out/.test(err.message)) this.abandonTarget(mine, err.message);
     }
     save();
     return true;
@@ -8734,6 +8740,27 @@ class Survival {
         notNow[k] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - Date.now()) / 1000))} seconds`;
       }
       if (options.go_for_food && !Object.keys(foodWays).length) delete options.go_for_food;
+      // After any interruption, the way back to the work is named first,
+      // ahead of night_mine, a hunt or the valuables (note 742): 25597's
+      // portal cast was cut twice by one zombie 7 blocks off, sealed at
+      // full health with a sword carried, and pocket_next chose night_mine
+      // over leave both times, each option already saying the same cast
+      // waiting on it (3 of ten obsidian in, the frame 11 blocks off) —
+      // the facts were honest, but leave sat last in the list, after
+      // night_mine, a hunt and the valuables. Reordered here so leave (or,
+      // where an active threat forces one first, open_on_watcher, the dig
+      // in beside blazes, or a tunnel out) is named right after those and
+      // before the ways that set the interrupted work aside.
+      if (options.leave && workWaiting(goal, bot)) {
+        const FIRST = ['sleep_beside', 'go_to_bed', 'sleep_in_nook', 'open_on_watcher', 'dig_in_and_fight', 'tunnel_from_warden', 'tunnel_out'];
+        const keys = Object.keys(options);
+        const ordered = {};
+        for (const k of keys) if (FIRST.includes(k)) ordered[k] = options[k];
+        ordered.leave = options.leave;
+        for (const k of keys) if (!FIRST.includes(k) && k !== 'leave') ordered[k] = options[k];
+        for (const k of keys) delete options[k];
+        Object.assign(options, ordered);
+      }
       // The old order, for the tests' stand-in only (context.rule; note 707).
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
         ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
@@ -9055,6 +9082,13 @@ class Survival {
       foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, for: errands.reserveFor(goal), hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood, ...(() => { const last = lastResortSupply(bot); return last.points ? { lastResort: `${last.points} more food points in the last resort, not counted in the reserve: ${last.says}` } : {}; })() } };
     const armed = kitReady(bot);
+    // "Armed and armoured" is kitReady's own bar (a weapon and every armour
+    // slot filled), and a bot with a sword but no armour read the same as
+    // one with neither: said apart, so a sword carried is not lost inside a
+    // false "not armed" (note 742).
+    const weaponNow = defenseWeapon(bot)?.name || null;
+    const armourNow = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+    const kitSaysNow = `${weaponNow ? `the ${weaponNow.replaceAll('_', ' ')} carried` : 'no weapon carried'}, ${armourNow.length ? `${armourNow.length} piece${armourNow.length === 1 ? '' : 's'} of armour worn` : 'no armour worn'}`;
     // Phantoms come for a player who has not slept in three nights. After
     // two nights awake (sealed in, night mining, staying up), staying up is
     // off the table while a bed is on offer.
@@ -9066,6 +9100,19 @@ class Survival {
     // beside staying up (the decision audit, 2026-09-25).
     const about = state.riskNow.hostilesWithin;
     const nowAbout = about.count ? ` Within ${about.blocks} blocks now: ${about.count} hostile mob${about.count === 1 ? '' : 's'}${about.count > about.inSight ? `, ${about.count - about.inSight} of them out of sight` : ''}${about.kinds.includes('creeper') ? ', creepers among them' : ''}.` : '';
+    // What fighting the nearest of them would cost, the same figure
+    // hunt_zombie prices beside it (note 742): 25597 sealed against one
+    // zombie 7 blocks off at full health with an iron sword, told only the
+    // night and dawn, secure_shelter silent on the zombie it was sealing
+    // against or what meeting it would cost.
+    const nearestThreat = threats(bot, 24).slice().sort((a, b) => a.distance - b.distance)[0] || null;
+    const threatFightSays = (() => {
+      if (!nearestThreat) return '';
+      const one = fightEstimate({ threats: [{ name: nearestThreat.entity.name, distance: nearestThreat.distance, shoots: shooter(nearestThreat.entity),
+        ...(nearestThreat.entity.heldItem?.name ? { held: nearestThreat.entity.heldItem.name } : {}), visible: nearestThreat.visible }],
+        armour: armourNow, weapon: weaponNow, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere;
+      return ` Nearest: a ${nearestThreat.entity.name.replaceAll('_', ' ')} ${Math.round(nearestThreat.distance)} blocks off${nearestThreat.visible ? '' : ' (heard, not seen)'}; fighting it with ${kitSaysNow} is about ${one.seconds} seconds and ${one.damageTaken} damage, from ${Math.round(bot.health)} health.`;
+    })();
     const healing = (bot.food ?? 20) >= 18 ? '' : ` Health does not come back meanwhile: hunger ${bot.food}, below eighteen.`;
     // Those coming at the bot now, and how soon, against the quickest
     // pocket here (a shaft underfoot): mid-244-a's four zombies walked up
@@ -9082,7 +9129,7 @@ class Survival {
     const waiting = workWaiting(goal, bot);
     const tree = {
       continue_request: { description: stayUp
-        ? `Stay up and keep on with ${waiting || 'the request'} ${underground ? 'underground' : 'outside in the dark'}, two minutes at a time. ${underground ? `${BELOW_NIGHT} The way back up comes out among the surface's mobs until dawn` : 'Hostile mobs spawn around the bot all night'}; it is ${armed ? 'armed and armoured' : 'not armed and armoured'}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${healing}`
+        ? `Stay up and keep on with ${waiting || 'the request'} ${underground ? 'underground' : 'outside in the dark'}, two minutes at a time. ${underground ? `${BELOW_NIGHT} The way back up comes out among the surface's mobs until dawn` : 'Hostile mobs spawn around the bot all night'}; it has ${kitSaysNow}${bedReady ? ', and the bed is one action away' : ', and there is no bed to fall back on'}.${this.sleepDebt() ? ' It has not slept for two nights: phantoms come for a player on the third.' : ''}${nowAbout}${threatFightSays}${healing}`
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.'
           : underground ? `Keep on with ${waiting || 'the request'} underground. ${BELOW_NIGHT} Nightfall on the surface is about ${Math.round(((DAY.NIGHT - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 1200)} real minutes off.${nowAbout}${healing}`
             // No daylight to spend off the Overworld (note 677).
@@ -9173,8 +9220,8 @@ class Survival {
     if (shelterRests && (needsShelter || woundedBelow)) state.secureShelterNotOffered = 'no way to shelter here (rests a while)';
     else if (sealedNow && (needsShelter || woundedBelow)) state.secureShelterNotOffered = 'already sealed in the shelter it would build';
     if ((needsShelter || woundedBelow) && !sealedNow && !shelterRests) tree.secure_shelter = { description: (woundedBelow
-      ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}`
-      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}` : ''}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+      ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}${threatFightSays}`
+      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}` : ''}${nowAbout}${threatFightSays}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
