@@ -107,7 +107,22 @@ const SURVIVAL_BY_NIGHT = {
 };
 const OVERWORLD_ONLY = new Set(['gather_shelter_materials', 'sleep', 'go_home_for_night', 'wait_for_bedtime', 'evening_chore', 'grow_plot', 'sleep_failed', 'stay_up']);
 const isMorning = bot => { const t = bot?.time?.timeOfDay; return !Number.isFinite(t) || t >= 23000 || t < 9500; };
-function survivalLines(action, { dimension = 'overworld', morning = true } = {}) {
+// Food looked for while not hungry is a stock-up, and said as one: 25595
+// chatted "I'm hungry" at hunger 20 with 75 food points carried (note 702).
+const STOCKING = {
+  gather_food: (goal, action) => action.item ? `Stocking up: some ${name(action.item)} for the pack.` : 'Stocking up on food.',
+  search_food: ['Stocking up on food. Looking for animals.', 'Topping up my food supplies.'],
+  go_home_for_food: ['Heading home to stock up on food.', "There's food at home. Stocking up."],
+};
+// Hunger at 18 or more, or what is carried fills the bar: not hungry.
+function fed(bot) {
+  const hunger = bot?.food;
+  if (!Number.isFinite(hunger)) return false;
+  if (hunger >= 18) return true;
+  try { return require('./foraging').foodSupply(bot) >= 20 - hunger; } catch (_) { return false; }
+}
+function survivalLines(action, { dimension = 'overworld', morning = true, fed: full = false } = {}) {
+  if (full && STOCKING[action]) return STOCKING[action];
   const off = !/overworld/.test(String(dimension || 'overworld'));
   if (off) return OVERWORLD_ONLY.has(action) ? null : SURVIVAL_ELSEWHERE[action] || SURVIVAL[action];
   return !morning && SURVIVAL_BY_NIGHT[action] ? SURVIVAL_BY_NIGHT[action] : SURVIVAL[action];
@@ -246,7 +261,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     return null;
   }
   if (action?.at && action.at !== state.survival) {
-    const phrase = survivalLines(action.action, { dimension: bot.game?.dimension, morning: isMorning(bot) });
+    const phrase = survivalLines(action.action, { dimension: bot.game?.dimension, morning: isMorning(bot), fed: fed(bot) });
     let line = pick(phrase, state.line, goal, action);
     if (action.action === 'escape_threat') {
       const names = [...new Set((action.threats || []).map(t => name(t.name || t)))].sort().join(',');

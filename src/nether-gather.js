@@ -542,6 +542,8 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   facts.pickaxe = (bot.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => words(i.name)).join(', ') || 'none: rock is dug by hand, slowly, and netherrack dug by hand drops nothing';
   if (forItem) facts.for = words(forItem);
   facts.health = bot.health; facts.food = bot.food;
+  // The fortress the gathering leaves, and the health it walks with (note 702).
+  { const away = require('./fortress-away').awayFacts(bot, goal); if (away) facts.fortressLeft = away; }
   try { facts.threatsInView = require('./danger').threats(bot, 64).filter(t => t.visible && (t.distance <= 32 || t.entity.name === 'ghast')).map(t => `${words(t.entity.name)} ${Math.round(t.distance)} blocks off`); } catch (_) { /* none said */ }
   try { facts.seenSoFar = coverage.coverageSays(state, dim, here, LEG); } catch (_) { /* none said */ }
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: { x: Math.round(o.target.x), y: Math.round(o.target.y), z: Math.round(o.target.z) } } : {}) }]));

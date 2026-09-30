@@ -130,16 +130,22 @@ async function hunt(bot, task, target, actions, goal, save) {
   } finally { surface.restore(); }
 }
 
-async function forageChoices(bot, task, goal, save, actions, state) {
+// `target`: the reserve the food is for, in points (the kit's 12 unless said).
+// Cooked toward it, a raw item that is food already adds only the difference:
+// 25595 carried 15 beef and 14 mutton 1 point short of the Nether's 80 and was
+// offered one steak (note 702).
+async function forageChoices(bot, task, goal, save, actions, state, { target = 12 } = {}) {
   const choices = {};
   for (const [output, inputs] of Object.entries(knowledge(bot.registry).smelting)) {
     if (!safeFood(bot, { name: output })) continue;
     const input = inputs.find(name => count(bot, name) > 0);
     if (!input) continue;
-    const amount = Math.min(count(bot, input), 4, Math.max(1, Math.ceil((12 - foodSupply(bot)) / bot.registry.foodsByName[output].foodPoints)));
+    const cooked = bot.registry.foodsByName[output].foodPoints;
+    const gain = cooked - (safeFood(bot, { name: input }) ? bot.registry.foodsByName[input]?.foodPoints || 0 : 0);
+    const amount = Math.min(count(bot, input), target > 12 ? 8 : 4, Math.max(1, Math.ceil((target - foodSupply(bot)) / Math.max(1, gain))));
     const targetCount = count(bot, output) + amount;
     choices[`cook_${output}`] = { description: { action: 'Cook carried ingredients into safe food using the recipe dependencies; gather a furnace, tool and fuel if needed.',
-      input, carried: count(bot, input), output, amount, safeToEatRaw: safeFood(bot, { name: input }) },
+      input, carried: count(bot, input), output, amount, safeToEatRaw: safeFood(bot, { name: input }), pointsAdded: amount * gain, cookSeconds: amount * 10 },
     valid: () => count(bot, input) >= amount,
     run: async () => {
       goal.survivalAction = { action: 'cook_food', input, output, amount, at: new Date().toISOString() }; save();

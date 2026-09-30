@@ -306,6 +306,9 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // health and food are the question's own facts here.
   if (quiet) { state.lull = quiet.short; state.healing = state.healthComesBack; delete state.healthComesBack; }
   if (goal.emptySpawner?.standRest?.until > now) state.standResting = `the stand rests ${Math.round((goal.emptySpawner.standRest.until - now) / 60000)} more minutes: ${goal.emptySpawner.standRest.why}`;
+  // What the stay at this cage has come to, on each hold (cage-yield.js, note 702).
+  const soFar = (() => { try { return require('./cage-yield').annotate(bot, goal, tree, now); } catch (_) { return null; } })();
+  if (soFar) state.cageSoFar = soFar;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
   if (decision.stale) return true;

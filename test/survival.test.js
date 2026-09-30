@@ -1268,7 +1268,7 @@ test('hungry at night, food is offered with the dark said, and staying up names 
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
   await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
-  assert.match(tree.obtain_food.description, /Night: mobs spawn on the way; hunger 6, starvation at 0/);
+  assert.match(tree.obtain_food.description, /Hunger 6, and what is carried does not fill it\..*Night: mobs spawn on the way; starvation at hunger 0\./);
   assert.match(tree.continue_request.description, /1 hostile mob, 1 of them out of sight, creepers among them/);
   assert.match(tree.continue_request.description, /Health does not come back meanwhile: hunger 6/);
 });

@@ -533,6 +533,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       for (const o of untriedBelow || []) tried.sendBack(goal, o.q, `the rung's question sent the work back here: ${stall.escalated?.says || 'a failure below'}`, now);
       save();
     } };
+  // At the cage, keeping at it and the stay say what the stay there has come
+  // to (cage-yield.js, note 702).
+  if (cage) { try { require('./cage-yield').annotate(bot, goal, answers, now); } catch (_) { /* no record */ } }
   // What it is stuck on, named: a step for another dimension (note 476).
   const blocker = stall.blocker || require('./stillness').actionOf(goal, now).blocker;
   // A staircase set aside for want of ground gained is the failure, with
@@ -825,6 +828,13 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const atCage = noPick ? require('./cage-hold').swordNotPickaxe(bot, goal) : null;
   if (atCage && options.fetch_stems) options.fetch_stems.description = `${options.fetch_stems.description.replace(require('./nether-wood').LATER, '')} ${atCage.leaves}`;
   if (atCage && options.make_pickaxe) options.make_pickaxe.description += ` ${atCage.makes}`;
+  // Away from a known fortress with the rods wanted, anywhere: the distance
+  // to it now and from where the stems are, and the health and hunger the
+  // walk goes with (fortress-away.js, note 702; note 700 said it only at a
+  // live spawner). 25590 left its fortress 52 blocks off at 14 health and
+  // hunger 10 with nothing to eat for stems 140 blocks from it.
+  const away = !atCage && options.fetch_stems ? require('./fortress-away').awaySays(bot, goal, options.fetch_stems.place?.at) : null;
+  if (away) options.fetch_stems.description = `${options.fetch_stems.description.replace(require('./nether-wood').LATER, '')} ${away}`;
   options.carry_on = { description: `${atCage ? atCage.carryOn : `Carry on with ${goal.step?.action ? `the ${String(goal.step.item || goal.step.block || goal.step.action).replaceAll('_', ' ')}` : 'the work'} and see to this later;`} asked again in five minutes, or sooner if what is due here changes${noPick ? ' or a way chosen fails for want of a pickaxe' : ''}.${budget?.short ? ` The pickaxes carried then run ${budget.need - budget.usesLeft} digs short of the step in hand and the way home, the rest dug by hand.` : ''}${noPick ? bs.goingOnSays(bot, UPKEEP_HOLD_MS / 60000) : wearNow ? ` The pickaxes: ${wearNow}.` : ''}${ended ? ` The last carry-on ended early: ${ended.method} failed for want of a pickaxe (${ended.why}).` : ''}`,
     run: async () => { goal.upkeepHold = { keys, until: Date.now() + UPKEEP_HOLD_MS, ...(noPick ? { noPickaxe: true, since: Date.now() } : {}) }; delete goal.upkeepHoldEnded; save(); } };
   // The lead short: carry_on says what going on without one costs.
@@ -873,7 +883,7 @@ async function upkeepOffers(bot, task, goal, save) {
   if (inNetherNow(bot) && reserveWeather(bot) && (goal.kind === 'win' || pickaxeNeeded(bot))) {
     const nw = require('./nether-wood');
     const fetch = await nw.fetchStemsOffer(bot, task, goal);
-    if (fetch) options.fetch_stems = { description: fetch.description, describe: fetch.describe, run: async () => {
+    if (fetch) options.fetch_stems = { description: fetch.description, describe: fetch.describe, place: fetch.place, run: async () => {
       const done = await nw.fetchStems(bot, task, goal, save, { acquireStep });
       if (done.unmade) throw new Error(done.unmade);
     } };

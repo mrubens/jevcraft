@@ -5049,6 +5049,18 @@ class Survival {
         // what it did (lethal-line.js, note 701).
         ...(lethalNow || this.state.lethalLine ? { oneShotEnds: [lethalNow?.says || this.state.lethalLine?.says, this.state.lethalLine?.did ? `Just now: ${this.state.lethalLine.did}.` : null].filter(Boolean).join(' ') } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
+      // At a live cage, what the stay there has come to, on each hold, and
+      // what cover gives up at full health (cage-yield.js, note 702).
+      const cageSoFar = (() => { try { return require('./cage-yield').annotate(bot, goal, options); } catch (_) { return null; } })();
+      if (cageSoFar) state.cageSoFar = cageSoFar;
+      // A hoglin about when food is what the bot lacks: killed, it is the
+      // food (fortress-away.js, note 702; 25590 was held by one at 10 health,
+      // hunger 10, nothing to eat, and every word said it only as a threat).
+      const hoglinFood = (() => { try { return require('./fortress-away').hoglinFoodSays(bot, danger); } catch (_) { return null; } })();
+      if (hoglinFood) {
+        state.hoglinIsFood = hoglinFood.trim();
+        for (const k of ['fight', 'strike_from_above', 'fight_from_footing']) if (typeof options[k]?.description === 'string') options[k].description += hoglinFood;
+      }
       // Each stance's price rides with it (not in its words): what the code
       // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.expects ? { expects: o.expects } : {}) }]));
@@ -8768,8 +8780,26 @@ class Survival {
     // first look whatever was found meanwhile.
     if (!hungry && stockDriven && foodSupply(bot) < desiredFood && !isSetAside(this, 'food_search', 'stock', now) &&
         watch(this, 'food_search', 'stock', foodSupply(bot), { better: 'higher', epsilon: 0.5, stallMs: 300000, restMs: 1200000, why: 'five minutes of searching brought no food', now }).stalled) save();
+    // A stock-up (hunger met by what is carried, or none to meet) that has
+    // kept nothing in three minutes rests with the stock search, said: 25595
+    // was asked 38 times at hunger 17 to 20 with 64 to 79 points carried of
+    // the 80 for the Nether, its hunts eaten again by the healing (note 702).
+    const errands = require('./food-errand');
+    const supplyNow = foodSupply(bot), fills = errands.fillsHunger(bot, supplyNow);
+    let errand = null;
+    if (supplyNow < desiredFood && (stockDriven || hungry) && (!hungry || fills) && !isSetAside(this, 'food_search', 'stock', now)) {
+      errand = errands.track(this.state, { supply: supplyNow, desired: desiredFood, now });
+      if (errands.noYield(errand, supplyNow, now)) {
+        const why = errands.restWhy(errand, supplyNow, now);
+        setAside(this, 'food_search', 'stock', why, errands.REST_MS);
+        this.report(goal, save, { action: 'food_errand_rested', why, food: bot.food, foodPoints: supplyNow, wanted: desiredFood });
+        errands.end(this.state); errand = null; delete this.state.foodPlan; save();
+      }
+    } else if (supplyNow >= desiredFood) errands.end(this.state);
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
-    const needsFood = foodSupply(bot) < desiredFood && (hungry || (stockDriven && !stockPaused));
+    // Resting, low hunger that what is carried fills is met by eating, not by
+    // a search.
+    const needsFood = supplyNow < desiredFood && ((hungry && !(stockPaused && fills)) || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
     // "Carry on" is an answer too, held as a food trip is: on the surface
     // at hunger eighteen the question came back every pass while Jev said
@@ -8795,7 +8825,7 @@ class Survival {
         shelterReady: !!refuge?.verifiedAt, shelterDistance: refuge ? Math.round(pos(refuge.origin).distanceTo(bot.entity.position)) : null,
         ...(refugeWay ? { shelterWayFromHere: refugeWay === 'success' ? 'found' : refugeWay === 'noPath' ? 'none found' : 'not known: the route search ran out of time' } : {}) },
       recentSurvivalAction: goal.survivalAction, carriedBuildingBlocks: shelter.materialStock(bot),
-      foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, hungerMaximum: 20, starvationAt: 0,
+      foodReserve: { foodPoints: foodSupply(bot), desiredMinimum: desiredFood, for: errands.reserveFor(goal), hungerMaximum: 20, starvationAt: 0,
         requiredBeforeExpedition: !!expeditionFood, ...(() => { const last = lastResortSupply(bot); return last.points ? { lastResort: `${last.points} more food points in the last resort, not counted in the reserve: ${last.says}` } : {}; })() } };
     const armed = kitReady(bot);
     // Phantoms come for a player who has not slept in three nights. After
@@ -8904,9 +8934,11 @@ class Survival {
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
-    if (needsFood) tree.obtain_food = { description: `Obtain safe food to restore hunger and maintain a reserve for healing${/overworld/.test(String(bot.game?.dimension || 'overworld')) ? ' and the coming night' : ''}. Keep the player request saved.` + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; hunger ${bot.food}, starvation at 0.` : '') +
+    // Said with the hunger, the points carried and what the reserve is for
+    // and wants, and the errand so far (food-errand.js, note 702).
+    if (needsFood) tree.obtain_food = { description: `${errands.says(bot, goal, { supply: supplyNow, desired: desiredFood, hungry, errand, now })} Keep the player request saved.` + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; starvation at hunger 0.` : '') +
         (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
-      children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state) };
+      children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state, { target: desiredFood }) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
     // Waiting sealed for daylight, anywhere in the Overworld, when health
     // does not come back and no shelter is on offer already: by day, on the
@@ -9130,7 +9162,9 @@ function claim(bot, goal = {}, survival = null) {
   const hungry = bot.food <= hungerTrigger || (!offWorld && hp < 14 && bot.food < 18 && !chooseFood(bot));
   const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game?.difficulty !== 'peaceful'));
   const supply = foodSupply(bot);
-  const needsFood = supply < desiredFood && (hungry || (stockDriven && !rests('food_search', 'stock')));
+  // As the layer reads it: resting, low hunger that what is carried fills is met by eating (note 702).
+  const stockRests = rests('food_search', 'stock'), fills = require('./food-errand').fillsHunger(bot, supply);
+  const needsFood = supply < desiredFood && ((hungry && !(stockRests && fills)) || (stockDriven && !stockRests));
   if (!needsShelter && !needsFood) return null;
   // "Carry on" is Jev's own answer, held: the work's turn by his choice.
   const carryOn = state.carryOnPlan;
