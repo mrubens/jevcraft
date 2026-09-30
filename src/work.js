@@ -183,11 +183,16 @@ function looseEnds(goal, now = Date.now()) {
     // place: the stall is the way that stalled, kept on its approach, not
     // sixteen blocks of it set aside for the next pass to take the nearest
     // brick past them as a fortress found anew (25588, note 706).
-    if (found && fs.fortressAt && fs.approach?.found && require('./mob-hunt').sameFortress(fs, fs.approach.found, found)) {
-      const a = fs.approach;
+    // Nor set aside where no approach to it was under way yet (a wait to heal
+    // before the visit, a walk to its blazes): a stall is a failure said on
+    // the next asking, never a leave (fortress-hold.js, note 721). The stall
+    // began the approach's record of this fortress instead.
+    if (found) {
+      const same = fs.approach?.found && require('./mob-hunt').sameFortress(fs, fs.approach.found, found);
+      const a = same ? fs.approach : (fs.approach = { found: { x: found.x, y: found.y, z: found.z }, failed: [] });
       a.failed = [...(a.failed || []), { choice: a.choice || 'the approach', why: 'the step stalled on the way in (no measurable progress)', at: now }].slice(-8);
       delete a.choice; delete a.until;
-    } else if (found) { (fs.shunned ||= []).push({ x: found.x, z: found.z, until: now + 600000 }); delete fs.found; }
+    }
   }
   goal.lastStallAt = now;
 }

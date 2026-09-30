@@ -402,7 +402,14 @@ function leafAt(tree, key) {
   for (const k of String(key).split('/')) node = node?.children?.[k];
   return node && !node.children ? node : undefined;
 }
-function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.now() } = {}) {
+// `leave`: which options leave what the question is about (fortress-hold.js
+// isLeave, for the questions about the plan). A leave is not a way on: where
+// the only options open leave, the resting ways stay on offer beside them,
+// each with its rest said (`keptBesideLeave`), so leaving is chosen with the
+// rest in view, not left as the one option the ledger did not rest. 25584
+// (critic-20260930T0436Z item 1) had its walk and staircase resting and
+// keep_searching taken as "the only way offered" (note 721).
+function read(bot, goal, q, tree, { target = null, sayOnly = false, leave = null, now = Date.now() } = {}) {
   const here = P(bot?.entity?.position);
   if (!goal?.tried?.entries?.length || !here) return { tree, resting: [], allResting: false };
   const nodes = new Map(), resting = [];
@@ -436,6 +443,10 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, now = Date.n
   };
   const ways = resting.filter(r => !r.wait), waits = resting.filter(r => r.wait);
   const open = onOffer().filter(k => !isResting(k));
+  if (!sayOnly && leave && open.length && open.every(leave) && ways.length) {
+    const kept = allResting({ say: true });
+    return { tree: kept.tree, resting: kept.heldOut, allResting: false, keptBesideLeave: ways.map(r => r.key).filter(k => nodes.get(k)) };
+  }
   // Every way resting: the question above is asked instead where there is
   // one; where there is none, all stay on offer, each with its rest said
   // (note 609).

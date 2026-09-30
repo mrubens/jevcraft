@@ -2136,7 +2136,7 @@ function searchReachSays(bot) {
 // Searching on chosen from about here before, and the bot here again: what
 // the choice came to. 25585 left its fortress from the same few blocks
 // eleven times in half an hour and each search brought it back (note 692).
-const LEFT_FROM_MS = 60 * 60000;
+const { LEFT_FROM_MS } = require('./fortress-hold');
 function leftBeforeSays(state, here, now = Date.now()) {
   const before = (state.leftFrom || []).filter(l => now - l.at < LEFT_FROM_MS && Math.hypot(l.x - here.x, l.z - here.z) <= 16 && Math.abs(l.y - here.y) < 8);
   if (!before.length) return '';
@@ -2716,20 +2716,24 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   const searching = state.since ? Math.round((Date.now() - state.since) / 60000) : null;
   const restingHere = HEADING_NAMES.map(n => [n, legResting(state, n, here)]).filter(([, r]) => r);
   const onFrom = restingHere.length ? ` From here ${restingHere.length === HEADING_NAMES.length ? 'every leg' : `the leg${restingHere.length === 1 ? '' : 's'} ${restingHere.map(([n]) => n).join(', ')}`} ended at once and rest${restingHere.length === 1 || restingHere.length === HEADING_NAMES.length ? 's' : ''} a few minutes (${[...new Set(restingHere.map(([, r]) => r.why))].slice(0, 2).join('; ')}).` : '';
+  // Leaving says what it leaves (fortress-hold.js, note 721), in the question's
+  // facts as `leaving`: the fortress's distance, what reaching it needs and the
+  // ways to that as they stand. 25584 left at 04:31:17 and 04:32:52 told the
+  // legs and the minutes, its fetch of stems set aside unsaid. Said on the
+  // option itself it read as the option's case: the recorded questions went
+  // keep_searching 24 of 25 with it there, and fetch_stems 10 of 10 with it in
+  // the facts and the fetch on offer (probe, note 721).
+  const anchor = state.fortressAt && sameFortress(state, state.fortressAt, nearest) ? state.fortressAt : nearest;
+  const reach = require('./fortress-hold').reachSays(bot, goal, { target: nearest, anchor, offered: options, facts: { ...(noPillar ? { pillar: noPillar } : {}), ...(noRoute ? { walkRoute: noRoute } : {}) } });
   options.keep_searching = { description: `Leave this fortress for ten minutes and go on with the search from here (${state.legs || 0} leg${state.legs === 1 ? '' : 's'} so far${minutes ? `, ${minutes} minutes on this one` : ''}${searching ? `, ${searching} minutes searching` : ''}): the next leg of the search is asked from here, and the fortress may be met again from another side. Left is all of it in view, its bricks out to ${extent} blocks from the nearest${bricks.length >= FORTRESS_VIEW ? ` (the look keeps the nearest ${FORTRESS_VIEW} bricks, and this fortress runs on past them: from here all of it is left, and past ${extent} blocks it is met again as the leg goes)` : ''}.${onFrom}${require('./block-stock').pickaxeCarried(bot) ? '' : ` The sweep's legs over open air and lava lay a block a cell, and with no pickaxe carried none comes back or can be dug: the ${blocksCarried(bot)} carried are all there will be.${searchReachSays(bot)}`}${leftBeforeSays(state, here)}`,
     run: async () => {
       // From where, kept with it: going back from the same spot asks the
       // same ways again (fortressInView). mid-235-q-nether-2 left its
       // fortress and went back to it every three seconds for a minute, each
       // way in weighed and left in the one question and the fortress taken
-      // back in the next (note 541).
-      const at = bot.entity.position;
+      // back in the next (note 541). The one set-aside (fortress-hold.js).
       const ways = Object.keys(options).filter(k => k !== 'keep_searching').map(k => k.replaceAll('_', ' '));
-      state.leftFrom = [...(state.leftFrom || []).filter(l => Date.now() - l.at < LEFT_FROM_MS), { at: Date.now(), x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) }].slice(-16);
-      state.shunned.push({ x: nearest.x, z: nearest.z, radius: extent, until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on',
-        from: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) }, left: ways });
-      delete state.target; save();
-      bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
+      require('./fortress-hold').leave(bot, state, { anchor, radius: Math.max(anchor === nearest ? 0 : anchor.extent || 0, Math.ceil(flatTo(nearest, anchor)) + extent), left: ways, save });
       return null;
     } };
   // What waits at the bricks, seen or not: mid-227-o dug down ten blocks
@@ -2749,7 +2753,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const tries = (record?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
-  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), ...(byHand ? { byHand } : {}), ...(noPillar ? { pillar: noPillar } : {}), ...(noDescend ? { descend: noDescend } : {}), ...(crossNotNow ? { crossLevel: crossNotNow } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
+  return { options, facts: { fortress: { distance: flat, height: dy }, leaving: reach, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), ...(byHand ? { byHand } : {}), ...(noPillar ? { pillar: noPillar } : {}), ...(noDescend ? { descend: noDescend } : {}), ...(crossNotNow ? { crossLevel: crossNotNow } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
     ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot, goal) } : {}),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
@@ -3283,6 +3287,17 @@ async function findFortressStep(bot, task, goal, save, actions) {
     goal.step = { action: 'at_spawner', target: { x: atCage.cage.x, y: atCage.cage.y, z: atCage.cage.z }, off: atCage.off, legs: state.legs || 0 }; save();
     await sleep(1000); task.check(); return;
   }
+  // A fetch of stems chosen under the fortress work and still holding (cut by
+  // a preemption, say) is carried on here, not set down by the fortress's own
+  // questions (fortress-hold.js, note 721): 25584 chose fetch_stems at
+  // 04:33:41Z and was asked the fortress's visit in its place a second later.
+  const errand = require('./fortress-hold').errandHolding(bot, goal);
+  if (errand && actions.acquireStep) {
+    console.log(`[fortress] carrying on the fetch of stems chosen ${Math.round((Date.now() - errand.at) / 1000)} seconds ago (${errand.q.replaceAll('_', ' ')}), not asking the fortress's questions in its place`);
+    const done = await require('./nether-wood').fetchStems(bot, task, goal, save, { acquireStep: actions.acquireStep });
+    if (done.unmade) throw new Error(done.unmade);
+    return;
+  }
   // The hunt's work while no blaze is near is this search, whatever branch
   // of it runs: a tick that only asked Jev left the hunt's own step named,
   // and the step "turned between find fortress and hunt mob" twice a
@@ -3433,7 +3448,21 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Off its floors with the leg's question owed: its ways in are what came
   // to nothing, so going back to it is among the legs, said so.
   const offFloors = !!owedLeg && bricks.length > 0 && !onFortressFloor(bot.entity.position, fortressFloors(bot, bricks));
-  if (offFloors) setAside = fortressInView(bot, goal, save, state, bricks, { stay: false, aside: `its ways in from here came to nothing: ${owedLeg.at(-1).slice(0, 200)}` });
+  // Still the target, not set aside (fortress-hold.js, note 721): the leg
+  // question says what leaving it leaves, and a leg taken from here is the
+  // leaving, set aside as keep_searching sets it. 25584 took leg_north,
+  // leg_east and leg_west from a brick 1 block off at 04:34:05 to 04:34:37Z
+  // with nothing recorded, and each next pass found the same bricks and asked
+  // the visit again.
+  let leftOnLeg = null;
+  if (offFloors) {
+    setAside = fortressInView(bot, goal, save, state, bricks, { stay: false, aside: `its ways in from here came to nothing: ${owedLeg.at(-1).slice(0, 200)}` });
+    const near = bricks.slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+    const anchor = fortressAnchor(state, bricks, near), floors = fortressFloors(bot, bricks);
+    const target = (floors.length ? floors : bricks).slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
+    setAside.facts.leaving = `${require('./fortress-hold').reachSays(bot, goal, { target, anchor })} Every leg, widen_search and seek_fortress_height leaves it.`;
+    leftOnLeg = { anchor, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)) };
+  }
   if (bricks.length && !offFloors) {
     const here = bot.entity.position;
     const byNear = list => list.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
@@ -3457,14 +3486,14 @@ async function findFortressStep(bot, task, goal, save, actions) {
       const target = kept || byNear(candidates)[0];
       // Whether the visit happens now is asked before the way in (note 638):
       // the bot's health and hunger are what a fight's outcome turns on.
+      const hold = require('./fortress-hold');
       const visit = await require('./fortress-visit').ask(bot, task, goal, save, actions, { fortress: { distance: Math.round(flatTo(target, here)), height: Math.round(target.y + 1 - here.y), at: { x: anchor.x, y: anchor.y, z: anchor.z } },
-        leave: () => {
-          // The whole fortress, by its one place and extent (note 706).
-          state.shunned.push({ x: anchor.x, z: anchor.z, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on',
-            from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, left: ['the visit itself'] });
-          delete state.target; save();
-          bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
-        } });
+        // What leaving leaves, said on it (note 721); the ways in are
+        // surveyed next, by the approach.
+        reach: (() => { let said = null; return () => (said ??= hold.reachSays(bot, goal, { target, anchor })); })(),
+        // The whole fortress, by its one place and extent (note 706), the
+        // one set-aside (fortress-hold.js).
+        leave: () => hold.leave(bot, state, { anchor, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), left: ['the visit itself'], save }) });
       if (visit !== 'go_in') return;
       await approachFortress(bot, task, goal, save, actions, state, target, bricks); return;
     }
@@ -3575,6 +3604,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // (chooseLeg); the compass's own heading is the outage default.
     state.since ||= Date.now();
     if (await chooseLeg(bot, task, goal, save, actions, state, setAside) !== true) return;
+    if (leftOnLeg) require('./fortress-hold').leave(bot, state, { ...leftOnLeg, left: ['its ways in from here, then a leg away'], save });
     beginLeg(state, here);
   }
   goal.step = { action: 'find_fortress', target: state.target, legs: state.legs }; save();

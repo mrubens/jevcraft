@@ -1880,7 +1880,8 @@ test('leaving a fortress leaves all of it in view, not sixteen blocks of it: the
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
   assert.match(client.asked[0].options.keep_searching, /Left is all of it in view, its bricks out to 61 blocks from the nearest\./);
-  assert.equal(goal.fortressSearch.shunned.at(-1).radius, 61);
+  // Set aside by the fortress's anchor and its reach (fortress-hold.js leave, note 721): all of it in view at least.
+  assert(goal.fortressSearch.shunned.at(-1).radius >= 61);
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 2);
   assert.equal(goal.decisions.at(-1).id, 'fortress_leg', 'the bricks past sixteen blocks are the same fortress, left');

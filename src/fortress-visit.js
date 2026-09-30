@@ -82,6 +82,8 @@ function facts(bot, goal, ctx = {}) {
     healthComesBack: f.health >= 20 ? 'health is full' : f.healable ? `yes: ${f.hunger >= 18 ? `at hunger ${f.hunger}` : `once what is carried is eaten (hunger ${f.eatenTo})`}, about ${f.seconds} seconds to full` : `no: at hunger ${f.hunger}${f.points ? `, and eating all that is carried brings it only to ${f.eatenTo}` : ' with nothing to eat'}, under eighteen, none of it comes back`,
     worn: worn.length ? worn.map(words) : 'no armor', weapon: weapon ? words(weapon) : 'no sword or axe', shield: bot.inventory?.slots?.[45]?.name === 'shield',
     ...(need != null ? { rodsStillNeeded: need, rodsTheGoalWants: eyeSays(bot, goal) } : {}),
+    // What leaving it leaves (fortress-hold.js reachSays, note 721).
+    ...(ctx.reach ? { leaving: typeof ctx.reach === 'function' ? ctx.reach() : ctx.reach } : {}),
     blazesInSightNow: blazesInSight(bot),
     fireResistance: require('./fire-resistance').says(bot),
     foodBeforeTheFight: foodFacts(bot, goal),
@@ -114,11 +116,15 @@ function options(bot, task, goal, save, actions, ctx = {}) {
   const row = rowSays(f.health, f.hunger);
   tree.go_in = { description: `Go in now, at health ${round(f.health)} and hunger ${f.hunger}${f.carried.length ? ` with ${f.carried.map(c => c.says).join('; ')} carried` : ' with nothing to eat'}: ${ctx.fortress ? 'the way in is asked next (fortress_approach), and each blaze fight after it as it comes' : 'the fights are asked as they come'}. What the bot's own fights with blazes came to, ${row}. That is the record of fights begun in that row (two days of trials), not a forecast for this fortress. ${f.health < 20 ? (f.healable ? `Health does come back on the way (${f.hunger >= 18 ? `hunger ${f.hunger}` : 'after eating'}), at about a point each four seconds, half a second with saturation at full hunger.` : `Health does not come back: hunger ${f.hunger} is under eighteen and ${f.points ? `eating all that is carried brings it only to ${f.eatenTo}` : 'nothing carried is food'}, so every point lost in the fight stays lost.`) : ''} ${foodLine(bot)}`.replace(/\s+$/, '') };
 
-  // Eat what is carried and wait here: where it is possible.
+  // Eat what is carried and wait here: where it is possible, and only where
+  // there is health to get back. At full health it heals nothing, and was
+  // taken at 0.95 with "Healing before going into the fortress: health 20"
+  // said (25592 at 04:36:33Z, critic-20260930T0436Z item 2, note 721); hunger
+  // at full health is the routine eat's (vitals.js), not a wait.
   const canFeed = f.hunger < 18 && f.points > 0;
-  if ((f.health < 20 && f.healable) || canFeed) {
+  if (f.health < 20 && (f.healable || canFeed)) {
     const after = f.healable ? 20 : f.health;
-    tree.heal_first = { description: `Do not go in yet: ${f.items && f.hunger < 20 ? `eat what is carried (${f.carried.map(c => c.says).join('; ')}), which brings hunger to ${f.eatenTo}, and ` : ''}${f.healable && f.health < 20 ? `wait where the bot stands until the health is full: from ${round(f.health)}, about ${f.seconds} seconds (${f.eatenTo >= 20 ? 'a point each half second while saturation lasts, then each four seconds' : 'a point each four seconds at hunger 18 or 19'}); standing still spends no hunger; at most three minutes, then the visit is asked again` : `then the visit is asked again: ${f.healable ? `health is full, so this raises hunger to ${f.eatenTo}, where health comes back after a hit, and heals nothing now` : `health does not come back at hunger ${f.eatenTo}, under eighteen, so this raises hunger and not health`}`}. ` +
+    tree.heal_first = { description: `Do not go in yet: ${f.items && f.hunger < 20 ? `eat what is carried (${f.carried.map(c => c.says).join('; ')}), which brings hunger to ${f.eatenTo}, and ` : ''}${f.healable && f.health < 20 ? `wait where the bot stands until the health is full: from ${round(f.health)}, about ${f.seconds} seconds (${f.eatenTo >= 20 ? 'a point each half second while saturation lasts, then each four seconds' : 'a point each four seconds at hunger 18 or 19'}); standing still spends no hunger; at most three minutes, then the visit is asked again` : `then the visit is asked again: health does not come back at hunger ${f.eatenTo}, under eighteen, so this raises hunger and not health`}. ` +
       `${rowThen(after, f.eatenTo, { health: f.health, hunger: f.hunger })} Nothing here gets the bot a rod; it is the time the wait costs. A mob that comes meanwhile is met as it always is, and ends the wait. What it heals to holds only while hunger stays at 18 or more: ${require('./food-facts').clockSays(bot)}` };
   }
 

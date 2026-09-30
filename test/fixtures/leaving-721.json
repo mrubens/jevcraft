@@ -1,0 +1,566 @@
+[
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:31:17.106Z",
+  "id": "fortress_approach",
+  "answer": [
+   "keep_searching"
+  ],
+  "position": {
+   "x": -80.28789886736968,
+   "y": 43,
+   "z": 111.5014617568375
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "tunnel": 0.27,
+   "keep_searching": 0.42,
+   "none_good": 0.31
+  },
+  "options": {
+   "tunnel": "Dig a staircase through the rock toward the fortress, 20 blocks off and 23 blocks up, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one. No pickaxe is carried: rock is dug by hand, netherrack about 2 s, basalt about 6.25 s, blackstone about 7.5 s, nether bricks about 10 s a block by hand, dropping nothing (about 48 seconds of digging on the straight line to it).",
+   "keep_searching": "Leave this fortress for ten minutes and go on with the search from here (1 leg so far, 55 minutes on this one, 55 minutes searching): the next leg of the search is asked from here, and the fortress may be met again from another side. Left is all of it in view, its bricks out to 32 blocks from the nearest (the look keeps the nearest 4096 bricks, and this fortress runs on past them: from here all of it is left, and past 32 blocks it is met again as the leg goes). The sweep's legs over open air and lava lay a block a cell, and with no pickaxe carried none comes back or can be dug: the 0 carried are all there will be. At this height from here, with no pickaxe, the legs go (rock dug by hand on the way): east 17 blocks (then a gap with no block to lay); south 19 blocks (then a gap with no block to lay); west 1 block (then a gap with no block to lay); north 9 blocks (then a gap with no block to lay).",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {
+   "fortress": {
+    "distance": 20,
+    "height": 23
+   },
+   "walkRoute": "the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)",
+   "pillar": "the climb to the floor is not offered: 46 blocks wanted (23 up, 23 across), 0 carried and none to be had here",
+   "failed": [
+    "return for blocks: the step stalled on the way in (no measurable progress)"
+   ],
+   "waysResting": [
+    "return for blocks: Tried 2 times toward the same place from about here in the last 40 seconds, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new ground looked over, no nearer the fortress (30 blocks off, the nearest yet 30), ended where it began. It rests 5 minutes more from here."
+   ]
+  }
+ },
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:32:52.861Z",
+  "id": "fortress_approach",
+  "answer": [
+   "keep_searching"
+  ],
+  "position": {
+   "x": -106.26498807915686,
+   "y": 47,
+   "z": 131.50067595427146
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "none_good": 0.14,
+   "tunnel": 0.09,
+   "return_for_blocks": 0.36,
+   "keep_searching": 0.41
+  },
+  "options": {
+   "return_for_blocks": "Go back through the portal (the nearest known 171 blocks off at 17, 59, 13) for a pickaxe and blocks: every way on here needs one of them. Here a hand gets no block: netherrack dug by hand drops nothing; a span or pillar needs blocks (0 carried). Back through the same portal after. Walks back like this made 17 to 30 blocks a minute (about 6 to 10 minutes); of 181 over 60 blocks, 22 came out, 18 died, the rest were given up or stalled. Chosen 2 times in the last 2 minutes, the last 2 minutes ago 33 blocks from here, and each came to nothing; the last: nothing gained on the rung: killed nothing, no rod, no new ground looked over, no nearer the fortress (30 blocks off, the nearest yet 30), ended where it began.",
+   "tunnel": "Dig a staircase through the rock toward the fortress, 27 blocks off and 27 blocks up, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one. No pickaxe is carried: rock is dug by hand, netherrack about 2 s, basalt about 6.25 s, blackstone about 7.5 s, nether bricks about 10 s a block by hand, dropping nothing (about 132 seconds of digging on the straight line to it).",
+   "keep_searching": "Leave this fortress for ten minutes and go on with the search from here (1 leg so far, 2 minutes on this one, 56 minutes searching): the next leg of the search is asked from here, and the fortress may be met again from another side. Left is all of it in view, its bricks out to 16 blocks from the nearest. The sweep's legs over open air and lava lay a block a cell, and with no pickaxe carried none comes back or can be dug: the 0 carried are all there will be. At this height from here, with no pickaxe, the legs go (rock dug by hand on the way): east 14 blocks (then a gap with no block to lay); south 6 blocks (then a gap with no block to lay); west 2 blocks (then a gap with no block to lay); north 1 block (then a gap with no block to lay).",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {
+   "fortress": {
+    "distance": 27,
+    "height": 27
+   },
+   "walkRoute": "the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)",
+   "pillar": "the climb to the floor is not offered: 27 blocks wanted (27 up, 0 across), 0 carried and none to be had here"
+  }
+ },
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:33:41.805Z",
+  "id": "upkeep",
+  "answer": [
+   "fetch_stems"
+  ],
+  "position": {
+   "x": -108.62936739690323,
+   "y": 50,
+   "z": 138.5
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "carry_on": 0.19,
+   "block_reserve": 0.02,
+   "fetch_stems": 0.77,
+   "none_good": 0.02
+  },
+  "options": {
+   "fetch_stems": "Fetch 2 stems of the Nether's forests now. The nearest stems: 143 warped stems known at (-114, 61, 79), 61 blocks north and 11 up. No pickaxe is carried: it is short of 2 planks (1 stem) for the sticks, the head, which this fetch brings; then a wooden pickaxe. Until then rock is dug by hand and drops nothing. Wanted in wood: 8 planks' worth for the pickaxe to make now (wooden, its head three planks) and a spare (wooden, its head three planks): the sticks for 2 pickaxes (4 sticks, 2 planks), 2 wooden heads (6 planks); carried: 3 planks, a crafting table (3 planks' worth), 5 short: 2 stems (8 planks). A warped forest: endermen spawn there (and striders on its lava), no hoglin or piglin does; an enderman turns on a look at its head from as far as 64 blocks, and every look the bot makes, a dig's among them, is kept off endermen's eyes (gaze.js); about it now: 1 zombified piglin. A route survey from here found no way there on foot (the bot's own walks in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot); the way there is asked on the spot as the gathering asks it: on foot as far as it goes, straight across at this height with the blocks carried, or down to the floor and along it. Next nearest: crimson stems 62 blocks west. A stem needs no tool to drop and breaks by hand in about 3 seconds, about 0.8 with the stone axe carried. The pickaxe is made as soon as the wood for it is carried. It takes the bot from the fortress 32 blocks off now to 66 blocks from it, and the way back after is as far. It walks with 20 health and hunger 20; health comes back on the way.",
+   "block_reserve": "Mine netherrack for building blocks now: 3 carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it, and none is carried and none can be made from what is carried: dug by hand, netherrack drops nothing. The nearest netherrack the gather would go for is 1 blocks off, with footing on the straight line to it. 16 also seal a pocket or tower out of a hole.",
+   "carry_on": "Carry on with the find fortress and see to this later; asked again in five minutes, or sooner if what is due here changes or a way chosen fails for want of a pickaxe. The find fortress in hand heads for (-163, 73, 155), 61 blocks off: straight there digs 43 cells of rock by hand, about 3 minutes, nothing dropped. No pickaxe is carried: for the next 5 minutes rock is dug by hand (netherrack about 2 s, basalt about 6.25 s, blackstone about 7.5 s, nether bricks about 10 s a block by hand, dropping nothing), and no block is carried to pillar or span a gap.",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {}
+ },
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:33:42.358Z",
+  "id": "fortress_visit",
+  "answer": [
+   "go_in"
+  ],
+  "position": {
+   "x": -108.58008553405804,
+   "y": 50,
+   "z": 138.0758332075516
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "none_good": 0.01,
+   "leave_fortress": 0,
+   "go_in": 0.99
+  },
+  "options": {
+   "go_in": "Go in now, at health 20 and hunger 20 with 6 cooked mutton, 6 hunger each; 9 mutton, 2 hunger each; 6 beef, 3 hunger each carried: the way in is asked next (fortress_approach), and each blaze fight after it as it comes. What the bot's own fights with blazes came to, at health 20: over 16 health, 523 fights begun there, 22% died, 34% brought a rod; at hunger 20: 18 or more, 462 fights begun there, 23% died, 35% brought a rod. That is the record of fights begun in that row (two days of trials), not a forecast for this fortress.  Food: A blaze fight in the record lasted 0.6 minutes at the median, 1.1 at three in four, 2 at nine in ten, and a visit is several fights; hunger fell 0.9 a minute of fighting (567 fights, 2026-09-28 to 2026-09-29T11:40Z) and 37% of the fights begun at 18 or more ended under 18. From hunger 20 it is under 18 in about 3.3 minutes of fighting with no eating, and at most about 83.3 minutes if all 72 carried points are eaten as it falls (the bar caps at 20, so this is an upper bound). Health comes back only at hunger 18 or more.",
+   "leave_fortress": "Leave this fortress for ten minutes and search for another one (this one is 36 blocks off). It changes nothing about health or hunger (health 20, hunger 20: as they stand) and the next fortress begins this question again from the same row unless something on the way changes it. It gains no rod, and the search is the minutes the trials' fortress searches took.",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {}
+ },
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:33:42.580Z",
+  "id": "fortress_approach",
+  "answer": [
+   "walk_route"
+  ],
+  "position": {
+   "x": -108.58008553405804,
+   "y": 50,
+   "z": 138.0758332075516
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "none_good": 0.43,
+   "walk_route": 0.52,
+   "tunnel": 0.05
+  },
+  "options": {
+   "walk_route": "Walk the pathfinder's route to the fortress, 36 blocks off: to a point level with the bot beside it first, then on up or down to the floor itself. Surveyed toward the first: a route part of the way of 1 cells, placing 0 blocks and digging 0; it ends 1 blocks nearer. The pathfinder walks upright on open ground and crouched beside lava or a drop that kills: a crouch stops the body at an edge, but a push there carries it over. It turns back on keep searching (fortress approach), chosen 50 seconds ago (leave this fortress); health 20 then, 20 now, hunger 20 then, 20 now.",
+   "tunnel": "Dig a staircase through the rock toward the fortress, 36 blocks off, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one. No pickaxe is carried: rock is dug by hand, netherrack about 2 s, basalt about 6.25 s, blackstone about 7.5 s, nether bricks about 10 s a block by hand, dropping nothing (about 20 seconds of digging on the straight line to it). It turns back on keep searching (fortress approach), chosen 50 seconds ago (leave this fortress); health 20 then, 20 now, hunger 20 then, 20 now.",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {
+   "fortress": {
+    "distance": 36,
+    "height": 1
+   }
+  }
+ },
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:33:42.975Z",
+  "id": "fortress_approach",
+  "answer": [
+   "tunnel"
+  ],
+  "position": {
+   "x": -108.58008553405804,
+   "y": 50,
+   "z": 138.0758332075516
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "none_good": 0.63,
+   "walk_route": 0.15,
+   "tunnel": 0.22
+  },
+  "options": {
+   "walk_route": "Walk the pathfinder's route to the fortress, 36 blocks off: to a point level with the bot beside it first, then on up or down to the floor itself. Surveyed toward the first: a route part of the way of 1 cells, placing 0 blocks and digging 0; it ends 1 blocks nearer. The pathfinder walks upright on open ground and crouched beside lava or a drop that kills: a crouch stops the body at an edge, but a push there carries it over. Tried on this approach once and ended no nearer: ended 36 blocks from the floor: No route from here to (-140, 51, 156) (noPath): the way passes along a drop that would kill. Tried once toward the same place from about here in the last 1 second, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new ground looked over, no nearer the fortress (36 blocks off, the nearest yet 30), ended where it began.",
+   "tunnel": "Dig a staircase through the rock toward the fortress, 36 blocks off, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one. No pickaxe is carried: rock is dug by hand, netherrack about 2 s, basalt about 6.25 s, blackstone about 7.5 s, nether bricks about 10 s a block by hand, dropping nothing (about 20 seconds of digging on the straight line to it).",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {
+   "fortress": {
+    "distance": 36,
+    "height": 1
+   },
+   "failed": [
+    "walk route: ended 36 blocks from the floor: No route from here to (-140, 51, 156) (noPath): the way passes along a drop that would kill"
+   ]
+  }
+ },
+ {
+  "port": 25584,
+  "at": "2026-09-30T04:34:05.417Z",
+  "id": "fortress_leg",
+  "answer": [
+   "leg_north"
+  ],
+  "position": {
+   "x": -108.4396453941564,
+   "y": 50,
+   "z": 139.5
+  },
+  "health": 20,
+  "food": 20,
+  "inventory": {
+   "bone": 1,
+   "blaze_rod": 3,
+   "coal": 105,
+   "furnace": 1,
+   "light_gray_wool": 2,
+   "gray_wool": 2,
+   "leaf_litter": 32,
+   "leather": 2,
+   "lapis_lazuli": 9,
+   "water_bucket": 1,
+   "flint": 1,
+   "cooked_mutton": 6,
+   "bucket": 1,
+   "gravel": 15,
+   "oak_fence": 15,
+   "gold_nugget": 3,
+   "mutton": 9,
+   "quartz": 1,
+   "beef": 6,
+   "raw_copper": 7,
+   "crafting_table": 1,
+   "oak_planks": 3,
+   "flint_and_steel": 1,
+   "white_wool": 3,
+   "iron_sword": 1,
+   "wooden_hoe": 1,
+   "stone_axe": 1
+  },
+  "probabilities": {
+   "widen_search": 0.13,
+   "go_to_blazes_about": 0.12,
+   "leg_north": 0.23,
+   "none_good": 0.2,
+   "leg_south": 0.09,
+   "leg_east": 0.15,
+   "leg_west": 0.08
+  },
+  "options": {
+   "leg_east": "Away from the fortress in view: its end is 57 blocks from its nearest brick (1 now). Unseen ahead: about 42 of 132 chunks (32%). The bot has stood on 48 of its 96 blocks before: it walks again ground already walked and looked from, and what is unseen that way lies off to its sides and past its end. Its end is 129 blocks from where the search began (the bot is 177 from there now). Go east 96 blocks at y 50: of the 96 cells ahead, 90 of open air (90 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar) and 6 of rock to dig (about 12.7 seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it); about 199 seconds with the blocks for all of it. 90 of the open cells have no floor: it needs 90 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 0, about 0 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. The first 16 cells, in order: 10 of open air with no floor under it, 6 of rock to dig. Seen before and lying this way: the fortress remembered at (-70, 35, 140), 38 blocks off and 15 down. This way the bot leaves the region it stands in after about 109 blocks, into the region x 0 to 431, z 0 to 431 may hold the fortress seen at (-70, 35, 140), which could have begun in it or in a region beside it; about 7% of it seen at fortress heights. The fortress's bricks in view run 39 blocks this way from here; what lies past them is unseen.",
+   "leg_south": "Away from the fortress in view: its end is 76 blocks from its nearest brick (1 now). Unseen ahead: about 90 of 134 chunks (67%). The bot has stood on 12 of its 96 blocks before. Its end is 255 blocks from where the search began (the bot is 177 from there now). Go south 96 blocks at y 50: of the 96 cells ahead, 96 of open air (96 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar); about 131 seconds with the blocks for all of it. 96 of the open cells have no floor: it needs 96 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 0, about 0 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. The first 16 cells, in order: 16 of open air with no floor under it. The last leg this way, begun 177 blocks from here, ended no nearer (67 tries from there): The staircase toward (-163, 73, 155) is set aside (paced the same few cells round where the round began, 61 blocks from it); trying another way. This way the bot leaves the region it stands in after about 293 blocks, into the region x -432 to -1, z 432 to 863 nothing of a fortress or bastion known there; about 0% of it seen at fortress heights. The fortress's bricks in view run 20 blocks this way from here; what lies past them is unseen.",
+   "leg_west": "Away from the fortress in view: its end is 61 blocks from its nearest brick (1 now). Unseen ahead: about 31 of 133 chunks (24%); about 31 of them lie beside the 79 blocks of its line in open air. The bot has stood on 15 of its 96 blocks before. Its end is 255 blocks from where the search began (the bot is 177 from there now). Go west 96 blocks at y 50: of the 96 cells ahead, 88 of open air (79 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar) and 8 of rock to dig (about 13.3 seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it); about 224 seconds with the blocks for all of it. 86 of the open cells have no floor: it needs 86 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 0, about 0 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. It steps a block up or down 1 time where the ground does. The first 16 cells, in order: 16 of open air with no floor under it. Seen before and lying this way: the fortress bricks last found at (-140, 50, 156), 36 blocks off; the fortress remembered at (-261, 74, 158), 154 blocks off and 24 up. This way the bot leaves the region it stands in after about 324 blocks, into the region x -864 to -433, z 0 to 431 nothing of a fortress or bastion known there; about 0% of it seen at fortress heights. The fortress's bricks in view run 35 blocks this way from here; what lies past them is unseen.",
+   "leg_north": "Away from the fortress in view: its end is 59 blocks from its nearest brick (1 now). Unseen ahead: about 71 of 131 chunks (54%). The bot has stood on 15 of its 96 blocks before. Its end is 129 blocks from where the search began (the bot is 177 from there now). Go north 96 blocks at y 50: of the 83 cells ahead, 44 of open air (35 of them over a drop of four or more: a cavern or the lava sea's edge, where a fortress is seen from afar) and 39 of rock to dig (about 3.9 seconds a cell by hand, no pickaxe carried, dropping nothing, and nothing is seen from inside it); about 201 seconds with the blocks for all of it. 35 of the open cells have no floor: it needs 35 blocks laid, crouched, about 1.4 seconds a cell, 0 carried: the blocks run out at cell 8, about 2 seconds in, where the leg stops with none to lay. No pickaxe is carried, so no block comes back: rock, basalt, netherrack and bricks dug by hand drop nothing, and a block laid and taken up drops nothing. After it none is left to lay, and none can be had here: every way from where it ends that lays a block (a gap crossed, a climb built) is closed until a pickaxe is made, and the floor already laid or standing is all the floor there is. Warped stem with lava or water behind it (not dug) stops it at cell 83. It steps a block up or down 3 times where the ground does. The first 16 cells, in order: 8 of open air with a floor, 8 of open air with no floor under it. This way the bot leaves the region it stands in after about 140 blocks, into the region x -432 to -1, z -432 to -1 nothing of a fortress or bastion known there; about 2% of it seen at fortress heights. Back over the last leg's own line: that leg began 177 blocks north of here, and all 96 blocks of this one go over the ground it just searched, already looked over from there. The fortress's bricks in view run 37 blocks this way from here; what lies past them is unseen.",
+   "widen_search": "Widen the search: the next side of a square spiral round where it began at (17, 14), clockwise, each ring 96 blocks past the last, so no side goes back over another. From here: north 192 blocks, ending 141 blocks from the start. Unseen ahead: about 160 of 227 chunks (70%); about 155 of them lie beside the 129 blocks of its line in open air. The bot has stood on 15 of its 192 blocks before. Its first 96 blocks are as leg_north says. Back over the last leg's own line: that leg began 177 blocks north of here, and all 96 blocks of this one go over the ground it just searched, already looked over from there.",
+   "go_to_blazes_about": "Go to the blazes about now: 1 blaze about now (none in sight, 1 heard through the walls), the nearest 78 blocks off and 30 up at (-162, 80, 187). The hunt takes each one as it comes into view within its reach. The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets). The last try at blazes about ended: Jev chose to leave that way for now.",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {}
+ },
+ {
+  "port": 25592,
+  "at": "2026-09-30T04:32:33.801Z",
+  "id": "fortress_approach",
+  "answer": [
+   "keep_searching"
+  ],
+  "position": {
+   "x": -114.60629239144927,
+   "y": 77,
+   "z": 129.49997794252488
+  },
+  "health": 20,
+  "food": 19,
+  "inventory": {
+   "oak_log": 2,
+   "bone": 1,
+   "white_wool": 5,
+   "flint_and_steel": 1,
+   "coal": 119,
+   "raw_copper": 16,
+   "light_gray_wool": 1,
+   "gray_wool": 2,
+   "leaf_litter": 23,
+   "wooden_hoe": 1,
+   "lapis_lazuli": 9,
+   "raw_iron": 6,
+   "flint": 1,
+   "mutton": 9,
+   "leather": 3,
+   "gravel": 15,
+   "white_bed": 1,
+   "oak_fence": 15,
+   "rotten_flesh": 2,
+   "bucket": 1,
+   "furnace": 1,
+   "beef": 11,
+   "water_bucket": 1,
+   "cooked_mutton": 3,
+   "netherrack": 128,
+   "stone_axe": 1,
+   "crafting_table": 1,
+   "iron_sword": 1,
+   "stone_pickaxe": 1,
+   "cobblestone": 17
+  },
+  "probabilities": {
+   "tunnel": 0.09,
+   "descend": 0.14,
+   "none_good": 0.27,
+   "keep_searching": 0.5
+  },
+  "options": {
+   "descend": "Dig straight down where the bot stands toward the bricks, 3 blocks below and 1 across, a block at a time. The first floor under the bot's feet is netherrack, 1 blocks down. A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is; under 12 health it goes no lower at all (20 now), and it stops after 24 steps (note 677). Within sixteen blocks of the bricks, seen or not: 1 blaze; a way that arrives among them arrives in their fight. One blaze fireball through what is worn (iron helmet, iron chestplate): about 3.9 hit and 4 burn over the next five seconds (four ticks of fire; 7.9 for one landing); a wither skeleton's blade about 6.7, and wither on top. Health 20, coming back about one each four seconds at hunger 19: about 3 fireballs end it, each from its own volley; 5 within one volley, whose fire is one fire. Tried on this approach once and ended no nearer: dropped no lower. Tried once toward the same place from about here in the last 11 seconds, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new ground looked over, no nearer the fortress (6 blocks off, the nearest yet 2), no nearer the nearest place blazes were seen (27 blocks off, th.",
+   "tunnel": "Dig a staircase through the rock toward the fortress, 1 blocks off and 3 blocks down, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one. Within sixteen blocks of the bricks, seen or not: 1 blaze; a way that arrives among them arrives in their fight. One blaze fireball through what is worn (iron helmet, iron chestplate): about 3.9 hit and 4 burn over the next five seconds (four ticks of fire; 7.9 for one landing); a wither skeleton's blade about 6.7, and wither on top. Health 20, coming back about one each four seconds at hunger 19: about 3 fireballs end it, each from its own volley; 5 within one volley, whose fire is one fire. Tried on this approach once and ended no nearer: came no nearer. Tried once toward the same place from about here in the last 1 second, and it came to nothing: nothing gained on the rung: killed nothing, no rod, no new ground looked over, no nearer the fortress (4 blocks off, the nearest yet 2), no nearer the nearest place blazes were seen (27 blocks off, th.",
+   "keep_searching": "Leave this fortress for ten minutes and go on with the search from here (2 legs so far, 5 minutes on this one, 9 minutes searching): the next leg of the search is asked from here, and the fortress may be met again from another side. Left is all of it in view, its bricks out to 35 blocks from the nearest (the look keeps the nearest 4096 bricks, and this fortress runs on past them: from here all of it is left, and past 35 blocks it is met again as the leg goes). Within sixteen blocks of the bricks, seen or not: 1 blaze; a way that arrives among them arrives in their fight. It turns back on tunnel (fortress approach), chosen 1 second ago (go to this fortress).",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {
+   "fortress": {
+    "distance": 1,
+    "height": -3
+   },
+   "walkRoute": "the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)",
+   "failed": [
+    "descend: dropped no lower",
+    "tunnel: came no nearer"
+   ]
+  }
+ },
+ {
+  "port": 25592,
+  "at": "2026-09-30T04:36:33.799Z",
+  "id": "fortress_visit",
+  "answer": [
+   "heal_first"
+  ],
+  "position": {
+   "x": -107.5,
+   "y": 74,
+   "z": 129.49985851114184
+  },
+  "health": 20,
+  "food": 17,
+  "inventory": {
+   "oak_log": 1,
+   "bone": 1,
+   "white_wool": 5,
+   "flint_and_steel": 1,
+   "coal": 119,
+   "raw_copper": 16,
+   "light_gray_wool": 1,
+   "gray_wool": 2,
+   "leaf_litter": 23,
+   "wooden_hoe": 1,
+   "lapis_lazuli": 9,
+   "raw_iron": 6,
+   "flint": 1,
+   "mutton": 9,
+   "leather": 3,
+   "gravel": 15,
+   "white_bed": 1,
+   "oak_fence": 15,
+   "rotten_flesh": 2,
+   "bucket": 1,
+   "furnace": 1,
+   "beef": 11,
+   "cooked_mutton": 2,
+   "water_bucket": 1,
+   "oak_planks": 1,
+   "stick": 2,
+   "crafting_table": 1,
+   "blaze_rod": 1,
+   "stone_axe": 1,
+   "netherrack": 128,
+   "cobblestone": 14,
+   "iron_sword": 1,
+   "nether_bricks": 1,
+   "stone_pickaxe": 1
+  },
+  "probabilities": {
+   "none_good": 0,
+   "hoglin_hunt": 0,
+   "heal_first": 0.95,
+   "go_in": 0.05
+  },
+  "options": {
+   "go_in": "Go in now, at health 20 and hunger 17 with 9 mutton, 2 hunger each; 2 rotten flesh, 4 hunger each; each eaten has a 80% chance of Hunger for 30 seconds, which spends about 0.75 of a hunger point (saturation first); 11 beef, 3 hunger each; 2 cooked mutton, 6 hunger each carried: the fights are asked as they come. What the bot's own fights with blazes came to, at health 20: over 16 health, 523 fights begun there, 22% died, 34% brought a rod; at hunger 17: under 18, 162 fights begun there, 33% died, 16% brought a rod. That is the record of fights begun in that row (two days of trials), not a forecast for this fortress.  Food: A blaze fight in the record lasted 0.6 minutes at the median, 1.1 at three in four, 2 at nine in ten, and a visit is several fights; hunger fell 0.9 a minute of fighting (567 fights, 2026-09-28 to 2026-09-29T11:40Z) and 37% of the fights begun at 18 or more ended under 18. Hunger is already 17, under 18: nothing here heals until it is eaten back up (71 points carried). Health comes back only at hunger 18 or more.",
+   "heal_first": "Do not go in yet: eat what is carried (9 mutton, 2 hunger each; 2 rotten flesh, 4 hunger each; each eaten has a 80% chance of Hunger for 30 seconds, which spends about 0.75 of a hunger point (saturation first); 11 beef, 3 hunger each; 2 cooked mutton, 6 hunger each), which brings hunger to 20, and then the visit is asked again: health is full, so this raises hunger to 20, where health comes back after a hit, and heals nothing now. Then the hunger row moves from under 18 (33% died, 16% brought a rod) to 18 or more (23% died, 35% brought a rod): fights begun in that row, not a trial of waiting. Nothing here gets the bot a rod; it is the time the wait costs. A mob that comes meanwhile is met as it always is, and ends the wait. What it heals to holds only while hunger stays at 18 or more: A blaze fight in the record lasted 0.6 minutes at the median, 1.1 at three in four, 2 at nine in ten, and a visit is several fights; hunger fell 0.9 a minute of fighting (567 fights, 2026-09-28 to 2026-09-29T11:40Z) and 37% of the fights begun at 18 or more ended under 18. Hunger is already 17, under 18: nothing here heals until it is eaten back up (71 points carried).",
+   "hoglin_hunt": "Hunt a hoglin for its meat (none in view; 1 hoglin seen 4 minutes ago, 83 blocks north-west (-167, 71)): each drops two to four raw porkchops, safe to eat raw at three hunger each, eight cooked. A hoglin has forty health and hits for three to eight before armour, throwing the bot about three blocks, off an edge if there is one beside it. One hoglin with the iron sword: about 12.6 seconds and 17.2 damage, leaving about 2.8 of the 20 health; a blow is 2.2 to 6.7 through the armour worn. The walk there is about 19 seconds at a walk and if nothing stops it (the Nether's walks made 17 to 30 blocks a minute over 2026-09-28, stops counted: about 3 to 5 minutes), at 20 health, and the hoglin may have moved on. Two minutes, and six health lost ends it. How the hunts of a hoglin for its meat went over 2026-09-28's trials in the Nether: 66 begun, 0 brought meat; 61 ended at the place a hoglin was seen with none within thirty-two blocks (they move on), 5 in a fight that took six health. Health does not come back meanwhile: hunger 17. Also within thirty-two blocks: blaze. Two facts, both from 2026-09-28's trials: the pillar stance against a hoglin (two blocks up, where its blow does not reach) lost 0.1 health on average over 168 stances, against 0.4 said, with 2 deaths inside fifteen seconds, where the 16 shield-guard stances lost 1.8; and the hunts that went for a hoglin for its meat brought none in 66 begun in the Nether. This hunt goes at the hoglin on foot: it does not stand on a pillar, so the pillar figure is for a hoglin that comes to a bot already up there. Then the hunger row moves from under 18 (33% died, 16% brought a rod) to 18 or more (23% died, 35% brought a rod): fights begun in that row, not a trial of waiting. (a hoglin's two to four raw porkchops, three hunger each).",
+   "none_good": "None of these options are good: the move a player would make here is not among them. Choose this only when such a move is missing, not because every option listed is costly; the least bad of a bad set is still one of them. It is recorded for the missing move to be added, and meanwhile the best of the options listed is taken."
+  },
+  "state": {}
+ }
+]

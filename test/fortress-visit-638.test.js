@@ -82,25 +82,27 @@ test('at 12 health and hunger 18 with food carried: eating and waiting is offere
   assert.match(tree.go_in.description, /Health does come back on the way/);
 });
 
-test('with hunger 14 and food that brings it to 20, the wait is offered; with food that does not reach 18 and health 20, only feeding is, and it says health does not come back', () => {
+test('with hunger 14 and food that brings it to 20, the wait is offered; hurt with food that does not reach 18, only feeding is, and it says health does not come back; at full health none (note 721)', () => {
   const rich = visit.options(bot({ health: 5, food: 14, items: [['iron_sword', 1], ['cooked_beef', 1]] }), null, goalOf(), () => {}, {}, { fortress });
   assert(rich.heal_first, 'one cooked beef takes hunger to 20 and health comes back');
-  const thin = visit.options(bot({ health: 20, food: 10, items: [['iron_sword', 1], ['potato', 1]] }), null, goalOf(), () => {}, {}, { fortress });
-  assert(thin.heal_first, 'feeding is possible with food carried under 18');
+  const thin = visit.options(bot({ health: 12, food: 10, items: [['iron_sword', 1], ['potato', 1]] }), null, goalOf(), () => {}, {}, { fortress });
+  assert(thin.heal_first, 'feeding is possible with food carried under 18, hurt');
   assert.match(thin.heal_first.description, /which brings hunger to 11, and then the visit is asked again: health does not come back at hunger 11, under eighteen, so this raises hunger and not health/);
+  const full = visit.options(bot({ health: 20, food: 10, items: [['iron_sword', 1], ['potato', 1]] }), null, goalOf(), () => {}, {}, { fortress });
+  assert.equal(full.heal_first, undefined, 'at full health there is no health to get back');
   const none = visit.options(bot({ health: 20, food: 20 }), null, goalOf(), () => {}, {}, { fortress });
   assert.equal(none.heal_first, undefined, 'nothing to change at 20 fed');
 });
 
 // Note 643: six live askings at health 20 and hunger 17 said "health does not
-// come back at hunger 20, under eighteen": eating to 20 was the very thing that
-// makes it come back, and Jev took the wait 0.72 to 0.86 on a sentence that
-// was false on its face.
-test('at full health with hunger under 18 and food that reaches 18, heal_first says health is full and hunger is what it raises, not that health does not come back', () => {
+// come back at hunger 20, under eighteen"; note 643 said instead that it
+// heals nothing now. 25592 then took it at 0.95 at health 20 and said
+// "Healing before going into the fortress: health 20" (critic-20260930T0436Z
+// item 2): at full health it is not offered (note 721).
+test('at full health with hunger under 18 and food carried, heal_first is not offered (25592, note 721)', () => {
   const tree = visit.options(bot({ health: 20, food: 17, items: [['iron_sword', 1], ['cooked_mutton', 3]] }), null, goalOf(), () => {}, {}, { fortress });
-  assert(tree.heal_first);
-  assert.match(tree.heal_first.description, /which brings hunger to 20, and then the visit is asked again: health is full, so this raises hunger to 20, where health comes back after a hit, and heals nothing now/);
-  assert.doesNotMatch(tree.heal_first.description, /health does not come back at hunger 20/);
+  assert.equal(tree.heal_first, undefined);
+  assert(tree.go_in);
 });
 
 test('the state says whether health can come back at this hunger and which row the bot is in', () => {

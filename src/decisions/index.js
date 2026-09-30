@@ -538,7 +538,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // options from about here and nothing come of it, the same set is not
   // asked again: the least bad is held from here and the question above is
   // asked with the none good said. Else it is said, in the facts and on it.
-  let lastLeastBad = null, lastChosen = null;
+  let lastLeastBad = null, lastChosen = null, keptBesideLeave = [];
   // The answer given last, whatever its question, if it ended in its first
   // second: rested from where it was chosen, and said below (at-once.js,
   // note 695).
@@ -564,7 +564,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       console.log(`[none good] ${id}: ${why}`);
       escalateFrom(bot, goal, spec, why);
     }
-    const read = tried.read(bot, goal, id, tree, { target, sayOnly: SAY_ONLY.has(id) });
+    const read = tried.read(bot, goal, id, tree, { target, sayOnly: SAY_ONLY.has(id), leave: require('../intention').GATED.has(id) ? require('../fortress-hold').isLeave : null });
+    keptBesideLeave = read.keptBesideLeave || [];
     if (read.allResting && spec.parent !== undefined && spec.parent !== null) escalateFrom(bot, goal, spec, `every way it had from here rests: ${read.resting.join('; ')}`, { until: read.until });
     tree = read.tree;
     if (read.resting.length) resting = read.resting;
@@ -592,7 +593,24 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     tree = g.tree; underWay = g.underWay; intentionEnded = g.ended;
     if (g.withheld.length) console.log(`[intention] ${id}: not offered while ${goal.intention?.choice} holds: ${g.withheld.join(', ')}`);
   }
+  // Leaving is Jev's, asked (fortress-hold.js, note 721): a lone leave, or a
+  // lone resting way kept only beside one, is not taken unasked. Its failure
+  // goes to the answer it serves, where it is that answer's way (the fetch of
+  // stems whose gathering has only `without` left fails, and says why), else
+  // to the question above with it said.
+  const loneLeave = key => {
+    const why = ledgered ? require('../fortress-hold').loneWhy(id, key, keptBesideLeave) : null;
+    if (!why) return;
+    const intent = require('../intention'), i = intent.holding(bot, goal);
+    console.log(`[leaving] ${id}: ${why}`);
+    if (i && i.q !== id && intent.wayOf(id, i)) {
+      intent.end(goal, `failed: ${id.replaceAll('_', ' ')}: ${why}`);
+      throw new Error(`No way on for ${i.choice.replaceAll('_', ' ')} from here: ${id.replaceAll('_', ' ')}: ${why}`);
+    }
+    escalateFrom(bot, goal, spec, why);
+  };
   const takeOne = (one, why = null) => {
+    loneLeave(one.path.join('/'));
     sayOnce(bot, id, one.path, Date.now(), why);
     const decision = { ...one, id, only: true };
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
