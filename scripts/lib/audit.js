@@ -124,9 +124,16 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   // was failed as "flipping hold_bunker <-> blaze_sortie" on one hold at
   // full health, no loop in it (note 623).
   const HOLDS_OWN = { blaze_sortie: /^hold_(bunker|box)$/ };
+  // The ladder's label for the crossing (game-progress.js gameStep writes
+  // {action: 'enter_nether', phase: 'reach_nether'} before every pass, note
+  // 748) is not a step of its own: a loop of the cast or the lava fetch was
+  // failed as "flipping enter_nether <-> fill_bucket" (note 763b), naming
+  // the label as half of it. The step it dispatched to is judged alone.
+  const label = s => { const st = s?.step || s?.goal?.step; return st?.action === 'enter_nether' && st.phase === 'reach_nether' && Object.keys(st).every(k => ['action', 'phase'].includes(k)); };
   for (const o of obs) {
     const a = stepOf(o.snapshot), held = changes.at(-1)?.a;
     if (a && HOLDS_OWN[a]?.test(held || '')) continue;
+    if (label(o.snapshot)) continue;
     if (a && held !== a) changes.push({ a, t: o.t, s: o.snapshot });
   }
   for (let i = 0; i + 6 < changes.length; i++) {

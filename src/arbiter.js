@@ -177,7 +177,10 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   // walking at the bot. It is the claim's, beside the work, with that said.
   const stood = t => { try { return !!require('./danger').standsOff(bot, t); } catch (_) { return false; } };
   const creeper = creepers.filter(t => !apart.has(t.entity.id) && !stood(t)).sort((a, b) => a.distance - b.distance)[0];
-  if (creeper) { try { require('./danger').markCreeper(bot, creeper); } catch (_) { /* unmarked */ }
+  // Marked only where it is seen or within four: a mark kept alive by its
+  // own mark would hold a creeper round a corner for as long as it stayed
+  // there (note 752j).
+  if (creeper) { if (creeper.visible || creeper.distance <= 4) { try { require('./danger').markCreeper(bot, creeper); } catch (_) { /* unmarked */ } }
     add('creeper', { creeper: Math.round(creeper.distance * 10) / 10, seen: !!creeper.visible, lightsAt: LIGHTS_AT, blocksASecond: APPROACH, fuse: FUSE }); }
   const armLine = ARM + (was.has('arm') ? HYSTERESIS : 0);
   // At the stance's six health or under, or with no more than BLOWS_LEFT of
@@ -580,7 +583,7 @@ function claimSays(c) {
     // Said with the hunger against what health needs, what the food carried
     // covers, what it is for, the errand's cost and whether the work is the
     // food already (note 761).
-    case 'obtain_food': return `Find food${f.foodFor ? ` for ${f.foodFor}` : ''}: ${notAsked(f) || 'where is asked next'}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for daylight, about ${f.waitSealedMinutes} real minutes, standing still and spending no hunger` : ''}.${f.hungerSays ? ` ${f.hungerSays}` : ` Hunger ${f.food}.`}${f.foodCarried !== undefined ? ` ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}${f.foodCarried !== undefined ? '.' : ''}${f.errandSoFar ? ` ${f.errandSoFar[0].toUpperCase()}${f.errandSoFar.slice(1)}.` : ''}${f.workIsFood ? ` ${f.workIsFood[0].toUpperCase()}${f.workIsFood.slice(1)}: given the turn, this takes it from that step to a search of its own.` : ''}${hp}${f.hungerSays ? '' : heals}`;
+    case 'obtain_food': return `Find food${f.foodFor ? ` for ${f.foodFor}` : ''}: ${notAsked(f) || 'where is asked next'}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for ${f.waitSealedDayNow ? `the next daylight (it is day now: the wait runs through dusk and the whole night), about ${f.waitSealedMinutes} real minutes` : `daylight, about ${f.waitSealedMinutes} real minutes`}, standing still and spending no hunger` : ''}.${f.hungerSays ? ` ${f.hungerSays}` : ` Hunger ${f.food}.`}${f.foodCarried !== undefined ? ` ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}${f.foodCarried !== undefined ? '.' : ''}${f.errandSoFar ? ` ${f.errandSoFar[0].toUpperCase()}${f.errandSoFar.slice(1)}.` : ''}${f.workIsFood ? ` ${f.workIsFood[0].toUpperCase()}${f.workIsFood.slice(1)}: given the turn, this takes it from that step to a search of its own.` : ''}${hp}${f.hungerSays ? '' : heals}`;
     case 'night_mine': return `Go on with the night mine chosen from the pocket ${f.nightMine?.minutes ?? 0} minute${f.nightMine?.minutes === 1 ? '' : 's'} ago (${f.nightMine?.mined ?? 0} mined), under the rock, until dawn about ${f.minutesToDawn} real minutes off or until it ends; given to the work, the work's own steps (a climb to the surface among them) run instead.${hp}`;
     case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,

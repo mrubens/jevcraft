@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-99 questions: 49 decision trees and 50 batched questions.
+100 questions: 50 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -480,6 +480,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
 | `top_up_cauldron` | root | make a cauldron and fill a bucket with water first, to put a fire out in the Nether | no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634) |
 | `top_up_chest` | root | make a chest from the wood carried first and carry it in, to keep rods in through a death | the goal still wants blaze rods, no chest carried and the wood for one carried (8 planks, 4 more for a table when none is carried); it makes the question worth asking even with nothing short; said with what a chest is for (stash_rods keeps rods through a death), the record of lives that carried rods without one, and its cost (crossing-kit.js chestRungSays, note 760) |
+| `top_up_pickaxe` | root | make a pickaxe first: none is carried | no pickaxe of any kind carried at the crossing, whatever the ladder's kit step said (note 763b); said with the pickaxe the pockets make (iron with three ingots, else stone with three cobblestone, else wood) and the pickaxe budget; cross_now says that nothing can be mined in the Nether without one |
 | `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |
 
@@ -705,6 +706,25 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `leave_it` | root | leave the bastion alone for thirty minutes and go on with the ladder's next step or another way to the pearls | always with the others |
 
 ## work
+
+### `lava_way`
+
+**The portal wants lava and none is in sight: dig toward a pool known, or down to the lava layer; or make more buckets first, or cast the frame down beside the pool?**
+
+- When: The lava fetch in the Overworld with no lava in sight and no scooping spot, a pool known whose way is not resting and a heading down to the lava layer open; asked once and held with the fetch (until a bucket is filled, the dimension changes or ten minutes pass).
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/obsidian.js (collectLava, askLavaWay, wayCosts), src/portal-cast.js (castTrips), src/levels.js
+- Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
+- Nothing left to try: asks `portal_method` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `pool_[0-9]+` (pattern: names the pool, by the number given when first offered (keys.js)) | root | dig toward a lava pool known | the two known pools whose way is not resting with the shortest dig and carry back; said with the blocks across and the height, the dig there, a trip after it at the measured pace, the trips the lava still to fetch takes with the buckets carried and all of it together, and the pickaxes carried |
+| `deep` | root | dig a staircase down to the lava layer | always, a heading open; said as the pools are, with the headings down already set aside from about here |
+| `craft_buckets` | root | make more buckets first from the iron carried | three iron ingots or more carried and more than one bucket's worth of lava still to fetch; said with the trips saved |
+| `cast_at_pool` | root | cast the frame down beside the nearest pool | no frame begun; said with the dig there and that the portal is then down there |
 
 ### `portal_method`
 

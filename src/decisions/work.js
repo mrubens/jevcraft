@@ -44,6 +44,24 @@ const IDLE_OPTIONS = [
 // lava and water (here or beside the lava), or a ruin finished; buckets
 // made first for a cast. Held on a clock, as a rung is: re-asked every
 // twenty working minutes with the minutes and what they made.
+// The lava's way for the portal (src/obsidian.js askLavaWay, note 763b): a
+// known pool against the lava layer, chosen by code until 25590 dug toward a
+// held pool 165 blocks off for about eight minutes with no way down said.
+define({
+  overworldOnly: true,
+  id: 'lava_way', area: 'work', parent: 'portal_method', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'The portal wants lava and none is in sight: dig toward a pool known, or down to the lava layer; or make more buckets first, or cast the frame down beside the pool?',
+  trigger: 'The lava fetch in the Overworld with no lava in sight and no scooping spot, a pool known whose way is not resting and a heading down to the lava layer open; asked once and held with the fetch (until a bucket is filled, the dimension changes or ten minutes pass).',
+  source: 'src/obsidian.js (collectLava, askLavaWay, wayCosts), src/portal-cast.js (castTrips), src/levels.js',
+  options: [
+    { pattern: 'pool_[0-9]+', names: 'the pool, by the number given when first offered (keys.js)', label: 'dig toward a lava pool known', when: 'the two known pools whose way is not resting with the shortest dig and carry back; said with the blocks across and the height, the dig there, a trip after it at the measured pace, the trips the lava still to fetch takes with the buckets carried and all of it together, and the pickaxes carried', level: 'root', dynamic: true },
+    { key: 'deep', label: 'dig a staircase down to the lava layer', when: 'always, a heading open; said as the pools are, with the headings down already set aside from about here', level: 'root' },
+    { key: 'craft_buckets', label: 'make more buckets first from the iron carried', when: 'three iron ingots or more carried and more than one bucket\'s worth of lava still to fetch; said with the trips saved', level: 'root' },
+    { key: 'cast_at_pool', label: 'cast the frame down beside the nearest pool', when: 'no frame begun; said with the dig there and that the portal is then down there', level: 'root' },
+  ],
+  instructions: { task: 'The portal needs lava and none is in sight. Choose where to get it: a known pool, the lava layer below, or first more buckets, or cast the frame beside the pool.', guidance: 'Each way says the dig there, each trip after it and the trips still to make with the buckets carried, at the bot\'s own measured pace, and the pickaxes it would be dug with. Fewer, shorter trips are the portal sooner.' },
+});
+
 define({
   id: 'portal_method', area: 'work', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'The way into the Nether: build a portal frame of its own from obsidian, cast one in place from lava and water (here, or beside the known lava), or finish and light a remembered ruined portal; or make more buckets first?',

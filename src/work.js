@@ -240,7 +240,12 @@ function stallAbove(goal, { idle = false, now = Date.now() } = {}) {
 }
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now(), failed = null, chose = {}, recoveryAdviser = null } = {}) {
   const stats = survival?.state || goal.survival || goal;
-  const thing = thingOf(stall.key);
+  // A stall of the stall's own answer (a detour, persist, work free) is the
+  // stall of the work it answered, named as that (note 763b): 25595
+  // (mid-243-ap, 21:14Z) was offered "Keep at the detour until rest ends
+  // another way", a question about its own detour.
+  const own = /^(detour|persist|shake loose|work free)\b/.test(thingOf(stall.key));
+  const thing = own ? thingOf(goal.step?.from || (goal.rungTime?.phase ? `rung:${goal.rungTime.phase}` : 'none')) : thingOf(stall.key);
   const tried = require('./tried');
   // A rung set aside is not brought to its own question while it waits
   // (tried.js rungOf): the stall's question is asked instead (note 600).
@@ -6891,7 +6896,12 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // A chest the wood carried makes now, to keep rods in (note 760): of 122
   // Nether entries none carried one.
   const chest = (() => { try { return require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_chest'); } catch (_) { return false; } })() ? items.find(i => i.key === 'chest' && i.offer) : null;
-  if (!short.length && !valuables && !cauldron && !chest) { delete goal.preparingNether; return true; }
+  // No pickaxe at all is a gap at the crossing whatever the ladder's kit
+  // step said (note 763b): the spare's rung set aside, the crossing asked
+  // nothing, and 25589 (about 21:20Z) crossed into the Nether with no
+  // pickaxe. Said on cross_now and offered as its own top-up.
+  const noPickaxe = !bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -6917,6 +6927,12 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
+  const pickMade = noPickaxe ? (countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : ['cobblestone', 'cobbled_deepslate', 'blackstone'].some(n => countOf(bot, n) >= 3) ? 'stone_pickaxe' : 'wooden_pickaxe') : null;
+  if (noPickaxe) {
+    let budget = null; try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal); } catch (_) { budget = null; }
+    tree.cross_now.description += ` No pickaxe is carried: in the Nether nothing can be mined, netherrack for a bridge or a pillar included, and a pickaxe is made there only from wood and stone carried or the Nether's stems.`;
+    tree.top_up_pickaxe = { description: `Make a pickaxe first (none carried): ${pickMade.replaceAll('_', ' ')}, from what is carried${budget?.says ? `. ${budget.says}` : ''}.` };
+  }
   if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
   if (chest) tree.top_up_chest = { description: `Make a chest from the wood carried first and carry it in (8 planks${countOf(bot, 'crafting_table') ? ' at the crafting table carried' : ', and a crafting table of 4 more'}, a few seconds, one slot).${chest.says.replace(/^Chest: none carried\./, '')}` };
   for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'health' ? healWaitSays(bot, i) : ''} ${i.says}${soFar(i)}` };
@@ -6944,6 +6960,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   try {
     if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
+    else if (pick === 'top_up_pickaxe') {
+      goal.step = { action: 'pickaxe_for_nether', item: pickMade }; save();
+      await acquireStep(bot, task, pickMade, countOf(bot, pickMade) + 1, goal, save);
+    }
     else if (pick === 'top_up_chest') {
       goal.step = { action: 'chest_for_nether' }; save();
       await acquireStep(bot, task, 'chest', 1, goal, save);

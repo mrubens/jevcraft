@@ -323,7 +323,14 @@ function workOf(f, rung) {
   if (NIGHT_SA.test(f.sa || '') || /^(night_mine|mine_nearby)$/.test(a)) return 'night';
   if (a === 'enter_nether') return 'enter_nether label';
   if (GEAR_RUNG.test(rung || '')) return `gear rungs`;
-  return a ? 'other' : 'no step';
+  // The rest by what the step did (note 763b: "other" was 500 of ~680
+  // pre-Nether minutes after 20:25Z in the old phase list).
+  if (/^(smelt|craft|bootstrap_pickaxe|craft_pickaxe|settle_craft)$/.test(a)) return 'smelt and craft';
+  if (/^(mine|tunnel|return_to_mine|collect_nearby_resource|mine_first|dig_own|wood_reserve|restock_blocks)$/.test(a)) return 'mining';
+  if (/^(detour|work_free|persist|shake_loose|unstuck|stay_below|breakout)$/.test(a)) return 'stall detours';
+  if (/^(loot_chest|loot_minecart|cut_cobwebs|return_home|take_home_bed|stash_valuables|restock|home)$/.test(a)) return 'side errands';
+  if (/^(reach_shore|dig_to_shore|swim_across|boat_travel|dig_bunker|retreat_from_tunnel|recover_before_nether|hunt_mob|stalk_mob)$/.test(a)) return 'body and fights';
+  return a ? `other: ${a}` : 'no step';
 }
 function workMinutes(frames) {
   const out = {};
@@ -539,8 +546,12 @@ function byWorld(rows) {
 function summarize(rs) {
   const reached = rs.filter(r => r.reachedNether);
   const pre = rs.reduce((n, r) => n + r.minutesMeasured, 0) || 1;
-  const work = {};
-  for (const r of rs) for (const [k, m] of Object.entries(r.work || {})) work[k] = (work[k] || 0) + m;
+  const work = {}, otherActions = {};
+  for (const r of rs) for (const [k, m] of Object.entries(r.work || {})) {
+    const key = k.startsWith('other: ') ? 'other' : k;
+    work[key] = (work[key] || 0) + m;
+    if (key === 'other') otherActions[k.slice(7)] = (otherActions[k.slice(7)] || 0) + m;
+  }
   const climbs = rs.flatMap(r => r.height?.climbs || []);
   const why = {};
   for (const c of climbs) { const k = `${c.rung || '?'} <- ${c.why}`; (why[k] ||= { n: 0, minutes: 0, rose: 0 }); why[k].n++; why[k].minutes += c.minutes; why[k].rose += c.rose; }
@@ -554,6 +565,7 @@ function summarize(rs) {
     trials: rs.length, reached: reached.length, cut: rs.filter(r => r.cut).length, medianMinutes: median(reached.map(r => r.minutesToNether)), medianStartY: Math.round(median(rs.map(r => r.startY)) ?? NaN),
     preNetherMinutes: round(pre), perTrial: round(pre / rs.length),
     work: Object.fromEntries(top(work, 20).map(([k, m]) => [k, { minutes: round(m), share: round(100 * m / pre) }])),
+    otherSteps: Object.fromEntries(top(otherActions, 8).map(([k, m]) => [k, round(m)])),
     climbs: climbs.length, climbMinutes: round(climbs.reduce((n, c) => n + c.minutes, 0)), blocksRisen: climbs.reduce((n, c) => n + c.rose, 0),
     ups: rs.reduce((n, r) => n + (r.height?.ups || 0), 0), downs: rs.reduce((n, r) => n + (r.height?.downs || 0), 0),
     climbsFor: Object.fromEntries(top(why, 12).map(([k, v]) => [k, { n: v.n, minutes: round(v.minutes), rose: v.rose }])),
@@ -644,7 +656,7 @@ function printByWorld(rows) {
   console.log('\nBy source world (note 763):');
   for (const [w, s] of Object.entries(W)) {
     console.log(`  ${w}: ${s.reached} of ${s.trials} reached the Nether${s.medianMinutes !== null ? `, median ${s.medianMinutes} min` : ''}; ${s.cut} ran an hour without it; started at y ${s.medianStartY ?? '?'} (median); ${s.perTrial} pre-Nether min a trial`);
-    console.log(`    work: ${Object.entries(s.work).map(([k, v]) => `${k} ${v.minutes} (${v.share}%)`).join(', ')}`);
+    console.log(`    work: ${Object.entries(s.work).map(([k, v]) => `${k} ${v.minutes} (${v.share}%)`).join(', ')}${Object.keys(s.otherSteps).length ? `; other is ${Object.entries(s.otherSteps).map(([k, m]) => `${k} ${m}`).join(', ')}` : ''}`);
     console.log(`    climbs: ${s.climbs}, ${s.climbMinutes} min, ${s.blocksRisen} blocks risen; depth to surface ${s.ups} times, surface to depth ${s.downs}; lava buckets ${s.lavaBuckets} (${round(s.lavaBuckets / s.trials)} a trial)`);
     console.log(`    climbs for (rung <- the question before): ${Object.entries(s.climbsFor).map(([k, v]) => `${k} ${v.n}x ${v.minutes} min`).join('; ')}`);
     console.log(`    win_strategy: ${s.strategy.asks} asks (${s.strategy.perHour} an hour), ${s.strategy.flips} turned (${s.strategy.flipsPerHour} an hour, ${s.strategy.quick} within a minute); work under way when it turned: ${Object.entries(s.strategy.abandoned).map(([k, n]) => `${k} ${n}`).join(', ')}`);

@@ -143,6 +143,22 @@ function portalLava(bot, goal = {}) {
   return { level, wants, says: `lava for the portal (${wants} bucket${wants === 1 ? '' : 's'} still to fetch; ${where})` };
 }
 
+// The pickaxes the depth would be worked with (note 763b): 25583 went down
+// to y 16 for lava with a wooden pickaxe, never made the stone one from the
+// cobblestone it dug, and dug its way out by hand.
+function pickSays(bot) {
+  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => {
+    const max = bot.registry?.itemsByName?.[i.name]?.maxDurability;
+    return { name: i.name, usesLeft: max ? Math.max(0, max - (i.durabilityUsed || 0)) : null };
+  });
+  const cobble = count(bot, /^(cobblestone|cobbled_deepslate|blackstone)$/), ingots = count(bot, /^iron_ingot$/);
+  const best = Math.max(0, ...picks.map(p => ['wooden', 'stone', 'iron', 'diamond', 'netherite'].indexOf(p.name.split('_')[0]) + 1));
+  const makes = best < 3 && ingots >= 3 ? ' The iron carried makes an iron pickaxe first (three ingots and two sticks).' : best < 2 && cobble >= 3 ? ` The ${cobble} cobblestone carried makes a stone pickaxe first (three and two sticks).` : '';
+  const list = picks.length ? picks.map(p => `${words(p.name)}${p.usesLeft != null ? ` (${p.usesLeft} uses left)` : ''}`).join(', ') : 'none';
+  const tier = !picks.length ? ' With none, every block down there is dug by hand.' : best < 2 ? ' A wooden pickaxe mines stone and coal only, slowly, not iron, gold or diamond.' : best < 3 ? ' A stone pickaxe mines iron but not gold or diamond.' : '';
+  return ` Pickaxes carried for the depth: ${list}.${tier}${makes}`;
+}
+
 // The sentence said with a climb or a way down: the height, the pace, and
 // what is owed at each level. `going` is 'up' (a climb out) or 'down'.
 function levelsSays(bot, goal = {}, { going = null } = {}) {
@@ -157,7 +173,7 @@ function levelsSays(bot, goal = {}, { going = null } = {}) {
   const once = up.length && down.length ? ' Each level\'s needs done in one visit is one climb between them; each need done on its own is a climb each.'
     : going === 'up' && !up.length && down.length ? ' A climb up now leaves every one of those owed below.'
       : going === 'down' && up.length && !down.length ? ' A way down now leaves every one of those owed up top.' : '';
-  return ` ${upSaid} ${downSaid}${climb}${once}`;
+  return ` ${upSaid} ${downSaid}${down.length || going === 'down' ? pickSays(bot) : ''}${climb}${once}`;
 }
 
 // A trip at the surface priced from here: the climb first when the bot is
@@ -181,8 +197,8 @@ function rungLevelSays(bot, goal, phase) {
   if (!level) return '';
   const under = depth >= UNDER;
   if (level === 'up' && under) return ` Its gathering is at the surface: the bot is ${climbSays(depth)}.${down.length ? ` Still owed at depth, a way back down after it: ${down.join('; ')}.` : ''}`;
-  if (level === 'down' && !under) return ` Its gathering is at depth.${up.length ? ` Still owed at the surface, a climb back up after it: ${up.join('; ')}.` : ''}`;
+  if (level === 'down' && !under) return ` Its gathering is at depth.${pickSays(bot)}${up.length ? ` Still owed at the surface, a climb back up after it: ${up.join('; ')}.` : ''}`;
   return '';
 }
 
-module.exports = { walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };
+module.exports = { pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };
