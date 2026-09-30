@@ -6500,22 +6500,34 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
 
 // The request's claim on the turn (src/arbiter.js): its next step, and how
 // it has been going. Always there while the request runs.
-function workClaim(goal) {
+function workClaim(goal, bot = null) {
   if (!goal) return null;
   return { layer: 'work', action: goal.step?.action || 'step', urgency: 'routine', facts: { request: goal.request || goal.kind || null,
     ...(goal.step?.item || goal.step?.block ? { item: goal.step.item || goal.step.block } : {}), failures: goal.failures || 0, stalls: goal.stalls || 0,
     ...(goal.lastError ? { lastError: String(goal.lastError).slice(0, 160) } : {}), ...(goal.lastErrorAt ? { lastErrorAt: goal.lastErrorAt } : {}),
     // What the step is, in words, for turn_priority (mid-218-n, note 490).
-    ...(goal.step?.action ? { doing: stepSays(goal.step) } : {}) } };
+    ...(goal.step?.action ? { doing: stepSays(goal.step, bot) } : {}) } };
 }
-const stepSays = step => `${String(step.action).replaceAll('_', ' ')}${step.item || step.block ? ` (${String(step.item || step.block).replaceAll('_', ' ')})` : ''}${step.phase ? `, ${String(step.phase).replaceAll('_', ' ')}` : ''}`;
+// A fortress already in reach is not "find fortress" as if none were
+// known: 25592 sealed itself three blocks from the bricks while turn_priority
+// kept saying "find fortress" with no word that one was right there (the
+// critic of 08:17Z, note 734). find_fortress's own step carries `found`
+// (the nearest brick) or `fortress` (the map's own anchor) once one is in
+// view: said, with the distance, when the bot is not already on its floors
+// (`walking` is set instead, and needs no restating here).
+const stepFortressAt = step => step.action === 'find_fortress' && !step.walking ? (step.found || step.fortress) : null;
+const stepSays = (step, bot = null) => {
+  const at = stepFortressAt(step);
+  const near = at && bot?.entity?.position ? Math.round(Math.hypot(at.x - bot.entity.position.x, at.z - bot.entity.position.z)) : null;
+  return `${String(step.action).replaceAll('_', ' ')}${step.item || step.block ? ` (${String(step.item || step.block).replaceAll('_', ' ')})` : ''}${step.phase ? `, ${String(step.phase).replaceAll('_', ' ')}` : ''}${at ? ` (a fortress in reach at (${Math.round(at.x)}, ${Math.round(at.y)}, ${Math.round(at.z)})${Number.isFinite(near) ? `, ${near} blocks off` : ''})` : ''}`;
+};
 
 // The arbiter in shadow (src/arbiter.js): what it would give this pass to,
 // from every layer's claim, beside what the layers below did. It acts on
 // nothing, and a failure in it is logged once and passed over.
 function shadowTurn(bot, goal, activeWork, survival) {
   return require('./arbiter').shadow(bot, () => [require('./survival').claim(bot, activeWork, survival), require('./vitals').claim(bot),
-    require('./mob-hunt').claim(bot, activeWork), workClaim(goal)]);
+    require('./mob-hunt').claim(bot, activeWork), workClaim(goal, bot)]);
 }
 // The arbiter live (the default, src/arbiter.js): the turn goes to
 // the claim it rules for, and each claim runs its layer's own step as the
@@ -6542,7 +6554,7 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
   // then runs as the backstop, as it did before the arbiter.
   const read = f => { try { return f(); } catch (err) { if (!liveTurn.failed) { liveTurn.failed = true; console.log(`[arbiter] a claim failed (said once): ${err?.stack || err}`); } return null; } };
   const claims = [read(() => require('./survival').claim(bot, activeWork, survival)), read(() => require('./vitals').claim(bot)),
-    read(() => require('./mob-hunt').claim(bot, activeWork)), workClaim(goal)].map(c => c && { ...c, run: () => runs[c.layer](c) });
+    read(() => require('./mob-hunt').claim(bot, activeWork)), workClaim(goal, bot)].map(c => c && { ...c, run: () => runs[c.layer](c) });
   return require('./arbiter').take(bot, claims, { task, goal, save, client, backstop: runs.survival, backstopFor });
 }
 // The layer an action reported during the survival step belongs to: the

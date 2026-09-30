@@ -412,7 +412,11 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
     if (found.routes.return_for_food) tree.return_for_food = { description: found.routes.return_for_food.description };
     if (found.routes.raid_bastion) tree.raid_bastion = { description: found.routes.raid_bastion.description };
     const others = Object.keys(found.routes).filter(k => !['return_for_food', 'raid_bastion'].includes(k));
-    if (others.length) tree.restock_food = { description: `Get food here first (the ways asked next, each priced): ${others.map(k => ({ hoglin_walk: 'a hoglin hunted on foot', hoglin_pillar: 'a hoglin hunted from a pillar', mushroom_stew: 'mushroom stew', cook_meat: 'the raw meat cooked' }[k])).join(', ')}. ${found.notOffered.join('; ')}.` };
+    if (others.length) {
+      const hunger = bot.food ?? 20, health = r1(bot.health ?? 20);
+      const already = `${stay.carried} food points already carried (about ${stay.lasts} minutes of it), hunger ${hunger} and health ${health}${hunger >= 20 && health >= 20 ? ' (both full now: this is for the stay ahead, not this moment)' : ''}.`;
+      tree.restock_food = { description: `Get food here first (the ways asked next, each priced): ${others.map(k => ({ hoglin_walk: 'a hoglin hunted on foot', hoglin_pillar: 'a hoglin hunted from a pillar', mushroom_stew: 'mushroom stew', cook_meat: 'the raw meat cooked' }[k])).join(', ')}. ${already} ${found.notOffered.join('; ')}.` };
+    }
   }
   if (stay.cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire now: ${stay.cauldron.says}` };
   goal.netherFoodKit = { at: now, points: stay.carried, minutes: stay.minutes };

@@ -64,8 +64,13 @@ const TIMED = {
 };
 // An errand is the same errand whichever question offers it: the fetch
 // chosen at upkeep is carried on by fortress_leg's or the approach's
-// fetch_stems (note 703).
-const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks)$/;
+// fetch_stems (note 703). go_back is fortress_visit's and leave_nether's
+// trip home for food (or rods): the same errand as return_for_food, and
+// gated the same way (note 734: 25597 chose fortress_visit's go_back at
+// fourteen health with no food, and a find_fortress stall's stillness_detour
+// picked cross_toward instead a moment later with nothing said of the trip
+// under way; it never returned to the portal and died).
+const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks|go_back)$/;
 // The questions about the plan that are not asked to replace an intention.
 const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip', 'kit_food']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever

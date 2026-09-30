@@ -2053,6 +2053,17 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     ...(left ? { waysLeft: left } : {}),
     structureRegions: regions.regionFacts(here, landmarks, state, dim), ...portalBackFact(goal, here),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot, goal), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
+    // Hurt or hungry, the search's own state does not say what going on
+    // costs: it names the height fortresses stand at and the blocks
+    // carried, never health, food carried or what fights begun this hurt
+    // have come to. 25597 chose leg after leg at 13.5 health and hunger 17
+    // with nothing to eat, none of that said (note 734). Said whenever
+    // health or hunger is short of full, as fitnessSays does for a hunt:
+    // health, whether it comes back, and food carried in words, not a
+    // number alone; under fourteen health (the fight floor, HUNT_FLOOR)
+    // the played record's row (blaze-record.js rowSays) is added, since the
+    // search is toward the fights that need it.
+    ...((bot.health < 20 || (bot.food ?? 20) < 20) ? { fitness: `${fitnessSays(bot)}${bot.health < HUNT_FLOOR ? ` ${require('./blaze-record').rowSays(bot.health, bot.food ?? 20)}.` : ''}` } : {}),
     ...(fortress ? { fortressInView: fortress.facts } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
   // The old order's facts (the most ground unseen, the open air each
   // heading's blocks reach): context, read by the tests' stand-in only (note 707).
