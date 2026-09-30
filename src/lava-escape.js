@@ -169,6 +169,14 @@ async function settleAfterJoin(bot, survival, { log = console.log, task = null }
   const t = task || new Task('join', 'read the ground on joining');
   const facts = surroundings(bot);
   facts.at = new Date().toISOString();
+  // And the mobs about and the hour, said with the rest (note 752h): four
+  // trials died 60 to 160 seconds after joining a checkpoint world at 17
+  // health, among zombies and creepers the join read nothing of.
+  try {
+    const about = require('./danger').threats(bot, 24).slice(0, 6);
+    facts.mobs = about.map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, seen: !!t.visible }));
+    facts.health = bot.health; facts.food = bot.food; facts.timeOfDay = bot.time?.timeOfDay;
+  } catch (_) { /* the ground alone */ }
   let acted = null;
   try {
     if (facts.inLava && !facts.fireResistant && survival) {
@@ -183,7 +191,7 @@ async function settleAfterJoin(bot, survival, { log = console.log, task = null }
     facts.error = String(err?.message || err).slice(0, 200);
   }
   facts.acted = acted;
-  log(`[join] the ground read again before resuming: at (${facts.position.x}, ${facts.position.y}, ${facts.position.z}) in ${facts.feet}${facts.inWater ? `${facts.waterFlowing ? ' (flowing)' : ''}` : ''}, floor ${facts.floor}, ${facts.inLava ? 'in lava' : facts.lavaNear ? `lava ${facts.lavaNear.distance} blocks off at (${facts.lavaNear.cell.x}, ${facts.lavaNear.cell.y}, ${facts.lavaNear.cell.z})` : 'no lava within 2 blocks'}; ${acted ? `${acted}: ${facts.out ? 'done' : 'not done'}${facts.error ? ` (${facts.error})` : ''}` : 'nothing to do first'}`);
+  log(`[join] the ground read again before resuming: at (${facts.position.x}, ${facts.position.y}, ${facts.position.z}) in ${facts.feet}${facts.inWater ? `${facts.waterFlowing ? ' (flowing)' : ''}` : ''}, floor ${facts.floor}, ${facts.inLava ? 'in lava' : facts.lavaNear ? `lava ${facts.lavaNear.distance} blocks off at (${facts.lavaNear.cell.x}, ${facts.lavaNear.cell.y}, ${facts.lavaNear.cell.z})` : 'no lava within 2 blocks'}${facts.mobs ? `; health ${Math.round((facts.health ?? 0) * 10) / 10}, ${facts.mobs.length ? `mobs within 24: ${facts.mobs.map(m => `${m.name} ${m.distance}${m.seen ? '' : ' unseen'}`).join(', ')}` : 'no mobs within 24'}` : ''}; ${acted ? `${acted}: ${facts.out ? 'done' : 'not done'}${facts.error ? ` (${facts.error})` : ''}` : 'nothing to do first'}`);
   if (survival?.state) survival.state.joinSurvey = facts;
   try { bot.emit?.('join_survey', facts); } catch (_) { /* the record is not the step */ }
   return facts;

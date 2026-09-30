@@ -235,7 +235,7 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
 // sixty blocks (note 751b). `state` is the search's coverage, for the steps
 // on ground stood on before. '' where no pathfinder is at hand.
 const LEG_WALK_SURVEY_MS = 500;
-async function legWalkSays(bot, task, target, { state = null } = {}) {
+async function legWalkSays(bot, task, target, { state = null, keep = null, i = null } = {}) {
   if (!bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return '';
   const { goals } = require('mineflayer-pathfinder');
   let route = null;
@@ -244,6 +244,7 @@ async function legWalkSays(bot, task, target, { state = null } = {}) {
   const path = route?.path || [];
   if (path.length < 2) return ' The pathfinder finds no walk on foot from here: the leg goes straight along the line as said.';
   const here = bot.entity.position, end = path.at(-1);
+  if (keep && i !== null) keep[i] = { x: end.x, y: end.y, z: end.z };
   const gain = Math.round(flat(target, here) - flat(target, end));
   const coverage = require('./nether-coverage'), dim = coverage.dimOf(bot);
   const stood = state ? path.filter(n => coverage.stoodAt(state, dim, n.x, n.z)).length : 0;
@@ -269,7 +270,11 @@ function legSays(survey, { direction, length, y }) {
     (short ? `the blocks run out at cell ${survey.runsOut}, about ${survey.reachSeconds} seconds in, where the leg stops with none to lay.` : `${carried - lay} left after.`) + blockStock.afterSays({ noPickaxe: survey.noPickaxe, left: short ? 0 : carried - lay });
   const steps = survey.stepped ? ` It steps a block up or down ${survey.stepped} time${survey.stepped === 1 ? '' : 's'} where the ground does.` : '';
   const laid = survey.laid ? ` ${survey.laid} of its cells are on blocks the bot laid itself: its own span, walked before.` : '';
-  return `Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${steps}${laid}${firstSays(survey)}`;
+  // Short of blocks, said first as what it is (note 751c): 25593 took
+  // leg_north with 88 blocks for 96 cells of open air, "about 131 seconds
+  // with the blocks for all of it", and ran out at cell 88.
+  const cannot = short ? `It needs ${lay} blocks laid and ${carried} ${carried === 1 ? 'is' : 'are'} carried: it cannot be done with what is carried, and stops at cell ${survey.runsOut} with none to lay. ` : '';
+  return `${cannot}Go ${direction} ${length} blocks at y ${y}: of the ${survey.cells} cells ahead, ${parts.join(' and ') || 'none open'}; about ${survey.seconds} seconds${short ? ' with the blocks for all of it' : ''}.${blocks}${stop}${steps}${laid}${firstSays(survey)}`;
 }
 
 // The floor below: going down to the ground and walking it, where the

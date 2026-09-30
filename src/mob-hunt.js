@@ -1396,12 +1396,31 @@ function roundLeg(bot, straight, i) {
 // A leg round what stopped a heading's line (round_<heading>) is kept apart
 // too: its failure is the side step's line, not the straight one (note 751).
 const legKey = (i, mode) => mode === true || mode === 'descend' ? `seek_${HEADING_NAMES[i]}` : mode === 'floor' ? `floor_${HEADING_NAMES[i]}` : mode === 'round' ? `round_${HEADING_NAMES[i]}` : HEADING_NAMES[i];
-function legEnded(state, why, seeking = false) {
+// Where it ended and with how many blocks carried, where known: a leg that
+// ran out of blocks there ends there again with no more carried (note 751c).
+function legEnded(state, why, seeking = false, { at = null, carried = null } = {}) {
   const i = Number.isInteger(state.lastHeading) ? state.lastHeading : headingIndex(state);
   const history = state.legHistory ||= {};
   const from = state.legFrom || null, was = history[legKey(i, seeking)];
   const same = was?.from && from && Math.hypot(was.from.x - from.x, was.from.z - from.z) < 8;
-  history[legKey(i, seeking)] = { ended: why || 'no ground made', from, tries: same ? (was.tries || 1) + 1 : 1, at: Date.now() };
+  history[legKey(i, seeking)] = { ended: why || 'no ground made', from, tries: same ? (was.tries || 1) + 1 : 1, at: Date.now(),
+    ...(at ? { endAt: { x: Math.round(at.x), y: Math.round(at.y), z: Math.round(at.z) } } : {}), ...(Number.isFinite(carried) ? { carried } : {}) };
+}
+// A level leg that ran out of blocks where this one would, with no more
+// carried now than then: said as tried. 25593 (mid-237-ca, 19:03 to 19:06Z
+// on 2026-09-30) took leg_north with 0 blocks at 19:05:31, its pathfinder
+// walk ending on its own span at z -178, where the last leg north had run
+// out of blocks a minute before, and ran out there again (note 751c). The
+// place this one stops: where the pathfinder's walk ends (`walkEnd`), else
+// the cell where its blocks run out on the line.
+function triedSays(state, name, here, survey, walkEnd, carried, now = Date.now()) {
+  const h = state.legHistory?.[name];
+  if (!h?.endAt || !/out of blocks/.test(h.ended || '') || !(carried <= (h.carried ?? 0))) return '';
+  const [dx, dz] = HEADINGS[HEADING_NAMES.indexOf(name)];
+  const stop = walkEnd || (Number.isInteger(survey?.runsOut) ? { x: here.x + dx * survey.runsOut, z: here.z + dz * survey.runsOut } : null);
+  if (!stop || Math.hypot(stop.x - h.endAt.x, stop.z - h.endAt.z) > 4) return '';
+  const ago = Math.max(1, Math.round((now - h.at) / 1000));
+  return ` Tried: the last leg ${name} ran out of blocks at (${h.endAt.x}, ${h.endAt.y}, ${h.endAt.z}) ${ago < 90 ? `${ago} seconds` : `${Math.round(ago / 60)} minutes`} ago with ${h.carried} carried; with ${carried} carried now this one stops at the same place.`;
 }
 function legHistorySays(state, name, here, what = 'leg') {
   const h = state.legHistory?.[name];
@@ -1977,16 +1996,16 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const blocked = [];
   // The walk each level leg takes first, the pathfinder toward its end
   // (findFortressStep), said with the line read from here (note 751b).
-  const walkFirst = [];
+  const walkFirst = [], walkEnds = [];
   for (const [i] of HEADINGS.entries()) {
     if (legResting(state, HEADING_NAMES[i], here) || surveys[i]?.stoppedAt === 0) continue;
-    walkFirst[i] = await require('./nether-travel').legWalkSays(bot, task, fortressLegTarget({ heading: i, legMode: 'level' }, here), { state });
+    walkFirst[i] = await require('./nether-travel').legWalkSays(bot, task, fortressLegTarget({ heading: i, legMode: 'level' }, here), { state, keep: walkEnds, i });
   }
   HEADINGS.forEach((h, i) => {
     const rest = legResting(state, HEADING_NAMES[i], here);
     if (rest) { resting.push(restSays(HEADING_NAMES[i], rest)); return; }
     if (surveys[i]?.stoppedAt === 0) { blocked.push(`leg ${HEADING_NAMES[i]}: closed at the first cell at y ${y}, ${surveys[i].stoppedBy}`); return; }
-    options[`leg_${HEADING_NAMES[i]}`] = { description: legLead(i) + legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + (walkFirst[i] || '') + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
+    options[`leg_${HEADING_NAMES[i]}`] = { description: legLead(i) + legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + (walkFirst[i] || '') + triedSays(state, HEADING_NAMES[i], here, surveys[i], walkEnds[i], blocksCarried(bot)) + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
       legHistorySays(state, HEADING_NAMES[i], here) +
       (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : '') + headingSays(i) + backSays(i),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
@@ -2198,7 +2217,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // still to be had here (note 729): 25591 stood on netherrack with a
   // pickaxe and was sent 109 blocks to the portal "for stone" while
   // restock_blocks itself found blocks within reach.
-  let plan = null;
+  let plan = null, groundSaid = null;
   if (short && actions.mineAt && actions.navigate) {
     plan = restockPlan(bot, goal, surveys);
     if (plan.want && !pickaxeFirst(bot).none) {
@@ -2214,7 +2233,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     // need to walk back the way it came.
     if (plan.want < plan.need) {
       const back = await backToGround(bot, task, goal, state, plan);
-      if (back?.option) options.back_to_ground = back.option(actions, save);
+      if (back?.option) { options.back_to_ground = back.option(actions, save); groundSaid = back.where; }
       else if (back?.says) blocked.push(back.says);
     }
   }
@@ -2262,7 +2281,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
   if (homeBy && !homeStart.ok) blocked.push(`back through the portal (${homeBy.says}): ${homeStart.why}`);
   if (homeBy && homeStart.ok) {
-    options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { goal, plan }),
+    options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { goal, plan, ground: groundSaid }),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   // A fortress floor known overhead within a climb's reach: the climb with
@@ -2274,6 +2293,10 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     Object.assign(options, climbOffers(climb, overhead, state));
     climbFact = climb.noPillar;
   }
+  // A leg short of blocks and a pickaxe to dig more here: the digging is
+  // named first, before the legs over open air it is for (note 751c; a
+  // player mines a stack before stepping out over the void).
+  if (options.restock_blocks && surveys.some(sv => Number.isInteger(sv?.runsOut))) { const r = options.restock_blocks; delete options.restock_blocks; const rest = { ...options }; for (const k of Object.keys(options)) delete options[k]; Object.assign(options, { restock_blocks: r }, rest); }
   // Every way from here rests or is gone: nothing to ask. The step says so
   // and the stall's own question takes it from there.
   const left = waysLeftSays(state, here);
@@ -2437,23 +2460,31 @@ async function backToGround(bot, task, goal, state, plan) {
   if (isSetAside(goal, 'back_to_ground', at)) return { says: `back to ${where}: it came to nothing from here a few minutes ago (${attemptsFor(goal).why('back_to_ground', at) || 'no nearer'}), resting` };
   const route = await routeSurvey(bot, task, new goals.GoalNear(g.x, g.y, g.z, 2), at);
   if (!route) return null;
-  if (route.status !== 'success') return { says: `back to ${where}: the pathfinder finds no route there from here${route.cells ? ` (its nearest ends ${Math.max(0, off - route.gain)} blocks short)` : ''}, so it is not offered` };
+  // A route that ends short of the ground but within the restock's own reach
+  // of it goes as far as it goes and the blocks are dug from there: 25593
+  // (19:05:31Z, note 751c) stood on its span with 0 blocks, the basalt last
+  // stood on 133 back and the route "its nearest ends 7 blocks short", and
+  // was offered no way back at all.
+  const short = route.end ? Math.round(flatTo(at, route.end)) : null;
+  const partWay = route.status !== 'success' && route.cells && short !== null && short <= RESTOCK_REACH;
+  if (route.status !== 'success' && !partWay) return { says: `back to ${where}: the pathfinder finds no route there from here${route.cells ? ` (its nearest ends ${Math.max(0, off - route.gain)} blocks short)` : ''}, so it is not offered` };
+  const goTo = partWay ? route.end : at;
   const work = [route.dig && `digging ${route.dig}`, route.place && `laying ${route.place}`].filter(Boolean).join(' and ');
   const seconds = Math.round(route.cells / WALK_SPEED + route.dig * 1.5);
-  return { option: (actions, save) => ({ target: { x: g.x, y: g.y, z: g.z },
-    description: `Walk back to ${where} the way the pathfinder finds (${route.cells} steps${work ? `, ${work} blocks` : ''}, about ${seconds} seconds${route.besideLava ? `, ${route.besideLava} of them beside lava` : ''}), and dig blocks to lay there: here only ${plan.want} can be had and the longest leg short of blocks needs ${plan.need + plan.carried}. The leg is chosen again from there.`,
+  return { where: { says: where, off }, option: (actions, save) => ({ target: { x: g.x, y: g.y, z: g.z },
+    description: `Walk back to ${where} the way the pathfinder finds (${route.cells} steps${work ? `, ${work} blocks` : ''}, about ${seconds} seconds${route.besideLava ? `, ${route.besideLava} of them beside lava` : ''}${partWay ? `; its route ends ${short} blocks short of it, within the ${RESTOCK_REACH} blocks the digging reaches from where it stands` : ''}), and dig blocks to lay there: here only ${plan.want} can be had and the longest leg short of blocks needs ${plan.need + plan.carried}. The leg is chosen again from there.`,
     run: async () => {
       goal.step = { action: 'back_to_ground', target: { x: g.x, y: g.y, z: g.z } }; save();
       const before = bot.entity.position.distanceTo(at);
       let why = null;
-      try { await actions.navigate(bot, task, new goals.GoalNear(g.x, g.y, g.z, 2), { timeoutMs: Math.max(30000, route.cells * 700), stallMs: 8000 }); }
+      try { await actions.navigate(bot, task, new goals.GoalNear(goTo.x, goTo.y, goTo.z, 2), { timeoutMs: Math.max(30000, route.cells * 700), stallMs: 8000 }); }
       catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 160); }
-      if (bot.entity.position.distanceTo(at) > 4) {
+      if (bot.entity.position.distanceTo(goTo) > 4) {
         const said = `The walk back to ${where} ended ${Math.round(bot.entity.position.distanceTo(at))} blocks from it${why ? `: ${why}` : ''}`;
         if (before - bot.entity.position.distanceTo(at) < 2) { setAside(goal, 'back_to_ground', at, said.slice(0, 200), BACK_REST_MS); save(); }
         throw new Error(said);
       }
-      state.restock = { want: blocksCarried(bot) + plan.need, since: Date.now(), said: null, from: { x: g.x, y: g.y, z: g.z } }; save();
+      state.restock = { want: blocksCarried(bot) + plan.need, since: Date.now(), said: null, from: partWay ? { x: Math.round(goTo.x), y: Math.round(goTo.y), z: Math.round(goTo.z) } : { x: g.x, y: g.y, z: g.z } }; save();
       await restockStep(bot, task, goal, save, actions, state);
       return 'restock';
     } }) };
@@ -2464,7 +2495,7 @@ async function backToGround(bot, task, goal, state, plan) {
 // line for half an hour under its fortress with no pickaxe, no wood and no
 // blocks, and return_for_blocks said only "for stone to lay spans with" and
 // was never chosen (note 692). The walks back's record is said with it.
-function returnForKitSays(bot, homeBy, { hand = null, goal = null, plan = null } = {}) {
+function returnForKitSays(bot, homeBy, { hand = null, goal = null, plan = null, ground = null } = {}) {
   const bs = require('./block-stock'), gp = require('./game-progress');
   const here = bot.entity.position, d = Math.round(Math.hypot(homeBy.portal.x - here.x, homeBy.portal.z - here.z));
   if (!bot.inventory?.items || bs.pickaxeCarried(bot)) {
@@ -2474,12 +2505,15 @@ function returnForKitSays(bot, homeBy, { hand = null, goal = null, plan = null }
     // blackstone and basalt, not stone: said as "for stone" whatever the
     // dimension, this trip was chosen 109 blocks from a fortress with
     // netherrack diggable at the feet (note 729).
-    const material = dimension(bot) === 'nether' ? 'netherrack' : 'stone';
+    // Said by where the blocks are got: the Overworld's are cobblestone,
+    // dirt and the like, never netherrack; 25593 was told "for netherrack"
+    // (note 751c).
+    const material = 'cobblestone, dirt or other blocks got there';
     // The fact restock_blocks itself found here, so the trip is weighed
     // against it honestly rather than looking like the only way on
     // (fixes-inform-jev: a fact added, not an option withheld).
     const dugHere = plan?.want ? ` Of the ${plan.need + plan.carried} the longest leg short of blocks needs, ${plan.want} can be dug from ground walked to from here (restock_blocks); the rest is not to be had that way.`
-      : plan && plan.need ? ' Nothing of what a leg is short of can be dug from ground walked to from here.' : '';
+      : plan && plan.need ? ` Nothing of what a leg is short of can be dug from ground walked to from here${ground ? `; ${ground.says} has blocks to dig (back_to_ground)${ground.off < d ? ', nearer than the portal' : ''}` : ''}.` : '';
     return `Go back through the portal to the Overworld, ${homeBy.says}, for ${material} to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.${dugHere}${pace}`;
   }
   const wood = (bot.inventory.items() || []).some(i => /_(log|stem|hyphae|wood|planks)$/.test(i.name));
@@ -2626,7 +2660,7 @@ async function routeSurvey(bot, task, target, brick) {
       // Its cells with lava round them, as the walk prices them (movement.js
       // lavaAlong, note 660).
       lava: route?.lava || null, besideLava: route?.lava?.beside || 0,
-      gain: end ? Math.round(flatTo(brick, bot.entity.position) - flatTo(brick, end)) : 0 };
+      gain: end ? Math.round(flatTo(brick, bot.entity.position) - flatTo(brick, end)) : 0, end: end ? { x: end.x, y: end.y, z: end.z } : null };
   } catch (err) { if (!retryable(err)) throw err; return null; }
 }
 
@@ -4246,7 +4280,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // Counted from nothing on a fresh search: incremented from undefined it
   // was NaN, never four, and a leg that never once made ground never turned.
   state.legFails = (state.legFails || 0) + 1;
-  legEnded(state, state.lastLegError || state.lastCrossStop, seeking ? 'descend' : state.legMode);
+  legEnded(state, state.lastLegError || state.lastCrossStop, seeking ? 'descend' : state.legMode, { at: bot.entity.position, carried: blocksCarried(bot) });
   // Every way on failed within a few blocks of where the leg began: the leg
   // ends here and its heading rests from this spot (legResting), its
   // failure said with the next ask, not tried again tick after tick.
@@ -4311,4 +4345,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

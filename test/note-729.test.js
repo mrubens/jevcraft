@@ -40,21 +40,24 @@ test('recoveryOptions asks for netherrack (not dirt or cobblestone) as the footi
 // dimension, and offered no honest comparison against restock_blocks
 // (removing the option outright would be the hidden-threshold bandaid the
 // project's fixes avoid: the fact is added, the choice stays Jev's).
-test('the trip home for blocks says netherrack in the Nether, with what restock_blocks itself found here (note 729)', () => {
+test('the trip home for blocks says what the Overworld gives (never netherrack), with what restock_blocks itself found here (notes 729, 751c)', () => {
   const { returnForKitSays } = require('../src/mob-hunt');
   const bot = { game: { dimension: 'the_nether' }, entity: { position: new Vec3(0.5, 40, 0.5) },
     inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }] } };
   const homeBy = { portal: { x: 109, y: 64, z: 0 }, says: 'the one it came through, 109 blocks off' };
   const said = returnForKitSays(bot, homeBy, { plan: { want: 7, need: 60, carried: 0 } });
-  assert.match(said, /for netherrack to lay spans with/);
-  assert.doesNotMatch(said, /for stone to lay spans with/);
+  assert.match(said, /for cobblestone, dirt or other blocks got there to lay spans with/);
+  assert.doesNotMatch(said, /netherrack to lay/);
   assert.match(said, /Of the 60 the longest leg short of blocks needs, 7 can be dug from ground walked to from here \(restock_blocks\)/);
   // Nothing diggable here at all: said plainly, not silently.
   const none = returnForKitSays(bot, homeBy, { plan: { want: 0, need: 60, carried: 0 } });
   assert.match(none, /Nothing of what a leg is short of can be dug from ground walked to from here\./);
-  // In the Overworld the material stays stone.
+  // With the ground last stood on offered, said beside it (note 751c).
+  const ground = returnForKitSays(bot, homeBy, { plan: { want: 0, need: 60, carried: 0 }, ground: { says: 'the basalt last stood on at (7, 35, -12), 166 blocks back', off: 66 } });
+  assert.match(ground, /from here; the basalt last stood on at \(7, 35, -12\), 166 blocks back has blocks to dig \(back_to_ground\), nearer than the portal\./);
+  // The same from the Overworld.
   const overworld = returnForKitSays({ ...bot, game: { dimension: 'overworld' } }, homeBy, {});
-  assert.match(overworld, /for stone to lay spans with/);
+  assert.match(overworld, /for cobblestone, dirt or other blocks got there to lay spans with/);
 });
 
 // A Nether world as a rule: `solid(p)` names the block at p, or null for air.

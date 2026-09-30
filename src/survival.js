@@ -432,6 +432,10 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // them, with nothing changed about it since, would end the same again.
 // Stances that stand behind the raised shield from their first moment.
 const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge']);
+// The runs, and how long one may stand still before it has failed (note 752h).
+const RUN_STANCES = new Set(['retreat', 'leave_reach']), RUN_STUCK_MS = 2000;
+// The stances that stand still with what is at arm's length hitting (note 752h).
+const STANDING_STANCES = new Set(['shield_guard', 'shield_the_charge', 'take_cover', 'back_to_wall', 'hold_on_span', 'eat', 'eat_golden_apple', 'keep_working']);
 // How long a shooter seen stays in the stance's danger out of sight (note 752g).
 const SHOOTER_KEPT_MS = 10000;
 // Hostiles that hop at a player they see rather than walk: slimes and
@@ -2204,7 +2208,7 @@ function nookSays(bot, nook, { pocket = false, later = false } = {}) {
   const where = pocket ? 'out of the pocket\'s wall' : 'beside the bot';
   const closed = nook.enclosed ? `, closed in rock all round${pocket ? ' so the pocket stays shut' : ''}` : ', open to the air on a side';
   const wait = later ? ` Bedtime is from ${SLEEP_FROM}, about ${Math.max(0, Math.round((SLEEP_FROM - (bot.time?.timeOfDay ?? 0)) / 20))} seconds off.` : '';
-  return `dig a bed nook ${where}, the two cells in a line where the bed goes (foot and head), ${n ? `${n} block${n === 1 ? '' : 's'} to dig` : 'nothing to dig'} and the floor under them kept${closed}; put the carried bed in it and sleep. The night passes in seconds, instead of about ${minutesToDawn(bot)} real minutes ${pocket ? 'in the pocket' : 'in a pocket or a night mine'}; the bed is picked back up after.${wait} Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${near ? `${near} ${near === 1 ? 'is' : 'are'} now` : 'none now'}.`;
+  return `dig a bed nook ${where}, the two cells in a line where the bed goes (foot and head), ${n ? `${n} block${n === 1 ? '' : 's'} to dig` : 'nothing to dig'} and the floor under them kept${closed}; put the carried bed in it and sleep. The night passes in seconds, instead of about ${minutesToDawn(bot)} real minutes ${pocket ? 'in the pocket' : 'in a pocket or a night mine'}; the bed is picked back up after.${wait} Sleep is refused while a monster is within about eight blocks sideways and five up or down of the bed (vanilla), seen or not: ${near ? `${near} ${near === 1 ? 'is' : 'are'} now, the rock between counting for nothing.${refusalSays(bot, nook.foot)} So chosen now, the bed goes down and the sleep is refused while they stay; the nook then gains only a pocket to wait in awake${pocket ? '' : ', the night passing at its length'}` : 'none now'}.`;
 }
 const emptySite = (bot, refuge) => refuge.kind !== 'house' && !refuge.verifiedAt &&
   shelter.shell(refuge.origin).every(p => shelter.replaceable(bot.blockAt(p)));
@@ -4454,7 +4458,23 @@ class Survival {
     // and teleports toward one more than sixteen off (combat-estimate MOBS
     // and CHASE, note 578).
     const endermanSays = endermen ? ` An enderman after the bot runs at about ${Math.round(blocksPerSecond('enderman') * 10) / 10} blocks a second, faster than the bot sprints (${Math.round(PLAYER_SPRINT * 10) / 10}), and teleports toward it once it is more than sixteen blocks off: a run from one ends with it beside the bot again.` : '';
-    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + riderSays + endermanSays + footing + chase + runChase.says + unseen,
+    // The shots at its back while it runs, the shield down, priced: 25585
+    // (19:26:12 to 19:27:05Z) ran retreat and shield_guard turn about over
+    // 110 blocks from 20 health to 7, shot in the back (note 752h).
+    const backShots = (() => { try {
+      const ceR = require('./combat-estimate'), wornR = ceR.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
+      const secs = scouted?.destination ? scouted.blocks / SPRINT : 4;
+      const parts = danger.filter(t => shooter(t.entity) && t.visible && t.distance <= (RANGE[t.entity.name] || 15)).slice(0, 3).map(t => {
+        const m = ceR.shotModel(t.entity.name, t.distance); if (!m) return null;
+        const shots = secs / m.every, lands = shots * m.lands, hit = ceR.MOBS[t.entity.name]?.hit ? ceR.afterArmour(ceR.MOBS[t.entity.name].hit, wornR) : null;
+        return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off: about ${Math.max(1, Math.round(shots))} shot${Math.round(shots) === 1 ? '' : 's'} in the ${Math.round(secs * 10) / 10} seconds of running, about ${Math.round(lands * 10) / 10} landing${hit ? `, ${Math.round(hit * 10) / 10} each through the armour worn` : ''}`;
+      }).filter(Boolean);
+      return parts.length ? ` With its back to them and the shield down while it runs: ${parts.join('; ')}.` : '';
+    } catch (_) { return ''; } })() + (danger.some(t => t.entity.name === 'phantom')
+      // 25585's phantoms (19:26:13 to 19:26:52Z): each run ended with them
+      // still on it, asked again five times (note 752h).
+      ? ' A phantom flies and swoops from above at the bot wherever it runs: no footing on the ground is out of its reach, and the run ends with it still there.' : '');
+    options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + backShots + riderSays + endermanSays + footing + chase + runChase.says + unseen,
       run: () => this.runAway(task, goal, save, danger) };
     // With no way passing every mob, the way past the reach of what bites,
     // found before the question (scoutRetreat, reachFootings): the
@@ -4806,6 +4826,43 @@ class Survival {
       Object.assign(options, ordered);
       for (const o of Object.values(options)) o.description = `${said.trim()} ${o.description}`;
     }
+    // A fight with a creeper about says what its blast costs at the fight's
+    // range, killed inside its fuse or not (combat-estimate creeperFought):
+    // 25590 (19:24:48Z) answered fight at 0.54 against a creeper, block_creeper
+    // 0.18, and the blast took 20 to 15.1 with four hits after (note 752h).
+    try {
+      const cr = (estimate?.mobs || []).filter(m => m.name === 'creeper' && m.fought && m.distance <= 8).sort((a, b) => a.distance - b.distance)[0];
+      if (cr && typeof options.fight?.description === 'string') {
+        const f = cr.fought;
+        options.fight.description += f.diesBeforeItGoesOff
+          ? ` The creeper ${Math.round(cr.distance)} blocks off: about ${f.swings} swing${f.swings === 1 ? '' : 's'}, ${f.secondsToKillIt} seconds, kill it inside its fuse by the estimate; a miss or a knock back and it goes off at the sword's reach.`
+          : ` The creeper ${Math.round(cr.distance)} blocks off: about ${f.swings} swing${f.swings === 1 ? '' : 's'}, ${f.secondsToKillIt} seconds, do not kill it inside its fuse by the estimate: it goes off about ${f.goesOffAt} blocks off, about ${f.blast} after the armour worn${f.blast >= (bot.health ?? 20) ? ', more than the bot has' : ''}.`;
+      }
+    } catch (_) { /* nothing said */ }
+    // What standing here costs now, as a clock: the biters at arm's length,
+    // their blows a second through the armour worn, and the seconds that
+    // leaves at this health, on every stance that stands still (the
+    // reviewer's check-in 17:09Z problem 2: 25585 took shield_guard at 0.43
+    // at 6.2 health with four zombies within three blocks and was dead in four
+    // seconds; note 752h). The shield takes the one it faces.
+    try {
+      const ceX = require('./combat-estimate');
+      const wornX = ceX.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
+      const atReachNow = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && ceX.MOBS[t.entity.name] && (t.distance <= 3 || canStrike(bot, t.entity))).sort((a, b) => a.distance - b.distance);
+      if (atReachNow.length) {
+        const perSecond = t => { const m = ceX.MOBS[t.entity.name]; return (m.ignoresArmour ? m.hit : ceX.afterArmour(m.hit, wornX)) / (m.blowEvery || 1); };
+        const all = atReachNow.reduce((n, t) => n + perSecond(t), 0), hp = bot.health ?? 20;
+        const who = atReachNow.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off`).join(', ');
+        for (const [k, o] of Object.entries(options)) {
+          if (!STANDING_STANCES.has(k) || typeof o.description !== 'string') continue;
+          const shield = SHIELD_STANCES.has(k) && bot.inventory?.slots?.[45]?.name === 'shield';
+          const rate = shield ? all - perSecond(atReachNow[0]) : all;
+          o.description += rate > 0
+            ? ` Standing here: ${atReachNow.length === 1 ? who : `${atReachNow.length} at arm's length (${who})`} land about ${Math.round(rate * 10) / 10} health a second through the armour worn${shield ? `, the ${atReachNow[0].entity.name.replaceAll('_', ' ')} the shield faces blocked` : ''}: at ${Math.round(hp * 10) / 10} health, about ${Math.max(1, Math.round(hp / rate))} seconds of it.`
+            : ` Standing here: the ${atReachNow[0].entity.name.replaceAll('_', ' ')} at arm's length, its blows on the shield.`;
+        }
+      }
+    } catch (_) { /* nothing said */ }
     // A stance that moves runs with the shield down (stanceStep lowers it
     // for any stance not held behind it): a shot_answer of shield_up lasts
     // only to the stance's next step. 25598's retreat (14:32:28Z) was taken
@@ -5005,7 +5062,15 @@ class Survival {
     // newcomer within six, a hit while leaving them be, a shooter's line
     // where it hid, the bot off its spot, a creeper's line, a shot through,
     // a push come through open over the drop.
-    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
+    // A run that is not running: held two seconds and more and moved under a
+    // block from where it began, it has failed, said so and asked again (the
+    // reviewer's check-in 17:09Z problem 2: 25597 at 15:49Z held retreat
+    // standing still from 7 health to 1; note 752h).
+    const ranFrom = held?.start?.pos, herePos = bot.entity.position;
+    const ranBlocks = ranFrom ? Math.round(Math.hypot(herePos.x - ranFrom.x, herePos.z - ranFrom.z) * 10) / 10 : null;
+    const runStuck = !!held && RUN_STANCES.has(held.choice) && Date.now() - held.at >= RUN_STUCK_MS && ranBlocks !== null && ranBlocks < 1;
+    if (runStuck) this.state.stanceFailed = [...[].concat(this.state.stanceFailed || []).filter(f => Date.now() - f.at < 20000), { choice: held.choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), why: `held ${Math.round((Date.now() - held.at) / 1000)} seconds and moved ${ranBlocks} blocks: the run is not running` }];
+    const physical = !!held && !leftBe && !runStuck && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -5244,7 +5309,7 @@ class Survival {
     // the bot off its spot), a way new on offer or a shot on its way: those
     // are asked, as they were.
     let askedNow = false, noneGoodNow = false;
-    const triggered = !!held && (!!held.lethalAgain || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
+    const triggered = !!held && (!!held.lethalAgain || runStuck || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
       || /^a way not on offer|^a shot came/.test(holdEnded || ''));
     if (!choice && !holdCapped && !triggered) {
       const kept = scenes.holdFor(book, Object.keys(options));
@@ -5288,6 +5353,7 @@ class Survival {
           ...(held.lethalAgain ? { askedAgainFor: `one shot that lands ends the bot now, and a shooter had a line to it: it stepped out of every line first (${this.state.lethalLine?.did || 'the rule'})` } : blockAgain ? { askedAgainFor: blockAgain } : shotThrough ? { askedAgainFor: `the ${shotThrough.replaceAll('_', ' ')} it was chosen against hit the bot ${Math.round((Date.now() - bot._hurtBy[shotThrough]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen` }
             : pushedOpen ? { askedAgainFor: (() => { const k = (held.shooters || []).find(n => (bot._hurtBy?.[n] || 0) > held.at); const p = held.start?.pos; return `the ${k.replaceAll('_', ' ')} it was chosen against landed a shot ${Math.round((Date.now() - bot._hurtBy[k]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen${p ? `, and the bot is ${Math.round(Math.hypot(bot.entity.position.x - p.x, bot.entity.position.z - p.z) * 10) / 10} blocks from where it chose` : ''}; it is still open over the drop a push puts it over`; })() }
             : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
+            : runStuck ? { askedAgainFor: `the ${held.choice.replaceAll('_', ' ')} has not moved: ${ranBlocks} blocks in ${Math.round((Date.now() - held.at) / 1000)} seconds` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
             // What the hold was chosen on, falsified, or its cap (holds.js).
@@ -10195,4 +10261,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

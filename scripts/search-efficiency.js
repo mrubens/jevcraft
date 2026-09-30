@@ -100,7 +100,9 @@ function measureTrial(tr) {
       if (line.includes('"kind":"decision"') && (line.includes('"id":"fortress_leg"') || line.includes('"id":"fortress_approach"') || line.includes('"fortressInView"'))) {
         let r; try { r = JSON.parse(line); } catch (_) { continue; }
         const d = r.snapshot?.decision; if (!d) continue;
-        decisions.push({ t: fr.t, id: d.id, chosen: d.path?.at(-1) || null, state: d.state || {}, pos: fr.pos, inView: !!d.state?.fortressInView });
+        const ch = d.path?.at(-1), o = ch ? d.options?.[ch] : null, text = typeof o === 'string' ? o : o?.description || '';
+        // A leg chosen short of blocks: its blocks run out on its line (note 751c).
+        decisions.push({ t: fr.t, id: d.id, chosen: ch || null, state: d.state || {}, pos: fr.pos, inView: !!d.state?.fortressInView, short: /the blocks run out at cell|cannot be done with what is carried/.test(text) });
       }
     }
   }
@@ -139,6 +141,7 @@ function measureTrial(tr) {
   const chosen = legs.filter(d => isLeg(d.chosen));
   let legMs = 0, revisitMs = 0, reversedFast = 0, reversedAll = 0, reversedAfterBlock = 0, newCols = 0, usesSpent = 0;
   const perLeg = [];
+  let shortChosen = 0, shortRanOut = 0;
   const blocked = {};
   for (let i = 0; i < legs.length; i++) {
     const d = legs[i];
@@ -162,6 +165,7 @@ function measureTrial(tr) {
     legMs += ms; revisitMs += rev;
     // How it ended, as the next question says it.
     const nextLast = legs[i + 1]?.state?.lastLeg;
+    if (d.short) { shortChosen++; if (/out of blocks/.test(nextLast || '')) shortRanOut++; }
     if (nextLast && /ended no nearer/.test(nextLast)) { const c = whyClass(nextLast.split('ended no nearer')[1]); blocked[c] = (blocked[c] || 0) + ms; }
     const prev = chosen[chosen.indexOf(d) - 1];
     if (prev && headingOf(prev.chosen) && OPPOSITE[headingOf(prev.chosen)] === headingOf(d.chosen)) {
@@ -184,6 +188,7 @@ function measureTrial(tr) {
     reversedWithin2Min: reversedFast, reversedAll, reversedAfterBlock,
     blockedMinutes: Object.fromEntries(Object.entries(blocked).map(([k, v]) => [k, round(v / 60000)])),
     noPickaxeMinutes: round(noPickMs / 60000), noPickaxeIronSmeltableMinutes: round(smeltMs / 60000),
+    shortLegsChosen: shortChosen, shortLegsRanOut: shortRanOut,
     pickaxeUsesOnLegs: usesSpent, pickaxeUsesPerLeg: perLeg,
     netherNoPickaxeIronMakeableMinutes: round(allMakeMs / 60000),
     netherNoPickaxeMinutes: round(allNoPickMs / 60000), netherNoPickaxeIronSmeltableMinutes: round(allSmeltMs / 60000), pickaxesMade: made, woodenMadeWithIronSmeltable: woodenWhileSmeltable,
@@ -206,6 +211,7 @@ function summarize(rows) {
     legsChosen: sum('legsChosen'), legMinutes: legMin, revisitShare: revisit,
     reversedWithin2Min: sum('reversedWithin2Min'), reversedAll: sum('reversedAll'), reversedAfterBlock: sum('reversedAfterBlock'),
     blockedMinutes: blocked, noPickaxeMinutes: sum('noPickaxeMinutes'), noPickaxeIronSmeltableMinutes: sum('noPickaxeIronSmeltableMinutes'), pickaxesMade: made,
+    shortLegsChosen: sum('shortLegsChosen'), shortLegsRanOut: sum('shortLegsRanOut'),
     pickaxeUsesOnLegs: sum('pickaxeUsesOnLegs'), medianUsesPerLeg: median(rows.flatMap(r => r.pickaxeUsesPerLeg)), meanUsesPerLeg: round(sum('pickaxeUsesOnLegs') / (sum('legsChosen') || 1)), p75UsesPerLeg: (() => { const s = rows.flatMap(r => r.pickaxeUsesPerLeg).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length * 0.75)] : null; })(), usesPerLegMinute: round(sum('pickaxeUsesOnLegs') / (legMin || 1)),
     netherMinutes: sum('netherMinutes'), netherNoPickaxeMinutes: sum('netherNoPickaxeMinutes'), netherNoPickaxeIronSmeltableMinutes: sum('netherNoPickaxeIronSmeltableMinutes'), netherNoPickaxeIronMakeableMinutes: sum('netherNoPickaxeIronMakeableMinutes'), woodenMadeWithIronSmeltable: sum('woodenMadeWithIronSmeltable'),
   };
@@ -225,6 +231,7 @@ function main() {
   console.log(`New columns stood on per 10 leg-minutes: median ${all.medianNewColumnsPer10}; ground seen at fortress heights gained per 10 leg-minutes: median ${all.medianSeenChunksPer10} chunks.`);
   console.log(`Legs chosen: ${all.legsChosen} over ${all.legMinutes} leg-minutes, ${Math.round(all.revisitShare * 100)}% of those minutes on columns stood on before the leg began.`);
   console.log(`Legs reversed: ${all.reversedAll} (${all.reversedWithin2Min} within 2 minutes of the last leg's choice; ${all.reversedAfterBlock} after a leg that ended no nearer).`);
+  console.log(`Legs chosen short of blocks (their blocks run out on the line): ${all.shortLegsChosen}, ${all.shortLegsRanOut} of them ended out of blocks.`);
   console.log(`Minutes of legs that ended no nearer, by why: ${Object.entries(all.blockedMinutes).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') || 'none'}.`);
   console.log(`Pickaxe uses spent on legs: ${all.pickaxeUsesOnLegs} (a leg: median ${all.medianUsesPerLeg}, mean ${all.meanUsesPerLeg}, three in four under ${all.p75UsesPerLeg}; ${all.usesPerLegMinute} a leg-minute).`);
   console.log(`Pickaxe: ${all.netherNoPickaxeMinutes} Nether minutes with none carried (${all.noPickaxeMinutes} of them on legs), ${all.netherNoPickaxeIronSmeltableMinutes} of them with 3+ raw iron, a furnace and fuel carried (${all.noPickaxeIronSmeltableMinutes} on legs), ${all.netherNoPickaxeIronMakeableMinutes} with the wood for the sticks too (an iron pickaxe to be made on the spot); pickaxes made in the Nether: ${Object.entries(all.pickaxesMade).map(([k, v]) => `${k.replace('_pickaxe', '')} ${v}`).join(', ') || 'none'}, ${all.woodenMadeWithIronSmeltable} of the wooden ones made with raw iron, a furnace and fuel carried.`);
