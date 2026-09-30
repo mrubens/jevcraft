@@ -701,17 +701,25 @@ function foodReason(bot, goal) {
 
 // Where the stalled Nether work was going: a portal on the way back, a
 // fortress leg or the bricks seen, the tunnel's target; with the food trip,
-// the nearest Nether portal known.
+// the nearest Nether portal known. Standing on or among a found fortress's
+// own bricks (state.inFortressSince) is arrival, not a leg still under way:
+// find_fortress's own `found` there is the nearest brick to wherever the
+// bot already stands, so offering it as a "leg" is a crossing to itself.
+// 25583 (mid-242-vh, 08:57-09:02Z) was offered "cross_toward: the fortress
+// search's leg, 3 blocks off" four times while inside its fortress with
+// blazes near, and 25590 and 25588 (~09:00Z) stalled on a "leg" whose own
+// target was, in fact, wherever they were already standing (note 739b).
 function legTarget(bot, goal) {
+  const arrived = !!goal.fortressSearch?.inFortressSince;
   const steps = [goal.step, goal.lastStruggleStep].filter(Boolean);
   for (const s of steps) {
-    const p = s.portal || s.target || s.found;
+    const p = s.portal || s.target || (arrived && s.action === 'find_fortress' ? null : s.found);
     if (p && Number.isFinite(p.x) && Number.isFinite(p.z)) {
       const portal = !!s.portal || /portal/.test(s.action || '');
       return { at: new Vec3(p.x, p.y ?? bot.entity.position.y, p.z), what: portal ? 'the portal back' : s.action === 'find_fortress' ? 'the fortress search\'s leg' : s.action === 'nether_gather' && s.what ? s.what : 'where the work was going', portal };
     }
   }
-  const t = goal.fortressSearch?.target;
+  const t = !arrived && goal.fortressSearch?.target;
   if (t) return { at: new Vec3(t.x, t.y, t.z), what: 'the fortress search\'s leg', portal: false };
   if (foodReason(bot, goal)) {
     const here = bot.entity.position;

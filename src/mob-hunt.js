@@ -3608,7 +3608,21 @@ async function findFortressStep(bot, task, goal, save, actions) {
   if (seen.length >= FORTRESS_LOOK) seen = look(FORTRESS_VIEW);
   const cutShort = seen.length >= FORTRESS_VIEW;
   const found = seen.filter(b => !shunned(b));
-  const bricks = found.length >= FORTRESS_MIN_BRICKS ? found : [];
+  let bricks = found.length >= FORTRESS_MIN_BRICKS ? found : [];
+  // Arrival is arrival (note 739b): once known to be inside a found
+  // fortress (state.inFortressSince), a look that happens to catch too few
+  // of its bricks in view -- turned toward a wall, down a bare corridor --
+  // is not "no fortress in view". Without this the whole Inside branch
+  // below is skipped for that one look and falls through to the blind
+  // sweep's own fortress_leg tree, which offers go_to_blazes toward
+  // wherever blazes were last seen rather than the fortress's own spawner
+  // and unwalked branches (25583, mid-242-vh, 08:57-09:02Z: fortress_leg
+  // sent it back to "blazes seen at (-139,74,96)", where it had stood
+  // three minutes before). The cached bricks are dropped after five
+  // seconds, or at once wherever the fortress is actually left (every spot
+  // that clears state.inFortressSince clears these with it).
+  if (bricks.length) { state.lastBricks = bricks; state.lastBricksAt = Date.now(); }
+  else if (state.inFortressSince && state.lastBricks && Date.now() - (state.lastBricksAt || 0) < 5000) bricks = state.lastBricks;
   // Bricks enough for a fortress, all left behind or set aside: said to
   // Jev with the next leg, going back among the ways (fortressInView),
   // said as they stand now, before a leg's end lets them be seen again.
@@ -3691,7 +3705,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       state.shunned.push({ x: nearest.x, z: nearest.z, until: Date.now() + 600000, at: Date.now(),
         why: 'none of its floors seen from where the bot stood runs on into unseen space, lies unwalked across a gap, or is twelve steps off to walk again: nothing to walk to',
         from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) } });
-      delete state.found; state.patrols = 0; delete state.inFortressSince; save();
+      delete state.found; state.patrols = 0; delete state.inFortressSince; delete state.lastBricks; delete state.lastBricksAt; save();
       setAside = fortressInView(bot, goal, save, state, seen, { stay: false });
     }
     else if (!owedLeg && (planned.frontiers.length || (state.patrolUntil && planned.patrol.length))) {
@@ -3741,7 +3755,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
       save();
       if (await chooseLeg(bot, task, goal, save, actions, state, fortressInView(bot, goal, save, state, bricks, { stay: true, map, planned })) !== true) return;
       state.leaving = { x: Math.round(here.x), z: Math.round(here.z), until: Date.now() + LEAVE_MS };
-      state.patrols = 0; delete state.inFortressSince; delete state.target; delete state.patrolUntil;
+      state.patrols = 0; delete state.inFortressSince; delete state.lastBricks; delete state.lastBricksAt; delete state.target; delete state.patrolUntil;
       beginLeg(state, here); save();
       return;
     }

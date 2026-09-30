@@ -162,6 +162,12 @@ function stepWait(bot, goal, now = Date.now()) {
     const f = goal.step.found;
     if (Math.hypot(f.x - bot.entity.position.x, f.z - bot.entity.position.z) <= 8 && Math.abs(f.y - bot.entity.position.y) <= 8) return 'at a known fortress';
   }
+  // Arrival is arrival (note 739b): once state.inFortressSince is set the
+  // bot is standing on the fortress's own floors, whatever a stall's own
+  // escalation has since renamed the step to (cross_toward, floor_toward, a
+  // sub-question's own retry); the unchanged-passes count is not "no
+  // progress" there either, the same as the find_fortress case above.
+  if (goal?.fortressSearch?.inFortressSince) return 'at a known fortress';
   return null;
 }
 

@@ -4486,6 +4486,12 @@ class Survival {
     const coverPlanks = coverStock < coverBlocks && typeof this.actions.acquireStep === 'function' ? shelter.plankCraft?.(bot) : null;
     const coverMade = coverPlanks && coverPlanks.available + countOf(bot, coverPlanks.item) >= coverBlocks ? coverPlanks : null;
     let coverWindow = 0;
+    // Nowhere to hide is said, not left as a silent gap in the list: 25598
+    // asked encounter_stance 53 times over one skeleton with retreat's own
+    // "no route" said on itself (footing note above) and take_cover simply
+    // missing from the tree, with no word of why it was not there (note 743).
+    if (shootersSeen.length && !covered.size) this.state.stanceTakeCoverNoRoute = `Nowhere to hide: no block can cut ${shootersSeen.length === 1 ? 'the' : 'any of the'} line${shootersSeen.length === 1 ? '' : 's'} of ${shootersSeen.map(t => t.entity.name.replaceAll('_', ' ')).join(', ')} from here.`;
+    else delete this.state.stanceTakeCoverNoRoute;
     if (covered.size && typeof this.actions.place === 'function' && (coverStock >= coverBlocks || coverMade) && !inWater(bot)) {
       const named = t => `the ${t.entity.name.replaceAll('_', ' ')} (${Math.round(t.distance)} blocks off)`;
       const open = plans.filter(p => !covered.has(p.t.entity.id));
@@ -4794,7 +4800,15 @@ class Survival {
     // stances asked again for a change of kinds in the midgame trials, 81
     // were for a kind gone out of view and 54 for one come into view more
     // than eight blocks off; a third of those changed the stance.
-    const newcomer = held?.ids && danger.find(t => t.distance <= STANCE_NEWCOMER && !held.ids.includes(t.entity.id));
+    // Not a live spawner's capped swarm turning over, either: a cage keeps
+    // about the same count of one kind spawning and despawning the whole
+    // time it is worked, and by entity id every one of them is new sooner
+    // or later. 25585 held take_cover against sixteen blazes at a spawner
+    // and was asked again on every one that spawned or despawned within
+    // six blocks, sixty-two times in 12.8 minutes with the same blazes at
+    // the same range throughout (note 743): a newcomer of a kind already
+    // held against is not news, only one of a kind that was not there.
+    const newcomer = held?.ids && danger.find(t => t.distance <= STANCE_NEWCOMER && !held.ids.includes(t.entity.id) && !held.kinds?.split(',').includes(t.entity.name));
     // A stance chosen on an estimate is asked again once it has cost more
     // than it was said to, health or time: first-days-219 chose to fight one
     // skeleton in full iron, told 1.3 damage in 3.8 seconds; it stood eleven
@@ -5118,6 +5132,9 @@ class Survival {
         ...(notOfferedNow.length ? { notOfferedNow } : {}),
         // A walk of survival's own that found no route here (step), whatever it was for.
         ...(this.state.walkFailed && Date.now() - this.state.walkFailed.at < 20000 ? { walkFailedJustNow: this.state.walkFailed.says } : {}),
+        // take_cover is missing from the tree because no route was found
+        // for it, not for no reason (note 743).
+        ...(this.state.stanceTakeCoverNoRoute ? { takeCoverNoRoute: this.state.stanceTakeCoverNoRoute } : {}),
         ...(spawner ? { spawner: { blocksAway: spawner.distance, ...(spawner.mob ? { makes: spawner.mob } : {}) } } : {}),
         ...(farther ? { shootersFartherInSight: farther.list } : {}),
         ...(sealing ? { pocketHere: { placed: sealing.placed, of: sealing.of, ...(sealing.mobInCells ? { mobInCells: sealing.mobInCells } : {}), says: sealing.says } } : {}),
@@ -5169,6 +5186,29 @@ class Survival {
         const closing = require('./shot-reflex').STANCE_SHOTS.closing;
         for (const k of Object.keys(options)) if (closing.has(k) && typeof options[k].description === 'string')
           options[k].description += ` This reverses defer (hunt target), chosen ${huntDefer.secondsAgo} second${huntDefer.secondsAgo === 1 ? '' : 's'} ago from about here: the hunt read the situation as unsuitable then.`;
+      }
+      // A stance that stands to hold the shield up (STANCE_SHOTS.holding)
+      // and one that closes to strike (STANCE_SHOTS.closing) are opposite
+      // sides of the same encounter; picking the other side of the one just
+      // held is a reversal, priced as such, not a fresh pick with nothing
+      // behind it (note 743: 25598 went take_cover, fight, take_cover,
+      // fight (0.89), take_cover against one skeleton in three minutes,
+      // each asking silent about the one just before it).
+      if (held?.choice) {
+        const shots = require('./shot-reflex').STANCE_SHOTS;
+        const heldSide = shots.closing.has(held.choice) ? 'closing' : shots.holding.has(held.choice) ? 'holding' : null;
+        if (heldSide) {
+          const heldAgo = Math.max(1, Math.round((Date.now() - held.at) / 1000));
+          const lastAnswer = book?.answers?.at(-1);
+          const heldDid = lastAnswer && lastAnswer.choice === held.choice
+            ? (scenes.cameToNothing(lastAnswer) ? `came to nothing${lastAnswer.why ? `: ${lastAnswer.why}` : ''}` : 'held, with nothing it turns on changed')
+            : 'held';
+          for (const [k, o] of Object.entries(options)) {
+            if (k === held.choice || typeof o.description !== 'string') continue;
+            const side = shots.closing.has(k) ? 'closing' : shots.holding.has(k) ? 'holding' : null;
+            if (side && side !== heldSide) o.description += ` This reverses ${held.choice.replaceAll('_', ' ')}, chosen ${heldAgo} second${heldAgo === 1 ? '' : 's'} ago: it ${heldDid}.`;
+          }
+        }
       }
       // Each stance's price rides with it (not in its words): what the code
       // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
@@ -5239,8 +5279,20 @@ class Survival {
     // quarter second (combat.js SHIELD_BLOCKS_AFTER_MS), and a wither
     // skeleton at arm's length landed its blow in that gap at re-askings
     // of shield_guard (25598, 18:57:08.7 and 09.8, 236 and 49 ms after the
-    // answer; note 683).
-    if (!/^shoot_/.test(choice) && !SHIELD_STANCES.has(choice)) lowerShield(bot);
+    // answer; note 683). The same gap under any stance that means to stand
+    // and hold the shield toward the mobs (shot-reflex.js STANCE_SHOTS.
+    // holding: take_cover, bunker, seal, dig_in, a box, a nook, a pillar,
+    // the rest): none of them needs the hand's speed lowering it costs, and
+    // lowering it on every tick this stance runs never let it stand raised
+    // the quarter second it takes to start blocking, so a shot or a blow
+    // landed on it whole as if it were down the whole time. 25598 held
+    // take_cover against one skeleton and took two such hits, 18 to 12
+    // health and 17.9 to 14.9, each "shield rising, not yet blocking";
+    // stance-scene.js counted each as the stance's own failure and asked
+    // again, and the answer flipped take_cover, fight, take_cover, fight,
+    // take_cover in three minutes (note 743).
+    const holdsShield = SHIELD_STANCES.has(choice) || require('./shot-reflex').STANCE_SHOTS.holding.has(choice);
+    if (!/^shoot_/.test(choice) && !holdsShield) lowerShield(bot);
     stance.running = true;
     let done;
     // A stance whose action is resting (set aside after it failed) is a stance
