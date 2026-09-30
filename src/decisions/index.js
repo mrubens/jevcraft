@@ -57,6 +57,7 @@ const repeats = require('./repeats');
 const tried = require('../tried');
 const leastBad = require('./least-bad');
 const unchanged = require('./unchanged');
+const loops = require('./loops');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -85,6 +86,13 @@ function define(spec) {
   if (!spec.trigger) problems.push('a trigger');
   if (!spec.source) problems.push('a source');
   if (spec.tree && !(Array.isArray(spec.options) && spec.options.length && spec.options.every(o => (o.key || o.pattern) && o.label && o.when))) problems.push('an option catalogue ({ key or pattern, label, when })');
+  // What a dynamic option's key names (keys.js, note 749): its thing, by
+  // name, by where it is, by its entity id; never its place in the list,
+  // which names a different thing whenever the list is ordered anew.
+  if (spec.tree && Array.isArray(spec.options)) for (const o of spec.options) {
+    if (o.trip !== undefined && !(typeof o.trip === 'string' && o.trip)) problems.push(`option ${o.key || o.pattern} to say where its trip goes (\`trip\`: a place in words), or no trip`);
+    if (o.dynamic && !(typeof o.names === 'string' && o.names && !/\b(index|order in the list|position in the list|place in the list|nearest first)\b/i.test(o.names))) problems.push(`option ${o.key || o.pattern} to say what its key names (\`names\`): its thing, by name, place or id, not its place in the list`);
+  }
   if (!spec.tree && !spec.unreachable) problems.push('an unreachable description');
   // The question asked next up when this one has nothing left to try (every
   // option resting in the ledger), its same answer is held, or the step it
@@ -174,6 +182,10 @@ const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet 
 // options whose goal is already so.
 const CHANGED_NOTHING = 'answerChangedNothing: this question\'s last answer ended with the bot on the same block, carrying the same, no block dug or placed and health as it was; the same answer again changes nothing unless something else has.';
 const ALREADY_SO = 'alreadySo: options not offered because what they would bring about is already so.';
+// Note 749 (loops.js): the askings of this question just before, each within
+// a minute of the one before, wherever the bot walked between.
+const SPELL = 'spellSoFar: this question has been asked again and again just now, each asking within a minute of the one before: how many times, what was answered, how far the bot walked and how far it is from where the askings began, whether anything new is carried, and how often none of the options was good. The same answers again seldom end it.';
+const ASIDE_HOLDS = 'asideHolds: options that would take back a rung set aside a moment ago, not offered while nothing named has changed since it was set aside.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 // Off the Overworld the clock is only minutes (note 677): no day comes to
 // end a wait, nothing burns off, and a wait in a sealed pocket ends only when
@@ -209,7 +221,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -329,6 +341,9 @@ function recordMissing(id, decision, listed, { bot, goal, state }, { near = fals
 // could not show (note 540). The request is still watched: one still out a
 // second after the stop, or settling late, is said with its stages.
 const SLOW_MS = 3000, LATE_MS = 250, STILL_OUT_MS = 1000;
+// Answers thrown away as stale (note 749): from STALE_RUN in a row within
+// STALE_WINDOW_MS, the next asking is watched STALE_WATCH_MS first.
+const STALE_RUN = 2, STALE_WINDOW_MS = 30000, STALE_WATCH_MS = 1000;
 const saysStages = trace => (trace.stages || []).map(s => `${s.stage} ${s.ms}${Object.keys(s).length > 2 ? ` ${JSON.stringify(Object.fromEntries(Object.entries(s).filter(([k]) => k !== 'stage' && k !== 'ms')))}` : ''}`).join(', ') +
   (trace.lookedMs !== undefined ? `; last looked ${trace.lookedMs}` : '');
 function endsWhenStopped(asking, signal, trace, log = console.log) {
@@ -597,6 +612,23 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const chain = require('../plan-chain').check(bot, goal, id);
     if (chain) { const { raiseFor, Stalled } = require('../stillness'); throw new Stalled(raiseFor(bot, goal, chain.says, Date.now(), { escalated: { from: id, to: 'rung_progress', says: chain.says } })); }
   }
+  // Asked round and round (loops.js, note 749): the spell of askings, each
+  // within a minute of the one before, wherever the bot has walked between.
+  // Said from its third asking; gone up to the question above, the answers
+  // it gave resting from here, once none good has been Jev's likeliest at
+  // half of it (three times or more) or it has gone nowhere.
+  let spell = null;
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !aside) {
+    spell = loops.before(bot, id);
+    if (spell?.why && ledgered && spec.parent && !SAY_ONLY.has(id) && !NEVER_HELD.has(id)) {
+      const why = `${id.replaceAll('_', ' ')} was ${spell.says}; ${spell.why}`;
+      loops.reset(bot, id);
+      const methods = spell.choices.filter(c => tried.leafAt(original, c));
+      if (methods.length) tried.hold(bot, goal, id, methods, why, { target, targets: Object.fromEntries(methods.map(m => [m, tried.leafAt(original, m)?.target])), anyTarget: true });
+      console.log(`[round and round] ${why}`);
+      escalateFrom(bot, goal, spec, why);
+    }
+  }
   // One committed intention at a time (intention.js, note 689): while an
   // answer that takes time holds, a question about the plan is asked without
   // the options that would replace it, and says it.
@@ -605,6 +637,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const g = require('../intention').gate(bot, goal, id, tree);
     tree = g.tree; underWay = g.underWay; intentionEnded = g.ended;
     if (g.withheld.length) console.log(`[intention] ${id}: not offered while ${goal.intention?.choice} holds: ${g.withheld.join(', ')}`);
+  }
+  // A rung set aside holds like a trip (asides.js, note 749): an option that
+  // would take it back is not offered until something named has changed.
+  let asideHolds = null;
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area)) {
+    const a = require('./asides').gate(bot, goal, tree);
+    tree = a.tree;
+    if (a.facts.length) { asideHolds = a.facts; console.log(`[aside holds] ${id}: ${a.facts.join(' | ')}`); }
   }
   // Leaving is Jev's, asked (fortress-hold.js, note 721): a lone leave, or a
   // lone resting way kept only beside one, is not taken unasked. Its failure
@@ -815,7 +855,9 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     const atOnce = require('../at-once').says(goal);
     if (atOnce) state = { ...state, failedAtOnce: atOnce };
   }
-  if (state && typeof state === 'object' && (underWay || intentionEnded)) state = { ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
+  if (asideHolds && state && typeof state === 'object') state = { ...state, asideHolds };
+  if (spell?.said && state && typeof state === 'object') state = { ...state, spellSoFar: `${id.replaceAll('_', ' ')} was ${spell.says}${spell.why ? `; ${spell.why}` : ''}` };
+  if (state && typeof state === 'object' && (underWay || intentionEnded)) state ={ ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
   // The plan answers just given from here, a reversal among them, and the
   // options that would turn back on the last (plan-chain.js, note 705).
   if (ledgered && state && typeof state === 'object') {
@@ -834,6 +876,27 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // The body's physics only (body_way, shot_answer): the rule that answers
   // when Jev cannot, at once (safetyRule in define).
   const rule = typeof spec.safetyRule === 'function' ? (children, path) => spec.safetyRule(children, path, context) : null;
+  // A question whose last answers were thrown away because its facts changed
+  // while it was out (note 749): 25585's upkeep, asked at every step of a
+  // staircase, came back "Discarded changed-state decision" 23 times in a
+  // minute and a half, one every 2.5 seconds. From the second such answer in
+  // a row it is watched a moment first; its facts changing meanwhile, it is
+  // not sent, and comes back stale for the step to ask when they hold still.
+  const staleRun = bot?._staleRun?.[id];
+  if (staleRun && staleRun.n >= STALE_RUN && Date.now() - staleRun.at < STALE_WINDOW_MS && !aside) {
+    const t0 = Date.now();
+    let changing = false;
+    while (Date.now() - t0 < STALE_WATCH_MS) {
+      await new Promise(r => setTimeout(r, Math.min(250, STALE_WATCH_MS)));
+      task?.check(); if (bot && watchAir) checkAir(bot); interrupt();
+      if (!isFresh()) { changing = true; break; }
+    }
+    if (changing) {
+      staleRun.notSent = (staleRun.notSent || 0) + 1;
+      console.log(`[stale] ${id}: its last ${staleRun.n} answers were thrown away as its facts changed while out, and they are changing still: not sent`);
+      return { id, stale: true, notSent: `its last ${staleRun.n} answers were thrown away as its facts changed while it was out, and they were changing still` };
+    }
+  }
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
   // Asked aside (`aside`: shot_answer, asked beside whatever holds the
@@ -906,9 +969,25 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (!aside && (!bot || bot._turn === mark)) giveBack(bot, turnBefore);
     if (bot?._asking === trace) delete bot._asking;
   }
+  // Thrown away as stale, an answer that keeps on with what is under way is
+  // kept (note 749): what changed the facts is the work it keeps on with.
+  if (decision.stale && !decision.jevWasDown && decision.staleAnswer?.choice && require('../intention').KEEP.test(decision.staleAnswer.choice) && tree[decision.staleAnswer.choice] && !tree[decision.staleAnswer.choice].children) {
+    const k = decision.staleAnswer.choice;
+    decision = { ...decision, stale: false, path: [k], action: tree[k], judgments: [{ branch: 'branch_0', ...decision.staleAnswer }], keptThroughChange: true };
+    console.log(`[stale] ${id}: ${k} kept though the facts changed while it was out: it keeps on with what changed them`);
+  }
+  if (bot && !decision.jevWasDown && !decision.notSent) {
+    const runs = bot._staleRun ||= {};
+    if (decision.stale) runs[id] = { n: (runs[id] && Date.now() - runs[id].at < STALE_WINDOW_MS ? runs[id].n : 0) + 1, at: Date.now() };
+    else delete runs[id];
+  }
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
   if (tracked && !decision.stale && decision.path) unchanged.after(bot, id, { choice: decision.path.join('/'), digest, run: changedNothing?.run || 0 });
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !aside && !decision.stale && decision.path) {
+    const weights = decision.judgments?.[0]?.probabilities || {};
+    loops.after(bot, id, { choice: decision.path.join('/'), noneGoodTop: decision.noneGood || Object.entries(weights).sort((a, b) => b[1] - a[1])[0]?.[0] === NONE_GOOD_KEY });
+  }
   if (bot && client && !decision.stale && decision.path && GAMEPLAY_AREAS.has(spec.area)) leastBad.after(bot, goal, id, original, decision, lastLeastBad);
   if (bot && client && ledgered) leastBad.chosenAfter(bot, goal, id, original, decision, lastChosen);
   // "None of these is good", sure, twice running to the same situation:

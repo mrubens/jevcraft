@@ -7730,8 +7730,13 @@ class Survival {
       const open = [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]].some(([x, y, z]) => /^(air|cave_air)$/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
       return ` ${dy ? `${Math.abs(dy)} block${Math.abs(dy) === 1 ? '' : 's'} ${dy > 0 ? 'up' : 'down'}` : 'level with the feet'}.${open ? ' It is in the wall of an open space: digging to it opens the tunnel onto whatever is in there.' : ''}${around(q, 2, /^lava$/) ? ' Lava within two blocks of it.' : ''}${around(q, 2, /^water$/) ? ' Water within two blocks of it.' : ''}`;
     };
-    const tree = Object.fromEntries(choices.map((c, i) => { const [item, use] = ORE_YIELD[c.kind];
-      return [`ore_${i}`, { description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${oreFacts(c.position)}` }]; }));
+    // Each ore keyed by the number it was given when first offered (keys.js,
+    // note 749), not by its place in the list: ore_0 was a different ore at
+    // 347 of 815 askings from 06:00Z to 11:30Z on 2026-09-30.
+    const oreIds = require('./decisions/keys').ids(goal, 'ore', choices.map(c => c.position), { near: 0.5 });
+    const oreKey = c => `ore_${oreIds[choices.indexOf(c)]}`;
+    const tree = Object.fromEntries(choices.map(c => { const [item, use] = ORE_YIELD[c.kind];
+      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${oreFacts(c.position)}` }]; }));
     const branchY = Math.max(feet.y - 10, 16);
     tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
@@ -7751,7 +7756,7 @@ class Survival {
       }
       for (const o of Object.values(tree)) o.description += place.says;
     }
-    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])), context: {},
+    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }])), context: {},
       state: { ...(place ? { place: place.state } : {}), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     const pick = decision.path.at(-1);
@@ -7761,7 +7766,7 @@ class Survival {
       return { lit: true };
     }
     if (pick === 'branch_away') { const mine = this.state.nightMine; if (mine) mine.heading = tree.branch_away.heading; return null; }
-    return pick === 'branch' ? null : choices[Number(pick.slice(4))] || null;
+    return pick === 'branch' ? null : choices.find(c => oreKey(c) === pick) || null;
   }
 
   async nightMine(task, goal, save) {

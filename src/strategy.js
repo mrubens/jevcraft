@@ -438,7 +438,8 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
 const tripSays = (key, o) => o.says ? o.says.replace(/^I'll /, '') : key.replaceAll('_', ' ');
 function strategyTree(options) {
   const top = {}, trips = {};
-  for (const [key, o] of Object.entries(options)) (o.trip ? trips : top)[key] = { description: o.description, ...(o.ladderNext ? { ladderNext: true } : {}) };
+  // A rung it would take back goes with the node (asides.js, note 749).
+  for (const [key, o] of Object.entries(options)) (o.trip ? trips : top)[key] = { description: o.description, ...(o.ladderNext ? { ladderNext: true } : {}), ...(o.takeBack ? { takeBack: o.takeBack } : o.takeUp && o.rung?.phase ? { takeBack: o.rung.phase } : {}) };
   const keys = Object.keys(trips);
   if (keys.length === 1) top.side_trip = { description: `A side trip, off the way to the Nether: ${trips[keys[0]].description}`, children: trips };
   else if (keys.length) top.side_trip = { description: `A side trip, off the way to the Nether, one of ${keys.length}: ${keys.map(k => tripSays(k, options[k])).join('; ')}. Each says what it buys and what it takes on its own question.`, children: trips };

@@ -251,6 +251,10 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     const food = n => !!bot.registry?.foodsByName?.[n];
     const weapon = n => /_(sword|axe)$|^(bow|crossbow|trident)$/.test(n);
     const tree = {};
+    // Each stack keyed by its item (keys.js, note 749), and where two stacks
+    // share an item, by its slot too: not by its place in this sorted list.
+    const named = new Set();
+    const keyOf = (stack, n) => { const base = `drop_${stack.name}`; if (!named.has(base)) { named.add(base); return base; } return `${base}_slot${stack.slot ?? n}`; };
     stacks.slice(0, 24).forEach((stack, n) => {
       const notes = [];
       const k = kind(stack.name);
@@ -293,7 +297,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       // (note 730). What is not flagged one of the above still costs a way
       // to get another, said so rather than left blank.
       if (!notes.length) notes.push('no flagged use for the run ahead, but not junk either: another would mean finding, mining, trading or crafting one again');
-      tree[`drop_${n}`] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
+      tree[keyOf(stack, n)] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
     });
     const unlisted = stacks.length - Math.min(stacks.length, 24);
     tree.none = { description: `Drop nothing and go without the ${name.replaceAll('_', ' ')}${purpose ? `: ${purpose} cannot go on without it, and fails and is tried again` : ''}.${NO_USE.test(name) ? ` The ${name.replaceAll('_', ' ')} itself has no use on the way to the dragon.` : ''}${unlisted ? ` ${unlisted} more stack${unlisted === 1 ? ' is' : 's are'} carried and not listed here.` : ''}` };

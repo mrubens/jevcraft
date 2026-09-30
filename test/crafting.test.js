@@ -138,11 +138,11 @@ function fullPockets(registry, { cursor = null, choices = [] } = {}) {
   const client = { systemOne: async ({ questions }) => {
     const pick = choices.shift() || 'none';
     asked.push({ ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) });
-    return { answers: { branch_0: { choice: pick === 'none' ? 'none' : 'drop', confidence: 0.7 }, branch_1: { choice: pick === 'none' ? 'drop_0' : pick, confidence: 0.7 } } };
+    return { answers: { branch_0: { choice: pick === 'none' ? 'none' : 'drop', confidence: 0.7 }, branch_1: { choice: pick === 'none' ? Object.keys(questions.branch_1?.criteria || {}).find(k => /^drop_/.test(k)) || 'none' : pick, confidence: 0.7 } } };
   } };
   return { bot, client, asked, tossed, slots };
 }
-const dropOf = (offered, name) => Object.keys(offered).find(k => /^drop_\d+$/.test(k) && new RegExp(`^Drop \\d+ ${name}`).test(offered[k]));
+const dropOf = (offered, name) => Object.keys(offered).find(k => /^drop_/.test(k) && new RegExp(`^Drop \\d+ ${name}`).test(offered[k]));
 
 test('a craft with the pockets full and sticks on the cursor makes room as Jev chooses, never clicking outside the window', async () => {
   // mid-241-v (note 496): four sticks on the cursor, thirty-six slots full, ten "invalid operation" crafting acacia planks.

@@ -40,13 +40,15 @@ function pearlRoutes(bot, goal, { now = Date.now(), save = () => {}, actions = {
     try { forests = exploration.knownLandmarks(bot, goal, 'warped_forest', 1024); } catch (_) { forests = []; }
     const tripKey = l => `${l.kind}:${l.x},${l.z}`;
     const resting = forests.filter(k => isSetAside(goal, 'landmark_trip', tripKey(k.landmark), now));
-    for (const [i, k] of resting.slice(0, 2).entries()) {
+    for (const k of resting.slice(0, 2)) {
       const l = k.landmark, key = tripKey(l), dy = Number.isFinite(l.y) ? Math.round(l.y - here.y) : 0;
       const entry = attemptsFor(goal).entries[require('./progress').keyOf('landmark_trip', key)];
       const w = l.lastWalk;
       const walked = w ? ` The last walk there, from (${w.from.x}, ${w.from.y}, ${w.from.z}), began ${w.began} blocks off and ended ${w.ended}${w.why ? `: ${w.why}` : ''}`.replace(/[.!?]?$/, m => m || '.') : '';
       const target = { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(here.y), z: l.z };
-      options[`pearls_forest_${i + 1}`] = { target, surveyTo: target,
+      // Keyed by the number the forest was given when first offered (keys.js,
+      // note 749).
+      options[`pearls_forest_${require('./decisions/keys').id(goal, 'warped_forest', { x: l.x, z: l.z }, { near: 16, base: 1 })}`] = { target, surveyTo: target,
         description: `Go for the warped forest at (${l.x}, ${l.z}) again, ${k.distance} blocks off${dy ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}: endermen spawn there in numbers, and the pearls are its hunt. Its walk rests ${plural(minutesLeft(entry.until, now), 'minute')} more (${entry.why}); chosen, the rest is lifted and the pearl step walks there, bridging and digging as the walk does, ${carried}.${walked}`,
         run: async () => { attemptsFor(goal).clear('landmark_trip', key); attemptsFor(goal).clear('rung', 'warped_pearls'); delete goal.pearlRoute; save(); } };
     }

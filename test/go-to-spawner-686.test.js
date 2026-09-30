@@ -17,6 +17,8 @@ require('../src/decisions/travel');
 
 const rec = require('./fixtures/go-to-spawner-25589.json');
 const CAGE = { x: rec.spawner.x, y: rec.spawner.y, z: rec.spawner.z };
+// The option's key is the number the spawner was given when first offered (note 749).
+const GO = 'go_to_spawner_1';
 
 // The frame's ground as far as the question reads it: the fortress floor at
 // y 57 under the bot, open air above, the cage where the map has it.
@@ -44,18 +46,18 @@ function jev(pick) {
 
 test('the recorded frame: the spawner the map holds is offered as go_to_spawner, said with what the bot\'s time at it came to, and its cage is the answer\'s target', async () => {
   const bot = frameBot(), goal = frameGoal(), state = goal.fortressSearch;
-  const client = jev('go_to_spawner');
+  const client = jev(GO);
   const picked = await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, tunnel: async () => {} }, state);
   assert.equal(picked, 'goto');
   const { options } = client.asked[0];
-  assert.match(options.go_to_spawner, /^Go to the blaze spawner at \(-108, 77, 155\), \d+ blocks off and 19 up, seen 65 minutes ago: blazes seen near it 27 times; 3 blazes killed and 3 rods taken in about 5 minutes within 16 of it, last there 62 minutes ago\. No floor seen joins it to here\./);
-  assert.match(options.go_to_spawner, /There, with no blaze near, the stand is asked \(empty_spawner\)\./);
+  assert.match(options[GO], /^Go to the blaze spawner at \(-108, 77, 155\), \d+ blocks off and 19 up, seen 65 minutes ago: blazes seen near it 27 times; 3 blazes killed and 3 rods taken in about 5 minutes within 16 of it, last there 62 minutes ago\. No floor seen joins it to here\./);
+  assert.match(options[GO], /There, with no blaze near, the stand is asked \(empty_spawner\)\./);
   assert.ok(options.go_to_blazes, 'the sightings stay a way of their own');
   // Chosen: the walk to it is the search's wait by a spawner, as a walk.
   assert.deepEqual({ x: state.spawnerWait.x, y: state.spawnerWait.y, z: state.spawnerWait.z, go: state.spawnerWait.go }, { ...CAGE, go: true });
   // The option's target is the cage: the ledger's answer and the rung's measure read it.
-  const tree = { go_to_spawner: { description: options.go_to_spawner, target: CAGE } };
-  const parts = require('../src/rung-measure').parts(bot, goal, { rung: 'obtain_blaze_rods', target: tree.go_to_spawner.target });
+  const tree = { [GO]: { description: options[GO], target: CAGE } };
+  const parts = require('../src/rung-measure').parts(bot, goal, { rung: 'obtain_blaze_rods', target: tree[GO].target });
   assert.ok(Object.keys(parts).some(k => /^cage@/.test(k)), JSON.stringify(Object.keys(parts)));
   assert.ok(Object.keys(parts).some(k => /^step:/.test(k)));
 });
@@ -94,7 +96,7 @@ test('a spawner seen broken is not offered; the tally counts only while within s
   assert.ok(state.map.spawners[0].broken);
   const client = jev('leg_east');
   await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client, tunnel: async () => {} }, state);
-  assert.equal(client.asked[0].options.go_to_spawner, undefined);
+  assert.ok(!Object.keys(client.asked[0].options).some(k => /^go_to_spawner/.test(k)));
   // The tally: a rod and a kill gained far off are not the spawner's; within sixteen they are.
   const b2 = frameBot(), g2 = frameGoal(), map = g2.fortressSearch.map;
   fm.noteSpawners(b2, map, { kills: 5, rods: 5 });
@@ -108,8 +110,8 @@ test('a spawner seen broken is not offered; the tally counts only while within s
 
 test('fortress_leg lists go_to_spawner, and without Jev a spawner known is gone to before the floors are walked again (stay_in_fortress)', () => {
   const q = question('fortress_leg');
-  assert.ok(q.options.some(o => o.pattern && new RegExp(`^${o.pattern}$`).test('go_to_spawner')));
-  assert.ok(q.options.some(o => o.pattern && new RegExp(`^${o.pattern}$`).test('go_to_spawner_2')));
+  assert.ok(q.options.some(o => o.pattern && new RegExp(`^${o.pattern}$`).test('go_to_spawner_1')));
+  assert.ok(!q.options.some(o => o.pattern && new RegExp(`^${o.pattern}$`).test('go_to_spawner')), 'every spawner has its number, the nearest too (note 749)');
   const { legFallback } = require('./support/jev-stand-in');
-  assert.equal(legFallback({ go_to_spawner: {}, stay_in_fortress: {}, go_to_blazes: {}, leg_east: {} }, [], { passes: 1 }), 'go_to_spawner');
+  assert.equal(legFallback({ go_to_spawner_1: {}, stay_in_fortress: {}, go_to_blazes: {}, leg_east: {} }, [], { passes: 1 }), 'go_to_spawner_1');
 });

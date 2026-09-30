@@ -35,8 +35,10 @@ const legFallback = (children, path, context = {}) => {
   if (children.back_to_fortress) return 'back_to_fortress';
   if (children.blocks_then_cross) return 'blocks_then_cross';
   if (children.wait_at_spawner) return 'wait_at_spawner';
-  if (children.go_to_spawner) return 'go_to_spawner';
-  if (children.unwalked_1) return 'unwalked_1';
+  const spawner = Object.keys(children).find(k => /^go_to_spawner_/.test(k));
+  if (spawner) return spawner;
+  const unwalked = Object.keys(children).find(k => /^unwalked_/.test(k));
+  if (unwalked) return unwalked;
   if (children.stay_in_fortress && (context.passes || 0) < 6) return 'stay_in_fortress';
   if (children.go_to_blazes_about) return 'go_to_blazes_about';
   if (children.go_to_blazes) return 'go_to_blazes';
@@ -70,7 +72,13 @@ function endFallback(safe) {
       find(k => k === 'shoot_dragon') || find(k => k.startsWith('move_')) || keys[0];
   };
 }
-const GATHER_ORDER = ['wood_in_view', 'walk_to_1', 'floor_to_1', 'cross_to_1', 'walk_to_2', 'floor_to_2', 'cross_to_2', 'walk_to_3', 'floor_to_3', 'cross_to_3', 'portal_trip'];
+// The wood in view, then each place as the tree lists them (nearest first; a
+// key names its place, note 749) on foot, down to the floor, across; then
+// the portal.
+const GATHER_ORDER = children => {
+  const keys = Object.keys(children), places = [...new Set(keys.map(k => /^(?:walk|floor|cross)_to_(.+)$/.exec(k)?.[1]).filter(Boolean))];
+  return ['wood_in_view', ...places.flatMap(p => ['walk', 'floor', 'cross'].map(m => `${m}_to_${p}`)), 'portal_trip'];
+};
 
 // The old order of each question, by id.
 const OLD_ORDER = {
@@ -103,7 +111,7 @@ const OLD_ORDER = {
   kit_food: (children, path, context = {}) => children[context.oldOrder] ? context.oldOrder : 'go_without',
   leave_nether: children => Object.keys(children).find(k => k !== 'go_back') || 'go_back',
   nether_food_kit: children => children.go_on ? 'go_on' : Object.keys(children)[0],
-  nether_gather: (children, path, context = {}) => GATHER_ORDER.find(k => children[k])
+  nether_gather: (children, path, context = {}) => GATHER_ORDER(children).find(k => children[k])
       || Object.keys(children).filter(k => k.startsWith('leg_')).sort((a, b) => (context.unseen?.[b] ?? 0) - (context.unseen?.[a] ?? 0))[0]
       || (children.without ? 'without' : Object.keys(children)[0]),
   night_mine_target: children => Object.keys(children).find(k => k !== 'branch') || 'branch',

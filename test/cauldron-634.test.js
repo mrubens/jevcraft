@@ -163,8 +163,8 @@ test('the inventory-room question says what the cauldron and the water bucket ar
   const items = [{ name: 'cauldron', count: 1, type: 1 }, { name: 'water_bucket', count: 1, type: 2 }, { name: 'dirt', count: 20, type: 3 }];
   const b = { registry, inventory: { items: () => items, emptySlotCount: () => 0 }, entity: { position: { x: 0, y: 64, z: 0 } }, tossStack: async () => {} };
   let offered;
-  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_2', confidence: 0.6 } } }; } } };
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_dirt', confidence: 0.6 } } }; } } };
   await makeRoom(b, task, 'oak_planks', {}).catch(() => {});
-  assert.match(offered.drop_0 || '', /for a fire on the body in the Nether: put down and filled from a water bucket \(1 carried\), a body that steps into it is put out at once/);
-  assert.match(offered.drop_1 || '', /and the water for the cauldron carried: emptied into it, it fills it, in the Nether as anywhere \(a poured bucket evaporates there\)/);
+  assert.match(offered.drop_cauldron || '', /for a fire on the body in the Nether: put down and filled from a water bucket \(1 carried\), a body that steps into it is put out at once/);
+  assert.match(offered.drop_water_bucket || '', /and the water for the cauldron carried: emptied into it, it fills it, in the Nether as anywhere \(a poured bucket evaporates there\)/);
 });

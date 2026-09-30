@@ -134,7 +134,7 @@ test('runGoal answers repeated failures with one question, whose recovery moves 
   const result = await runGoal(bot, task, goal, { save() {} }, { survival, recoveryAdviser: adviser, decisionClient, maxSteps: 8 });
   assert(result.ok); assert.equal(failures, 3);
   assert.equal(judged, 0, 'the separate recovery question is not asked: one question answers a failure');
-  assert(asked.some(keys => keys.includes('recover_1')), 'the recovery move is among the stall question\'s answers');
+  assert(asked.some(keys => keys.some(k => /^recover_[a-z_]+/.test(k))), 'the recovery move is among the stall question\'s answers');
   assert.equal(goal.recoveryAdvice.history.at(-1).source, 'stall question');
   assert.equal(goal.item, 'pumpkin'); assert.equal(goal.count, 1); assert.equal(goal.status, 'complete');
 });

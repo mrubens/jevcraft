@@ -2129,7 +2129,11 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   if (cages.length) {
     const planned = require('./fortress-map').plan(bot, state.map);
     for (const [i, k] of cages.entries()) {
-      const s = k.s, key = i ? `go_to_spawner_${i + 1}` : 'go_to_spawner', ended = state.goToEnded?.[`spawner:${s.x},${s.y},${s.z}`];
+      // Keyed by the number the spawner was given when first offered
+      // (keys.js, note 749): the nearest was go_to_spawner and the next
+      // go_to_spawner_2, so which spawner a key named changed as the bot
+      // walked between them.
+      const s = k.s, key = `go_to_spawner_${require('./decisions/keys').id(goal, 'spawner', s, { base: 1 })}`, ended = state.goToEnded?.[`spawner:${s.x},${s.y},${s.z}`];
       // The pathfinder's survey toward the nearest only: a survey is up to
       // half a second on a loaded machine.
       const route = i === 0 && actions.navigate ? await routeSurvey(bot, task, new goals.GoalNear(s.x, s.y, s.z, 4), new Vec3(s.x, s.y, s.z)) : null;
@@ -3546,6 +3550,9 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
     // its own text said three minutes of walking back and forth with no
     // spawner seen, and unwalked_1 sat 13 blocks off with one block to dig.
     let firstUnwalked = null;
+    // Each keyed by the number its floors were given when first offered
+    // (keys.js, note 749), not by its place among the nearest three.
+    const unwalkedKey = g => `unwalked_${require('./decisions/keys').id(goal, 'unwalked', { x: g.at[0], y: g.at[1] + 1, z: g.at[2] }, { near: 8, base: 1 })}`;
     unwalkedParts(bot, map, planned).filter(part => !wayLeft(state, { x: part.g.at[0], y: part.g.at[1] + 1, z: part.g.at[2] })).slice(0, 3).forEach((part, i) => {
       const { g, groups } = part, across = { way: part.way, round: part.round, says: acrossSays(part.way, part.round) };
       const gap = across.way ? null : fm.gapTo(bot, planned, g, map);
@@ -3553,8 +3560,8 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
       const more = groups.length > 1 ? ` (with ${groups.length - 1} more part${groups.length === 2 ? '' : 's'} the same way reaches, ${floors} floors in all, ${open} of them running on into unseen space)` : '';
       const ended = state.goToEnded?.[`unwalked:${g.key}`];
       const dy = g.dy ? ` and ${Math.abs(g.dy)} ${g.dy > 0 ? 'up' : 'down'}` : '';
-      if (i === 0) firstUnwalked = { g, dy, cost: across.way ? across.says : gap ? `no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to` : 'no way across along the ground found yet' };
-      others[`unwalked_${i + 1}`] = { description: `Go to the fortress's unwalked floors seen ${g.off} blocks off${dy}, at (${g.at[0]}, ${g.at[1] + 1}, ${g.at[2]}): ${g.cells} floor${g.cells === 1 ? '' : 's'} seen there, ${g.open} of them running on into unseen space${more}; no floor seen joins them to where the bot stands` +
+      if (i === 0) firstUnwalked = { key: unwalkedKey(g), g, dy, cost: across.way ? across.says : gap ? `no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to` : 'no way across along the ground found yet' };
+      others[unwalkedKey(g)] = { description: `Go to the fortress's unwalked floors seen ${g.off} blocks off${dy}, at (${g.at[0]}, ${g.at[1] + 1}, ${g.at[2]}): ${g.cells} floor${g.cells === 1 ? '' : 's'} seen there, ${g.open} of them running on into unseen space${more}; no floor seen joins them to where the bot stands` +
         `${across.way ? `: the way across along the ground is ${across.says}` : gap ? `: no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to (${gap.from[0]}, ${gap.from[1] + 1}, ${gap.from[2]}), between them ${gap.says}${gap.dy ? `, ${Math.abs(gap.dy)} ${gap.dy > 0 ? 'up' : 'down'}` : ''}` : ''}. ` +
         `The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: covering the lava, digging through the rock, a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
         target: { x: g.at[0], y: g.at[1] + 1, z: g.at[2] }, run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, keys: groups.map(p => p.key), since: Date.now() }; save(); return 'goto'; } };
@@ -3563,7 +3570,7 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
     // least lately walked of it), nothing past what has already been seen;
     // said beside the nearest unwalked branch's own distance and cost, when
     // there is one, so pacing is weighed against actually going there.
-    const against = firstUnwalked ? ` Against staying: unwalked_1 is ${firstUnwalked.g.off} blocks off${firstUnwalked.dy} with ${firstUnwalked.cost}; staying re-walks the ${walkedSays(planned)} already, nothing past what has already been seen there.` : '';
+    const against = firstUnwalked ? ` Against staying: ${firstUnwalked.key} is ${firstUnwalked.g.off} blocks off${firstUnwalked.dy} with ${firstUnwalked.cost}; staying re-walks the ${walkedSays(planned)} already, nothing past what has already been seen there.` : '';
     const patrol = planned.patrol.length ? { key: 'stay_in_fortress',
       description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.${walkedAllSays(bot, state)}${against}`,
       run: () => { state.patrolUntil = Date.now() + PATROL_MS; save(); return 'stay'; } } : null;

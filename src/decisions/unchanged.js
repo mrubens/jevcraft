@@ -18,7 +18,8 @@
 //     changed, that answer changed nothing. The next asking says so, in the
 //     facts (answerChangedNothing) and on the option: "X was chosen N
 //     seconds ago and changed nothing";
-//   - and if the question's facts are the same too, it is not asked again
+//   - and if the question's facts are the same too (note 749: the options
+//     offered and the kinds of mob that threaten; digest below), it is not asked again
 //     yet: the bot holds, its reflexes still watching (the task's check, the
 //     air, the caller's interrupt), until the block, the carried things, the
 //     blocks or the health band change, or a short wait passes (HOLD_MS:
@@ -71,27 +72,47 @@ function changed(a, b) {
 
 const holdFor = run => HOLD_MS[Math.min(Math.max(run, 1), HOLD_MS.length) - 1];
 
-// The question's own facts, as the world has them: the state less the record
-// of the answers themselves (what was chosen, how it ended, what rests, the
-// moves and legs so far, at any depth), which changes with every answer and
-// is what this rule says in its own words; clocks and counts aside
-// (repeats.fingerprint); and the options offered by their keys, whose words
-// carry the same record. Read from the flight records of 2026-09-30, the
-// facts that differed between two askings with nothing changed between were
-// these records nine times in ten: fortress_leg's lastLeg, legsSoFar,
-// legsResting and lastIntention, unstuck_move's recentMoves and
-// here.notOffered, rung_progress's stalled.strikes and stalled.tried.
+// The question's own facts, as the answer could have changed them (note
+// 749): the options offered, by their keys, and the mobs that threaten, by
+// kind. Before note 749 it was the whole state less the record of the
+// answers (RECORD below) and its clocks and counts (repeats.fingerprint);
+// the state drifts between two askings with nothing the answer could touch
+// changed (riskNow's count of mobs within 24, the healing line, a stall's
+// strikes, a fortress's passes), and the hold was missed. Read from the
+// flight records of 2026-09-30 from 06:00Z: of 1,276 askings whose last
+// answer changed nothing (same block, same things carried, same health
+// band), 1,127 had facts that differed, 226 of them with the same options.
+// What the answer was meant to change is the mark (markOf: the block, what
+// is carried, blocks dug or placed, the health band) and the options on
+// offer (a key names its thing, define's `names`, so an option for a new
+// thing is a new key); a mob coming or going is the one change in the world
+// the survival layer's own reflexes may be waiting on it to say, so the kinds
+// that threaten count too, their distances and counts not.
 const RECORD = /^(last[A-Z]\w*|recent\w*|\w*(SoFar|Resting|JustNow|Tried|AtOnce|Ago)|tried|strikes|failed|failures|notOffered\w*|notNow|underWay|leastBad\w*|planAnswers\w*|reversal|previous\w*|waysResting|whatFailedBelow|answerChangedNothing|sameAnswerAgain|answersThatCameToNothing|sameSceneSoFar|situation|legsClosed|waysLeft|workedOnRung|stretch)$/;
-function digest(state, tree) {
-  const strip = v => {
-    if (!v || typeof v !== 'object') return v;
-    if (Array.isArray(v)) return v.map(strip);
-    return Object.fromEntries(Object.entries(v).filter(([k]) => !RECORD.test(k)).map(([k, x]) => [k, strip(x)]));
+const THREAT_KEY = /^(threats?\w*|\w*Threats?|hostiles?\w*|\w*Hostiles?|mobs|shooters|kinds)$/;
+const MOB_NAME = s => String(s || '').toLowerCase().replace(/_/g, ' ').replace(/[^a-z ].*$/, '').trim();
+function threatKinds(state) {
+  const kinds = new Set(), seen = new WeakSet();
+  const take = v => {
+    if (typeof v === 'string') { const n = MOB_NAME(v); if (n) kinds.add(n); return; }
+    if (!v || typeof v !== 'object' || seen.has(v)) return;
+    seen.add(v);
+    if (Array.isArray(v)) { v.forEach(take); return; }
+    if (typeof v.name === 'string') kinds.add(MOB_NAME(v.name));
+    if (Array.isArray(v.kinds)) v.kinds.forEach(take);
   };
+  const visit = (v, depth) => {
+    if (!v || typeof v !== 'object' || depth > 4 || seen.has(v)) return;
+    for (const [k, x] of Object.entries(v)) { if (RECORD.test(k)) continue; if (THREAT_KEY.test(k)) take(x); else if (x && typeof x === 'object' && !Array.isArray(x)) visit(x, depth + 1); }
+  };
+  visit(state && typeof state === 'object' ? state : {}, 0);
+  return [...kinds].filter(Boolean).sort();
+}
+function digest(state, tree) {
   const keys = [];
   const visit = (children, pre) => { for (const [k, n] of Object.entries(children || {})) { if (k === 'none_good') continue; if (n?.children) visit(n.children, [...pre, k]); else keys.push([...pre, k].join('/')); } };
   visit(tree, []);
-  return require('./repeats').fingerprint(strip(state && typeof state === 'object' ? state : {}), {}) + '|' + keys.sort().join(',');
+  return `${keys.sort().join(',')}|${threatKinds(state).join(',')}`;
 }
 
 // Before asking `id`: its last answer, if nothing has changed since.
@@ -168,4 +189,4 @@ function replay(asks) {
   return held;
 }
 
-module.exports = { HOLD_MS, setHold, KEPT_MS, NOT_HELD, RECORD, band, digest, markOf, changed, holdFor, before, says, hold, after, satisfiedGate, replay };
+module.exports = { HOLD_MS, setHold, KEPT_MS, NOT_HELD, RECORD, band, digest, threatKinds, markOf, changed, holdFor, before, says, hold, after, satisfiedGate, replay };

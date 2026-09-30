@@ -669,12 +669,12 @@ test('sheep_search says the bot is underground, and rests briefly after a failed
   const realDecide = decisions.decide;
   try {
     let asked;
-    decisions.decide = async (id, opts) => { asked = opts; return { path: ['biome_0'], stale: false }; };
+    decisions.decide = async (id, opts) => { asked = opts; return { path: ['biome_plains'], stale: false }; };
     let exploredWith = null;
     await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async (b, t, g, sv, target, opts) => { exploredWith = opts; } });
     assert.equal(asked?.state?.underground, true, 'the state says the bot is underground');
-    assert.match(asked.tree.biome_0.description, /Underground here/, 'the biome walk itself says the bot is underground');
-    // The walk that biome_0 leads to fails at once (no route): the biome
+    assert.match(asked.tree.biome_plains.description, /Underground here/, 'the biome walk itself says the bot is underground');
+    // The walk that biome_plains leads to fails at once (no route): the biome
     // rests, and the very next call carries on with a plain search instead
     // of asking sheep_search again right away.
     await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async (b, t, g, sv, target, opts) => { exploredWith = opts; } });

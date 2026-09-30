@@ -174,12 +174,12 @@ test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes w
     tossStack: async stack => { tossed.push(stack.name); items = items.filter(i => i !== stack); } };
   let offered;
   // Two questions, asked together: drop anything (branch_0), and which stack (branch_1).
-  const pick = choice => ({ check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: choice === 'none' ? 'none' : 'drop', confidence: 0.6 }, branch_1: { choice: choice === 'none' ? 'drop_0' : choice, confidence: 0.6 } } }; } } });
+  const pick = choice => ({ check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: choice === 'none' ? 'none' : 'drop', confidence: 0.6 }, branch_1: { choice: choice === 'none' ? 'drop_stone_pickaxe' : choice, confidence: 0.6 } } }; } } });
   assert.equal(await makeRoom(bot, pick('none'), 'raw_iron'), false, 'Jev chose to go without');
   assert.deepEqual(tossed, []);
-  assert.match(offered.drop_0, /the only pickaxe/);
-  assert.match(offered.drop_1, /part of the 16-block reserve/);
-  assert.equal(await makeRoom(bot, pick('drop_1'), 'raw_iron'), true);
+  assert.match(offered.drop_stone_pickaxe, /the only pickaxe/);
+  assert.match(offered.drop_dirt, /part of the 16-block reserve/);
+  assert.equal(await makeRoom(bot, pick('drop_dirt'), 'raw_iron'), true);
   assert.deepEqual(tossed, ['dirt'], 'Jev\'s pick went');
 });
 
@@ -251,11 +251,11 @@ test('making room, Jev sees junk and surplus first and marked, and what going wi
   add('iron_pickaxe', 1); add('diamond_sword', 1); add('coal', 242); add('pink_petals', 8); add('pointed_dripstone', 29); add('dripstone_block', 64); add('raw_iron', 63);
   while (items.length < 36) add('white_wool', 1) || items.push({ name: `lapis_lazuli`, count: 64, type: registry.itemsByName.lapis_lazuli.id, stackSize: 64 });
   let offered;
-  const client = { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_0', confidence: 0.6 } } }; } };
+  const client = { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_coal', confidence: 0.6 } } }; } };
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
   await makeRoom(bot, { check() {}, opportunityClient: client }, 'cobblestone', { purpose: 'the step in hand (8 cobblestone for the reach nether step)' });
   const keys = Object.keys(offered);
-  assert.match(offered.drop_0, /(pink petals|pointed dripstone|dripstone block|coal).*(no use on the way|more than the)/);
+  assert.match(offered[Object.keys(offered).find(k => /^drop_/.test(k))], /(pink petals|pointed dripstone|dripstone block|coal).*(no use on the way|more than the)/);
   assert.match(offered.none, /go without the cobblestone: the step in hand \(8 cobblestone for the reach nether step\) cannot go on without it/);
   assert(keys.some(k => /coal.*more than the \d+ worth keeping/.test(offered[k])), 'surplus coal marked');
 });
@@ -267,7 +267,7 @@ test('making room says the only food, the only weapon, the water bucket, the val
   add('diamond_sword', 1); add('bread', 3); add('water_bucket', 1); add('diamond', 2); add('coal', 20);
   while (items.length < 36) add('white_wool', 1);
   let offered, state;
-  const client = { systemOne: async ({ questions, state: s }) => { offered = Object.values({ ...questions.branch_0.criteria, ...questions.branch_1.criteria }); state = s; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_0', confidence: 0.6 } } }; } };
+  const client = { systemOne: async ({ questions, state: s }) => { offered = Object.values({ ...questions.branch_0.criteria, ...questions.branch_1.criteria }); state = s; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_coal', confidence: 0.6 } } }; } };
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
   const goal = { kind: 'obtain', step: { action: 'smelt', item: 'iron_ingot', fuel: 'coal' } };
   await makeRoom(bot, { check() {}, opportunityClient: client }, 'raw_iron', { goal });
@@ -289,7 +289,7 @@ test('making room asks whether to drop anything apart from which stack, so junk 
   add('dripstone_block', 17); add('pointed_dripstone', 5); add('red_mushroom', 1);
   while (items.length < 36) add('white_wool', 1);
   let asked;
-  const client = { systemOne: async ({ questions }) => { asked = questions; return { answers: { branch_0: { choice: 'drop', confidence: 0.87 }, branch_1: { choice: 'drop_1', confidence: 0.3 } } }; } };
+  const client = { systemOne: async ({ questions }) => { asked = questions; return { answers: { branch_0: { choice: 'drop', confidence: 0.87 }, branch_1: { choice: 'drop_pointed_dripstone', confidence: 0.3 } } }; } };
   const tossed = [];
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {},
     tossStack: async st => { tossed.push(st.name); items = items.filter(i => i !== st); } };
@@ -306,19 +306,19 @@ test('with the portal frame to be cast, the water bucket is said to be what turn
   let items = [{ name: 'water_bucket', count: 1, type: 1 }, { name: 'dirt', count: 20, type: 2 }, { name: 'bucket', count: 1, type: 3 }];
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 0 }, entity: { position: { x: 0, y: 64, z: 0 } }, tossStack: async () => {} };
   let offered;
-  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_1', confidence: 0.6 } } }; } } };
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...(questions.branch_1?.criteria || {}) }; return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_dirt', confidence: 0.6 } } }; } } };
   await makeRoom(bot, task, 'oak_planks', { goal: { portalMethod: { kind: 'cast' } } }).catch(() => {});
-  assert.match(offered.drop_0 || '', /turns each block of the portal frame being cast to obsidian/);
-  assert.match(offered.drop_2 || '', /a bucket for the lava of the portal frame/);
+  assert.match(offered.drop_water_bucket || '', /turns each block of the portal frame being cast to obsidian/);
+  assert.match(offered.drop_bucket || '', /a bucket for the lava of the portal frame/);
   // And how far the trip to water would be: mid-243-bd dropped its water bucket for four sticks with a river
   // seventy-two blocks off and it took the hour to make up for (note 630).
-  assert.match(offered.drop_0 || '', /a trip to water \(no water is known: none in view within 48 blocks/);
+  assert.match(offered.drop_water_bucket || '', /a trip to water \(no water is known: none in view within 48 blocks/);
   const exploration = require('../src/exploration'), was = exploration.biomeView;
   exploration.biomeView = () => ({ biome: 'forest', biomesNearby: [{ biome: 'river', distance: 72, direction: 'south-west', x: 0, z: 0, has: 'water, sand, clay and gravel; squid and salmon spawn' }] });
   try {
     items = [{ name: 'water_bucket', count: 1, type: 1 }, { name: 'dirt', count: 20, type: 2 }, { name: 'bucket', count: 1, type: 3 }];
     await makeRoom(bot, task, 'oak_planks', { goal: { portalMethod: { kind: 'cast' } } }).catch(() => {});
-    assert.match(offered.drop_0 || '', /a trip to water \(no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/);
+    assert.match(offered.drop_water_bucket || '', /a trip to water \(no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/);
   } finally { exploration.biomeView = was; }
 });
 
@@ -378,7 +378,7 @@ test('making room says the flint and steel lights the Nether portal on the way t
   add('flint_and_steel', 1); add('iron_pickaxe', 1); add('stone_pickaxe', 1);
   while (items.length < 36) add('white_wool', 1);
   let offered;
-  const client = { systemOne: async ({ questions }) => { offered = Object.values({ ...questions.branch_0.criteria, ...questions.branch_1.criteria }).join('\n'); return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_0', confidence: 0.6 } } }; } };
+  const client = { systemOne: async ({ questions }) => { offered = Object.values({ ...questions.branch_0.criteria, ...questions.branch_1.criteria }).join('\n'); return { answers: { branch_0: { choice: 'none', confidence: 0.6 }, branch_1: { choice: 'drop_coal', confidence: 0.6 } } }; } };
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
   const goal = { kind: 'win', step: { action: 'mine', block: 'iron_ore', drops: 'raw_iron', requires: { iron_pickaxe: 1 } } };
   await makeRoom(bot, { check() {}, opportunityClient: client }, 'stick', { goal });

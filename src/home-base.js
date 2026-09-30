@@ -823,6 +823,12 @@ const BIOME_REST_MS = 10 * 60000;
 // rest before the next ask gives the last answer's walk room to have begun
 // (or plainly failed) before a fresh one is asked for.
 const SEARCH_REST_MS = 15000;
+// A far walk (note 749): legs of FAR_LEG blocks one way, FAR_LEGS of them.
+const FAR_LEG = 128, FAR_LEGS = 3;
+function farPoint(bot, heading) {
+  const p = bot.entity.position, a = heading * Math.PI / 4;
+  return { x: Math.round(p.x + Math.cos(a) * FAR_LEG), z: Math.round(p.z + Math.sin(a) * FAR_LEG) };
+}
 async function searchForSheep(bot, task, goal, save, actions) {
   // A search last worked on over half an hour ago is a new search: one
   // carried from the first days' world said "searching for sheep for 1033
@@ -865,6 +871,14 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // Arrived where a flock was seen and none is in view (gatherWool looked):
   // it has moved on, and the place is not offered again.
   if (held?.seen && goal.sightings?.sheep) goal.sightings.sheep = goal.sightings.sheep.filter(s => Math.hypot(s.x - held.x, s.z - held.z) > 24);
+  // A far walk goes on the same way, leg after leg, until FAR_LEGS legs are
+  // walked or sheep come into view (gatherWool looks before each call), and
+  // is not asked about between its legs: it is one answer (note 749).
+  if (held?.far !== undefined && (held.legs || 1) < FAR_LEGS) {
+    const next = farPoint(bot, held.far);
+    search.toward = { ...next, far: held.far, legs: (held.legs || 1) + 1 }; save();
+    return;
+  }
   delete search.toward;
   // Resting from a walk that just failed: carry on with a plain search
   // instead of asking sheep_search again at once (note 747).
@@ -909,9 +923,38 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // decision audit, 2026-09-25).
   const tod = bot.time?.timeOfDay ?? 6000;
   const walk = d => { const s = Math.round(d / 4.3); return ` About ${s} seconds at a walk${tod >= DAY.DARK && tod < DAY.DAWN ? ', in the dark: mobs spawn along the way' : tod + s * 20 >= DAY.DARK && tod < DAY.DARK ? ', arriving after dark' : ''}.`; };
-  const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}${belowSays}` }]));
-  flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.${walk(s.distance)}${belowSays}` }; });
-  tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
+  // Each option's key names its thing (keys.js, note 749): a biome by its
+  // name (biomeView keeps the nearest patch of each), a flock by the number
+  // it was given when first offered. They were biome_0, seen_1: numbered
+  // afresh at every asking, so what had come of the jungle was said on the
+  // forest.
+  const K = require('./decisions/keys'), y = Math.round(bot.entity.position.y);
+  const ways = {};
+  const tree = {};
+  for (const b of nearby) { const key = `biome_${K.name(b.biome)}`; ways[key] = { biome: b }; tree[key] = { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}${belowSays}`, target: { x: Math.round(b.x), y, z: Math.round(b.z) } }; }
+  const flockIds = K.ids(goal, 'sheep_flock', flocks, { near: 24 });
+  for (const [i, s] of flocks.entries()) { const key = `seen_${flockIds[i]}`; ways[key] = { flock: s }; tree[key] = { description: `Walk back to where ${s.says}; sheep wander, but not far.${walk(s.distance)}${belowSays}`, target: { x: Math.round(s.x), y: Math.round(s.y ?? y), z: Math.round(s.z) } }; }
+  // The long walk one way (note 749): 25594 hopped between biomes 32 blocks
+  // apart for thirteen minutes, each hop ending about 25 blocks from where it
+  // began, none good Jev's likeliest at 52 of 67 askings; the biomes further
+  // off were never offered as a walk that keeps going. Each of the four ways,
+  // with the biomes and water that way and how often this search went far
+  // that way already.
+  if (!underground && !underwater) {
+    const { biomeRay, surfaceRay, headingFacts, HEADINGS } = exploration;
+    for (const i of [0, 2, 4, 6]) {
+      const h = HEADINGS[i], key = `far_${h}`, n = search.farWays?.[i] || 0;
+      ways[key] = { far: i };
+      tree[key] = { description: `Walk far ${h}: ${FAR_LEG} blocks and on, up to ${FAR_LEG * FAR_LEGS}, past the biomes near here, looking for sheep all the way and not asked again until the walk ends or sheep are seen. ${headingFacts(biomeRay(bot, i), surfaceRay(bot, i))}.${n ? ` Walked far ${h} ${n === 1 ? 'once' : `${n} times`} already in this search.` : ''}${walk(FAR_LEG * FAR_LEGS).replace('About', 'All of it about')}`, target: { ...farPoint(bot, i), y } };
+    }
+  }
+  // Underground, the way to any of these is up first (note 749): 25594 was
+  // asked sheep_search 24 times at y 0 to 6 from 11:49Z, every option saying
+  // the surface was about 67 blocks up, none good Jev's likeliest at 22 of
+  // them, and no option was the climb. It is offered on its own, with its
+  // cost; the walk on from here is then the search on the surface.
+  if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.` };
+  else tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
   if (webs.length >= 2 && stringWanted) {
     const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     const webDy = Math.round(nearWeb.y - bot.entity.position.y);
@@ -940,14 +983,23 @@ async function searchForSheep(bot, task, goal, save, actions) {
     await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
     return;
   }
-  const flock = /^seen_(\d+)$/.exec(pick || '') && flocks[Number(pick.slice(5))];
+  const way = ways[pick] || {};
+  if (way.far !== undefined) {
+    (search.farWays ||= {})[way.far] = (search.farWays[way.far] || 0) + 1;
+    search.toward = { ...farPoint(bot, way.far), far: way.far, legs: 1 }; save();
+    bot.chat?.(`No sheep about here. Walking far ${exploration.HEADINGS[way.far]} to look.`);
+    return;
+  }
+  const flock = way.flock;
   if (flock) {
     search.toward = { x: flock.x, y: flock.y, z: flock.z, seen: true }; save();
     bot.chat?.(`Back to the sheep I saw ${flock.distance} blocks ${flock.direction}.`);
     return;
   }
-  const chosen = /^biome_(\d+)$/.exec(pick || '') && nearby[Number(pick.slice(6))];
-  if (!chosen) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  const chosen = way.biome;
+  // explore_here, or the climb (explore's own surface trip comes first when
+  // the bot is below the surface, work.js explore).
+  if (!chosen) { if (pick === 'climb_first') bot.chat?.('No sheep down here. Climbing to the surface to look.'); await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   search.toward = { x: chosen.x, z: chosen.z, biome: chosen.biome }; save();
   bot.chat?.(`No sheep here. Trying the ${chosen.biome.replaceAll('_', ' ')} to the ${chosen.direction}.`);
 }
@@ -1100,17 +1152,21 @@ async function pickHomeSite(bot, task, goal, save, sites) {
   const client = task.opportunityClient;
   if (sites.length < 2) return sites[0];
   const here = bot.entity.position;
-  const tree = Object.fromEntries(sites.map((site, i) => {
+  // Each site keyed by the number it was given when first offered (keys.js,
+  // note 749).
+  const siteIds = require('./decisions/keys').ids(goal, 'home_site', sites.map(site => site.origin));
+  const siteKey = site => `site_${siteIds[sites.indexOf(site)]}`;
+  const tree = Object.fromEntries(sites.map(site => {
     const levelling = site.work.digs.length + site.work.fills.length;
     const distance = Math.round(Math.hypot(site.origin.x - here.x, site.origin.z - here.z));
-    return [`site_${i}`, { description: `A site ${distance} blocks away${site.anchor?.kind && site.anchor.kind !== 'here' ? ` near the remembered ${site.anchor.kind}` : ''}: ${levelling ? `${levelling} blocks to dig or fill to level it` : 'level already'}, ${site.pourWater ? 'no water beside it (a bucket is poured into a hole for the plot)' : 'beside natural water for the plot and the pond'}.` }];
+    return [siteKey(site), { target: { x: site.origin.x, y: site.origin.y ?? Math.round(here.y), z: site.origin.z }, description: `A site ${distance} blocks away${site.anchor?.kind && site.anchor.kind !== 'here' ? ` near the remembered ${site.anchor.kind}` : ''}: ${levelling ? `${levelling} blocks to dig or fill to level it` : 'level already'}, ${site.pourWater ? 'no water beside it (a bucket is poured into a hole for the plot)' : 'beside natural water for the plot and the pond'}.` }];
   }));
   try {
     const { decide } = require('./decisions');
     const decision = await decide('home_site', { client, bot, task, goal, save, tree, state: { position: plain(here.floored()), sites: sites.length, timeOfDay: bot.time?.timeOfDay,
       threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() } });
     if (decision.stale) return pickHomeSite(bot, task, goal, save, sites);
-    return sites[Number(/^site_(\d+)$/.exec(decision.path.at(-1) || '')?.[1] ?? 0)] || sites[0];
+    return sites.find(site => siteKey(site) === decision.path.at(-1)) || sites[0];
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return sites[0]; }
 }
 

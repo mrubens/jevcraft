@@ -274,8 +274,12 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
   const sightings = require('./sightings');
   const herds = ['cow', 'sheep', 'rabbit'].flatMap(kind => sightings.sighted(bot, goal, kind).filter(s => s.distance > 32 && s.distance <= 192).map(s => ({ kind, s })))
     .sort((a, b) => a.s.distance - b.s.distance).slice(0, 3);
+  // Each herd keyed by the number it was given when first offered (keys.js,
+  // note 749), not its place in this list: the ledger's tries and the least
+  // bad go by it.
+  const herdIds = require('./decisions/keys').ids(goal, 'seen_food', herds.map(h => h.s), { near: 24 });
   herds.forEach(({ kind, s }, i) => {
-    choices[`seen_food_${i}`] = { description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
+    choices[`seen_food_${herdIds[i]}`] = { target: { x: Math.round(s.x), y: Math.round(s.y ?? bot.entity.position.y), z: Math.round(s.z) }, description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
       run: async () => {
         goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
         const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);

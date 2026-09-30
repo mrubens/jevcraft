@@ -71,28 +71,38 @@ const TIMED = {
   // (top_up_cook) is a stand, not a walk, and is not timed here.
   kit_food: /^(top_up_food|top_up_food_near)$/,
 };
-// An errand is the same errand whichever question offers it: the fetch
-// chosen at upkeep is carried on by fortress_leg's or the approach's
-// fetch_stems (note 703). go_back is fortress_visit's and leave_nether's
-// trip home for food (or rods): the same errand as return_for_food, and
-// gated the same way (note 734: 25597 chose fortress_visit's go_back at
-// fourteen health with no food, and a find_fortress stall's stillness_detour
-// picked cross_toward instead a moment later with nothing said of the trip
-// under way; it never returned to the portal and died).
-// blocks_then_cross joined the list at note 745: 25593 chose return_for_blocks
-// seven times running at fortress_leg, each undone within seconds because
-// fortress_leg was its own question (gate() below, `q === i.q`) and was
-// asked wide open there, not held to the errand: "in, then out" in four
-// seconds, with "Leaving the fortress" said each time nothing had been left.
-// back_to_fortress joined at note 745's third item: 25581 said "Walked what
-// I can reach of this fortress" having walked none of it (stuck atop its
-// own pillar, fixed at the source in mob-hunt.js onFortressFloor below),
-// and in the same second answered keep_searching (a leave), back_to_fortress
-// and leg_east, none of the three given even a breath to be carried out.
-// back_to_fortress is not a supply run, but the same unconditional q===i.q
-// bypass tore it down exactly as return_for_blocks was torn down in item 1,
-// so it is held the same way.
-const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks|blocks_then_cross|back_to_fortress|go_back)$/;
+// A trip is an answer that goes somewhere: a walk to a target, or an errand
+// (note 749, replacing the ERRANDS list of notes 703, 734 and 745, which
+// grew a name each time an errand was found undone: fetch_stems,
+// return_for_blocks, return_for_food, restock_food, restock_blocks,
+// blocks_then_cross, back_to_fortress, go_back). Trip-ness is the option's
+// own: its node has a target it walks to, or its question's catalogue says
+// where it goes (`trip`, for an errand whose place is found on the way: the
+// stems, the portal, netherrack to dig). Every trip answered to a question
+// about the plan is held until it arrives, is done, fails, the dimension
+// changes, a death, health falls a blow's worth, ten minutes pass, or a walk
+// brings nothing for three: its own question asked again offers only it, and
+// the other plan questions only what carries it on. The check-in of
+// 2026-09-30 11:02Z (problem 3): 25590's leave_nether restock_food turned to
+// go_back in nine seconds, and of the last 120 loop verdicts about 12 were
+// flips (find_fortress and restock_blocks twice, mine and tunnel, cross_toward
+// and find_fortress).
+// The same trip is the same whichever question offers it: the fetch chosen at
+// upkeep is carried on by fortress_leg's or the approach's fetch_stems (note
+// 703); go_back is fortress_visit's and leave_nether's trip home (note 734).
+const PLAN = () => new Set([...GATED, ...AT_A_CHANGE, 'upkeep']);
+// A wait is not a trip, whatever it names as its target: portal_way's
+// wait_rest carries the portal as its target and goes nowhere (its catalogue
+// says `wait`, as do the answers that are waits by what they are,
+// decisions/index.js WAIT_ANSWERS).
+function tripOf(q, key, node = null) {
+  let o = null;
+  try { o = require('./decisions').question(q).options?.find(x => x.key === key || (x.pattern && new RegExp(`^(?:${x.pattern})$`).test(key))) || null; } catch (_) { o = null; }
+  if (o?.trip) return o.trip;
+  if (o?.wait) return null;
+  try { if (require('./decisions').WAIT_ANSWERS.has(key)) return null; } catch (_) { /* no catalogue */ }
+  return P(node?.target) ? 'its target' : null;
+}
 // The questions about the plan that are not asked to replace an intention.
 const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip', 'kit_food']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
@@ -155,7 +165,7 @@ const words = s => String(s || '').replaceAll('_', ' ');
 const ago = ms => { const s = Math.max(1, Math.round(ms / 1000)); return s < 90 ? `${s} second${s === 1 ? '' : 's'}` : `${Math.round(s / 60)} minutes`; };
 const dim = bot => String(bot?.game?.dimension || '').replace(/^minecraft:/, '');
 
-const committing = (q, choice) => !!TIMED[q]?.test(String(choice || ''));
+const committing = (q, choice, node = null) => !!TIMED[q]?.test(String(choice || '')) || (PLAN().has(q) && !!tripOf(q, String(choice || ''), node));
 const wayOf = (q, i) => i ? WAYS.find(w => w.q === q && w.of.test(`${i.q}/${i.choice}`)) || null : null;
 
 // A trip back through the portal is a walk to it: the nearest portal known in
@@ -337,9 +347,12 @@ const endedSays = (e, now = Date.now()) => e && now - e.endedAt < 2 * 60000 ? `$
 // Whether an option of question q serves the intention i.
 function serves(i, q, key, node, way = wayOf(q, i)) {
   if (KEEP.test(key) || key === 'none_good') return true;
+  // A trip's own question asked again offers only it (note 749), even where
+  // the question is otherwise the means of whatever holds (nether_gather).
+  if (q === i.q && i.trip) return key === i.choice;
   if (way) return !way.drops.test(key);
   if (q === i.q) return key === i.choice;
-  if (key === i.choice && ERRANDS.test(key)) return true;
+  if (key === i.choice && i.trip && !(P(node?.target) && i.target && dist(P(node.target), i.target) > NEAR)) return true;
   const t = P(node?.target);
   return !!(t && i.target && dist(t, i.target) <= NEAR);
 }
@@ -356,11 +369,11 @@ function gate(bot, goal, q, tree, { now = Date.now() } = {}) {
   const out = { tree, underWay: null, withheld: [], ended };
   if (!i || !(GATED.has(q) || AT_A_CHANGE.has(q))) return out;
   out.underWay = says(i, now);
-  // An errand held (fetch_stems, return_for_food, restock_food and the
-  // like) is gated at rung_progress and stillness_detour too, the same as
+  // A trip held (note 749: an answer that goes somewhere, tripOf) is gated
+  // at rung_progress and stillness_detour too, the same as
   // upkeep's fetch already is (note 703): otherwise asked wide open, they
   // could drop it with nothing said (note 726).
-  const errandGate = ERRAND_GATED.has(q) && ERRANDS.test(i.choice);
+  const errandGate = ERRAND_GATED.has(q) && !!i.trip;
   // Its own question, asked again, ordinarily goes unfiltered: what holds
   // is one of its own answers, so the full menu is put to Jev afresh. Not
   // while the intention is an errand (note 745): 25593's return_for_blocks
@@ -371,7 +384,7 @@ function gate(bot, goal, q, tree, { now = Date.now() } = {}) {
   // errand never got the trip it started. An errand held to its own
   // question is filtered the same as everywhere else: only itself, its
   // ways, and the safe answers (KEEP, none_good) stay on offer.
-  const sameQ = q === i.q && !ERRANDS.test(i.choice);
+  const sameQ = q === i.q && !i.trip;
   if (!(GATED.has(q) || errandGate) || sameQ) return out;
   const way = wayOf(q, i);
   const kept = Object.fromEntries(Object.entries(tree).filter(([k, n]) => serves(i, q, k, n, way)));
@@ -395,8 +408,9 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   const choice = String(pathKeys.at(-1)), path = pathKeys.join('/');
   const i = holding(bot, goal, now);
   if (i && DROP.test(choice)) { end(goal, `dropped: Jev chose ${words(choice)} (${words(q)})`, now); return null; }
-  if (i && q !== i.q && (wayOf(q, i) || !committing(q, choice) || (choice === i.choice && ERRANDS.test(choice)) || (P(target) && i.target && dist(P(target), i.target) <= NEAR))) {
-    if (committing(q, choice)) {
+  const node = P(target) ? { target: P(target) } : null;
+  if (i && q !== i.q && (wayOf(q, i) || !committing(q, choice, node) || (choice === i.choice && i.trip) || (P(target) && i.target && dist(P(target), i.target) <= NEAR))) {
+    if (committing(q, choice, node)) {
       i.way = `${q}/${choice}`; i.wayAt = now;
       // A sub-need of the intention (the wood its trip needs), said as part
       // of it, not asked as a new plan (note 714): 25583's return_for_blocks
@@ -411,7 +425,7 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
     }
     return i;
   }
-  if (!committing(q, choice) || !chosen) return i;
+  if (!committing(q, choice, node) || !chosen) return i;
   if (i && i.q === q && i.path === path) { i.health = bot?.health ?? i.health; return i; }
   if (i) end(goal, `replaced: Jev chose ${words(choice)} (${words(q)})`, now);
   // A trip back through the portal in the Nether goes to the portal, not to
@@ -420,7 +434,8 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   // floor, with the portal at (3, 42, 8) (note 705).
   const viaPortal = THROUGH_PORTAL.test(choice) && /nether/.test(dim(bot)) ? portalBack(bot, goal) : null;
   const to = viaPortal || P(target) || (THROUGH_PORTAL.test(choice) ? portalBack(bot, goal) : null);
-  const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null, ...(Number.isFinite(bot?.food) ? { food: bot.food } : {}) };
+  const trip = tripOf(q, choice, node) || (viaPortal ? 'the portal' : null);
+  const next = { q, choice, path, at: now, ...(to ? { target: to } : {}), ...(trip ? { trip } : {}), dimension: dim(bot) || null, health: Number.isFinite(bot?.health) ? bot.health : null, ...(Number.isFinite(bot?.food) ? { food: bot.food } : {}) };
   goal.intention = next;
   yieldLook(bot, goal, next, now);
   const line = startSays(bot, goal, next, state);
@@ -450,4 +465,4 @@ function yieldWatch(bot, goal, now = Date.now()) {
   try { return require('./stillness').raiseFor(bot, goal, why, now, { escalated: { from: 'intention', to: e.q, says: why } }); } catch (_) { return null; }
 }
 
-module.exports = { ERRANDS, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, startSays, TIMED, GATED, AT_A_CHANGE, ERRAND_GATED, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };
+module.exports = { tripOf, PLAN, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, startSays, TIMED, GATED, AT_A_CHANGE, ERRAND_GATED, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };

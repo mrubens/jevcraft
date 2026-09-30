@@ -566,7 +566,9 @@ function jevStub(picks) {
   // Whether the visit happens now (fortress_visit, note 638) is answered go_in: these tests are about what comes after it.
   return { asked, visits, systemOne: async ({ kind, state, questions }) => {
     if (questions.branch_0.criteria.go_in) { visits.push({ state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: 'go_in', confidence: 0.9 } } }; }
-    asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } };
+    // A pick ending in * is the first key it begins (keys that name a place, note 749).
+    const p = picks.shift(), keys = Object.keys(questions.branch_0.criteria);
+    asked.push({ kind, state, options: questions.branch_0.criteria }); return { answers: { branch_0: { choice: typeof p === 'string' && p.endsWith('*') ? keys.find(k => k.startsWith(p.slice(0, -1))) || keys[0] : p, confidence: 0.9 } } };
   } };
 }
 
@@ -1125,7 +1127,7 @@ test('a spawner behind a wall is not known; seen through an opening, waiting by 
   ({ options, state } = client.asked[1]);
   assert.match(state.fortressInView.map.spawnersSeen[0], /^\(20, 65, -4\), \d+ blocks off, about \d+ steps along the floors$/);
   assert.match(options.wait_at_spawner, /^Wait by the spawner seen at \(20, 65, -4\), \d+ blocks off, for 3 minutes: .*Floors seen join it to where the bot stands, about \d+ steps\./);
-  assert.equal(options.go_to_spawner, undefined, 'the spawner wait_at_spawner offers is not offered twice (note 686)');
+  assert.ok(!Object.keys(options).some(k => /^go_to_spawner/.test(k)), 'the spawner wait_at_spawner offers is not offered twice (note 686)');
   // Going back into it from here walks the same floors: said plainly, with the spawner a way of its own (note 686).
   const { fortressInView } = require('../src/mob-hunt');
   const ids = ['nether_bricks'].map(n => registry.blocksByName[n].id);
@@ -1152,11 +1154,11 @@ test('on the fortress\'s floor, floors seen across a gap of two are Jev\'s to cr
   const goal = { fortressSearch: { axis: 1, legs: 15 } };
   const walks = [], tunnels = [];
   const refused = g => g.x >= 12 ? 'No route from here to (13, 65, 0) (noPath): the way passes along a drop that would kill' : null;
-  const client = jevStub(['unwalked_1', 'cross_level']);
+  const client = jevStub(['unwalked_*', 'cross_level']);
   const actions = { client, dig: async () => {}, navigate: walker(bot, walks, refused), tunnel: async (...a) => tunnels.push(a) };
   for (let i = 0; i < 20 && !client.asked.length; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   let { options } = client.asked[0];
-  assert.match(options.unwalked_1, /^Go to the fortress's unwalked floors seen 3 blocks off, at \(12, 65, -?\d\): 87 floors seen there, .*no floor seen joins them to where the bot stands: the way across along the ground is 3 cells from \(9, 65, -?\d\) to \(12, 65, -?\d\): 2 of open air with no floor, to span, 1 of floor, about \d+ seconds\./);
+  assert.match(options[Object.keys(options).find(k => /^unwalked_/.test(k))], /^Go to the fortress's unwalked floors seen 3 blocks off, at \(12, 65, -?\d\): 87 floors seen there, .*no floor seen joins them to where the bot stands: the way across along the ground is 3 cells from \(9, 65, -?\d\) to \(12, 65, -?\d\): 2 of open air with no floor, to span, 1 of floor, about \d+ seconds\./);
   // Chosen: the walk is on foot; it finds no way, and the way there is asked, the span among the ways.
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 2); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
@@ -1194,12 +1196,12 @@ test('on a fortress floor cut off by lava lying on its corridor, the way across 
   const goal = { fortressSearch: { axis: 1, legs: 15 } };
   const walks = [], tunnels = [];
   const refused = g => g.x >= 12 ? 'No path to the goal!' : null;
-  const client = jevStub(['unwalked_1', 'cover_lava']);
+  const client = jevStub(['unwalked_*', 'cover_lava']);
   const actions = { client, dig: async () => {}, navigate: walker(bot, walks, refused), tunnel: async (...a) => tunnels.push(a) };
   for (let i = 0; i < 20 && !client.asked.length; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   let { options } = client.asked[0];
   assert(walks.every(w => w.onFoot && w.x <= 11), `walked on foot to the lava's edge only: ${JSON.stringify(walks)}`);
-  assert.match(options.unwalked_1, /no floor seen joins them to where the bot stands: the way across along the ground is \d+ cells from \(11, 65, -?\d\) to \(18, 65, -?\d\): 6 of lava lying on the floor, to cover \(a block each, walked a block up\), 1 of floor, about \d+ seconds; round the lava instead, \d+ cells from .* \d+ of open air with no floor, to span, .*about \d+ seconds\./);
+  assert.match(options[Object.keys(options).find(k => /^unwalked_/.test(k))], /no floor seen joins them to where the bot stands: the way across along the ground is \d+ cells from \(11, 65, -?\d\) to \(18, 65, -?\d\): 6 of lava lying on the floor, to cover \(a block each, walked a block up\), 1 of floor, about \d+ seconds; round the lava instead, \d+ cells from .* \d+ of open air with no floor, to span, .*about \d+ seconds\./);
   // Chosen: the walk on foot finds no way, and the ways across are asked, covering the lava among them.
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 2); assert.equal(goal.decisions.at(-1).id, 'fortress_approach');

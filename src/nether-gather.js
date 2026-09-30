@@ -479,7 +479,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   const refused = require('./bridging').spanRefused(bot);
   const places = knownPlaces(bot, goal, names);
   const placesSaid = [];
-  for (const [i, place] of places.entries()) {
+  const placeIds = require('./decisions/keys').ids(goal, 'gather_place', places.map(p => p.at), { near: 8, base: 1 });
+  for (const [pi, place] of places.entries()) {
+    const placeId = placeIds[pi];
     const way = await wayTo(bot, task, place.at);
     const off = Math.round(flat(place.at, here)), dy = Math.round(place.at.y - here.y);
     const where = place.n ? `the ${words(place.name)}s` : place.forest;
@@ -496,7 +498,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
       const endsAt = method === 'walk' ? (way.walk.found ? null : way.walk.end) : method === 'cross' ? way.cross.now.end : null;
       const same = endsAt ? sameEnd(goal, wayEndKey(place.at, method), e => nearEnd(e, endsAt)) : null;
       if (same) { notOffered.push(sameEndSays(`${WAY_SAYS[method]} to ${where} at ${at3(place.at)}`, same)); continue; }
-      const key = `${method}_to_${i + 1}`;
+      // Keyed by the way and the number the place was given when first
+      // offered (keys.js, note 749), not by its place among the nearest three.
+      const key = `${method}_to_${placeId}`;
       keys.push(key);
       const how = method === 'walk' ? (way.walk.found ? 'on foot, by the pathfinder\'s route' : `on foot as far as the pathfinder goes (${at3(way.walk.end)}, ${way.walk.nearer} blocks nearer), and the way on asked from there`)
         : method === 'cross' ? `straight across at this height as far as the blocks carried take it (${way.cross.now.cells} cells, ${Math.round(way.cross.now.gain)} blocks nearer)`

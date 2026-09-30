@@ -188,7 +188,9 @@ test('the whole flow: sighted, visited, the walk failing said on the next asking
     asked.push({ q, keys, state, options: questions.branch_0.criteria });
     const order = { fortress_visit: ['go_in'], fortress_approach: ['walk_route', 'fetch_stems', 'cross_level'], fortress_leg: ['wait_at_spawner', 'go_to_spawner', 'stay_in_fortress'], other: [] }[q];
     const tries = asked.filter(a => a.q === q && a.keys.includes('walk_route')).length;
-    let choice = order.find(k => keys.includes(k) && !(k === 'walk_route' && tries > 1)) || keys.find(k => k !== 'none_good');
+    // A spawner's key names where it is (note 749): go_to_spawner_x_y_z.
+    const has = k => k === 'go_to_spawner' ? keys.find(x => x.startsWith('go_to_spawner_')) : keys.includes(k) ? k : null;
+    let choice = order.map(k => (k === 'walk_route' && tries > 1) ? null : has(k)).find(Boolean) || keys.find(k => k !== 'none_good');
     return { answers: { branch_0: { choice, confidence: 0.9, probabilities: { [choice]: 0.9 } } } };
   } };
   const walks = [];

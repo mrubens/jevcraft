@@ -33,7 +33,10 @@ async function decideTree(client, { state, tree, isFresh = () => true, signal, r
   }
   const latencyMs = Math.round(performance.now() - started);
   if (signal?.aborted) throw signal.reason || new Error('Decision cancelled');
-  if (!isFresh()) return { stale: true, latencyMs, usage: response.usage };
+  // Stale: the facts it was built from changed while it was out. Jev's own
+  // answer at the root goes back with it, for decide() to keep where it is
+  // an answer that keeps on with what is under way (note 749).
+  if (!isFresh()) return { stale: true, latencyMs, usage: response.usage, staleAnswer: response.answers?.[branches.get(tree)] || null };
   // Jev's own answer at any level of the tree, for a walk down a branch Jev
   // answered though the path did not go that way (none_good, decide()).
   const answerAt = children => { const a = response.answers?.[branches.get(children)]; return a && Object.hasOwn(children, a.choice) ? a.choice : null; };

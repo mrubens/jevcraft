@@ -444,7 +444,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     const lately = tried.summary(goal, { work: `step:rung:${back.phase}`, now });
     const aside = goal.rungAside?.phase === back.phase ? goal.rungAside : null;
     const from = aside?.where ? ` from (${aside.where.x}, ${aside.where.y}, ${aside.where.z}), ${Math.round(Math.hypot(aside.where.x + 0.5 - bot.entity.position.x, aside.where.z + 0.5 - bot.entity.position.z))} blocks from here` : '';
-    answers[`take_up_${back.phase}`] = { description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${agoSays(now - back.at)} ago${from} (${back.why})${aside?.why ? `, for this: ${aside.why}` : ''}; it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
+    answers[`take_up_${back.phase}`] = { takeBack: back.phase, description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${agoSays(now - back.at)} ago${from} (${back.why})${aside?.why ? `, for this: ${aside.why}` : ''}; it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
       run: async () => {
         require('./game-progress').takeBackRung(goal, back.phase); save();
         bot.chat?.(`Back to the ${words(back.phase)}.`);
@@ -537,8 +537,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     const adviser = recoveryAdviser || createRecoveryAdviser(bot, client);
     try { observed = await adviser.observe(bot, task, goal, adviser.actions); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-    for (const [i, option] of (observed?.options || []).slice(0, 6).entries()) {
-      answers[`recover_${i + 1}`] = { description: `${require('./recovery-adviser').describeOption(option)} A bounded move the code checked from here; the work is taken up again after it.`,
+    // Each move keyed by what it is, and a move to a place by the number the
+    // place was given when first offered (keys.js, note 749), not by its
+    // place in the adviser's list.
+    const K = require('./decisions/keys');
+    for (const option of (observed?.options || []).slice(0, 6)) {
+      const what = `recover_${K.name([option.kind, option.item].filter(Boolean).join('_'))}`;
+      answers[option.position ? `${what}_${K.id(goal, what, option.position, { base: 1 })}` : what] = { ...(option.position ? { target: { x: option.position.x, y: option.position.y, z: option.position.z } } : {}), description: `${require('./recovery-adviser').describeOption(option)} A bounded move the code checked from here; the work is taken up again after it.`,
         run: async () => { adviser.adopt(goal, save, option, observed.context); } };
     }
   }
@@ -4366,8 +4371,12 @@ function siteFailedSays(frame, placed) {
   return ` The frame at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten cast, has failed at its site ${times(f.n)} since the last block went in: ${whys || 'reasons not kept'}.${body}`;
 }
 const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
-const methodKey = (method, ruins) => method?.kind === 'build' ? 'build_new' : method?.kind === 'cast' ? (method.near ? 'cast_at_lava' : 'cast_frame')
-  : method?.kind === 'ruin' ? (i => i < 0 ? null : `ruin_${i}`)(ruins.findIndex(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) : null;
+const methodKey = (method, ruins, goal = null) => method?.kind === 'build' ? 'build_new' : method?.kind === 'cast' ? (method.near ? 'cast_at_lava' : 'cast_frame')
+  : method?.kind === 'ruin' ? (k => k ? ruinKey(goal, k) : null)(ruins.find(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) : null;
+// A ruin's key is the number it was given when first offered (keys.js, note
+// 749), not its place in the list of ruins remembered.
+const ruinKey = (goal, k) => `ruin_${require('./decisions/keys').id(goal, 'ruin', k.landmark, { near: 8 })}`;
+const ruinOf = (key, ruins, goal) => ruins.find(k => ruinKey(goal, k) === key) || null;
 // A ruined portal as an option, with what finishing it takes. The missing
 // blocks are obsidian too, said as such: mid-218-a chose a ruin with three
 // of ten standing, told they were "placed like any block", and spent its
@@ -4476,7 +4485,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   }
   const ruins = knownLandmarks(bot, goal, 'ruined_portal', 512).filter(k => !k.landmark.noFrame).slice(0, 3);
   // The ruin held stays on offer to be kept, however many lie nearer.
-  if (method?.kind === 'ruin' && methodKey(method, ruins) === null) {
+  if (method?.kind === 'ruin' && methodKey(method, ruins, goal) === null) {
     const held = knownLandmarks(bot, goal, 'ruined_portal', 4096).find(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z);
     if (held) ruins.push(held);
   }
@@ -4500,7 +4509,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const madeAgo = made ? Math.max(1, Math.round((Date.now() - made.chosenAt) / 1000)) : 0;
   const madeSays = made ? ` Asked again because the buckets chosen ${madeAgo} second${madeAgo === 1 ? '' : 's'} ago are made: ${made.carried} carried now, against ${made.before} when they were chosen.` : '';
   const facts = portalFacts(bot, goal, ruins, lava) + madeSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
-  const current = due ? methodKey(method, ruins) : null;
+  const current = due ? methodKey(method, ruins, goal) : null;
   // Trips for lava are measured from the frame, where each one starts and
   // ends, not from the bot: mid-244-v, standing at its lava with the frame
   // 122 blocks up, was told five seconds a trip, and was never offered the
@@ -4650,15 +4659,15 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // Where the walk to a ruin gives out, the staircase toward it: said
   // while it rests (tunneling.js restingSays, note 500).
   const { restingSays } = require('./tunneling');
-  ruins.forEach((k, i) => {
+  ruins.forEach(k => {
     const rest = restingSays(goal, new Vec3(k.landmark.x, k.landmark.y ?? bot.entity.position.y, k.landmark.z), bot.entity.position);
-    tree[`ruin_${i}`] = { description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + (rest ? ` Where the walk gives out, ${rest}.` : '') + facts };
+    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(bot.entity.position.y), z: k.landmark.z }, description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + (rest ? ` Where the walk gives out, ${rest}.` : '') + facts };
   });
   // Asked again: the way held says its minutes and what they made; the
   // others say what becomes of a frame begun.
   if (current) {
     for (const [key, node] of Object.entries(tree)) {
-      if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruins[Number(key.slice(5))] : null);
+      if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruinOf(key, ruins, goal) : null);
       else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
   }
@@ -4716,7 +4725,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     method.intoCave = { ...cave }; method.reasked = (method.reasked || 0) + 1; delete method.nearAsked;
     save(); return false;
   }
-  const ruin = pick.startsWith('ruin_') ? ruins[Number(pick.slice(5))] : null;
+  const ruin = pick.startsWith('ruin_') ? ruinOf(pick, ruins, goal) : null;
   const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_here' ? { kind: 'cast', here: true } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
     : pick === 'other_lava' ? { kind: 'cast', near: { ...otherLava.at } }
     : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };

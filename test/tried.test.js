@@ -385,14 +385,14 @@ test('mid-244-ad-nether-3: the pearl step failing every two seconds with nothing
   const bot = netherBot();
   const goal = { kind: 'win', rungTime: { phase: 'obtain_ender_pearls' }, gameProgress: { phase: 'obtain_ender_pearls' },
     step: { action: 'persist', attempt: 1, retrying: 'warped_pearls' }, lastStruggleStep: { action: 'warped_pearls', phase: 'obtain_ender_pearls', item: 'ender_pearl', count: 16 } };
-  const recorded = ['differently', 'recover_5', 'recover_4', 'recover_6', 'recover_3', 'differently', 'recover_1', 'recover_2'];
+  const recorded = ['differently', 'recover_relocate_5', 'recover_relocate_4', 'recover_relocate_6', 'recover_relocate_3', 'differently', 'recover_relocate_1', 'recover_relocate_2'];
   let asks = 0;
   const client = { systemOne: async ({ questions }) => {
     asks++;
     const keys = Object.keys(questions.branch_0.criteria);
     return { answers: { branch_0: { choice: recorded.find(k => keys.includes(k)) || keys[0], confidence: 0.6 } } };
   } };
-  const tree = () => Object.fromEntries(['differently', 'recover_1', 'recover_2', 'recover_3', 'recover_4', 'recover_5', 'recover_6'].map(k => [k, { description: `${k}: a way on from the stall.` }]));
+  const tree = () => Object.fromEntries(['differently', 'recover_relocate_1', 'recover_relocate_2', 'recover_relocate_3', 'recover_relocate_4', 'recover_relocate_5', 'recover_relocate_6'].map(k => [k, { description: `${k}: a way on from the stall.` }]));
   let escalated = null, n = 0;
   for (; n < 30 && !escalated; n++) {
     try {

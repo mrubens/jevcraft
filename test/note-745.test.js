@@ -51,11 +51,14 @@ const portal = { x: 5, y: 50, z: 13 };
 const fortress = { x: -136, y: 69, z: 157 };
 const netherBot = (at) => ({ game: { dimension: 'the_nether' }, entity: { position: at }, health: 20, food: 19 });
 
-test('blocks_then_cross joins the held errands, the existing ones stay (note 745)', () => {
-  assert(intention.ERRANDS.test('blocks_then_cross'));
-  for (const k of ['fetch_stems', 'return_for_blocks', 'return_for_food', 'restock_food', 'restock_blocks', 'go_back']) {
-    assert(intention.ERRANDS.test(k), `${k} should still be an errand`);
+test('blocks_then_cross is a held trip, and the errands before it stay trips: each option says so itself (notes 745, 749)', () => {
+  // Note 749: no list of errand names; each option's catalogue entry says where its trip goes.
+  assert(intention.tripOf('fortress_leg', 'blocks_then_cross'));
+  for (const [q, k] of [['fortress_leg', 'fetch_stems'], ['fortress_leg', 'return_for_blocks'], ['nether_food_kit', 'return_for_food'], ['leave_nether', 'restock_food'], ['fortress_leg', 'restock_blocks'], ['leave_nether', 'go_back'], ['fortress_visit', 'go_back']]) {
+    assert(intention.tripOf(q, k), `${q}/${k} should still be a trip`);
   }
+  assert.equal(intention.tripOf('fortress_leg', 'stay_in_fortress'), null, 'a stand is not a trip');
+  assert.equal(intention.tripOf('nether_gather', 'leg_east', { target: { x: 1, y: 2, z: 3 } }), 'its target', 'an option with a target it walks to is a trip');
 });
 
 // The exact shape of the bug: fortress_leg's own question, asked again
@@ -90,16 +93,24 @@ test('fortress_approach re-asked while blocks_then_cross holds keeps only the er
   assert.deepEqual(g.withheld.sort(), ['cross_level', 'tunnel']);
 });
 
-test('a non-errand intention at its own question still goes unfiltered (no regression, note 745)', () => {
+test('an intention that is not a trip at its own question still goes unfiltered (no regression, note 745); one with a target it walks to is a trip and holds (note 749)', () => {
   const bot = netherBot(new Vec3(17, 57, 96));
   const goal = {};
-  intention.after(bot, goal, 'fortress_leg', ['leg_east'], { target: { x: 200, y: 57, z: 96 } });
+  // A leg as fortress_leg builds it: a heading, no target.
+  intention.after(bot, goal, 'fortress_leg', ['leg_east'], {});
   assert.equal(goal.intention.choice, 'leg_east');
+  assert.equal(goal.intention.trip, undefined);
   const tree = { leg_east: opt('Go east.'), leg_west: opt('Go west.'), none_good: opt('None good.') };
   const g = intention.gate(bot, goal, 'fortress_leg', tree);
-  // leg_east is a walk, not an errand: the whole menu still goes to Jev.
   assert.deepEqual(Object.keys(g.tree).sort(), ['leg_east', 'leg_west', 'none_good']);
   assert.equal(g.withheld.length, 0);
+  // Given a target it walks to, the same answer is a trip: held at its own question until it arrives or fails.
+  const goal2 = {};
+  intention.after(bot, goal2, 'fortress_leg', ['leg_east'], { target: { x: 200, y: 57, z: 96 } });
+  assert.equal(goal2.intention.trip, 'its target');
+  const g2 = intention.gate(bot, goal2, 'fortress_leg', tree);
+  assert.deepEqual(Object.keys(g2.tree).sort(), ['leg_east', 'none_good']);
+  assert.deepEqual(g2.withheld, ['leg_west']);
 });
 
 // Item 3's own-second flip: keep_searching (a leave, correctly not held),
@@ -107,7 +118,7 @@ test('a non-errand intention at its own question still goes unfiltered (no regre
 // carried out. back_to_fortress now holds against fortress_leg's own
 // unfiltered re-ask the same way return_for_blocks does.
 test('back_to_fortress re-asked at its own question keeps only itself (note 745 item 3)', () => {
-  assert(intention.ERRANDS.test('back_to_fortress'));
+  assert(intention.tripOf('fortress_leg', 'back_to_fortress'));
   const bot = netherBot(new Vec3(343, 66, -254));
   const goal = {};
   intention.after(bot, goal, 'fortress_leg', ['back_to_fortress'], { target: fortress });

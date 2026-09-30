@@ -109,7 +109,9 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
       const destination = new goals.GoalBlock(p.x, p.y, p.z);
       const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 450);
       if (route.status !== 'success' || !route.path.every(surface.allowed)) continue;
-      tree[`walk_${Object.keys(tree).length}`] = { description: { action: 'Walk this surveyed surface route toward the Eye-indicated stronghold',
+      // Keyed by the number its end was given when first offered (keys.js,
+      // note 749).
+      tree[`walk_${require('./decisions/keys').id(goal, 'stronghold_walk', p)}`] = { target: { x: p.x, y: p.y, z: p.z }, description: { action: 'Walk this surveyed surface route toward the Eye-indicated stronghold',
         destination: { ...p }, remainingDistanceToEstimatedTarget: horizontal(p, target), previousVisits: search.visited[key(p)] || 0 },
       run: async () => {
         if (!dryStanding(bot, p) || !safeFromHostiles(bot, p)) throw new Error('Stronghold waypoint changed before execution');

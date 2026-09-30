@@ -30,7 +30,9 @@ test('the 25585 storm replayed: 44 asks of survival_priority in 16 seconds, seal
   // Every ask the rule lets through has new facts, or its wait has passed.
   const heldSet = new Set(held);
   const through = asks.filter(a => !heldSet.has(a));
-  for (let i = 1; i < through.length; i++) assert.ok(through[i].digest !== through[i - 1].digest || through[i].t - through[i - 1].t >= 10000, `ask ${i} let through with nothing new`);
+  // (Note 749: the facts compared are the options and the kinds of mob that threaten, so an ask let through within
+  // its wait with the same of those is one the bot moved, or whose carried things or health band changed, before.)
+  for (let i = 1; i < through.length; i++) assert.ok(through[i].digest !== through[i - 1].digest || unchanged.changed(through[i - 1].mark, through[i].mark) || through[i].t - through[i - 1].t >= 10000, `ask ${i} let through with nothing new`);
 });
 
 test('asked live with the recorded facts: held for the stated wait, then asked with "chosen N seconds ago and changed nothing" said', async () => {
@@ -104,7 +106,7 @@ test('a reflex stops a hold as it stops a question out', async () => {
   assert.equal(bot._turn, null, 'the turn given back');
 });
 
-test('the stance and the body\'s own questions are said, never held; new facts are asked at once, with the answer that changed nothing said', async () => {
+test('the stance and the body\'s own questions are said, never held; a new option is asked at once, with the answer that changed nothing said', async () => {
   const bot = { entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, game: { dimension: 'overworld' }, inventory: inventoryOf({}) };
   const goal = { kind: 'win' };
   const seen = [];
@@ -118,8 +120,9 @@ test('the stance and the body\'s own questions are said, never held; new facts a
     // New facts: asked at once, the answer that changed nothing said.
     const t1 = Date.now();
     await decide('night_mine_target', { client: { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'ore_0', confidence: 0.9 } } }; } }, bot, goal, tree: { ore_0: { description: 'Ore.' }, branch: { description: 'Branch.' } }, state: { ore: 'iron' } });
-    await decide('night_mine_target', { client: { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'branch', confidence: 0.9 } } }; } }, bot, goal, tree: { ore_0: { description: 'Ore.' }, branch: { description: 'Branch.' } }, state: { ore: 'gold' } });
-    assert.ok(Date.now() - t1 < 2000, 'new facts: not held');
+    // A new ore in view is a new option (its key names it, note 749): asked at once.
+    await decide('night_mine_target', { client: { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'branch', confidence: 0.9 } } }; } }, bot, goal, tree: { ore_1: { description: 'Ore.' }, branch: { description: 'Branch.' } }, state: { ore: 'gold' } });
+    assert.ok(Date.now() - t1 < 2000, 'a new option: not held');
     assert.match(seen.at(-1).answerChangedNothing, /^ore 0 was chosen \d+ seconds? ago and changed nothing \(the bot on the same block, carrying the same, no block dug or placed, health as it was\)\.$/);
   });
 });
@@ -132,6 +135,11 @@ test('the question\'s own facts leave out the record of the answers; the world\'
   assert.notEqual(a, unchanged.digest({ fortressInView: { passes: 3 }, threatsInView: ['magma cube 6 blocks off'] }, tree));
   assert.notEqual(a, unchanged.digest({ fortressInView: { passes: 3 }, threatsInView: [] }, { leg_east: {} }), 'an option left out is a change');
   assert.equal(unchanged.digest({ here: { notOffered: ['a'], floor: 'stone' } }, tree), unchanged.digest({ here: { notOffered: ['b'], floor: 'stone' } }, tree), 'at any depth');
+  // Note 749: what drifts between two askings with nothing the answer could change is not a change: riskNow's
+  // count of mobs within 24, the healing line, a stall's strikes, the fortress's passes. A kind of mob coming is.
+  const drift = n => ({ riskNow: { level: 'high', hostilesWithin: { blocks: 24, count: 9 + n, kinds: ['spider', 'zombie'] } }, healing: `health ${18 + n}`, stalled: { strikes: n }, fortressInView: { passes: 3 + n }, threatsInView: [`zombie ${6 + n} blocks off`] });
+  assert.equal(unchanged.digest(drift(0), tree), unchanged.digest(drift(1), tree), 'counts, distances and readings drift');
+  assert.notEqual(unchanged.digest(drift(0), tree), unchanged.digest({ ...drift(0), threatsInView: ['zombie 6 blocks off', 'creeper 9 blocks off'] }, tree), 'a creeper coming is a change');
 });
 
 test('an option whose goal is already so is not offered, and that is said; with every option so, each says it on itself', async () => {
