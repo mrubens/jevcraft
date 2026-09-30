@@ -110,6 +110,6 @@ test('fortress_leg lists go_to_spawner, and without Jev a spawner known is gone 
   const q = question('fortress_leg');
   assert.ok(q.options.some(o => o.pattern && new RegExp(`^${o.pattern}$`).test('go_to_spawner')));
   assert.ok(q.options.some(o => o.pattern && new RegExp(`^${o.pattern}$`).test('go_to_spawner_2')));
-  const { legFallback } = require('../src/decisions/travel');
+  const { legFallback } = require('./support/jev-stand-in');
   assert.equal(legFallback({ go_to_spawner: {}, stay_in_fortress: {}, go_to_blazes: {}, leg_east: {} }, [], { passes: 1 }), 'go_to_spawner');
 });

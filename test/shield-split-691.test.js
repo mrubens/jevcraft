@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 // Note 691 (3): the shield covers only the half the bot faces. On 25589 at
 // 21:18:21.456Z (test/fixtures/shield-split-25589.json) the hold faced four
 // blazes out of sight behind rock (within 42 degrees of the facing) and had
@@ -97,5 +98,5 @@ test('shield_up says how many of the blazes about are outside the half it faces,
   assert.equal(reflex.shotRule({ shield_up: { split: false }, behind_cover: {} }), 'shield_up');
   const { question } = require('../src/decisions');
   require('../src/decisions/survival');
-  assert.equal(question('shot_answer').fallback({ shield_up: { split: true }, behind_cover: {}, keep_on: {} }), 'behind_cover');
+  assert.equal(question('shot_answer').safetyRule({ shield_up: { split: true }, behind_cover: {}, keep_on: {} }), 'behind_cover');
 });

@@ -53,7 +53,7 @@ test('several claims are one turn_priority question, one option per claim with i
   assert.equal(dry.winner.layer, 'survival'); assert.equal(dry.ask, true); assert.equal(dry.acted, undefined);
   // The question is defined, and its fallback is the same order.
   const q = require('../src/decisions').question('turn_priority');
-  assert.equal(q.fallback({ work: { description: { urgency: 'routine' } }, vitals: { description: { urgency: 'pressing' } } }), 'vitals');
+  assert.equal(require('./support/jev-stand-in').oldOrder('turn_priority')({ work: { description: { urgency: 'routine' } }, vitals: { description: { urgency: 'pressing' } } }), 'vitals');
 });
 
 test('a ruling is held by its fingerprint until a newcomer, health, a food band or a minute breaks it', async () => {
@@ -335,7 +335,7 @@ test('live: at 0.9 health with the shelter set aside, Jev is asked between survi
   assert.equal(asked[0][1].state.health, 0.9);
   assert.equal(turn.layer, 'survival'); assert.equal(turn.acted, false);
   assert.deepEqual(ran, ['survival'], 'the step did nothing, and the turn stayed with it');
-  // Without Jev, the question's own fallback: survival, the more urgent.
+  // No client: the tests' stand-in answers by the old order (survival, the more urgent).
   const alone = world({ health: 0.9, food: 10, time: { timeOfDay: 14000, age: 100000 } });
   const byRule = await arbiter.take(alone, claims(alone), { mobs: [], now });
   assert.equal(byRule.layer, 'survival'); assert.equal(byRule.winner.action, 'secure_shelter');
@@ -560,14 +560,15 @@ test('a mob held by a stance chosen against it is said with the stance, which go
 const never = () => new Promise(() => {});
 const within = (p, ms = 2000) => Promise.race([p, new Promise((_, reject) => setTimeout(() => reject(new Error(`still waiting after ${ms} ms`)), ms).unref())]);
 
-test('a turn_priority question that does not come back is cut when the bot is hurt: survival takes the turn by the rules', async () => {
+test('a turn_priority question is not cut when the bot is hurt while it is out: nobody takes the turn by rule (note 707)', async () => {
   const bot = fakeBot();
   const ran = [];
   const claims = [claim('work', 'routine', { run: async () => { ran.push('work'); return true; } }),
     claim('survival', 'pressing', { action: 'escape_threat', run: async () => { ran.push('survival'); return true; } })];
-  setTimeout(() => { bot._recentHurtAt = Date.now(); }, 60).unref();
-  const out = await within(arbiter.take(bot, claims, { state: bot._arbiter = {}, decide: never, mobs: [] }));
-  assert.equal(out.layer, 'survival'); assert.equal(out.by, 'rules'); assert.match(out.cut, /hurt/);
+  setTimeout(() => { bot._recentHurtAt = Date.now(); }, 30).unref();
+  const answered = new Promise(resolve => setTimeout(() => resolve({ path: ['survival'] }), 120).unref());
+  const out = await within(arbiter.take(bot, claims, { state: bot._arbiter = {}, decide: () => answered, mobs: [] }));
+  assert.equal(out.layer, 'survival'); assert.equal(out.by, 'jev'); assert.equal(out.cut, undefined);
   assert.deepEqual(ran, ['survival']);
 });
 
@@ -579,11 +580,28 @@ test('a turn_priority question ends when the task check throws, even if the ques
   await assert.rejects(within(arbiter.take(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter = {}, decide: never, task, mobs: [] })), { name: 'NeedsSafety' });
 });
 
-test('a turn_priority question with no answer in its time is given by the rules, and asked again soon', async () => {
+test('a turn_priority question with no answer in its time gives nobody the turn: no rule picks, and it is asked again (note 707)', async () => {
   const bot = fakeBot();
-  const out = await within(arbiter.take(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter = {}, decide: never, askMs: 100, mobs: [] }));
-  assert.equal(out.layer, 'survival'); assert.match(out.cut, /no answer/);
-  assert(bot._arbiter.ruling.until - bot._arbiter.ruling.at <= arbiter.IDLE_MS);
+  const ran = [];
+  const out = await within(arbiter.take(bot, [claim('work', 'routine', { run: async () => { ran.push('work'); return true; } }), claim('survival', 'pressing', { run: async () => { ran.push('survival'); return true; } })],
+    { state: bot._arbiter = {}, decide: never, askMs: 100, mobs: [] }));
+  assert.equal(out.layer, null); assert.equal(out.by, 'cut'); assert.match(out.cut, /no answer/);
+  assert.deepEqual(ran, [], 'no layer ran');
+  assert.equal(bot._arbiter.ruling, undefined, 'no ruling held');
+});
+
+test('while Jev is down the question is not cut: its own hold is the wait, and nobody is given the turn meanwhile (note 707)', async () => {
+  const jevDown = require('../src/jev-down');
+  const bot = fakeBot();
+  jevDown.down(bot, null, 'turn_priority', new Error('connect ECONNREFUSED'), { log: () => {} });
+  const ran = [];
+  let settle;
+  const held = new Promise(resolve => { settle = resolve; });
+  setTimeout(() => { jevDown.back(bot, null, 'turn_priority', { log: () => {} }); settle({ id: 'turn_priority', stale: true, jevWasDown: {} }); }, 250).unref();
+  const out = await within(arbiter.take(bot, [claim('work', 'routine', { run: async () => { ran.push('work'); return true; } }), claim('survival', 'pressing', { run: async () => { ran.push('survival'); return true; } })],
+    { state: bot._arbiter = {}, decide: () => held, askMs: 100, mobs: [] }));
+  assert.equal(out.layer, null); assert.equal(out.by, 'stale'); assert.equal(out.cut, undefined, 'not cut at 0.1 s while Jev was down');
+  assert.deepEqual(ran, []);
 });
 
 test('a newcomer picked up is known to the holder: the same mob coming closer does not preempt again', () => {

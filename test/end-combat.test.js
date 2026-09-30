@@ -234,7 +234,7 @@ test('a cloud arriving while eating interrupts consumption and starts an escape 
 });
 
 test('without Jev the End fight goes on in a fixed order: out of danger, crystals, head, arrow, position', () => {
-  const { endFallback } = require('../src/end-combat');
+  const { endFallback } = require('./support/jev-stand-in');
   const tree = { observe: {}, move_a: {}, shoot_dragon: {}, crystal_7: {}, strike_head: {} };
   assert.equal(endFallback(false)(tree), 'move_a', 'unsafe ground is left first');
   assert.equal(endFallback(true)(tree), 'crystal_7');

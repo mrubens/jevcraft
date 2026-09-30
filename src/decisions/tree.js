@@ -3,23 +3,11 @@ const { choice } = require('../typesafe');
 
 // The caller constructs only executable leaves. Each sibling choice has an
 // explicit conditional premise; questions in the batch never read each other.
-// A Jev outage must not stop the bot. When the service fails after its own
-// retries and the caller supplies a fallback rule, the tree is walked with
-// that rule instead and the decision says so, so the decision log shows a
-// code default where a judgment would have been. A cancelled task and a
-// rejected request (4xx) still throw: those are not outages.
-const TRANSIENT = new Set([408, 429, 500, 502, 503, 504, 529]);
-const transient = err => err?.name !== 'TypeSafeError' || !err.status || TRANSIENT.has(err.status);
+// No answer is made here without Jev: a call that fails is thrown to decide()
+// (decisions/index.js), which holds while Jev cannot be reached (jev-down.js)
+// and asks again. A cancelled task and a rejected request (4xx) throw too.
 
-function announceFallback(bot, goal, decision) {
-  if (decision.fallback) {
-    if (goal.jevOutage) return;
-    goal.jevOutage = { since: new Date().toISOString(), reason: decision.fallback.reason };
-    bot.chat?.("Jev isn't answering right now, so I'm going with the safe default until it is.");
-  } else if (goal.jevOutage) { delete goal.jevOutage; bot.chat?.('Jev is back.'); }
-}
-
-async function decideTree(client, { state, tree, isFresh = () => true, signal, rootInstructions, fallback, kind, trace }) {
+async function decideTree(client, { state, tree, isFresh = () => true, signal, rootInstructions, kind, trace }) {
   const questions = {};
   const branches = new Map();
   let serial = 0;
@@ -41,15 +29,14 @@ async function decideTree(client, { state, tree, isFresh = () => true, signal, r
   let response = { answers: {}, usage: null };
   if (Object.keys(questions).length) {
     try { response = await client.systemOne({ state, questions, signal, kind, ...(trace ? { trace } : {}) }); }
-    catch (err) {
-      if (signal?.aborted) throw signal.reason || err;
-      if (!fallback || !transient(err)) throw err;
-      response = { answers: {}, usage: null, fallback: { reason: err.message, status: err.status ?? null } };
-    }
+    catch (err) { if (signal?.aborted) throw signal.reason || err; throw err; }
   }
   const latencyMs = Math.round(performance.now() - started);
   if (signal?.aborted) throw signal.reason || new Error('Decision cancelled');
   if (!isFresh()) return { stale: true, latencyMs, usage: response.usage };
+  // Jev's own answer at any level of the tree, for a walk down a branch Jev
+  // answered though the path did not go that way (none_good, decide()).
+  const answerAt = children => { const a = response.answers?.[branches.get(children)]; return a && Object.hasOwn(children, a.choice) ? a.choice : null; };
   const path = [];
   const judgments = [];
   let children = tree;
@@ -57,21 +44,27 @@ async function decideTree(client, { state, tree, isFresh = () => true, signal, r
     const id = branches.get(children);
     const keys = Object.keys(children);
     const answer = response.answers?.[id];
-    const key = keys.length === 1 ? keys[0] : response.fallback ? fallback(children, path) : answer?.choice;
-    if (!Object.hasOwn(children, key)) throw new Error(`${response.fallback ? 'The fallback rule' : 'Jev'} selected an unavailable option for ${id}`);
+    const key = keys.length === 1 ? keys[0] : answer?.choice;
+    // An answer that names no option offered is a bug to see, not an outage.
+    if (!Object.hasOwn(children, key)) throw Object.assign(new Error(`Jev selected an unavailable option for ${id}`), { name: 'BadAnswer' });
     path.push(key);
-    if (keys.length > 1 && !response.fallback) judgments.push({ branch: id, ...answer });
+    if (keys.length > 1) judgments.push({ branch: id, ...answer });
     const node = children[key];
     // The questions themselves travel with the decision so an inspector can
     // show what Jev was asked, not only what it answered.
-    if (!node.children) return { path, action: node, latencyMs, usage: response.usage, judgments, questions: Object.keys(questions).length,
-      asked: Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, q.instructions])), fallback: response.fallback };
+    if (!node.children) {
+      const decision = { path, action: node, latencyMs, usage: response.usage, judgments, questions: Object.keys(questions).length,
+        asked: Object.fromEntries(Object.entries(questions).map(([id, q]) => [id, q.instructions])) };
+      Object.defineProperty(decision, 'answerAt', { value: answerAt, enumerable: false });
+      return decision;
+    }
     children = node.children;
   }
 }
 
-// The first listed option is the author's default. A node may claim it
-// outright with `fallback: true`.
-const firstOption = children => Object.keys(children).find(key => children[key].fallback) || Object.keys(children)[0];
+// The first listed option: where a walk down a branch has no answer of
+// Jev's to follow (a none-good taken again unasked, decide()). The ladder's
+// own next rung claims it (`ladderNext: true`, strategy.js).
+const firstOption = children => Object.keys(children).find(key => children[key].ladderNext) || Object.keys(children)[0];
 
-module.exports = { decideTree, announceFallback, firstOption };
+module.exports = { decideTree, firstOption };

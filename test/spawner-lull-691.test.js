@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 // Note 691 (1): the lull at a live blaze spawner is the time to prepare.
 // 25589 (mid-242-ch-nether-1-fortress-12) stood three blocks from the cage at
 // (-152, 83, 168) with every blaze about out of its sight at 21:17:28Z
@@ -100,7 +101,7 @@ test('the hunt at a cleared spawner 8 blocks off: the ways to prepare are offere
   assert.match(tree.stand_by_spawner.description, /^Take a stand in the open at .* and fight its next blazes as they come; each that sees the bot shoots at it\. Nothing is built\./);
   assert.match(tree.step_out.description, /past 16: the spawner makes none and its clock stops/);
   // Full health, fed: the outage default builds.
-  assert.equal(question('empty_spawner').fallback(tree), 'box_here');
+  assert.equal(oldOrder('empty_spawner')(tree), 'box_here');
 });
 
 test('the box chosen in the lull is built without a blaze from the spawner cutting it, then held; the commit ends with the build', async () => {

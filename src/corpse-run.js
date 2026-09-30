@@ -61,28 +61,13 @@ function corpseRun(bot, goal, now = Date.now()) {
   if (!run.loadedAt && flat(bot.entity.position, run.position) <= TICKING) run.loadedAt = new Date(now).toISOString();
   if (run.loadedAt && now - Date.parse(run.loadedAt) > DESPAWN_MS - MARGIN_MS) { run.status = 'despawned'; return null; }
   // Whether it is fit to go is Jev's to weigh (corpse_run, told what was
-  // about at the death, what it wore then and wears now); the kit or
-  // daylight is the fallback's rule only (corpseRunStep). As a gate here it
+  // about at the death, what it wore then and wears now). As a gate here it
   // kept the kit's own way back shut until the kit was made again:
   // mid-242-aa came back through its Nether portal thirteen blocks from its
   // iron sword, iron armor, bucket and pickaxe, unarmored, was never
   // asked, and died to a wither skeleton half an hour later in no armor
   // and with a stone sword (note 559).
   return run;
-}
-
-// Daylight is no help below ground: the dream run went back unarmoured by
-// day to a cave at y 15 where two zombies had just killed it, and they
-// killed it again (2026-09-24). Below sea level the kit is needed as in the
-// Nether.
-const SEA_LEVEL = 60;
-function fitToGo(bot, where) {
-  const { kitReady } = require('./mob-policy');
-  if (kitReady(bot)) return true;
-  if (dim(bot.game?.dimension) !== 'overworld') return false;
-  if (where && where.y < SEA_LEVEL) return false;
-  const t = bot.time?.timeOfDay ?? 0;
-  return t < 12500 || t >= 23500;
 }
 
 const listed = items => Object.entries(items).map(([name, n]) => `${n > 1 ? `${n} ` : ''}${name.replace(/_/g, ' ')}`).join(', ');
@@ -102,12 +87,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
   // Jev's to weigh, once a death: what was about when the bot died there,
   // against what it would get back.
   const client = task.opportunityClient;
-  // With no one to ask, the old rule: the kit worn (in the Nether or under
-  // ground), or daylight. The dream run walked back to a fortress's edge
-  // with no armor for the armor it had dropped there, and the wither
-  // skeleton that killed it once killed it again (2026-09-24 00:49).
-  if (!run.choice && !client && !fitToGo(bot, run.position)) { save(); return false; }
-  if (!run.choice && client) {
+  if (!run.choice) {
     const death = (goal.survival?.deaths || []).at(-1) || {};
     const about = (death.about || []).map(t => `a ${t.name.replaceAll('_', ' ')} ${t.distance} blocks off`).join(', ');
     const wornNow = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
@@ -124,8 +104,7 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
       state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
-    if (decision.fallback && !fitToGo(bot, run.position)) { save(); return false; }
-    run.choice = decision.fallback ? 'go_back' : decision.path.at(-1); save();
+    run.choice = decision.path.at(-1); save();
     if (run.choice === 'leave_them') { run.status = 'left'; save(); return false; }
   }
   if (!run.announced) {

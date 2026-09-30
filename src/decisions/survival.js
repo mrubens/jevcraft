@@ -3,10 +3,6 @@
 // (night, hunger, a threat) may outrank the player's request.
 const { define } = require('./index');
 
-// Shelter before food before the request: the order a careful player
-// keeps when nobody is weighing the trade.
-const safetyOrder = children => ['sleep_in_bed', 'sleep_in_nook', 'go_home_for_night', 'secure_shelter', 'obtain_food'].find(key => children[key]) || Object.keys(children)[0];
-
 // The food sources, shared by the priority tree's obtain_food branch.
 const FOOD_OPTIONS = [
   { pattern: 'cook_[a-z_]+', label: 'cook a carried ingredient', when: 'raw food and fuel are carried; the output is safe food', level: 'obtain_food', dynamic: true },
@@ -44,8 +40,7 @@ define({
     { key: 'rest_to_heal', wait: true, label: 'stay still where it is while health comes back', when: 'health under twenty and hunger eighteen or more, with the seconds to twenty and the mobs about said; held half a minute; a wait: it names what it waits for and when (src/waits.js), and is not offered where that cannot come or its coming changes nothing, said in waitsForNothing (note 698)', level: 'root' },
     ...FOOD_OPTIONS,
   ],
-  fallback: safetyOrder,
-  ungated: 'Jev\'s pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; the safety order answers only when Jev cannot be reached',
+  ungated: 'Jev\'s pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; Jev not reachable, nothing is chosen: the bot holds and it is asked again (jev-down.js)',
 });
 
 // How the night is sheltered, once a shelter is the answer.
@@ -65,8 +60,6 @@ define({
     { key: 'bed_nook', label: 'the carried bed in a nook dug beside the bot', when: 'a bed carried in the Overworld and a nook can be dug here: at bedtime it is dug and slept in now; before it, a pocket is sealed here and the nook, closed in rock, is dug out of its wall at bedtime and slept in (held, not asked again)', level: 'root' },
   ],
   instructions: { task: 'Night is coming and the bot will shelter. Choose how.', guidance: 'Each option says its distance and the blocks it needs against those carried. Placing a block takes about a second, gathering more takes minutes; mobs spawn in the dark (darkHere says where the bot stands is dark enough); a room or pocket is kept for later nights.' },
-  // Without Jev, the old order.
-  fallback: children => ['saved_shelter', 'build_at_site', 'seal_here', 'shaft_pocket', 'night_mine', 'bed_nook'].find(k => children[k]) || Object.keys(children)[0],
 });
 
 // Sealed in a pocket: stay, leave, go to bed, open on a watcher, or mine.
@@ -100,8 +93,6 @@ define({
     // Off the Overworld the whole guidance is this one: no time of day, no
     // sun, no eleven-minute night (note 677).
     elsewhereGuidance: place => `Use health, food, armour and the mobs about (distance, in sight, whether they shoot). A pocket's walls keep out mobs that walk and what they shoot while the walls stand, but gain nothing: a creeper's blast can break a wall open, a warden's sonic boom passes through blocks and armour to within fifteen blocks across and twenty up or down, and fire, poison or hunger already on the bot go on inside; each option says what is about. Health comes back only while hunger is eighteen or more, in the pocket or out of it. workWaiting is what the work outside is on; stillNeeded is the steps still open on the ladder and what each takes from the pockets as they are. watchedForSeconds is how long a mob has kept watch. The player wants the bot never to stand idle when useful work is in reach. In ${place}, with hunger under eighteen and nothing to eat, health never comes back in a pocket however long it waits.` },
-  // Without Jev, the old order, worked out by the caller.
-  fallback: (children, path, context = {}) => children[context.rule] ? context.rule : children.stay ? 'stay' : Object.keys(children)[0],
 });
 
 // The night mine's next target.
@@ -118,7 +109,6 @@ define({
     { key: 'light_tunnel', label: 'put a torch in the tunnel here', when: 'torches carried and the cells around are dark enough for monsters', level: 'root' },
   ],
   instructions: { task: 'The bot is mining through the night from its shelter. Choose the next target, or light the tunnel.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
-  fallback: children => Object.keys(children).find(k => k !== 'branch') || 'branch',
 });
 
 // At home before bedtime: a chore, or wait for the bed.
@@ -140,7 +130,6 @@ define({
     { pattern: '[a-z_]+', label: 'another home chore', when: 'offered by the stash or the home', level: 'root', dynamic: true },
   ],
   instructions: { task: 'The bot is at home and bedtime is near. Choose a chore to do before it, or wait by the bed.', guidance: 'Each chore says what it does and what it is for. Bread and a stocked chest are tomorrow\'s food and kit; light around home keeps the night\'s monsters from spawning there. The player wants the bot never to stand idle when useful work is in reach.' },
-  fallback: children => ['stock_stash', 'harvest_and_bake', 'tend_farm', 'breed_cows'].find(k => children[k]) || Object.keys(children).find(k => k !== 'wait_for_bedtime') || 'wait_for_bedtime',
 });
 
 // A shooter in view and a bow in the pack: shoot, retreat or dig in.
@@ -158,13 +147,13 @@ define({
     { key: 'retreat', label: 'run for cover out of its sight', when: 'always', level: 'root' },
     { key: 'dig_in', label: 'seal a two-block pocket here', when: 'twelve or more building blocks are carried', level: 'root' },
   ],
-  fallback: (children, path, context = {}) => (context.health ?? 20) >= 12 ? Object.keys(children)[0] : (children.retreat ? 'retreat' : Object.keys(children)[0]),
-  ungated: 'Jev\'s pick is taken at any confidence; the health rule answers only when Jev cannot be reached',
+  ungated: 'Jev\'s pick is taken at any confidence; Jev not reachable, the bot holds and it is asked again (jev-down.js)',
 });
 
 // The stance for an encounter, once per encounter (src/survival.js
-// stanceStep). Jev's pick stands, sure or not; the rules answer only when
-// Jev cannot be reached, or with JEV_ENCOUNTERS=0.
+// stanceStep). Jev's pick stands, sure or not; Jev not reachable, the bot
+// holds and asks again (jev-down.js); the rules answer only with
+// JEV_ENCOUNTERS=0.
 define({
   id: 'encounter_stance', area: 'combat', parent: 'survival_priority', kind: 'combat', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'Hostile mobs are near the bot: fight here, go up, step out of the shooters\' line, block a creeper\'s line, dig into the wall, dig down, seal in, run, eat, drink fire resistance, shoot, strike a ghast\'s fireball back, charge the shooters, dance with the creeper, or leave them be and keep working?',
@@ -226,11 +215,10 @@ define({
     { key: 'return_fireball', label: 'stand in the ghast\'s line, look at it, and strike its fireball back at it', when: 'a ghast in the bot\'s sight within sixty-four blocks, not in water; said with when it fires, the fireball\'s flight each way, that a struck fireball flies where the bot looks and kills the ghast it hits, the server\'s six blocks and three or four ticks for the strike, what it has done live (before its strike was timed by the fireball\'s flight, and this bot\'s own since), and priced by that record: the next two fireballs landing but for the share measured sent back, and over a drop a shot can push the bot off, by that fall', level: 'root' },
     { pattern: 'shoot_\\d+', label: 'shoot this mob with the bow', when: 'a bow, arrows and a clear arrow path (up to three targets within twenty blocks, and a ghast in sight out to sixty-four, said with the arrow\'s flight and the arrows that bring it down)', level: 'root', dynamic: true },
   ],
-  fallback: 'throws',
-  ungated: 'Jev\'s pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached',
+  ungated: 'Jev\'s pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; Jev not reachable, the bot holds and it is asked again (jev-down.js); the encounter rules answer only with JEV_ENCOUNTERS=0',
 });
 
-module.exports = { safetyOrder, FOOD_OPTIONS };
+module.exports = { FOOD_OPTIONS };
 
 // Getting unstuck one move at a time (src/unstuck.js): the moves possible
 // from where the bot stands, each with what the code works out about it.
@@ -249,7 +237,6 @@ define({
   ],
   // No sky off the Overworld (note 677).
   instructions: { task: 'The bot is stuck and has to get somewhere: `aim` says where. Choose the next single move.', guidance: 'Each move says what it does and what the code has worked out about the result: what digging would bring down or let in, whether the move rises, whether it ends on dry ground or under open sky, and whether the bot has stood there before. `here` is where the bot stands now, read once it has landed, `here.floor`, when the floor stood on is a small one (a span, an island), how many cells it is and where the nearest ground that is not part of it lies, in cells of gap from which cell of the floor and how many steps along it from here, and `here.notOffered` the moves left out and why (one that would stand the body in lava, fall into it, or drop the floor it stands on into it); `recentMoves` are the moves already made and what each did. A drop past a step that ends in lava is said with what a touch costs. A move that changed nothing last time will change nothing again. `threats` are the mobs within sixteen blocks, `shootersFartherOff` the shooters past them whose fire still reaches the bot, and `pushHere`, with a ghast in sight, how its fireball\'s push carries the body over a drop that kills from where it stands; a move says where that push carries the body over from its end, or no longer does (note 621). `serverCorrections`, when it is there, says the server keeps putting the body back where it was: the moves are read from this client\'s view of the blocks, and the server acts on its own, so a block the server has and the view lacks (a dig the server did not carry out) makes every move that walks or drops into that cell come back to nothing; asking the server puts its answer in the view and changes nothing else (note 632).', offOverworld: [['or under open sky,', 'or with nothing overhead for forty blocks,']] },
-  fallback: children => Object.keys(children)[0],
 });
 
 // Down off a top no walk steps down from (src/way-down.js, note 565):
@@ -266,7 +253,6 @@ define({
     { key: 'step_off', label: 'step off a side and take the fall', when: 'a side whose fall leaves more than a point of health', level: 'root' },
   ],
   instructions: { task: 'The bot has to walk somewhere off the top it stands on, and no side of the top comes down within three blocks, so no walk can start from here. Choose how it comes down.', guidance: 'Each way says what it costs: the blocks to dig and the seconds and pickaxe uses, the water bucket spent, the health a fall takes, and where it ends: somewhere a walk goes on, or still up on the tower, where this is asked again. `top` says how far the sides fall; `triedLately` is what the ways chosen lately did.' },
-  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : Object.keys(children)[0],
 });
 
 // Climbing out of the mine by digging (src/surface.js): a staircase, or
@@ -286,7 +272,6 @@ define({
     { key: 'walk_then_up', label: 'walk through the open mine to a column with less rock over it, then dig straight up from there', when: 'a cell walked to within 24 blocks, nothing dug on the way and nothing in, under or beside it wet or lava, whose column to open sky can be climbed straight up (as straight_up) a minute or more quicker, the walk counted, than the quicker way from here; said with the cells walked, the rock over it against here, and the minutes (note 668)', level: 'root' },
   ],
   instructions: { task: 'The bot is underground and has to dig its way out to open sky. Choose how it climbs.', guidance: 'Each way says how many blocks it digs, how long it takes with the pickaxes carried, and what it leaves behind; the staircase\'s blocks are the ones on its way, each at its own dig time. A pickaxe wears a use for each block it digs; once the pickaxes are used up the rest is dug by hand, stone at seven and a half seconds a block. `pickaxes` lists what is carried and the uses left; `straightUpBlocked` says why the column overhead is not on offer, when it is not; `climbSoFar`, when present, is the way chosen before, what it was said to take, and what it has done since.' },
-  fallback: (children, path, context = {}) => children[context.quicker] ? context.quicker : Object.keys(children)[0],
 });
 
 // The kit carried into the Nether (src/work.js crossingKitReady,
@@ -310,12 +295,11 @@ define({
     { key: 'top_up_health', label: 'wait and heal first, to sixteen', when: 'health under sixteen, monsters on', level: 'root' },
     { key: 'top_up_gold', label: 'make golden boots first, a piece of gold worn so piglins leave the bot be', when: 'no piece of golden armour carried', level: 'root' },
     { key: 'top_up_wood', label: 'gather logs up to eight and make a crafting table first', when: 'fewer than eight logs or no crafting table carried', level: 'root' },
-    { key: 'top_up_cauldron', label: 'make a cauldron and fill a bucket with water first, to put a fire out in the Nether', when: 'no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short, and is never the fallback; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634)', level: 'root' },
+    { key: 'top_up_cauldron', label: 'make a cauldron and fill a bucket with water first, to put a fire out in the Nether', when: 'no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634)', level: 'root' },
     { key: 'stash_valuables', label: 'walk home and leave the valuables in the stash chest first', when: 'the home stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'leave the valuables in a chest put down here first', when: 'home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
   ],
   instructions: { task: 'The bot is on its way through a portal into the Nether. Choose whether to cross with what it carries now or to top up one item of its kit first.', guidance: 'Every option lists the kit item by item: what is carried, what the code would take, and why. The amounts the code would take are a careful default, not a rule. The food, blocks and spare pickaxe were steps of the ladder before this; what they left short is said. A top-up says the working minutes it has had at this crossing and what they brought. `kit` is each item carried against what the code would take.' },
-  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'cross_now',
 });
 
 // The food rung before the portal, taken (src/work.js kitFoodStep,
@@ -336,7 +320,6 @@ define({
     { key: 'top_up_cook', label: 'cook the raw food carried first, at a furnace put down here', when: 'raw food carried that cooking makes more of, fuel carried, and a furnace or smoker or eight cobblestone for one; said with the points as carried and once cooked, the seconds, and who is coming meanwhile (notes 594, 628)', level: 'root' },
   ],
   instructions: { task: 'The bot is getting food before it goes into the Nether. Choose the way to it, or go on without more for now.', guidance: 'Each way says its trip, its seconds and what it gives, raw and cooked. `foodWanted` is the Nether stay the goal still needs, at about forty hunger an hour; in the Nether a hoglin is the only meat and health comes back only at hunger 18 or more. A way says the working minutes it has had and what they brought.' },
-  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : 'go_without',
 });
 
 // A step on the ladder whose sources are in another dimension
@@ -355,7 +338,6 @@ define({
     { key: 'on_here', label: 'leave the step for now and go on with what the ladder has next here', when: 'the ladder has something else to do in this dimension', level: 'root' },
   ],
   instructions: { task: 'The next step of the game cannot be done where the bot is. Choose to go where its sources are, or go on here with the ladder\'s next step.', guidance: 'Each option says what it means: what is mined in the other dimension and brought back, and the trip to the portal; or what the ladder does here meanwhile. A step left comes back after half an hour.' },
-  fallback: children => Object.keys(children).find(k => k.startsWith('go_')) || Object.keys(children)[0],
 });
 
 // A climb to open sky for the ladder's step (src/work.js surfaceTrip): a
@@ -376,7 +358,6 @@ define({
     { key: 'dig_site', label: 'dig a site for the portal frame out of the rock where the bot stands', when: 'the need is a portal site, a pickaxe carried, and a site takes in the bot\'s feet whose frame and walkways are natural rock to dig, with solid floor and no water, lava or falling block beside; said with the blocks, the seconds and the uses, and how far it is from the lava chosen to cast beside, where the climb says how far above that lava the frame would go (note 531)', level: 'root' },
   ],
   instructions: { task: 'The step in hand needs the surface and the bot is underground. Choose to climb for it now, to leave it and go on with the next step down here, to dig the ore in view first, or, for a portal site, to dig one out here.', guidance: 'The climb says how far up it is, how long the quicker way out takes with the pickaxes carried, how many of their uses it wears, and what the way back down to this depth is after. Staying says what the ladder goes on with meanwhile and what the pickaxes carried cover of it and of the way home after; the step left comes back after thirty minutes. Ore first says the uses the climb leaves spare. A site dug out says its blocks and seconds; a frame goes on it as on open ground.' },
-  fallback: children => children.dig_site ? 'dig_site' : children.climb ? 'climb' : Object.keys(children)[0],
 });
 
 // Back for what a death dropped (src/corpse-run.js). A rule that went
@@ -393,12 +374,12 @@ define({
     { key: 'leave_them', label: 'leave them and go on', when: 'always', level: 'root' },
   ],
   instructions: { task: 'The bot died and has come back to life. Choose whether it goes back for what it dropped.', guidance: 'Each option says what is there, how far, how long the drops last, what was about when the bot died there and what it wore then and wears now.' },
-  fallback: () => 'go_back',
 });
 
 // The body's own dangers (src/body.js): lava, fire, a head in a block, the
 // breath. They were reflexes, one way out taken by rule; the ways are Jev's
-// now (the user, 2026-09-28: "Ask Jev"), the old order the fallback.
+// now (the user, 2026-09-28: "Ask Jev"), the old order the body's safety
+// rule when Jev cannot answer in time (note 707).
 define({
   id: 'body_way', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
   question: 'The body is in danger of its own (in lava, alight or in fire, on a hot floor, the head in a block, out of breath under water), and may be struck by a mob at arm\'s length meanwhile: which way, now?',
@@ -432,8 +413,12 @@ define({
     { key: 'swim_to_air', label: 'swim the shortest way to air, digging what is in the way', when: 'under water with a way to air found within the breath and the drowning after it; said with its seconds and digs', level: 'root' },
     { key: 'straight_up', label: 'swim and dig straight up to air', when: 'under water with the column overhead diggable to air within the breath and the drowning after it; said with its seconds', level: 'root' },
   ],
-  fallback: (children, path, context = {}) => children[context.default] ? context.default : Object.keys(children)[0],
-  ungated: 'Jev\'s pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the code\'s old order answers only when Jev cannot be reached or has not answered in a second',
+  // The body's physics (note 707): the code's order of the ways out, the
+  // first the builder's own, answers at once when Jev cannot be reached or
+  // has not answered in a second (body.js ASK_MS).
+  safetyRule: (children, path, context = {}) => children[context.default] ? context.default : Object.keys(children)[0],
+  safetyWhy: 'the body is in lava, fire, on a hot floor, in a block or out of breath: a way out is taken at once, by the order the builders keep, when Jev cannot answer in time',
+  ungated: 'Jev\'s pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the body\'s safety rule (the builders\' order of the ways) answers only when Jev cannot be reached or has not answered in a second',
 });
 
 // A shooter's warning, answered as it begins (src/shot-reflex.js, note 676):
@@ -449,12 +434,15 @@ define({
   source: 'src/shot-reflex.js (shotOptions, ask, tick)',
   options: [
     { key: 'shield_up', label: 'face the shooters and hold the shield up while the shots come', when: 'a shield carried; said with how long the step stops (a blaze\'s volley about 2.2 seconds), whether the shooters are split so that facing some leaves others behind, how many of the blazes within sixteen (in sight or not) are outside the half it faces and how many of those see the bot now (note 691), and the shield\'s measured rates (a scratch server\'s blaze and this run\'s own shots); the hold faces a shot already on its way first, then warned shooters in sight, then those behind rock', level: 'root' },
-    { key: 'behind_cover', label: 'step out of the shooters\' line behind a block and stay there while the shots come', when: 'a cell one or two steps off on the level, walked straight, out of every warned shooter\'s line, with no lava or drop beside the way; said with the cell and the steps; without Jev it is the rule\'s answer where the shooters are split round the bot (note 691)', level: 'root' },
+    { key: 'behind_cover', label: 'step out of the shooters\' line behind a block and stay there while the shots come', when: 'a cell one or two steps off on the level, walked straight, out of every warned shooter\'s line, with no lava or drop beside the way; said with the cell and the steps; when Jev cannot be reached it is the safety rule\'s answer where the shooters are split round the bot (note 691)', level: 'root' },
     { key: 'strike_first', label: 'strike the shooter at arm\'s length before it shoots', when: 'a warned shooter the sword reaches now; said with the weapon, its swings and seconds to kill against the seconds before it shoots', level: 'root' },
     { key: 'keep_on', label: 'leave the shield down and keep on with what the bot is doing', when: 'always; said with what each shot that lands costs through the armour worn, and the fire a blaze\'s sets', level: 'root' },
   ],
   instructions: { task: 'A shooter in sight is about to shoot at the bot. Choose what the bot does about these shots.', guidance: 'The shield blocks what comes from the half the bot faces, a quarter second after it rises; held up, the bot stops what it is doing until the shots are past. The answer is for this warning only: the next is asked again.' },
-  fallback: children => require('../shot-reflex').shotRule(children) || Object.keys(children).find(k => k !== 'none_good') || Object.keys(children)[0],
+  // A shot about to land (note 676): the shield, or cover where the
+  // shooters are split, when Jev cannot be reached (shot-reflex.js shotRule).
+  safetyRule: children => require('../shot-reflex').shotRule(children) || (children.keep_on ? 'keep_on' : Object.keys(children).find(k => k !== 'none_good') || Object.keys(children)[0]),
+  safetyWhy: 'a shot is about to land: the shield goes up (or the bot steps behind cover where the shooters are split) when Jev cannot answer, as it does for a shot already in the air',
   ungated: 'Jev\'s pick is taken at any confidence: it holds for the seconds of one warning\'s shots, and a shot in the air with no answer about it is met by the shield anyway (shot-reflex.js)',
 });
 
@@ -479,6 +467,5 @@ define({
     { key: 'hunt', label: 'fight a mob the request needs a drop from', when: 'a mob hunt is on and one of its kind is in view', level: 'root' },
     { key: 'work', label: 'the request\'s next step', when: 'always while a request is running', level: 'root' },
   ],
-  fallback: children => require('../arbiter').rulesPick(Object.entries(children).map(([layer, o]) => ({ layer, urgency: o.description?.urgency })))?.layer || Object.keys(children)[0],
-  ungated: 'Jev\'s pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached',
+  ungated: 'Jev\'s pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; Jev not reachable or not answering in five seconds, nobody is given the turn and it is asked again (note 707)',
 });

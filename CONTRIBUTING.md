@@ -9,7 +9,7 @@ jevcraft exists to show what a System One model is good at, so the most useful c
 
 When Jev makes a bad choice in a trial, the fix is usually a missing fact, not a rule: find what the question did not say, add it to the state or the option's description, and ask again (a quick probe against the live model is the fastest check). The [rule audit](docs/rule-audit.md) lists the choices still made in code.
 
-When you add a question, define it in [`src/decisions`](src/decisions/index.js): its full meaning in the instructions and option descriptions (question ids are not sent to the model), the code's fallback for an outage, and, for questions a person is on the other end of, the confidence below which the bot asks instead. Regenerate [docs/decisions.md](docs/decisions.md) with `node scripts/decisions-doc.js`; a test fails if it is stale.
+When you add a question, define it in [`src/decisions`](src/decisions/index.js): its full meaning in the instructions and option descriptions (question ids are not sent to the model), no fallback (a question Jev cannot answer is held and asked again; the tests' answers go in [test/support/jev-stand-in.js](test/support/jev-stand-in.js)), and, for questions a person is on the other end of, the confidence below which the bot asks instead. Regenerate [docs/decisions.md](docs/decisions.md) with `node scripts/decisions-doc.js`; a test fails if it is stale.
 
 ## Setting up
 

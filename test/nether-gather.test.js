@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
@@ -140,7 +141,7 @@ test('the portal back is offered where the walk reaches it, said with where it c
 test('without Jev the wood within reach is taken first, then the walk to the nearest place (note 608)', () => {
   const { question } = require('../src/decisions');
   require('../src/decisions/work');
-  const fallback = question('nether_gather').fallback;
+  const fallback = oldOrder('nether_gather');
   assert.equal(fallback({ without: {}, walk_to_2: {}, wood_in_view: {} }), 'wood_in_view');
   assert.equal(fallback({ without: {}, cross_to_1: {}, walk_to_2: {} }), 'cross_to_1');
   assert.equal(fallback({ without: {}, leg_east: {}, leg_west: {} }, [], { unseen: { leg_east: 3, leg_west: 40 } }), 'leg_west');

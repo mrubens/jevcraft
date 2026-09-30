@@ -2,11 +2,6 @@
 // Where to walk next when the place is not known yet.
 const { define } = require('./index');
 
-// The least-walked waypoint, then the one nearest the estimate.
-const leastVisited = children => Object.keys(children).sort((a, b) =>
-  (children[a].description.previousVisits - children[b].description.previousVisits) ||
-  (children[a].description.remainingDistanceToEstimatedTarget - children[b].description.remainingDistanceToEstimatedTarget))[0];
-
 define({
   id: 'stronghold_waypoint', area: 'endgame', parent: 'rung_progress', kind: 'stronghold', primitive: 'choice', stakes: 'medium', tree: true, thinking: true,
   question: 'Following thrown Eyes of Ender, which surveyed waypoint should the bot walk to next?',
@@ -17,19 +12,12 @@ define({
     task: 'Following thrown Eyes of Ender toward the stronghold: which waypoint should the bot walk to next?',
     guidance: 'The estimate is unverified. Previous visits and remaining distance are given for each waypoint.',
   },
-  fallback: leastVisited,
 });
 
 // The way to a fortress seen. Both fortresses any trial found were lost
 // within a second of the sighting, each by a way the code alone had
 // chosen: mid-242-c walking the lava sea's shore toward one (note 264),
-// mid-215-e on a span with a hoglin behind it (note 273). The order the
-// code kept is the fallback, each way failed on this approach passed over.
-const APPROACH_ORDER = ['walk_route', 'descend', 'dig_through', 'cover_lava', 'scoop_lava', 'span_round', 'make_pickaxe', 'cross_level', 'blocks_then_cross', 'pillar_up', 'blocks_then_pillar', 'tunnel', 'fetch_stems', 'return_for_blocks', 'other_way', 'keep_searching'];
-const approachFallback = (children, path, context = {}) => {
-  const failed = new Set(context.failed || []);
-  return APPROACH_ORDER.find(k => children[k] && !failed.has(k)) || (children.keep_searching ? 'keep_searching' : children.other_way ? 'other_way' : Object.keys(children)[0]);
-};
+// mid-215-e on a span with a hoglin behind it (note 273). Each way is Jev's.
 define({
   id: 'fortress_approach', area: 'endgame', parent: 'fortress_leg', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   question: 'A Nether fortress is in view: which way should the bot go to it, or should it leave it and keep searching?',
@@ -57,8 +45,7 @@ define({
     task: 'A Nether fortress is in view on the search for blazes. Choose the way to it, or leave it for now and keep searching.',
     guidance: 'blazesSeen, first when there, is what the search is for: the blazes about now (in sight or heard through the walls) and where the hunt has seen them. Each way says what it meets, surveyed from here. The lava sea lies under most of the Nether: a fall into it is death and loses everything carried. threatsInView are the mobs in sight now; a hit on a one-wide span or at the lava\'s edge is the fall. failed is the ways tried on this approach that ended no nearer, and why; the same way again seldom ends differently. The staircase steps on ground and digs rock: a gap of open air between floors (\"no floor to step onto\") is crossed by the span or a pillar, laid from blocks carried. Lava lying on a floor is crossed as a player crosses it: a block laid into lava takes its place, so the lava on the way is covered and walked on, scooped where it is a source and a bucket is carried, or gone round by digging through the rock where there is a way round. With blazes at the bricks, playedRecord is what the bot\'s own fights with blazes came to in the trials, by the health and hunger a fight began at and by how many blazes were about (three within sixteen blocks is a spawner\'s): a way that arrives among them begins a fight at the health and hunger the bot has when it arrives.',
   },
-  fallback: approachFallback,
-  ungated: 'every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter\'s fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over',
+  ungated: 'every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter\'s fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed',
 });
 
 // Whether the visit happens now (note 638). Note 631 measured that a blaze
@@ -87,7 +74,6 @@ define({
     task: 'The bot is about to begin a visit to a Nether fortress for blaze rods. Choose whether it goes in now, first eats and heals where that is possible, goes back for food, hunts a hoglin, or leaves this fortress.',
     guidance: 'playedRecord is what the bot\'s own fights with blazes came to in the trials: by the health a fight began at (over 16, 8 to 16, under 8) and by the hunger (18 or more, under 18), each counted apart. Health and hunger at the beginning are what moved the outcome; iron armor made no difference. It is a day\'s record of fights begun in a row, not a trial of what waiting or eating first does. healthComesBack says whether waiting can heal at this hunger: under eighteen with too little to eat, none of it comes back, and the options that need it are not offered. Each option says what it costs in minutes and what it gains toward the rods (none, except going in). foodBeforeTheFight says hunger, whether health comes back (only at hunger 18 or more), the food carried in hunger points and the minutes of fighting it holds at the measured spend, what fights begun with and without food came to, and the ways to more food with their costs; it is the played record, not a trial of eating. Nothing is refused for health. blazeCounts (note 665) says the blazes in sight now, how many are within sixteen and have a line to the cell the bot stands in, the spawner\'s rule (up to four every ten to forty seconds while the bot is within sixteen, until six are about, none beyond sixteen), what fights at a live spawner came to by how many blazes were about (with the number of fights in each row), and the clock of the first four; they are counts of fights the bot played in states the rows do not hold alike, so a row is what a fight that got that many came to, not what entering with that many would do.',
   },
-  fallback: children => children.go_in ? 'go_in' : Object.keys(children)[0],
 });
 
 // At a blaze spawner known and no blaze about (note 681). mid-242-dc-
@@ -118,57 +104,13 @@ define({
     task: 'A blaze spawner is known here and no blaze is near. Choose what the bot does now.',
     guidance: 'The stand begins fights at the health the bot has; the trials\' rows are fights begun there, not a forecast.',
   },
-  fallback: children => {
-    if (children.stash_rods) return 'stash_rods';
-    if (children.heal_first) return 'heal_first';
-    if (children.box_at_spawner) return 'box_at_spawner';
-    if (children.box_here) return 'box_here';
-    if (children.stand_by_spawner && !children.go_back) return 'stand_by_spawner';
-    return children.go_back ? 'go_back' : children.get_food_here ? 'get_food_here' : Object.keys(children)[0];
-  },
 });
 
 // The next leg of the fortress search. mid-205-m's thirteen legs went the
 // way the compass said at the height the bot stood, y 96 to 104, straight
 // through solid netherrack at six seconds a cell, and saw nothing in fifty-
 // one minutes (note 394). Each heading is surveyed now and the leg is
-// Jev's; the outage default is the heading with the most ground unseen
-// that way, then the most open air ahead, the compass's own heading at a tie
-// or unsurveyed.
-// A fortress in view (stay_in_fortress, back_to_fortress) is kept over any
-// leg until six passes of it came to nothing, as the code kept it before
-// the choice was Jev's (mid-235-p, note 507).
-const legFallback = (children, path, context = {}) => {
-  if (children.back_to_fortress) return 'back_to_fortress';
-  if (children.blocks_then_cross) return 'blocks_then_cross';
-  if (children.wait_at_spawner) return 'wait_at_spawner';
-  if (children.go_to_spawner) return 'go_to_spawner';
-  if (children.unwalked_1) return 'unwalked_1';
-  if (children.stay_in_fortress && (context.passes || 0) < 6) return 'stay_in_fortress';
-  if (children.go_to_blazes_about) return 'go_to_blazes_about';
-  if (children.go_to_blazes) return 'go_to_blazes';
-  const open = context.open || {};
-  let keys = Object.keys(children).filter(k => k.startsWith('leg_'));
-  // The most ground unseen that way first, counted in chunks (sixteen
-  // columns of 4 by 4): a leg over ground already looked across shows
-  // nothing new (nether-coverage.js, note 572).
-  // A leg whose own line runs mostly over ground stood on walks it again
-  // (its own tunnel back, often, all open air) and goes after the rest.
-  const unseen = context.unseen || {}, stood = context.stood || {};
-  const fresh = keys.filter(k => !(stood[k] >= 48));
-  if (fresh.length) keys = fresh;
-  const chunks = k => Number.isFinite(unseen[k]) ? Math.round(unseen[k] / 16) : null;
-  const counted = keys.filter(k => chunks(k) !== null);
-  if (counted.length) { const most = Math.max(...counted.map(chunks)); keys = counted.filter(k => chunks(k) === most); }
-  // The spiral's side where its heading is among the most unseen: the
-  // search widens rather than turning back over itself (note 688).
-  const widen = context.widen;
-  if (children.widen_search && widen && keys.includes(widen.leg)) return 'widen_search';
-  const surveyed = keys.filter(k => Number.isFinite(open[k]));
-  if (!surveyed.length) return children[context.current] && keys.includes(context.current) ? context.current : keys[0] || Object.keys(children)[0];
-  const best = Math.max(...surveyed.map(k => open[k]));
-  return surveyed.includes(context.current) && open[context.current] === best ? context.current : surveyed.find(k => open[k] === best);
-};
+// Jev's.
 define({
   id: 'fortress_leg', area: 'endgame', parent: 'rung_progress', kind: 'fortress', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'Searching the Nether for a fortress: which way should the next leg go, should the bot first dig toward the heights fortresses stand at, or first get blocks to lay spans with?',
@@ -199,10 +141,9 @@ define({
     task: 'The bot is searching the Nether for a fortress, in legs of ninety-six blocks. Choose the next leg.',
     guidance: 'The search is for blazes: blazesSeen, when there, is the blazes about now (in sight or heard through the walls) and where the hunt has seen them, and they come back to where a spawner is. waysLeft are places Jev left the way to (fortress_approach), set aside for ten minutes and not offered until then. Fortresses stand mostly between y 48 and 75 over the lava sea at y 31, and their bricks are seen within 128 blocks through open air only: a leg through rock sees nothing however far it goes, and each leg says the seconds a cell of its rock takes to dig with the tools carried. Open air over a deep drop is a cavern or the sea\'s edge, where the view is long. The mobs in view, the blocks carried and the pickaxe are in the state; a leg over open air with no floor needs a block laid a cell, and stops where the blocks carried run out; rock is dug with the pickaxe carried, or by hand where there is none, several times slower, netherrack so dug dropping nothing, and basalt, blackstone and bricks not at all (a leg stops there); withoutAPickaxe, when there, says what the ways here lack without one and which get one. Each leg says its first cells in order: what it meets before anything else. A player crosses the Nether on its floors where they are walkable (forests, soul sand valleys, netherrack caverns) and bridges only across lava or a void: a floor leg says the way down to the floor and what the floor that way holds. legsResting are legs that ended at once from here, no ground made, and why; they are not offered from here for a few minutes. legsClosed are headings closed at their first cell at this height, each with why, not offered. fortressInView.map, on a fortress, is the fortress as the bot has seen it through open air: the floors seen and walked, how many are joined to where it stands, the ways on it can still walk to, the spawners, stairs, nether wart and chests seen, and the ways whose walk failed; a fortress\'s blaze spawners stand in rooms reached by its stairs, and nether wart and chests are in its other rooms. seenSoFar is what the search has looked over: ground a line from the eyes has reached through open air at fortress heights, and the columns stood on. A leg\'s worth is the new ground it looks over, not the blocks it walks: a fortress is seen only in ground not yet looked over, so a leg back over seen ground shows nothing new (unseen ahead, on each way, is the ground within 128 blocks of its line not yet seen). widen_search widens the search in a square spiral round where it began instead of turning back. structureRegions is where fortresses can begin at all: the Nether\'s regions of 432 blocks each hold one fortress or one bastion, never both, so a region holding a bastion has no fortress of its own however much of it is searched; it says the region the bot stands in, and each leg says how far that way the region ends and what is known past it. portalBack is the nearest portal known in the Nether and how far the search has come from it.',
   },
-  fallback: legFallback,
 });
 
-module.exports = { leastVisited, approachFallback, legFallback };
+module.exports = {};
 
 // A boat for a crossing the code has already checked: level water, room for
 // the boat and a safe shore at each end.
@@ -211,7 +152,7 @@ define({
   question: 'Code has checked a water crossing: take a boat, or keep walking and swimming?',
   trigger: 'A travel leg meets a level water route of useful length with a safe shore at each end.',
   source: 'src/boats.js (boatTravelStep)',
-  unreachable: 'counted as a failed boat choice; the bot walks or swims',
+  unreachable: 'the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the crossing is surveyed and asked fresh',
   build: () => require('../typesafe').choice(
     'Choose how to travel for this request. Code has verified a level water route, boat clearance and a safe shore at each end. Boats are useful for long river/lake crossings; small puddles are already excluded. Prefer a boat when this makes meaningful progress and saves a long swim. Respect an explicit request to swim, stay on land or avoid crafting. A boat already in inventory costs no crafting. New boats cost five planks plus access to a crafting table. Do not abandon the main task for an unnecessary boat.', {
       boat: 'Use a carried boat, or make a wooden boat, for this water crossing.',

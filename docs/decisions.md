@@ -2,7 +2,7 @@
 
 Generated from `src/decisions` by `node scripts/decisions-doc.js`. Do not edit by hand: change the definition and regenerate.
 
-Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
+Each question is defined once: what it asks and when, what a wrong answer costs (stakes), the bar its answer must clear and what happens below it, what happens when Jev cannot be reached, and where its options are built. No question has a fallback: when Jev cannot be reached nothing is decided by code (the user, 2026-09-30); the bot holds where it is, says once in chat that it is waiting for Jev, asks again with a backoff, and asks the question fresh when Jev answers (src/jev-down.js, note 707). The one exception is the body's own physics: `body_way` and `shot_answer` carry a safety rule that answers at once, and the reflexes that are rules (lava, fire, a hot floor, a head in a block, the breath, a shot in the air, the one-shot line) run through an outage as they always do. The decision trees also declare every option they can offer, and the runner checks each tree against that catalogue: an undeclared option fails the tests and is logged as a bug in play. Every tree is asked through one runner (`decide`) and every batched question through `ask`; nothing else in `src` calls the model.
 
 99 questions: 49 decision trees and 50 batched questions.
 
@@ -26,8 +26,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: none: Jev's pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; the safety order answers only when Jev cannot be reached
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: Jev's pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; Jev not reachable, nothing is chosen: the bot holds and it is asked again (jev-down.js)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -62,7 +62,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: When a shelter is chosen for the night (secure_shelter) and none is under way; held for the night, and asked again when the chosen way fails (it rests three minutes).
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (refugeStep)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: asks `survival_priority` next up, with this one's failure said
@@ -84,7 +84,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Each survival step inside a sealed pocket, unless a mob is inside or at arm's length (that is fought as a reflex); the choice holds ninety seconds for the same watcher and the same night. A pocket shut to walkers (its four sides at the feet and the head and the cell over the head closed) whose only open cells hold lava or water, which no block goes into, is the pocket too, said not whole (pocketNotWhole, note 697).
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (stepOnce: the pocket)
 - Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
@@ -123,7 +123,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near.
 - Decision tree, choice; stakes low; ledger kind `mining`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (nightMine, nightTarget)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: asks `survival_priority` next up, with this one's failure said
@@ -142,7 +142,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: At home within six blocks of the bed, from the walk-home hour until bedtime, with a chore on offer; waiting, once chosen, holds until a new chore appears.
 - Decision tree, choice; stakes low; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (step), src/home-base.js (homeChores), src/home-stash.js (stashChores)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: asks `survival_priority` next up, with this one's failure said
@@ -166,7 +166,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A stall while the bot is in water, or under cover on the way up (the survival layer's stall, or the work stall's work_free answer): each move asked in turn until the bot is out, twenty-four moves pass, four in a row change nothing, or a minute of moves gains nothing toward the aim (the height for the surface, the distance off the spot, a new cell out of water), which goes to the question above with what they gained (note 684). No move is offered that takes back the move before (a block put there or under the feet dug again, a cell just dug filled again: notes 671, 684); said in here.notOffered.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/unstuck.js (localMoves)
 - Nothing left to try: asks `stillness_detour` next up, with this one's failure said
 
@@ -185,7 +185,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A walk to somewhere off the top (not on it, nor a place just above it) from a top whose every side falls more than three blocks, with no mob at hand; asked again from wherever the way chosen leaves the bot while it is still on a top, up to four times a walk.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/way-down.js (perchOf, waysDown, comeDownFirst); asked from src/skills.js navigate
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -202,7 +202,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A climb to the surface with no dug way out found, when it starts digging; asked again when the pickaxes carried change, a way not offered before is open, the column would not rise, a span has been laid, a walk to another column did not arrive, or the way kept has run to twice what it was said to take (note 668).
 - Decision tree, choice; stakes medium; ledger kind `mining`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/surface.js (returnToSurface, chooseClimb, climbOptions)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: asks `surface_trip` next up, with this one's failure said
@@ -221,7 +221,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: After a death whose drops are worth fetching (what was worn and in the off hand among them) and still there, once the bot is in their dimension, whatever it wears; asked once a death. With no answer, it goes only with the kit worn (in the Nether or below sea level) or by day (note 559).
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/corpse-run.js (corpseRunStep)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -236,8 +236,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: The moment a step meets the condition (the survival step for lava and burning, the vitals step for fire, a hot floor (a magma block not crouched, a lit campfire) under the body wherever it stands, a head in a block and the breath), with two or more ways out (one is taken without asking); asked again each time the step meets it, unless burning was left to burn out (chosen, or the one way there was), which holds until it could have burned out, health falls four more (or half what it was, when that is less), or a way not on offer when it was left be is on offer (the bucket pours once the body is over a floor); while it holds, every other question says the burning (state.alight).
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: none: Jev's pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the code's old order answers only when Jev cannot be reached or has not answered in a second
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: Jev's pick is taken at any confidence and acted on at once: every way offered gets the body out as the code can carry it out, and the next step asks again while the danger stands; the body's safety rule (the builders' order of the ways) answers only when Jev cannot be reached or has not answered in a second
+- Jev unreachable: the body's safety rule answers at once: the body is in lava, fire, on a hot floor, in a block or out of breath: a way out is taken at once, by the order the builders keep, when Jev cannot answer in time
 - Options built in: src/body.js (answer), src/survival.js (lavaWays), src/vitals.js (fireWays, hotFloorWays, headWays, airWays)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -272,8 +272,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: When two or more layers claim the turn and none of them is the body's own danger (lava, fire, a hot floor, a head in a block, the breath: that layer's step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; the urgency then safety order answers only when Jev cannot be reached
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; Jev not reachable or not answering in five seconds, nobody is given the turn and it is asked again (note 707)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -291,7 +291,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Chosen as the step (restock_food) at the food question of a hunt short of fitness (leave_nether), at a stalled Nether step, or at the stay's food kit (nether_food_kit); not asked where no way is real from here. A bastion raid for the chests' food is among the ways when a bastion is remembered within reach.
 - Decision tree, choice; stakes medium; ledger kind `survival`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/nether-food.js (foodRoutes, askRestockFood), src/nether-travel.js (hoglinSays), src/game-progress.js (portalTrip), src/work.js (cookable)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -313,8 +313,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: A shooting mob is in clear view at bow range, a bow and arrows are carried, health is eight or more and no melee mob is within three blocks.
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: none: Jev's pick is taken at any confidence; the health rule answers only when Jev cannot be reached
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: Jev's pick is taken at any confidence; Jev not reachable, the bot holds and it is asked again (jev-down.js)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (rangedChoice)
 - Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
@@ -330,8 +330,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: An encounter (a threat the survival step answers, a mob at arm's length among them, in a sealed pocket too, and a hurt beside a deep drop while the hunt waits to heal), asked before anything is done about it while no stance holds: the swing at arm's length is part of the stance chosen, the step off a ledge is fight_from_footing, the hold on a span is hold_on_span, and the shield at shots is shot_answer, asked at each shooter's warning beside whatever holds the turn (the code does these first only when Jev cannot be reached); with two or more stances possible (one is taken without asking); held for fifteen seconds (or its estimate's seconds), until health falls by six, until the stance fails, or until a mob it was not chosen against comes within six blocks (not when a kind of mob comes into view further off or goes out of it); at the end of its time a stance with nothing new is held on without asking, 15, 30, then 60 seconds at a time up to five minutes (src/holds.js), and asked again sooner when what it was chosen on is falsified: more damage than priced at its own rate, a mob it was chosen against nearer by four, into or out of sight, gone or hurting the bot, a shot at the bot, the bot off the spot it held, or a way not on offer when it was chosen (at the cap the rung's question is due too); asked sure twice running with none good to the same situation (the failures just now aside), it is not asked again there for five minutes and the best listed is taken (a none-good answer takes the likeliest listed stance its own figures do not price at the bot's health or more, else the one that takes the least in fifteen seconds at its own pace, note 691); a stance that hid the bot from the shooters (out_of_sight, nook) is asked again once a shooter has a line to where it hid, or the bot is off that spot; out_of_sight, nook and take_cover are asked again once a shooter they were chosen against lands a hit. A stance that failed stays on offer, its option saying how long ago and how it failed here; one that ended without acting (no swing, no step of a block, no block placed or dug, nothing carried changed), or a fight or strike held to its end so, is left out while nothing about it changes (the bot within a block of where it was, each mob within a block of where it stood and none come, health within a point) and two or more other ways stay on offer, said in notOfferedNow with why; with fewer left it stays on offer with that said. The scene a stance turns on (src/stance-scene.js, note 659: the health in whole hearts, the hunger, each mob by kind within the sword's reach, within 8 blocks, within 16, farther or unable to get to the bot, a shooter in sight or not, a hit taken, the blocks carried, the shield, the block stood on, the rods carried): while it is unchanged, an answer that came to nothing in it (failed, or a striking stance that struck nothing) is left out while two or more other ways stay on offer, an answer that held is taken again without asking up to five minutes from its asking (then asked, and the rung's question is due), and a none-good answer counts by the scene at any weight, twice in it spending the question there and escalating it to survival_priority. Where one shot that lands ends the bot (a shot's hit through the armour worn, and a blaze's fire, the fire on the body counted first) and a shooter has a line to it, the bot first walks to the nearest cell out of every line or puts a block in each line, whichever is sooner, and the stance is asked after with that said (oneShotEnds; src/lethal-line.js, note 701), not again while a stance chosen with it said holds. While a stance holds, the shield at each arrow gives way to a stance that moves or builds, the hurt watchdog to any stance but keep_working, and eating to the eat stance. Off with JEV_ENCOUNTERS=0.
 - Decision tree, choice; stakes high; ledger kind `combat`
-- Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; the encounter rules answer only when Jev cannot be reached
-- Jev unreachable: stops: no safe default
+- Bar: none: Jev's pick is taken at any confidence: a stance is held fifteen seconds and asked again when health falls by six, when it fails or when a new mob comes close, so a close call is soon corrected; Jev not reachable, the bot holds and it is asked again (jev-down.js); the encounter rules answer only with JEV_ENCOUNTERS=0
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/survival.js (stanceOptions)
 - Nothing left to try: asks `survival_priority` next up, with this one's failure said
 
@@ -391,14 +391,14 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: As a shooter in sight begins its warning (a blaze glows, a ghast opens its mouth, a skeleton, stray or bogged draws), a shield carried in the off hand, whatever the bot is doing (a step of the work, a walk, a stance, a meal): asked aside, the step going on meanwhile; one question out at a time, the warnings begun meanwhile asked next. The answer holds for that warning's shots; while a meal the bot chose is eaten, a shield_up answer waits for the meal, and only a shot on its way that lands inside it raises the shield (the meal begun again after, note 701).
 - Decision tree, choice; stakes medium; ledger kind `combat`
 - Bar: none: Jev's pick is taken at any confidence: it holds for the seconds of one warning's shots, and a shot in the air with no answer about it is met by the shield anyway (shot-reflex.js)
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: the body's safety rule answers at once: a shot is about to land: the shield goes up (or the bot steps behind cover where the shooters are split) when Jev cannot answer, as it does for a shot already in the air
 - Options built in: src/shot-reflex.js (shotOptions, ask, tick)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
 | `shield_up` | root | face the shooters and hold the shield up while the shots come | a shield carried; said with how long the step stops (a blaze's volley about 2.2 seconds), whether the shooters are split so that facing some leaves others behind, how many of the blazes within sixteen (in sight or not) are outside the half it faces and how many of those see the bot now (note 691), and the shield's measured rates (a scratch server's blaze and this run's own shots); the hold faces a shot already on its way first, then warned shooters in sight, then those behind rock |
-| `behind_cover` | root | step out of the shooters' line behind a block and stay there while the shots come | a cell one or two steps off on the level, walked straight, out of every warned shooter's line, with no lava or drop beside the way; said with the cell and the steps; without Jev it is the rule's answer where the shooters are split round the bot (note 691) |
+| `behind_cover` | root | step out of the shooters' line behind a block and stay there while the shots come | a cell one or two steps off on the level, walked straight, out of every warned shooter's line, with no lava or drop beside the way; said with the cell and the steps; when Jev cannot be reached it is the safety rule's answer where the shooters are split round the bot (note 691) |
 | `strike_first` | root | strike the shooter at arm's length before it shoots | a warned shooter the sword reaches now; said with the weapon, its swings and seconds to kill against the seconds before it shoots |
 | `keep_on` | root | leave the shield down and keep on with what the bot is doing | always; said with what each shot that lands costs through the armour worn, and the fire a blaze's sets |
 
@@ -408,8 +408,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: A mob hunt step with at least one candidate in view that is reachable and isolated, or on a blaze hunt a blaze within twenty-four, in sight or heard through the walls, and a stand to take them from, the bot on ground it can fight from (dry, not on a one-wide span, air to breathe). A blaze whose every way in the open ends within a fireball's push of lava or a deep drop is not offered to fight in the open (notFoughtInTheOpen in the state).
 - Decision tree, choice; stakes high; ledger kind `combat`
-- Bar: none: every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference, and the outage default is the same nearest target
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/mob-hunt.js (huntObserved, fitness, fitnessSays)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -437,7 +437,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Before a hunt of a mob that fights back, or the crossing into the Nether or the End, with a piece of the kit neither carried nor set aside, and more than one way on; held ten minutes while the same options stand.
 - Decision tree, choice; stakes medium; ledger kind `combat`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/mob-hunt.js (prepareCombatGear, kitChoice, kitPieces)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -456,7 +456,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: In the Overworld on the way through a portal, in Survival, with health, gold or wood short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); the food, blocks and spare pickaxe are the ladder's rungs and are only said here, as left from them; held until what is on offer changes or for ten working minutes.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -466,7 +466,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `top_up_health` | root | wait and heal first, to sixteen | health under sixteen, monsters on |
 | `top_up_gold` | root | make golden boots first, a piece of gold worn so piglins leave the bot be | no piece of golden armour carried |
 | `top_up_wood` | root | gather logs up to eight and make a crafting table first | fewer than eight logs or no crafting table carried |
-| `top_up_cauldron` | root | make a cauldron and fill a bucket with water first, to put a fire out in the Nether | no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short, and is never the fallback; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634) |
+| `top_up_cauldron` | root | make a cauldron and fill a bucket with water first, to put a fire out in the Nether | no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634) |
 | `stash_valuables` | root | walk home and leave the valuables in the stash chest first | the home stash chest within 128 blocks and valuables carried |
 | `cache_valuables` | root | leave the valuables in a chest put down here first | home's chest out of reach, valuables carried, and a chest or the wood for one |
 
@@ -477,7 +477,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: In the Overworld on the ladder's food rung (fewer food points carried than the Nether stay the goal still needs, crossing-kit.js netherStay), in Survival with monsters on; held until what is on offer changes or for ten minutes. Ten working minutes with no food point more set the rung aside half an hour instead of asking.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (kitFoodStep), src/crossing-kit.js (kitRungs, netherStay)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -495,7 +495,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: On the game ladder, a step whose plan from here needs a block found only in another dimension, or a step set aside for that.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/game-progress.js (elsewhereStep, nextGameStage)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -511,7 +511,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Underground in the Overworld, the work's step wants what only the surface has (logs, flowers, a surface search, a portal site), on the game ladder with another step to go on with (the rungs after it that want the same climb are left with it), or for a portal site with one that can be dug out here; asked when the climb would begin, and held to the top once Jev chose it (a climb made with nothing else on offer holds nothing and is looked at again; wood chosen at upkeep is its climb chosen) (note 543).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (surfaceTrip), src/surface.js (tripCost), src/game-progress.js (nextGameStage)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
@@ -530,7 +530,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: In the Nether on the game ladder: the blaze rods step waits (set aside, not for its sources being elsewhere) and the ladder would go back; or a hunt short of fitness, hungry under eighteen with nothing to eat. The answer kept while its reason stands.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/game-progress.js (leaveNetherStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -549,7 +549,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: On the game ladder, the first time a Nether question is due in a stay (the fortress search or a blaze hunt at a fortress) with fewer food points carried than the goal's stay wants (crossing-kit.js netherStay), or with the cauldron set makeable from what is carried (7 iron ingots, a water bucket, a crafting table or wood for one: note 649), and each hour of the stay after; not with a mob in sight; asked once whatever the answer.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/nether-food.js (askStayKit), src/crossing-kit.js (netherStay), src/mob-hunt.js (stayKit)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -558,7 +558,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `go_on` | root | go on with the stay on what is carried | always; said with the points carried and how many minutes they last at forty hunger an hour against the minutes the goal still wants |
 | `restock_food` | root | get food here first: the ways to it asked next, each priced | some way to food real from here other than the trip back (a hoglin known, mushrooms of both kinds in view, raw meat to cook); the ways not real are said |
 | `raid_bastion` | root | raid a bastion's chests for their food | food short for the stay and a bastion remembered within 384 blocks whose walk is not resting (note 649); said with the same facts as bastion_raid and the food its chests hold; chosen, it is the raid Jev chose |
-| `top_up_cauldron` | root | make the cauldron set for the Nether's fire now | in the Nether with a water bucket, seven iron ingots and a crafting table or wood for one carried, and no cauldron (no water is to be had there to fill an empty bucket); said with the iron it costs, the slots, what fire is of the blaze fights' damage, that it must be set down near the fight or when alight, the seconds it takes, and that no trial has played it; never the fallback (note 649) |
+| `top_up_cauldron` | root | make the cauldron set for the Nether's fire now | in the Nether with a water bucket, seven iron ingots and a crafting table or wood for one carried, and no cauldron (no water is to be had there to fill an empty bucket); said with the iron it costs, the slots, what fire is of the blaze fights' damage, that it must be set down near the fight or when alight, the seconds it takes, and that no trial has played it (note 649) |
 | `return_for_food` | root | go back through the portal to the Overworld for food | the way back is at hand; said with the trip at the measured pace of the Nether's walks, and the food known on the other side (not where every way its walk begins with rests or is refused from here: said as not reachable, note 706) |
 
 ### `win_strategy`
@@ -568,14 +568,14 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder's next step or the top-level choices change (a side trip coming into view among others does not), or ten minutes pass. A side trip runs once and then rests ten minutes.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/strategy.js (strategyOptions, strategyTree, homeOption), src/game-progress.js (openRungs), src/work.js (sideTrips)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, iron armour, golden boots, bow, arrows, diamond sword, and last before the portal, while blaze rods are still needed, the crossing kit: a spare pickaxe, blocks and food for the stay, crossing-kit.js kitRungs, note 673); pickaxes are never skipped. Each is said alike, with what it is for, what it takes from the pockets and what going without costs |
-| `stage_[a-z_]+` (pattern) | root | the ladder's later stage | past the preparation ladder in the Overworld (pearls, the crossing, the stronghold): the fallback |
+| `rung_[a-z_]+` (pattern) | root | a rung of the ladder | the ladder's next rung, and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, iron armour, golden boots, bow, arrows, diamond sword, and last before the portal, while blaze rods are still needed, the crossing kit: a spare pickaxe, blocks and food for the stay, crossing-kit.js kitRungs, note 673); pickaxes are never skipped. Each is said alike, with what it is for, what it takes from the pockets and what going without costs |
+| `stage_[a-z_]+` (pattern) | root | the ladder's later stage | past the preparation ladder in the Overworld (pearls, the crossing, the stronghold) |
 | `take_up_[a-z_]+` (pattern) | root | take up a rung set aside for the Nether after all | a rung Jev chose to go without before the Nether (nether_first) and still waiting (note 498); said with what it is for and when it would come back on its own |
 | `nether_first` | root | leave the steps that may wait and go for the Nether now | in the Overworld when every step left before the Nether may wait (DEFERRABLE); said with what going without each costs and the minutes spent on the step at hand |
 | `side_trip` | root | a side trip, off the way to the Nether | one or more trips below are on offer; said with the trips it holds (all of the one, when there is one) |
@@ -607,7 +607,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: The rung's budget (src/tried.js watchRung, kept by src/arbiter.js rungWatch whoever holds the turn): ten minutes on the clock, sealed in, held on a pillar or fighting included (only sleep, a batch cooking, health coming back and the Overworld night in a shelter are not counted), without more of the rung's item, a milestone, a new best distance to its target or sixteen blocks of new country; at once when a stance held on with nothing new reaches its five-minute cap (src/holds.js); or an escalation from a question below whose every way rests from here, whose same answer was held (src/decisions/index.js escalateFrom), or that was answered none good, sure, twice running to the same situation.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (answerStall with the rung's stall), src/tried.js (the budget and the ledger)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -676,7 +676,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: In the Nether on the game ladder, the pearl step short of pearls with no gold to barter, and a bastion remembered within 384 blocks whose walk is not resting; asked when the trip begins, held forty-five minutes (or until the bot dies or the raid closes) so it is not asked at each leg.
 - Decision tree, choice; stakes high; ledger kind `strategy`
 - Bar: none: Jev's pick is taken at any confidence: the ways are carried out by the survival layer's own stances and the loot code's guards (health, a mob that bites in sight), an unsure raid is one trip held forty-five minutes and asked again after, and the code default (gold only) answers only when Jev cannot be reached
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/bastion-raid.js (chooseTrip, facts, options), src/bartering.js (gatherBastionGold), src/looting.js (lootableChests reads raidOn)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -695,7 +695,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: In the Overworld on the way to the Nether, with no lit portal known and no frame begun; held once chosen and asked again after every twenty working minutes on the way held (said with the minutes and what they made, to keep or change), when a chosen ruin's frame will not do, when the walks to the lava chosen come no nearer, or when neither the walk nor the staircase gets back to a cast frame (said with where it is and what each way ended in), or when a frame with obsidian in it fails at its site (said with what is cast, the failures since the last block went in and why, and those a mob in the way caused, not counted).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (portalMethod, portalFacts, methodSoFar), src/portal-cast.js (castSays)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -718,7 +718,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: On the way to a remembered portal or one in view (the crossing into the Nether, or the way back from it), when the walk made no ground and the staircase toward it rests or stalls; asked once for each rest from each place (its eight-block area and height), the answer kept (said as every way resting when met again). A way chosen from a place that moved the bot under four blocks and no nearer is not offered from there again for five minutes in that rest, and is said (triedFromHereToNothing); with every way so tried, the way rests and is not asked.
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (walkToKnownPortal, portalWay, lineSays)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -740,7 +740,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Between work steps in the Overworld, with Jev reachable, when the bot is within a sculk sensor's hearing (eight blocks) or sixteen blocks of a shrieker that can call a warden; once per patch, the answer held five minutes.
 - Decision tree, choice; stakes high; ledger kind `upkeep`
 - Bar: none: Jev's pick is taken at any confidence: every answer is held only five minutes, so a close call is soon asked again, and the warden is not a rule code can weigh for it
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (sculkStep)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -759,7 +759,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: An acquisition step needs a material and no chosen source is still being worked; a single feasible option is taken without asking.
 - Decision tree, choice; stakes medium; ledger kind `source`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (executePlannedAcquisition), src/decision-options.js (resourceSources)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -778,7 +778,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Once per source, when a mining step has met its count and more of the trunk, vein or stone face is within six blocks, up to a cap (eight logs, thirty-two of an ore, two dozen stone).
 - Decision tree, choice; stakes low; ledger kind `source`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (moreOfSource)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -794,7 +794,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: An item the work wants (a drop, a craft, a smelt, food) has no slot; asked up to three times until there is room.
 - Decision tree, choice; stakes medium; ledger kind `inventory`
 - Bar: none: dropped stacks lie where they fell and can be picked up again; the only-tool and block-reserve facts are said in each option
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/inventory-tidy.js (makeRoom, jevMakesRoom)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -811,7 +811,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, and after a walk to ore that wore the pickaxes.
 - Decision tree, choice; stakes low; ledger kind `smelting`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (smelt, whileCooking)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -830,7 +830,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: After a dig beside water or lava, when the liquid is seen in the dug cell, the bot is on dry ground, and a building block is carried.
 - Decision tree, choice; stakes medium; ledger kind `mining`
 - Bar: none: a plug is one block, taken back up as easily; the choice is asked again at the next leak
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (dig, leakResponse)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -846,7 +846,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.
 - Decision tree, choice; stakes low; ledger kind `explore`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/home-base.js (searchForSheep), src/exploration.js (biomeView)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
@@ -866,7 +866,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A surface search (logs, sand, clay and the like) that needs a new heading: at its start, when a leg is walked, or after three walks that got nowhere. The heading is held until then; the leg is up to 512 blocks.
 - Decision tree, choice; stakes low; ledger kind `explore`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (explore), src/exploration.js (biomeRay)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -881,7 +881,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A mine step in the Nether (wood for a tool, or any block the Nether has) with none of its blocks within reach where the bot stands; asked each time the search would have walked, the chosen way carried out to its end, and a way that came no nearer resting from that spot five minutes.
 - Decision tree, choice; stakes medium; ledger kind `explore`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/nether-gather.js (netherGather, knownPlaces, wayTo, woodInReach), src/work.js (explore), src/nether-travel.js (surveyLeg, floorWay, walkFloorToward), src/bridging.js (surveyCrossing, spanBlockSources), src/nether-coverage.js
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -900,7 +900,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs' worth of wood are carried; in the Nether, fewer planks' worth than the pickaxe to make now and a spare want, with no pickaxe to be made or stems known within 128 blocks (note 658); or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).
 - Decision tree, choice; stakes low; ledger kind `upkeep`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (upkeepStep)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -922,7 +922,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Every third mining or tunnelling step with a useful ore in reach, and at once when an ore the bot is short of is in reach (coal, iron, lapis, diamonds, nether gold for pearls); the shortage is said in the option. Without Jev a short ore is taken.
 - Batched question, choice; stakes low; ledger kind `mining`
 - Bar: none
-- Jev unreachable: no detour: an error or a five-second timeout is swallowed and the main step carries on
+- Jev unreachable: Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn
 - Options built in: src/opportunistic-mining.js (opportunityCandidates)
 
 ### `passing_gold`
@@ -932,7 +932,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A Nether walk that looks in passing (the fortress sweep, the return to the blazes, the warped search, the gather and portal walks, the way down, corpse runs) has gold within eight blocks that the rule does not take: past four blocks, gilded blackstone, or any gold while health is under 16 or food under 14. Asked at most every fifteen seconds. Nether gold ore and gold blocks within four blocks at full enough health and food are taken without asking.
 - Batched question, choice; stakes low; ledger kind `mining`
 - Bar: none
-- Jev unreachable: no detour: an error or a five-second timeout is swallowed and the walk goes on
+- Jev unreachable: Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn
 - Options built in: src/opportunistic-mining.js (mineInPassing)
 
 ### `opportunistic_animal`
@@ -942,7 +942,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Every third step with a sheep in view and fewer than three wool carried (chickens and pigs are never hurt).
 - Batched question, choice; stakes low; ledger kind `pickup`
 - Bar: none
-- Jev unreachable: no detour: an error or a five-second timeout is swallowed and the main step carries on
+- Jev unreachable: Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn
 - Options built in: src/opportunistic-pickups.js (animalCandidates)
 
 ### `trade_choice`
@@ -952,7 +952,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A trade step (the idle trade option, or the pearl rung when a cleric's pearls are known) once the offers of the villagers in reach are read and at least one trade is feasible.
 - Decision tree, choice; stakes low; ledger kind `trade`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/trading.js (tradeStep, tradeOptions)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -970,7 +970,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Each step of a small-house request.
 - Decision tree, choice; stakes medium; ledger kind `build`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (houseDecisionStep)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -1095,7 +1095,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Between player requests, by day, with health fourteen or more, hunger twelve or more and no threat.
 - Decision tree, choice; stakes medium; ledger kind `idle`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (idleOptions), src/home-base.js (homeChores)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -1137,7 +1137,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A stall (src/stillness.js): forty-five seconds on one action without new ground, a gain, a block changed or getting nearer, outside a permitted wait; a single option is taken without asking.
 - Decision tree, choice; stakes low; ledger kind `idle`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/work.js (answerStall, breakStillness), src/stillness.js (the rule)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -1219,7 +1219,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: The home rung's site step, when two or more sites fit the layout (up to four, eight blocks apart, the level ones first).
 - Decision tree, choice; stakes low; ledger kind `home`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/home-base.js (chooseBaseSite, pickHomeSite)
 - Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
 - Nothing left to try: the stall's question, as before (nothing above it)
@@ -1236,8 +1236,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: Each step of the dragon fight in the End.
 - Decision tree, choice; stakes high; ledger kind `end`
-- Bar: none: Jev's pick is taken at any confidence and asked again each step; the fixed order (out of danger, crystals, head, arrow, position) answers only when Jev cannot be reached
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: Jev's pick is taken at any confidence and asked again each step; Jev not reachable, the bot holds and it is asked again (jev-down.js)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/end-combat.js (fightEndStep)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
@@ -1257,7 +1257,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: Each step of the stronghold search once an Eye has given a bearing.
 - Decision tree, choice; stakes medium; ledger kind `stronghold`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/stronghold.js (walkBearing)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -1271,8 +1271,8 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 - When: On the fortress search, when a fortress (two dozen or more of its bricks) is in view and the bot is not on its floors (at the height of a brick with room to stand on it, within six blocks), and again each time the way chosen ends no nearer; the way is to its nearest floor; the answer holds for the approach until it fails, five minutes at most. Also where a walk on foot to a place Jev chose failed (state.stretch says which: a stretch of the fortress's floors, or where blazes were seen): the way is then to that place, asked afresh for each, the failed walk among what failed, and leaving it (other_way) leaves that way, not the fortress.
 - Decision tree, choice; stakes high; ledger kind `fortress`
-- Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed, and the outage default is the order the code kept, a failed way passed over
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Bar: none: every way offered was surveyed and runs under the hard rules (a span laid crouched and never under a shooter's fire, no rock dug with lava behind it, no drop into lava, no swing or turn on a span); a way that fails is asked again with what failed
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/mob-hunt.js (fortressApproaches, approachFortress, crossingOptions), src/bridging.js (surveyCrossing, crossAlong), src/fortress-map.js (crossing), src/nether-travel.js (crossingSays)
 - Nothing left to try: asks `fortress_leg` next up, with this one's failure said
 
@@ -1302,7 +1302,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: On the fortress search, when a fortress in view is about to be approached (before fortress_approach asks the way in), and on a blaze hunt when blazes heard out of sight are about to be gone at; asked once per visit and held until the bot dies, its hunger falls two points, or its time is out (five minutes for going in, three for a wait, two for the trip back and the hunt); a wait ends when health is full or a mob comes, and the visit then goes on as chosen.
 - Decision tree, choice; stakes high; ledger kind `fortress`
 - Bar: none: every way offered is a real route the bot can run from here (a wait eats what is carried and stops when a mob comes; the trip back and the hoglin hunt are the ones leave_nether and the food answers run), none refuses a visit for health, and the outage default is to go in, as the code did before the question
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/fortress-visit.js (ask, options), src/mob-hunt.js (findFortressStep, huntObserved), src/blaze-record.js (rowSays)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -1324,7 +1324,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: On a blaze hunt in the Nether, each pass with a spawner the fortress map holds (or one in sight) within 48 blocks, not seen broken, and no blaze within 32 that is not set aside; or, within 16 of a live cage, no blaze in the bot's sight and none within two blocks (where a blaze swings instead of shooting) (the lull between its tries, note 691: spawner-clock.js), unless Jev chose to go after the ones out of sight within the last minute; not while a stand or wait by a spawner is going on, a heal chosen here is going on, or the trip back for food is held. The search is not offered: the spawner is the target.
 - Decision tree, choice; stakes high; ledger kind `fortress`
 - Bar: none: every way offered is a real route from here (the stand is the fortress search's wait by a spawner, a minute at a covered cell; the heal eats what is carried and ends at full health, three minutes or a mob; the trip back and the food ways are the ones leave_nether and restock_food run); none refuses anything for health
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/empty-spawner.js (atSpawner, options), src/mob-hunt.js (prepareMobHunt, findFortressStep's wait by a spawner)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -1349,7 +1349,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: On the fortress search, each time a leg begins: at the start, when the last leg reached its end, when a leg ended within eight blocks of where it began (its heading then rests from there), when the sweep turned for a leg that made no ground, and on a fortress's floors when the bot has walked all it can reach of what it has seen of it (the map: floors seen through open air, walked, and running on into unseen space).
 - Decision tree, choice; stakes medium; ledger kind `fortress`
 - Bar: none
-- Jev unreachable: the code's own order walks the tree (recorded as a code default, and said once in chat)
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/mob-hunt.js (chooseLeg, findFortressStep), src/nether-travel.js (surveyLeg, legSays), src/nether-coverage.js (what has been seen and stood on), src/nether-regions.js (where fortresses can begin)
 - Nothing left to try: asks `rung_progress` next up, with this one's failure said
 
@@ -1384,7 +1384,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 - When: A travel leg meets a level water route of useful length with a safe shore at each end.
 - Batched question, choice; stakes low; ledger kind `travel`
 - Bar: none
-- Jev unreachable: counted as a failed boat choice; the bot walks or swims
+- Jev unreachable: the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the crossing is surveyed and asked fresh
 - Options built in: src/boats.js (boatTravelStep)
 
 ### `discovery_target`

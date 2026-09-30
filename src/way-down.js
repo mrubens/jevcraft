@@ -529,9 +529,10 @@ function creepersAtEnd(bot, plan, { worn = null } = {}) {
 }
 const TRIED_MS = 10 * 60000;
 
-// Without Jev, the way that comes off the top safely, else the one that
-// gets lower safely, else the fall.
-function fallbackWay(ways) {
+// The old order (the way that comes off the top safely, else the one that
+// gets lower safely, else the fall): said to decide() as context, read by
+// the tests' stand-in only; in play nothing acts on it (note 707).
+function oldOrderWay(ways) {
   const order = [['dig_down', w => w.plan.off], ['ride_water', w => w.plan.off], ['dig_down', () => true], ['ride_water', () => true], ['step_off', () => true]];
   return (order.find(([k, ok]) => ways[k] && ok(ways[k])) || [Object.keys(ways)[0]])[0];
 }
@@ -572,7 +573,7 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
     carried: { waterBucket: view.carried.water_bucket || 0, buildingBlocks: ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack', 'stone', 'andesite', 'diorite', 'granite', 'tuff'].reduce((n, k) => n + (view.carried[k] || 0), 0), pickaxe: view.pickaxe ? `${said(view.pickaxe)}, ${view.pickaxeUses} uses left` : 'none' },
     ...(tried.length ? { triedLately: tried.map(t => `${said(t.way)} ${Math.round((now - t.at) / 1000)} s ago: ${t.result}`) } : {}) };
   const { decide } = require('./decisions');
-  const decision = await decide('way_down', { client, bot, task, goal, save, tree, state, context: { fallback: fallbackWay(ways) } });
+  const decision = await decide('way_down', { client, bot, task, goal, save, tree, state, context: { oldOrder: oldOrderWay(ways) } });
   if (decision.stale) return false;
   const choice = decision.path.at(-1), way = ways[choice];
   if (!way) return false;
@@ -593,4 +594,4 @@ async function oneWayDown(bot, task, walkGoal, perch, { client, goal, save }) {
   } finally { bot.clearControlStates?.(); }
 }
 
-module.exports = { sinkDown, RIDE_RECORD, endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, fallbackWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };
+module.exports = { sinkDown, RIDE_RECORD, endOf, creepersAtEnd, perchOf, waysDown, digColumn, digSeconds, fallUnder, perchSays, livePerch, liveView, goalOnTop, comeDownFirst, oldOrderWay, digDown, rideWater, stepOff, waterInView, waterBucketUse, SAFE_FALL };

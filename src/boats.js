@@ -100,8 +100,8 @@ async function surveyBoatTrip(bot, task, destination) {
   return best || null;
 }
 
-async function chooseBoat(client, state) {
-  const response = await require('./decisions').ask(client, { state, questions: { travel: ['boat_crossing'] }, signal: AbortSignal.timeout(5000) });
+async function chooseBoat(client, state, hold = null) {
+  const response = await require('./decisions').ask(client, { state, questions: { travel: ['boat_crossing'] }, timeoutMs: 5000, hold });
   return response;
 }
 
@@ -273,8 +273,11 @@ async function boatTravelStep(bot, task, goal, save, destination, actions, clien
       const response = await chooseBoat(client, { request: goal.request, waterBlocks: trip.length, progressBlocks: trip.progress,
         swimSecondsWithoutBoat: Math.round(trip.length / 2), timeOfDay: bot.time?.timeOfDay, threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(),
         carriedBoat: bot.inventory.items().find(i => boatItem(i.name))?.name || null,
-        inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])), safeShoreAtBothEnds: true });
-      task.check(); state.decision = { at: new Date().toISOString(), ...response.answers.travel }; save();
+        inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])), safeShoreAtBothEnds: true }, { bot, goal, task });
+      task.check();
+      // Held through an outage (note 707): surveyed and asked fresh next pass.
+      if (response.stale) return true;
+      state.decision = { at: new Date().toISOString(), ...response.answers.travel }; save();
       if (response.answers.travel.choice !== 'boat') { state.declinedArea = area; state.declinedUntil = Date.now() + 60000; save(); return false; }
       state.preparing = preferredBoat(bot); state.attempts = 0; save();
     }

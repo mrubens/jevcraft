@@ -15,7 +15,7 @@ const pos = p => new Vec3(p.x, p.y, p.z);
 // the next pickaxe needs. The dream run walked past coal ore with no fuel in
 // the pockets while Jev, asked about "surplus" and told nothing of the
 // shortage, chose to continue. Now it is asked whenever a short ore is in
-// reach, with the shortage in the option; without Jev the ore is taken.
+// reach, with the shortage in the option.
 const FUEL_UNITS_WANTED = 8;
 const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name === 'coal' || i.name === 'charcoal' ? i.count : i.name === 'coal_block' ? i.count * 9 : 0), 0);
 // Gold in the Nether is pearls: nine ingots a pearl bartered with piglins
@@ -142,8 +142,10 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
     const response = !asking ? { answers: { opportunity: { choice: `ore_${Math.max(0, firstShort)}`, rule: 'no Jev: a short ore is taken' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, health: bot.health, food: bot.food, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: choices.map(({ standing, ...c }) => ({ ...c, distance: c.position.distanceTo(start) })) },
     questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.${shortage(bot, c) ? ` ${shortage(bot, c)[0].toUpperCase()}${shortage(bot, c).slice(1)}.` : ''}`])) }] },
-    signal: AbortSignal.timeout(5000) });
+    timeoutMs: 5000, hold: { bot, goal, task } });
     task.check();
+    // Held through an outage (note 707): asked fresh at its next turn.
+    if (response.stale) return false;
     const selected = response.answers?.opportunity?.choice;
     state.lastDecision = { at: new Date().toISOString(), answer: response.answers?.opportunity, usage: response.usage };
     if (selected === 'continue') { save(); return false; }
@@ -283,8 +285,10 @@ async function mineInPassing(bot, task, goal, save, { navigate, dig }, client = 
           takenWithoutAsking: `nether gold ore and gold blocks within ${PASSING_RADIUS} blocks while pearls are short and health is at least ${VITALS.health} and food at least ${VITALS.food}`,
           candidates: choices.map(c => ({ block: c.block, distance: round(c.distance), routeSteps: c.routeSteps, seconds: detourSeconds(bot, c) })) },
         questions: { passing: ['passing_gold', { pearls, options: Object.fromEntries(choices.map((c, i) => [`gold_${i}`, passingSays(bot, c)])) }] },
-        signal: AbortSignal.timeout(5000) });
+        timeoutMs: 5000, hold: { bot, goal, task } });
       task.check();
+      // Held through an outage (note 707): asked fresh at its next look.
+      if (response.stale) return false;
       const selected = response.answers?.passing?.choice;
       state.lastDecision = { at: new Date().toISOString(), question: 'passing_gold', answer: response.answers?.passing, usage: response.usage };
       const index = /^gold_(\d+)$/.exec(selected || '')?.[1];

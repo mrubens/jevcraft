@@ -7,12 +7,20 @@ safety), feasibility (whether an option is possible now) and bookkeeping (the
 stall detector's measurement, attempt counts). This audit lists the rules that
 choose. Line numbers are as of commit 27ef475.
 
+## Done in note 707
+
+- No question has a fallback. Jev not reachable, nothing is decided by code:
+  the bot holds, says once it is waiting for Jev, asks again with a backoff
+  and asks fresh when Jev answers (src/jev-down.js). The arbiter gives no
+  turn by rule. Only the body's physics keeps a safety rule (`body_way`,
+  `shot_answer`), beside the rule reflexes. The inventory is in trial note 707.
+
 ## Done in 27ef475
 
 - The play decisions have no confidence gate: `survival_priority`,
   `ranged_response`, `encounter_stance` and `dragon_fight` act on Jev's pick at
-  any confidence. Their hand-written fallbacks answer only when Jev cannot be
-  reached.
+  any confidence. They have no fallbacks since note 707: Jev not reachable,
+  the bot holds and asks again.
 - `encounter_stance` is asked by default (`JEV_ENCOUNTERS=0` turns it off).
   An unsure pick is no longer handed to the rules for fifteen seconds; a stance
   that cannot be carried out is struck off for twenty seconds and Jev chooses
@@ -69,7 +77,8 @@ choose. Line numbers are as of commit 27ef475.
 - 68984f7: `night_mine_target` (the nearest of each ore, copper included
   with its use said, or a branch).
 - Note 593: a threat at hand beside a saved shelter is the stance question
-  with Jev reachable; sealing that shelter first is the fallback's rule only.
+  with Jev reachable; sealing that shelter first is the rule only with
+  `JEV_ENCOUNTERS=0` (note 707: no fallback when Jev is down).
 
 The gates that remain are all on player-facing questions (intake, commands,
 builds, memory, dream): below the bar the bot asks the player, which is Jev's

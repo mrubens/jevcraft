@@ -19,38 +19,6 @@ function world({ deathAgoMs = 60000, dimension = 'overworld', deathDimension = '
   return { bot, goal, said, equipped, give };
 }
 
-function wearKit(bot) {
-  const kit = { 5: 'iron_helmet', 6: 'iron_chestplate', 7: 'iron_leggings', 8: 'iron_boots', 45: 'shield' };
-  for (const [slot, name] of Object.entries(kit)) bot.inventory.slots[slot] = { name, durabilityUsed: 0, type: bot.registry.itemsByName[name].id };
-  const items = bot.inventory.items();
-  bot.inventory.items = () => [...items, { name: 'iron_sword', count: 1, durabilityUsed: 0 }];
-}
-
-// With no one to ask (no client), the old rule waits: the kit, or daylight.
-const noClientStep = (bot, goal, moved) => corpseRunStep(bot, new Task('win'), goal, () => {}, { move: async () => { moved.push(1); }, collect: async () => false });
-
-test('in the Overworld with no kit, and no one to ask, the run waits for daylight', async () => {
-  const { bot, goal } = world();
-  bot.time.timeOfDay = 15000;
-  const moved = [];
-  assert(corpseRun(bot, goal), 'the run is there to weigh');
-  assert.equal(await noClientStep(bot, goal, moved), false, 'no kit, at night: not gone');
-  assert.equal(moved.length, 0);
-  assert.equal(goal.corpseRun.status, 'open', 'still to do');
-  bot.time.timeOfDay = 1000;
-  assert.equal(await noClientStep(bot, goal, moved), true, 'by day');
-  assert.equal(moved.length, 1);
-});
-
-test('daylight is no help below ground: with no one to ask, a cave death waits for the kit', async () => {
-  const { bot, goal } = world();
-  goal.survival.deaths[0].position = { x: 400, y: 15, z: 0 };
-  const moved = [];
-  assert.equal(await noClientStep(bot, goal, moved), false, 'unarmored, by day, to a cave at y 15: no');
-  wearKit(bot);
-  assert.equal(await noClientStep(bot, goal, moved), true, 'with the kit on');
-});
-
 test('what is worth going back for: the kit and supplies, not blocks or stone tools', () => {
   assert.deepEqual(worth({ iron_chestplate: 1, diamond_sword: 1, blaze_rod: 8, dirt: 40, stone_pickaxe: 1, cobblestone: 64, ender_pearl: 2 }),
     { iron_chestplate: 1, diamond_sword: 1, blaze_rod: 8, ender_pearl: 2 });

@@ -126,8 +126,6 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
       search.moves++; save(); return;
     }
     const origin = bot.entity.position.clone(), dimension = bot.game.dimension;
-    // Without Jev: the least-walked waypoint, then the one nearest the
-    // estimate (the stronghold_waypoint question, decisions/travel.js).
     const decision = await decide('stronghold_waypoint', { client, bot, task, goal, save, tree, interrupt: () => checkThreats(bot),
       state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
         latestBearing: search.bearings.at(-1), estimatedTargetIsUnverified: true, health: bot.health, food: bot.food,

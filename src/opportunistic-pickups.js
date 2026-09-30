@@ -170,8 +170,10 @@ async function opportunisticPickups(bot, task, goal, save, primary, actions, cli
     const response = await require('./decisions').ask(client, { state: { request: goal.request, primary, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: animals.map(({ entity, ...c }) => ({ ...c, position: plain(entity.position) })) },
     questions: { opportunity: ['opportunistic_animal', { options: Object.fromEntries(animals.map((c, i) => [`animal_${i}`, `${c.animal}: ${c.label}; carrying ${c.carried} of ${c.wanted} wanted; ${Math.round(c.distance)} blocks away.`])) }] },
-    signal: AbortSignal.timeout(5000) });
+    timeoutMs: 5000, hold: { bot, goal, task } });
     task.check();
+    // Held through an outage (note 707): asked fresh at its next turn.
+    if (response.stale) return false;
     const selected = response.answers?.opportunity?.choice;
     state.lastDecision = { at: new Date().toISOString(), answer: response.answers?.opportunity, usage: response.usage };
     if (selected === 'continue') { for (const c of animals) state.skipped[`mob:${c.entity.uuid || c.entity.id}`] = Date.now(); save(); return false; }

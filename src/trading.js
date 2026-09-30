@@ -7,8 +7,7 @@
 //
 // At a remembered village each adult villager in reach is opened and its
 // offers read (kept ten minutes), then one trade is made: Jev picks among
-// the feasible ones (decisions/work.js, trade_choice); without Jev, a
-// wanted buy first, then a sale while emeralds are short of forty.
+// the feasible ones (decisions/work.js, trade_choice).
 const { goals } = require('mineflayer-pathfinder');
 const { countOf } = require('./skills');
 const { checkAir } = require('./vitals');

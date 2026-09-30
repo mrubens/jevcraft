@@ -1,7 +1,7 @@
 'use strict';
 // Fights chosen on purpose: which target a hunt takes on, and the Ender
 // Dragon fight's next action.
-const { define, firstOption } = require('./index');
+const { define } = require('./index');
 const { endDecisionInstructions } = require('./end-state');
 
 define({
@@ -29,8 +29,7 @@ define({
     task: 'The resource the request needs drops from these mobs. Choose which observed mob to fight now, or leave them for now if the situation is unsuitable.',
     guidance: 'Every target listed is reachable, with no crowd of other kinds beside it; where other mobs reach the bot, its fight is priced with them. fitness is the bot\'s state for a fight: the code once refused one under fourteen health or hunger, without a full kit, or with hunger under eighteen and nothing to eat (health comes back only at eighteen or more); those are facts here, not rules. A bot alight in the Nether has no water to put the fire out: a cauldron of water or a fire resistance potion does, where one is carried or near, and otherwise only waiting burns it off. Health, food and the resource still needed are in the state; on a blaze hunt, blazes says how many are about, seen or heard, at what heights, a spawner seen, and that blaze rods come from nothing else. A stand (a hole, the spawner\'s cage, a wall at the back) is priced as the fight in the open is: the price of each, set against leaving them, is the choice. On a blaze hunt playedRecord is what the bot\'s own fights with blazes came to in the trials, by the health and hunger a fight began at and by how many blazes were about (three within sixteen blocks is a spawner\'s): the row the bot is in is what a fight begun now has been. playedAnswers, and the sentence ending a stand that has one, say what came after each kind of answer (a strike, cover, a retreat, going away to heal) in the fights of the trials given in a situation like this one, with the fights counted, the rods taken after it and the deaths after it, only where at least five fights are in the row; what happened after such answers, not what the answer caused. Near a live spawner the fight in the open is also priced with the blazes it puts in over the fight\'s own seconds. For a blaze target, blazeCounts (note 665) says the blazes in sight now, the spawner\'s rule (up to four every ten to forty seconds while the bot is within sixteen, until six are about, none beyond sixteen) and what fights at a live spawner came to by how many blazes were about, with the number of fights in each row: counts of fights the bot played in states the rows do not hold alike, not what entering with that many would do.',
   },
-  fallback: firstOption,
-  ungated: 'every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference, and the outage default is the same nearest target',
+  ungated: 'every target offered is reachable and isolated and the bot has footing for a fight; the fitness is said in full on every option, a close call between fighting and leaving it is a preference',
 });
 
 // The kit for a fight, offered and not required (src/mob-hunt.js
@@ -51,18 +50,7 @@ define({
     task: 'A fight needs a kit the bot is short of. Choose to go on with what is carried, to make the missing pieces here, or to go back to the Overworld for them.',
     guidance: 'Each option says what it costs: the fight as it would go with what is worn and held, the iron and steps to make a piece, the walk to the portal. Fighting without armour is a real choice, not a rule broken; iron ore is found only in the Overworld.',
   },
-  fallback: (children, path, context = {}) => children[context.fallback] ? context.fallback : Object.keys(children)[0],
 });
-
-// Out of danger first, then the crystals that heal the dragon, then a bed
-// by the perched head, then the head within reach, then an arrow, then a better position, then a watch.
-function endFallback(safe) {
-  return children => {
-    const keys = Object.keys(children), find = test => keys.find(test);
-    return (!safe && find(k => k.startsWith('move_'))) || find(k => k.startsWith('crystal_')) || find(k => k === 'bed_bomb') || find(k => k === 'strike_head') ||
-      find(k => k === 'shoot_dragon') || find(k => k.startsWith('move_')) || keys[0];
-  };
-}
 
 define({
   id: 'dragon_fight', area: 'endgame', parent: null, kind: 'end', primitive: 'choice', stakes: 'high', tree: true,
@@ -78,8 +66,7 @@ define({
     { key: 'observe', label: 'wait one second and watch', when: 'on a safe spot with the dragon in view, fewer than five idle watches in a row', level: 'root' },
   ],
   instructions: endDecisionInstructions,
-  fallback: (children, path, context = {}) => endFallback(context.safe)(children),
-  ungated: 'Jev\'s pick is taken at any confidence and asked again each step; the fixed order (out of danger, crystals, head, arrow, position) answers only when Jev cannot be reached',
+  ungated: 'Jev\'s pick is taken at any confidence and asked again each step; Jev not reachable, the bot holds and it is asked again (jev-down.js)',
 });
 
-module.exports = { endFallback };
+module.exports = {};

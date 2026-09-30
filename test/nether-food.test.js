@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 // Food as a resource of the Nether stay (note 639): when the step is on offer, the ways it holds and what each
 // says, the hoglin hunt from a pillar and the hunt that finds no hoglin at the sighting, the stay's food kit
 // asked inside the Nether, and the fact that health does not come back said on the options of a hurt bot.
@@ -239,9 +240,9 @@ test('restock_food is asked with its ways, the pick carried out, and the stay an
   assert.deepEqual(state.stay, { minutesWanted: 120, pointsWanted: 80, carriedLastMinutes: 0 });
   // The keep_on it offers is the same twenty minutes' rest of the trip back the stalls offer.
   const { question } = require('../src/decisions');
-  assert.equal(question('restock_food').fallback({ cook_meat: {}, keep_on: {}, hoglin_pillar: {} }), 'cook_meat');
-  assert.equal(question('restock_food').fallback({ hoglin_walk: {}, hoglin_pillar: {}, return_for_food: {} }), 'return_for_food');
-  assert.equal(question('nether_food_kit').fallback({ go_on: {}, return_for_food: {} }), 'go_on');
+  assert.equal(oldOrder('restock_food')({ cook_meat: {}, keep_on: {}, hoglin_pillar: {} }), 'cook_meat');
+  assert.equal(oldOrder('restock_food')({ hoglin_walk: {}, hoglin_pillar: {}, return_for_food: {} }), 'return_for_food');
+  assert.equal(oldOrder('nether_food_kit')({ go_on: {}, return_for_food: {} }), 'go_on');
 });
 
 test('a hurt bot\'s options say health does not come back where it does not, once, and not where it does or where they say it already (note 639)', () => {

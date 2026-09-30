@@ -27,7 +27,7 @@ test('body_way: Jev\'s way is run at once, and burning left to burn out is held'
   const decide = async (id, q) => { asked = { id, ...q }; return { path: ['burn_out'] }; };
   const r = await body.answer(bot, new Task('t'), 'fire', ways, { client: {}, decide, facts: { inFire: false } });
   assert.equal(asked.id, 'body_way');
-  assert.equal(asked.context.default, 'douse_bucket', 'the old rule\'s way is the fallback');
+  assert.equal(asked.context.default, 'douse_bucket', 'the old rule\'s way is the safety rule\'s');
   assert.match(asked.state.says, /Alight at 16 health/);
   assert.deepEqual(ran, ['burn']);
   assert.equal(r.by, 'jev');
@@ -36,7 +36,7 @@ test('body_way: Jev\'s way is run at once, and burning left to burn out is held'
   assert.equal(body.held(bot, 'fire'), null, 'asked again once four more health is gone');
 });
 
-test('body_way: no answer within a second takes the old order\'s way, and holds nothing', async () => {
+test('body_way: no answer within a second takes the body\'s safety rule (the old order\'s way), and holds nothing', async () => {
   const bot = { health: 16, entity: { position: new Vec3(0, 64, 0) } };
   const ran = [];
   const ways = {
@@ -46,7 +46,7 @@ test('body_way: no answer within a second takes the old order\'s way, and holds 
   const decide = async () => { throw Object.assign(new Error('body_way: no answer in 1 seconds'), { name: 'CutShort' }); };
   const r = await body.answer(bot, new Task('t'), 'fire', ways, { client: {}, decide, log: () => {} });
   assert.deepEqual(ran, ['water']);
-  assert.equal(r.by, 'fallback');
+  assert.equal(r.by, 'rule');
   assert.equal(body.held(bot, 'fire'), null);
 });
 
@@ -148,11 +148,11 @@ test('on a span with Jev reachable, the stance is asked before anything is done,
   assert.match(tree.hold_on_span.description, /open sides? at the feet .* walled first/);
 });
 
-test('without Jev the span is held by the code first, as before', async () => {
+test('with JEV_ENCOUNTERS off (no client) the span is held by the code first, as before', async () => {
   const zombie = { id: 4, name: 'zombie', type: 'hostile', position: new Vec3(2.5, 65, 0.5), height: 1.95, width: 0.6, isValid: true };
   const { bot, events } = spanBot(zombie);
   const survival = new Survival(bot, { navigate: async () => {}, place: async () => {}, dig: async () => {} }, { state: { shelters: [] } });
-  survival.decide = async (task, goal, save, q) => { events.push(`ask:${q.id}`); return { fallback: true }; };
+  survival.decide = async (task, goal, save, q) => { events.push(`ask:${q.id}`); return { stale: true }; };
   const goal = {};
   await survival.flee(new Task('span'), goal, () => {}).catch(() => {});
   assert.equal(events[0], 'crouch', `first: ${events.join(',')}`);

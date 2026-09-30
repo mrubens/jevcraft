@@ -1389,20 +1389,6 @@ function rockHolds(bot, feet, attempts) {
   const wear = Number.isFinite(uses) ? ` The best pickaxe has ${uses} uses left; about ${keep} of them are the climb back out from here, and the mine stops when it gets down to that.` : '';
   return `${seen.length ? `Ore in view: ${seen.join(', ')}.` : 'No ore in view from here; a branch finds it in the rock.'} The ${pick} pickaxe carried mines ${mines.join(', ')} ore${not.length ? `; ${not.join(', ')} need a better one` : ''}.${wear}`;
 }
-// Without Jev: the nearest of the ores the ladder uses (not copper).
-function nightOre(bot, feet, attempts) {
-  const ids = [...NIGHT_ORES].filter(name => !/copper/.test(name)).map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
-  const found = bot.findBlocks?.({ matching: ids, maxDistance: 24, count: 32 }) || [];
-  // Not ore touching water or lava. The staircase will not open a cell onto
-  // a liquid, so every step toward such an ore is refused but the sideways
-  // ones: the mine paced back and forth under a copper in the wall of a
-  // flooded cave, the same cave it had drowned in.
-  const wet = q => [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]
-    .some(([x, y, z]) => /water|lava|bubble_column|kelp|seagrass/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
-  const p = found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !attempts?.resting('night_mine', q) && !wet(q))
-    .sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0];
-  return p ? { position: p, name: bot.blockAt(p)?.name } : null;
-}
 
 // What a pocket is built of: what the bot carries to wall itself in with.
 // Natural ground in the shell was never placed and stays where it is.
@@ -5118,8 +5104,6 @@ class Survival {
       // Stale: the moment moved on while Jev answered; the next tick asks
       // again from where the bot is then.
       if (decision.stale) return true;
-      // Jev could not be reached: the rules answer this tick.
-      if (decision.fallback) return false;
       choice = decision.path.at(-1);
       askedNow = !decision.only; noneGoodNow = !!decision.noneGood;
       // Chosen up on the pillar: counted for what the hold says next.
@@ -5219,8 +5203,7 @@ class Survival {
   // A shooter in view at bow range, and a bow in the pack: running from a
   // skeleton is how most of the dream run's deaths went, arrows in the back.
   // Code lists the shots that have a clear arc, the retreat and the pocket;
-  // Jev picks. Without Jev: shoot while health holds and nothing is at arm's
-  // length, otherwise retreat. A melee mob within three blocks is the swing
+  // Jev picks (with Jev not reachable, the bot holds: note 707). A melee mob within three blocks is the swing
   // and escape rules' business, not a moment to draw a bow.
   async rangedChoice(task, goal, save, danger, armed) {
     const bot = this.bot;
@@ -5925,19 +5908,6 @@ class Survival {
       method = decision.path.at(-1);
       this.state.nightPlan = { ...(plan || { plan: 'shelter' }), until: Date.now() + 120000, method };
       save();
-      // Without Jev, the old cascade in one tick: each way in order until one
-      // works (a pocket, a shaft, a mine), the room last as before.
-      if (!this.client || decision.fallback) {
-        for (const key of ['seal_here', 'shaft_pocket', 'night_mine'].filter(k => options[k] && !['saved_shelter', 'build_at_site', 'bed_nook'].includes(method))) {
-          if (await this.shelterBy(task, goal, save, key)) { this.state.nightPlan.method = key; save(); return true; }
-          setAside(this, 'shelter_method', key, 'did not work here', 180000);
-        }
-        if (!['saved_shelter', 'build_at_site', 'bed_nook'].includes(method)) {
-          setAside(this, 'refuge', 'anywhere', 'no way to shelter here', 180000); delete this.state.nightPlan;
-          this.report(goal, save, { action: 'no_shelter_here', reason: 'no way to shelter here' });
-          return false;
-        }
-      }
     }
     // A way that fails rests, and the question is asked again next pass
     // (true). A way the caller gave (the emergency's saved site) is not the
@@ -5995,8 +5965,6 @@ class Survival {
       // twenty-eight. Two or three down into dirt or rock and a block over
       // the head, before a trip for blocks (the dream run gathered dirt one
       // block at a time on open grass at night and a creeper found it).
-      // Without Jev only: a room Jev chose knowing the count is built.
-      if (!this.client && !shelter.inside(bot, refuge) && await this.shaftPocket(task, goal, save)) return;
       this.report(goal, save, { action: 'gather_shelter_materials', need: required, carried: stock, origin: refuge.origin });
       const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try {
@@ -7547,17 +7515,15 @@ class Survival {
   }
 
   // Which ore the night mine goes for, or a branch deeper: Jev's, with each
-  // kind's distance, what is carried and what it is for. Without Jev, the
-  // nearest of the kinds the ladder uses.
+  // kind's distance, what is carried and what it is for.
   async nightTarget(task, goal, save, feet) {
     const bot = this.bot;
     const choices = nightOreChoices(bot, feet, attemptsFor(this));
     // The tunnel behind, dark enough for monsters: a torch is Jev's option
-    // (never the rule's; without Jev the mine goes on as it did).
-    const dark = this.client && countOf(bot, 'torch') ? darkCells(bot, groundCells(bot, feet, 3)).filter(c => !c.equals(feet)) : [];
-    const place = this.client ? this.placeAbout(goal, { at: feet }) : null;
+    // (never a rule's).
+    const dark = countOf(bot, 'torch') ? darkCells(bot, groundCells(bot, feet, 3)).filter(c => !c.equals(feet)) : [];
+    const place = this.placeAbout(goal, { at: feet });
     if (!choices.length && !dark.length && !place?.spawner && !place?.structures.length) return null;
-    if (!this.client) return nightOre(bot, feet, attemptsFor(this));
     // Where each ore lies and what is beside it, and where a branch goes
     // (the decision audit, 2026-09-25): an ore in a cave wall opens the
     // tunnel onto the cave's mobs, and lava two blocks off is one misstep.
@@ -7593,7 +7559,6 @@ class Survival {
     const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description }])), context: {},
       state: { ...(place ? { place: place.state } : {}), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
-    if (decision.fallback) return nightOre(bot, feet, attemptsFor(this));
     const pick = decision.path.at(-1);
     if (pick === 'light_tunnel') {
       const placed = await placeTorches(bot, task, this.actions, [dark.sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0]], { max: 1 });
@@ -7804,7 +7769,7 @@ class Survival {
   }
 
   // The ways out of lava the code can carry out from here, for body_way:
-  // the old rule's way first (its fallback), each with where it goes and its
+  // the old rule's way first (the body's safety rule), each with where it goes and its
   // seconds. The old rule: the nearest cell out, water or dry (water puts
   // the fire out); a pillar where that cell is out of a jump's reach and
   // blocks are carried; with no cell, back toward the last dry footing; with
@@ -8569,7 +8534,7 @@ class Survival {
         notNow[k] = `${entry.why}; back in about ${Math.max(1, Math.round((entry.until - Date.now()) / 1000))} seconds`;
       }
       if (options.go_for_food && !Object.keys(foodWays).length) delete options.go_for_food;
-      // Without Jev, the old order.
+      // The old order, for the tests' stand-in only (context.rule; note 707).
       const rule = bedNear && !watched ? 'go_to_bed' : (night || watched) && !outwaited
         ? (options.open_on_watcher && (bot.health ?? 20) >= 16 && watcher.entity.name !== 'creeper' && threats(bot, 16).filter(t => t.entity !== watcher.entity).length <= 1 ? 'open_on_watcher' : options.night_mine && !watched ? 'night_mine' : 'stay')
         : 'leave';
@@ -8696,7 +8661,7 @@ class Survival {
       const attempts = attemptsFor(this);
       const chores = Object.fromEntries(Object.entries(homeChores(bot, goal)).filter(([key]) => !attempts.resting('chore', key)));
       const home = homeOf(bot, goal);
-      // Which chore, or none, is Jev's; without Jev, the old order.
+      // Which chore, or none, is Jev's.
       // A chore whose walk runs past dark says so (the decision audit,
       // 2026-09-25): the cows fetched at dusk come back in the dark.
       const late = chore => chore.walkSeconds && bot.time.timeOfDay + chore.walkSeconds * 20 >= DAY.DARK ? ` Back after dark (${DAY.DARK}): mobs spawn on the way back.` : '';
@@ -9005,8 +8970,6 @@ class Survival {
           for (const until = Date.now() + 30000; Date.now() < until && bot.health < 20 && (bot.food ?? 0) >= 18;) { task.check(); checkThreats(bot); await sleep(250); }
         } };
     }
-    // Without Jev, shelter comes before food and food before the request
-    // (the survival_priority question's fallback, in decisions/survival.js).
     // A reserve top-up once chosen is held, not asked again: at full health
     // and hunger "get food or carry on" went to Jev every five seconds,
     // thirty times in two bursts, obtain_food each time at 0.96 to 0.98.

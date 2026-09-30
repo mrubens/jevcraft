@@ -814,7 +814,7 @@ async function buildPen(bot, task, goal, save, home, actions) {
 // No sheep in view: where to look is Jev's, told the biome underfoot and the
 // ones about with their distance and direction (sheep graze plains, meadows
 // and forests, not deserts or oceans), beside exploring on from here. The
-// pick holds until the bot is there or the walk fails. Without Jev, explore.
+// pick holds until the bot is there or the walk fails.
 const BIOME_REST_MS = 10 * 60000;
 async function searchForSheep(bot, task, goal, save, actions) {
   // A search last worked on over half an hour ago is a new search: one
@@ -870,14 +870,13 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const string = countOf(bot, 'string'), short = Math.max(0, 3 - woolCarried(bot).count);
   const fromString = Math.min(Math.floor(string / 4), short);
   const flocksKnown = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32);
-  if (!client && flocksKnown.length) { search.toward = { x: flocksKnown[0].x, y: flocksKnown[0].y, z: flocksKnown[0].z, seen: true }; save(); return; }
   // Cobwebs cut with a sword drop a string each: an abandoned mineshaft is
   // full of them, and night mining walks into one often enough.
   const sword = bot.inventory.items().some(i => /_sword$/.test(i.name));
   const webId = bot.registry.blocksByName.cobweb?.id;
   const webs = sword && webId != null && bot.findBlocks ? bot.findBlocks({ matching: webId, maxDistance: 32, count: 48 }) : [];
   const stringWanted = Math.max(0, short * 4 - string);
-  if (!client || (!nearby.length && !fromString && !flocksKnown.length && !(webs.length >= 2 && stringWanted))) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
+  if ((!nearby.length && !fromString && !flocksKnown.length && !(webs.length >= 2 && stringWanted))) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const minutes = Math.round((Date.now() - search.since) / 60000);
   // Flocks seen earlier and out of view now (sightings.js).
   const flocks = require('./sightings').sighted(bot, goal, 'sheep').filter(s => s.distance > 32).slice(0, 3);
@@ -902,7 +901,9 @@ async function searchForSheep(bot, task, goal, save, actions) {
       state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
         timeOfDay: tod, ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
         withoutSheep: 'Four string craft a white wool, twelve a bed\'s three: spiders drop up to two string each (they come out at night), and cobwebs cut with a sword drop one (abandoned mineshafts are full of them). An igloo, in snowy plains and taiga, always has a bed in it, and so do most village houses. Phantoms only come after three nights without sleep.' } });
-    if (!decision.stale && !decision.fallback) pick = decision.path.at(-1);
+    // Held through an outage (note 707): asked fresh at the next step.
+    if (decision.stale) return;
+    pick = decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   if (pick === 'cut_cobwebs') {
     bot.chat?.("Cobwebs! Each one's a string, and string makes wool.");
@@ -1069,11 +1070,10 @@ async function bake(bot, task, goal, save, actions) {
 }
 
 // Where home goes, of the sites found: Jev's, with each one's distance, the
-// levelling it needs and its water. Without Jev, the first (the nearest
-// flat one).
+// levelling it needs and its water.
 async function pickHomeSite(bot, task, goal, save, sites) {
   const client = task.opportunityClient;
-  if (!client || sites.length < 2) return sites[0];
+  if (sites.length < 2) return sites[0];
   const here = bot.entity.position;
   const tree = Object.fromEntries(sites.map((site, i) => {
     const levelling = site.work.digs.length + site.work.fills.length;
@@ -1084,6 +1084,7 @@ async function pickHomeSite(bot, task, goal, save, sites) {
     const { decide } = require('./decisions');
     const decision = await decide('home_site', { client, bot, task, goal, save, tree, state: { position: plain(here.floored()), sites: sites.length, timeOfDay: bot.time?.timeOfDay,
       threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() } });
+    if (decision.stale) return pickHomeSite(bot, task, goal, save, sites);
     return sites[Number(/^site_(\d+)$/.exec(decision.path.at(-1) || '')?.[1] ?? 0)] || sites[0];
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return sites[0]; }
 }

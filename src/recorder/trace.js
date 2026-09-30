@@ -64,7 +64,8 @@ function decisionSource(decision, kind) {
   if (['request', 'clarify', 'dream'].includes(kind)) return 'jev';
   if (['connection', 'result', 'start', 'chat', 'observation', 'vitals', 'damage'].includes(kind)) return 'observed';
   if (decision?.stale) return 'stale';
-  if (decision?.fallback) return 'fallback';
+  // The body's safety rule, Jev not answering in time (note 707).
+  if (decision?.safetyRule) return 'safety rule';
   if (decision?.judgments?.length && ['decision', 'action'].includes(kind)) return 'jev';
   return kind === 'survival' || kind === 'danger' ? 'survival' : 'rules';
 }

@@ -221,7 +221,7 @@ test('a detour underground says where the ore is and what is beside it, and that
     pathfinder: { movements: {}, setGoal() {} }, clearControlStates() {}, chat() {} });
   const goal = { kind: 'win', step: { action: 'mine' }, survival: {} };
   let offered;
-  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; throw new Error('offline'); } };
+  const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; throw Object.assign(new Error('seen what was offered'), { name: 'Cancelled' }); } };
   await breakStillness(bot, new Task('still'), goal, () => {}, { client, survival: { state: goal.survival, canNightMine: () => false }, reason: 'step:mine' }).catch(() => {});
   assert.match(offered.mine_nearby, /It is 3 blocks down\. It is in the wall of an open space/);
   assert.match(offered.look_around, /Underground: mobs spawn wherever it is dark along the way/);
@@ -848,4 +848,27 @@ test('a climb up a shaft at a block in eight seconds is getting somewhere once t
   const from = { x: 0, y: 22, z: 0 }, top = 96;
   assert(climb({ action: 'ascend_to_surface', method: 'straight_up', from, top }, 120).idle >= STALL_MS, 'without a target the climb is a stall, as recorded');
   assert(climb({ action: 'ascend_to_surface', method: 'straight_up', from, top, target: { x: 0, y: top, z: 0 } }, 120).idle < 10000, 'each block nearer the sky is progress');
+});
+
+// Note 707: held for Jev, the stillness is the hold, not a stall; the rung's
+// budget is not raised either. Jev back, the watch counts again.
+test('while the bot waits for Jev, no stall is raised and the rung\'s question is not raised; after, the watch counts again (note 707)', t => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'], now: Date.now() });
+  const { watchStalls, unwatchStalls } = require('../src/stillness');
+  const jevDown = require('../src/jev-down');
+  const bot = botAt(0.5, 64, 0.5);
+  const goal = { step: { action: 'mine', block: 'stone', drops: 'cobblestone' } };
+  jevDown.down(bot, goal, 'resource_source', new Error('fetch failed'), { log: () => {} });
+  watchStalls(bot, () => goal);
+  try {
+    // The hold asks again every fifteen seconds at most, each failure keeping the mark.
+    for (let i = 0; i < 9; i++) { t.mock.timers.tick(10000); jevDown.down(bot, goal, 'resource_source', new Error('fetch failed'), { log: () => {} }); }
+    assert.equal(bot._stalls.stall, undefined, 'no stall while held for Jev');
+    assert.equal(jevDown.isDown(bot, Date.now() + 61000), false, 'a mark no ask has renewed for a minute lapses');
+    assert.equal(require('../src/arbiter').rungWatch(bot, { ...goal, kind: 'win', rungTime: { phase: 'iron_pickaxe', since: Date.now() - 3600000 } }), null, 'no rung question while held');
+    jevDown.back(bot, goal, 'resource_source', { log: () => {} });
+    const log = console.log; console.log = () => {};
+    try { for (let i = 0; i < 90 && !bot._stalls.stall; i++) t.mock.timers.tick(1000); } finally { console.log = log; }
+    assert(bot._stalls.stall, 'Jev back, the same stillness is a stall again');
+  } finally { unwatchStalls(bot); }
 });

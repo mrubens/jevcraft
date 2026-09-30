@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 // Note 649: two features made reachable inside the Nether, where the trials now begin.
 //  - The cauldron set (note 634) was asked only at the Overworld crossing; it is now a line of the stay's
 //    kit question (nether_food_kit) when the bot carries a water bucket and 7 iron and a table or wood.
@@ -83,7 +84,7 @@ test('a craft that fails is said and the stay goes on; the fallback never makes 
   assert.equal(await nf.askStayKit(b, new Task('t'), goal, save, { actions, client: asks(['top_up_cauldron']) }), 'top_up_cauldron');
   assert.match(goal.netherFoodKit.cauldronFailed, /no crafting table could be put down/);
   const { question } = require('../src/decisions');
-  assert.equal(question('nether_food_kit').fallback({ go_on: {}, top_up_cauldron: {}, raid_bastion: {} }), 'go_on');
+  assert.equal(oldOrder('nether_food_kit')({ go_on: {}, top_up_cauldron: {}, raid_bastion: {} }), 'go_on');
 });
 
 test('with food short the kit carries the cauldron beside the food ways, and a bastion route when one is remembered', async () => {
@@ -132,7 +133,7 @@ test('restock_food offers the bastion route when one is remembered and not other
   // Without a way to walk: not offered.
   assert.ok(!nf.foodRoutes(b, new Task('t'), goalWith({ landmarks: [bastion] }), save, { actions: {} }).routes.raid_bastion);
   const { question } = require('../src/decisions');
-  assert.equal(question('restock_food').fallback({ raid_bastion: {}, keep_on: {} }), 'keep_on');
+  assert.equal(oldOrder('restock_food')({ raid_bastion: {}, keep_on: {} }), 'keep_on');
 });
 
 test('the step offered at the stalls names the bastion among the ways', () => {

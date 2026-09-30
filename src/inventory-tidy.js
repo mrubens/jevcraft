@@ -170,7 +170,7 @@ const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name
 // What goes when the pockets are full is Jev's: every stack, with what it is
 // (the only pickaxe, part of the block reserve, what the work in hand is
 // for), and "nothing" (go without what the room was for). Up to three
-// stacks a time. Without Jev, the order below.
+// stacks a time.
 // Decorative finds with no use on the way to the dragon, said as such.
 const LIGHTER = /^(flint_and_steel|fire_charge)$/;
 const NO_USE = /^(pink_petals|.*_tulip|dandelion|poppy|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|lily_pad|sunflower|lilac|rose_bush|peony|.*_mushroom|pointed_dripstone|dripstone_block|leaf_litter|short_grass|fern|dead_bush|sugar_cane|bamboo|cactus|.*_carpet|.*_dye)$/;
@@ -277,8 +277,6 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
           ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}), ...(foodKept ? { foodNotListed: `The food carried is kept: ${foodKept}.` } : {}) } });
     } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
     if (decision.stale) continue;
-    // Jev unreachable: the tidy's own order.
-    if (decision.fallback) return null;
     const pick = decision.path.at(-1);
     console.log(`[room] for ${name}: Jev chose ${pick}${tree[pick]?.stack ? ` (${tree[pick].stack.count} ${tree[pick].stack.name})` : ''}`);
     if (pick === 'none') return false;

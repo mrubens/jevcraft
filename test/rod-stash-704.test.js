@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 // Note 704: the rods into a chest in the Nether. A death drops everything
 // carried and the bot comes back to life in the Overworld; of the times a bot
 // in the Nether first held 2 or more rods (flight records 2026-09-28 to 30),
@@ -92,7 +93,7 @@ test('in the lull with 4 rods and a chest carried: a chest cell in reach, out of
   const tree = es.options(bot, task, goal, () => {}, { navigate: async () => {} }, known, { now });
   assert.ok(tree.stash_rods, Object.keys(tree).join(', '));
   assert.match(tree.stash_rods.rodsCarried, /^4 blaze rods carried/);
-  assert.equal(question('empty_spawner').fallback(tree), 'stash_rods');
+  assert.equal(oldOrder('empty_spawner')(tree), 'stash_rods');
 });
 
 test('not offered: one rod, a blaze with a line to the bot, no chest and no wood, the rods done, or outside the Nether', () => {

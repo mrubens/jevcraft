@@ -18,16 +18,18 @@
 //   primitive      choice, noul or score
 //   stakes         low, medium or high: what a wrong answer costs
 //   instructions   what Jev is asked (a tree's root; children use the default)
-//   fallback       the code's own answer when Jev is unreachable, as
-//                  (children, path, context) => key, or 'throws' where there
-//                  is no safe default and the caller must stop instead
-//   gate           { threshold, below, why }: a confidence under the
-//                  threshold is not acted on as asked. below is 'fallback'
-//                  (the fallback walks the tree instead) or 'caller' (the
-//                  caller has its own low-confidence path: a clarifying
-//                  question, a narrower action). A tree's gate applies at
-//                  every level of it. A high-stakes question without a gate
-//                  states why in `ungated`.
+//   (no fallback)  a question Jev cannot answer is not answered by code
+//                  (the user, 2026-09-30: "If jev is down, decisions aren't
+//                  made"): decide() holds and asks again (jev-down.js)
+//   safetyRule     the body's physics only (body_way, shot_answer): the
+//                  rule that answers at once when Jev cannot be reached, as
+//                  (children, path, context) => key, with `safetyWhy`
+//   gate           { threshold, below: 'caller', why }: a confidence under
+//                  the threshold is not acted on as asked; the caller has
+//                  its own low-confidence path (a clarifying question, a
+//                  narrower action). A tree's gate applies at every level
+//                  of it. A high-stakes question without a gate states why
+//                  in `ungated`.
 //   question       what is asked, in a plain sentence
 //   trigger        when it is asked
 //   source         where its options or candidates are built
@@ -37,7 +39,7 @@
 //                  against it: a key not in the catalogue fails a test, and
 //                  is logged as a bug in play.
 //   unreachable    for a batched question, what happens when Jev cannot be
-//                  reached (a tree's is its fallback)
+//                  reached (a tree's is the hold, decide())
 //   batch          the batch a question rides in, when it rides in one
 //   parent         for a question about playing the game, the question
 //                  asked next up when this one has nothing left to try:
@@ -47,7 +49,8 @@
 // and every tree decision goes through decide() below, which applies the
 // definition. Batched questions are asked with ask() and judged with
 // confident(), so their bars live here too.
-const { decideTree, announceFallback, firstOption } = require('./tree');
+const { decideTree, firstOption } = require('./tree');
+const jevDown = require('../jev-down');
 const { checkAir } = require('../vitals');
 const { stage } = require('../typesafe');
 const repeats = require('./repeats');
@@ -57,7 +60,12 @@ const leastBad = require('./least-bad');
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
 const PRIMITIVES = new Set(['choice', 'noul', 'score']);
-const BELOW = new Set(['fallback', 'caller']);
+const BELOW = new Set(['caller']);
+// The questions whose unanswered form is the body's own physics: the way
+// out of lava, fire, a hot floor, a block or the water (body_way), and the
+// shield or cover against a shot about to land (shot_answer, note 676).
+// Only these may carry a safetyRule.
+const SAFETY_RULED = new Set(['body_way', 'shot_answer']);
 
 function define(spec) {
   const problems = [];
@@ -67,10 +75,10 @@ function define(spec) {
   if (!spec.kind) problems.push('a ledger kind');
   if (!PRIMITIVES.has(spec.primitive)) problems.push('a primitive');
   if (!STAKES.has(spec.stakes)) problems.push('stakes');
-  if (spec.tree && !(typeof spec.fallback === 'function' || spec.fallback === 'throws')) problems.push("a fallback or fallback: 'throws'");
+  if (Object.hasOwn(spec, 'fallback')) problems.push('no fallback (a question Jev cannot answer is held and asked again, jev-down.js; the tests declare their answers in test/support/jev-stand-in.js)');
+  if (spec.safetyRule !== undefined && !(SAFETY_RULED.has(spec.id) && typeof spec.safetyRule === 'function' && spec.safetyWhy)) problems.push(`a safetyRule only on the body's physics (${[...SAFETY_RULED].join(', ')}), a function, with safetyWhy`);
   if (!spec.tree && typeof spec.build !== 'function') problems.push('a tree flag or a build(args) that returns its typed question');
   if (spec.gate && (!(spec.gate.threshold > 0 && spec.gate.threshold < 1) || !BELOW.has(spec.gate.below) || !spec.gate.why)) problems.push('a gate with threshold, below and why');
-  if (spec.gate?.below === 'fallback' && typeof spec.fallback !== 'function') problems.push('a fallback for its gate to fall back to');
   if (spec.stakes === 'high' && !spec.gate && !spec.ungated) problems.push('a gate, or `ungated` saying why a high-stakes answer is acted on at any confidence');
   if (!spec.question) problems.push('a plain question');
   if (!spec.trigger) problems.push('a trigger');
@@ -116,14 +124,15 @@ function checkOptions(spec, tree) {
   if (!reported.has(message)) { reported.add(message); console.error('[bug]', message); }
 }
 
-// The code's own walk down a tree, for an outage, no client, or a gate.
-function walk(tree, fallback) {
+// A walk down a tree by a picker: the body's safety rule, Jev's own answers
+// below a none good, the tests' stand-in.
+function walk(tree, pick) {
   const path = [];
   let children = tree;
   for (;;) {
     const keys = Object.keys(children);
-    const key = keys.length === 1 ? keys[0] : fallback(children, path);
-    if (!Object.hasOwn(children, key)) throw new Error(`The fallback rule selected an unavailable option at ${path.join(' / ') || 'root'}`);
+    const key = keys.length === 1 ? keys[0] : pick(children, path);
+    if (!Object.hasOwn(children, key)) throw new Error(`The walk selected an unavailable option at ${path.join(' / ') || 'root'}`);
     path.push(key);
     const node = children[key];
     if (!node.children) return { path, action: node };
@@ -273,12 +282,14 @@ function pickWhenNoneGood(listed, weights, health) {
 // Recorded, and an option taken instead: the least bad (least-bad.js,
 // note 693: a wait or keep-on taken so twice running with nothing changed
 // is passed over for the best other), unless its own price takes the health
-// the bot has (pickWhenNoneGood, note 691), walked on down its branch by the
-// question's fallback.
-function noneGood(id, decision, listed, fallback, { bot, goal, state, last = null }) {
+// the bot has (pickWhenNoneGood, note 691), walked on down its branch by
+// Jev's own answers there (the whole tree is asked at once), the first
+// listed where a level had none.
+function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   const weights = decision.judgments?.[0]?.probabilities || {};
   const keys = Object.keys(listed);
-  const down = k => { const node = listed[k]; return node?.children ? { path: [k, ...walk(node.children, fallback || firstOption).path] } : { path: [k] }; };
+  const byJev = children => decision.answerAt?.(children) || firstOption(children);
+  const down = k => { const node = listed[k]; return node?.children ? { path: [k, ...walk(node.children, byJev).path] } : { path: [k] }; };
   const safety = pickWhenNoneGood(listed, weights, bot?.health);
   let path, passedOver = null, why = safety.why;
   if (why) { path = down(safety.key).path; console.log(`[none good] ${id}: took ${safety.key}, not the next by weight: ${why}`); }
@@ -454,13 +465,18 @@ function escalateFrom(bot, goal, spec, why, { until = 0 } = {}) {
 // 684). Throws the stall.
 function escalate(bot, goal, id, why) { return escalateFrom(bot, goal, question(id), why); }
 
-class NoSafeDefault extends Error {
-  constructor(id, reason) { super(`${id}: Jev is unreachable (${reason}) and this decision has no safe default`); this.name = 'Blocked'; }
-}
+// No client in play is Jev not reachable: held like an outage.
+const NO_CLIENT = { systemOne: async () => { throw new jevDown.JevDown('no Jev client is configured'); } };
+// The tests' stand-in for Jev (test/support/jev-stand-in.js), set by the
+// test harness only; used where a test gives no client.
+const STAND_IN = { current: null };
+const useStandIn = standIn => { STAND_IN.current = standIn || null; };
 
 // One decision over a tree of feasible options the caller built. Returns
 // what decideTree returns, plus `id`, and `gated` when a low confidence
-// sent it to the fallback. A single feasible leaf is taken without asking.
+// is under the question's bar (its caller's own path). A single feasible
+// leaf is taken without asking. Jev not reachable, it holds and asks again
+// (jev-down.js); an answer after an outage comes back stale.
 // watchAir false: the question is about the breath or the lava itself
 // (body_way), which checkAir would stop at once.
 // `situation`: the caller's own key for "the same situation", where the whole
@@ -689,7 +705,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (spentHere) {
     const { key: best } = pickWhenNoneGood(tree, spentHere.weights || {}, bot?.health);
     const node = tree[best];
-    const rest = node?.children ? walk(node.children, typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : firstOption) : { path: [], action: node };
+    const rest = node?.children ? walk(node.children, firstOption) : { path: [], action: node };
     return { ...takeOne({ path: [best, ...rest.path], action: rest.action }, `spent here: none of its options was good, ${spentHere.times} times running with these same facts; the best listed taken`), spent: true };
   }
   if (tracked) {
@@ -751,7 +767,9 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   checkOptions(spec, tree);
   const rootInstructions = withRealTime(spec, state, dimension);
   auditAsked(id, { instructions: rootInstructions, state, tree: listed, dimension });
-  const fallback = typeof spec.fallback === 'function' ? (children, path) => spec.fallback(children, path, context) : null;
+  // The body's physics only (body_way, shot_answer): the rule that answers
+  // when Jev cannot, at once (safetyRule in define).
+  const rule = typeof spec.safetyRule === 'function' ? (children, path) => spec.safetyRule(children, path, context) : null;
   // The question out is what holds the turn while it is out (turn.js).
   const { takeTurn, giveBack } = require('../turn');
   // Asked aside (`aside`: shot_answer, asked beside whatever holds the
@@ -764,10 +782,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   const askedAt = new Date().toISOString();
   let decision;
   try {
-  if (!client) {
-    if (!fallback) throw new NoSafeDefault(id, 'no client');
-    decision = { ...walk(tree, fallback), fallback: { reason: 'no Jev client' } };
+  // The tests' stand-in (test/support/jev-stand-in.js), where no client was
+  // given: its answers are declared in the test harness. In play there is
+  // no stand-in, and no client is Jev not reachable.
+  const standIn = !client ? STAND_IN.current : null;
+  if (standIn) {
+    decision = { ...standIn.decide(id, { tree, context, state, spec }), standIn: true };
   } else {
+    const asked = client || NO_CLIENT;
     const controller = new AbortController();
     const watcher = setInterval(() => {
       // When the watcher last looked: a check starved would show here.
@@ -776,25 +798,38 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       catch (err) { if (!controller.signal.aborted) { stage(trace, 'stopped', { why: String(err?.message || err).slice(0, 100) }); controller.abort(err); } }
     }, watchMs);
     const stopThinking = spec.thinking && bot ? require('../speech').thinking(bot) : () => {};
+    // Jev down (jev-down.js): no answer is made by code. The asker holds,
+    // the question is asked again with a backoff, the reflexes stop the hold
+    // through the watcher above as they stop anything, and when Jev answers
+    // again the question held comes back stale, to be asked fresh.
+    let outage = null;
     try {
-      decision = await endsWhenStopped(decideTree(client, { state, tree, signal: controller.signal, fallback, kind: spec.kind,
-        rootInstructions, isFresh, trace }), controller.signal, trace);
-    } catch (err) {
-      if (!fallback && !controller.signal.aborted && err.name === 'TypeSafeError') throw new NoSafeDefault(id, err.message);
-      throw err;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          decision = await endsWhenStopped(decideTree(asked, { state, tree, signal: controller.signal, kind: spec.kind, rootInstructions, isFresh, trace }), controller.signal, trace);
+          break;
+        } catch (err) {
+          if (controller.signal.aborted || !jevDown.unreachable(err)) throw err;
+          if (rule) { decision = { ...walk(tree, rule), safetyRule: { reason: String(err.message || err).slice(0, 200) } }; console.log(`[jev down] ${id}: ${decision.path.join('/')} by the body's safety rule (${decision.safetyRule.reason})`); break; }
+          outage = jevDown.down(bot, goal, id, err, { aside });
+          if (process.env.NODE_TEST_CONTEXT && attempt >= jevDown.TEST_ASKS) { jevDown.testHeld.push(id); throw new Error(`${id} held ${attempt} times for Jev under the test runner: give the test a client or the stand-in`); }
+          stage(trace, 'held', { attempt });
+          await jevDown.pause(attempt, controller.signal);
+        }
+      }
     } finally { clearInterval(watcher); stopThinking(); }
     const tookMs = performance.now() - trace.t0;
-    if (tookMs >= SLOW_MS) console.log(`[question] ${id} answered in ${(tookMs / 1000).toFixed(1)}s: ${saysStages(trace)}`);
+    if (tookMs >= SLOW_MS && !outage) console.log(`[question] ${id} answered in ${(tookMs / 1000).toFixed(1)}s: ${saysStages(trace)}`);
+    if (!decision.safetyRule) jevDown.back(bot, goal, id);
+    // Held through an outage: the facts it was built from are old. Not acted
+    // on; its caller asks it again from where the bot is now.
+    if (outage) decision = { stale: true, jevWasDown: { since: new Date(outage.since).toISOString(), heldMs: Math.round(tookMs) }, usage: decision.usage };
     task?.check(); if (bot && watchAir) checkAir(bot); interrupt();
     // The gate: a judgment below the question's threshold is not acted on
-    // as asked. Where the fallback is the safer answer, it is taken.
-    const low = !decision.stale && !decision.fallback && spec.gate && (decision.judgments || []).find(j => (j.confidence ?? 1) < spec.gate.threshold);
-    if (low) {
-      decision.gated = { branch: low.branch, confidence: low.confidence, threshold: spec.gate.threshold, below: spec.gate.below };
-      if (spec.gate.below === 'fallback') decision = { ...decision, ...walk(tree, fallback) };
-    }
-    if (goal && bot && !decision.stale) announceFallback(bot, goal, decision);
-    if (!decision.stale && decision.path?.[0] === NONE_GOOD_KEY) decision = noneGood(id, decision, listed, fallback, { bot, goal, state, last: lastLeastBad });
+    // as asked; the caller has its own low-confidence path.
+    const low = !decision.stale && !decision.safetyRule && spec.gate && (decision.judgments || []).find(j => (j.confidence ?? 1) < spec.gate.threshold);
+    if (low) decision.gated = { branch: low.branch, confidence: low.confidence, threshold: spec.gate.threshold, below: spec.gate.below };
+    if (!decision.stale && decision.path?.[0] === NONE_GOOD_KEY) decision = noneGood(id, decision, listed, { bot, goal, state, last: lastLeastBad });
     // A near flag: "none of these" weighed a quarter or more but not taken.
     // In the replay of mid-227-q's blaze at 1.4 health, cover missing, it was
     // a close second (0.32 against the pillar's 0.37) every time (note 462).
@@ -842,7 +877,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     goal.decisions.push({ at: new Date().toISOString(), askedAt, id, kind: spec.kind, path: decision.path, ...(dimension ? { dimension } : {}), state, options: JSON.parse(JSON.stringify(tree)),
       ...(client ? { stages: trace.stages } : {}),
       latencyMs: decision.latencyMs, usage: decision.usage, judgments: decision.judgments, asked: decision.asked, model: client?.model,
-      stale: decision.stale, fallback: decision.fallback, gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}), ...(decision.passedOver ? { passedOver: decision.passedOver } : {}) });
+      stale: decision.stale, ...(decision.jevWasDown ? { jevWasDown: decision.jevWasDown } : {}), ...(decision.safetyRule ? { safetyRule: decision.safetyRule } : {}), ...(decision.standIn ? { standIn: true } : {}), gated: decision.gated, ...(decision.noneGood ? { noneGood: true } : {}), ...(decision.passedOver ? { passedOver: decision.passedOver } : {}) });
     goal.decisions = goal.decisions.slice(-40); save();
     // The flight records it now. Its frame used to wait for the next step's
     // report, after the chosen stance had run, and read as seconds of
@@ -859,12 +894,37 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
 // answers are read with confident(), which applies each question's own bar.
 // `questions` is { key: [id, args] }; a falsy entry is left out, so a
 // speculative question is included with a condition in place.
-async function ask(client, { questions, state, signal, kind }) {
+// `hold` ({ bot, goal, task }), for a question about playing the game: Jev
+// not reachable, nothing is decided by code: the asker holds as decide()
+// does (jev-down.js), the task's check stopping the hold, and asks again;
+// when Jev answers after an outage the answer is not used (its facts are
+// old) and { stale: true, answers: {} } comes back, for the caller to ask
+// fresh. `timeoutMs` is then each try's own bound, a try that runs past it
+// being Jev not answering. Without `hold` an outage is thrown to the caller
+// (a player's request, which tells the player).
+async function ask(client, { questions, state, signal, kind, hold = null, timeoutMs = 0 }) {
   const entries = Object.entries(questions).filter(([, entry]) => entry);
   if (!entries.length) throw new Error('No questions to ask');
   const specs = entries.map(([key, [id]]) => [key, question(id)]);
   const built = Object.fromEntries(entries.map(([key, [id, args]]) => [key, question(id).build(args || {})]));
-  return client.systemOne({ kind: kind || specs[0][1].kind, state, questions: built, signal });
+  const send = () => (client || NO_CLIENT).systemOne({ kind: kind || specs[0][1].kind, state, questions: built,
+    signal: timeoutMs ? (signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs)) : signal });
+  if (!hold) return send();
+  const ids = entries.map(([, [id]]) => id).join('+');
+  let outage = null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await send();
+      jevDown.back(hold.bot, hold.goal, ids);
+      if (outage) return { stale: true, answers: {}, usage: response.usage, jevWasDown: { since: new Date(outage.since).toISOString() } };
+      return response;
+    } catch (err) {
+      if (signal?.aborted || !jevDown.unreachable(err)) throw err;
+      outage = jevDown.down(hold.bot, hold.goal, ids, err);
+      if (process.env.NODE_TEST_CONTEXT && attempt >= jevDown.TEST_ASKS) { jevDown.testHeld.push(ids); throw new Error(`${ids} held ${attempt} times for Jev under the test runner`); }
+      await jevDown.pauseChecked(attempt, () => { hold.task?.check?.(); signal?.throwIfAborted(); });
+    }
+  }
 }
 // Whether an answer clears its question's bar. A Noul clears it when the
 // probability of yes is at least the bar: a sure "no" is not a sure "yes".
@@ -881,7 +941,7 @@ function confident(id, answer, { threshold, missing = true } = {}) {
 
 const all = () => [...QUESTIONS.values()];
 
-module.exports = { pickWhenNoneGood, EXPOSED_S, escalate, withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, NoSafeDefault, decideTree, announceFallback, firstOption };
+module.exports = { pickWhenNoneGood, EXPOSED_S, escalate, withRealTime, ownInstructions, stateFor, WAIT_ANSWERS, parentOf, recentDeaths, define, question, decide, endsWhenStopped, walk, ask, confident, all, decideTree, firstOption, useStandIn, SAFETY_RULED, NONE_GOOD_KEY };
 
 // The area modules register their questions when this directory is loaded.
 require('./survival'); require('./work'); require('./combat'); require('./travel'); require('./intake');

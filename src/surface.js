@@ -569,7 +569,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
 
 // How the climb digs its way: asked when it starts, and again when the
 // pickaxes carried change (one wearing out halfway up changes every cost)
-// or the column overhead stops being open. Without Jev, the quicker.
+// or the column overhead stops being open.
 async function chooseClimb(bot, task, goal, save, state, target, { landing = false } = {}) {
   // The staircase's rest, said with it (tunneling.js restingSays, note 500).
   const rests = restingSays(goal, target, bot.entity.position);
@@ -591,6 +591,8 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   if (kept && !overdue && !(state.climb.method === 'staircase' && rests) && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column, walkTo: state.climb.walkTo };
   const quicker = Object.keys(estimate).sort((a, b) => estimate[a] - estimate[b])[0];
   const decision = await require('./decisions').decide('climb_out', { client: task.opportunityClient, bot, task, goal, save, tree: options, state: facts, context: { quicker } });
+  // Held through an outage (note 707): asked fresh.
+  if (decision.stale) return chooseClimb(bot, task, goal, save, state, target, { landing });
   const method = decision.path.at(-1);
   const walkTo = method === 'walk_then_up' ? options.walk_then_up?.walkTo : undefined;
   state.climb = { method, tools, offered: Object.keys(options), ...(state.climb?.failedColumn ? { failedColumn: state.climb.failedColumn } : {}), estimate: Math.round(estimate[method] ?? 0), fromY: feet.y, ...(walkTo ? { walkTo } : {}), at: new Date().toISOString() };

@@ -1,7 +1,7 @@
 'use strict';
 // The work questions: where to get a resource, what to build next, how to
 // spend spare daylight, and what to do instead of standing still.
-const { define, firstOption } = require('./index');
+const { define } = require('./index');
 
 const workInstructions = task => ({
   task,
@@ -61,7 +61,6 @@ define({
     { pattern: 'ruin_[0-9]+', label: 'finish and light a remembered ruined portal', when: 'a ruined portal remembered within 512 blocks, not found frameless (and the one held, however far)', level: 'root', dynamic: true },
   ],
   instructions: { task: 'Choose how the bot gets a portal to the Nether.', guidance: 'Each option says its walk, what it needs against what is carried, and whether a diamond pickaxe is needed, and every option ends with the same facts: the nearest known lava, how deep diamonds lie, the pickaxes, buckets and iron carried, and the ruins remembered. A new frame needs ten obsidian, which without a diamond pickaxe means finding diamonds first; a frame cast in place needs no pickaxe but one lava bucket a block, each trip carrying one lava per bucket held, so where it stands against the lava and the buckets carried decide its trips; a ruin needs only its missing blocks. Asked again, the way held says how long it has been worked on and what that made.' },
-  fallback: (children, path, context = {}) => context.leaveSite && children.new_site ? 'new_site' : children[context.current] ? context.current : 'build_new',
 });
 
 // A known portal the bot is making for that no way reaches: the walk, the
@@ -84,7 +83,6 @@ define({
     { key: 'wait_rest', wait: true, label: 'other work until the staircase\'s rest ends, the minutes said', when: 'the staircase toward the portal rests until a time; a wait: it names what it waits for and when (src/waits.js), and is not offered where that cannot come or its coming changes nothing, said in waitsForNothing (note 698)', level: 'root' },
   ],
   instructions: { task: 'The bot cannot get to the portal it is making for. Choose how it goes on.', guidance: 'Each option says what it takes and what it leaves. The state says where the portal is (portalAbove: how far above the bot it is), what each way ended in, and what lies on the straight line toward it (water, lava, ground, unloaded), and with lava on that line, what one touch of lava costs the bot at its health (aTouchOfLava: in the Nether the fire it sets burns on with no water to put it out). The staircase steps on ground and digs rock: a gap of open air (\"no floor to step onto\") is crossed by a span or a pillar of blocks carried, not stairs. In the Nether a player crosses on its floors where they are walkable and bridges only across lava or a void: the way down to the floor and along it is said with what it takes. triedFromHereToNothing are ways chosen from here that moved the bot nowhere, and why; they are not offered again from here for a few minutes. A portal made here comes out somewhere new on the other side; a leg round goes on foot and asks again from where it ends.' },
-  fallback: children => ['portal_here', 'wait_rest'].find(k => children[k]) || Object.keys(children)[0],
 });
 
 // Leaving the Nether for the Overworld while the rods step waits, or for
@@ -104,7 +102,6 @@ define({
     { key: 'restock_food', label: 'get food here first: the ways to it asked next, each priced', when: 'the food reason, in the Nether, with under eight food points carried or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way\'s yield (src/nether-food.js)', level: 'root' },
   ],
   instructions: { task: 'Choose whether the bot leaves the Nether now.', guidance: 'Going back says what it is for, how far the portal is and whether it is night on the other side; staying says what waits and for how long. Health comes back only at hunger eighteen or more.' },
-  fallback: children => Object.keys(children).find(k => k !== 'go_back') || 'go_back',
 });
 
 // Food as a resource of the Nether stay (note 639): the ways to it, each
@@ -125,8 +122,6 @@ define({
     { key: 'keep_on', label: 'go on in the Nether without more food for twenty minutes', when: 'hunger under eighteen, or a bastion raid is among the ways (not where one hit ends the bot and health cannot come back, last-hit.js, note 706)', level: 'root' },
   ],
   instructions: workInstructions('The bot is in the Nether short of food. Choose the way to more, or to go on without. Each way says what it yields in hunger points, what it costs in seconds and health, and what the bot must carry; a way that is not real from here is not offered and is said in waysNotOffered. whatTheNetherHas lists what the Nether has to eat and what it does not, read from the game\'s data. Health comes back only at hunger eighteen or more; the stay the goal still wants is in the state against what is carried. A number said as not measured is not known: read it as unknown, neither good nor bad.'),
-  // Without Jev: what costs no health first, then the way back, then going on.
-  fallback: children => ['cook_meat', 'mushroom_stew', 'keep_on', 'return_for_food', 'hoglin_pillar', 'hoglin_walk'].find(k => children[k]) || Object.keys(children).find(k => k !== 'raid_bastion') || Object.keys(children)[0],
 });
 
 // The food line of the crossing kit, asked inside the Nether (note 639): the
@@ -141,11 +136,10 @@ define({
     { key: 'go_on', label: 'go on with the stay on what is carried', when: 'always; said with the points carried and how many minutes they last at forty hunger an hour against the minutes the goal still wants', level: 'root' },
     { key: 'restock_food', label: 'get food here first: the ways to it asked next, each priced', when: 'some way to food real from here other than the trip back (a hoglin known, mushrooms of both kinds in view, raw meat to cook); the ways not real are said', level: 'root' },
     { key: 'raid_bastion', label: 'raid a bastion\'s chests for their food', when: 'food short for the stay and a bastion remembered within 384 blocks whose walk is not resting (note 649); said with the same facts as bastion_raid and the food its chests hold; chosen, it is the raid Jev chose', level: 'root' },
-    { key: 'top_up_cauldron', label: 'make the cauldron set for the Nether\'s fire now', when: 'in the Nether with a water bucket, seven iron ingots and a crafting table or wood for one carried, and no cauldron (no water is to be had there to fill an empty bucket); said with the iron it costs, the slots, what fire is of the blaze fights\' damage, that it must be set down near the fight or when alight, the seconds it takes, and that no trial has played it; never the fallback (note 649)', level: 'root' },
+    { key: 'top_up_cauldron', label: 'make the cauldron set for the Nether\'s fire now', when: 'in the Nether with a water bucket, seven iron ingots and a crafting table or wood for one carried, and no cauldron (no water is to be had there to fill an empty bucket); said with the iron it costs, the slots, what fire is of the blaze fights\' damage, that it must be set down near the fight or when alight, the seconds it takes, and that no trial has played it (note 649)', level: 'root' },
     { key: 'return_for_food', label: 'go back through the portal to the Overworld for food', when: 'the way back is at hand; said with the trip at the measured pace of the Nether\'s walks, and the food known on the other side (not where every way its walk begins with rests or is refused from here: said as not reachable, note 706)', level: 'root' },
   ],
   instructions: workInstructions('The bot is in the Nether and its food carried is less than the stay the goal still wants will spend (stay, in the state: the minutes wanted, the points that wants, the points carried and the minutes they last). Choose whether to go on as it is, to get food here (the ways are asked next, each priced), or to go back through the portal for it. A stay spends about forty hunger an hour; health comes back only at hunger eighteen or more. A bastion\'s chests hold food too (raid_bastion, priced with what a lid and the piglins cost), and where the bot carries a water bucket and seven iron ingots it can make a cauldron for the fire of the blaze fights (top_up_cauldron: what it costs and saves is said); when food is not short, only the cauldron is asked.'),
-  fallback: children => children.go_on ? 'go_on' : Object.keys(children)[0],
 });
 
 define({
@@ -161,7 +155,6 @@ define({
     { key: 'execute_recipe', label: 'carry out the recipe step', when: 'a non-mining step', level: 'step' },
   ],
   instructions: workInstructions('Which source should the bot work to obtain the resource the request needs? Code picks the exact block inside the source chosen.'),
-  fallback: firstOption,
 });
 define({
   id: 'house_build_step', area: 'build', parent: null, kind: 'build', primitive: 'choice', stakes: 'medium', tree: true,
@@ -180,7 +173,6 @@ define({
     { pattern: '(?:place|clear)_-?\\d+_-?\\d+_-?\\d+', label: 'place or clear this cell', when: 'under build: the lowest unfinished layer', level: 'build', dynamic: true },
   ],
   instructions: workInstructions('Which house-building step should the bot take next?'),
-  fallback: firstOption,
 });
 define({
   id: 'idle_work', area: 'idle', parent: null, kind: 'idle', primitive: 'choice', stakes: 'medium', tree: true,
@@ -189,10 +181,10 @@ define({
   source: 'src/work.js (idleOptions), src/home-base.js (homeChores)',
   options: IDLE_OPTIONS.map(o => ({ ...o, level: 'root' })),
   instructions: workInstructions('Between player requests, with shelter and food already sufficient: how should the bot spend the spare time?'),
-  fallback: firstOption,
 });
 // Strategy on the way to the dragon (src/strategy.js): the ladder's order
-// is the fallback, and Jev weighs what the order cannot see. The top level
+// is said (its next rung marked ladderNext), and Jev weighs what the order
+// cannot see. The top level
 // is short (the open rungs, the Nether now, a side trip); the trips are the
 // side_trip branch's children, each with its facts (the critical review,
 // 2026-09-26: twenty-odd options in one list, the first labelled the
@@ -203,8 +195,8 @@ define({
   trigger: 'Each step of the beat-the-game ladder in the Overworld while more than one thing is open; the answer holds until the ladder\'s next step or the top-level choices change (a side trip coming into view among others does not), or ten minutes pass. A side trip runs once and then rests ten minutes.',
   source: 'src/strategy.js (strategyOptions, strategyTree, homeOption), src/game-progress.js (openRungs), src/work.js (sideTrips)',
   options: [
-    { pattern: 'rung_[a-z_]+', label: 'a rung of the ladder', when: 'the ladder\'s next rung (the fallback), and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, iron armour, golden boots, bow, arrows, diamond sword, and last before the portal, while blaze rods are still needed, the crossing kit: a spare pickaxe, blocks and food for the stay, crossing-kit.js kitRungs, note 673); pickaxes are never skipped. Each is said alike, with what it is for, what it takes from the pockets and what going without costs', level: 'root', dynamic: true },
-    { pattern: 'stage_[a-z_]+', label: 'the ladder\'s later stage', when: 'past the preparation ladder in the Overworld (pearls, the crossing, the stronghold): the fallback', level: 'root', dynamic: true },
+    { pattern: 'rung_[a-z_]+', label: 'a rung of the ladder', when: 'the ladder\'s next rung, and each rung after it the ladder may reach while the ones before it wait (shield, iron sword, bucket, iron armour, golden boots, bow, arrows, diamond sword, and last before the portal, while blaze rods are still needed, the crossing kit: a spare pickaxe, blocks and food for the stay, crossing-kit.js kitRungs, note 673); pickaxes are never skipped. Each is said alike, with what it is for, what it takes from the pockets and what going without costs', level: 'root', dynamic: true },
+    { pattern: 'stage_[a-z_]+', label: 'the ladder\'s later stage', when: 'past the preparation ladder in the Overworld (pearls, the crossing, the stronghold)', level: 'root', dynamic: true },
     { pattern: 'take_up_[a-z_]+', label: 'take up a rung set aside for the Nether after all', when: 'a rung Jev chose to go without before the Nether (nether_first) and still waiting (note 498); said with what it is for and when it would come back on its own', level: 'root', dynamic: true },
     { key: 'nether_first', label: 'leave the steps that may wait and go for the Nether now', when: 'in the Overworld when every step left before the Nether may wait (DEFERRABLE); said with what going without each costs and the minutes spent on the step at hand', level: 'root' },
     { key: 'side_trip', label: 'a side trip, off the way to the Nether', when: 'one or more trips below are on offer; said with the trips it holds (all of the one, when there is one)', level: 'root' },
@@ -230,7 +222,6 @@ define({
     { key: 'enchanting_table', label: 'make an enchanting table', when: 'no table known, two diamonds and three lapis carried, level five or more, obsidian carried or a diamond pickaxe, and gear unenchanted', level: 'side_trip' },
   ],
   instructions: workInstructions('On the way to beating the game, several things are open: steps toward the Nether, the Nether now, or a side trip off the way. Which should the bot do next? Each option says what it is for and what it takes; choose the one that serves the run best now (a chest that holds what a step is digging for, levels that should go on the sword before the fights, a step that has stalled).'),
-  fallback: firstOption,
 });
 // What a stall or a failure can be answered with (answerStall, breakStillness),
 // for the stall's question and the rung's.
@@ -271,14 +262,6 @@ define({
   source: 'src/work.js (answerStall, breakStillness), src/stillness.js (the rule)',
   options: STALL_OPTIONS,
   instructions: workInstructions('The bot\'s work has stopped getting anywhere. `stalled` says what stalled and how many times in ten minutes. Choose: keep at it another way, another route to what the rung is for, take up a rung set aside earlier (its rest cut short), leave its rung for later, or something useful from here for a few minutes, after which the stalled work gets its turn again. The same answer twice running seldom unsticks it.'),
-  // Without Jev, the order the rule kept: another way first, the rung left
-  // at the third stall, a detour otherwise.
-  fallback: (children, path, context = {}) => {
-    const strikes = context.stalled?.strikes ?? 2;
-    if (strikes === 1 && children.differently) return 'differently';
-    if (strikes >= 3 && children.set_aside_rung) return 'set_aside_rung';
-    return Object.keys(children).find(k => !['differently', 'set_aside_rung'].includes(k) && !/^(take_up|pearls)_/.test(k)) || Object.keys(children)[0];
-  },
 });
 
 // The rung's own question (note 571): ten working minutes on a rung with
@@ -296,8 +279,6 @@ define({
     ...STALL_OPTIONS,
   ],
   instructions: workInstructions('The bot has worked on this rung of the game for ten minutes without getting any nearer it (no more of what it is for, no milestone, no nearer its target, no new country), or every way it had from here has been tried and come to nothing. `rung` says what the rung is and its best so far; `tried` is what has been tried lately, each way with how often and how it ended; `whatFailedBelow` is the failure that brought this question; `workedOnRung` is how long the rung has been worked, how many answers to how many different ways of those its questions offered, and whether a failure below brought this question before its ten minutes; `setAsideNotOffered`, when present, is why setting it aside is not among the answers (ways below not yet tried from here). Choose: keep at it with the ways left, change the plan (another way at it, another route to what the rung is for, or a way the ledger has not tried), take up a rung set aside earlier, or set the rung aside for now. The same ways again seldom end differently.'),
-  // Without Jev: the rung aside where it may wait, another way otherwise.
-  fallback: (children) => children.set_aside_rung ? 'set_aside_rung' : children.differently ? 'differently' : Object.keys(children).find(k => k !== 'keep_at_it' && !/^(take_up|pearls)_/.test(k)) || Object.keys(children)[0],
 });
 
 // Recovery after repeated failure: Jev picks among bounded options the code
@@ -326,7 +307,6 @@ define({
     { key: 'enough', label: 'stop at what the step asked for', when: 'always', level: 'root' },
   ],
   instructions: workInstructions('A mining step has what it asked for, and more of the same trunk, vein or stone face is within reach. Choose whether to keep taking it now or go on; the options say what is carried and the cap.'),
-  fallback: () => 'take_more',
 });
 
 // Where the home base goes.
@@ -340,7 +320,6 @@ define({
     { pattern: 'site_\\d+', label: 'build the home here', when: 'the whole layout fits, with its distance, levelling and water said', level: 'root', dynamic: true },
   ],
   instructions: workInstructions('Choose where the home base goes: the bed, a chest, a small farm plot with water, and an animal pen. Each site says how far it is, how much levelling it needs and where its water comes from. Home is walked back to every evening.'),
-  fallback: firstOption,
 });
 
 // Full pockets: which stack goes.
@@ -356,8 +335,6 @@ define({
     { key: 'none', label: 'drop nothing and go without', when: 'always', level: 'root' },
   ],
   instructions: workInstructions('The pockets are full and the work needs room for `roomFor`. Choose a stack to drop, or none. Each option says how much of it is carried and whether it is the only tool of its kind, food, or part of the block reserve.'),
-  // Without Jev, the tidy's own order (the caller runs it).
-  fallback: () => 'none',
 });
 
 // While a furnace batch cooks.
@@ -374,7 +351,6 @@ define({
     { key: 'leave_cooking', label: 'leave the batch to cook and go on with the work in hand, taking it out when back by the furnace once it is done, or in twenty minutes', when: 'a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch\'s own', level: 'root' },
   ],
   instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. With a pickaxe carried, the ways that dig say the uses it has left against the way back out of the mine and whether another can be made from the pockets (`pickaxeBudget`), and after a walk, what the walks so far wore (`walksSoFar`); `workInHand` is the work waiting on the batch when it may be left to cook.'),
-  fallback: children => ['dig_in_reach', 'mine_nearby', 'dig_stone'].find(k => children[k]) || 'wait_here',
 });
 
 // Dug into water or lava.
@@ -389,7 +365,6 @@ define({
     { key: 'carry_on', label: 'leave it running and carry on', when: 'always', level: 'root' },
   ],
   instructions: workInstructions('The bot just dug a block and water or lava has run into the gap. Choose whether to plug it with a carried block or carry on digging.'),
-  fallback: () => 'plug',
 });
 
 // Where to look for sheep, for a bed.
@@ -407,7 +382,6 @@ define({
     { key: 'cut_cobwebs', label: 'cut the cobwebs in view with the sword for string', when: 'a sword carried, two or more cobwebs within thirty-two blocks, and string still wanted for the bed', level: 'root' },
   ],
   instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look, or make the wool from string carried. The biome underfoot and those about are in the state with their distance and direction, and `sheepSeenEarlier` lists flocks the bot saw and walked on from.'),
-  fallback: () => 'explore_here',
 });
 
 // Which way a search for a resource heads when none is in view: each of
@@ -422,13 +396,10 @@ define({
     { pattern: 'heading_(east|south_east|south|south_west|west|north_west|north|north_east)', label: 'head this way', when: 'always; each says the biomes that way and how often this search went that way', level: 'root', dynamic: true },
   ],
   instructions: workInstructions('The bot is searching for `resource` and none is in view. Choose which way to head. Each heading lists the biomes that way as far as the world is loaded, with what each holds; the search walks up to 512 blocks that way, beyond what is known. `legsThatWay` counts the legs of this search already walked that way, and a walk that met water or cliffs turns the search.'),
-  // Without Jev, the turn the explorer always made.
-  fallback: children => Object.keys(children)[0],
 });
 
 // Gathering in the Nether, where the Overworld's walking search found no
 // ground to walk to from a span over the lava sea (note 608).
-const GATHER_ORDER = ['wood_in_view', 'walk_to_1', 'floor_to_1', 'cross_to_1', 'walk_to_2', 'floor_to_2', 'cross_to_2', 'walk_to_3', 'floor_to_3', 'cross_to_3', 'portal_trip'];
 define({
   id: 'nether_gather', area: 'resources', parent: 'rung_progress', kind: 'explore', primitive: 'choice', stakes: 'medium', tree: true,
   question: 'In the Nether, nothing of what the step mines is within reach: which way to get it, or go on without it?',
@@ -442,12 +413,6 @@ define({
     { key: 'without', label: 'go on without it: leave the rung it is for thirty minutes and go on with the ladder\'s next step', when: 'on the game ladder, with a rung in hand and another step of the ladder open to go on with; said with what the wood is for, the rung (the errand and what it is for, where it is one) and what the ladder goes on with; with no other step open it is said in the state as without, not offered (it would be only waiting for this one to come back)', level: 'root' },
   ],
   instructions: workInstructions('The bot is in the Nether and needs `looking` (for `for`, where said); none is within reach where it stands. Choose how to get it, or to go on without it. knownPlaces are where it is known, each with every way there from here: on foot by the pathfinder, straight across at this height (rock dug, a block laid over each cell of open air or lava, crouched, against blocksCarried; rock dug without a pickaxe is slow and netherrack so dug drops nothing), and down to the floor and along it; a way that does not make ground is not offered. The Nether\'s ground is broken by lava and drops, and a block laid over open air with a ghast in sight is a fall. Legs search where nothing is known; the Overworld has trees where the Nether has none in reach.'),
-  // Without Jev: the wood at hand, then the nearest place by the walk, the
-  // floor, the crossing, the portal, the leg with the most unseen, and last
-  // going on without.
-  fallback: (children, path, context = {}) => GATHER_ORDER.find(k => children[k])
-    || Object.keys(children).filter(k => k.startsWith('leg_')).sort((a, b) => (context.unseen?.[b] ?? 0) - (context.unseen?.[a] ?? 0))[0]
-    || (children.without ? 'without' : Object.keys(children)[0]),
 });
 
 // A bastion's chests (note 636): a rule that opened them whoever was looking,
@@ -464,7 +429,6 @@ define({
     { key: 'leave_it', label: 'leave the bastion alone for thirty minutes and go on with the ladder\'s next step or another way to the pearls', when: 'always with the others', level: 'root' },
   ],
   instructions: workInstructions('The bot is in the Nether and a bastion is remembered. Choose whether to open its chests, to take only the gold in its walls, or to leave it. The state gives the trip (distance, legs), what is in view, what a chest holds by room, what a lifted lid does to piglins and brutes, the fights priced from the game\'s numbers, and the bot\'s health, food and armor. A number said as not known is not known: how many mobs live there and how many chests it has are not counted. The record says whether this has been tried; do not read a missing record as a good or a bad one.'),
-  fallback: children => children.gold_only ? 'gold_only' : Object.keys(children)[0],
 });
 
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
@@ -484,8 +448,6 @@ define({
     { key: 'carry_on', label: 'carry on and see to it later', when: 'always; asked again in five minutes. With no pickaxe carried and a way to one on offer, said with what the five minutes cannot do (dig or stair through basalt, blackstone or bricks, or stone in the Overworld; pillar or span with no block that holds), and the hold ends early when a way chosen fails for want of a pickaxe (tried.js settles it blocked: no tool, out of blocks), the next asking saying so; the question then leads with the pickaxe (note 687)', level: 'root' },
   ],
   instructions: workInstructions('Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work; each option says what is carried and what it is for.'),
-  // Without Jev, the old order.
-  fallback: children => ['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems', 'block_reserve'].find(k => children[k]) || 'carry_on',
 });
 
 // Work within reach of sculk: mid-230-n made its obsidian four blocks over
@@ -502,17 +464,16 @@ define({
     { key: 'move_away', label: 'take the work out of the sculk\'s reach', when: 'a standing place out of every sensor\'s hearing within thirty-two blocks; its lava and remembered places within sixteen blocks passed over for thirty minutes', level: 'root' },
   ],
   instructions: workInstructions('The work is within reach of sculk. Each option says what it does; `sculk` says what is near, what hears the bot, and what a shrieker calls.'),
-  fallback: children => children.move_away ? 'move_away' : 'work_crouched',
 });
 
 // Short detours along the way: bounded, optional, and never at the cost of
-// the main request. An error or a five-second timeout is swallowed.
+// the main request. Jev not reachable, the bot holds (note 707).
 define({
   id: 'opportunistic_ore', area: 'resources', kind: 'mining', primitive: 'choice', stakes: 'low',
   question: 'An ore is within six blocks along the way: take a short detour for it, or carry on?',
   trigger: 'Every third mining or tunnelling step with a useful ore in reach, and at once when an ore the bot is short of is in reach (coal, iron, lapis, diamonds, nether gold for pearls); the shortage is said in the option. Without Jev a short ore is taken.',
   source: 'src/opportunistic-mining.js (opportunityCandidates)',
-  unreachable: 'no detour: an error or a five-second timeout is swallowed and the main step carries on',
+  unreachable: 'Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn',
   build: ({ options }) => require('../typesafe').choice('Standing instruction: collect useful ores noticed along the way, even when they are not ingredients for the current request. These candidates already pass strict checks for tools, safe access, inventory room, a six-block radius and a twelve-second detour. Prefer picking up a scarce valuable resource such as diamonds, emeralds or needed iron, and what an option says the bot is short of; return to the main request immediately afterward. Choose continue for low-value surplus or if the player explicitly said no detours/only the requested item. Asking for coal alone does NOT forbid grabbing a nearby diamond.', {
     ...options, continue: 'Keep working on the requested task without a detour.',
   }),
@@ -522,7 +483,7 @@ define({
   question: 'Gold is in reach of a Nether walk while pearls are short: a short detour to mine it, then the same walk on, or walk past?',
   trigger: 'A Nether walk that looks in passing (the fortress sweep, the return to the blazes, the warped search, the gather and portal walks, the way down, corpse runs) has gold within eight blocks that the rule does not take: past four blocks, gilded blackstone, or any gold while health is under 16 or food under 14. Asked at most every fifteen seconds. Nether gold ore and gold blocks within four blocks at full enough health and food are taken without asking.',
   source: 'src/opportunistic-mining.js (mineInPassing)',
-  unreachable: 'no detour: an error or a five-second timeout is swallowed and the walk goes on',
+  unreachable: 'Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn',
   build: ({ options, pearls }) => require('../typesafe').choice(`The bot is walking in the Nether and is short of ender pearls (${pearls ?? 'fewer than 16'} of 16 carried). Piglins barter about one pearl for nine gold ingots, nine nuggets an ingot; bartering gold and hunting endermen are the two ways the bot gets pearls, and the eyes of ender that find and open the End portal take twelve. Each option is a block of gold beside the walk with what it gives, its share of a pearl, and the seconds the detour costs; the walk goes on to the same place afterward. The candidates already pass checks for a tool, dry standing, no lava against the block, no hostile near, no piglin within 16 blocks of the gold, and a route on foot that digs and lays nothing. Weigh the gold against the seconds, the health and food an option states, and what the walk is for; choose continue to walk past.`, {
     ...options, continue: 'Walk past without a detour.',
   }),
@@ -532,7 +493,7 @@ define({
   question: 'An animal whose drop the bot is short of is in view: chase it briefly, or carry on?',
   trigger: 'Every third step with a sheep in view and fewer than three wool carried (chickens and pigs are never hurt).',
   source: 'src/opportunistic-pickups.js (animalCandidates)',
-  unreachable: 'no detour: an error or a five-second timeout is swallowed and the main step carries on',
+  unreachable: 'Jev not reachable (or no answer within five seconds a try): the bot holds and asks again with a backoff (jev-down.js); an answer after an outage is not used, and the step goes on to ask it fresh at its next turn',
   build: ({ options }) => require('../typesafe').choice('Standing instruction: an animal in view whose drop the bot is short of is worth a short chase, even when it is not an ingredient of the current request. These candidates already pass checks for isolation, safe footing, health and a twelve-block radius; the chase is bounded and the main request resumes afterward. Wool is the next bed. Choose continue if the player explicitly said no detours/only the requested item, or if the request is urgent.', {
     ...options, continue: 'Keep working on the requested task without a detour.',
   }),
@@ -548,7 +509,6 @@ define({
     { pattern: 'sell_[a-z_]+_\\d+', label: 'sell spare items for emeralds', when: 'the input is carried beyond what is kept back, and fewer than forty emeralds are carried', level: 'root', dynamic: true },
   ],
   instructions: workInstructions('Which trade should the bot make now? Buying what the run needs (ender pearls above all) comes before selling; selling spare items is for the emeralds that buying needs.'),
-  fallback: firstOption,
 });
 
 module.exports = { IDLE_OPTIONS };

@@ -72,7 +72,7 @@ test('each leg leads with the new ground it looks over and where it ends against
 });
 
 test('without Jev the spiral\'s side is taken where its heading is among the most unseen', () => {
-  const { legFallback } = require('../src/decisions/travel');
+  const { legFallback } = require('./support/jev-stand-in');
   const children = { leg_east: {}, leg_south: {}, leg_west: {}, leg_north: {}, widen_search: {} };
   const unseen = { leg_east: 20, leg_south: 300, leg_west: 900, leg_north: 900 };
   assert.equal(legFallback(children, [], { current: 'leg_east', open: {}, unseen, widen: { leg: 'leg_north', unseen: 1500 } }), 'widen_search');

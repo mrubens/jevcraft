@@ -37,7 +37,7 @@ test('the Nether is seen through open air at fortress heights, not through rock,
   assert(!seenAt(lowState, 40, 0), 'a gallery at y 20 shows nothing of y 48 to 79');
 });
 
-test('each leg says the ground it would show that is unseen and what seen before lies that way, and without Jev the most unseen is taken, not the compass (note 572)', async () => {
+test('each leg says the ground it would show that is unseen and what seen before lies that way, and the old order (the tests\' stand-in) takes the most unseen, not the compass (note 572)', async () => {
   // The design review of 2026-09-27: a leg into air already looked across was offered on the same terms as one into space never seen.
   const { chooseLeg } = require('../src/mob-hunt');
   const { TypeSafeError } = require('../src/typesafe');
@@ -63,10 +63,9 @@ test('each leg says the ground it would show that is unseen and what seen before
   assert.match(facts.seenSoFar, /seen at fortress heights \(y 48 to 79\) through open air: about \d+ chunks' worth of ground in all/);
   assert.match(options.go_to_blazes, /It lies west of here; the bot has not stood within 32 blocks of it, so whether it can be walked to is not known\./);
   assert.equal(state.heading, 2);
-  // Jev unreachable, no blazes seen (go_to_blazes comes first without Jev): the compass's own heading was east, as open as west; the most unseen is west.
-  const down = { systemOne: async () => { throw new TypeSafeError('TypeSafe 503: no healthy upstream', { status: 503 }); } };
+  // No client, no blazes seen: the tests' stand-in by the old order (go_to_blazes first there): the compass's own heading was east, as open as west; the most unseen is west.
   state.heading = 0; delete goal.mobHunt.sightings;
-  await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client: down, navigate: async () => {}, tunnel: async () => {} }, state);
+  await chooseLeg(bot, new Task('hunt'), goal, () => {}, { client: null, navigate: async () => {}, tunnel: async () => {} }, state);
   assert.equal(state.heading, 2, 'west, the ground not yet seen, not east back over the seen');
   // Saved with the goal: the sets are plain JSON and come back the same.
   const saved = JSON.parse(JSON.stringify(goal));
@@ -75,7 +74,7 @@ test('each leg says the ground it would show that is unseen and what seen before
 });
 
 test('the fallback without Jev: most unseen beside the leg\'s open air, a leg over ground stood on after the rest, then the most open air', () => {
-  const { legFallback } = require('../src/decisions/travel');
+  const { legFallback } = require('./support/jev-stand-in');
   const children = { leg_east: {}, leg_south: {}, leg_west: {}, leg_north: {} };
   const open = { leg_east: 96, leg_south: 0, leg_west: 96, leg_north: 0 };
   assert.equal(legFallback(children, [], { current: 'leg_east', open, unseen: { leg_east: 20, leg_south: 900, leg_west: 600, leg_north: 30 } }), 'leg_south');

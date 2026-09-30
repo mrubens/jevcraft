@@ -119,7 +119,7 @@ test('every option the visit offers is one fortress_visit declares, and its outa
   const b = bot({ health: 5, food: 14, hoglin: true });
   const tree = visit.options(b, null, goalOf(), () => {}, { navigate: async () => {}, returnOverworld: async () => {} }, { fortress, leave: () => {} });
   for (const k of [...Object.keys(tree), 'heal_first']) assert(spec.options.some(o => o.key === k), k);
-  assert.equal(spec.fallback({ go_in: {}, leave_fortress: {} }), 'go_in');
+  assert.equal(require('./support/jev-stand-in').oldOrder('fortress_visit')({ go_in: {}, leave_fortress: {} }), 'go_in');
 });
 
 // ---- asked once and held ----------------------------------------------------

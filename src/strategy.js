@@ -242,9 +242,9 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   const without = WITHOUT[piece] ? ` Until it is done, ${WITHOUT[piece]}.` : '';
   // Said alike whichever rung is first: "the ladder's next step" beside
   // "ahead of the ladder's order" was a thumb on the scale (the critical
-  // review, 2026-09-26). The first is still the fallback.
+  // review, 2026-09-26). The first is marked the ladder's next (ladderNext).
   const kit = rung.kit && bot ? require('./crossing-kit').kitRungSays(bot, goal || {}, rung) : '';
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, fallback: first };
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, ladderNext: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
@@ -369,7 +369,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     // reach nether is not held by its rest at all): said, and taking it is
     // taking it back, a choice of its own (note 694).
     const asideSays = require('./game-progress').rungAsideSays(goal, stage.phase);
-    options[`stage_${stage.phase}`] = { description: `${asideSays ? `Take the ${label(stage.phase)} back up now after all.` : `Go on to ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.`}${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}${asideSays ? ` ${asideSays}` : ''}${stage.action === 'enter_nether' ? require('./crossing-kit').kitSummary(bot, goal) : ''}`, stage, fallback: true,
+    options[`stage_${stage.phase}`] = { description: `${asideSays ? `Take the ${label(stage.phase)} back up now after all.` : `Go on to ${label(stage.phase)}${stage.item ? ` (${stage.count || ''} ${label(stage.item)})` : ''}.`}${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase] ? ` It is for this: ${RUNG_WHY[stage.action] || RUNG_WHY[stage.phase]}.` : ''}${asideSays ? ` ${asideSays}` : ''}${stage.action === 'enter_nether' ? require('./crossing-kit').kitSummary(bot, goal) : ''}`, stage, ladderNext: true,
       ...(asideSays ? { takeBack: stage.phase, says: `I'll take the ${label(stage.phase)} back up after all` } : {}) };
     // A step that may wait, back on the ladder after its time was up (the
     // ladder returns a set-aside step when nothing else is left): the
@@ -426,7 +426,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
 const tripSays = (key, o) => o.says ? o.says.replace(/^I'll /, '') : key.replaceAll('_', ' ');
 function strategyTree(options) {
   const top = {}, trips = {};
-  for (const [key, o] of Object.entries(options)) (o.trip ? trips : top)[key] = { description: o.description, ...(o.fallback ? { fallback: true } : {}) };
+  for (const [key, o] of Object.entries(options)) (o.trip ? trips : top)[key] = { description: o.description, ...(o.ladderNext ? { ladderNext: true } : {}) };
   const keys = Object.keys(trips);
   if (keys.length === 1) top.side_trip = { description: `A side trip, off the way to the Nether: ${trips[keys[0]].description}`, children: trips };
   else if (keys.length) top.side_trip = { description: `A side trip, off the way to the Nether, one of ${keys.length}: ${keys.map(k => tripSays(k, options[k])).join('; ')}. Each says what it buys and what it takes on its own question.`, children: trips };
@@ -480,8 +480,11 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   let choice = held && held.ladderNext === stage.phase && held.keys === keys && now() - held.at < HOLD_MS && options[held.choice] ? held.choice : null;
   if (!choice) {
     const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage) });
+    // Held through an outage (note 707): nothing is done this step; the
+    // next asks it fresh.
+    if (decision.stale) return { stale: true };
     choice = decision.path.at(-1);
-    goal.strategy = { choice, ladderNext: stage.phase, keys, at: now(), source: decision.fallback ? 'fallback' : 'jev' };
+    goal.strategy = { choice, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev' };
     save();
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }

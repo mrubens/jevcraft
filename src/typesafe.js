@@ -11,6 +11,7 @@ const MODEL = process.env.TYPESAFE_DEFAULT_MODEL || 'jev-latest';
 const { leanRequest } = require('./decisions/lean');
 
 const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
+const BREAKER_MS = 15000;
 
 class TypeSafeError extends Error {
   constructor(message, { status, requestId, body } = {}) {
@@ -89,11 +90,12 @@ class TypeSafe {
   // independently server-side. Measure latency and token use for each workload.
   // `run` and `kind` never reach the wire: they say which run the ledger
   // charges the call to and what sort of question it was.
-  // A service that is down is asked again in a minute, not by every caller
-  // meanwhile: at up to thirty seconds a call (three tries at ten), a run of
-  // decisions during an outage would stand the bot still for minutes. While
-  // the breaker is open a call fails at once and its caller takes its
-  // rule-based fallback.
+  // A service that is down is asked again in fifteen seconds, not by every
+  // caller meanwhile: at up to thirty seconds a call (three tries at ten), a
+  // run of questions during an outage would each wait it out. While the
+  // breaker is open a call fails at once; nothing is decided by code then
+  // (note 707): the asker holds and asks again (jev-down.js), and the first
+  // ask after the breaker's fifteen seconds is the one that finds Jev back.
   // `trace`, when given, is marked with the time of each stage of the call
   // (stage() below): a question that never came back (mid-243-q-nether-3,
   // note 540) could not say where it stood.
@@ -108,7 +110,7 @@ class TypeSafe {
     } catch (err) {
       // A call abandoned by its own caller cost nothing worth counting.
       if (!signal?.aborted) this.charge({ run, kind, latencyMs: performance.now() - started, ok: false });
-      if (!signal?.aborted && !(err instanceof TypeSafeError && err.status && !RETRY_STATUSES.has(err.status))) this.openUntil = Date.now() + 60000;
+      if (!signal?.aborted && !(err instanceof TypeSafeError && err.status && !RETRY_STATUSES.has(err.status))) this.openUntil = Date.now() + BREAKER_MS;
       throw err;
     }
   }

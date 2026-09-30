@@ -3,7 +3,7 @@
 ## Design
 
 - [How Jev thinks](how-jev-thinks.md): one recorded chat request, step by step, with the real questions, answers, confidences, latency and tokens. Start here.
-- [Every question Jev is asked](decisions.md): generated from `src/decisions`; each question's options, trigger, stakes, confidence bar and code fallback.
+- [Every question Jev is asked](decisions.md): generated from `src/decisions`; each question's options, trigger, stakes, confidence bar and what an outage does (no fallbacks: the bot holds, note 707).
 - [Rule audit](rule-audit.md): the choices handed from code to Jev, with the probes that checked them, and those code still makes.
 
 ## Building and movement

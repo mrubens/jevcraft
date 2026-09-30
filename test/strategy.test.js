@@ -72,12 +72,12 @@ test('side trips are offered at night too (Jev weighs the dark), and a lone rung
   assert.equal(lone.asked.length, 0, 'a lone step is not asked about');
 });
 
-test('with Jev unreachable the ladder\'s own order is kept, through the registry', async () => {
+test('with no client the tests\' stand-in takes the ladder\'s next, through the registry', async () => {
   const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
-  const sides = { enchant: { description: 'Enchant the diamond sword.', run: async () => assert.fail('the fallback is the ladder') } };
+  const sides = { enchant: { description: 'Enchant the diamond sword.', run: async () => assert.fail('the stand-in takes the ladder') } };
   assert.equal(await strategyStep(bot, task, goal, () => {}, stage, { client: null, decide, sides }), null);
-  assert.equal(goal.strategy.choice, 'rung_golden_boots'); assert.equal(goal.strategy.source, 'fallback');
+  assert.equal(goal.strategy.choice, 'rung_golden_boots'); assert.equal(goal.strategy.source, 'stand-in');
 });
 
 test('the ladder step works the rung Jev chose', async () => {
@@ -232,7 +232,7 @@ test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, w
   assert.match(d, /three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed/);
   assert.match(d, /any night on the Overworld, anywhere there .*the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after/);
   assert.match(d, /In hand: 0 wool \(three of one colour make the bed; wool of mixed colours is dyed white, a bone's bone meal for three\), 5 string, 8 planks and 0 logs; no sheep in view or remembered/);
-  assert.equal(options.carry_bed.fallback, undefined, 'not the ladder\'s default');
+  assert.equal(options.carry_bed.ladderNext, undefined, 'not the ladder\'s default');
   assert.deepEqual(options.carry_bed.rung, { phase: 'carry_bed', action: 'gather_wool', count: 3 }, 'the wool the way the bed rung gathers it');
   // Not with a bed in the pack, nor before the base's bed is claimed, nor with the wool search set aside.
   assert.equal(strategyOptions(homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'red_bed', count: 1 }] }).bot, goal, stage).carry_bed, undefined);
@@ -409,8 +409,8 @@ test('the rungs are said alike, none as the ladder\'s own; the first is still th
     assert.match(options[key].description, /^Get /, key);
     assert.doesNotMatch(options[key].description, /ladder/, key);
   }
-  assert.equal(options.rung_golden_boots.fallback, true);
-  assert(!options.rung_diamond_sword.fallback);
+  assert.equal(options.rung_golden_boots.ladderNext, true);
+  assert(!options.rung_diamond_sword.ladderNext);
   const f = fixture([]);
   const later = strategyOptions(f.bot, f.goal, { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: 12 }, trips);
   assert.doesNotMatch(later.stage_obtain_ender_pearls.description, /ladder/);

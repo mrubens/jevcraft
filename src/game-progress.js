@@ -852,7 +852,9 @@ async function gameStep(bot, task, goal, save, actions) {
   // (strategy.js). A side trip that ran is this step's work.
   if (actions.strategy && stage.phase !== 'complete') {
     const chosen = await actions.strategy(bot, task, goal, save, stage);
-    if (chosen?.ran) return false;
+    // A side trip that ran, or the question held through a Jev outage (asked
+    // fresh at the next step, note 707).
+    if (chosen?.ran || chosen?.stale) return false;
     if (chosen?.stage) stage = chosen.stage;
     // A choice that only set steps aside did nothing in the world: the
     // ladder moves on at once to what it leaves next. Kept as the step, it

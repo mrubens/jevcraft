@@ -541,8 +541,9 @@ function ask(bot, survival, warned) {
   const answers = bot._shotAnswers ||= new Map();
   const until = new Map(warned.map(e => [e.id, e._shotWarn.at + WARNS[e._shotWarn.kind].most * 1000]));
   const record = (choice, by) => { for (const [id, key] of keys) answers.set(id, { key, choice, at: Date.now(), until: until.get(id), ...(choice === 'behind_cover' ? { cell: tree.behind_cover.cell } : {}), by }); };
-  // Without Jev (no client, or JEV_ENCOUNTERS=0): the rule, the shield.
-  // Split round the bot, a cell out of their line is the rule's answer.
+  // With JEV_ENCOUNTERS=0 (or no client): the shot's safety rule, the
+  // shield; split round the bot, a cell out of their line. Jev not
+  // reachable, decide() answers by the same rule (note 707).
   if (!survival.client || process.env.JEV_ENCOUNTERS === '0') { const rule = shotRule(tree); if (rule) record(rule, 'rules'); return; }
   const state = shotState(bot, warned);
   const goal = bot._survivalGoal || bot._goal || {}, save = bot._goalSave || (() => {});
@@ -552,13 +553,13 @@ function ask(bot, survival, warned) {
     .then(d => {
       const choice = d && !d.stale ? d.path?.[0] : null;
       if (!choice || !tree[choice]) return;
-      record(choice, d.fallback ? 'fallback' : 'jev');
+      record(choice, d.safetyRule ? 'rule' : 'jev');
       if (choice === 'strike_first') strikeFirst(bot, tree.strike_first.target).catch(() => {});
     })
     .catch(() => null)
     .finally(() => { bot._shotAsking = false; });
 }
-// The answer without Jev: the shield, or where the shooters are split round
+// The shot's safety rule, when Jev cannot answer: the shield, or where the shooters are split round
 // the bot and a cell out of their line is a step off, that cell (note 691).
 const shotRule = tree => tree.shield_up?.split && tree.behind_cover ? 'behind_cover' : tree.shield_up ? 'shield_up' : null;
 // The strike chosen: swings at the shooter while it is in reach and its

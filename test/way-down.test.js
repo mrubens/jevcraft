@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
-const { perchOf, waysDown, fallbackWay } = require('../src/way-down');
+const { perchOf, waysDown, oldOrderWay } = require('../src/way-down');
 
 // A view over a world given as a function of the cell.
 const viewOf = at => ({ name: p => at(p.x, p.y, p.z) });
@@ -95,8 +95,8 @@ test('the water bucket is a waterfall off an open side to the ground, not in the
 
 test('without Jev, the way that comes off the top safely is taken first', () => {
   const view = tower(), perch = perchOf(view, new Vec3(0, 90, 0));
-  assert.equal(fallbackWay(waysDown(view, perch, { health: 20, carried: { water_bucket: 1 } })), 'ride_water', 'the dig stops still up the tower; the water reaches the ground');
-  assert.equal(fallbackWay(waysDown(view, perch, { health: 20 })), 'dig_down');
+  assert.equal(oldOrderWay(waysDown(view, perch, { health: 20, carried: { water_bucket: 1 } })), 'ride_water', 'the dig stops still up the tower; the water reaches the ground');
+  assert.equal(oldOrderWay(waysDown(view, perch, { health: 20 })), 'dig_down');
 });
 
 // A live bot on a tower of dirt over the ground: the walk asks the way

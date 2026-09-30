@@ -127,17 +127,17 @@ test('sixteen building blocks are never thrown away to make room', async () => {
 });
 
 test('short of the block reserve by day, the bot tops it up: cobblestone with a pickaxe, netherrack in the Nether', async () => {
-  const { maintainBlocks } = require('../src/work');
+  const { gatherBlocks } = require('../src/work');
   const got = [];
   const bot = { game: { gameMode: 'survival', dimension: 'overworld' }, time: { timeOfDay: 3000 }, entity: { isInWater: false, position: { x: 0, y: 64, z: 0 } },
     registry, inventory: { items: () => [{ name: 'stone_pickaxe', count: 1 }, { name: 'dirt', count: 4 }, { name: 'oak_log', count: 8 }] } };
   const goal = { kind: 'win' };
   // acquireStep is the real planner; stand it in by watching the step the upkeep records.
-  await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
+  await gatherBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
   assert.equal(goal.step.action, 'block_reserve'); assert.equal(goal.step.item, 'cobblestone'); assert.equal(goal.step.have, 4);
   bot.game.dimension = 'the_nether';
   delete goal.survival; delete goal.step; delete goal.attempts;
-  await maintainBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
+  await gatherBlocks(bot, { check() {} }, goal, () => {}).catch(() => {});
   assert.equal(goal.step.item, 'netherrack');
 });
 
@@ -183,13 +183,13 @@ test('full pockets: which stack goes is Jev\'s, told what each is; "none" goes w
   assert.deepEqual(tossed, ['dirt'], 'Jev\'s pick went');
 });
 
-test('while a batch cooks, what the bot does is Jev\'s, asked once; without Jev, the order in smelt', async () => {
+test('while a batch cooks, what the bot does is Jev\'s, asked once (no client: the tests\' stand-in, by the old order)', async () => {
   const { whileCooking } = require('../src/work');
   const { Vec3 } = require('vec3');
   const bot = { inventory: { items: () => [{ name: 'cobblestone', count: 10 }], emptySlotCount: () => 10 }, entity: { position: new Vec3(0, 64, 0) }, time: { timeOfDay: 4000 },
     blockAt: () => ({ name: 'iron_ore' }) };
   const args = { cooking: 200000, oreInReach: () => new Vec3(1, 64, 0), walkTarget: () => new Vec3(10, 64, 0), what: 'raw iron', count: 20 };
-  assert.equal(await whileCooking(bot, { check() {} }, {}, () => {}, args), null, 'no Jev: the order in smelt');
+  assert.equal(await whileCooking(bot, { check() {} }, {}, () => {}, args), 'dig_in_reach', 'the stand-in: the old order');
   let offered;
   const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'mine_nearby', confidence: 0.5 } } }; } } };
   assert.equal(await whileCooking(bot, task, {}, () => {}, args), 'mine_nearby');

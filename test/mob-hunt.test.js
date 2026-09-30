@@ -639,7 +639,7 @@ test('a fortress in view is asked whether the visit happens now before the way i
 test('the way chosen to a fortress holds while it makes ground, and a failure is asked again with what failed', async t => {
   noIntention(t);
   const { findFortressStep } = require('../src/mob-hunt');
-  const { approachFallback } = require('../src/decisions/travel');
+  const { approachFallback } = require('./support/jev-stand-in');
   const { bot } = fortressAcrossLava();
   // A pickaxe carried: with none, a staircase no step of which can be dug
   // by hand from here is not offered (note 687). The stair ends a block
@@ -682,7 +682,7 @@ test('no hunt fight is begun from a one-wide span over the lava sea', async () =
 test('the next leg of the fortress search is Jev\'s: each heading surveyed for open air against rock, and the fortress heights offered from high up', async () => {
   // mid-205-m (note 394): thirteen legs at y 96 to 104 straight through solid netherrack, six seconds a cell, nothing seen in fifty-one minutes.
   const { findFortressStep, FORTRESS_LEG, FORTRESS_Y } = require('../src/mob-hunt');
-  const { legFallback } = require('../src/decisions/travel');
+  const { legFallback } = require('./support/jev-stand-in');
   // Solid netherrack everywhere at the standing height except a cavern to the south: open air from z 1 to 40, its floor thirty blocks down.
   const rock = p => p.y === 99 && p.z <= 0 ? 'netherrack' : (p.z >= 1 && p.z <= 40 && p.x === 0) ? (p.y < 70 ? 'netherrack' : null) : 'netherrack';
   const { bot } = netherWorld(new Vec3(0.5, 100, 0.5), rock);

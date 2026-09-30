@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { decideTree } = require('../src/decisions');
+const { Task } = require('../src/skills');
 const { TypeSafe } = require('../src/typesafe');
 
 const tree = () => ({
@@ -57,34 +58,109 @@ test('cancelling an in-flight Jev call aborts fetch without retrying', async () 
   } finally { global.fetch = original; }
 });
 
-test('a Jev outage walks the tree with the fallback rule and says so, while cancellations and rejections still throw', async () => {
+test('decideTree makes no answer of its own: an outage, a rejection and a cancellation are all thrown to decide()', async () => {
   const { TypeSafeError } = require('../src/typesafe');
   const down = { systemOne: async () => { throw new TypeSafeError('TypeSafe 503: no healthy upstream', { status: 503 }); } };
-  const fallback = (children, path) => path.length ? Object.keys(children)[0] : 'eat';
-  const result = await decideTree(down, { state: {}, tree: tree(), fallback });
-  assert.deepEqual(result.path, ['eat', 'carried', 'consume']);
-  assert.equal(result.fallback.status, 503); assert.deepEqual(result.judgments, []);
-  assert.equal(result.asked.branch_0 !== undefined, true, 'the questions that would have been asked are still recorded');
-  await assert.rejects(decideTree(down, { state: {}, tree: tree() }), /503/, 'no fallback rule, no fallback');
+  await assert.rejects(decideTree(down, { state: {}, tree: tree() }), /503/);
   const rejected = { systemOne: async () => { throw new TypeSafeError('TypeSafe 400: bad question', { status: 400 }); } };
-  await assert.rejects(decideTree(rejected, { state: {}, tree: tree(), fallback }), /400/, 'a rejected request is a bug, not an outage');
+  await assert.rejects(decideTree(rejected, { state: {}, tree: tree() }), /400/);
   const controller = new AbortController(); const cancelled = new Error('Cancelled'); cancelled.name = 'Cancelled';
   const aborting = { systemOne: async () => { controller.abort(cancelled); throw new Error('aborted'); } };
-  await assert.rejects(decideTree(aborting, { state: {}, tree: tree(), fallback, signal: controller.signal }), { name: 'Cancelled' });
+  await assert.rejects(decideTree(aborting, { state: {}, tree: tree(), signal: controller.signal }), { name: 'Cancelled' });
+  const jevDown = require('../src/jev-down');
+  assert(jevDown.unreachable(new TypeSafeError('TypeSafe 503', { status: 503 })));
+  assert(jevDown.unreachable(new TypeSafeError('The decision service is not answering', { status: 503 })));
+  assert(jevDown.unreachable(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } })));
+  assert(jevDown.unreachable(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })));
+  assert(!jevDown.unreachable(new TypeSafeError('TypeSafe 400', { status: 400 })), 'a rejected question is a bug, not an outage');
+  assert(!jevDown.unreachable(Object.assign(new Error('x'), { name: 'Cancelled' })));
 });
 
-test('the outage is announced once and its end once, and the first listed option is the default unless a node claims it', async () => {
-  const { announceFallback, firstOption } = require('../src/decisions');
-  const said = [], bot = { chat: line => said.push(line) }, goal = {};
-  announceFallback(bot, goal, { fallback: { reason: 'TypeSafe 503' } });
-  announceFallback(bot, goal, { fallback: { reason: 'TypeSafe 503' } });
-  assert.equal(said.length, 1); assert.equal(goal.jevOutage.reason, 'TypeSafe 503');
-  announceFallback(bot, goal, { judgments: [{}] });
-  announceFallback(bot, goal, { judgments: [{}] });
-  assert.deepEqual(said, ["Jev isn't answering right now, so I'm going with the safe default until it is.", 'Jev is back.']);
+// Note 707 (the user, 2026-09-30: "I don't want jev fallbacks. If jev is
+// down, decisions aren't made."): Jev down, the question holds, says so once,
+// is asked again, and comes back stale when Jev returns, for its caller to
+// ask fresh.
+const flaky = (fails, answer = 'eat') => {
+  const { TypeSafeError } = require('../src/typesafe');
+  let calls = 0;
+  return { get calls() { return calls; }, systemOne: async ({ questions }) => {
+    calls++;
+    if (calls <= fails) throw new TypeSafeError('TypeSafe 503: no healthy upstream', { status: 503 });
+    return { answers: Object.fromEntries(Object.keys(questions).map(k => [k, { choice: answer && questions[k].criteria[answer] !== undefined ? answer : Object.keys(questions[k].criteria)[0], confidence: 0.9 }])) };
+  } };
+};
+const botFor = () => { const said = [], controls = []; return { said, controls, chat: line => said.push(line), setControlState: (k, v) => controls.push([k, v]), pathfinder: { setGoal: g => controls.push(['goal', g]) } }; };
+
+test('Jev down: nothing is decided by code; the asker holds (the walk and keys let go), says once it is waiting, asks again, and comes back stale when Jev answers (note 707)', async () => {
+  const { decide } = require('../src/decisions');
+  const bot = botFor(), goal = {}, client = flaky(3);
+  const lines = []; const log = console.log; console.log = (...a) => lines.push(a.join(' '));
+  let decision;
+  try { decision = await decide('stillness_detour', { client, bot, goal, task: new Task('t'), tree: { mine_nearby: { description: 'a', run: async () => assert.fail('nothing is run') }, look_around: { description: 'b' } }, state: {} }); }
+  finally { console.log = log; }
+  assert.equal(client.calls, 4, 'asked again until Jev answered');
+  assert.equal(decision.stale, true, 'held through the outage: not acted on');
+  assert(decision.jevWasDown?.since);
+  assert.equal(decision.path, undefined); assert.equal(decision.fallback, undefined);
+  assert.deepEqual(bot.said, ["Jev isn't answering, so I'm waiting here until it does.", 'Jev is back.'], 'said once each');
+  assert(bot.controls.some(([k, v]) => k === 'goal' && v === null), 'the walk let go');
+  assert(bot.controls.some(([k, v]) => k === 'forward' && v === false) && !bot.controls.some(([k]) => k === 'sneak'), 'the keys let go, the crouch kept');
+  assert.equal(lines.filter(l => l.startsWith('[jev down] stillness_detour:')).length, 1, 'the outage logged once');
+  assert(lines.some(l => l.startsWith('[jev down] back')));
   assert.equal(goal.jevOutage, undefined);
+  assert.equal(goal.decisions.at(-1).stale, true); assert(goal.decisions.at(-1).jevWasDown);
+  // Asked fresh: Jev's own answer, acted on.
+  const fresh = await decide('stillness_detour', { client, bot, goal, task: new Task('t'), tree: { mine_nearby: { description: 'a' }, look_around: { description: 'b' } }, state: {} });
+  assert.equal(fresh.stale, undefined); assert.ok(fresh.judgments.length);
+});
+
+test('Jev down: the hold ends at once when the task stops it (a reflex, a preemption, the air), and no answer is made (note 707)', async () => {
+  const { decide } = require('../src/decisions');
+  const { TypeSafeError } = require('../src/typesafe');
+  const bot = botFor();
+  const client = { systemOne: async () => { throw new TypeSafeError('The decision service is not answering; asking again in 12s', { status: 503 }); } };
+  let stop = false;
+  const task = { check() { if (stop) { const e = new Error('Preempted by lava'); e.name = 'NeedsSafety'; throw e; } } };
+  setTimeout(() => { stop = true; }, 60).unref();
+  const log = console.log; console.log = () => {};
+  try { await assert.rejects(decide('stillness_detour', { client, bot, goal: {}, task, tree: { mine_nearby: { description: 'a' }, look_around: { description: 'b' } }, state: {} }), { name: 'NeedsSafety' }); }
+  finally { console.log = log; require('../src/jev-down').back(bot, null, 'test', { log: () => {} }); }
+});
+
+test('Jev down: the body\'s physics is answered by its safety rule at once; nothing else is (note 707)', async () => {
+  const { decide } = require('../src/decisions');
+  const { TypeSafeError } = require('../src/typesafe');
+  const client = { systemOne: async () => { throw new TypeSafeError('fetch failed', {}); } };
+  const log = console.log; console.log = () => {};
+  try {
+    const body = await decide('body_way', { client, task: new Task('t'), tree: { to_water: { description: 'w' }, swim_up: { description: 's' } }, state: {}, context: { default: 'to_water' }, watchAir: false });
+    assert.deepEqual(body.path, ['to_water']); assert(body.safetyRule.reason);
+    const shot = await decide('shot_answer', { client, task: new Task('t'), tree: { shield_up: { description: 'up' }, keep_on: { description: 'on' } }, state: {}, aside: true });
+    assert.deepEqual(shot.path, ['shield_up']); assert(shot.safetyRule);
+  } finally { console.log = log; }
+});
+
+test('Jev down on a batched question about the game: held, asked again, and stale after (note 707)', async () => {
+  const { ask } = require('../src/decisions');
+  const { TypeSafeError } = require('../src/typesafe');
+  let calls = 0;
+  const client = { systemOne: async () => { if (++calls <= 2) throw new TypeSafeError('TypeSafe 502', { status: 502 }); return { answers: { travel: { choice: 'boat' } } }; } };
+  const bot = botFor();
+  const log = console.log; console.log = () => {};
+  let response;
+  try { response = await ask(client, { state: {}, questions: { travel: ['boat_crossing'] }, hold: { bot, goal: {}, task: new Task('t') }, timeoutMs: 5000 }); }
+  finally { console.log = log; }
+  assert.equal(calls, 3); assert.equal(response.stale, true); assert.deepEqual(response.answers, {});
+  assert.deepEqual(bot.said, ["Jev isn't answering, so I'm waiting here until it does.", 'Jev is back.']);
+  // Without `hold` (a player's request): thrown, and the player is told.
+  calls = 0;
+  await assert.rejects(ask(client, { state: {}, questions: { travel: ['boat_crossing'] } }), /502/);
+});
+
+test('the first listed option is the one a walk takes with no answer of Jev\'s to follow, unless the ladder marks its next', () => {
+  const { firstOption } = require('../src/decisions');
   assert.equal(firstOption({ a: {}, b: {} }), 'a');
-  assert.equal(firstOption({ a: {}, b: { fallback: true } }), 'b');
+  assert.equal(firstOption({ a: {}, b: { ladderNext: true } }), 'b');
 });
 
 test('every question about playing the game is told how the bot died lately', async () => {

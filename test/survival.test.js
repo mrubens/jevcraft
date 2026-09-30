@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { Vec3 } = require('vec3');
@@ -924,7 +925,7 @@ test('at night with a bed the choices are sleep, stay up, or shelter, the shelte
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client });
   // The fallback is the question's own, from its definition.
   const { question } = require('../src/decisions');
-  survival.decide = async (task, goal, save, { id, tree }) => { seen.push(Object.keys(tree).sort()); const key = question(id).fallback(tree, []); return { path: [key], action: tree[key], stale: false }; };
+  survival.decide = async (task, goal, save, { id, tree }) => { seen.push(Object.keys(tree).sort()); const key = oldOrder(id)(tree, []); return { path: [key], action: tree[key], stale: false }; };
   survival.sleepStep = async () => { seen.push('slept'); };
   await survival.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.deepEqual(seen, [['continue_request', 'secure_shelter', 'sleep_in_bed'], 'slept'], 'with a bed at hand, the fallback sleeps');
@@ -1656,7 +1657,9 @@ test('no shelter site and no blocks, but a pickaxe: the night is dug into the gr
   let mined = 0;
   survival.nightMine = async () => { mined++; return true; };
   survival.shaftPocket = async () => false; // no rock straight down here
-  await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
+  // Asked each pass (the tests' stand-in, the old order); a way that fails
+  // rests and the next pass asks without it (note 707: no cascade by code).
+  for (let pass = 0; pass < 4 && !mined; pass++) await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
   assert.equal(mined, 1, 'the mine began where the bot stands');
   assert(survival.state.nightMine?.origin, 'and it is the night mine the next step continues');
 });
@@ -1692,36 +1695,13 @@ test('on a sand island at dusk with one block and a pickaxe, the bot digs straig
     place: async (b, t, p, name) => { placed.set(`${p.floored()}`, name); } };
   const survival = new Survival(bot, actions, { state: { shelters: [] } });
   survival.nightMine = async () => assert.fail('the shaft comes first');
-  await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
+  for (let pass = 0; pass < 3 && !survival.state.shelters.at(-1)?.shaft; pass++) await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
   const refuge = survival.state.shelters.at(-1);
   assert(refuge?.shaft, 'a shaft pocket was made');
   assert(refuge.origin.y <= 57, `down into the sandstone (feet at ${refuge.origin.y})`);
   assert(Math.abs(refuge.origin.x) <= 2, 'from a column in from the edge');
   assert.equal(placed.get(`${new Vec3(refuge.origin.x, refuge.origin.y + 2, refuge.origin.z)}`), 'netherrack', 'capped with the netherrack');
   assert(refuge.verifiedAt, 'and it counts as a sealed shelter');
-});
-
-test('short of blocks for the room on open grass, the bot digs a shaft pocket instead of gathering dirt a block at a time', async () => {
-  const { Survival } = require('../src/survival');
-  const registry = require('minecraft-data')('26.1');
-  const dug = new Set(), placed = new Map();
-  const ground = p => { const y = Math.floor(p.y); return y >= 63 ? 'air' : y === 62 ? 'grass_block' : y >= 58 ? 'dirt' : 'stone'; };
-  const blockAt = p => { const f = p.floored(), k = `${f}`; const name = placed.get(k) || (dug.has(k) ? 'air' : ground(f)); return { position: f, name, boundingBox: name === 'air' ? 'empty' : 'block', diggable: true }; };
-  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000 },
-    entity: { position: new Vec3(0.5, 63, 0.5), onGround: true }, health: 20, food: 20, registry,
-    inventory: { items: () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'dirt', count: 11 }], slots: {}, emptySlotCount: () => 5 },
-    findBlocks: () => [], blockAt, world: { raycast: () => null }, pathfinder: { movements: {}, getPathTo: () => ({ status: 'success', path: [] }), setGoal() {} } });
-  const actions = { navigate: async () => {},
-    dig: async (b, t, p) => { dug.add(`${p.floored()}`); bot.entity.position = new Vec3(p.x + 0.5, p.y, p.z + 0.5); },
-    place: async (b, t, p, name) => { placed.set(`${p.floored()}`, name); },
-    acquireStep: async () => assert.fail('no dirt gathering: the shaft costs one block') };
-  // The room already planned beside the bot, twenty-eight blocks short of eleven.
-  const survival = new Survival(bot, actions, { state: { shelters: [{ origin: { x: 3, y: 63, z: 0 }, dimension: 'overworld', createdAt: new Date().toISOString() }] } });
-  await survival.refugeStep(new Task('dusk'), { kind: 'win' }, () => {});
-  const shaft = survival.state.shelters.find(s => s.shaft);
-  assert(shaft?.verifiedAt, 'a sealed shaft pocket');
-  assert.equal(shaft.origin.y, 60, 'three down, walled in dirt with grass over the rim');
-  assert.equal(placed.get(`${new Vec3(0, 62, 0)}`), 'dirt', 'capped with a block of dirt');
 });
 
 test('a zombie at arm\'s length comes before the bed: it is fought, not slept beside', async () => {
@@ -2314,7 +2294,7 @@ test('how the night is sheltered is Jev\'s pick, run and held for the night with
   assert(seen.state.riskNow && seen.state.deathWouldCost);
 });
 
-test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, copper included with its use said; without Jev, not copper', async () => {
+test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, copper included with its use said', async () => {
   const registry = require('minecraft-data')('26.1');
   const ores = { '3,39,0': 'copper_ore', '6,39,0': 'iron_ore', '4,39,0': 'copper_ore', '8,39,0': 'lava' };
   const bot = Object.assign(new EventEmitter(), { registry, game: { dimension: 'overworld' }, entities: {}, entity: { position: new Vec3(0.5, 40, 0.5) },
@@ -2322,7 +2302,6 @@ test('the night mine\'s next ore is Jev\'s pick of the nearest of each kind, cop
     findBlocks: ({ matching }) => Object.keys(ores).filter(k => matching.includes(registry.blocksByName[ores[k]].id)).map(k => new Vec3(...k.split(',').map(Number))),
     blockAt: p => ({ name: ores[`${p.x},${p.y},${p.z}`] || 'stone', boundingBox: 'block', position: p }) });
   const survival = new Survival(bot, {}, {});
-  assert.equal((await survival.nightTarget(new Task('night'), {}, () => {}, new Vec3(0, 40, 0))).name, 'iron_ore', 'no Jev: the nearest the ladder uses');
   survival.client = { systemOne: async () => ({}) };
   let tree;
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['ore_0'], stale: false }; };
@@ -2675,7 +2654,7 @@ test('at bedtime in a shaft with a bed carried, the nook is on offer where the b
   const { bot } = nookFixture({ open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
   const seen = [];
-  survival.decide = async (task, goal, save, { id, tree }) => { seen.push([id, Object.keys(tree).sort()]); const key = question(id).fallback(tree, []); seen.push(tree[key].description); return { path: [key], action: tree[key], stale: false }; };
+  survival.decide = async (task, goal, save, { id, tree }) => { seen.push([id, Object.keys(tree).sort()]); const key = oldOrder(id)(tree, []); seen.push(tree[key].description); return { path: [key], action: tree[key], stale: false }; };
   survival.nookSleep = async () => { seen.push('slept'); };
   await survival.step(new Task('night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.deepEqual(seen[0], ['survival_priority', ['continue_request', 'secure_shelter', 'sleep_in_nook']]);
@@ -2899,7 +2878,7 @@ test('a priority choice that runs into a resting action rests with it and is lef
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
   const seen = [];
   survival.decide = async (task, goal, save, { id, tree, state }) => { seen.push({ id, keys: Object.keys(tree).sort(), notNow: state.notNow });
-    const key = tree.secure_shelter ? 'secure_shelter' : question(id).fallback(tree, []); return { path: [key], action: tree[key], stale: false }; };
+    const key = tree.secure_shelter ? 'secure_shelter' : oldOrder(id)(tree, []); return { path: [key], action: tree[key], stale: false }; };
   survival.refugeStep = async () => { throw Object.assign(new Error('seal shelter is set aside: Shelter verification failed'), { name: 'SetAside', until: Date.now() + 120000 }); };
   survival.nookSleep = async () => {};
   const goal = { kind: 'win', request: 'beat the game' };

@@ -9,7 +9,9 @@
 // 0.2 seconds (note 530), inside every one of these windows (lava, the
 // shortest, is 2.5 seconds from full health). The code's old order is the
 // question's fallback, when Jev cannot be reached or has not answered in
-// ASK_MS.
+// ASK_MS. That order is the body's safety rule (decisions/survival.js
+// safetyRule, note 707): the one kind of answer the code still gives when
+// Jev cannot, because the body is dying while it waits.
 //
 // The ways themselves (a walk out of lava, a pillar, a dig, a swim) are the
 // mechanics they always were, built where they live (survival.js lavaWays,
@@ -26,7 +28,7 @@ const RATE = { lava: 8, in_fire: 2, burning: 1, head_in_block: 2, drowning: 2, h
 // What burning lasts after the source is left: fifteen seconds after lava,
 // eight after fire.
 const BURNS_AFTER = { lava: 15, fire: 8 };
-// The answer waited for before the fallback takes it: five times the 0.2
+// The answer waited for before the safety rule takes it: five times the 0.2
 // seconds answers take (note 530), and under half of the shortest window
 // (lava from full health).
 const ASK_MS = 1000;
@@ -171,8 +173,8 @@ function held(bot, key, now = Date.now()) {
 }
 
 // Ask which way, and carry it out. `ways` is { key: { description, run,
-// seconds } } in the code's old order (the first is the fallback's), from
-// the builders named above. -> { key, by: 'jev'|'fallback'|'only', acted }
+// seconds } } in the code's old order (the first is the safety rule's),
+// from the builders named above. -> { key, by: 'jev'|'rule'|'only', acted }
 // A way whose run returns false did not get the body out; the step goes on
 // as it did when the old rule's way failed.
 async function answer(bot, task, key, ways, { client = null, goal = null, save = () => {}, facts = {}, context = {}, log = console.log, decide = null } = {}) {
@@ -203,13 +205,13 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
       interrupt: () => { if (Date.now() - t0 >= ASK_MS) throw Object.assign(new Error(`body_way: no answer in ${ASK_MS / 1000} seconds`), { name: 'CutShort' }); } });
   } catch (err) {
     if (err?.name === 'Cancelled') throw err;
-    // Cut short or failed: the old order's way, said.
-    log(`[body] ${key}: ${err?.message || err}; took ${keys[0]} by the old order`);
+    // Cut short or failed: the body's safety rule, the old order's way, said.
+    log(`[body] ${key}: ${err?.message || err}; took ${keys[0]} by the body's safety rule`);
     decision = { path: [keys[0]], action: tree[keys[0]] };
-    by = 'fallback';
+    by = 'rule';
   }
   if (keys.length === 1) by = 'only';
-  else if (decision.fallback || !client) by = 'fallback';
+  else if (decision.safetyRule || decision.standIn) by = 'rule';
   const choice = decision.path?.[0] && ways[decision.path[0]] ? decision.path[0] : keys[0];
   const way = ways[choice];
   // Held as Jev's choice, or as the one way there is: the old order's

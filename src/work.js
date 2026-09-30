@@ -195,7 +195,7 @@ function looseEnds(goal, now = Date.now()) {
 // A stall (stillness.js) is answered by Jev, whatever stalled: the same
 // thing done differently, the rung left for later, or something else useful
 // from here for a while (breakStillness), with how many times it has stalled
-// as a fact. Without Jev, in that order by strikes. A survival action that
+// as a fact. A survival action that
 // stalled is refused by the survival layer for ten minutes
 // (Survival.report), which falls through to its next answer; nothing more
 // is needed here.
@@ -795,17 +795,10 @@ async function blockSourceSaid(bot, task, goal, item) {
   return ` The nearest ${what} the gather would go for is ${Math.round(p.distanceTo(here))} blocks off${rise >= 2 ? ` and ${rise} up` : rise <= -2 ? ` and ${-rise} down` : ''}` +
     (open ? `, across ${open} blocks of open drop on the straight line to it (${deepest >= 48 ? 'more than 48' : deepest} deep).` : ', with footing on the straight line to it.');
 }
-// Without Jev, the reserves in the old order: wood, then blocks.
-async function maintainBlocks(bot, task, goal, save) {
-  if (woodDue(bot, goal)) return gatherWood(bot, task, goal, save);
-  if (blocksDue(bot, goal)) return gatherBlocks(bot, task, goal, save);
-  return false;
-}
-
 // Upkeep: a spare pickaxe before the one in hand wears out, and the wood and
 // blocks a night or a climb needs. Whether now is the time is Jev's: it is
 // asked when one falls short, with what is carried, and "carry on" holds
-// for five minutes. Without Jev, the old order: pickaxe, wood, blocks.
+// for five minutes.
 const UPKEEP_HOLD_MS = 5 * 60 * 1000;
 // The base's bed is offered to take along within a short walk; food before
 // dark within the last few minutes of day.
@@ -818,7 +811,6 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   // was carried on from before.
   const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
-  if (!client) return options[['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems'].find(k => due.includes(k)) || due[0]].run();
   // The route to the stems surveyed only for a question asked.
   if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
   // With no pickaxe, what going on leaves the bot unable to do for the
@@ -970,7 +962,7 @@ async function upkeepOffers(bot, task, goal, save) {
 // sculk; the answer holds five minutes, the patch left thirty.
 const SCULK_HOLD_MS = 5 * 60000;
 async function sculkStep(bot, task, goal, save, client, onStep = () => {}) {
-  if (!client || !/overworld/.test(String(bot.game?.dimension || ''))) return false;
+  if (!/overworld/.test(String(bot.game?.dimension || ''))) return false;
   const sculk = require('./sculk');
   const about = sculk.sculkAbout(bot);
   if (!about || !(about.withinHearing || (about.nearestShrieker !== null && about.nearestShrieker <= sculk.ZONE_REACH))) return false;
@@ -1163,8 +1155,7 @@ async function dig(bot, task, p, { done, requiredTool, enchantment, requireDrops
 }
 
 // Liquid ran into a cell the bot dug: plug it with a carried block, or carry
-// on. Jev's choice, asked once the liquid is seen in the gap; without Jev
-// the gap is plugged.
+// on. Jev's choice, asked once the liquid is seen in the gap.
 async function leakResponse(bot, task, p, LIQUID, { placer = place } = {}) {
   const { buildingMaterials } = require('./shelter');
   for (const ms of [300, 700]) {
@@ -1190,7 +1181,9 @@ async function leakResponse(bot, task, p, LIQUID, { placer = place } = {}) {
       try {
         const decision = await require('./decisions').decide('dug_into_liquid', { client, bot, task, tree, state: { liquid: kind, position: { x: p.x, y: p.y, z: p.z }, inWater: !!bot.entity?.isInWater, health: bot.health,
           liquidIs: { where, blocksOff: off }, ...(kind === 'lava' ? { onFire: burning } : { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) }) } });
-        if (!decision.fallback && !decision.stale && decision.path.at(-1) === 'carry_on') return false;
+        // Held through an outage (note 707): looked at again and asked fresh.
+        if (decision.stale) continue;
+        if (decision.path.at(-1) === 'carry_on') return false;
       } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     return plugLeak(bot, task, p, LIQUID, { placer });
@@ -1524,7 +1517,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
           const decision = await decide('search_heading', { client, bot, task, goal, save, tree,
             state: { resource: LOG.test(resource) ? 'wood (any log)' : resource.replaceAll('_', ' '), biome: require('./exploration').biomeView(bot)?.biome, searchLegs: search.attempts,
               legsThatWay: Object.fromEntries(Object.entries(legs).map(([i, n]) => [HEADINGS[i], n])) } });
-          if (!decision.stale && !decision.fallback) (search.frontier ||= { heading: 0, legs: 0 }).chosen = HEADINGS.indexOf(decision.path.at(-1).slice(8).replace('_', '-'));
+          if (!decision.stale) (search.frontier ||= { heading: 0, legs: 0 }).chosen = HEADINGS.indexOf(decision.path.at(-1).slice(8).replace('_', '-'));
         } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
       target = explorationTarget(search, resource, bot.entity.position);
@@ -1820,10 +1813,9 @@ function logInView(bot, step) {
 // eight logs), of a vein (up to a stack of thirty-two), or two dozen stone
 // from a face at hand. The dream run walked to a fresh tree for every
 // smelt's fuel and climbed a hill fourteen times for one iron at a time; a
-// source already reached is a few seconds' work. Without Jev, taken.
+// source already reached is a few seconds' work.
 async function moreOfSource(bot, task, goal, save, step, source, cap) {
   const client = task.opportunityClient;
-  if (!client) return true;
   const what = String(step.drops || step.block).replaceAll('_', ' ');
   const tree = {
     take_more: { description: `Keep taking the ${String(source.block).replaceAll('_', ' ')} within reach until ${cap} ${what} are carried (${countOf(bot, step.drops)} now): a few seconds a block while it is at hand, where coming back later is a walk.` },
@@ -1835,7 +1827,9 @@ async function moreOfSource(bot, task, goal, save, step, source, cap) {
         // What staying at the source risks (the decision audit, 2026-09-25).
         timeOfDay: bot.time?.timeOfDay, threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })(),
         ...(source.blocks?.[0] ? require('./decision-options').sourceSurroundings(bot, source.blocks[0]) : {}) } });
-    return decision.stale || decision.path.at(-1) !== 'enough';
+    // Held through an outage (note 707): asked fresh.
+    if (decision.stale) return moreOfSource(bot, task, goal, save, step, source, cap);
+    return decision.path.at(-1) !== 'enough';
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return true; }
 }
 
@@ -2347,13 +2341,14 @@ const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_or
   'deepslate_coal_ore', 'deepslate_iron_ore', 'deepslate_gold_ore', 'deepslate_lapis_ore', 'deepslate_redstone_ore', 'deepslate_diamond_ore'];
 // While a batch cooks: dig what is in arm's reach, walk to an ore or a tree
 // nearby, dig the stone around, or stand by the furnace. Asked once a batch
-// of Jev; null (no Jev, or nothing to weigh) keeps the order in smelt.
+// of Jev; null (nothing to weigh, or held through an outage) stands by the
+// furnace, as smelt does.
 async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count, spent = [], leave = null, walks = null }) {
   // From one item up: trial 46 stood by its furnace for a one-ingot batch,
   // crafted, and stood again for a two-ingot one, seventy-five seconds on
   // one spot, each batch under the twenty seconds this once needed.
   const client = task.opportunityClient;
-  if (!client || cooking < 8000) return null;
+  if (cooking < 8000) return null;
   const seconds = Math.round(cooking / 1000);
   const tree = {};
   // Every way of spending the wait but standing digs, and each block dug is
@@ -2390,7 +2385,7 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
     const decision = await decide('while_cooking', { client, bot, task, goal, save, tree, state: { cooking: `${count} ${what}`, seconds, inventoryFreeSlots: bot.inventory.emptySlotCount?.() ?? null, timeOfDay: bot.time?.timeOfDay,
       ...(budget ? { pickaxeBudget: budget.says } : {}), ...(walks ? { walksSoFar: walks } : {}), ...(leave ? { workInHand: leave.work } : {}),
       threats: (() => { try { return require('./danger').threats(bot, 16).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance), visible: t.visible })); } catch (_) { return []; } })(), riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() } });
-    if (decision.stale || decision.fallback) return null;
+    if (decision.stale) return null;
     return decision.path.at(-1);
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
 }
@@ -2654,8 +2649,7 @@ async function smelt(bot, task, step, goal, save = () => {}) {
         return logs < 16 ? find(bot, LOGS, 16, 16).filter(p => p.y <= bot.entity.position.y + 3).find(ok) : null;
       };
       const cooking = () => (needed - taken) * 10000;
-      // What to do while it cooks is Jev's, asked once a batch; without Jev,
-      // each in turn as below.
+      // What to do while it cooks is Jev's, asked once a batch.
       // A choice that has run out (no more ore in walking distance, its
       // turns used) is asked again among what is left, not stood out: trial
       // 55 walked to eleven ores for a twenty-four-iron batch, then stood by
@@ -3680,7 +3674,6 @@ async function executePlannedAcquisition(bot, task, goal, save, client, onStep, 
     description: { action: step.action, dependency: step, rationale: 'Required by the shared recipe graph for the retained player request' },
     run: () => executeAcquisition(bot, task, step, goal, save),
   };
-  if (!client) { await Object.values(actions)[0].run(); return false; }
   await decideAction(bot, task, goal, save, client, onStep, {
     obtain_item: { description: 'Gather shared materials and make the requested outputs, preparing necessary tools first.', children: {
       [step.action]: { description: `Resolve the next ${step.action} dependency for ${step.item || step.drops}.`, children: actions },
@@ -4519,7 +4512,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
   }
-  // Without Jev, the code's old default: a part-cast frame is left after ten failures at its site.
+  // context: the old order, read by the tests' stand-in only (note 707).
   const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current, leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
       buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
@@ -5835,10 +5828,9 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     tree[key].run = (...args) => { log[reason] = [...tried, { choice: key, at: now }].slice(-20); return run(...args); };
   }
   try {
-    // Through decide whatever the client: the ledger reads and records every
-    // answer to it, the one way and the code's own walk included.
-    if (!client) { const d = await decide(id, { client: null, bot, task, goal, save, tree, state: context, context, above }); if (!d.stale) await d.action.run(); }
-    else await decideAction(bot, task, goal, save, client, onStep, tree, context, id, { above });
+    // Through decide: the ledger reads and records every answer to it, the
+    // one way included.
+    await decideAction(bot, task, goal, save, client, onStep, tree, context, id, { above });
   } finally { goal.step = step; save(); }
   return true;
 }
@@ -5935,9 +5927,7 @@ const homeActions = () => ({ acquireStep, navigate, place, dig, explore, tunnel:
 // minutes on one answer. A top-up says the working minutes it has had at
 // this crossing and what they brought.
 const KIT_HOLD_MS = 10 * 60000;
-// Without Jev, the code's walk: the valuables home, then each short item
-// in turn, one worked on twenty minutes passed over unless none of it is
-// carried, then the crossing.
+// The old walk's time on one item (the tests' stand-in's order, note 707).
 const KIT_FALLBACK_MS = 20 * 60000;
 // The food, the blocks and the spare pickaxe are rungs of the ladder now,
 // before the portal (crossing-kit.js kitRungs, note 673); this question
@@ -6086,8 +6076,9 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   let pick = held ? kit.choice.pick : null;
   if (!pick) {
     const worn = k => { const i = short.find(s => `top_up_${s.key}` === k); return i && kit.spent[i.key]?.ms >= KIT_FALLBACK_MS && i.carried > 0; };
-    const fallback = KIT_ORDER.find(k => tree[k] && !worn(k)) || 'cross_now';
-    const decision = await decide('crossing_kit', { client, bot, task, goal, save, tree, context: { fallback },
+    // The old order, for the tests' stand-in only (note 707).
+    const oldOrder = KIT_ORDER.find(k => tree[k] && !worn(k)) || 'cross_now';
+    const decision = await decide('crossing_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
       state: { kit: Object.fromEntries(items.map(i => [i.key, `${i.carried} carried, the code would take ${i.wants}`])), health: bot.health, hunger: bot.food,
         minutesAtCrossing: Math.round(kit.workedMs / 60000), riskNow: require('./risk').riskNow(bot) } });
     if (decision.stale) return false;
@@ -6164,8 +6155,9 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
   const keys = Object.keys(tree).sort().join(',');
   let pick = kit.choice && kit.choice.keys === keys && now - kit.choice.at < KIT_HOLD_MS && tree[kit.choice.pick] ? kit.choice.pick : null;
   if (!pick) {
-    const fallback = KIT_FOOD_ORDER.find(k => tree[k]) || 'go_without';
-    const decision = await decide('kit_food', { client, bot, task, goal, save, tree, context: { fallback },
+    // The old order, for the tests' stand-in only (note 707).
+    const oldOrder = KIT_FOOD_ORDER.find(k => tree[k]) || 'go_without';
+    const decision = await decide('kit_food', { client, bot, task, goal, save, tree, context: { oldOrder },
       state: { foodCarried: carried, foodWanted: want, health: bot.health, hunger: bot.food, foodBeforeTheNether: require('./food-facts').beforeSays(bot, goal), riskNow: require('./risk').riskNow(bot) } });
     if (decision.stale) return false;
     pick = decision.path.at(-1);
@@ -6808,4 +6800,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, maintainBlocks, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };

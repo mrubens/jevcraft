@@ -9,9 +9,8 @@ const { checkAir, maintainVitals, chooseFood } = require('./vitals');
 const { aimAtEntity, shootBow } = require('./projectiles');
 const { decide } = require('./decisions');
 
-// The dragon_fight question and its fixed-order fallback live in
-// decisions/combat.js; endFallback is re-exported for its callers.
-const { endFallback } = require('./decisions/combat');
+// The dragon_fight question lives in decisions/combat.js (no fallback:
+// Jev not reachable, the bot holds, note 707).
 const { canStrike, defendNearby, raiseShield, lowerShield } = require('./combat');
 const { durable, carriedEquipment } = require('./mob-policy');
 const { fallDanger, recoverFall } = require('./fall-recovery');
@@ -460,4 +459,4 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
   }
 }
 
-module.exports = { voidEdge, endermenNearRoute, endFallback, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };
+module.exports = { voidEdge, endermenNearRoute, metadata, perched, perchedHead, repeatedCrystalMiss, observeArena, endHazards, safeEndPoint, arenaMovement, arenaRoutes, fightEndStep };

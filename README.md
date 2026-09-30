@@ -52,7 +52,7 @@ At first, a low-confidence pick was handed to hand-written rules. In practice th
 
 ### Reflexes
 
-Lava escapes, fire escapes, creeper dodges and shield use used to run before Jev was asked. Several deaths started with a reflex (note 548). They are now questions, such as `body_way` for lava, fire and suffocation, with code only as the fallback (note 549).
+Lava escapes, fire escapes, creeper dodges and shield use used to run before Jev was asked. Several deaths started with a reflex (note 548). They are now questions, such as `body_way` for lava, fire and suffocation (note 549). When Jev cannot answer in time, the body's own physics (`body_way`, and `shot_answer` for a shot about to land) is answered by a safety rule; nothing else is (note 707).
 
 ### Turn priority
 
@@ -109,7 +109,7 @@ Damage above 20 means the bot healed during the run. A blaze drops a rod about h
 ### Running many trials on one machine
 
 - CPU runs out first. Twenty trials saturated 16 cores and bots stalled 2 to 4 seconds at a time, which kills them in fights. About 14 is the practical limit.
-- The decision service has outages. The bot uses its fallbacks and says so in chat; deaths during an outage aren't triaged.
+- The decision service has outages. There are no fallbacks: while Jev is down the bot holds where it is, says once in chat that it is waiting for Jev, and asks again with a backoff; the body's reflexes (lava, fire, air, a shot, the one-shot line) still run. When Jev answers, what was held is asked fresh (note 707).
 - Anything that watches trials needs a timeout. A hung check once kept the watcher silent for five hours while trials failed.
 
 More operational notes are in [scripts/README.md](scripts/README.md).
@@ -122,7 +122,7 @@ Code decides what is possible. Jev decides what to do.
 - Each option's description says what it does, what it costs (damage and seconds, against the bot's actual health) and what it gains toward the goal. Mob behavior and numbers such as fireball knockback are taken from the game's own code and checked on a test server.
 - Every play question also offers `none_good`: "the move a player would make is not listed". If Jev picks it, code logs a missing option and takes the highest-probability listed one. Those logs became a worklist for new options.
 - If only one option is possible, Jev is not asked.
-- Each question has a code fallback, used only if the service is down or too slow.
+- No question has a code fallback. If the service is down, nothing is decided by code: the bot holds, says it is waiting for Jev, asks again with a backoff and asks the question fresh when Jev answers ([src/jev-down.js](src/jev-down.js), note 707). The tests answer with a declared stand-in instead ([test/support/jev-stand-in.js](test/support/jev-stand-in.js)).
 
 ### One decision
 
@@ -215,7 +215,8 @@ define({
     { key: 'keep_on', label: 'leave the shield down and keep on with what the bot is doing', when: 'always; said with what each shot that lands costs ...', level: 'root' },
   ],
   instructions: { task: 'A shooter in sight is about to shoot at the bot. Choose what the bot does about these shots.', guidance: 'The shield blocks what comes from the half the bot faces, a quarter second after it rises ...' },
-  fallback: children => children.shield_up ? 'shield_up' : ...,
+  // The body's physics only: answered by this when Jev cannot be reached.
+  safetyRule: children => children.shield_up ? 'shield_up' : ...,
 });
 ```
 
@@ -230,7 +231,7 @@ Jev only chooses among options, so some things are not questions:
 - Physical safety. The pathfinder refuses moves onto gravel over lava, and a guard on every dig refuses one that would let lava in or drop the bot into it.
 - Anything faster than an answer. A shooter's warning (a blaze's three-second glow, a skeleton's draw) is asked about as it begins (`shot_answer`), but a shot already in the air with no answer about it lands before a question could come back, so code raises the shield toward it, whatever step is running.
 - Checking the answer. A pick that was not offered is rejected.
-- The fallback when the service is down.
+- Nothing else when the service is down: the bot holds and waits for Jev. Only the body's physics has a safety rule (`body_way`, `shot_answer`).
 
 [docs/rule-audit.md](docs/rule-audit.md) lists what code still decides and why.
 

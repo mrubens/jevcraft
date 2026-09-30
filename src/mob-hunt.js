@@ -145,8 +145,9 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
     // hand): there is nothing to choose between.
     if (Object.keys(tree).length === 1) pick = 'fight_with_carried';
     else {
-      const fallback = tree.make_kit_here ? 'make_kit_here' : tree.return_for_kit ? 'return_for_kit' : 'fight_with_carried';
-      const decision = await decide('combat_kit', { client, bot, task, goal, save, tree, context: { fallback },
+      // The old order, for the tests' stand-in only (note 707).
+      const oldOrder = tree.make_kit_here ? 'make_kit_here' : tree.return_for_kit ? 'return_for_kit' : 'fight_with_carried';
+      const decision = await decide('combat_kit', { client, bot, task, goal, save, tree, context: { oldOrder },
         state: { missing: all, carried: carriedFightSays(bot, mob), ...(mob ? { against: mob } : {}), dimension: dimension(bot), health: bot.health, hunger: bot.food, ironIngotsCarried: carriedIron } });
       if (decision.stale) return false;
       pick = decision.path.at(-1);
@@ -1690,9 +1691,7 @@ function sightingsThatWay(bot, goal, state, here, heading) {
 // height the bot stands (nether-travel.js surveyLeg), and, off the
 // fortress heights, a staircase down or up toward them. mid-205-m's
 // thirteen legs went the way the compass said at y 96 to 104, six seconds a
-// cell of netherrack and nothing seen (note 394, 2026-09-27). Without Jev,
-// the heading with the most open air the blocks carried reach, the code's
-// own heading at a tie. With a leg short of blocks, the ways to more are
+// cell of netherrack and nothing seen (note 394, 2026-09-27). With a leg short of blocks, the ways to more are
 // beside the legs: mining what is round the bot, or back through the
 // portal; the code chose between them itself after four failed ticks, and
 // mined netherrack in a delta of basalt (note 480).
@@ -1989,8 +1988,8 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     structureRegions: regions.regionFacts(here, landmarks, state, dim), ...portalBackFact(goal, here),
     blocksCarried: blocksCarried(bot), pickaxe: pickaxeSays(bot, goal), health: bot.health, food: bot.food, threatsInView: threatsInView(bot).map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(fortress ? { fortressInView: fortress.facts } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
-  // Without Jev: the most ground unseen beside the leg's open air, then the
-  // open air each heading's carried blocks reach.
+  // The old order's facts (the most ground unseen, the open air each
+  // heading's blocks reach): context, read by the tests' stand-in only (note 707).
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
   const unseen = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, seenThatWay[i].cells ? seenThatWay[i].unseenInView ?? seenThatWay[i].unseen : null]));
   const stood = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, seenThatWay[i].stood]));

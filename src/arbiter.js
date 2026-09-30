@@ -76,8 +76,10 @@ const REFLEX_RANK = Object.fromEntries(REFLEXES.map((r, i) => [r.key, i]));
 // routing too"). Only the body's own physics (lava, fire, the head in a
 // block, a hot floor, air) is taken by rule.
 const ALERTS = new Set(['creeper', 'arm']);
-// Without Jev (the question's fallback, and the shadow's pick): the more
-// urgent claim, and among equals the layer that keeps the bot alive first.
+// The shadow's pick (JEV_ARBITER=shadow, and a dry ruling): the more urgent
+// claim, and among equals the layer that keeps the bot alive first. In live
+// play the turn is never given by it: Jev not answering, nobody is given
+// the turn and the question is asked again (jev-down.js, note 707).
 const LAYERS = ['survival', 'vitals', 'hunt', 'work'];
 const URGENCY = { body: 0, pressing: 1, routine: 2 };
 
@@ -469,16 +471,25 @@ async function arbitrate(bot, claims, ctx = {}) {
     if (out.cut) setAside = true;
     const decision = out.decision;
     if (decision?.stale) return { winner: null, by: 'stale', ask: true, why };
-    const winner = (!out.cut && live.find(c => c.layer === decision?.path?.[0])) || rulesPick(live);
-    // Cut short, the rules' pick holds only until Jev can be asked again.
-    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + (out.cut ? IDLE_MS : RULING_MS), ...seen };
-    // Jev's answer to this scene, given again to it for a while (sameScene).
-    if (!out.cut && decision?.path && !decision.fallback && result.pending.scene) answeredScene(state, result.pending.scene, winner.layer, seen.health, now);
+    // Cut short (no answer in its time), nobody is given the turn by rule:
+    // the question is asked again at the next pass, from where the bot is
+    // then (the user, 2026-09-30: "If jev is down, decisions aren't made").
     // Said with how far the question had got (decisions/index.js), the
     // stages a question that never came back could not show (note 540).
-    const got = bot?._asking?.id === 'turn_priority' ? `; the question had got to ${bot._asking.stages.map(s => `${s.stage} ${s.ms}`).join(', ')}` : '';
-    if (out.cut) console.log(`[arbiter] turn_priority cut short (${out.cut}): gave ${winner.layer} ${winner.action} by the rules${got}`);
-    Object.assign(result, { winner, by: out.cut ? 'rules' : 'jev', ...(out.cut ? { cut: out.cut } : {}), ruling: state.ruling });
+    if (out.cut) {
+      const got = bot?._asking?.id === 'turn_priority' ? `; the question had got to ${bot._asking.stages.map(s => `${s.stage} ${s.ms}`).join(', ')}` : '';
+      console.log(`[arbiter] turn_priority cut short (${out.cut}): nobody given the turn, asked again${got}`);
+      delete result.pending;
+      return { ...result, winner: null, by: 'cut', ask: true, cut: out.cut, why };
+    }
+    const winner = live.find(c => c.layer === decision?.path?.[0]);
+    // An answer that is no claim of this pass's (gone meanwhile): nobody is
+    // given the turn by rule; asked again at the next pass.
+    if (!winner) { delete result.pending; return { ...result, winner: null, by: 'stale', ask: true, why }; }
+    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
+    // Jev's answer to this scene, given again to it for a while (sameScene).
+    if (decision?.path && !decision.standIn && result.pending.scene) answeredScene(state, result.pending.scene, winner.layer, seen.health, now);
+    Object.assign(result, { winner, by: decision.standIn ? 'stand-in' : 'jev', ruling: state.ruling });
     delete result.pending;
   }
   if (!ctx.dry && ctx.run !== false && result.winner?.run) result.acted = !!(await result.winner.run(ctx.task));
@@ -492,11 +503,12 @@ async function arbitrate(bot, claims, ctx = {}) {
 // the hurt watchdog's stop and a pending preemption were both left standing,
 // no layer acted, and it was knocked into lava (note 539). Here the question
 // ends when the task's check throws (a preemption, the watchdogs, a cancel:
-// thrown, as an abort would be); when the bot is hurt after it was asked,
-// or no answer has come in ASK_MS, the rules' pick takes the turn (the
-// question's own fallback, survival's claim before the work's), so a mob
-// that hits gets survival's step and its stance question. The question left
-// behind is told to stop at its next look.
+// thrown, as an abort would be); when no answer has come in ASK_MS the
+// question is cut, told to stop at its next look, and nobody is given the
+// turn: it is asked again at the next pass. The rules' pick took the turn
+// there (and when the bot was hurt while it was out) until note 707: a turn
+// given by rule is a decision made without Jev. While Jev is down the
+// question's own hold (decisions/index.js, jev-down.js) is the wait, not cut.
 const ASK_MS = 5000;
 const ASK_LOOK_MS = 50;
 function answerOrCut(bot, asking, { task, askedAt = Date.now(), ms = ASK_MS, every = ASK_LOOK_MS } = {}) {
@@ -506,8 +518,8 @@ function answerOrCut(bot, asking, { task, askedAt = Date.now(), ms = ASK_MS, eve
     Promise.resolve(asking).then(decision => end(resolve, { decision }), err => end(reject, err));
     timer = setInterval(() => {
       try { task?.check?.(); } catch (err) { end(reject, err); return; }
-      if ((bot?._recentHurtAt || 0) > askedAt) end(resolve, { cut: 'the bot was hurt while Jev was being asked' });
-      else if (Date.now() - askedAt >= ms) end(resolve, { cut: `no answer in ${ms / 1000} seconds` });
+      if (require('./jev-down').isDown(bot)) return;
+      if (Date.now() - askedAt >= ms) end(resolve, { cut: `no answer in ${ms / 1000} seconds` });
     }, every);
   });
 }
@@ -795,6 +807,8 @@ function watch(bot, opts = {}) {
 // rung. Due, the rung's question is raised for the work (answerStall), and
 // the loop's next pass asks it before the turn is given.
 function rungWatch(bot, goal, now = Date.now()) {
+  // Held for Jev, the rung's question could not be asked (note 707).
+  if (require('./jev-down').isDown(bot)) return null;
   const stillness = require('./stillness');
   const due = require('./tried').watchRung(bot, goal, { now, waiting: stillness.waitEnds(bot, goal, now) });
   if (!due) return null;

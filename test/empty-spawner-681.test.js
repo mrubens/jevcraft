@@ -1,4 +1,5 @@
 'use strict';
+const { oldOrder } = require('./support/jev-stand-in');
 // Note 681: at a blaze spawner known and no blaze near, the ways are Jev's.
 // mid-242-dc-fortress-22 (25589) ended a close-in beside the cage at
 // (-108, 77, 155) at 3.8 health, hunger 15 and nothing to eat; the hunt fell
@@ -86,9 +87,9 @@ test('at 20 health with food the stand is on offer and the outage default takes 
   assert.ok(tree.stand_by_spawner);
   assert.equal(tree.go_back, undefined, 'health comes back: the trip back for food is not the way offered');
   // The rods carried go in a chest first without Jev (note 704), then the stand.
-  assert.equal(question('empty_spawner').fallback(tree), tree.stash_rods ? 'stash_rods' : 'stand_by_spawner');
+  assert.equal(oldOrder('empty_spawner')(tree), tree.stash_rods ? 'stash_rods' : 'stand_by_spawner');
   const { stash_rods: _stash, ...rest } = tree;
-  assert.equal(question('empty_spawner').fallback(rest), 'stand_by_spawner');
+  assert.equal(oldOrder('empty_spawner')(rest), 'stand_by_spawner');
 });
 
 test('the stand is the search\'s wait by the spawner, a minute, with the spawner as the step\'s target', async () => {

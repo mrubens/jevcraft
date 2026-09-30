@@ -321,6 +321,9 @@ function watchStalls(bot, goalOf) {
     airWatch(bot, now);
     const goal = stalls.goalOf?.();
     if (!goal || stalls.stall || bot.game?.gameMode === 'creative' || /end/.test(String(bot.game?.dimension || ''))) return;
+    // Held for Jev (jev-down.js): the stillness is the hold, not a stall;
+    // nothing is counted against the action while it lasts (note 707).
+    if (require('./jev-down').isDown(bot)) return;
     try {
       const seen = look(bot, goal, { now, dt });
       if (seen && seen.idle >= STALL_MS) raise(bot, goal, seen, now);
