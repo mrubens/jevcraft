@@ -433,7 +433,40 @@ function strategyTree(options) {
   return top;
 }
 
-function strategyState(bot, goal, stage) {
+// Whether the rung a strategy answer chose is still open (not yet finished),
+// resting (set aside, so it failed or was gone without), or gone from the
+// ladder outright (finished): read the same way openRungs and the aside
+// ledger already read it, nothing new kept for this.
+function rungStatus(bot, goal, phase, now = Date.now()) {
+  const open = openRungs(bot, goal, now).some(r => r.phase === phase);
+  const resting = isSetAside(goal, 'rung', phase, now);
+  return { open, resting, why: resting ? attemptsFor(goal).why('rung', phase) : null };
+}
+const agoWords = ms => { const s = Math.max(1, Math.round(ms / 1000)); return s < 90 ? `${s} second${s === 1 ? '' : 's'}` : `${Math.round(s / 60)} minutes`; };
+// What a held strategy answer has brought, once it is worth saying: what was
+// chosen, how long ago, and whether its rung finished, was set aside, or is
+// still open with nothing decided about it since (note 733: win_strategy was
+// re-asked after every small craft between rungs_nether_pickaxe,
+// rung_nether_food, nether_first and stage_reach_nether, six times in nine
+// minutes on 25585, because the hold broke on the tree's own shape - a new
+// side trip unlocked by the pickaxe just made, or the ladder's default stage
+// moving to the rung just chosen - not on anything the chosen rung itself
+// did). -> { choice, rungPhase, at, open, resting, why, says } or null
+function lastStrategyFact(bot, goal, now = Date.now()) {
+  const held = goal.strategy;
+  if (!held) return null;
+  const at = held.at, choice = held.choice, phase = held.rungPhase;
+  if (!phase) return { choice, rungPhase: null, at, open: false, resting: false, why: null,
+    says: `${label(choice)} was chosen ${agoWords(now - at)} ago: a side step or the ladder's own default, not a rung of its own.` };
+  const { open, resting, why } = rungStatus(bot, goal, phase, now);
+  const clock = goal.rungClocks?.[phase];
+  const worked = clock ? `${Math.round(clock.activeMs / 60000)} minutes worked on it` : 'nothing worked on it yet';
+  const gained = !open && !resting ? `the ${label(phase)} finished` : resting ? `the ${label(phase)} was set aside: ${why || 'it came to nothing'}`
+    : `the ${label(phase)} is still open, ${worked}, nothing decided about it since`;
+  return { choice, rungPhase: phase, at, open, resting, why, says: `${label(choice)} was chosen ${agoWords(now - at)} ago: ${gained}.` };
+}
+
+function strategyState(bot, goal, stage, extra = {}) {
   const clock = goal.rungClocks?.[stage.phase];
   const t = bot.time?.timeOfDay ?? 0;
   // The options are not repeated here: each is in its question, and the
@@ -443,6 +476,7 @@ function strategyState(bot, goal, stage) {
     situation: 'On the way to beating the game (Nether, blaze rods, ender pearls, the stronghold, the dragon). Several things are open; choose which to do next.',
     workingOn: label(stage.phase), minutesWorkedOn: clock ? Math.round(clock.activeMs / 60000) : 0,
     note: 'minutesWorkedOn is how long the step being worked on has gone without finishing; this is asked again every twenty of them. Nothing skipped here is skipped for good.',
+    ...extra,
     // The day where there is one (note 677).
     ...(/overworld/.test(String(bot.game?.dimension || 'overworld')) ? { timeOfDay: t, daylightMinutesRemaining: Math.round(Math.max(0, DAY.DUSK - t) / 1200 * 10) / 10 } : {}),
     ...(require('./exploration').biomeView(bot) || {}),
@@ -484,18 +518,64 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   const held = goal.strategy;
   const offered = new Set(String(held?.keys || '').split(','));
   const same = held && (held.keys === keys || Object.keys(tree).every(k => offered.has(k)));
-  let choice = same && held.ladderNext === stage.phase && now() - held.at < HOLD_MS && options[held.choice] ? held.choice : null;
+  // A rung chosen commits to that rung, not to the tree's own shape (note
+  // 733): the crafts a rung takes (a table, a stone pickaxe) change what is
+  // carried, which unlocks or closes side trips and moves the ladder's
+  // default stage onto the rung just picked, and both used to read as "the
+  // question changed" and break the hold on their own, with the rung itself
+  // still open and nothing decided about it. Held instead on the rung's own
+  // end: it is asked again only once that rung has finished or been set
+  // aside, or HOLD_MS has passed regardless. A choice that named no rung of
+  // its own (a side trip, the ladder's plain default) still holds the old
+  // way, by the tree's shape and the ladder's stage.
+  let choice = null, heldOption = null;
+  if (held?.rungPhase) {
+    // Held by the open rungs themselves (game-progress.js openRungs), not by
+    // the tree's shape: that list does not change regime with stage.phase
+    // (rung_* keys against stage_* ones) the way the tree does, so a rung
+    // finishing its own crafts mid-way, which flips the ladder's default
+    // stage onto it and back, no longer reads as a new question. Still asked
+    // again the moment a rung neither open nor known at the answer opens up
+    // (note 709's own case: iron boots wearing out mid-hold), or the chosen
+    // rung itself finishes, is set aside, or HOLD_MS is up regardless.
+    const status = rungStatus(bot, goal, held.rungPhase, now());
+    const openNow = openRungs(bot, goal, now());
+    const newlyOpen = openNow.some(r => !(held.openPhases || []).includes(r.phase));
+    if (status.open && !newlyOpen && now() - held.at < HOLD_MS) {
+      const rung = openNow.find(r => r.phase === held.rungPhase);
+      if (rung) { choice = held.choice; heldOption = { rung }; }
+    }
+  } else if (same && held?.ladderNext === stage.phase && now() - held.at < HOLD_MS && options[held.choice]) {
+    choice = held.choice; heldOption = options[choice];
+  }
   if (!choice) {
-    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage) });
+    // What the last answer brought, said so the next one is not asked blind
+    // of it, and priced as a reversal on every other option when the rung it
+    // held is still open with nothing decided (note 733).
+    const last = lastStrategyFact(bot, goal, now());
+    if (last && last.rungPhase && last.open) {
+      for (const [key, node] of Object.entries(tree)) {
+        if (key === `rung_${last.rungPhase}` || node.children) continue;
+        node.description = `${node.description} This would reverse ${label(last.choice)}, chosen ${agoWords(now() - last.at)} ago: ${label(last.rungPhase)} is still open, nothing decided about it since.`;
+      }
+    }
+    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, last ? { lastStrategy: last.says } : {}) });
     // Held through an outage (note 707): nothing is done this step; the
     // next asks it fresh.
     if (decision.stale) return { stale: true };
     choice = decision.path.at(-1);
-    goal.strategy = { choice, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev' };
+    // Only a ladder rung (openRungs, `rung_${phase}`) is held by its own
+    // progress: a side trip's rung-shaped object (home_base, carry_bed) is
+    // never in openRungs at all (the base's steps are not on the ladder),
+    // so it is held the old way, by the tree's shape.
+    const rungPhase = choice.startsWith('rung_') ? options[choice]?.rung?.phase || null : null;
+    if (last?.rungPhase && last.open && rungPhase !== last.rungPhase) console.log(`[strategy] reversal: ${choice} (${rungPhase ? label(rungPhase) : 'no rung'}) chosen over ${label(last.choice)}, with ${label(last.rungPhase)} still open and nothing decided about it since it was chosen ${agoWords(now() - last.at)} ago`);
+    goal.strategy = { choice, rungPhase, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev',
+      ...(rungPhase ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}) };
     save();
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }
-  const option = options[choice];
+  const option = heldOption || options[choice];
   // A rung set aside, taken back: its rest cut short and said (note 694).
   if (option.takeBack) {
     const gp = require('./game-progress');
@@ -526,4 +606,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS };
+module.exports = { woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };
