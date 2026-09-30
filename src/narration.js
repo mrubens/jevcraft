@@ -151,10 +151,20 @@ function sourceDescription(decision, key) {
   return null;
 }
 
+// Jev chose to go on in the Nether without food (keep_on) and the bot is
+// under hunger 18 with nothing to eat: the hunt then searches, it does not
+// go after blazes (note 708).
+function keptOnHungry(goal, bot) {
+  try {
+    if (!require('./progress').isSetAside(goal, 'nether_return', 'food')) return false;
+    return (bot.food ?? 20) < 18 && !(require('./foraging').foodSupply(bot) > 0);
+  } catch (_) { return false; }
+}
+const fortressLeft = goal => (goal?.fortressSearch?.shunned || []).some(sh => sh.until > Date.now() && /Jev chose|came to nothing/.test(sh.why || ''));
 // Which way the leg goes, so a person watching sees the search turn (note 689).
 const legHeading = goal => { const h = goal?.fortressSearch?.lastHeading; return Number.isInteger(h) && h >= 0 && h < 4 ? `, heading ${['east', 'south', 'west', 'north'][h]}` : ''; };
 const some = (count, value) => count > 1 ? `${count} ${plural(count, value)}` : `some ${plural(2, value)}`;
-function stepVariants(goal, step) {
+function stepVariants(goal, step, bot = null) {
   const detail = step.detail && typeof step.detail === 'object' ? step.detail : null;
   switch (step.action) {
     case 'combined_request': return detail ? stepVariants(goal, detail) : null;
@@ -169,11 +179,16 @@ function stepVariants(goal, step) {
     case 'cast_portal': return "Lava in, water on top: I'm casting the portal frame.";
     case 'to_lava_for_portal': return "I'll cast the portal down by the lava, so each bucket is a short trip.";
     case 'buckets_for_portal': return "More buckets first: each one is another lava per trip.";
-    case 'hunt_mob': return [`I'm going after a ${name(step.entity)} for ${name(step.item)}.`, `Hunting a ${name(step.entity)}. I need ${name(step.item)}.`];
+    // Going on without food under hunger 18, the hunt goes after no blaze
+    // (mob-hunt.js prepareMobHunt): said so, not "going after a blaze" a
+    // second after keep_on (25591, note 708).
+    case 'hunt_mob': if (bot && keptOnHungry(goal, bot)) return [`Going on without food for now: I won't go after a ${name(step.entity)}, but I'll fight one that comes.`];
+      return [`I'm going after a ${name(step.entity)} for ${name(step.item)}.`, `Hunting a ${name(step.entity)}. I need ${name(step.item)}.`];
     case 'strike_out': return ["Nothing here. I'll try somewhere new.", 'Time to look somewhere else.'];
     case 'stock_food_for_nether': return "I'm stocking up on food before the Nether.";
     case 'return_for_food': return "I'm out of food. Back through the portal to eat.";
-    case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?" : step.found ? "A fortress! I'm heading for it." : `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
+    // A fortress left for now is not searched for: said so (note 708).
+    case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?" : step.found ? "A fortress! I'm heading for it." : fortressLeft(goal) ? `Leaving the fortress for now, searching on (leg ${step.legs || 1}${legHeading(goal)}).` : `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
     case 'collect': return `I'm picking up the ${name(step.item || step.drops)}.`;
     case 'place': case 'build': case 'build_schematic': {
       const what = goal.kind === 'house' ? ' the house' : goal.design?.source?.name ? ` ${goal.design.source.name}` : '';
@@ -229,9 +244,9 @@ function stepVariants(goal, step) {
     default: return null;
   }
 }
-function stepLine(goal, step, decision, last = null) {
+function stepLine(goal, step, decision, last = null, bot = null) {
   if (!step?.action) return null;
-  const variants = stepVariants(goal, step);
+  const variants = stepVariants(goal, step, bot);
   return variants ? pick(variants, last) : null;
 }
 
@@ -287,7 +302,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
   const decision = goal.decisions?.at(-1);
   const key = stepKey(goal, goal.step, decision);
   if (!key || key === state.step) return null;
-  const line = stepLine(goal, goal.step, decision, state.line);
+  const line = stepLine(goal, goal.step, decision, state.line, bot);
   // A step with nothing to say (a tunnel segment, a climb) must not reset
   // the key, or the resource line fires again after every one of them.
   if (!line) return null;

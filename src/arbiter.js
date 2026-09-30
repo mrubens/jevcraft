@@ -227,7 +227,13 @@ const STOPPED_BY_THREAT = /Threat nearby|Preempted|hurt|NeedsSafety/i;
 // one comes (note 586).
 function observe(bot, ctx) {
   const mobs = ctx.mobs || (() => { try { return probe.mobs(bot, STANCE_NEWCOMER); } catch (_) { return []; } })();
-  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER).map(t => t.entity?.id), health: bot?.health ?? 20, band: foodBand(bot?.food),
+  // A mob counts as come when it can be at the bot: in sight, or within four
+  // (the watch's own newcomer, watchOnce). One out of sight behind rock is
+  // counted when it comes into sight. At a live spawner every blaze it put
+  // out behind the rock re-asked the turn: 25591 (mid-242-nb) was asked
+  // turn_priority 14 times in 43 seconds, each "a newcomer within six
+  // blocks", none of them seeing it (note 708).
+  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER && (t.visible !== false || t.distance <= 4)).map(t => t.entity?.id), health: bot?.health ?? 20, band: foodBand(bot?.food),
     ...(ctx.pressing || pressing(bot, ctx.look || probe)) };
 }
 
@@ -429,7 +435,9 @@ function claimSays(c) {
     case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${hp}${heals}`;
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
     // at 5.5 health beside the work (note 509): what it goes for, and why.
-    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: close on it and fight it; which one, and the fight's cost, is asked next. The work waits.${hp}`;
+    // Out of sight and walled in, the fight begins only through the walls
+    // (note 708): said, not left as "close on it".
+    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance, seen: f.outOfSight ? false : undefined }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: ${f.walledIn ? `the bot is walled in (${f.walledIn}), so it closes on it only by digging out first` : 'close on it and fight it'}; which one, and the fight's cost, is asked next. The work waits.${hp}`;
     case 'night_hunt': return `Go on with ${f.forFood ? 'the hunt for food' : 'tonight\'s hunt'}${f.hunting ? ` of ${plural(f.hunting)}` : ''}, as chosen${f.forFood ? '' : ' for the night'}: close on those met and fight them.${hp}${heals}${f.hoglinFight ? ` ${f.hoglinFight}` : ''}`;
     case 'recover_items': return `Go back for the items dropped at the death${f.dropsAt ? ` at ${Math.round(f.dropsAt.x)}, ${Math.round(f.dropsAt.y)}, ${Math.round(f.dropsAt.z)}` : ''}: the way there is walked; items left lying in a loaded area vanish five minutes after they drop.${hp}`;
     case 'go_home_for_night': return `Go home for the night, as planned: the walk to the bed and sleep.${hp}`;

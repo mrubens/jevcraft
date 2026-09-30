@@ -59,8 +59,9 @@ const blazesAbout = (bot, r = ce.RANGE?.blaze || 48) => {
 };
 
 // A line from a blaze's eye to the bot's body, cell by cell, stopped by a
-// solid block or by one of `walls` (cells not yet built counted as built).
-function lineThrough(bot, from, to, walls) {
+// solid block or by one of `walls` (cells not yet built counted as built);
+// a cell in `open` (a window still to be dug) is counted as dug.
+function lineThrough(bot, from, to, walls, open = null) {
   const d = to.minus(from), length = d.norm();
   if (length < 1e-6) return true;
   const u = d.scaled(1 / length);
@@ -74,7 +75,7 @@ function lineThrough(bot, from, to, walls) {
     // A block with a shape of its own (a stair, a slab, a fence) stops it
     // only where the line meets that shape (danger.js blocksRay, note 618).
     const at = new Vec3(c[0], c[1], c[2]);
-    if (walls.has(key) || require('./danger').blocksRay(bot.blockAt(at), at, from, u, length)) return false;
+    if (!open?.has(key) && (walls.has(key) || require('./danger').blocksRay(bot.blockAt(at), at, from, u, length))) return false;
     const i = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
     if (next[i] > length) return true;
     c[i] += step[i]; next[i] += delta[i];
@@ -180,10 +181,10 @@ function boxFits(bot, plan) {
   if (dig && (win.diggable === false || /bedrock|obsidian|spawner/.test(win.name))) return null;
   return { ...plan, place, dig, blocks: place.length };
 }
-function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [] } = {}) {
+function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [], sightOf = null } = {}) {
   const carried = blocksCarried(bot);
   const centre = cage ? cage.offset(0.5, 0.5, 0.5) : null;
-  let best = null;
+  const fits = [];
   for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
     if (centre) {
       const off = Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z);
@@ -194,9 +195,54 @@ function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [] } = {})
     // Over air (the roof), only a block that does not fall.
     if (fit.place.filter(c => !solid(bot.blockAt(c.offset(0, -1, 0))) && !fit.place.some(q => q.equals(c.offset(0, -1, 0)))).length > blocksCarried(bot, { standing: true })) continue;
     const score = n + fit.blocks * 0.5 + (fit.dig ? 2 : 0);
-    if (!best || score < best.score) best = { ...fit, steps: n, score, cage, off: centre ? round(Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z)) : null };
+    fits.push({ ...fit, steps: n, score, cage, off: centre ? round(Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z)) : null });
   }
-  return best;
+  fits.sort((a, b) => a.score - b.score);
+  // A box held for a spawner's blazes is held for those its window sees
+  // (note 708): the nearest, with its window's line to the cells round the
+  // cage where they come, and (`inLine`) the one of the nearest few whose
+  // window sees the most of them, where that is more.
+  const spawner = sightOf || cage, best = fits[0] || null;
+  if (!spawner || !best) return best;
+  let most = null;
+  for (const f of fits.slice(0, SIGHT_TRIES)) {
+    f.line = windowLine(bot, f, spawner);
+    if (!most || f.line.per100 > most.line.per100) most = f;
+  }
+  return most !== best && most.line.per100 > best.line.per100 ? { ...best, inLine: most } : best;
+}
+const SIGHT_TRIES = 24;
+// Where the spawner's blazes come (spawnCells, weighted by how often each is
+// tried) against a cell the bot would hold: of its tries, how many in 100
+// put a blaze whose eyes have a line to the bot's body there, `walls`
+// counted as built and `open` as dug. A box's window is the only open face
+// (windowLine); a stand in the open has no walls (standLine). mid-242-nb
+// (25591) held a box 6.4 blocks from the cage at (-108, 77, 155) whose
+// window faced a netherrack wall: the 9 blazes the spawner made within 6
+// blocks were all out of sight, and "hold it for its next blazes" was
+// chosen twice (note 708).
+const BLAZE_EYE = 1.53;
+function spawnLine(bot, cell, cage, { walls = [], open = [] } = {}) {
+  const shut = new Set(walls.map(c => `(${c.x}, ${c.y}, ${c.z})`)), dug = new Set(open.map(c => `(${c.x}, ${c.y}, ${c.z})`));
+  const own = new Set([`${cell}`, `${cell.offset(0, 1, 0)}`, ...walls.map(c => `${c}`)]);
+  let all = 0, seen = 0, cells = 0, of = 0;
+  for (const { cell: c, weight } of spawnCells(bot, cage)) {
+    if (own.has(`${c}`)) continue;
+    of++; all += weight;
+    const eye = c.offset(0.5, BLAZE_EYE, 0.5);
+    if (BODY.some(dy => lineThrough(bot, eye, cell.offset(0.5, dy, 0.5), shut, dug))) { seen += weight; cells++; }
+  }
+  return { cells, of, per100: all ? Math.round(100 * seen / all) : 0 };
+}
+const windowLine = (bot, site, cage) => spawnLine(bot, site.cell, cage, { walls: site.walls.filter(w => !w.equals(site.window)), open: site.dig ? [site.window] : [] });
+const standLine = (bot, cell, cage) => spawnLine(bot, cell, cage);
+// In words: what a cell sees of where they come.
+const lineWords = l => !l.cells ? 'none of where the spawner\'s blazes come'
+  : `where ${l.per100 ? `about ${l.per100}` : 'fewer than 1'} in 100 of the spawner's blazes come`;
+// For a box's option.
+function windowSays(line) {
+  if (!line) return '';
+  return ` Its window sees ${lineWords(line)}${line.per100 > 0 ? '' : `: it holds for ${line.cells ? 'hardly any' : 'none'} of them`}.`;
 }
 // How far the box where the bot stands may be walked to: the nearest ground
 // a box fits on (a span over a drop takes none).
@@ -846,4 +892,4 @@ async function waitFarOff(bot, task, goal, save, site, { navigate, seconds = FAR
   return stats;
 }
 
-module.exports = { FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE };
+module.exports = { FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, spawnLine, windowLine, standLine, windowSays, lineWords, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE };

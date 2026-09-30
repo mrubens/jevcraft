@@ -125,18 +125,35 @@ function stallAnswers(bot, task, goal, save, fight, { dig, now = Date.now() } = 
   const unseen = blazes.filter(t => !t.visible).length;
   const about = blazes.length ? ` ${blazes.length} blaze${blazes.length === 1 ? '' : 's'} within 16${unseen ? `, ${unseen} out of sight` : ''}.` : '';
   const last = lastSays(goal, bot, now);
-  const slit = slitLine(bot, fight.cage);
-  if (slit) {
-    out.open_slit = { description: `Open a slit toward the cage: dig ${slit.cells.length === 1 ? 'the block' : `the ${slit.cells.length} blocks`} on the line from the eyes to it (${slit.says}), then stay a minute and fight what comes into that line.${about}`,
-      run: async () => {
-        bot.chat?.(`Opening a slit toward the spawner and staying to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`);
-        for (const x of slit.cells) { task.check(); await dig(bot, task, x.cell, { requireDrops: false }); }
-        beginHold(bot, goal, save, 'open_slit');
-      } };
-  }
+  const slit = slitOption(bot, task, goal, save, fight, { dig, about });
+  if (slit) out.open_slit = slit;
   out.stay_and_fight = { description: `Stay here, ${fight.off} blocks from the cage, a minute and fight what comes.${clock ? ` ${clock}.` : ''}${about} ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed.${last}`,
     run: async () => { bot.chat?.(`Staying at the spawner to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`); beginHold(bot, goal, save, 'stay_and_fight'); } };
   return out;
+}
+
+// The slit as a way: said with what the bot then sees of where the blazes
+// come (blaze-tactics.js spawnLine, note 708). -> option or null
+function slitOption(bot, task, goal, save, fight, { dig, about = null } = {}) {
+  const slit = slitLine(bot, fight.cage);
+  if (!slit || !dig) return null;
+  if (about === null) {
+    const blazes = (() => { try { return require('./danger').threats(bot, RANGE).filter(t => t.entity.name === 'blaze'); } catch (_) { return []; } })();
+    const unseen = blazes.filter(t => !t.visible).length;
+    about = blazes.length ? ` ${blazes.length} blaze${blazes.length === 1 ? '' : 's'} within 16${unseen ? `, ${unseen} out of sight` : ''}.` : '';
+  }
+  let then = '';
+  try {
+    const T = require('./blaze-tactics');
+    const l = T.spawnLine(bot, bot.entity.position.floored(), fight.cage, { open: slit.cells.map(x => x.cell) });
+    then = ` Then it sees ${T.lineWords(l)}.`;
+  } catch (_) { then = ''; }
+  return { description: `Open a slit toward the cage: dig ${slit.cells.length === 1 ? 'the block' : `the ${slit.cells.length} blocks`} on the line from the eyes to it (${slit.says}), then stay a minute and fight what comes into that line.${then}${about}`,
+    run: async () => {
+      bot.chat?.(`Opening a slit toward the spawner and staying to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`);
+      for (const x of slit.cells) { task.check(); await dig(bot, task, x.cell, { requireDrops: false }); }
+      beginHold(bot, goal, save, 'open_slit');
+    } };
 }
 
 // Said on work_free at the cage: where it leads.
@@ -157,4 +174,4 @@ function swordNotPickaxe(bot, goal) {
     carryOn: `Carry on with the fight at the spawner ${off}, with the ${sword}: a blaze needs a sword, not a pickaxe;` };
 }
 
-module.exports = { cageFight, holding, beginHold, stallAnswers, workFreeSays, swordNotPickaxe, swordCarried, slitLine, chosenThere, RANGE, HOLD_MS, HOLD_NEAR };
+module.exports = { cageFight, holding, beginHold, stallAnswers, slitOption, workFreeSays, swordNotPickaxe, swordCarried, slitLine, chosenThere, RANGE, HOLD_MS, HOLD_NEAR };

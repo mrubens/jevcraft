@@ -154,7 +154,10 @@ function startSays(bot, goal, i, state) {
   const row = SAYS.find(([re]) => re.test(`${i.q}/${i.choice}`));
   if (!row) return null;
   const at = i.target ? ` at (${i.target.x}, ${i.target.y}, ${i.target.z})` : '';
-  const what = row[2] === 'for' ? `${row[1]} ${state?.for ? `what a ${words(state.for)} needs` : 'what is needed'}` : row[2] === 'kit' ? `${row[1]} ${kitSays(bot)}` : row[1];
+  // Fed, food got now is a stock-up, said so (note 702's words): 25584 said
+  // "Getting food here first: hunger 20, health 20" (note 708).
+  const fed = row[1] === 'Getting food here first' && (bot?.food ?? 0) >= 18;
+  const what = row[2] === 'for' ? `${row[1]} ${state?.for ? `what a ${words(state.for)} needs` : 'what is needed'}` : row[2] === 'kit' ? `${row[1]} ${kitSays(bot)}` : fed ? 'Stocking up on food here first' : row[1];
   const why = row[2] === 'for' ? null : whySays(bot, goal, row[2], state);
   return `${what}${at}${why ? `: ${why}` : ''}.`;
 }
@@ -339,4 +342,4 @@ function yieldWatch(bot, goal, now = Date.now()) {
   try { return require('./stillness').raiseFor(bot, goal, why, now, { escalated: { from: 'intention', to: e.q, says: why } }); } catch (_) { return null; }
 }
 
-module.exports = { ERRANDS, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };
+module.exports = { ERRANDS, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, startSays, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };

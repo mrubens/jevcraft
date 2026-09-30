@@ -645,6 +645,16 @@ function floorTowardSays(down, floor, { what, target }) {
 // health, was at 2.2 forty seconds later, and its pocket's way to food
 // offered only a hoglin 123 blocks off (note 607).
 const KEEP_ON_WHY = 'Jev chose to go on in the Nether without going back for food';
+// What going on without food does to the fights, as it is (note 708):
+// under hunger 18 with nothing to eat the hunt goes looking for no blaze
+// (mob-hunt.js prepareMobHunt: the search goes on instead), but a blaze in
+// reach is still the hunt's claim and its fight is asked. "No fight is
+// started" was said, and 25591 chose keep_on and said "I'm going after a
+// blaze" in the same second.
+function keepOnFightSays(bot) {
+  let fed = true; try { fed = (bot.food ?? 20) >= 18 || require('./foraging').foodSupply(bot) > 0; } catch (_) { fed = true; }
+  return fed ? 'Fights go on as they come.' : 'The hunt goes looking for no blaze meanwhile (the search goes on), but a blaze met in reach is still offered as a fight.';
+}
 const keepOnWhy = bot => `${KEEP_ON_WHY}, at ${Math.round((bot.health ?? 20) * 10) / 10} health and hunger ${bot.food}`;
 function keepOnSays(bot, goal, now = Date.now()) {
   const { attemptsFor, keyOf } = require('./progress');
@@ -871,7 +881,7 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
     const points = foodSupply(bot);
     const meals = bot.inventory.items().filter(i => require('./vitals').safeFood(bot, i)).map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ');
     const starve = { peaceful: 'no hunger at all', easy: 'starving takes health down to ten and no further', normal: 'starving takes health down to one and no further', hard: 'starving kills' }[String(bot.game?.difficulty || 'normal')] || '';
-    answers.keep_on = { description: `Stay in the Nether and go on without the Overworld for twenty minutes: ${points ? `eat what is carried (${meals}, ${points} food points)` : 'nothing edible is carried'}, and go on with the work. Hunger ${bot.food}: health comes back only at eighteen or more${starve ? `, and ${starve}` : ''}. With nothing to eat below eighteen, no fight is started: the blazes wait.${standingTripSays(bot, goal, 'keep_on')}`,
+    answers.keep_on = { description: `Stay in the Nether and go on without the Overworld for twenty minutes: ${points ? `eat what is carried (${meals}, ${points} food points)` : 'nothing edible is carried'}, and go on with the work. Hunger ${bot.food}: health comes back only at eighteen or more${starve ? `, and ${starve}` : ''}. ${keepOnFightSays(bot)}${standingTripSays(bot, goal, 'keep_on')}`,
       run: async () => {
         setAside(goal, 'nether_return', 'food', keepOnWhy(bot), 20 * 60000);
         delete goal.stockFood; save();
@@ -886,4 +896,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, downRoute, withDownMovements, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, downRoute, withDownMovements, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, keepOnFightSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };

@@ -352,7 +352,7 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   const lastHit = require('./last-hit').lastHit(bot);
   if (lastHit) notOffered.push(`going on without food: ${lastHit.says}`);
   if (!options.keep_on && !lastHit && ((bot.food ?? 20) < 18 || options.raid_bastion)) {
-    options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, ${(bot.food ?? 20) < 18 ? 'health comes back only at eighteen or more. No fight is started while it does not.' : 'health comes back at eighteen or more, as it does now.'}`,
+    options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, ${(bot.food ?? 20) < 18 ? `health comes back only at eighteen or more. ${nv.keepOnFightSays(bot)}` : 'health comes back at eighteen or more, as it does now.'}`,
       run: async () => { const { setAside } = require('./progress'); setAside(goal, 'nether_return', 'food', nv.keepOnWhy(bot), 20 * 60000); delete goal.stockFood; save?.(); } };
   }
   if (!Object.keys(options).length) throw new Error(`No way to food from here: ${notOffered.join('; ')}`.slice(0, 500));

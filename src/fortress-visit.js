@@ -230,6 +230,14 @@ function stands(bot, goal, now = Date.now()) {
   return h;
 }
 
+// A held answer that is neither going in nor the heal's wait: carried out
+// when chosen, it keeps the hunt's visit from doing anything until it lapses
+// (note 708). -> the hold, or null
+function holdsOff(bot, goal, now = Date.now()) {
+  const h = stands(bot, goal, now);
+  return h && h.pick !== 'go_in' && h.pick !== 'heal_first' ? h : null;
+}
+
 // The wait: one step of it. Eat what is carried while hunger is under 20
 // (health comes back at 18 or more), otherwise let a second pass. Ends
 // with health full (the visit then goes on), or when mobs come.
@@ -268,7 +276,8 @@ async function ask(bot, task, goal, save, actions = {}, ctx = {}, now = Date.now
   if (h) {
     if (h.pick === 'go_in') return 'go_in';
     if (h.pick === 'heal_first') return (await rest(bot, task, goal, save)) ? 'acted' : 'go_in';
-    return 'acted';
+    // Carried out when it was chosen: held, nothing is done now (note 708).
+    return 'held';
   }
   const { state } = facts(bot, goal, ctx);
   const tree = options(bot, task, goal, save, actions, ctx);
@@ -295,4 +304,4 @@ async function ask(bot, task, goal, save, actions = {}, ctx = {}, now = Date.now
   return 'acted';
 }
 
-module.exports = { ask, facts, options, fireOptions, FIRE_OFFER_BELOW, fitness, stands, rest, rowThen, PILLAR, HOLD_MS, HUNGER_DROP, HURT_DROP };
+module.exports = { ask, facts, options, fireOptions, FIRE_OFFER_BELOW, fitness, stands, holdsOff, rest, rowThen, PILLAR, HOLD_MS, HUNGER_DROP, HURT_DROP };

@@ -547,6 +547,9 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   if (state.entity === 'blaze' && candidates.length && !(() => { try { return threats(bot, 48).some(t => t.entity.name === 'blaze' && t.visible); } catch (_) { return true; } })()) {
     const visit = await require('./fortress-visit').ask(bot, task, goal, save, { ...actions, client: actions.client || client }, {});
     if (visit === null) return false;
+    // A visit answer held from before (food, a hoglin, leaving) did its
+    // work when chosen: this turn did nothing, and says so (note 708).
+    if (visit === 'held') return false;
     if (visit !== 'go_in') return true;
   }
   const tree = {}, positions = new Map(), pushed = [];
@@ -767,7 +770,7 @@ async function foodLeave(bot, task, goal, save, actions) {
   const exposed = hits ? ` The search goes on where the Nether's mobs are: a blaze in sight shoots from as far as forty-eight blocks and a ghast from sixty-four, fight or no fight. ${hits}` : '';
   const tree = {
     go_back: { description: `Go back to the Overworld for food, hunted and cooked there. ${portalTrip(bot, goal)} The hunt waits till the bot is fed and back.` },
-    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more, so no fight is started; the fortress search goes on meanwhile. ${fitnessSays(bot)}${exposed}` },
+    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more. ${require('./nether-travel').keepOnFightSays(bot)} ${fitnessSays(bot)}${exposed}` },
   };
   // Food as a resource of the stay (nether-food.js): the ways to more here,
   // each priced, asked next.
@@ -1189,6 +1192,11 @@ const FORTRESS_LEG = 96;
 // Legs run along x until a direction will not give; then the sweep turns.
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const HEADING_NAMES = ['east', 'south', 'west', 'north'];
+// The heading nearest the bearing from `a` to `b`.
+const bearingOf = (a, b) => { const dx = b.x + 0.5 - a.x, dz = b.z + 0.5 - a.z; return Math.abs(dx) >= Math.abs(dz) ? (dx >= 0 ? 0 : 2) : (dz >= 0 ? 1 : 3); };
+// A fortress in view farther than this is headed toward as the legs go
+// (fortress_approach head_toward, note 708); within it, the ways in.
+const TOWARD_FROM = 48;
 // Where fortresses stand: their corridors and bridges mostly between y 48
 // and 75, over the lava sea at y 31. A leg at y 100 through the rock passes
 // over every one of them unseen (mid-205-m, note 394).
@@ -1849,6 +1857,16 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     // corridors run on past the last brick seen (fortressRuns).
     const runs = fortressRuns(fortress.bricks || [], here);
     HEADINGS.forEach((h, i) => { if (runs[i] >= 8 && options[`leg_${HEADING_NAMES[i]}`]) options[`leg_${HEADING_NAMES[i]}`].description += ` The fortress's bricks in view run ${runs[i]} blocks this way from here; what lies past them is unseen.`; });
+    // Each leg against the fortress in view: toward it or away (note 708).
+    // 25584 took leg_east 60 blocks away from a fortress 104 blocks west,
+    // the legs said as a search for one.
+    const near = (p, list) => Math.round(Math.min(...list.map(b => flatTo(b, p))));
+    if (bricks.length) HEADINGS.forEach((h, i) => {
+      const o = options[`leg_${HEADING_NAMES[i]}`];
+      if (!o) return;
+      const now = near(here, bricks), end = near({ x: here.x + h[0] * FORTRESS_LEG, z: here.z + h[1] * FORTRESS_LEG }, bricks);
+      o.description = `${end < now - 8 ? 'Toward' : end > now + 8 ? 'Away from' : 'Across from'} the fortress in view: its end is ${end} blocks from its nearest brick (${now} now). ${o.description}`;
+    });
   }
   // A blaze spawner the map holds is the place the blazes come from: each
   // not seen broken is a way of its own, nearest first (note 686). 25589
@@ -2586,6 +2604,32 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
         run: async () => { await bridgeTo(bot, task, nearest, { maxBlocks: survey.bridge, maxSteps: survey.cells }); return survey.stoppedBy; } };
     }
   }
+  // Far off, the way the search's legs go, toward it: 25584 (mid-242-nh)
+  // saw a fortress 104 blocks off, was offered only the staircase and a
+  // crossing that ended 71 short (the walk's survey found no whole route),
+  // answered none good, and a leg then took it 60 blocks the other way. The
+  // legs had brought it 80 blocks west in three minutes, walking, crossing
+  // and digging in turn (note 708).
+  if (flat > TOWARD_FROM && actions.navigate) {
+    const heading = HEADING_NAMES[bearingOf(here, nearest)];
+    options.head_toward = { description: `Head ${heading} toward it the way the search's legs go, a pass at a time: the pathfinder's walk where it finds ground${noRoute ? ' (no whole route from here)' : ''}, straight across at this height where the cells ahead allow, the staircase where neither does. The way in is asked again within ${TOWARD_FROM} blocks of it, or after a pass that gains nothing.`,
+      run: async () => {
+        const target = new Vec3(nearest.x, Math.round(bot.entity.position.y), nearest.z), from = flatTo(nearest, bot.entity.position);
+        const gained = () => flatTo(nearest, bot.entity.position) < from - 1.5;
+        let why = null;
+        try { await actions.navigate(bot, task, new goals.GoalNearXZ(target.x, target.z, TOWARD_FROM - 8), { timeoutMs: 30000, stallMs: 8000, passing: true }); }
+        catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+        if (gained()) return null;
+        const crossed = await crossToward(bot, task, goal, save, target, { what: 'the fortress in view' });
+        if (crossed.tried && gained()) return null;
+        if (crossed.survey?.stoppedBy) why = crossed.survey.stoppedBy;
+        if (actions.tunnel) {
+          try { await actions.tunnel(bot, task, goal, save, target, 'fortress'); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; why = err.message; }
+        }
+        return gained() ? null : why || 'came no nearer';
+      } };
+  }
   // Up to a floor overhead by a pillar: jump and lay a block under the
   // feet, from a column with no lava or water in or beside it. mid-235-p-
   // fortress-6 stood on its own span at y 49 beside the fortress's footing,
@@ -2746,6 +2790,9 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     // forty times, was set aside for ten minutes of legs that ended at once
     // (note 557). The way is left; the fortress's other ways are asked.
     delete options.keep_searching;
+    // Heading toward is the way to the fortress itself (note 708), not to a
+    // place asked about beside it.
+    delete options.head_toward;
     // The ways across along the ground to floors seen unwalked (note 564).
     if (stretch.across) {
       for (const [key, option] of Object.entries(crossingOptions(bot, task, what, stretch.across, actions))) {
@@ -3257,6 +3304,20 @@ async function findFortressStep(bot, task, goal, save, actions) {
         catch (err) { task.check(); if (!retryable(err)) throw err; }
         return;
       }
+      // A stand chosen at the cage with no cell of its own is taken within
+      // four of it, as its option says, where the bot's own spot sees next to
+      // none of the cells its blazes come in (fewer than 1 in 100 of its tries): 25591 (mid-242-nb) chose the stand
+      // six blocks off inside a box whose window faced rock and stood there,
+      // every blaze out of sight (note 708). Walked once; then it waits.
+      if (off <= 8 && w.chosen === 'empty_spawner' && !w.cell && !w.nearTried && actions.navigate && off > 4.5) {
+        let line = null; try { line = require('./blaze-tactics').standLine(bot, bot.entity.position.floored(), cage); } catch (_) { line = null; }
+        if (line && line.per100 < 1) {
+          w.nearTried = true; save();
+          try { await actions.navigate(bot, task, new goals.GoalNear(w.x, w.y, w.z, 4), { timeoutMs: 15000, stallMs: 4000, onFoot: true }); }
+          catch (err) { task.check(); if (!retryable(err)) throw err; }
+          return;
+        }
+      }
       if (off <= 8) { await sleep(1000); task.check(); return; }
       let why = null;
       if (actions.navigate) {
@@ -3570,8 +3631,20 @@ function claim(bot, goal = {}) {
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 4);
   const target = near.find(e => isolated(bot, e, handler) && !isSetAside(goal, 'hunt_target', e.uuid || e.id));
   if (!target) return null;
+  // A blaze hunt with none in sight asks the visit first (huntObserved), and
+  // a visit answer held from before that is not to go in does nothing: the
+  // hunt given the turn then would do nothing, so it claims none. 25591
+  // (mid-242-nb) chose turn_priority's hunt about 30 times in 7 minutes,
+  // boxed in beside a cage, get_food_here held, and none led anywhere (note 708).
+  const seen = (() => { try { return threats(bot, 48).some(t => t.entity.name === state.entity && t.visible); } catch (_) { return true; } })();
+  if (state.entity === 'blaze' && !seen && require('./fortress-visit').holdsOff(bot, goal)) return null;
+  // Walled in with the one hunted out of sight: the fight begins only through
+  // the walls, said with the claim.
+  let walled = null;
+  if (!seen) { try { walled = require('./walled-in').walledInSays(bot); } catch (_) { walled = null; } }
   return { layer: 'hunt', action: 'hunt', urgency: 'routine', facts: { entity: target.name, distance: Math.round(target.position.distanceTo(bot.entity.position) * 10) / 10,
-    item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
+    item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health, ...(seen ? {} : { outOfSight: true }),
+    ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}) } };
 }
 
 module.exports = { tripHomeClosed, fortressAnchor, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };

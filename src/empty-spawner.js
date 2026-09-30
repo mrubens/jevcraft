@@ -112,12 +112,15 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
   const healthSays = `Health ${round(f.health)}${f.health >= 20 ? '' : f.healable ? ', coming back meanwhile' : ', not coming back'}: a blaze fires three fireballs a volley, one that lands costs ${hit} and sets the bot alight, so ${lands === 1 ? 'one that lands is the end' : `about ${lands} that land are the end`}.${row}`;
   if (!resting) {
     const site = standSite(bot, cage);
+    // What the stand's cell sees of where the blazes come (note 708).
+    const line = site ? (() => { try { return require('./blaze-tactics').standLine(bot, site.cell, cage); } catch (_) { return null; } })() : null;
     const where = site
       ? `a cell ${site.off} blocks from the cage, ${site.steps ? `a ${site.steps}-block walk` : 'where the bot stands'}, ${bot.blockAt(site.cell.offset(0, 2, 0))?.boundingBox === 'block' ? 'under a ceiling' : 'rock at its back'}`
       : `within four blocks of the cage (${off} off now; no covered cell found near it)`;
+    const sees = line ? ` There it sees ${require('./blaze-tactics').lineWords(line)}.` : '';
     tree.stand_by_spawner = { description: quiet
-      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built. ${healthSays.replace(row, '')}`
-      : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail. ${healthSays}`,
+      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built.${sees} ${healthSays.replace(row, '')}`
+      : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail.${sees} ${healthSays}`,
       run: () => {
         const fs = goal.fortressSearch ||= { legs: 0 };
         fs.spawnerWait = { x: cage.x, y: cage.y, z: cage.z, until: now + STAND_MS, startedAt: now, chosen: 'empty_spawner', ...(site ? { cell: P(site.cell) } : {}) };
@@ -186,15 +189,23 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
   const boxWords = (b, at) => {
     const secs = b.steps / WALK + b.blocks * PLACE + (b.dig ? 1 : 0);
     const where = b.steps ? `Walk ${b.steps} block${b.steps === 1 ? '' : 's'} to a cell ${at}` : `Where the bot stands, ${at}`;
-    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : 'the box whole already'}, one open at head height toward the spawner, and hold it for its next blazes: only a blaze in line with the window sees in, from the front.${clock.jobSays(quiet, secs)}` };
+    // Held for the blazes its window sees (note 708): a window with no line
+    // to where they come holds for none of them, and is said so.
+    const sees = !b.line || b.line.per100 > 0;
+    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : 'the box whole already'}, one open at head height toward the spawner, and hold it${sees ? ' for its next blazes: only a blaze in line with the window sees in, from the front' : ''}.${T.windowSays(b.line)}${clock.jobSays(quiet, secs)}` };
   };
   const box = (key, site) => ({ description: site.words, secs: site.secs,
     run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'box', site: site.b, key }, site.secs) });
+  const offOf = c => round(Math.hypot(c.x + 0.5 - toward.x, c.z + 0.5 - toward.z));
   if (actions?.navigate) {
     const atCage = T.boxSite(bot, { cage, from: toward });
     if (atCage) { const w = boxWords(atCage, `${atCage.off} blocks from the cage, where it puts its blazes beside the box`); tree.box_at_spawner = box('box_at_spawner', { b: atCage, words: w.says + ' Arena: built among four blazes it lost 3 runs of 5, never whole in those.', secs: w.secs }); }
-    const here = T.boxSite(bot, { from: toward });
-    if (here && !(atCage && atCage.cell.equals(here.cell))) { const off = round(Math.hypot(here.cell.x + 0.5 - toward.x, here.cell.z + 0.5 - toward.z)); const w = boxWords(here, `${off} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    const here = T.boxSite(bot, { from: toward, sightOf: cage });
+    if (here && !(atCage && atCage.cell.equals(here.cell))) { const w = boxWords(here, `${offOf(here.cell)} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    // The nearest box whose window sees more of where they come, where the
+    // nearest sees less (note 708).
+    const inLine = here?.inLine;
+    if (inLine && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says, secs: w.secs }); }
     // A hole in the rock beside the cage, its mouth toward it: rock behind,
     // beside and over, only the front open.
     const pick = bot.inventory?.items?.().some(i => /_pickaxe$/.test(i.name));
@@ -211,6 +222,14 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
       tree.step_out = { description: `Walk ${out.steps} blocks to a cell ${out.off} from the cage, past 16: the spawner makes none and its clock stops. Eat and heal there up to a minute, then asked again.`, secs,
         run: () => stepOut(bot, task, goal, save, actions, out) };
     }
+  }
+  // Where the bot stands sees none of where they come (a box whose window
+  // faces rock, 25591 at (-104, 78, 150), note 708): a slit toward the cage
+  // is a way of its own (cage-hold.js, note 700).
+  if (known.lineHere && !known.lineHere.per100 && actions?.dig) {
+    const fight = require('./cage-hold').cageFight(bot, goal);
+    const slit = fight ? require('./cage-hold').slitOption(bot, task, goal, save, fight, { dig: actions.dig, about: '' }) : null;
+    if (slit) tree.open_slit = slit;
   }
   // Rods on the ground the hunt's pickup (twelve blocks) left.
   const rods = Object.values(bot.entities || {}).filter(e => e.getDroppedItem?.()?.name === 'blaze_rod' && e.position?.distanceTo(bot.entity.position) <= 24);
@@ -269,6 +288,18 @@ async function rest(bot, task, goal, save, now = Date.now()) {
   return true;
 }
 
+// Where the bot stands against where the blazes come, in words: "From where
+// the bot stands, 6 blocks from the cage, it sees none of the cells round
+// the cage where the spawner's blazes come; the 9 blazes within 16 are all
+// out of sight."
+function lineHereSays(bot, known) {
+  const l = known.lineHere;
+  let within = []; try { within = require('./danger').threats(bot, RANGE).filter(t => t.entity.name === 'blaze'); } catch (_) { within = []; }
+  const unseen = within.filter(t => !t.visible).length;
+  const about = unseen ? `; ${within.length === unseen ? `${within.length === 1 ? 'the blaze' : `all ${within.length}`} within 16 out of sight` : `${unseen} of the ${within.length} within 16 out of sight`}` : '';
+  return `From here, ${known.off} blocks from the cage, it sees ${require('./blaze-tactics').lineWords(l)}${about}.`;
+}
+
 // One pass of the hunt at a known spawner with no blaze near. -> true when
 // this pass was spent here (asked, carried out, or a chosen wait going on);
 // false when it is not this question's (a blaze near, no spawner known, the
@@ -305,9 +336,13 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   try { if (require('./game-progress').netherLeaveHeld(goal, 'food', now)) return false; } catch (_) { /* no hold */ }
   if (goal.emptySpawner?.pick === 'heal_first' && await rest(bot, task, goal, save, now)) return true;
   if (quiet) known.lull = quiet;
+  // What the bot sees from where it stands of the cells the spawner puts its
+  // blazes in (note 708): a hold here is worth only what that line brings.
+  if (known.off <= RANGE) { try { known.lineHere = require('./blaze-tactics').standLine(bot, bot.entity.position.floored(), known.cage); } catch (_) { known.lineHere = null; } }
   const tree = options(bot, task, goal, save, actions, known, { now });
   if (!Object.keys(tree).length) return false;
   const { state } = facts(bot, goal, known);
+  if (known.lineHere) state.lineHere = lineHereSays(bot, known);
   // In the lull the facts are said once, short (the plain cap, note 672):
   // health and food are the question's own facts here.
   if (quiet) { state.lull = quiet.short; state.healing = state.healthComesBack; delete state.healthComesBack; }
