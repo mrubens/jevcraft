@@ -12,7 +12,9 @@ test('acacia asked for with only oak in view takes the oak; with acacia in view 
   const step = { action: 'mine', block: 'acacia_log', sources: ['acacia_log'], drops: 'acacia_log', count: 2 };
   const swapped = work.logInView(bot, step);
   assert.equal(swapped.block, 'oak_log'); assert.equal(swapped.insteadOf, 'acacia_log');
-  // Acacia in view too: acacia it is.
-  const both = { ...bot, findBlocks: () => [oak] };
+  // Acacia in view too, on a bot not already walking to another kind: acacia it is.
+  const both = { ...bot, _logKind: undefined, findBlocks: () => [oak] };
   assert.equal(work.logInView(both, step).block, 'acacia_log');
+  // The same bot, already going for the oak: the oak is kept while it is in reach (note 749e).
+  assert.equal(work.logInView({ ...both, _logKind: bot._logKind }, step).block, 'oak_log');
 });

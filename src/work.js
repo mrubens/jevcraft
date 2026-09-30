@@ -354,6 +354,18 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       }
     }
   } };
+  // The block the mine step digs, carried, for a drop that is not the block
+  // itself (note 749e): 25590 circled a pit for flint from 18:08 to 18:23Z,
+  // 829 blocks walked within 13 blocks, "I can't get at the gravel here"
+  // twice, carrying 8 gravel the whole time. A player puts one down and digs
+  // it. Offered with its odds where they are known.
+  const ownBlock = mine && mine.drops && mine.drops !== mine.block && bot.registry?.blocksByName?.[mine.block] ? countOf(bot, mine.block) : 0;
+  if (ownBlock) {
+    const odds = DROP_ODDS[mine.block]?.[mine.drops];
+    const want = Math.max(1, (mine.count || 1) - countOf(bot, mine.drops));
+    answers.dig_own = { description: `Put down the ${ownBlock} ${String(mine.block).replaceAll('_', ' ')} carried, one at a time beside the bot, and dig each for its ${String(mine.drops).replaceAll('_', ' ')}: no walk and no search, ${want} wanted.${odds ? ` Each dug gives ${String(mine.drops).replaceAll('_', ' ')} about one time in ${Math.round(1 / odds)}: with ${ownBlock}, about ${Math.round((1 - (1 - odds) ** ownBlock) * 100)} in 100 that one comes; a failed one gives the ${String(mine.block).replaceAll('_', ' ')} back to put down again.` : ''}`,
+      run: async () => { await digOwn(bot, task, mine, want); } };
+  }
   const walled = terrain ? (() => { try { const u = require('./unstuck'); return u.walledSays(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
   // A way straight up through rock overhead, when there is one (note 635):
   // the stall's answer is a choice of local moves, and on a span over the lava
@@ -1965,15 +1977,26 @@ const LOG = /^(oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak)
 // And either of the Nether's stems for the other: the Nether's search walks
 // to whichever forest is known (nether-gather.js, note 608).
 const NETHER_STEM = /^(crimson|warped)_stem$/;
+// The kind of wood the fetch last went for is kept while trees of it are
+// within 32 blocks (note 749e): 25598 said "8 oak logs" at 18:37:58Z, "8
+// acacia logs" at 18:38:26, "4 oak logs" at 18:41:51 and "4 acacia logs" at
+// 18:43:01, the plan naming oak and the step in view turning it to acacia
+// and back as the one or the other came within reach. Any kind serves the
+// recipe; the one being walked to is the target.
+const LOG_KIND_MS = 5 * 60000;
+const swapTo = (step, name) => name === step.block ? step : { ...step, block: name, sources: [name], drops: name, produces: { [name]: step.count || 1 }, insteadOf: step.block };
 function logInView(bot, step) {
   const family = LOG.test(step.block || '') ? LOG : NETHER_STEM.test(step.block || '') ? NETHER_STEM : null;
   if (!family || typeof bot.findBlocks !== 'function') return step;
-  if (find(bot, [step.block], 32, 1).length) return step;
+  const kept = bot._logKind && Date.now() - bot._logKind.at < LOG_KIND_MS && family.test(bot._logKind.name) ? bot._logKind.name : null;
+  if (kept && find(bot, [kept], 32, 1).length) { bot._logKind = { name: kept, at: Date.now() }; return swapTo(step, kept); }
+  if (find(bot, [step.block], 32, 1).length) { bot._logKind = { name: step.block, at: Date.now() }; return step; }
   const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => family.test(n) && n !== step.block);
   const other = find(bot, names, 32, 1)[0];
   const name = other && bot.blockAt(other)?.name;
   if (!name) return step;
-  return { ...step, block: name, sources: [name], drops: name, produces: { [name]: step.count || 1 }, insteadOf: step.block };
+  bot._logKind = { name, at: Date.now() };
+  return swapTo(step, name);
 }
 
 // More of a source than the step asked for: the rest of a trunk (up to
@@ -6217,6 +6240,9 @@ function portalJobs(bot, goal) {
 
 async function detourWork(bot, task, goal, save, { survival = null, bounded = task, scratch = null, holding = false, preview = false, resting = () => false } = {}) {
   scratch ||= { kind: 'survive', request: 'Something useful meanwhile', survival: goal.survival, portals: goal.portals, villages: goal.villages, blueprint: goal.blueprint };
+  // The goal the detour serves, for what its questions read of the ladder
+  // (note 749e); not saved or recorded with the scratch goal.
+  if (!Object.hasOwn(scratch, 'mainGoal')) Object.defineProperty(scratch, 'mainGoal', { value: goal, enumerable: false });
   const out = [];
   const add = (key, description, run) => { if (!resting(key) && !out.some(w => w.key === key)) out.push({ key, description, run }); };
   const overworld = dimension(bot) === 'overworld';
@@ -6448,9 +6474,21 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   const tried = (log[reason] || []).filter(e => now - e.at < DETOUR_MEMORY_MS);
   for (const key of options) {
     const n = tried.filter(e => e.choice === key).length;
-    if (n) tree[key].description += ` Chosen for this same stall ${n} time${n === 1 ? '' : 's'} in the last ${Math.round(DETOUR_MEMORY_MS / 60000)} minutes, and the work stood still again after each.`;
+    if (n) tree[key].description += ` Chosen for this same stall ${n} time${n === 1 ? '' : 's'} in the last ${Math.round(DETOUR_MEMORY_MS / 60000)} minutes, and the work stood still again after each${n >= 2 ? `: listed after the ways not tried for it` : ''}.`;
     const run = tree[key].run;
     tree[key].run = (...args) => { log[reason] = [...tried, { choice: key, at: now }].slice(-20); return run(...args); };
+  }
+  // The ways chosen for this stall and come to nothing come after the ways
+  // not yet tried (note 749e): 25590's stillness_detour offered mine_nearby
+  // and differently first, chosen for the same stall up to six times, while
+  // the work stood still after each. By how often, the fewest first, the
+  // order as built among equals.
+  {
+    const count = key => tried.filter(e => e.choice === key).length;
+    const order = options.map((k, i) => [k, i]).sort((a, b) => (Math.min(count(a[0]), 2) - Math.min(count(b[0]), 2)) || (a[1] - b[1])).map(([k]) => k);
+    const copy = Object.fromEntries(order.map(k => [k, tree[k]]));
+    for (const k of Object.keys(tree)) delete tree[k];
+    Object.assign(tree, copy);
   }
   try {
     // Through decide: the ledger reads and records every answer to it, the
@@ -6458,6 +6496,29 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     await decideAction(bot, task, goal, save, client, onStep, tree, context, id, { above });
   } finally { goal.step = step; save(); }
   return true;
+}
+
+// The chance a block dug gives a drop other than itself, where the game fixes
+// it (gravel: flint one time in ten, and the gravel otherwise).
+const DROP_ODDS = { gravel: { flint: 0.1 } };
+// Put the block down beside the bot and dig it, until the drop wanted is
+// carried or no block is left (dig_own, note 749e). A block that gives
+// itself back is put down again.
+async function digOwn(bot, task, step, want) {
+  const target = countOf(bot, step.drops) + want;
+  for (let tries = 0; tries < 64 && countOf(bot, step.drops) < target && countOf(bot, step.block) > 0; tries++) {
+    task.check();
+    const feet = bot.entity.position.floored();
+    const cell = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz))
+      .find(c => bot.blockAt(c)?.boundingBox === 'empty' && !/water|lava/.test(bot.blockAt(c)?.name || '') && bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block');
+    if (!cell) throw new Error(`No open cell with a floor beside the bot to put the ${String(step.block).replaceAll('_', ' ')} down`);
+    await place(bot, task, cell, step.block);
+    await dig(bot, task, cell, { requireDrops: false });
+    await new Promise(r => setTimeout(r, 400));
+    const drop = Object.values(bot.entities || {}).find(e => e.getDroppedItem?.() && e.position.distanceTo(cell) < 2.5);
+    if (drop) { try { await navigate(bot, task, new goals.GoalNear(drop.position.x, drop.position.y, drop.position.z, 0.5), { timeoutMs: 3000, stallMs: 1500 }); } catch (_) { task.check(); } }
+  }
+  if (countOf(bot, step.drops) < target) throw new Error(`Dug the ${String(step.block).replaceAll('_', ' ')} carried and got no ${String(step.drops).replaceAll('_', ' ')}`);
 }
 
 // Other work until a rest ends, Jev's choice at the stall (answerStall's

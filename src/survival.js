@@ -7948,8 +7948,30 @@ class Survival {
       return pickUses ? ` The dig takes about ${cells} block${cells === 1 ? '' : 's'} of pickaxe wear, of the ${pickUses} uses left on the best pickaxe carried.` : '';
     };
     const pastSays = item => { const cap = capOf(item), n = countOf(bot, item); return cap !== undefined && n >= cap ? ` That is already past the ${cap} worth keeping: more is not wanted.` : ''; };
+    // What the next rung still wants of it, against what is carried (note
+    // 749e): 25588 dug coal after coal at 52 carried, one ask a block, ore_4
+    // to ore_35 every two seconds, with the iron (ore_5) the runner-up and an
+    // iron pickaxe the next rung. Read from the ladder of the goal the mine
+    // serves (a detour's scratch goal carries it as mainGoal) and the rung's
+    // own plan against the pockets.
+    const ladder = goal?.mainGoal || goal;
+    let rungNeed = null;
+    try {
+      const rung = ladder?.kind === 'win' ? require('./game-progress').openRungs(bot, ladder)[0] : null;
+      const plan = rung?.item && this.actions?.planFor ? this.actions.planFor(bot, rung.item, rung.count || 1, ladder) : null;
+      if (rung && Array.isArray(plan)) {
+        const more = {};
+        for (const st of plan) for (const [k, n] of Object.entries(st.produces || {})) more[k] = (more[k] || 0) + n;
+        rungNeed = { name: String(rung.phase).replaceAll('_', ' '), more };
+      }
+    } catch (_) { rungNeed = null; }
+    const needSays = item => {
+      if (!rungNeed) return '';
+      const more = rungNeed.more[item] || 0, n = countOf(bot, item), w = item.replaceAll('_', ' ');
+      return more > 0 ? ` The next rung, the ${rungNeed.name}, still wants ${more} more ${w} (${n} carried).` : ` The next rung, the ${rungNeed.name}, wants no more ${w}: the ${n} carried cover it.`;
+    };
     const tree = Object.fromEntries(choices.map(c => { const [item, use] = ORE_YIELD[c.kind];
-      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${pastSays(item)}${costSays(c)}${oreFacts(c.position)}` }]; }));
+      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${pastSays(item)}${needSays(item)}${costSays(c)}${oreFacts(c.position)}` }]; }));
     const branchY = Math.max(feet.y - 10, 16);
     tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
@@ -9699,16 +9721,30 @@ class Survival {
     // for it, told each time only that the errand's minute count had gone
     // up (note 747). Held briefly, while the same search is still on offer
     // and nothing about the bot has gotten worse.
+    // And a walk to animals seen is a trip (note 749e): 25592 at hunger 17
+    // answered obtain_food four times in 23 seconds (18:43:39 to 18:44:02Z),
+    // seen_food_0, 3, 0, 1, each herd kept its number and each answer a walk
+    // to it, re-asked before any arrived. The herd chosen is walked on while
+    // it is still on offer (not yet reached within 32 blocks, nor rested for
+    // a failed walk), up to two minutes; the search, 45 seconds as before.
     const searchFoodHold = this.state.searchFoodHold;
     if (searchFoodHold?.until < Date.now()) delete this.state.searchFoodHold;
-    if (this.state.searchFoodHold && tree.obtain_food?.children?.search_food && !immediateThreat(bot)) {
-      await runChosen('obtain_food', { run: () => tree.obtain_food.children.search_food.run() }); onStep(goal); return true;
+    const heldKey = this.state.searchFoodHold?.key || 'search_food';
+    if (this.state.searchFoodHold && tree.obtain_food?.children?.[heldKey] && !immediateThreat(bot)) {
+      console.log(`[food trip] obtain_food/${heldKey} held: on offer still, chosen ${Math.round((Date.now() - (this.state.searchFoodHold.at || Date.now())) / 1000)}s ago`);
+      let ok = false;
+      try { ok = await runChosen('obtain_food', { run: () => tree.obtain_food.children[heldKey].run() }); }
+      finally { if (!ok) delete this.state.searchFoodHold; }
+      onStep(goal); return true;
     }
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
     if (decision.stale) return true;
-    if (decision.path.at(-1) === 'search_food') this.state.searchFoodHold = { until: Date.now() + 45000 }; else delete this.state.searchFoodHold;
+    const foodKey = decision.path[0] === 'obtain_food' ? decision.path.at(-1) : null;
+    if (foodKey === 'search_food') this.state.searchFoodHold = { key: foodKey, until: Date.now() + 45000, at: Date.now() };
+    else if (foodKey && /^seen_food_\d+$/.test(foodKey)) this.state.searchFoodHold = { key: foodKey, until: Date.now() + 120000, at: Date.now() };
+    else delete this.state.searchFoodHold;
     if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
     if (decision.path[0] === 'continue_request') {
       delete this.state.foodPlan;
