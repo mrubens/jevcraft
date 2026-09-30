@@ -1,7 +1,7 @@
 'use strict';
 // Questions asked round and round (note 749). Read from the flight records;
 // read-only.
-//   node scripts/ask-loops.js [--since 2026-09-30T06:00Z] [--until ...] [--port 25594] [--top 20] [--json]
+//   node scripts/ask-loops.js [--since 2026-09-30T06:00Z] [--until ...] [--port 25594] [--top 20] [--json] [--triggers] [--commit]
 //
 // For every decision Jev weighed (source jev), per bot process (one record
 // file), by question:
@@ -23,6 +23,12 @@
 // With --replay the asks are walked through the ask layer's rules of note
 // 749 (src/decisions/loops.js replay) and the same figures are printed for
 // the asks that would have gone to Jev.
+// With --triggers (note 764) each asking again of a question is put to what
+// the record shows set it off (triggerOf below), by question, ranked by the
+// minutes of re-asks within 30 s. With --commit the asks are walked through
+// the commitment rule (src/decisions/commit.js; turn_priority's ruling,
+// arbiter.js; win_strategy's going to the Nether, strategy.js) and the
+// figures printed again for the asks that would still go to Jev.
 const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
@@ -59,7 +65,7 @@ function leaves(tree, pre = [], out = {}) {
 }
 
 async function readFile(file) {
-  const asks = [], takenBack = [], stale = [], positions = [], weak = [];
+  const asks = [], takenBack = [], stale = [], positions = [], weak = [], errors = [];
   let first = null, last = null;
   const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
   for await (const line of rl) {
@@ -71,6 +77,13 @@ async function readFile(file) {
       let o; try { o = JSON.parse(line); } catch (_) { continue; }
       const t = Date.parse(o.at || ''), text = JSON.stringify(o.detail || o.snapshot?.chat || o).match(/Back to the ([a-z ]+) after all: I set it aside (\d+) (second|minute)/);
       if (Number.isFinite(t) && t >= since && t <= until && text) takenBack.push({ t, phase: text[1], agoMs: Number(text[2]) * (text[3] === 'minute' ? 60000 : 1000), pos: P(o.snapshot?.position) });
+      continue;
+    }
+    // Failures said between two askings (note 764): an error, a walk with no
+    // route, a stalled walk.
+    if (/^\{"kind":"(error|no_route|navigation_stall)"/.test(line)) {
+      const t = Number.isFinite(t0) ? t0 : NaN;
+      if (Number.isFinite(t) && t >= since && t <= until) errors.push({ t, label: (line.match(/"label":"([^"]{0,80})/) || [])[1] || '' });
       continue;
     }
     if (!line.startsWith('{"kind":"decision"')) continue;
@@ -93,9 +106,10 @@ async function readFile(file) {
       } }
     const topKey = Object.entries(probs).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     asks.push({ t, id: d.id, choice: d.path.join('/'), pos: P(s.position), dimension: s.dimension, kinds: Object.keys(s.inventory || {}), top: topKey, noneGood: topKey === 'none_good',
-      ids: leaves(d.options), state: d.state, options: d.options, health: s.health, inventory: s.inventory });
+      ids: leaves(d.options), state: d.state, options: d.options, health: s.health, inventory: s.inventory, food: s.food, mobs: s.mobs,
+      deaths: (s.goal?.survival?.deaths || []).length || 0 });
   }
-  return { asks, takenBack, stale, positions, weak, minutes: first && last ? (last - first) / 60000 : 0 };
+  return { asks, takenBack, stale, positions, weak, errors, minutes: first && last ? (last - first) / 60000 : 0 };
 }
 
 // The figures over one record's asks (all, or those a replay lets through).
@@ -190,6 +204,163 @@ function tripsMeasure(asks, out) {
     if (I.committing(a.id, key, node) || climb) { cur = { q: a.id, choice: key, t: a.t, target: P(node?.target), trip, dimension: a.dimension, health: a.health }; out.trips++; }
   }
 }
+// What set off each asking again of a question (note 764), as far as the
+// record shows, first that applies: its last answer failed (an error, a walk
+// with no route or stalled, said between the two), its last answer was
+// thrown away as stale, it arrived (its target within 4 blocks), a named
+// fact changed band (the dimension, the health band falling or back to
+// full, the hunger band, the mobs that threaten within 16 by kind and
+// number, a kind of thing carried got or gone, 16 blocks walked), a new
+// option was offered; else nothing the record names changed, and the asking
+// was its caller's poll. turn_priority's own reason (its state's `why`, the
+// arbiter's broken()) is kept beside.
+function facts(a) { return require('../src/decisions/commit').factsFromSnapshot({ position: a.pos, dimension: a.dimension, health: a.health, food: a.food, inventory: a.inventory, mobs: a.mobs }, a.t, a.deaths || 0); }
+function triggerOf(prev, a, { errors, stale }) {
+  const C = require('../src/decisions/commit');
+  const err = errors.find(e => e.t > prev.t && e.t <= a.t);
+  if (err) return /Threat nearby|Preempted|hurt|creeper|NeedsSafety/i.test(err.label) ? 'stopped by a threat' : 'failed';
+  if (stale.some(x => x.id === a.id && x.t > prev.t && x.t <= a.t)) return 'stale';
+  const node = leafNode(prev.options, prev.choice), tgt = P(node?.target);
+  if (tgt && a.pos && dist(tgt, a.pos) <= 4) return 'arrived';
+  const f0 = facts(prev), f1 = facts(a);
+  if (f0.dimension && f1.dimension && f0.dimension !== f1.dimension) return 'fact: dimension';
+  const hb0 = C.healthBand(f0.health), hb1 = C.healthBand(f1.health);
+  if (hb0 != null && hb1 != null && (hb1 < hb0 || (hb1 === 5 && hb0 !== 5))) return 'fact: health band';
+  if (C.foodBand(f0.food) !== C.foodBand(f1.food)) return 'fact: hunger band';
+  if (C.threatsChanged(f0.threats, f1.threats)) return 'fact: threats';
+  const k0 = Object.keys(f0.inv || {}), k1 = Object.keys(f1.inv || {});
+  if (k1.some(k => !k0.includes(k)) || k0.some(k => !k1.includes(k))) return 'fact: a kind carried got or gone';
+  if (f0.pos && f1.pos && dist(f0.pos, f1.pos) >= 16) return 'fact: moved 16+';
+  const offered0 = new Set(Object.keys(prev.ids || {}));
+  if (Object.keys(a.ids || {}).some(k => !offered0.has(k))) return 'new option';
+  return 'poll';
+}
+function triggersMeasure(asks, ev, out) {
+  const lastOf = {};
+  for (const a of asks) {
+    const prev = lastOf[a.id]; lastOf[a.id] = a;
+    if (!prev) continue;
+    const gap = a.t - prev.t;
+    const r = out[a.id] ||= { reasks: 0, within: 0, ms: 0, by: {}, byWithin: {}, why: {} };
+    r.reasks++;
+    const k = triggerOf(prev, a, ev);
+    r.by[k] = (r.by[k] || 0) + 1;
+    if (gap <= WITHIN) {
+      r.within++; r.ms += gap; r.byWithin[k] = (r.byWithin[k] || 0) + 1;
+      if (a.id === 'turn_priority') { const w = String(a.state?.why || '?').replace(/\d+(\.\d+)?/g, 'N').replace(/: .*/, ''); r.why[w] = (r.why[w] || 0) + 1; }
+    }
+  }
+}
+// What the recorded options do not carry and the builder now puts on them:
+// the night mine's ore as its kind and the line its yield is held to
+// (survival.js nightTarget), read back from the option's own words.
+const REPLAY_NODES = {
+  night_mine_target: options => Object.fromEntries(Object.entries(options).map(([k, n]) => {
+    const d = typeof n?.description === 'string' ? n.description : '';
+    const kind = (d.match(/^Dig to the (?:deepslate )?([a-z]+) ore/) || [])[1];
+    if (!/^ore_\d+$/.test(k) || !kind) return [k, n];
+    const c = d.match(/\((\d+) ([a-z ]+?) carried;/);
+    const item = c ? c[2].replaceAll(' ', '_') : null, carried = c ? Number(c[1]) : 0;
+    const more = /still wants (\d+) more/.test(d) ? Number(d.match(/still wants (\d+) more/)[1]) : /wants no more/.test(d) ? 0 : null;
+    let cap; try { cap = require('../src/inventory-tidy').capOf(item); } catch (_) { cap = undefined; }
+    const line = item ? require('../src/decisions/commit').needLine(carried, more, cap) : null;
+    return [k, { ...n, commit: { as: `ore:${kind}`, until: line ? { items: { [item]: line } } : {} } }];
+  })),
+};
+// turn_priority's ruling as a commitment (arbiter.js broken, note 764), over
+// its recorded asks: each ask's own reason (its state's `why`) read against
+// the ruling the rule would still hold. A fight ruling (survival's
+// escape_threat or creeper_back_off) holds through a newcomer, its own step
+// stopped, health or food falling and survival's own alert; a minute passed
+// holds where the scene is as it was (the claims' layers and actions, the
+// kinds of mob within 16, the food band), up to five minutes; "no ruling"
+// (the ruling dropped by a reflex's pass or the winner's claim alone, which
+// now keep it) is held where the same layers claim, the winner among them,
+// within its minute or the same scene, and neither health fell six nor the
+// food band moved (a fight excepted). The record cannot tell a reflex's pass
+// from another claim's alone, so the last is an upper bound.
+function turnReplay(asks, out) {
+  const FIGHT = /^(escape_threat|creeper_back_off)$/;
+  const A = require('../src/arbiter');
+  const kinds16 = a => [...new Set((a.mobs || []).filter(m => m.d <= 16).map(m => m.name))].sort().join(',');
+  const layersOf = a => Object.keys(a.options || {}).filter(k => k !== 'none_good').sort().join('|');
+  const sceneOf = a => `${Object.entries(a.options || {}).filter(([k]) => k !== 'none_good').map(([k, n]) => `${k}:${n?.description?.action}`).sort().join('|')}#${kinds16(a)}#${A.foodBand(a.food)}`;
+  let r = null;
+  const kept = [];
+  for (const a of asks) {
+    if (a.id !== 'turn_priority') { kept.push(a); continue; }
+    out.asks++;
+    const why = String(a.state?.why || '');
+    let held = false;
+    const w = r && a.options?.[r.winner];
+    if (r && w && a.t - r.at0 < A.RULING_MAX_MS) {
+      const fight = r.winner === 'survival' && FIGHT.test(w.description?.action || '');
+      const sameLayers = layersOf(a) === r.layers;
+      if (/^a minute passed/.test(why)) held = sceneOf(a) === r.scene;
+      else if (/^(its winner was stopped|a newcomer within six blocks|health fell|food crossed a band)/.test(why)) held = fight;
+      else if (/^the claims changed/.test(why)) held = fight && sameLayers;
+      else if (/^no ruling/.test(why)) held = sameLayers && (a.t < r.until || sceneOf(a) === r.scene) && (fight || (!(a.health <= r.health - 6) && A.foodBand(a.food) === r.band));
+      if (held) { out.held++; const k = why.replace(/: .*/, '').replace(/\d+/g, 'N'); out.by[k] = (out.by[k] || 0) + 1; if (/^a minute/.test(why) || a.t >= r.until) r.until = a.t + A.RULING_MS; continue; }
+    }
+    kept.push(a);
+    const winner = a.choice.split('/')[0];
+    r = { winner, layers: layersOf(a), scene: sceneOf(a), at0: a.t, until: a.t + A.RULING_MS, health: a.health, band: A.foodBand(a.food) };
+  }
+  return kept;
+}
+// win_strategy's going to the Nether held as one answer (strategy.js, note
+// 764): after nether_first or stage_reach_nether, asked again only when the
+// dimension changes, ten minutes pass, the portal's stage is not on offer, or
+// the ladder is working on a phase the answer's beforeTheNether did not name
+// (a rung neither open nor known then; read from the words, an
+// approximation of openRungs).
+function strategyReplay(asks, out) {
+  let h = null;
+  const kept = [];
+  const named = a => String(a.state?.beforeTheNether || '').toLowerCase();
+  for (const a of asks) {
+    if (a.id !== 'win_strategy') { kept.push(a); continue; }
+    out.asks++;
+    if (h && a.t - h.at < 10 * 60000 && a.dimension === h.dimension && a.options?.stage_reach_nether) {
+      const w = String(a.state?.workingOn || '').toLowerCase();
+      if (w === 'reach nether' || h.named.includes(w)) { out.held++; continue; }
+    }
+    kept.push(a);
+    const c = a.choice.split('/').at(-1);
+    h = /^(nether_first|stage_reach_nether)$/.test(c) ? { at: a.t, dimension: a.dimension, named: named(a) } : null;
+  }
+  return kept;
+}
+// The commitment rule (src/decisions/commit.js) over the recorded asks: each
+// question whose definition declares what ends its answers (define's
+// `commit`) is walked in order; an ask while the last answer's commitment
+// holds is one the rule would have answered with the held answer. The ask
+// after it is where the record shows it ended, so what followed is the
+// record's (an answer held is taken to have gone on as it was).
+function commitMeasure(asks, ev, out) {
+  const C = require('../src/decisions/commit');
+  const D = require('../src/decisions');
+  const byId = {};
+  for (const a of asks) (byId[a.id] ||= []).push(a);
+  const kept = new Set(asks);
+  for (const [id, list] of Object.entries(byId)) {
+    let def; try { def = D.question(id); } catch (_) { continue; }
+    if (!def.commit) continue;
+    let prevT = -Infinity;
+    const walked = list.map(a => {
+      const failedSince = ev.errors.some(e => e.t > prevT && e.t <= a.t && !/Threat nearby|Preempted|hurt|creeper|NeedsSafety/i.test(e.label));
+      prevT = a.t;
+      const tree = REPLAY_NODES[id] ? REPLAY_NODES[id](a.options || {}) : (a.options || {});
+      return { t: a.t, id, choice: a.choice, tree, facts: facts(a), failedSince, a };
+    });
+    const r = C.replay(def, walked);
+    const o = out[id] ||= { asks: 0, held: 0, ends: {} };
+    o.asks += list.length; o.held += r.held.length;
+    for (const [k, n] of Object.entries(r.ends)) o.ends[k] = (o.ends[k] || 0) + n;
+    for (const h of r.held) kept.delete(h.a);
+  }
+  return asks.filter(a => kept.has(a));
+}
 function leafNode(tree, choice) {
   let n = { children: tree };
   for (const k of String(choice).split('/')) n = n?.children?.[k];
@@ -204,10 +375,17 @@ async function main() {
   const before = {}, after = {};
   let minutes = 0, asksAll = 0, sentAll = 0;
   const held = {};
+  const trig = {}, committed = {}, afterCommit = {}, turnHeld = { asks: 0, held: 0, by: {} }, stratHeld = { asks: 0, held: 0 };
+  let commitAsks = 0;
   const trips = { trips: 0, turned: 0, before: 0, after: 0, pairsBefore: {}, pairsAfter: {} };
   const extra = { takenBack: 0, takenBackHeld: 0, stale: 0, staleWatched: 0, staleBy: {}, weak: 0, weakCalm: 0, weakNone: 0, weakBy: {} };
   for (const f of files) {
-    const { asks, takenBack, stale, positions, weak, minutes: m } = await readFile(path.join(dir, f));
+    const { asks, takenBack, stale, positions, weak, errors, minutes: m } = await readFile(path.join(dir, f));
+    if (argv.includes('--triggers')) triggersMeasure(asks, { errors, stale }, trig);
+    if (argv.includes('--commit')) {
+      const left = strategyReplay(turnReplay(commitMeasure(asks, { errors, stale }, committed), turnHeld), stratHeld);
+      commitAsks += left.length; measure(left, afterCommit, f);
+    }
     for (const w of weak) { if (w.safety) continue; extra.weak++; (extra.weakBy[w.id] = (extra.weakBy[w.id] || 0) + 1); if (w.calm && w.calm !== w.took.split('/')[0]) extra.weakCalm++; else if (!w.calm) extra.weakNone++; }
     // Set-asides taken back (asides.js): held had the bot been within 16
     // blocks of where it was set aside (read from the record's positions
@@ -266,6 +444,23 @@ async function main() {
     console.log(`  before:\n${show(trips.pairsBefore)}\n  after:\n${show(trips.pairsAfter) || '    none'}`);
   }
   table(before, 'as asked');
+  if (argv.includes('--triggers')) {
+    const rows = Object.entries(trig).sort((a, b) => b[1].ms - a[1].ms).slice(0, top);
+    const kinds = ['failed', 'stopped by a threat', 'stale', 'arrived', 'fact: dimension', 'fact: health band', 'fact: hunger band', 'fact: threats', 'fact: a kind carried got or gone', 'fact: moved 16+', 'new option', 'poll'];
+    const all = Object.values(trig).reduce((s, r) => { s.within += r.within; s.ms += r.ms; for (const [k, n] of Object.entries(r.byWithin)) s.by[k] = (s.by[k] || 0) + n; return s; }, { within: 0, ms: 0, by: {} });
+    console.log(`\nre-asks within 30 s of the same question, by what the record shows set them off (note 764): ${all.within}, ${(all.ms / 60000).toFixed(0)} re-ask minutes (the gaps summed)`);
+    console.log(`  all: ${kinds.filter(k => all.by[k]).map(k => `${k} ${Math.round(100 * all.by[k] / all.within)}%`).join(', ')}`);
+    console.log('re-ask min\t<=30s\t' + kinds.map(k => k.replace('fact: ', '').replace('a kind carried got or gone', 'kinds').replace('stopped by a threat', 'stopped').slice(0, 8)).join('\t') + '\tquestion');
+    for (const [id, r] of rows) console.log(`${(r.ms / 60000).toFixed(1)}\t\t${r.within}\t${kinds.map(k => r.byWithin[k] ? `${Math.round(100 * r.byWithin[k] / r.within)}%` : '-').join('\t')}\t${id}`);
+    if (trig.turn_priority) console.log(`turn_priority's own reason at its re-asks within 30 s: ${Object.entries(trig.turn_priority.why).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join('; ')}`);
+  }
+  if (argv.includes('--commit')) {
+    console.log(`\nreplayed through the commitment rule (note 764, src/decisions/commit.js): ${asksAll} asks become ${commitAsks} (${(commitAsks / hours).toFixed(1)} a bot-hour); held by question:`);
+    for (const [id, r] of Object.entries(committed).sort((a, b) => b[1].held - a[1].held)) console.log(`  ${id}: ${r.asks} -> ${r.asks - r.held} (${r.held} held); ended by ${Object.entries(r.ends).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k} ${n}`).join(', ')}`);
+    console.log(`  turn_priority (arbiter.js ruling): ${turnHeld.asks} -> ${turnHeld.asks - turnHeld.held} (${turnHeld.held} held; by the reason it had been asked: ${Object.entries(turnHeld.by).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ')})`);
+    console.log(`  win_strategy (going to the Nether held): ${stratHeld.asks} -> ${stratHeld.asks - stratHeld.held} (${stratHeld.held} held)`);
+    table(afterCommit, 'after the commitment rule');
+  }
   if (loops) {
     console.log(`\nreplayed through note 749's spell rule: ${asksAll - sentAll} spells sent up (${Object.entries(held).map(([k, v]) => `${k} ${v}`).join(', ')})`);
     console.log('went up\tng\tnowhere\tspells reached/all\tmedian at ask, s\tspell-min after up (nowhere)\tquestion');

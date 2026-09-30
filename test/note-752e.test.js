@@ -67,7 +67,9 @@ test('the fight against a mob no run reached says so, and every stance carries t
 test('turn_priority is not asked again for one of a kind already about coming within six; more of that kind is news (25595, note 752e)', () => {
   const m = (name, distance, id) => ({ entity: { name, id }, distance, visible: true });
   const bot = { entity: { position: new Vec3(0, 64, 0) }, health: 20, food: 20, oxygenLevel: 20, entities: {} };
-  const claims = () => [{ layer: 'survival', action: 'escape_threat', urgency: 'pressing', facts: {} }, { layer: 'work', action: 'mine', urgency: 'routine', facts: {} }];
+  // A ruling that is not survival's answer to a threat (a fight ruling holds
+  // through its fight, note 764).
+  const claims = () => [{ layer: 'survival', action: 'secure_shelter', urgency: 'pressing', facts: {} }, { layer: 'work', action: 'mine', urgency: 'routine', facts: {} }];
   const state = {};
   arbiter.rule(bot, claims(), { dry: true, state, now: 1000, mobs: [m('magma_cube', 5, 1), m('magma_cube', 9, 2)] });
   const hop = arbiter.rule(bot, claims(), { dry: true, state, now: 2000, mobs: [m('magma_cube', 8, 1), m('magma_cube', 4, 2)] });

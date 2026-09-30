@@ -286,23 +286,57 @@ function answeredScene(state, scene, winner, health, now) {
   state.scenes = Object.fromEntries([...kept, [scene, { winner, at: now, health }]]);
 }
 
+// A ruling is a commitment with its end stated (note 764, decisions/
+// commit.js). Read over the flight records of 2026-09-30 13:20Z to 19:00Z,
+// turn_priority asked again within 30 s gave the same answer as before at
+// 100% of 349 re-asks for "a newcomer within six blocks" after survival's
+// escape_threat, 98% of 175 for "its winner was stopped", 100% of 128 for
+// "food crossed a band", 100% of 22 for "health fell", 81% of 194 and 95%
+// of 106 for "the claims changed" (survival's own alert coming or going), and
+// 93 to 99% of 938 re-asks for "a minute passed" whatever the winner. So:
+//   - survival's answer to a threat (a fight ruling: its action
+//     escape_threat or creeper_back_off, or an alert) holds until its claim
+//     is over (the threat answered, its winner no longer claims), the other
+//     layers' claims change, or its winner does nothing for IDLE_MS: a
+//     newcomer, its own step stopped by a mob, health or food falling, and
+//     survival's own alert coming or going are the fight it is answering;
+//   - a minute passed ends a ruling only where the scene it was made on
+//     (sceneOf: each claim's layer, alert and action, the kinds of mob about,
+//     the food band) has changed; else it is renewed, up to RULING_MAX_MS;
+//   - a pass with a reflex, or with the winner's claim alone, keeps the
+//     ruling (rule() below) where it had been dropped and asked as new.
+const FIGHT_ACTIONS = new Set(['escape_threat', 'creeper_back_off']);
+const RULING_MAX_MS = 5 * 60000;
+const fightRuling = (ruling, winner) => ruling?.winner === 'survival' && !!winner && (FIGHT_ACTIONS.has(winner.action) || !!winner.alert);
+// The fingerprint without survival's own alert.
+const bareOf = print => [...new Set(String(print).split('|').map(k => k.startsWith('survival') ? 'survival' : k))].sort().join('|');
 // Why a held ruling no longer holds, or null while it does.
-function broken(ruling, claims, seen, now, print = fingerprintOf(claims)) {
+function broken(ruling, claims, seen, now, print = fingerprintOf(claims), scene = null) {
   if (!ruling) return 'no ruling';
   const winner = claims.find(c => c.layer === ruling.winner);
   if (!winner) return 'its winner no longer claims';
   // A winner that asked not to be cut short keeps the turn for its hold,
   // whatever else comes; only a reflex takes it.
   if (winner.preemptible === false && now - ruling.at < (winner.minHoldMs || 0)) return null;
-  if (ruling.stoppedBy) return `its winner was stopped: ${ruling.stoppedBy}`;
-  if (now >= ruling.until) return 'a minute passed';
+  const fight = fightRuling(ruling, winner);
+  if (ruling.stoppedBy && !fight) return `its winner was stopped: ${ruling.stoppedBy}`;
+  // Stopped by the mob it is answering: the fight goes on (note 764).
+  if (ruling.stoppedBy && fight) delete ruling.stoppedBy;
+  if (now >= ruling.until) {
+    // Renewed while nothing it was made on has changed (note 764).
+    const since = ruling.since ?? ruling.at;
+    if (scene && ruling.scene === scene && !ruling.idleSince && now - since < RULING_MAX_MS) { ruling.until = now + RULING_MS; ruling.renewed = (ruling.renewed || 0) + 1; }
+    else return 'a minute passed';
+  }
   // Its winner stopped by a mob since the ruling: the ruling was made
   // before it, and giving it the turn back only stops it again. mid-218-n's
   // work was stopped by a drowned eleven times in four seconds, handed back
   // each time on the ruling held, at seven health (note 490).
-  if (stoppedAt(winner) > ruling.at && STOPPED_BY_THREAT.test(winner.facts?.lastError || '')) return `its winner was stopped: ${winner.facts.lastError}`;
+  if (!fight && stoppedAt(winner) > ruling.at && STOPPED_BY_THREAT.test(winner.facts?.lastError || '')) return `its winner was stopped: ${winner.facts.lastError}`;
   if (ruling.idleSince && now - ruling.idleSince >= IDLE_MS) return `its winner did nothing for ${IDLE_MS / 1000} seconds`;
-  if (print !== ruling.fingerprint) return 'the claims changed';
+  if (print !== ruling.fingerprint && !(fight && bareOf(print) === bareOf(ruling.fingerprint))) return 'the claims changed';
+  // A fight ruling holds through the fight it answers (note 764).
+  if (fight) return null;
   // One come within six of a kind already about, their count within
   // sixteen no higher than the ruling saw, is one of those it was made
   // with moving about, not news: 25595's magma cubes, hopping in and out of
@@ -617,7 +651,7 @@ async function arbitrate(bot, claims, ctx = {}) {
     // An answer that is no claim of this pass's (gone meanwhile): nobody is
     // given the turn by rule; asked again at the next pass.
     if (!winner) { delete result.pending; return { ...result, winner: null, by: 'stale', ask: true, why }; }
-    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
+    state.ruling = { winner: winner.layer, action: winner.action, fingerprint: fingerprintOf(live), scene: result.pending.scene, at: now, until: now + RULING_MS, ...seen };
     // Jev's answer to this scene, given again to it for a while (sameScene).
     if (decision?.path && !decision.standIn && result.pending.scene) answeredScene(state, result.pending.scene, winner.layer, seen.health, now);
     Object.assign(result, { winner, by: decision.standIn ? 'stand-in' : 'jev', ruling: state.ruling });
@@ -687,7 +721,12 @@ function rule(bot, claims, ctx = {}) {
     delete bot._preempt;
   }
   const gone = missing(state, live);
-  if (reflexes.length) { delete state.ruling; return { winner: reflexes[0], by: 'body', ask: false }; }
+  // A reflex's pass keeps the ruling (note 764): the body's physics taken
+  // by rule is a pause in it, not its end; what it was made on is read again
+  // at the next pass that rules (broken). Dropped here, it was asked as new
+  // at the next: 420 of turn_priority's re-asks within 30 s from 13:20Z to
+  // 19:00Z on 2026-09-30 said "no ruling".
+  if (reflexes.length) return { winner: reflexes[0], by: 'body', ask: false };
   // The ruling's claims absent one pass still count for it (ABSENT_PASSES).
   // Its winner absent one pass: nobody has the turn this pass, a breath,
   // and the ruling stands; its claim's run is not taken from a pass it was
@@ -696,21 +735,24 @@ function rule(bot, claims, ctx = {}) {
   const kept = [...gone.values()].filter(key => ruled.has(key));
   if (ruling && gone.has(ruling.winner) && !ruling.stoppedBy && now < ruling.until) return { winner: null, by: 'absent', ask: false, why: `its winner, ${ruling.winner}, missed one look`, ruling };
   if (!live.length) { delete state.ruling; return { winner: null, by: 'none', ask: false }; }
-  if (live.length === 1 && !kept.length) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
+  // The winner's claim alone keeps its ruling (note 764): the others come
+  // back to a ruling that still holds. Another's claim alone ends it.
+  const alone = () => { if (!(ruling && live[0].layer === ruling.winner)) delete state.ruling; return { winner: live[0], by: 'single', ask: false }; };
+  if (live.length === 1 && !kept.length) return alone();
   const seen = observe(bot, ctx);
-  const why = broken(ruling, live, seen, now, [...live.map(keyOf), ...kept].sort().join('|'));
+  const scene = sceneOf(bot, live, seen, ctx);
+  const why = broken(ruling, live, seen, now, [...live.map(keyOf), ...kept].sort().join('|'), scene);
   if (!why) return { winner: live.find(c => c.layer === ruling.winner), by: 'held', ask: false, ruling };
   if (live.length === 1) { delete state.ruling; return { winner: live[0], by: 'single', ask: false }; }
-  const scene = sceneOf(bot, live, seen, ctx);
   const same = sameScene(state, scene, why, seen, now);
   if (same) {
     const winner = live.find(c => c.layer === same.winner);
-    state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: same.at + RULING_MS, ...seen };
+    state.ruling = { winner: winner.layer, action: winner.action, fingerprint: fingerprintOf(live), scene, at: now, until: same.at + RULING_MS, ...seen };
     return { winner, by: 'scene', ask: false, why: `${why}; this same scene was answered ${Math.round((now - same.at) / 1000)} seconds ago`, ruling: state.ruling };
   }
   if (!ctx.dry) return { winner: null, ask: true, why, pending: { live, seen, now, why, scene } };
   const winner = rulesPick(live);
-  state.ruling = { winner: winner.layer, fingerprint: fingerprintOf(live), at: now, until: now + RULING_MS, ...seen };
+  state.ruling = { winner: winner.layer, action: winner.action, fingerprint: fingerprintOf(live), scene, at: now, until: now + RULING_MS, ...seen };
   return { winner, by: 'rules', ask: true, why, ruling: state.ruling };
 }
 
@@ -971,4 +1013,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };

@@ -28,7 +28,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **What should the bot handle next: the player's request, sleep, a shelter, a night hunt, the valuables to the chest, or food (and which food)?**
 
-- When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.
+- When: Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out. A hunt for food chosen holds for its kind (the next animal of that kind in view hunted unasked) until hunger or health changes band, the mobs about change, it fails, or three minutes pass (note 764).
 - Decision tree, choice; stakes high; ledger kind `survival`
 - Bar: none: Jev's pick is taken at any confidence: a food trip or carrying on is held five minutes, a night plan two, so a close call is soon asked again; Jev not reachable, nothing is chosen: the bot holds and it is asked again (jev-down.js)
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
@@ -125,7 +125,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Mining through the night: which ore next, or a branch deeper?**
 
-- When: Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near.
+- When: Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near; an ore kind or a branch chosen holds (the nearest ore of that kind taken unasked) until its yield carried reaches what the next rung wants or the worth keeping, a new kind of ore is offered, health falls a band or comes back to full, the mobs about change, a way to it fails, or five minutes pass (note 764).
 - Decision tree, choice; stakes low; ledger kind `mining`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
@@ -277,9 +277,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Which layer has the bot's turn now: survival, the meal and breath, the hunt, or the work?**
 
-- When: When two or more layers claim the turn and none of them is the body's own danger (lava, fire, a hot floor, a head in a block, the breath: that layer's step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.
+- When: When two or more layers claim the turn and none of them is the body's own danger (lava, fire, a hot floor, a head in a block, the breath: that layer's step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute with the scene changed (renewed while the claims, the kinds of mob about and the food band are as they were, up to five minutes); survival's answer to a threat (escape_threat, creeper_back_off, an alert) holds through the fight it answers until its claim is over or the other claims change; a reflex's pass, or the winner's claim alone, keeps the ruling (note 764).
 - Decision tree, choice; stakes high; ledger kind `survival`
-- Bar: none: Jev's pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; Jev not reachable or not answering in five seconds, nobody is given the turn and it is asked again (note 707)
+- Bar: none: Jev's pick is taken at any confidence: it holds a minute unless nothing it was given on has changed (five at most), and a newcomer, six health or a food band asks again (a fight given to survival excepted, note 764); Jev not reachable or not answering in five seconds, nobody is given the turn and it is asked again (note 707)
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
 - Options built in: src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js
 - Nothing left to try: the stall's question, as before (nothing above it)
@@ -919,7 +919,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **Something the bot keeps in its pockets is running short (a pickaxe or a spare, wood, building blocks): see to it now, or carry on?**
 
-- When: Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs' worth of wood are carried; in the Nether, fewer planks' worth than the pickaxe to make now and a spare want, with no pickaxe to be made or stems known within 128 blocks (note 658); or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).
+- When: Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs' worth of wood are carried; in the Nether, fewer planks' worth than the pickaxe to make now and a spare want, with no pickaxe to be made or stems known within 128 blocks (note 658); or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543). Carrying on, or a reserve chosen, holds until something new comes due, it is no longer on offer, it fails, health falls a band, the mobs about change, or five minutes pass (note 764).
 - Decision tree, choice; stakes low; ledger kind `upkeep`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers

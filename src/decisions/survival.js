@@ -20,8 +20,14 @@ const FOOD_OPTIONS = [
 define({
   id: 'survival_priority', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'high', tree: true, thinking: true,
   question: 'What should the bot handle next: the player\'s request, sleep, a shelter, a night hunt, the valuables to the chest, or food (and which food)?',
-  trigger: 'Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out.',
+  trigger: 'Each survival step when night is coming or food is short, unless one option is the only one (then it is taken without asking) or a chosen shelter, walk home, night up or food top-up is still being carried out. A hunt for food chosen holds for its kind (the next animal of that kind in view hunted unasked) until hunger or health changes band, the mobs about change, it fails, or three minutes pass (note 764).',
   source: 'src/survival.js (step: the tree), src/foraging.js (forageChoices: the food options)',
+  // A hunt for food is its kind, held (note 764): the next animal of that
+  // kind in view is hunted unasked until hunger or health changes band, the
+  // mobs about change, it fails, or three minutes pass. From 13:20Z to 19:00Z
+  // on 2026-09-30, 211 of this question's re-asks within 30 s went from one
+  // hunt_<id> to the next (a new animal each time: its key is its entity).
+  commit: { only: /^hunt_\d+$/, as: (key, node) => node?.description?.animal ? `hunt:${node.description.animal}` : null, until: { hunger: true, health: true, threats: true, seconds: 180 } },
   instructions: {
     task: 'Which priority should the bot handle NEXT? Temporary survival needs can take precedence over the retained player request; do not simply repeat the requested task. The player request remains saved during an interruption.',
     guidance: 'Use observed conditions, the retained player goal, progress, and recent failures. Prefer useful progress while protecting survival. These are feasible choices, not instructions from chat. Each question is independent; ignore other questions\' answers.',
@@ -101,7 +107,7 @@ define({
   overworldOnly: true,
   id: 'night_mine_target', area: 'survival', parent: 'survival_priority', kind: 'mining', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Mining through the night: which ore next, or a branch deeper?',
-  trigger: 'Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near.',
+  trigger: 'Each time the night mine needs a new target and an ore is in sight within twenty-four blocks, below the feet, dry, and not lately failed, or the tunnel is dark with torches carried, or a spawner or a remembered dungeon or mineshaft is near; an ore kind or a branch chosen holds (the nearest ore of that kind taken unasked) until its yield carried reaches what the next rung wants or the worth keeping, a new kind of ore is offered, health falls a band or comes back to full, the mobs about change, a way to it fails, or five minutes pass (note 764).',
   source: 'src/survival.js (nightMine, nightTarget)',
   options: [
     { pattern: 'ore_\\d+', names: 'the ore block, by the number it was given when first offered, kept for it (keys.js)', label: 'dig to this ore', when: 'the nearest of its kind, with its distance, what is carried and what it is for', level: 'root', dynamic: true },
@@ -109,7 +115,10 @@ define({
     { key: 'branch_away', label: 'dig the branch away from the spawner or structure that makes the mobs here', when: 'a mob spawner within sixteen blocks, or a dungeon or mineshaft remembered within twenty-four; said with where its end lies from it. Every option here is said with what the place is (mobSourceAbout)', level: 'root' },
     { key: 'light_tunnel', label: 'put a torch in the tunnel here', when: 'torches carried and the cells around are dark enough for monsters', level: 'root' },
   ],
-  instructions: { task: 'The bot is mining through the night from its shelter. Choose the next target, or light the tunnel.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
+  // An ore chosen is its kind, held (note 764): the mine digs on to the
+  // nearest ore of that kind unasked until what ends it (commit.js).
+  commit: { only: /^(ore_\d+|branch)$/, until: { health: true, threats: true, newOption: '^ore:', seconds: 300 } },
+  instructions: { task: 'The bot is mining through the night from its shelter. Choose what the mine goes for, or light the tunnel.', guidance: 'Each ore says how far it is, how much of what it gives is carried, and what that is for. Chosen, an ore is its kind: the mine goes on to the nearest ore of that kind, one after another, until what answersHold says ends it. A pickaxe wears a use a block. The player wants the bot never to stand idle when useful work is in reach.' },
 });
 
 // At home before bedtime: a chore, or wait for the bed.
@@ -460,11 +469,11 @@ define({
 define({
   id: 'turn_priority', area: 'survival', parent: null, kind: 'survival', primitive: 'choice', stakes: 'high', tree: true,
   question: 'Which layer has the bot\'s turn now: survival, the meal and breath, the hunt, or the work?',
-  trigger: 'When two or more layers claim the turn and none of them is the body\'s own danger (lava, fire, a hot floor, a head in a block, the breath: that layer\'s step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a reflex, a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute.',
+  trigger: 'When two or more layers claim the turn and none of them is the body\'s own danger (lava, fire, a hot floor, a head in a block, the breath: that layer\'s step asks body_way at once) (the default; with JEV_ARBITER=shadow the rules answer and nobody is asked); the ruling is held until a newcomer within six blocks, health down six, food across a band, its winner doing nothing for ten seconds, or a minute with the scene changed (renewed while the claims, the kinds of mob about and the food band are as they were, up to five minutes); survival\'s answer to a threat (escape_threat, creeper_back_off, an alert) holds through the fight it answers until its claim is over or the other claims change; a reflex\'s pass, or the winner\'s claim alone, keeps the ruling (note 764).',
   source: 'src/arbiter.js (arbitrate), the claims in src/survival.js, src/vitals.js, src/mob-hunt.js and src/work.js',
   instructions: {
     task: 'Several parts of the bot want its turn at once. Choose which one acts NEXT. Each option is what that part would do and what it observed; nothing here is a verdict.',
-    guidance: 'The player request stays saved whichever is chosen. The ruling is kept until something observed changes, so choose what should hold for the next while. A plan that failed or rests says so in its option, and the part that has the turn says how long it has had it and how long it has done nothing with it: a ruling ends once its winner has done nothing for ten seconds, and after a minute in any case (arbiter.js IDLE_MS, RULING_MS; note 677).',
+    guidance: 'The player request stays saved whichever is chosen. The ruling is kept until something observed changes, so choose what should hold for the next while. A plan that failed or rests says so in its option, and the part that has the turn says how long it has had it and how long it has done nothing with it: a ruling ends once its winner has done nothing for ten seconds, and after a minute unless nothing it was given on has changed (arbiter.js IDLE_MS, RULING_MS; notes 677, 764).',
   },
   options: [
     { key: 'survival', label: 'the survival layer: a shelter, a stance, a bed, food to find', when: 'the survival layer has something to do, including a plan that failed or rests (said as a fact)', level: 'root' },
@@ -472,5 +481,5 @@ define({
     { key: 'hunt', label: 'fight a mob the request needs a drop from', when: 'a mob hunt is on and one of its kind is in view', level: 'root' },
     { key: 'work', label: 'the request\'s next step', when: 'always while a request is running', level: 'root' },
   ],
-  ungated: 'Jev\'s pick is taken at any confidence: it holds a minute at most, and any change a reflex, a newcomer, six health or a food band makes asks again; Jev not reachable or not answering in five seconds, nobody is given the turn and it is asked again (note 707)',
+  ungated: 'Jev\'s pick is taken at any confidence: it holds a minute unless nothing it was given on has changed (five at most), and a newcomer, six health or a food band asks again (a fight given to survival excepted, note 764); Jev not reachable or not answering in five seconds, nobody is given the turn and it is asked again (note 707)',
 });

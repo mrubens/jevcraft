@@ -243,6 +243,7 @@ test('short of wood in a mine, the reserve is offered with what running out cost
   // On the surface the trees are looked for, not assumed (the decision audit).
   bot.entity.position = new Vec3(0.5, 64, 0.5);
   bot.findBlocks = () => [new Vec3(12, 64, 0)];
+  delete bot._commits; // carry_on holds until something new comes due (note 764): asked afresh here
   await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'mine', block: 'iron_ore' } }, () => {}, client);
   assert.match(offered.wood_reserve, /A tree is 12 blocks away/);
 });
@@ -370,6 +371,7 @@ test('short of blocks in the Nether, the upkeep says where the nearest netherrac
   assert.doesNotMatch(said || '', /all around/);
   assert.match(said || '', /The nearest netherrack the gather would go for is 33 blocks off and 15 up, across 29 blocks of open drop on the straight line to it \(44 deep\)\./);
   bot.findBlocks = () => [];
+  delete bot._commits; // carry_on holds until something new comes due (note 764): asked afresh here
   await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'find_fortress' } }, () => {}, client);
   assert.match(said || '', /No netherrack with an open face is within 48 blocks of here/);
 });

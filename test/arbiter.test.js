@@ -79,16 +79,21 @@ test('a ruling is held by its fingerprint until a newcomer, health, a food band 
   // Food across a band (eighteen to seventeen: no healing).
   bot.food = 17;
   assert.equal((await at(6000, { mobs: [] })).why, 'food crossed a band');
-  // A minute.
-  assert.equal((await at(6000 + arbiter.RULING_MS, { mobs: [] })).why, 'a minute passed');
-  // A reflex ends the ruling.
-  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 70000 });
-  assert.equal(state.ruling, undefined);
+  // A minute, with the scene it was made on unchanged: renewed (note 764).
+  assert.equal((await at(6000 + arbiter.RULING_MS, { mobs: [] })).by, 'held');
+  assert.equal(state.ruling.renewed, 1);
+  // A minute more with another kind of mob about: asked.
+  assert.equal((await at(6000 + 2 * arbiter.RULING_MS, { mobs: [mob('skeleton', 12, 9)] })).why, 'a minute passed');
+  // A reflex's pass keeps the ruling (note 764).
+  const was = state.ruling;
+  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 130000 });
+  assert.equal(state.ruling, was);
   // A winner that is not preemptible keeps its hold (asked past the time a
   // scene's answer is given again, note 672).
   const pinned = [claim('survival', 'pressing', { preemptible: false, minHoldMs: 10000 }), claim('work')];
-  await arbiter.arbitrate(bot, pinned, { state, decide: async () => ({ path: ['survival'] }), now: 110000, mobs: [] });
-  assert.equal((await arbiter.arbitrate(bot, [...pinned, claim('vitals')], { state, decide, now: 115000, mobs: [mob('zombie', 2, 5)] })).by, 'held');
+  delete state.ruling;
+  await arbiter.arbitrate(bot, pinned, { state, decide: async () => ({ path: ['survival'] }), now: 170000, mobs: [] });
+  assert.equal((await arbiter.arbitrate(bot, [...pinned, claim('vitals')], { state, decide, now: 175000, mobs: [mob('zombie', 2, 5)] })).by, 'held');
 });
 
 test('the same scene answered within thirty seconds is given the same answer, not asked again; a fall in health, a new kind of mob or a newcomer is asked (note 672)', async () => {
@@ -98,9 +103,13 @@ test('the same scene answered within thirty seconds is given the same answer, no
   const bot = fakeBot({ health: 18, food: 18 });
   const at = (now, extra = {}) => arbiter.arbitrate(bot, claims(), { state, decide, now, mobs: [mob('zombie', 10, 1)], ...extra });
   assert.equal((await at(0)).by, 'jev'); assert.equal(asked, 1);
-  // A reflex between drops the ruling; the same scene after it is given the
-  // same answer.
-  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 2000 });
+  // Another's claim alone (twice: ABSENT_PASSES) drops the ruling; the same
+  // scene after it is given the same answer. (A reflex's pass keeps the
+  // ruling, note 764.)
+  const drop = async now => { for (const t of [now, now + 1]) await arbiter.arbitrate(bot, [claim('survival', 'pressing')], { state, decide, now: t, mobs: [mob('zombie', 10, 1)] }); };
+  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 1000 });
+  assert.equal(state.ruling.winner, 'work');
+  await drop(2000);
   assert.equal(state.ruling, undefined);
   const again = await at(4000);
   assert.equal(again.by, 'scene'); assert.equal(again.winner.layer, 'work'); assert.equal(asked, 1);
@@ -108,14 +117,14 @@ test('the same scene answered within thirty seconds is given the same answer, no
   // The ruling it made holds as a ruling does.
   assert.equal((await at(5000)).by, 'held');
   // Another kind of mob about is another scene.
-  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 6000 });
+  await drop(6000);
   assert.equal((await at(7000, { mobs: [mob('zombie', 10, 1), mob('skeleton', 14, 2)] })).by, 'jev'); assert.equal(asked, 2);
   // Health fallen four since the answer: asked.
-  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 8000 });
+  await drop(8000);
   bot.health = 14;
   assert.equal((await at(9000)).by, 'jev'); assert.equal(asked, 3);
   // Thirty seconds after its answer the scene is asked again.
-  await arbiter.arbitrate(bot, [...claims(), reflex('air')], { state, decide, now: 40000 });
+  await drop(40000);
   assert.equal((await at(41000)).by, 'jev'); assert.equal(asked, 4);
   // A newcomer is asked whatever the scene.
   assert.equal((await at(42000, { mobs: [mob('zombie', 10, 1), mob('zombie', 4, 7)] })).why, 'a newcomer within six blocks'); assert.equal(asked, 5);

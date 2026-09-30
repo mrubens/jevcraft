@@ -58,6 +58,7 @@ const tried = require('../tried');
 const leastBad = require('./least-bad');
 const unchanged = require('./unchanged');
 const loops = require('./loops');
+const commit = require('./commit');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -190,6 +191,8 @@ const ALREADY_SO = 'alreadySo: options not offered because what they would bring
 // a minute of the one before, wherever the bot walked between.
 const SPELL = 'spellSoFar: this question has been asked again and again just now, each asking within a minute of the one before: how many times, what was answered, how far the bot walked and how far it is from where the askings began, whether anything new is carried, and how often none of the options was good. The same answers again seldom end it.';
 const ASIDE_HOLDS = 'asideHolds: options that would take back a rung set aside a moment ago, not offered while nothing named has changed since it was set aside.';
+// Note 764 (commit.js): an answer holds until what ends it happens.
+const HOLDS = 'answersHold: what ends each answer here once chosen; until one of those happens the answer goes on and this question is not asked again. lastCommitment: how the answer that held last ended.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 // Off the Overworld the clock is only minutes (note 677): no day comes to
 // end a wait, nothing burns off, and a wait in a sealed pocket ends only when
@@ -225,7 +228,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -740,19 +743,35 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
     escalateFrom(bot, goal, spec, why);
   };
-  const takeOne = (one, why = null) => {
+  const takeOne = (one, why = null, { held = null } = {}) => {
     loneLeave(one.path.join('/'));
-    sayOnce(bot, id, one.path, Date.now(), why);
-    const decision = { ...one, id, only: true };
+    if (!held) sayOnce(bot, id, one.path, Date.now(), why);
+    const decision = { ...one, id, ...(held ? { held } : { only: true }) };
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
     if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, one.path), offered: offeredOf(original, target) });
-    if (ledgered && !decision.stale) require('../intention').after(bot, goal, id, one.path, { target: decision.action?.target || target, state, chosen: false });
-    if (ledgered && !decision.stale) require('../plan-chain').note(bot, goal, id, one.path);
+    if (ledgered && !decision.stale && !held) require('../intention').after(bot, goal, id, one.path, { target: decision.action?.target || target, state, chosen: false });
+    if (ledgered && !decision.stale && !held) require('../plan-chain').note(bot, goal, id, one.path);
     return decision;
   };
   const one = oneWay(tree);
   if (one) return takeOne(one);
+  // An answer holds until what ends it happens (commit.js, note 764): the
+  // question's definition or the option says what ends it (it arrives, it
+  // fails, a named fact changes band, its time), and until then asking again
+  // returns it, not Jev's next guess. A caller that polls (a target dug, a
+  // pass of its step) gets the answer it was given. At low health (the body
+  // offered first, note 752c) nothing is held.
+  let commitEnded = null;
+  if (bot && GAMEPLAY_AREAS.has(spec.area) && !aside) {
+    if (bodyFirst) commit.end(bot, id, `health is low (${Math.round((bot.health ?? 0) * 10) / 10})`);
+    const c = commit.before(bot, goal, spec, tree);
+    if (c?.held?.node && !c.held.node.children) {
+      if (!bot._commitSaid || bot._commitSaid[id] !== c.held.since) { (bot._commitSaid ||= {})[id] = c.held.since; console.log(`[commit] ${id}: held, not asked: ${c.held.says}`); }
+      return takeOne({ path: c.held.path, action: c.held.node }, null, { held: c.held.says });
+    }
+    if (c?.ended) commitEnded = c.ended;
+  }
   // How the bot died lately, with every question about playing the game:
   // it walked back to the drowned that had just killed it, and chose to
   // search for food at five health three deaths running, told nothing of
@@ -943,6 +962,11 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (atOnce) state = { ...state, failedAtOnce: atOnce };
   }
   if (asideHolds && state && typeof state === 'object') state = { ...state, asideHolds };
+  // What ends each answer that would hold, and how the last one ended.
+  if (bot && GAMEPLAY_AREAS.has(spec.area) && state && typeof state === 'object') {
+    const holds = commit.holdsSays(spec, tree);
+    if (holds || commitEnded) state = { ...state, ...(holds ? { answersHold: holds } : {}), ...(commitEnded ? { lastCommitment: commitEnded } : {}) };
+  }
   if (spell?.said && state && typeof state === 'object') state = { ...state, spellSoFar: `${id.replaceAll('_', ' ')} was ${spell.says}${spell.why ? `; ${spell.why}` : ''}` };
   if (state && typeof state === 'object' && (underWay || intentionEnded)) state ={ ...state, ...(underWay ? { underWay } : {}), ...(intentionEnded ? { lastIntention: intentionEnded } : {}) };
   // The plan answers just given from here, a reversal among them, and the
@@ -1074,6 +1098,12 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !decision.stale && decision.path) {
     const weights = decision.judgments?.[0]?.probabilities || {};
     loops.after(bot, id, { choice: decision.path.join('/'), noneGoodTop: decision.noneGood || Object.entries(weights).sort((a, b) => b[1] - a[1])[0]?.[0] === NONE_GOOD_KEY });
+  }
+  // The commitment Jev's answer makes (commit.js, note 764): not the least
+  // bad taken for none good, nor one under the question's bar.
+  if (bot && GAMEPLAY_AREAS.has(spec.area) && !aside && !decision.stale && decision.path) {
+    if (decision.noneGood || decision.gated) commit.drop(bot, id);
+    else commit.after(bot, goal, spec, decision.path, decision.action, tree, { target });
   }
   if (bot && client && !decision.stale && decision.path && GAMEPLAY_AREAS.has(spec.area)) leastBad.after(bot, goal, id, original, decision, lastLeastBad);
   if (bot && client && ledgered) leastBad.chosenAfter(bot, goal, id, original, decision, lastChosen);

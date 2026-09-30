@@ -434,7 +434,8 @@ test('an answer that got somewhere, or new facts, starts afresh; a wait chosen i
   const goal = { step: { action: 'mine' } };
   const seen = [];
   const client = { systemOne: async ({ state }) => { seen.push(state); return { answers: { branch_0: { choice: 'ore_0', confidence: 0.9 } } }; } };
-  const tree = { ore_0: { description: 'Iron ore 6 blocks off.' }, branch: { description: 'A branch tunnel.' } };
+  // Held as nothing (commit: false): an ore chosen is otherwise its kind, held until what ends it (note 764).
+  const tree = { ore_0: { description: 'Iron ore 6 blocks off.', commit: false }, branch: { description: 'A branch tunnel.' } };
   const ask = (state = {}) => decide('night_mine_target', { client, bot, goal, tree, state });
   await ask(); bot.entity.position = new Vec3(5.5, 64, 0.5); await ask(); await ask();
   assert.equal(seen[1].sameAnswerAgain, undefined, 'walked five blocks: something came of it');

@@ -447,7 +447,7 @@ define({
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
   question: 'Something the bot keeps in its pockets is running short (a pickaxe or a spare, wood, building blocks): see to it now, or carry on?',
-  trigger: 'Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs\' worth of wood are carried; in the Nether, fewer planks\' worth than the pickaxe to make now and a spare want, with no pickaxe to be made or stems known within 128 blocks (note 658); or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543).',
+  trigger: 'Between work steps, when no pickaxe is carried and the pockets make one with crafts alone; when a pickaxe is nearly worn or (on the game ladder) the uses carried fall short of the step in hand and the way home to open sky after it, with the makings of a spare carried; fewer than six logs\' worth of wood are carried; in the Nether, fewer planks\' worth than the pickaxe to make now and a spare want, with no pickaxe to be made or stems known within 128 blocks (note 658); or (on the game ladder) fewer than sixteen building blocks; not at night on the surface or in water. "Carry on" holds five minutes, unless the uses carried have since fallen short of the step and the way home (note 543). Carrying on, or a reserve chosen, holds until something new comes due, it is no longer on offer, it fails, health falls a band, the mobs about change, or five minutes pass (note 764).',
   source: 'src/work.js (upkeepStep)',
   options: [
     { key: 'make_pickaxe', label: 'make a pickaxe now from what is carried, none being carried', when: 'no pickaxe is carried and the pockets as they are make one with crafts alone (iron from ingots, stone from cobblestone, blackstone or cobbled deepslate, wood from planks, with the sticks and a table from the wood carried); said with the best one they make, what it takes, its uses, and what digging by hand costs where the bot is (note 655)', level: 'root' },
@@ -460,6 +460,13 @@ define({
     { key: 'food_reserve', label: 'find food before dark', when: 'on the game ladder in the Overworld, less than a kit\'s food carried in the last minutes of daylight', level: 'root' },
     { key: 'carry_on', label: 'carry on and see to it later', when: 'always; asked again in five minutes. With no pickaxe carried and a way to one on offer, said with what the five minutes cannot do (dig or stair through basalt, blackstone or bricks, or stone in the Overworld; pillar or span with no block that holds), and the hold ends early when a way chosen fails for want of a pickaxe (tried.js settles it blocked: no tool, out of blocks), the next asking saying so; the question then leads with the pickaxe (note 687)', level: 'root' },
   ],
+  // An answer holds (note 764): carrying on, or the reserve chosen, is not
+  // asked again at each pass while what is due is as it was; it ends when
+  // something new comes due, it is no longer on offer (the reserve met, the
+  // spare made), it fails, health falls a band, the mobs about change, or
+  // five minutes pass. From 13:20Z to 19:00Z on 2026-09-30 upkeep's re-asks
+  // within 30 s were 40% a kind carried got or gone and 30% nothing named.
+  commit: { only: /^(carry_on|wood_reserve|spare_pickaxe|block_reserve|food_reserve)$/, until: { health: true, threats: true, newOption: true, seconds: 300 } },
   instructions: workInstructions('Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work; each option says what is carried and what it is for.'),
 });
 

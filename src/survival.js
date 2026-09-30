@@ -8094,8 +8094,18 @@ class Survival {
       const more = rungNeed.more[item] || 0, n = countOf(bot, item), w = item.replaceAll('_', ' ');
       return more > 0 ? ` The next rung, the ${rungNeed.name}, still wants ${more} more ${w} (${n} carried).` : ` The next rung, the ${rungNeed.name}, wants no more ${w}: the ${n} carried cover it.`;
     };
+    // Chosen, an ore is a policy for its kind (note 764): the mine goes on
+    // with the nearest ore of that kind, not asking at each block dug, until
+    // what is carried of its yield reaches what the next rung wants (or the
+    // worth keeping), a new kind of ore is offered, health or the mobs about
+    // change, a way to it fails, or five minutes pass (decisions/survival.js
+    // night_mine_target's commit). 71% of this question's re-asks within 30
+    // s from 13:20Z to 19:00Z on 2026-09-30 came when the ore chosen was dug.
+    const holdLine = item => require('./decisions/commit').needLine(countOf(bot, item), rungNeed ? rungNeed.more[item] || 0 : null, capOf(item));
     const tree = Object.fromEntries(choices.map(c => { const [item, use] = ORE_YIELD[c.kind];
-      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${pastSays(item)}${needSays(item)}${costSays(c)}${oreFacts(c.position)}` }]; }));
+      const line = holdLine(item);
+      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, commit: { as: `ore:${c.kind}`, until: line ? { items: { [item]: line } } : {} },
+        description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${pastSays(item)}${needSays(item)}${costSays(c)}${oreFacts(c.position)}` }]; }));
     const branchY = Math.max(feet.y - 10, 16);
     tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };
@@ -8115,7 +8125,7 @@ class Survival {
       }
       for (const o of Object.values(tree)) o.description += place.says;
     }
-    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}) }])), context: {},
+    const decision = await this.decide(task, goal, save, { id: 'night_mine_target', tree: Object.fromEntries(Object.entries(tree).map(([k, o]) => [k, { description: o.description, ...(o.target ? { target: o.target } : {}), ...(o.commit ? { commit: o.commit } : {}) }])), context: {},
       state: { ...(place ? { place: place.state } : {}), timeOfDay: bot.time?.timeOfDay, feetY: feet.y, riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot), stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor), pickaxe: bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `${i.name} (${remainingUses(bot, i)} uses)`), afterThePickaxes: pickaxeReserve(bot, feet), freeSlots: bot.inventory.emptySlotCount?.() ?? null } });
     if (decision.stale) return null;
     const pick = decision.path.at(-1);
@@ -8246,6 +8256,9 @@ class Survival {
   // chose the same nearest ore again, and the mine turned eighty times in
   // one place.
   abandonTarget(mine, why, { recorded = false } = {}) {
+    // The kind chosen for the night's mine (its commitment, note 764) ends
+    // with a way that failed: Jev is asked afresh, with how it ended.
+    require('./decisions/commit').end(this.bot, 'night_mine_target', `the way to the ${String(mine.targetOre || 'target').replaceAll('_', ' ')} failed: ${why}`);
     if (NIGHT_ORES.has(mine.targetOre) && mine.target && !recorded) {
       const e = attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
       // The way failed, not the block: its vein rests with it (note 749d).

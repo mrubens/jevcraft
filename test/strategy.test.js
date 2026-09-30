@@ -305,6 +305,9 @@ test('the Nether first moves the ladder on to the Nether at once, and is not off
   assert.equal(options.nether_first, undefined, 'a Nether first that would set nothing aside is not offered');
   assert.deepEqual(Object.keys(options), ['stage_reach_nether', 'take_up_bow', 'take_up_diamond_sword'], 'each step set aside is a route of its own');
   assert.match(options.take_up_bow.description, /Take up the bow now after all, before the Nether: it was set aside to go without it, and would come back on its own in 30 minutes/);
+  // Going to the Nether holds until the bot is there, a rung opens or its time is up (note 764): asked again after.
+  assert.equal(goal.strategy.choice, 'nether_first');
+  goal.strategy.at -= require('../src/strategy').HOLD_MS;
   // The question says so as a fact, and a step taken up is the ladder's again.
   const acquired = [];
   await gameStep(bot, task, goal, () => {}, { ...actions, acquireStep: async (b, t, item) => { acquired.push(item); }, strategy: pick('take_up_bow') });

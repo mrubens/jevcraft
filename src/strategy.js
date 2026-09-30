@@ -33,6 +33,8 @@ const { immediateThreat } = require('./danger');
 const WALK_BLOCKS_PER_S = 4;
 const LATER = new Set(['acquire', 'enter_nether', 'find_stronghold', 'trade', 'barter', 'pearl_patrol']);
 const HOLD_MS = 10 * 60 * 1000, SIDE_REST_MS = 10 * 60 * 1000, SIDE_FAIL_MS = 30 * 60 * 1000;
+// The answers that are going to the Nether (note 764): held as one.
+const TO_THE_NETHER = /^(nether_first|stage_reach_nether)$/;
 const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
 const label = phase => phase.replaceAll('_', ' ');
 
@@ -560,6 +562,25 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
       const rung = openNow.find(r => r.phase === held.rungPhase);
       if (rung) { choice = held.choice; heldOption = { rung }; }
     }
+  } else if (held && TO_THE_NETHER.test(held.choice) && now() - held.at < HOLD_MS) {
+    // Going to the Nether holds until the bot is there (note 764): nether_first
+    // (the rungs left put after it) and stage_reach_nether (the ladder's own
+    // stage, the portal) are the one answer, and the ladder read afresh after
+    // each craft moving its default between the portal and a rung it had put
+    // after it was not an end. From 13:20Z to 19:00Z on 2026-09-30, 185 of
+    // win_strategy's re-asks within 30 s followed nether_first or
+    // stage_reach_nether with the ladder's stage flipped by a craft. Asked
+    // again when the dimension changes, a rung neither open nor known at the
+    // answer opens (note 709's case, read after nether_first's set-asides, so
+    // a rung it set aside coming back is one), the portal's stage is not on
+    // offer, or HOLD_MS.
+    const openNow = openRungs(bot, goal, now());
+    const newlyOpen = openNow.some(r => !(held.openPhases || []).includes(r.phase));
+    const dim = String(bot.game?.dimension || '').replace(/^minecraft:/, '');
+    // Only the ladder's own stage is taken unasked: nether_first again would
+    // set rungs aside again, which is Jev's to say.
+    const key = options.stage_reach_nether ? 'stage_reach_nether' : null;
+    if (key && !newlyOpen && (!held.dimension || held.dimension === dim)) { choice = key; heldOption = options[key]; }
   } else if (same && held?.ladderNext === stage.phase && now() - held.at < HOLD_MS && options[held.choice]) {
     choice = held.choice; heldOption = options[choice];
   }
@@ -593,7 +614,8 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     const rungPhase = choice.startsWith('rung_') ? options[choice]?.rung?.phase || null : null;
     if (last?.rungPhase && last.open && rungPhase !== last.rungPhase) console.log(`[strategy] reversal: ${choice} (${rungPhase ? label(rungPhase) : 'no rung'}) chosen over ${label(last.choice)}, with ${label(last.rungPhase)} still open and nothing decided about it since it was chosen ${agoWords(now() - last.at)} ago`);
     goal.strategy = { choice, rungPhase, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev',
-      ...(rungPhase ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}) };
+      ...(rungPhase || TO_THE_NETHER.test(choice) ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}),
+      ...(TO_THE_NETHER.test(choice) ? { dimension: String(bot.game?.dimension || '').replace(/^minecraft:/, '') } : {}) };
     save();
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].chat ? options[choice].chat : options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }
@@ -613,7 +635,14 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   // stall on, no rest. The ladder is read again at once (gameStep).
   // mid-242-x kept it as a strategy_side step, re-chose it five times a
   // second and failed on "no measurable progress" (note 498).
-  if (option.aside) { await option.run(bot, task, goal, save); delete goal.strategy; save(); return { replan: true }; }
+  if (option.aside) {
+    await option.run(bot, task, goal, save);
+    // Going to the Nether is held past its set-asides (note 764), against the
+    // rungs open once they are made.
+    if (TO_THE_NETHER.test(choice) && goal.strategy?.choice === choice) goal.strategy.openPhases = openRungs(bot, goal, now()).map(r => r.phase);
+    else delete goal.strategy;
+    save(); return { replan: true };
+  }
   // A side trip: once, then a rest, and the next step asks again.
   delete goal.strategy;
   goal.step = { action: 'strategy_side', choice, ladderNext: stage.phase }; save();
