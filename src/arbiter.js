@@ -747,7 +747,14 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     // and the build meets its volleys itself. A mob at its reach, a push by a
     // drop, and the body's own dangers still preempt (below and above).
     const commit = bot._buildCommit && bot._buildCommit.until > now ? bot._buildCommit : null;
-    const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || t.distance <= 4) && !holder.ids.includes(t.entity.id) &&
+    // Within four counts a melee mob the sight check missed at point-blank
+    // range; a shooter has no reach of its own, only sight, so a blaze
+    // behind a box's wall (out of sight, note 708's line) does not count
+    // just for being close: 25598's box saw none of its cage's cells and
+    // still restarted encounter_stance about five times a second, each
+    // "a blaze came within 4 blocks" (note 729).
+    const { shooter } = require('./mob-policy');
+    const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || (t.distance <= 4 && !shooter(t.entity))) && !holder.ids.includes(t.entity.id) &&
       !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };

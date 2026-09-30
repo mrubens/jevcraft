@@ -319,6 +319,29 @@ test('a hostile newcomer preempts the work once: the ruling was made without it'
   assert.equal(p.by, 'newcomer'); assert.equal(p.facts.mob, 'skeleton');
 });
 
+// Note 729: 25598 held a box at a spawner whose window saw none of the
+// cage's cells; blazes about stayed "out of sight" at 3 to 4 blocks, and
+// each one restarted encounter_stance as "a blaze came within 4 blocks",
+// 118 stance asks in 11 minutes. A shooter has no reach of its own, only
+// sight (note 708's line, which `visible` already carries via lineClear):
+// unlike a melee mob at point-blank range, a blaze behind a wall within
+// four blocks cannot act on the bot and should not count as a newcomer.
+test('an unseen shooter close by is not a newcomer; an unseen melee mob that close still is (note 729)', () => {
+  const holder = { layer: 'work', action: 'mine', since: 0, ids: [1] };
+  // A blaze 3 blocks off, out of sight (behind a box wall): no preempt.
+  const unseen = stoppable(); unseen.bot._arbiter = { holder };
+  assert.equal(arbiter.watchOnce(unseen.bot, { live: true, look: look({ mobs: [mob('blaze', 3, 9, false)] }), log: () => {} }), null);
+  // The same blaze once it has a line to the bot: a newcomer.
+  const seenBot = stoppable(); seenBot.bot._arbiter = { holder };
+  const seen = arbiter.watchOnce(seenBot.bot, { live: true, look: look({ mobs: [mob('blaze', 3, 9, true)] }), log: () => {} });
+  assert.equal(seen.by, 'newcomer'); assert.equal(seen.facts.mob, 'blaze');
+  // A melee mob (no reach of its own to check by sight alone) that close
+  // and unseen still counts, as before note 729 (point-blank raycast misses).
+  const meleeBot = stoppable(); meleeBot.bot._arbiter = { holder };
+  const melee = arbiter.watchOnce(meleeBot.bot, { live: true, look: look({ mobs: [mob('zombie', 3, 11, false)] }), log: () => {} });
+  assert.equal(melee.by, 'newcomer'); assert.equal(melee.facts.mob, 'zombie');
+});
+
 test('live: at 0.9 health with the shelter set aside, Jev is asked between survival and the work, and the work does not get the turn by default', async () => {
   const bot = world({ health: 0.9, food: 10, time: { timeOfDay: 14000, age: 100000 } });
   const now = Date.now();

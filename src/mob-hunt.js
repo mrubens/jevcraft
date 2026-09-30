@@ -1949,16 +1949,24 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // dug by hand drops nothing: no restock to offer, and each leg says so.
   // 25585 was offered "Dig 35 blocks ... about 78 seconds" with "none can
   // be made" in the same line (note 655).
-  if (short && actions.mineAt && actions.navigate && !pickaxeFirst(bot).none) {
-    const plan = restockPlan(bot, goal, surveys);
-    if (plan.want) {
+  // Kept past the block so the portal trip below can see whether blocks are
+  // still to be had here (note 729): 25591 stood on netherrack with a
+  // pickaxe and was sent 109 blocks to the portal "for stone" while
+  // restock_blocks itself found blocks within reach.
+  let plan = null;
+  if (short && actions.mineAt && actions.navigate) {
+    plan = restockPlan(bot, goal, surveys);
+    if (plan.want && !pickaxeFirst(bot).none) {
       options.restock_blocks = { description: restockSays(bot, plan, state.lastRestock),
         run: async () => { state.restock = { want: blocksCarried(bot) + plan.want, since: Date.now(), said: plan.seconds, from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, ...(plan.far ? { far: true } : {}) }; save(); await restockStep(bot, task, goal, save, actions, state); return 'restock'; } };
     }
     // Fewer than the leg needs to be had here: back to the rock last stood
     // on, the way it came, as a player walks back along the bridge (note
     // 695). Offered by the pathfinder's own route there, the walk its run
-    // makes first; with none, said.
+    // makes first; with none, said. Offered with no pickaxe too (note 729):
+    // 25594 sat 14+ minutes on the tip of its own span with no pickaxe and
+    // 197 blocks carried, and this was gated behind a pickaxe it did not
+    // need to walk back the way it came.
     if (plan.want < plan.need) {
       const back = await backToGround(bot, task, goal, state, plan);
       if (back?.option) options.back_to_ground = back.option(actions, save);
@@ -1997,11 +2005,16 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // one in view. 25597 (mid-242-gf) was offered it with none of those
   // (the one it knew then lay past the walk back's reach), chose it, and
   // the code answered "No loaded return portal observed" (note 685).
+  // Still Jev's to weigh against restock_blocks (mid-211-s kept both, note
+  // 480): what changes here is the fact it is given, not the option taken
+  // away (note 693's "no bandaids"). 25591 was told "for stone" while
+  // standing on netherrack with a pickaxe; returnForKitSays now says what
+  // is actually short and what restock_blocks itself found here (`plan`).
   const homeBy = short && actions.returnOverworld ? portalBack(bot, goal, here) : null;
   const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
   if (homeBy && !homeStart.ok) blocked.push(`back through the portal (${homeBy.says}): ${homeStart.why}`);
   if (homeBy && homeStart.ok) {
-    options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { goal }),
+    options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { goal, plan }),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   // A fortress floor known overhead within a climb's reach: the climb with
@@ -2192,13 +2205,23 @@ async function backToGround(bot, task, goal, state, plan) {
 // line for half an hour under its fortress with no pickaxe, no wood and no
 // blocks, and return_for_blocks said only "for stone to lay spans with" and
 // was never chosen (note 692). The walks back's record is said with it.
-function returnForKitSays(bot, homeBy, { hand = null, goal = null } = {}) {
+function returnForKitSays(bot, homeBy, { hand = null, goal = null, plan = null } = {}) {
   const bs = require('./block-stock'), gp = require('./game-progress');
   const here = bot.entity.position, d = Math.round(Math.hypot(homeBy.portal.x - here.x, homeBy.portal.z - here.z));
   if (!bot.inventory?.items || bs.pickaxeCarried(bot)) {
     let pace = '';
     try { pace = gp.netherPaceSays(bot, d).says; } catch (_) { pace = ''; }
-    return `Go back through the portal to the Overworld, ${homeBy.says}, for stone to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.${pace}`;
+    // In the Nether the blocks a span or pillar wants are netherrack,
+    // blackstone and basalt, not stone: said as "for stone" whatever the
+    // dimension, this trip was chosen 109 blocks from a fortress with
+    // netherrack diggable at the feet (note 729).
+    const material = dimension(bot) === 'nether' ? 'netherrack' : 'stone';
+    // The fact restock_blocks itself found here, so the trip is weighed
+    // against it honestly rather than looking like the only way on
+    // (fixes-inform-jev: a fact added, not an option withheld).
+    const dugHere = plan?.want ? ` Of the ${plan.need + plan.carried} the longest leg short of blocks needs, ${plan.want} can be dug from ground walked to from here (restock_blocks); the rest is not to be had that way.`
+      : plan && plan.need ? ' Nothing of what a leg is short of can be dug from ground walked to from here.' : '';
+    return `Go back through the portal to the Overworld, ${homeBy.says}, for ${material} to lay spans with; the Nether is entered again by the same portal, and the search goes on from there.${dugHere}${pace}`;
   }
   const wood = (bot.inventory.items() || []).some(i => /_(log|stem|hyphae|wood|planks)$/.test(i.name));
   const laid = blocksCarried(bot);
@@ -3779,4 +3802,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}) } };
 }
 
-module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks };
+module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays };

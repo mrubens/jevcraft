@@ -27,7 +27,15 @@ async function recoveryOptions(bot, task, goal, actions) {
     try { plans.push(...actions.catalogPlan(bot, item, Math.min(goal.count || 1, 32), inventory, goal)); } catch (_) { /* Unsupported recipes are not executable choices. */ }
   }
   const alternatives = recipeSourceGroups(bot.registry, plans);
-  const supplies = new Map([['dirt', 12], ['cobblestone', 12], ['crafting_table', 1]]);
+  // The blocks a player would fetch here: dirt and cobblestone in the
+  // Overworld, but neither exists to find in the Nether (25591 was sent
+  // looking for both, "no stone seen within 128 blocks" and the same for
+  // cobblestone and dirt, while it stood on netherrack; note 729).
+  // Netherrack is what the Nether has instead, and blackstone or basalt
+  // stand in the same place where the local ground is one of those.
+  const inNether = /nether/.test(String(bot.game?.dimension || ''));
+  const netherBuildingBlock = ['netherrack', 'blackstone', 'basalt'].find(n => bot.blockAt(origin)?.name === n || bot.blockAt(origin.offset(0, -1, 0))?.name === n) || 'netherrack';
+  const supplies = inNether ? new Map([[netherBuildingBlock, 12], ['crafting_table', 1]]) : new Map([['dirt', 12], ['cobblestone', 12], ['crafting_table', 1]]);
   if (!bot.inventory.items().some(i => i.name.endsWith('_pickaxe') &&
     (bot.registry.itemsByName[i.name]?.maxDurability || 0) - (i.durabilityUsed || 0) >= 16)) supplies.set('stone_pickaxe', 1);
   for (const group of Object.values(alternatives)) for (const name of group) {
@@ -68,7 +76,7 @@ async function recoveryOptions(bot, task, goal, actions) {
   const previous = { scafoldingBlocks: movement.scafoldingBlocks, allow1by1towers: movement.allow1by1towers };
   Object.assign(movement, { scafoldingBlocks: [], allow1by1towers: false });
   try {
-    const ids = ['stone', 'dirt', 'grass_block', 'cobblestone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
+    const ids = (inNether ? ['netherrack', 'blackstone', 'basalt', 'soul_sand', 'soul_soil'] : ['stone', 'dirt', 'grass_block', 'cobblestone', 'sand', 'gravel', 'deepslate']).map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
     const candidates = bot.findBlocks({ matching: ids, maxDistance: 12, count: 96,
       useExtraInfo: b => dryStanding(bot, b.position.offset(0, 1, 0)) })
       // No footing where the body stands in lava (terrain.js standsInLava,

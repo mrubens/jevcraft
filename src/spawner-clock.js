@@ -131,4 +131,24 @@ function jobSays(l, seconds) {
   return ` About ${round(seconds)} second${round(seconds) === 1 ? '' : 's'} of it; done before the spawner's next try about ${p} times in 100${l.next.lastAgo == null ? ' (its last try not seen)' : ''}.`;
 }
 
-module.exports = { watch, noteTry, nextTry, doneBefore, lull, jobSays, clockSays, nearSince, MIN_S, MAX_S, PER_TRY, CAP, RANGE };
+// How many of the spawner's own kind are near the cage now (within
+// NEAR_CAGE, the jar's own range for its tries), against the cap: while
+// CAP or more are there, none more come, whatever the delay says (note 729:
+// 25598 held a box 36+ minutes with 12 to 15 blazes about, most out of
+// sight behind rock, and no option said the cap was already met).
+function nearCage(bot, cage, { threats = null } = {}) {
+  let t = threats;
+  if (!t) { try { t = require('./danger').threats(bot, 48); } catch (_) { t = []; } }
+  const c = centre(cage);
+  return t.filter(x => x.entity?.name === 'blaze' && x.entity.position && Math.hypot(x.entity.position.x - c.x, x.entity.position.z - c.z) <= NEAR_CAGE && Math.abs(x.entity.position.y - cage.y) <= 2.5).length;
+}
+// The fact said on every hold, box or stand at this cage: how many of the
+// cap are there now, and, capped, that none more come until fewer are.
+function capSays(bot, cage, opts = {}) {
+  const near = nearCage(bot, cage, opts);
+  return near >= CAP
+    ? `${near} of the spawner's own kind are already within its own range of the cage: at its cap of ${CAP}, it tries none more until fewer are there.`
+    : `${near} of the spawner's own kind ${near === 1 ? 'is' : 'are'} within its own range of the cage now, of the ${CAP} it caps at.`;
+}
+
+module.exports = { watch, noteTry, nextTry, doneBefore, lull, jobSays, clockSays, nearSince, nearCage, capSays, MIN_S, MAX_S, PER_TRY, CAP, RANGE, NEAR_CAGE };

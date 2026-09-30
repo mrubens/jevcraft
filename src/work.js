@@ -360,7 +360,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const cage = !idle ? require('./cage-hold').cageFight(bot, goal) : null;
   if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${cage ? require('./cage-hold').workFreeSays(cage) : ''}${risingSays}${spellSays}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
-  if (cage) Object.assign(answers, require('./cage-hold').stallAnswers(bot, task, goal, save, cage, { dig, now }));
+  if (cage) Object.assign(answers, require('./cage-hold').stallAnswers(bot, task, goal, save, cage, { dig, now, navigate }));
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the
   // decision audit, 2026-09-25).

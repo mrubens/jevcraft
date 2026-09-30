@@ -116,19 +116,39 @@ function slitLine(bot, cage) {
   return { cells, says };
 }
 
-// The stall's ways at the cage: open a slit toward it, or stay and fight.
-// `dig` as the work has it. -> { open_slit?, stay_and_fight? }
-function stallAnswers(bot, task, goal, save, fight, { dig, now = Date.now() } = {}) {
+// The stall's ways at the cage: open a slit toward it, stay and fight, or go
+// to a blaze already out. `dig` as the work has it. -> { open_slit?,
+// stay_and_fight?, go_to_blaze_about? }
+function stallAnswers(bot, task, goal, save, fight, { dig, now = Date.now(), navigate = null } = {}) {
   const out = {};
   const clock = (() => { try { const sc = require('./spawner-clock'); return sc.clockSays(sc.nextTry(bot, fight.cage, now)); } catch (_) { return null; } })();
   const blazes = (() => { try { return require('./danger').threats(bot, RANGE).filter(t => t.entity.name === 'blaze'); } catch (_) { return []; } })();
   const unseen = blazes.filter(t => !t.visible).length;
   const about = blazes.length ? ` ${blazes.length} blaze${blazes.length === 1 ? '' : 's'} within 16${unseen ? `, ${unseen} out of sight` : ''}.` : '';
+  // The cap: while it is met, no more come, whatever the delay says (note
+  // 729: 25598 held a box 36+ minutes with 12 to 15 about, most out of
+  // sight, and no option said the spawner had already given all it could
+  // until some of those left or died).
+  const cap = (() => { try { return require('./spawner-clock').capSays(bot, fight.cage, { threats: blazes }); } catch (_) { return null; } })();
   const last = lastSays(goal, bot, now);
   const slit = slitOption(bot, task, goal, save, fight, { dig, about });
   if (slit) out.open_slit = slit;
-  out.stay_and_fight = { description: `Stay here, ${fight.off} blocks from the cage, a minute and fight what comes.${clock ? ` ${clock}.` : ''}${about} ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed.${last}`,
+  out.stay_and_fight = { description: `Stay here, ${fight.off} blocks from the cage, a minute and fight what comes.${clock ? ` ${clock}.` : ''}${about}${cap ? ` ${cap}` : ''} ${fight.need} rod${fight.need === 1 ? '' : 's'} still needed.${last}`,
     run: async () => { bot.chat?.(`Staying at the spawner to fight: ${fight.need} more rod${fight.need === 1 ? '' : 's'} needed.`); beginHold(bot, goal, save, 'stay_and_fight'); } };
+  // The rods already made are in the blazes already out, most of them
+  // behind rock while the cap holds none more back: a line to the nearest
+  // one, on foot, is the way on the cap itself does not offer.
+  if (navigate) {
+    const mh = require('./mob-hunt');
+    const known = mh.blazesAbout(bot);
+    const nearest = known.find(b => !b.visible) || known[0];
+    if (nearest) {
+      const p = nearest.entity.position.floored();
+      out.go_to_blaze_about = { description: `Go to the nearest blaze already out, ${mh.blazesAboutSays(known)}, on foot, one at a time: the fight there is asked as it is met.${cap ? ` ${cap}` : ''}`,
+        run: async () => { bot.chat?.('Going to a blaze already out, not waiting on the cage for more.');
+          try { await navigate(bot, task, new (require('mineflayer-pathfinder').goals.GoalNear)(p.x, p.y, p.z, 3), { timeoutMs: 20000, stallMs: 5000 }); } catch (err) { task.check(); } } };
+    }
+  }
   return out;
 }
 
