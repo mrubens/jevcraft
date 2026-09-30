@@ -53,8 +53,13 @@ function shotTargets(bot, danger, { minimum = 4, maximum = 20, any = false } = {
 // tick more for the raise to reach the server: a blow in that time lands
 // whole, as with the shield down (note 683).
 const SHIELD_BLOCKS_AFTER_MS = 300;
+// A chosen meal on (meal.js): the shield is not raised, the raise being a
+// use that ends the meal, unless the shot reflex cut it for a shot on its way
+// (note 701).
 function raiseShield(bot) {
   if (bot.inventory.slots?.[45]?.name !== 'shield') return false;
+  const meal = require('./meal').mealOn(bot);
+  if (meal && !meal.cut) return false;
   if (bot._shieldRaised) {
     const active = require('./shot-reflex').shieldActive(bot);
     if (active !== false || Date.now() - (bot._shieldRaisedAt || 0) < 500) return false;
@@ -66,6 +71,11 @@ function lowerShield(bot) {
   // Not while the reflex holds it up to a shot on its way (shot-reflex.js):
   // a swing's lowering there is the shot landing.
   if (bot._shotHold && bot._shotHold.last > Date.now() - 300) return;
+  // The release ends whatever is in use: with a meal on, or the server
+  // saying the main hand is in use, the shield is down already and the
+  // release would end the meal or the draw (note 701).
+  const meal = require('./meal').mealOn(bot);
+  if ((meal && !meal.cut) || require('./shot-reflex').mainHandBusy(bot)) { bot._shieldRaised = false; return; }
   bot.deactivateItem(); bot._shieldRaised = false;
 }
 

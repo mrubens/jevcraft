@@ -41,6 +41,9 @@ const noRouteSays = (err, what) => {
   return `${what} found no route to ${d ? `(${d.x}, ${Number.isFinite(d.y) ? `${d.y}, ` : ''}${d.z})` : 'its destination'}`;
 };
 const MEAL_CUT_MS = 10000;
+// The rule's step out of every line (note 701) is said with the stance asked
+// after it for this long.
+const LETHAL_SAID_MS = 15000;
 const pos = p => new Vec3(p.x, p.y, p.z);
 const { DAY, night } = require('./day');
 const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
@@ -1638,11 +1641,9 @@ async function eatApple(bot, task, apple) {
   const before = countOf(bot, apple.name), wasLeaving = bot._leavingLava;
   if (require('./terrain').bodyInLava(bot)) bot._leavingLava = true;
   try {
-    await bot.equip(apple, 'hand');
-    for (let n = 0; n < 10 && bot.heldItem?.name !== apple.name; n++) { task.check(); await sleep(50); }
-    await sleep(100);
-    await bot.consume();
-    return countOf(bot, apple.name) < before;
+    // Eaten through the shots as any chosen meal (meal.js, note 701).
+    const r = await require('./meal').eatThrough(bot, task, apple, { eaten: () => countOf(bot, apple.name) < before });
+    return r.eaten;
   }
   catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
   finally { bot._leavingLava = wasLeaving; }
@@ -4034,6 +4035,21 @@ class Survival {
     // The wither and poison a blow in the meal leaves are counted whole,
     // past the meal's own seconds (note 601).
     const eatCost = stanceCost({ mobs: eatMobs, setup: EAT_SECONDS, seconds: EAT_SECONDS, effectsTo: EAT_SECONDS + 10 });
+    // Whether the meal can be eaten here before a shot lands (note 701): the
+    // shooters with a line here, each at its next shot (a blaze's glow, a
+    // draw, a ghast's mouth), and the spawner's clock.
+    const eatFinish = (() => {
+      if (!meal || !seenHere.length) return { says: '' };
+      try {
+        const bs = require('./blaze-stand'), sr = require('./shot-reflex');
+        const here = bot.entity.position;
+        const lined = seenHere.map(e => ({ name: e.name, distance: e.position.distanceTo(here),
+          inSeconds: e.name === 'blaze' ? bs.volleyIn(bot, e) : sr.warningOn(bot, e) && e._shotWarn ? Math.max(0, (e._shotWarn.kind === 'ghast' ? 0.5 : 1) - (Date.now() - e._shotWarn.at) / 1000) : 1 }));
+        const cage = seenHere.some(e => e.name === 'blaze') ? bs.spawnerAt(bot) : null;
+        const clock = cage && cage.offset(0.5, 0.5, 0.5).distanceTo(here) <= 16 ? require('./spawner-clock').nextTry(bot, cage) : null;
+        return require('./meal').finishSays(lined, clock);
+      } catch (_) { return { says: '' }; }
+    })();
     const eatSight = shooting.length && seenIds.size < shooting.length ? ` Of the ${shooting.length} shooter${shooting.length === 1 ? '' : 's'} about, ${seenIds.size ? `${seenIds.size} ha${seenIds.size === 1 ? 's' : 've'}` : 'none has'} a line to the bot where it stands, and one without shoots while it eats only if it comes round to a line.` : '';
     // What the bot meets them with after it, beside what the fight here
     // costs: its figure is the meal's second and a half only, where every
@@ -4067,7 +4083,7 @@ class Survival {
     // at 2.7 a second: within three and lit 1.5 seconds in, the meal done
     // with the fuse all but burning where it stands (note 604).
     const eatCreeper = meal ? creeperAfterMeal(bot, this.creepersOfRun(danger)) : '';
-    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatCreeper + eatLeaves,
+    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatFinish.says + eatCreeper + eatLeaves,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
         // Marked before the meal and cleared when it is eaten: a meal cut
@@ -4079,19 +4095,34 @@ class Survival {
         // nothing eaten while a zombie hit, was taken for a meal and the
         // mark cleared, and mid-227-f began its beef nine times (2026-09-27).
         this.state.mealCutAt = Date.now();
-        const hungerBefore = bot.food ?? 20, saturationBefore = bot.foodSaturation ?? 0;
-        try {
-          await bot.equip(meal, 'hand');
-          // The hand settles first: its change arriving after the eat began
-          // ended the eat at once (see the golden apple below).
-          for (let n = 0; n < 10 && bot.heldItem?.name !== meal.name; n++) { task.check(); await sleep(50); }
-          await sleep(100);
-          await bot.consume();
-          if ((bot.food ?? 20) > hungerBefore || (bot.foodSaturation ?? 0) > saturationBefore) { delete this.state.mealCutAt; return true; }
-          return false;
-        }
+        try { return await this.eatChosen(task, meal); }
         catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       } };
+    // Out of every line first, then the meal (note 701): where a spot no
+    // shooter's line reaches is a short walk off and one has a line here.
+    if (meal && cover?.steps && seenHere.length && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) {
+      const secs = Math.round(cover.steps / 4.3 * 10) / 10;
+      const regain = regainAt(cover.cell, { setup: secs });
+      // The walk in their fire, then the meal where only what comes round
+      // to a line or to arm's length reaches it.
+      const outCost = stanceCost({ mobs, setup: secs, seconds: secs + EAT_SECONDS, reaches: m => !m.shoots || reachesAgain(regain)(m), effectsTo: secs + EAT_SECONDS + 10 });
+      options.step_out_and_eat = { expects: { damage: outCost.damage, seconds: outCost.seconds, oneHit },
+        description: `Walk ${plural(cover.steps, 'block')} (about ${secs} seconds, in their fire meanwhile) to a spot no line from ${shooterNames(shooting)} reaches, then eat the ${meal.name.replaceAll('_', ' ')} there (about ${EAT_SECONDS} seconds).${regainSays(regain)}` + costSays(outCost, bot.health, mobs, { over: 'over the walk and the meal', doing: 'walking there', done: 'Out of their line' }),
+        run: async () => {
+          this.report(goal, save, { action: 'step_out_and_eat', to: { x: cover.cell.x, y: cover.cell.y, z: cover.cell.z }, blocks: cover.steps, item: meal.name, health: bot.health, stance: true });
+          let walkWhy = null;
+          try { await this.actions.navigate(bot, task, new goals.GoalBlock(cover.cell.x, cover.cell.y, cover.cell.z), { timeoutMs: Math.max(3000, secs * 3000), stallMs: 1200 }); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; walkWhy = err.message; }
+          if (!feetCell(bot).equals(cover.cell)) {
+            this.state.stanceWhy = `the walk to the spot at (${cover.cell.x}, ${cover.cell.y}, ${cover.cell.z}) out of their line did not get there${walkWhy ? `: ${walkWhy}` : ''}`;
+            return false;
+          }
+          hideAt(cover.cell);
+          this.state.mealCutAt = Date.now();
+          try { return await this.eatChosen(task, meal); }
+          catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
+        } };
+    }
     // The charge at a few ground shooters, where it can be run.
     const ground = danger.filter(t => t.visible && GROUND_SHOOTERS.has(t.entity.name) && t.distance <= 16);
     // Offered only where it can run: its run refuses the water (either test of
@@ -4573,6 +4604,65 @@ class Survival {
 
   // The work the encounter stops, and how long it has stood for these mobs:
   // from when the first of them was met, while any of them stays about.
+  // The rule when one shot that lands ends the bot and a shooter has a line
+  // to it (lethal-line.js, note 701): the nearest cell out of every line, or
+  // a block in each line, whichever is sooner, before the stance is asked.
+  // Kept in this.state.lethalLine, said with the stance asked next. Returns
+  // true when it moved or built (the stance is asked at the next look, from
+  // where the bot is then); false when there was no way or it failed here
+  // just now (then the stance is asked with that said).
+  async breakLethalLine(task, goal, save, danger, L) {
+    const bot = this.bot, feet = feetCell(bot), now = Date.now();
+    const failed = this.state.lethalLineFailed;
+    if (failed && now - failed.at < LETHAL_SAID_MS && failed.feet === `${feet}`) {
+      this.state.lethalLine = { at: now, says: L.says, did: failed.did };
+      return false;
+    }
+    if (inWater(bot)) return false;
+    const biting = danger.filter(t => !shooter(t.entity)).map(t => t.entity);
+    const way = require('./lethal-line').wayOut(bot, danger, L, { blocks: shelter.materialStock(bot), canPlace: typeof this.actions.place === 'function', avoid: biting });
+    const fail = did => { this.state.lethalLineFailed = { at: Date.now(), feet: `${feet}`, did }; this.state.lethalLine = { at: Date.now(), says: L.says, did }; return false; };
+    if (!way) return fail('no cell out of every line within eight blocks of walking, and no block could go in every line');
+    this.report(goal, save, { action: 'out_of_line', how: way.how, health: bot.health, shooters: L.lined.map(l => l.e.name), ...(way.cell ? { to: { x: way.cell.x, y: way.cell.y, z: way.cell.z }, blocks: way.steps } : { cells: way.cells }) });
+    console.log(`[lethal line] ${Math.round(bot.health * 10) / 10} health, one ${L.worst.e.name.replaceAll('_', ' ')} shot ends it: ${way.how === 'walk' ? `walking ${way.steps} block${way.steps === 1 ? '' : 's'} out of every line` : `putting ${way.cells} block${way.cells === 1 ? '' : 's'} in the lines`} before the stance`);
+    if (way.how === 'walk') {
+      let why = null;
+      try { await this.actions.navigate(bot, task, new goals.GoalBlock(way.cell.x, way.cell.y, way.cell.z), { timeoutMs: Math.max(2500, way.seconds * 3000), stallMs: 1000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; why = err.message; }
+      if (!feetCell(bot).equals(way.cell)) return fail(`the walk of ${way.steps} blocks to (${way.cell.x}, ${way.cell.y}, ${way.cell.z}), out of every line, did not get there${why ? `: ${String(why).slice(0, 120)}` : ''}`);
+      this.state.lethalLine = { at: Date.now(), says: L.says, did: `walked ${way.steps} blocks to (${way.cell.x}, ${way.cell.y}, ${way.cell.z}), where no shooter's line reaches` };
+      return true;
+    }
+    const material = shelter.buildingItem(bot, 1)?.name;
+    const { blockPlan } = require('./creeper-sight');
+    let placed = 0;
+    for (const p of way.plans) {
+      const e = bot.entities?.[p.e.id] || p.e;
+      const plan = e.isValid === false ? { cells: [] } : blockPlan(bot, e);
+      for (const c of plan.cells) {
+        task.check();
+        try { await this.actions.place(bot, task, c, material, { stay: true }); placed++; }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; if (blockPlan(bot, e).stoppedBy) break; return fail(`a block in the ${e.name.replaceAll('_', ' ')}'s line at ${c} did not go down: ${String(err.message || err).slice(0, 120)}`); }
+      }
+    }
+    if (require('./bunker').seenFrom(bot, danger.filter(t => shooter(t.entity)).map(t => t.entity), feetCell(bot)).length) return fail(`${placed} block${placed === 1 ? '' : 's'} put in the lines, and a shooter still has one`);
+    this.state.lethalLine = { at: Date.now(), says: L.says, did: `put ${placed} block${placed === 1 ? '' : 's'} in the shooters' lines; none has a line to the bot now` };
+    return true;
+  }
+  // The meal chosen as a stance, eaten through (meal.js, note 701): begun
+  // again after a cut by the shot reflex for a shot on its way, while a meal
+  // still helps. Eaten is hunger or saturation up: the consume came back
+  // with nothing eaten while a zombie hit (mid-227-f, 2026-09-27).
+  async eatChosen(task, meal) {
+    const bot = this.bot;
+    const hungerBefore = bot.food ?? 20, saturationBefore = bot.foodSaturation ?? 0;
+    const eaten = () => (bot.food ?? 20) > hungerBefore || (bot.foodSaturation ?? 0) > saturationBefore;
+    const r = await require('./meal').eatThrough(bot, task, meal, { eaten, helps: () => (bot.food ?? 20) < 20 });
+    if (r.cuts.length) console.log(`[meal] ${meal.name.replaceAll('_', ' ')}: cut ${r.cuts.length} time${r.cuts.length === 1 ? '' : 's'} by a shot on its way (${r.cuts.at(-1)}), ${r.eaten ? `eaten at try ${r.tries}` : 'not eaten'}`);
+    if (r.eaten) { delete this.state.mealCutAt; return true; }
+    this.state.stanceWhy = r.cuts.length ? `the meal was cut ${r.cuts.length} time${r.cuts.length === 1 ? '' : 's'} by the shield raised for a shot on its way, and begun again each time; not eaten` : `the meal was not eaten: ${r.why}`;
+    return false;
+  }
   workWaits(goal, danger, now = Date.now()) {
     const ids = danger.map(t => t.entity?.id);
     const was = this._encounterMet;
@@ -4677,7 +4767,7 @@ class Survival {
     // newcomer within six, a hit while leaving them be, a shooter's line
     // where it hid, the bot off its spot, a creeper's line, a shot through,
     // a push come through open over the drop.
-    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough && !pushedOpen;
+    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -4698,6 +4788,15 @@ class Survival {
     const striking = STRIKING_STANCES.has(held?.choice);
     const extendable = physical && !damageOver && !!held?.hold && (!inTime || extendedHold) && !['keep_working', 'eat', 'eat_golden_apple', 'drink_fire_resistance', 'retreat', 'leave_reach'].includes(held.choice) && !(striking && held.start && !stanceActed(bot, held.start));
     if (extendable) holding = false;
+    // One shot that lands ends the bot, and a shooter has a line to it: out
+    // of every line first, then the stance is asked (lethal-line.js, note
+    // 701). Not while a stance chosen with this said holds.
+    const lethalNow = require('./lethal-line').lethal(bot, danger, feet);
+    if (!lethalNow && this.state.lethalLine && Date.now() - this.state.lethalLine.at > LETHAL_SAID_MS) delete this.state.lethalLine;
+    if (lethalNow && !(held?.lethalKnown && (holding || extendable)) && await this.breakLethalLine(task, goal, save, danger, lethalNow)) {
+      if (held) held.lethalAgain = true;
+      return true;
+    }
     let holdEnded = null, holdCapped = false;
     // About to ask: the run's way is looked for first, so the retreat says
     // whether there is one (a moment ago from here will do).
@@ -4872,7 +4971,7 @@ class Survival {
     // the bot off its spot), a way new on offer or a shot on its way: those
     // are asked, as they were.
     let askedNow = false, noneGoodNow = false;
-    const triggered = !!held && (leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
+    const triggered = !!held && (!!held.lethalAgain || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
       || /^a way not on offer|^a shot came/.test(holdEnded || ''));
     if (!choice && !holdCapped && !triggered) {
       const kept = scenes.holdFor(book, Object.keys(options));
@@ -4905,7 +5004,7 @@ class Survival {
         estimate: fightEstimate({ threats: (this.lastApart?.ids.size ? [...danger.filter(t => !this.lastApart.ids.has(t.entity.id)), ...danger.filter(t => this.lastApart.ids.has(t.entity.id))] : danger).slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...(this.lastApart?.ids.has(t.entity.id) ? { apart: true } : {}), ...(this.lastQuiet?.has(t.entity.id) ? { quiet: this.lastQuiet.get(t.entity.id).q.minutes } : {}), ...(ownCells.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
           armour, weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', atOnce: columnOpening(bot, feet) ? Infinity : openCells(bot, feet) + ownCells.size }),
         previousStance: held ? { choice: held.choice, secondsAgo: Math.round((Date.now() - held.at) / 1000), healthThen: held.health,
-          ...(blockAgain ? { askedAgainFor: blockAgain } : shotThrough ? { askedAgainFor: `the ${shotThrough.replaceAll('_', ' ')} it was chosen against hit the bot ${Math.round((Date.now() - bot._hurtBy[shotThrough]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen` }
+          ...(held.lethalAgain ? { askedAgainFor: `one shot that lands ends the bot now, and a shooter had a line to it: it stepped out of every line first (${this.state.lethalLine?.did || 'the rule'})` } : blockAgain ? { askedAgainFor: blockAgain } : shotThrough ? { askedAgainFor: `the ${shotThrough.replaceAll('_', ' ')} it was chosen against hit the bot ${Math.round((Date.now() - bot._hurtBy[shotThrough]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen` }
             : pushedOpen ? { askedAgainFor: (() => { const k = (held.shooters || []).find(n => (bot._hurtBy?.[n] || 0) > held.at); const p = held.start?.pos; return `the ${k.replaceAll('_', ' ')} it was chosen against landed a shot ${Math.round((Date.now() - bot._hurtBy[k]) / 1000)} seconds ago, ${Math.round((held.health - bot.health) * 10) / 10} health lost since it was chosen${p ? `, and the bot is ${Math.round(Math.hypot(bot.entity.position.x - p.x, bot.entity.position.z - p.z) * 10) / 10} blocks from where it chose` : ''}; it is still open over the drop a push puts it over`; })() }
             : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
@@ -4946,7 +5045,9 @@ class Survival {
         ...((s => s ? { sameSceneSoFar: s } : {})(scenes.says(book))),
         ...(quiet ? { quietScene: quiet.says } : {}),
         ...(blazePlace ? { hereSoFar: scenes.exposureSays(blazePlace) } : {}),
-
+        // One shot that lands ends the bot here: the rule, its numbers, and
+        // what it did (lethal-line.js, note 701).
+        ...(lethalNow || this.state.lethalLine ? { oneShotEnds: [lethalNow?.says || this.state.lethalLine?.says, this.state.lethalLine?.did ? `Just now: ${this.state.lethalLine.did}.` : null].filter(Boolean).join(' ') } : {}),
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       // Each stance's price rides with it (not in its words): what the code
       // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
@@ -5001,6 +5102,9 @@ class Survival {
       // What the bot had done when it was chosen: whether the stance acts is
       // measured from here (stanceActed, note 596).
       start: stanceMark(bot),
+      // Chosen with one shot's end said: the rule does not step it out again
+      // while it holds (note 701).
+      ...(lethalNow || this.state.lethalLine ? { lethalKnown: true } : {}),
       // What it was chosen on, for holding on while that stands (holds.js).
       hold: require('./holds').begin({ choice, health: bot.health, expects: options[choice]?.expects || null, mobs: danger, offered: [...Object.keys(options), ...leftOut] }) };
     // An answer in this scene, asked or held without asking (note 659).

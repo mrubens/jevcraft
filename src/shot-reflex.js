@@ -186,6 +186,13 @@ function hitting(bot, s, now = Date.now()) {
   return { seconds: Math.max(0, along) / (Math.max(speed, 0.5) * 20), at };
 }
 
+// A shot in the air on a line that hits the bot now (the meal waits for
+// none, note 701).
+function shotComing(bot, now = Date.now()) {
+  for (const s of bot?._shots?.values?.() || []) if (hitting(bot, s, now)) return true;
+  return false;
+}
+
 // The answers, per warning: bot._shotAnswers by shooter id, { key, choice,
 // cell?, at }. A warning is keyed by its shooter and when it began.
 function answerFor(bot, shooterId, now = Date.now()) {
@@ -251,7 +258,9 @@ function holdRefused(bot) {
   if (e.isInWater || e.isInLava) return 'in water or lava';
   const at = e.position.floored(), feet = bot.blockAt?.(at);
   if (/ladder|vine|scaffolding/.test(feet?.name || '')) return 'on a ladder';
-  if (mainHandBusy(bot)) return 'eating or drawing a bow';
+  // A meal the reflex cut for a shot on its way is not a refusal: the cut
+  // is the raise (note 701).
+  if (mainHandBusy(bot) && !require('./meal').mealOn(bot)?.cut) return 'eating or drawing a bow';
   if (!e.onGround) {
     // In the air: over lava, or over a drop of more than three.
     for (let dy = 0; dy >= -4; dy--) {
@@ -333,10 +342,16 @@ function tick(bot, survival, now = Date.now()) {
   }
   if (!carried) return release(bot);
   const guard = [];
+  // A meal the bot chose, on (meal.js, note 701): the raise ends it, so no
+  // warning's answer raises the shield while it is eaten; a shot already on
+  // its way that lands inside the meal, late enough for the shield to block
+  // it, cuts it, and the meal is begun again after.
+  const meal = require('./meal').mealOn(bot, now);
+  let eating = !!meal && !meal.cut;
   // A warning answered with the shield, its shots due.
   // Every shooter with a warning on or its shots in the air, in sight or
   // not: the shield held through a line lost for a moment.
-  for (const id of new Set([...(bot._shotShooters || []), ...(bot._shotWarned || [])])) {
+  if (!eating) for (const id of new Set([...(bot._shotShooters || []), ...(bot._shotWarned || [])])) {
     const e = bot.entities?.[id], a = answerFor(bot, id, now);
     if (e?.position && a?.choice === 'shield_up' && warnDue(bot, e, now)) guard.push({ at: e.position.offset(0, (e.height || 1.8) / 2, 0), why: `answer: shield up to the ${e.name}`, w: bot._shotInSight?.has(id) ? SEEN_W : 1 });
   }
@@ -350,6 +365,14 @@ function tick(bot, survival, now = Date.now()) {
     // Answered otherwise: Jev chose to step out of its line, strike first
     // or take it; the step it chose is what answers it.
     if (a && a.choice !== 'shield_up') continue;
+    if (eating) {
+      // Landing after the meal is eaten, or too soon for a raise to block:
+      // the meal goes on.
+      const inMs = h.seconds * 1000;
+      if (inMs < RISE_MS || now + inMs > meal.endsAt) continue;
+      require('./meal').cutMeal(bot, `a ${s.name.replaceAll('_', ' ')} on its way to the bot, landing in about ${round(h.seconds)} seconds, inside the meal: the shield raised for it`, now);
+      eating = false;
+    }
     s.by = a ? 'answer' : 'reflex';
     guard.push({ at: h.at, why: a ? 'answer: shield up' : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s, w: SHOT_W });
   }
@@ -568,4 +591,4 @@ function install(bot, survival) {
 // shooter's line, strike it first or take its shots.
 const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up'; };
 
-module.exports = { shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };
+module.exports = { shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };
