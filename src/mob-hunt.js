@@ -2808,7 +2808,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
       // way in weighed and left in the one question and the fortress taken
       // back in the next (note 541). The one set-aside (fortress-hold.js).
       const ways = Object.keys(options).filter(k => k !== 'keep_searching').map(k => k.replaceAll('_', ' '));
-      require('./fortress-hold').leave(bot, state, { anchor, radius: Math.max(anchor === nearest ? 0 : anchor.extent || 0, Math.ceil(flatTo(nearest, anchor)) + extent), left: ways, save, goal });
+      require('./fortress-hold').leave(bot, state, { anchor, target: nearest, radius: Math.max(anchor === nearest ? 0 : anchor.extent || 0, Math.ceil(flatTo(nearest, anchor)) + extent), left: ways, save, goal });
       return null;
     } };
   // What waits at the bricks, seen or not: mid-227-o dug down ten blocks
@@ -2877,7 +2877,12 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   // no walk in it. 25585 said "I'm in the fortress" 44 blocks under it
   // (note 687).
   const onFloors = !!stretch && onFortressFloors(bot, state);
-  const fortressAt = !stretch && state.fortressAt ? { x: state.fortressAt.x, y: state.fortressAt.y, z: state.fortressAt.z } : null;
+  // firstAt travels with it: narration reads it to tell a fortress already
+  // announced from one just found (note 739), instead of saying "A
+  // fortress! I'm heading for it." anew each time this step is set, which a
+  // large fortress's approach (fortress_approach held up to five minutes,
+  // asked again on every failure) does often.
+  const fortressAt = !stretch && state.fortressAt ? { x: state.fortressAt.x, y: state.fortressAt.y, z: state.fortressAt.z, firstAt: state.fortressAt.firstAt } : null;
   goal.step = { action: 'find_fortress', found, ...(fortressAt ? { fortress: fortressAt } : {}), ...(onFloors ? { walking: found } : {}), legs: state.legs }; save();
   const approaches = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
   const { options } = approaches;
@@ -3039,7 +3044,20 @@ function fortressAnchor(state, bricks, nearest, now = Date.now()) {
   const a = state.fortressAt;
   if (a && now - (a.seenAt || 0) < FORTRESS_KEPT_MS) {
     const d = Math.hypot(nearest.x - a.x, nearest.z - a.z);
-    if (d <= Math.max(a.extent || 0, SAME_FORTRESS) || linkedTo(bricks, a, nearest)) {
+    // A region holds one fortress or one bastion, never both (nether-
+    // regions.js): bricks seen sparsely, through gaps and openings rather
+    // than one continuous wall, can fail both the extent and the link tests
+    // while still being the same fortress the search already knows of.
+    // 25595 (mid-242-vh, note 739) had its anchor replaced three times in
+    // three minutes as the nearest visible brick shifted between distant,
+    // disjoint parts of the one fortress ((-106,66,93), then (-70,37,140),
+    // then (-98,66,103)), each replacement read as a wholly new find by
+    // fortress_leg, fortress_approach and rung_progress in the same second,
+    // each pulling toward whichever point it last saw. Kept, not replaced:
+    // the same region is the same fortress, so the anchor's own point and
+    // firstAt stay; only its extent grows to cover what is newly seen.
+    const ra = regions.regionOf(a.x, a.z), rn = regions.regionOf(nearest.x, nearest.z);
+    if (d <= Math.max(a.extent || 0, SAME_FORTRESS) || linkedTo(bricks, a, nearest) || (ra.rx === rn.rx && ra.rz === rn.rz)) {
       a.extent = Math.max(a.extent || 16, Math.ceil(d) + 2); a.seenAt = now;
       return a;
     }
@@ -3074,6 +3092,14 @@ function seedFortressAt(bot, state, cage) {
 function sameFortress(state, p, q) {
   const a = state?.fortressAt, reach = a ? Math.max(a.extent || 0, SAME_FORTRESS) : 0;
   if (a && Math.hypot(p.x - a.x, p.z - a.z) <= reach && Math.hypot(q.x - a.x, q.z - a.z) <= reach) return true;
+  // A region holds one fortress or one bastion, never both: two places
+  // in the fortress's own known region are its own, however sparsely
+  // joined or far beyond its extent as first measured (note 739,
+  // fortressAnchor above; keeps this reading the same one record).
+  if (a) {
+    const rp = regions.regionOf(p.x, p.z), rq = regions.regionOf(q.x, q.z), ra = regions.regionOf(a.x, a.z);
+    if (rp.rx === ra.rx && rp.rz === ra.rz && rq.rx === ra.rx && rq.rz === ra.rz) return true;
+  }
   return Math.hypot(p.x - q.x, p.z - q.z) <= SAME_FORTRESS;
 }
 
@@ -3233,6 +3259,13 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
     // between the nearest two floors went through the walls: mid-235-q-
     // nether-1-fortress-3's was "4 of lava, 2 of wall or rock", where the way
     // was six blocks laid into the lava of the corridor beside (note 564).
+    // The nearest floors not yet walked, kept beside the patrol's own
+    // description below (note 739): stay_in_fortress said only its own
+    // pacing, never what the closest unwalked branch would cost instead.
+    // 25588 (mid-242-we-fortress-1, 08:37:15Z) chose stay_in_fortress while
+    // its own text said three minutes of walking back and forth with no
+    // spawner seen, and unwalked_1 sat 13 blocks off with one block to dig.
+    let firstUnwalked = null;
     unwalkedParts(bot, map, planned).filter(part => !wayLeft(state, { x: part.g.at[0], y: part.g.at[1] + 1, z: part.g.at[2] })).slice(0, 3).forEach((part, i) => {
       const { g, groups } = part, across = { way: part.way, round: part.round, says: acrossSays(part.way, part.round) };
       const gap = across.way ? null : fm.gapTo(bot, planned, g, map);
@@ -3240,13 +3273,19 @@ function fortressInView(bot, goal, save, state, bricks, { stay, map = null, plan
       const more = groups.length > 1 ? ` (with ${groups.length - 1} more part${groups.length === 2 ? '' : 's'} the same way reaches, ${floors} floors in all, ${open} of them running on into unseen space)` : '';
       const ended = state.goToEnded?.[`unwalked:${g.key}`];
       const dy = g.dy ? ` and ${Math.abs(g.dy)} ${g.dy > 0 ? 'up' : 'down'}` : '';
+      if (i === 0) firstUnwalked = { g, dy, cost: across.way ? across.says : gap ? `no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to` : 'no way across along the ground found yet' };
       others[`unwalked_${i + 1}`] = { description: `Go to the fortress's unwalked floors seen ${g.off} blocks off${dy}, at (${g.at[0]}, ${g.at[1] + 1}, ${g.at[2]}): ${g.cells} floor${g.cells === 1 ? '' : 's'} seen there, ${g.open} of them running on into unseen space${more}; no floor seen joins them to where the bot stands` +
         `${across.way ? `: the way across along the ground is ${across.says}` : gap ? `: no way across along the ground found; the nearest crossing is ${gap.across} blocks from a floor it can walk to (${gap.from[0]}, ${gap.from[1] + 1}, ${gap.from[2]}), between them ${gap.says}${gap.dy ? `, ${Math.abs(gap.dy)} ${gap.dy > 0 ? 'up' : 'down'}` : ''}` : ''}. ` +
         `The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: covering the lava, digging through the rock, a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
         target: { x: g.at[0], y: g.at[1] + 1, z: g.at[2] }, run: () => { state.goTo = { x: g.at[0], y: g.at[1] + 1, z: g.at[2], kind: 'unwalked', key: g.key, keys: groups.map(p => p.key), since: Date.now() }; save(); return 'goto'; } };
     });
+    // What staying gains against that: it re-walks ground already seen (the
+    // least lately walked of it), nothing past what has already been seen;
+    // said beside the nearest unwalked branch's own distance and cost, when
+    // there is one, so pacing is weighed against actually going there.
+    const against = firstUnwalked ? ` Against staying: unwalked_1 is ${firstUnwalked.g.off} blocks off${firstUnwalked.dy} with ${firstUnwalked.cost}; staying re-walks the ${walkedSays(planned)} already, nothing past what has already been seen there.` : '';
     const patrol = planned.patrol.length ? { key: 'stay_in_fortress',
-      description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.${walkedAllSays(bot, state)}`,
+      description: `Stay in the fortress and walk its corridors again for blazes for ${PATROL_MS / 60000} minutes, the least lately walked first, any new way on seen walked first: ${walkedSays(planned)}, ${planned.patrol.length} of those joined to here twelve or more steps off; ${joinedExtentSays(planned)}${!map.spawners.length ? ', and no spawner has been seen' : map.spawners.some(sp => fm.stepsTo(map, planned, new Vec3(sp.x, sp.y, sp.z)) !== null) ? ', a spawner seen among them' : ', no spawner seen among them'}; ${passes} time${passes === 1 ? '' : 's'} asked here, ${minutes} minute${minutes === 1 ? '' : 's'} in it, ${seen}. Blazes come from their spawners and spawn on the fortress's bricks as time passes. The legs are asked again after.${walkedAllSays(bot, state)}${against}`,
       run: () => { state.patrolUntil = Date.now() + PATROL_MS; save(); return 'stay'; } } : null;
     return { key: 'stay_in_fortress', ...(patrol ? {} : { offer: false }), passes, bricks, facts, others,
       description: patrol?.description || '', run: patrol?.run || (() => 'stay') };
@@ -3590,7 +3629,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     const anchor = fortressAnchor(state, bricks, near), floors = fortressFloors(bot, bricks);
     const target = (floors.length ? floors : bricks).slice().sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     setAside.facts.leaving = `${require('./fortress-hold').reachSays(bot, goal, { target, anchor })} Every leg, widen_search and seek_fortress_height leaves it.`;
-    leftOnLeg = { anchor, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)) };
+    leftOnLeg = { anchor, target, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)) };
   }
   if (bricks.length && !offFloors) {
     const here = bot.entity.position;
@@ -3626,7 +3665,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
         reach: (() => { let said = null; return () => (said ??= hold.reachSays(bot, goal, { target, anchor })); })(),
         // The whole fortress, by its one place and extent (note 706), the
         // one set-aside (fortress-hold.js).
-        leave: () => hold.leave(bot, state, { anchor, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), left: ['the visit itself'], save, goal }) });
+        leave: () => hold.leave(bot, state, { anchor, target, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), left: ['the visit itself'], save, goal }) });
       if (visit !== 'go_in') return;
       await approachFortress(bot, task, goal, save, actions, state, target, bricks); return;
     }
@@ -3658,7 +3697,10 @@ async function findFortressStep(bot, task, goal, save, actions) {
     else if (!owedLeg && (planned.frontiers.length || (state.patrolUntil && planned.patrol.length))) {
       const exploring = !!planned.frontiers.length, next = exploring ? planned.frontiers[0] : planned.patrol[0];
       const [x, y, z] = next.at;
-      goal.step = { action: 'find_fortress', found: state.found, [exploring ? 'exploring' : 'patrolling']: { x, y, z }, steps: next.steps, walked: planned.walked, seen: planned.seen, legs: state.legs }; save();
+      // Walking a found fortress's own corridors is not a new find of it
+      // (note 739): firstAt carries so narration does not say "A fortress!
+      // I'm heading for it." on every patrol pass of one already known.
+      goal.step = { action: 'find_fortress', found: state.found, ...(state.fortressAt ? { fortress: { x: state.fortressAt.x, y: state.fortressAt.y, z: state.fortressAt.z, firstAt: state.fortressAt.firstAt } } : {}), [exploring ? 'exploring' : 'patrolling']: { x, y, z }, steps: next.steps, walked: planned.walked, seen: planned.seen, legs: state.legs }; save();
       let why = null;
       if (actions.navigate) {
         try { await actions.navigate(bot, task, new goals.GoalNear(x, y + 1, z, 1), { timeoutMs: 30000, stallMs: 6000, passing: true, onFoot: true }); }

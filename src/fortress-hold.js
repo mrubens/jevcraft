@@ -140,7 +140,7 @@ function reachSays(bot, goal, { target, anchor = null, offered = {}, facts = {} 
 // was left and over which ways, said in chat with where it is.
 const LEAVE_FOR_MS = 10 * 60000;
 const LEFT_FROM_MS = 60 * 60000;
-function leave(bot, state, { anchor, radius = 16, left = [], why = 'Jev chose to leave it and search on', save = () => {}, now = Date.now(), goal = null }) {
+function leave(bot, state, { anchor, target = null, radius = 16, left = [], why = 'Jev chose to leave it and search on', save = () => {}, now = Date.now(), goal = null }) {
   const p = bot.entity.position, from = { x: round(p.x), y: round(p.y), z: round(p.z) };
   state.leftFrom = [...(state.leftFrom || []).filter(l => now - l.at < LEFT_FROM_MS), { at: now, ...from }].slice(-16);
   (state.shunned ||= []).push({ x: anchor.x, z: anchor.z, radius, until: now + LEAVE_FOR_MS, at: now, why, from, left });
@@ -150,7 +150,14 @@ function leave(bot, state, { anchor, radius = 16, left = [], why = 'Jev chose to
   // but the chat line a person actually sees said only the distance.
   let rods = null; try { rods = goal ? require('./blaze-stand').rodsNeeded(bot, goal) : null; } catch (_) { rods = null; }
   const owed = rods ? ` ${rods} blaze rod${rods === 1 ? '' : 's'} still needed.` : '';
-  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${round(Math.hypot(anchor.x - p.x, anchor.z - p.z))} blocks off. Searching on for another.${owed}`);
+  // The distance said here is the same point reachSays measured for the
+  // question this leave answers (`target`, the nearest brick asked about),
+  // not the anchor's own, possibly far, kept coordinate: 25588 (mid-242-we-
+  // fortress-1, note 739) had the option say the nearest brick 39 blocks
+  // off and this chat say 3, then 1, of the one fortress, because this line
+  // measured from the anchor while the option measured from the target.
+  const from3 = target || anchor;
+  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${round(Math.hypot(from3.x + 0.5 - p.x, from3.z + 0.5 - p.z))} blocks off. Searching on for another.${owed}`);
 }
 
 // 5. A fetch of stems chosen under the fortress work and still holding: it

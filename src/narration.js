@@ -161,6 +161,17 @@ function keptOnHungry(goal, bot) {
   } catch (_) { return false; }
 }
 const fortressLeft = goal => (goal?.fortressSearch?.shunned || []).some(sh => sh.until > Date.now() && /Jev chose|came to nothing/.test(sh.why || ''));
+// A fortress already announced is not announced again as a new find: note
+// 725 fixed this for the landmark notice (exploration.js) but not for this
+// ambient line, so 25588 (mid-242-we-fortress-1) still said "A fortress!
+// I'm heading for it." three times in a minute about the one fortress it
+// was standing in and leaving and re-finding (note 739). Read only, by the
+// anchor's own firstAt (set once, kept while the fortress is); narrate()
+// records it once said.
+const fortressAlreadyAnnounced = (goal, step) => {
+  const at = step?.fortress?.firstAt;
+  return at != null && goal?.narrated?.fortressFirstAt === at;
+};
 // Which way the leg goes, so a person watching sees the search turn (note 689).
 const legHeading = goal => { const h = goal?.fortressSearch?.lastHeading; return Number.isInteger(h) && h >= 0 && h < 4 ? `, heading ${['east', 'south', 'west', 'north'][h]}` : ''; };
 const some = (count, value) => count > 1 ? `${count} ${plural(count, value)}` : `some ${plural(2, value)}`;
@@ -188,7 +199,10 @@ function stepVariants(goal, step, bot = null) {
     case 'stock_food_for_nether': return "I'm stocking up on food before the Nether.";
     case 'return_for_food': return "I'm out of food. Back through the portal to eat.";
     // A fortress left for now is not searched for: said so (note 708).
-    case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?" : step.found ? "A fortress! I'm heading for it." : fortressLeft(goal) ? `Leaving the fortress for now, searching on (leg ${step.legs || 1}${legHeading(goal)}).` : `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
+    case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?"
+      : step.found && fortressAlreadyAnnounced(goal, step) ? null
+      : step.found ? "A fortress! I'm heading for it."
+      : fortressLeft(goal) ? `Leaving the fortress for now, searching on (leg ${step.legs || 1}${legHeading(goal)}).` : `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
     case 'collect': return `I'm picking up the ${name(step.item || step.drops)}.`;
     case 'place': case 'build': case 'build_schematic': {
       const what = goal.kind === 'house' ? ' the house' : goal.design?.source?.name ? ` ${goal.design.source.name}` : '';
@@ -306,7 +320,12 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
   // A step with nothing to say (a tunnel segment, a climb) must not reset
   // the key, or the resource line fires again after every one of them.
   if (!line) return null;
-  if (speak(line)) { state.step = key; return line; }
+  if (speak(line)) {
+    state.step = key;
+    // Once said, this fortress's own find is not said again (above).
+    if (goal.step.action === 'find_fortress' && goal.step.fortress?.firstAt != null) state.fortressFirstAt = goal.step.fortress.firstAt;
+    return line;
+  }
   return null;
 }
 
