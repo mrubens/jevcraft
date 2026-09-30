@@ -24,6 +24,8 @@ const BURNS = /lava|fire|magma_block|campfire/;
 // A cell with lava round it costs this much more than open ground, so a
 // route takes as few as the ground allows (note 660).
 const LAVA_SIDE_COST = 6;
+// While blaze rods are carried (note 762, walk-out.js).
+const { ROD_DROP_MAX, ROD_COST } = require('./walk-out');
 // The bot's own blocks (SurvivalMovements.safeToBreak), read lazily.
 let ownLaid = null;
 // The lava round a standing cell (note 516's set): the eight cells round it
@@ -224,6 +226,9 @@ class SurvivalMovements extends Movements {
         }
       }
     }
+    // While blaze rods are carried, their own rules (note 762, rodRefused).
+    const rods = this.rodStake();
+    if (rods) for (let i = kept.length - 1; i >= 0; i--) if (this.rodRefused(node, kept[i])) { kept.splice(i, 1); this.rodRefusals = (this.rodRefusals || 0) + 1; }
     // In every dimension, no move that leaves the ground beside a fall that
     // kills (note 545, overFall below).
     for (let i = kept.length - 1; i >= 0; i--) if (this.overFall(node, kept[i]) || this.climbOverFall(node, kept[i])) kept.splice(i, 1);
@@ -236,6 +241,10 @@ class SurvivalMovements extends Movements {
       // And in the Nether each cell with lava round it, so the route takes
       // as few as the ground allows (note 660).
       if (nether && lavaOf(next).cells.length) next.cost += LAVA_SIDE_COST;
+      // With rods carried, a cell beside lava or a deadly drop off the way
+      // the bot came in costs more by each rod: a misstep there loses them
+      // all, and the way in was walked alive (note 762).
+      if (rods && !this.onWayIn(next) && (lavaBy(next) || lavaOf(next).cells.length || this.deadlyDropBeside(next))) next.cost += ROD_COST * rods;
     }
     // Nor back onto the edge the bot has just stepped back from, while the
     // mobs it stepped back from are about (terrain.js holdOffEdge); save the
@@ -280,6 +289,42 @@ class SurvivalMovements extends Movements {
     }
     return null;
   }
+  // Note 762: the rods' physical rules. Of six lives that set out for a
+  // portal carrying four or more rods since 2026-09-29T23:00Z, four died on
+  // the way (scripts/walk-out.js): 25591 at 7 rods stepped down onto the
+  // lava sea's shore at full health, lava level with its feet a block off,
+  // and went in (04:27:56Z); 25588 at 5 went 35 blocks off a ledge into the
+  // sea at full health (11:50:43Z); 25598 at 6 and 1.7 health took two drops
+  // of three, a point each (05:51:54-55Z). A death there drops every rod and
+  // lava burns them. While rods are carried: no drop of more than
+  // ROD_DROP_MAX; no cell with lava a block to a side at the feet or the head
+  // (nothing between the body and the lava); and off the way in (cells stood
+  // on before, the bot's own laid blocks, walk-out.js onWayIn) no cell with
+  // lava a block to a side at the floor and none beside a drop into lava or a
+  // fall that costs half the health. A walk that names its cells (besideLava:
+  // the portal's last cells, a crossing's own) keeps them.
+  rodStake() {
+    const now = Date.now();
+    if (!this._rods || now - this._rods.at > 250) {
+      let n = 0; try { n = require('./walk-out').rodsCarried(this.bot); } catch (_) { n = 0; }
+      this._rods = { at: now, n };
+    }
+    return this._rods.n;
+  }
+  onWayIn(next) {
+    try { return require('./walk-out').onWayIn(this.bot, next); } catch (_) { return false; }
+  }
+  rodRefused(node, next) {
+    if (node.y - next.y > ROD_DROP_MAX) return 'drop';
+    if (this.besideLava?.(next)) return null;
+    const side = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const lavaAt = (dx, dy, dz) => /lava/.test(this.getBlock(next, dx, dy, dz)?.name || '');
+    if (side.some(([dx, dz]) => lavaAt(dx, 0, dz) || lavaAt(dx, 1, dz))) return 'lava';
+    if (this.onWayIn(next)) return null;
+    if (side.some(([dx, dz]) => lavaAt(dx, -1, dz))) return 'lava';
+    return this.deadlyDropBeside(next, { level: false }) ? 'edge' : null;
+  }
+
   // Note 592: gravel, sand and the other blocks that fall lie on the lava
   // sea's beaches resting on the lava, and stay until a block beside the
   // lowest of them is laid or dug (terrain.js floorDrops). A move that lays

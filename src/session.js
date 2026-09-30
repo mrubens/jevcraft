@@ -115,6 +115,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // finished only when the server has broken the block (server-truth.js).
   bot.loadPlugin(require('./server-truth').serverTruthPlugin);
   bot.loadPlugin(require('./own-blocks').ownBlocksPlugin);
+  // The way in, kept while in the Nether: the walk out with rods goes back
+  // along it (walk-out.js, note 762).
+  bot.loadPlugin(require('./walk-out').wayInPlugin);
   bot.loadPlugin(require('./gaze').gazePlugin);
   bot.loadPlugin(require('./riders').ridersPlugin);
   // A window click the window refuses ("invalid operation") is logged with

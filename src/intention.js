@@ -46,7 +46,7 @@ const TIMED = {
   // or the bot leaves, arrives, or is hurt a real change (intention.js's own
   // rules, same as stand_by_spawner already had).
   empty_spawner: /^(stand_by_spawner|heal_first|box_here|box_in_line|box_at_spawner|dig_in_at_spawner|open_slit)$/,
-  portal_way: /^(climb_here|around_\w+)$/,
+  portal_way: /^(climb_here|around_\w+|the_way_in)$/,
   // Building or casting a portal frame is a stand at one spot over minutes
   // (note 714): 25581 was asked portal_method twice within a second and
   // chose cast_frame then cast_at_lava, and surface_trip's climb sent it back

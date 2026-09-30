@@ -43,6 +43,23 @@ function checkAir(bot) {
   if (needsAir(bot)) throw new NeedsAir();
   if (!bot._leavingLava && require('./terrain').bodyInLava(bot)) throw new (require('./danger').NeedsSafety)({ entity: { name: 'lava' }, distance: 0 });
 }
+// The head dipped under at the water's top with the breath full (note
+// 752f): the air is the block over the eyes, and a player there keeps the
+// head up with the jump key, asking nothing. 25584 (17:38:10 to 17:40:01Z)
+// was asked body_way about forty times at (13, 61, 124), swim_to_air and
+// straight_up turn about ("1 cell, 0.4 s, against 13 seconds of breath"),
+// the breath at 20 throughout, sinking a block between each and bobbing up.
+function atWaterTop(bot) {
+  if ((bot.oxygenLevel ?? 20) < 20 || !headSubmerged(bot)) return false;
+  const eye = bot.entity.position.offset(0, bot.entity.eyeHeight || 1.62, 0).floored();
+  const above = bot.blockAt?.(eye.offset(0, 1, 0));
+  return !!above && above.boundingBox === 'empty' && !swimmableWater(above) && !/lava/.test(above.name || '');
+}
+async function bobUp(bot, task) {
+  bot.setControlState?.('jump', true);
+  try { for (let n = 0; n < 12 && headSubmerged(bot); n++) { task?.check?.(); await sleep(50); } }
+  finally { bot.setControlState?.('jump', false); }
+}
 function headSubmerged(bot) {
   const eye = bot.entity?.position?.offset(0, bot.entity.eyeHeight || 1.62, 0);
   if (!eye) return false;
@@ -1477,7 +1494,8 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     if (Object.keys(ways).length) await body.answer(bot, own, 'hot_floor', ways, { ...asked, facts: { floor: hot.block.name, hurt: hot.hurt, crouchSafe: hot.crouchSafe } });
     own.check();
   }
-  if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
+  if (bot.oxygenLevel > 12 && atWaterTop(bot)) { onAction({ action: 'surface', oxygen: bot.oxygenLevel, bob: true }); await bobUp(bot, own); }
+  else if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
     // The way up is Jev's (body_way); with none found, the old swim, which
     // throws that no way up was found.
     const ways = airWays(bot, own, onAction);
@@ -1554,7 +1572,7 @@ function claim(bot) {
   if (reflex) return { layer: 'vitals', action: reflex.action, urgency: 'body', reflex: reflex.key, facts: reflex.facts, preemptible: false };
   const facts = { health: bot.health, food: bot.food, air: bot.oxygenLevel, ...(bot.health < 20 ? { healing: bot.food >= 18 } : {}) };
   if (inPowderSnow(bot) || bot._freezingAt > Date.now() - 3000) return { layer: 'vitals', action: 'out_of_powder_snow', urgency: 'pressing', facts: { ...facts, freezing: true } };
-  if (headSubmerged(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
+  if (headSubmerged(bot) && !atWaterTop(bot) && !(bot._surfaceFailedAt > Date.now() - 60000)) return { layer: 'vitals', action: 'surface', urgency: 'pressing', facts: { ...facts, headUnderwater: true } };
   if (!(bot.food <= 16 || (bot.health < 20 && bot.food < 18) || (bot.health <= 12 && bot.food < 20))) return null;
   if (bot.food > 2 && closeHostile(bot)) return null;
   const held = require('./danger').stanceHeld(bot);
@@ -1571,4 +1589,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

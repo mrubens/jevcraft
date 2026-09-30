@@ -550,7 +550,10 @@ function noRoute(bot, goal, status) {
   const to = destination ? `(${destination.x}, ${Number.isFinite(destination.y) ? `${destination.y}, ` : ''}${destination.z})` : 'the destination';
   const refused = bot.pathfinder?.movements || {};
   const lavaFor = refused.lavaRefusedFor || {}, lavaWhy = [lavaFor.touch && 'where a touch of it is death at this health', lavaFor.push && 'in line with something that can push the bot'].filter(Boolean).join(', and ');
-  const lava = refused.lavaRefusals > 0 ? `: the way passes beside lava${lavaWhy ? ` ${lavaWhy}` : ''}` : refused.edgeRefusals > 0 ? ': the way passes along a drop that would kill' : '';
+  // With rods carried, their rules (movement.js rodRefused, note 762).
+  let rods = 0; try { rods = refused.rodRefusals > 0 ? require('./walk-out').rodsCarried(bot) : 0; } catch (_) { rods = 0; }
+  const lava = refused.lavaRefusals > 0 ? `: the way passes beside lava${lavaWhy ? ` ${lavaWhy}` : ''}` : refused.edgeRefusals > 0 ? ': the way passes along a drop that would kill' :
+    rods ? `: with ${rods} blaze rod${rods === 1 ? '' : 's'} carried the walk takes no drop of more than two, no cell at the lava's edge and, off the way the bot came in, none beside a drop into lava or a fall that costs half its health` : '';
   return Object.assign(new Error(`No route from here to ${to} (${status})${lava}`), { name: 'NoRoute', destination, besideLava: refused.lavaRefusals > 0 });
 }
 
@@ -576,7 +579,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
   };
   bot.on?.('forcedMove', corrected);
   bot.on?.('path_update', observedRoute);
-  for (const k of ['lavaRefusals', 'edgeRefusals']) if (bot.pathfinder?.movements?.[k]) bot.pathfinder.movements[k] = 0;
+  for (const k of ['lavaRefusals', 'edgeRefusals', 'rodRefusals']) if (bot.pathfinder?.movements?.[k]) bot.pathfinder.movements[k] = 0;
   if (bot.pathfinder?.movements?.lavaRefusedFor) bot.pathfinder.movements.lavaRefusedFor = {};
   // Crouched along a deadly edge in the Nether, as a player walks a ridge
   // over the lava: a crouching body cannot step off an edge. Not before a

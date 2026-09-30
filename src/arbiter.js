@@ -536,7 +536,10 @@ function claimSays(c) {
     case 'secure_shelter': return `${f.underground ? 'A sealed pocket under the rock' : 'Shelter for the night'}${f.sealFor ? ` (${f.sealFor})` : ''}: ${f.nightMine ? `the night mine from the pocket, chosen ${f.nightMine.minutes} minute${f.nightMine.minutes === 1 ? '' : 's'} ago (${f.nightMine.mined} mined), goes on under the rock; a shelter is asked for once it ends` : notAsked(f) || 'the way (a room, a pocket here, a shaft, the bed) is asked next'}.${f.underground ? ` Underground here the night up top changes nothing: mobs spawn in the dark by day as by night${f.sleepDebt ? '; it is claimed for the sleep owed (no bed slept in for two game days and more), not for a mob named, and a pocket does not pay that: only a bed does' : ''}.` : ''}${hp}${heals}`;
     // Said with the last resort carried and, when health does not come back,
     // the sealed wait for daylight among the ways asked next (note 515).
-    case 'obtain_food': return `Find food: ${notAsked(f) || 'where is asked next'}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for daylight, about ${f.waitSealedMinutes} real minutes, standing still and spending no hunger` : ''}. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}.${hp}${heals}`;
+    // Said with the hunger against what health needs, what the food carried
+    // covers, what it is for, the errand's cost and whether the work is the
+    // food already (note 761).
+    case 'obtain_food': return `Find food${f.foodFor ? ` for ${f.foodFor}` : ''}: ${notAsked(f) || 'where is asked next'}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for daylight, about ${f.waitSealedMinutes} real minutes, standing still and spending no hunger` : ''}.${f.hungerSays ? ` ${f.hungerSays}` : ` Hunger ${f.food}.`}${f.foodCarried !== undefined ? ` ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}${f.foodCarried !== undefined ? '.' : ''}${f.errandSoFar ? ` ${f.errandSoFar[0].toUpperCase()}${f.errandSoFar.slice(1)}.` : ''}${f.workIsFood ? ` ${f.workIsFood[0].toUpperCase()}${f.workIsFood.slice(1)}: given the turn, this takes it from that step to a search of its own.` : ''}${hp}${f.hungerSays ? '' : heals}`;
     case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
     // at 5.5 health beside the work (note 509): what it goes for, and why.
@@ -573,6 +576,8 @@ async function arbitrate(bot, claims, ctx = {}) {
     const tree = Object.fromEntries(live.map(c => withUnkept(bot, state, c, now)).map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
     let setAside = false;
     const askedAt = Date.now();
+    // The alerts this question is out about (watchOnce leaves them be).
+    state.askingAlerts = new Set(live.map(c => c.alert).filter(Boolean));
     const asking = decide('turn_priority', { client: ctx.client, bot, task: ctx.task, goal: ctx.goal, save: ctx.save, tree,
       interrupt: () => { if (setAside) throw new Error('turn_priority set aside'); },
       state: { health: bot?.health, food: bot?.food, claims: live.map(c => c.layer), why,
@@ -592,7 +597,7 @@ async function arbitrate(bot, claims, ctx = {}) {
     let out;
     try { out = await answerOrCut(bot, asking, { task: ctx.task, askedAt, ms: ctx.askMs ?? ASK_MS }); }
     catch (err) { setAside = true; throw err; }
-    finally { answered = true; if (backing) await backing; }
+    finally { answered = true; delete state.askingAlerts; if (backing) await backing; }
     if (out.cut) setAside = true;
     const decision = out.decision;
     if (decision?.stale) return { winner: null, by: 'stale', ask: true, why };
@@ -854,7 +859,14 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
   const holder = live ? state.holder || null : bot._turn ? { layer: bot._turn.holder, action: bot._turn.phase } : null;
   const top = observeReflexes(bot, state.reflexes || [], look)[0];
   let p = null;
-  if (outranks(bot, top, holder, now)) p = { by: top.key, layer: top.layer, action: top.action, facts: top.facts, why: `${top.action.replaceAll('_', ' ')} ${JSON.stringify(top.facts)}` };
+  // An alert the turn's own question is out about is not a preemption: the
+  // question is its answer, and the bot backs from a creeper meanwhile
+  // (arbitrate). 25597 (17:35:52 to 17:35:58Z) had turn_priority cut nine
+  // times in five seconds by the same creeper's alert, the work it preempted
+  // still the holder while the question was out, never answered, the bot
+  // backing 2.4 blocks in all; the blast took 20 to 6.4 (note 752f).
+  const askedAbout = top && ALERTS.has(top.key) && state.askingAlerts?.has(top.key);
+  if (!askedAbout && outranks(bot, top, holder, now)) p = { by: top.key, layer: top.layer, action: top.action, facts: top.facts, why: `${top.action.replaceAll('_', ' ')} ${JSON.stringify(top.facts)}` };
   // A newcomer: the ruling was made without it. The work's own threat check
   // (interruptCheck) is swapped out by nested steps and lost with them.
   else if (holder?.layer === 'work' && holder.ids) {

@@ -52,6 +52,9 @@ const isClosing = choice => { try { return require('./shot-reflex').STANCE_SHOTS
 // line to where the bot hid is that hide failing, not skirmish noise, even
 // alone against the one it hid from (mid-242-y, note 522).
 const HIDING = new Set(['out_of_sight', 'nook', 'take_cover']);
+// The stances that stand and take a biter's blows on the shield or the
+// sword by design (note 752f).
+const FACES = new Set(['shield_guard', 'shield_the_charge', 'fight', 'fight_from_footing', 'strike_from_above', 'rail_and_fight']);
 const soloArrowShooter = (mobs, choice) => !HIDING.has(choice) && (() => { try { return !!require('./danger').soloRangedThreat(null, mobs); } catch (_) { return false; } })();
 
 const name = n => String(n || '').replaceAll('_', ' ');
@@ -102,7 +105,12 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
     if (solo) continue;
     if (t.distance <= m.distance - NEARER_BY) return `the ${name(m.name)} it was chosen against came from ${Math.round(m.distance)} to ${Math.round(t.distance)} blocks off`;
     if (!!t.visible !== m.visible) return `the ${name(m.name)} it was chosen against ${t.visible ? 'came into sight' : 'went out of sight'}, ${Math.round(t.distance)} blocks off`;
-    if ((hurtBy[m.name] || 0) > hold.at) return `the ${name(m.name)} it was chosen against hit the bot`;
+    // A hit from the mob a fight or a shield guard was chosen against is
+    // that stance as priced (the damage over its price ends it, above), not
+    // news: 25597 (17:54:44Z) asked the fight again for "the zombie it was
+    // chosen against hit the bot", 104 stance askings in 15 minutes (note
+    // 752f). A hide, a pillar or a wall a hit came through is news.
+    if ((hurtBy[m.name] || 0) > hold.at && !FACES.has(hold.choice) && !isClosing(hold.choice)) return `the ${name(m.name)} it was chosen against hit the bot`;
   }
   if (shot) return `a shot came at the bot${shot.name ? ` (${name(shot.name)})` : ''}`;
   // A shot at one mob or another is the one way (shoot_<id> per target):

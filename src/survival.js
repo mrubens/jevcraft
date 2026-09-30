@@ -1464,7 +1464,14 @@ function keepShieldForStance(bot) {
   if (!bot._shieldRaised || !SHIELD_STANCES.has(bot._stance?.choice) || !bot.entity?.position) return false;
   if ((bot.entity.metadata?.[0] & 1) || inLava(bot)) return false;
   const wg = require('./wither-guard');
-  try { return threats(bot, 4).some(t => wg.guardable(t) && (wg.bladeReaches(t.entity, bot.entity.position) || t.distance <= 2)); } catch (_) { return false; }
+  // Any biter the guard faces within five (about two seconds' walk at a
+  // zombie's pace), not only one at its reach: lowered
+  // between the stance's passes while the zombies came from four blocks to
+  // one, each raise's quarter second (SHIELD_BLOCKS_AFTER_MS) was a gap a
+  // blow landed in. 25593 (17:51:40 to 17:51:53Z) took seven hits under
+  // shield_guard, five "shield rising, not yet blocking"; 25588 three of
+  // three (note 752f).
+  try { return threats(bot, 6).some(t => wg.guardable(t) && (wg.bladeReaches(t.entity, bot.entity.position) || t.distance <= 5)); } catch (_) { return false; }
 }
 // Seconds between a biter's blows at its reach (a hoglin two, most one).
 const ce_blowEvery = name => require('./combat-estimate').MOBS[name]?.blowEvery || 1;
@@ -9400,9 +9407,21 @@ class Survival {
     // the 80 for the Nether, its hunts eaten again by the healing (note 702).
     const errands = require('./food-errand');
     const supplyNow = foodSupply(bot), fills = errands.fillsHunger(bot, supplyNow);
+    // Met: hunger back at eighteen or more, where health comes back, with
+    // food carried to eat as it falls. The errand ends there and is not asked
+    // again for the reserve, which is the work's own food step to gather
+    // (kit_food): 25588 (mid-241-ce, 17:16:26Z) was sent after a cow at
+    // hunger 18 with a beef carried; 25592 flipped between cooking and the
+    // walk home at 19 (note 761).
+    const foodMet = errands.met(bot, supplyNow);
+    if (foodMet && this.state.foodErrand) {
+      const e = this.state.foodErrand;
+      this.report(goal, save, { action: 'food_errand_met', food: bot.food, foodPoints: supplyNow, wanted: desiredFood, minutes: Math.round((now - e.since) / 6000) / 10, climbed: e.climbed || 0, asks: e.asks });
+      errands.end(this.state); delete this.state.foodPlan; delete this.state.searchFoodHold; save();
+    }
     let errand = null;
-    if (supplyNow < desiredFood && (stockDriven || hungry) && (!hungry || fills) && !isSetAside(this, 'food_search', 'stock', now)) {
-      errand = errands.track(this.state, { supply: supplyNow, desired: desiredFood, now });
+    if (!foodMet && supplyNow < desiredFood && (stockDriven || hungry) && (!hungry || fills) && !isSetAside(this, 'food_search', 'stock', now)) {
+      errand = errands.track(this.state, { supply: supplyNow, desired: desiredFood, now, y: bot.entity?.position?.y, dimension: String(bot.game?.dimension || 'overworld') });
       if (errands.noYield(errand, supplyNow, now)) {
         const why = errands.restWhy(errand, supplyNow, now);
         setAside(this, 'food_search', 'stock', why, errands.REST_MS);
@@ -9413,7 +9432,7 @@ class Survival {
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
     // Resting, low hunger that what is carried fills is met by eating, not by
     // a search.
-    const needsFood = supplyNow < desiredFood && ((hungry && !(stockPaused && fills)) || (stockDriven && !stockPaused));
+    const needsFood = !foodMet && supplyNow < desiredFood && ((hungry && !(stockPaused && fills)) || (stockDriven && !stockPaused));
     if (!needsShelter && !needsFood) return false;
     // "Carry on" is an answer too, held as a food trip is: on the surface
     // at hunger eighteen the question came back every pass while Jev said
@@ -9772,6 +9791,22 @@ function nightMineOn(bot, mine) {
   return !o || Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z) <= 24;
 }
 
+// The survival claim's food facts (note 761): the hunger against what health
+// needs and what the food carried covers of it, whether hunger or the reserve
+// is what it is for, the errand's cost so far (minutes, blocks climbed), and,
+// where the work's own step is the food for the Nether, that it is. 25588
+// (mid-241-ce, 17:08 to 17:16Z) gave the turn to "Find food ... Hunger 13, 0
+// food points carried of 80 wanted" fourteen times over its own nether-food
+// step's climb, the claim silent on both.
+function foodCost(bot, goal, state, supply, hungry, now = Date.now()) {
+  const errands = require('./food-errand');
+  const out = { hungerSays: errands.hungerSays(bot, supply), foodFor: hungry ? 'hunger' : (bot.food ?? 20) >= errands.HEALS_AT ? 'the reserve' : 'the reserve, with hunger under eighteen' };
+  const cost = errands.costSays(state.foodErrand && now - state.foodErrand.lastAt <= errands.GAP_MS ? state.foodErrand : null, now);
+  if (cost) out.errandSoFar = cost;
+  if (goal?.gameProgress?.phase === 'nether_food') out.workIsFood = 'the work\'s own step now is the food for the Nether (the food step, which asks where it comes from)';
+  return out;
+}
+
 function claim(bot, goal = {}, survival = null) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const state = survival?.state || goal.survival || {};
@@ -9938,8 +9973,10 @@ function claim(bot, goal = {}, survival = null) {
   const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game?.difficulty !== 'peaceful'));
   const supply = foodSupply(bot);
   // As the layer reads it: resting, low hunger that what is carried fills is met by eating (note 702).
-  const stockRests = rests('food_search', 'stock'), fills = require('./food-errand').fillsHunger(bot, supply);
-  const needsFood = supply < desiredFood && ((hungry && !(stockRests && fills)) || (stockDriven && !stockRests));
+  const errands = require('./food-errand');
+  const stockRests = rests('food_search', 'stock'), fills = errands.fillsHunger(bot, supply);
+  // Met, as the layer reads it: hunger eighteen or more with food carried (note 761).
+  const needsFood = !errands.met(bot, supply) && supply < desiredFood && ((hungry && !(stockRests && fills)) || (stockDriven && !stockRests));
   if (!needsShelter && !needsFood) return null;
   // "Carry on" is Jev's own answer, held: the work's turn by his choice.
   const carryOn = state.carryOnPlan;
@@ -9965,7 +10002,7 @@ function claim(bot, goal = {}, survival = null) {
   const sealFor = needsShelter ? sealForWhy(bot, { underground, night: true, sleepDebt: debt }) : null;
   const quietNight = needsShelter && plan !== 'home' && underground && sealFor?.none;
   return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', (needsShelter && !quietNight) || bot.food <= 6 ? 'pressing' : 'routine',
-    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}) } : {}),
+    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}), ...foodCost(bot, goal, state, supply, hungry, now) } : {}),
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 

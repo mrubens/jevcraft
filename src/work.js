@@ -1376,7 +1376,11 @@ async function nudgeClear(bot, task, p) {
 // by fire" twelve times in two and a half seconds, the bot open on its span
 // over the lava sea until the next fireball (note 582).
 const FLAMES = new Set(['fire', 'soul_fire']);
-const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine', 'short_dry_grass', 'tall_dry_grass', 'bush', 'firefly_bush', ...FLAMES]);
+// Not the firefly bush: the game does not replace it with a placed block
+// (it is broken first, as a flower is, knockedAway): 25595 (17:39 to 17:53Z)
+// was refused its crafting table at (48, 63, 140) eight times, "the block is
+// still firefly_bush" (note 761).
+const GROUND_COVER = new Set(['water', 'short_grass', 'tall_grass', 'fern', 'large_fern', 'snow', 'leaf_litter', 'dead_bush', 'seagrass', 'vine', 'short_dry_grass', 'tall_dry_grass', 'bush', ...FLAMES]);
 // A cell a workstation can go in: open or only covered, over a full block.
 // In snowy plains every cell at the feet is a snow layer over grass, and
 // trial 40 found "no place for crafting_table" forty times in a minute.
@@ -1397,9 +1401,30 @@ const openForStation = (bot, q) => {
   return !hit || eye.distanceTo(hit.intersect || hit.position) >= d - 0.6;
 };
 
+// A cell a workstation is put in now (note 761): open for it, with no part
+// of the bot's own body in it at all, and not refused there lately. The game
+// puts no block where any body is, its own included, by the least sliver:
+// 25595 (mid-243-ke, 17:09Z, the Nether at 418, 43, 27) stood 0.008 of a
+// block into the cell beside its feet, under the 0.02 hitboxIntrudes lets
+// pass, and was refused its crafting table there eleven times, "the block
+// is still air", the same cell picked each time; 25598 (06:54Z) 0.01 into
+// its cell fifteen times, 25593 0.018, 25595 at 09:28Z 0.015.
+const STATION_CELL_REST_MS = 10 * 60000;
+const stationKey = q => `${q.x},${q.y},${q.z}`;
+function stationCellOk(bot, goal, q) {
+  return openForStation(bot, q) && !hitboxIntrudes(bot, q, 0) && !(goal && isSetAside(goal, 'station_cell', stationKey(q)));
+}
+// A cell the game refused a workstation in rests, said, and the next is tried.
+function restStationCell(goal, q, name, err) {
+  if (goal) setAside(goal, 'station_cell', stationKey(q), `the ${String(name).replaceAll('_', ' ')} was refused there: ${err?.message || err}`, STATION_CELL_REST_MS);
+}
+const STATION_FATAL = new Set(['NeedsAir', 'NeedsSafety', 'Cancelled', 'Blocked']);
+
 const CROPS = new Set(['wheat', 'carrots', 'potatoes', 'beetroots', 'melon_stem', 'pumpkin_stem', 'sweet_berry_bush', 'torchflower_crop', 'pitcher_crop', 'nether_wart']);
 function knockedAway(bot, block) {
-  if (!block || block.boundingBox !== 'empty' || CROPS.has(block.name) || /water|lava|fire|portal/.test(block.name)) return false;
+  // Fire by its name, not "fire" anywhere in it: the firefly bush read as a
+  // flame and was never knocked away (note 761).
+  if (!block || block.boundingBox !== 'empty' || CROPS.has(block.name) || /water|lava|^(soul_)?fire$|portal/.test(block.name)) return false;
   return (block.hardness ?? bot.registry?.blocksByName?.[block.name]?.hardness) === 0;
 }
 
@@ -2329,16 +2354,26 @@ async function workstation(bot, task, name, goal) {
   const existing = await approachWorkstation(bot, task, name, candidates);
   if (existing) return existing;
   if (!countOf(bot, name)) throw new Blocked(`I can't reach a ${name.replaceAll('_', ' ')}. I need one I can use.`);
-  let p;
+  let p, refused = null, tries = 0;
   const o = bot.entity.position.floored();
-  for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p; dx++) for (let dz = -2; dz <= 2 && !p; dz++) {
+  // Up to three cells in one go: one the game refuses rests (note 761), and
+  // the next is tried rather than the same one again at the next pass.
+  for (const dy of [0, -1, 1, -2, 2]) for (let dx = -2; dx <= 2 && !p && tries < 3; dx++) for (let dz = -2; dz <= 2 && !p && tries < 3; dz++) {
     if (!dx && !dz) continue;
     const q = o.offset(dx, dy, dz);
-    if (openForStation(bot, q)) {
-      await place(bot, task, q, name); p = q;
-      rememberWorkstation(bot, goal, name, q);
+    if (!stationCellOk(bot, goal, q)) continue;
+    tries++;
+    try { await place(bot, task, q, name); }
+    catch (err) {
+      task.check(); if (STATION_FATAL.has(err.name) || err instanceof Blocked) throw err;
+      restStationCell(goal, q, name, err); refused = err;
+      console.log(`[station] ${name} refused at ${q}: ${err.message}; the cell rests ${STATION_CELL_REST_MS / 60000} minutes`);
+      continue;
     }
+    p = q;
+    rememberWorkstation(bot, goal, name, q);
   }
+  if (!p && refused) throw refused;
   // Walled in (the bottom of a one-block shaft): a notch is cut in the wall
   // at foot or head height and the station goes in it, as a player would.
   // The wall of a saved shelter the bot stands in too: the station fills
@@ -2621,11 +2656,12 @@ async function loadSideFurnaces(bot, task, goal, save, main, { item, from, fuelI
     let cell = null;
     for (const dy of [0, 1, -1]) for (let dx = -2; dx <= 2 && !cell; dx++) for (let dz = -2; dz <= 2 && !cell; dz++) {
       const q = o.offset(dx, dy, dz);
-      if ((dx || dz) && !taken.some(t => t.equals(q)) && !hitboxIntrudes(bot, q) && openForStation(bot, q)) cell = q;
+      if ((dx || dz) && !taken.some(t => t.equals(q)) && stationCellOk(bot, goal, q)) cell = q;
     }
     if (!cell) break;
     try {
-      await place(bot, task, cell, 'furnace');
+      try { await place(bot, task, cell, 'furnace'); }
+      catch (err) { task.check(); if (!STATION_FATAL.has(err.name)) restStationCell(goal, cell, 'furnace', err); throw err; }
       rememberWorkstation(bot, goal, 'furnace', cell); taken.push(cell);
       const block = bot.blockAt(cell);
       const furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
@@ -4082,7 +4118,15 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // and remembered on the way, and walked into from there.
   if (!known.length && where === 'nether') { const came = require('./game-progress').cameThrough(goal, here); if (came) known.push(came); }
   if (!known.length) return false;
-  const p = known[0];
+  // With blaze rods carried, the portal the way in began at, where it is one
+  // remembered: its way back is known (note 762). 25588 (11:50Z) made for a
+  // portal 114 blocks off with its way in beginning at another.
+  let p = known[0];
+  if (where === 'nether' && require('./walk-out').rodsCarried(bot)) {
+    const start = require('./walk-out').backTrail(require('./walk-out').wayInOf(bot, goal), here)?.start;
+    const came = start && known.find(q => Math.hypot(q.x - start.x, q.y - start.y, q.z - start.z) <= 6);
+    if (came) p = came;
+  }
   // At the place worked out and still none in view: it is not there.
   if (p.estimated && Math.hypot(p.x - here.x, p.z - here.z) <= 8) return false;
   goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
@@ -4090,8 +4134,20 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // a staircase toward it the way an ore is reached; a portal at y=-11 is
   // not on any surface route. What each way ended in is kept, for the
   // question when none gets there (portalWay).
-  const distance = here.distanceTo(pos(p));
+  let distance = here.distanceTo(pos(p));
   let walk;
+  // With blaze rods carried in the Nether, back the way it came in first:
+  // cells stood on alive and its own spans, not a fresh route over the lava
+  // sea (walk-out.js, note 762). Stopped, it rests two minutes and the ways
+  // on are asked with what it came to.
+  const walkOut = require('./walk-out'), rods = where === 'nether' ? walkOut.rodsCarried(bot) : 0;
+  if (rods && !isSetAside(goal, 'way_in', pos(p))) {
+    const went = await walkOut.walkBack(bot, task, goal, p, navigate);
+    if (went.tried && !went.ok) { setAside(goal, 'way_in', pos(p), `the way back along it stopped: ${went.why}`, 120000); save(); walk = `back the way it came in: ${went.walked} cells walked, then ${went.why}`; }
+    if (went.tried) distance = bot.entity.position.distanceTo(pos(p));
+  }
+  // The way in stopped: the ways on are Jev's, with what it came to.
+  if (walk) return portalWay(bot, task, goal, save, p, where, { walk });
   if (distance <= 48) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000, passing: where === 'nether' }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walk = `the walk there failed (${String(err.message || err).slice(0, 80)})`; }
@@ -4106,7 +4162,11 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // staircase both failed 250 blocks from its portal, and nothing else was
   // tried (note 241, 2026-09-26). The height is made up where it stands
   // below the portal, by the pillar (tunnelToward).
-  if (where === 'nether') {
+  // Not with rods carried: a span of its own over the lava sea is a fresh
+  // route over lava, and a fall or a push off it loses every rod; offered
+  // with that said (portal_way dig_across, note 762).
+  if (where === 'nether' && rods) walk = `${walk}; the crossing straight at it over open air or lava is not begun unasked while rods are carried`;
+  else if (where === 'nether') {
     const { crossToward } = require('./nether-travel');
     portalApproach(goal, p, bot.entity.position);
     const crossed = await crossToward(bot, task, goal, save, pos(p), { what: 'the portal back', beat: approachBest(goal, p) });
@@ -4279,6 +4339,16 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     const wood = fetch ? await fetch.describe() : 'No stem is known and none is on offer to fetch: the wood is looked for by the gathering\'s legs.';
     tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the staircase to the portal, from wood not carried, then the staircase: the gathering goes where the wood is, not toward the portal. ${wood}` };
   }
+  // With blaze rods carried (note 762): back the way it came in, where a way
+  // is kept from near here. Every other way is fresh ground, said with what
+  // a fall or lava on it costs.
+  const walkOut = require('./walk-out'), rods = where === 'nether' ? walkOut.rodsCarried(bot) : 0;
+  if (rods) {
+    const way = walkOut.backTrail(walkOut.wayInOf(bot, goal), here, p);
+    if (way?.cells.length > 1 && !isSetAside(goal, 'way_in', target)) tree.the_way_in = { description: walkOut.wayBackSays(bot, way, walkOut.wayFacts(bot, way)) };
+    const fresh = ` Fresh ground, not the way the bot came in: with ${rods} blaze rod${rods === 1 ? '' : 's'} carried, a fall or lava on it loses ${rods === 1 ? 'it' : 'every one'}.`;
+    for (const k of ['climb_here', 'around_left', 'around_right', 'floor_way', 'blocks_then_cross', 'dig_across']) if (tree[k]) tree[k].description += fresh;
+  }
   if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.`,
     // Not idle: the work is asked then (the stall's until_rest_ends says whether any is on offer, note 698).
     waits: require('./waits').restEnds(bot, { what: 'the staircase\'s rest', until, cause: stairsWhy, idle: false, now }) };
@@ -4289,7 +4359,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   // (the stall's question answers it), not asked again.
   if (!Object.keys(tree).length) throw new WaysResting(`${says} Every way offered from here was tried in this rest and came to nothing: ${triedSays.join('; ')}.`, Math.max(until, now + PORTAL_WAY_TRIED_MS));
   const decision = await decide('portal_way', { client, bot, task, goal, save, tree, target: p,
-    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(where === 'nether' && / over lava/.test(between || '') ? { aTouchOfLava: require('./terrain').lavaTouchSays(bot) } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), ...(triedSays.length ? { triedFromHereToNothing: triedSays } : {}), health: bot.health, food: bot.food } });
+    state: { portal: { x: p.x, y: p.y, z: p.z, dimension: where }, distance, ...(Math.round(p.y - here.y) >= 3 ? { portalAbove: Math.round(p.y - here.y) } : {}), walk, staircase: stairsWhy, ...(minutes ? { minutesLeft: minutes } : {}), ...(boat ? { boat } : {}), ...(between ? { between } : {}), ...(where === 'nether' && / over lava/.test(between || '') ? { aTouchOfLava: require('./terrain').lavaTouchSays(bot) } : {}), ...(again ? { chosenFromHereBefore: again.pick } : {}), ...(triedSays.length ? { triedFromHereToNothing: triedSays } : {}), ...(rods ? { rodsOnTheWalk: walkOut.rodsSays(bot) } : {}), health: bot.health, food: bot.food } });
   if (decision.stale) return true;
   const pick = decision.path.at(-1);
   goal.portalWay = { key, until, from, pick, at: now, tried }; save();
@@ -4332,6 +4402,13 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   if (pick === 'pickaxe_first') {
     goal.portalPickaxeChosen = { at: now }; save();
     await pickaxeForStair(bot, task, goal, save, target, `portal_${where}`, pickaxeWanted.item);
+    return true;
+  }
+  if (pick === 'the_way_in') {
+    attemptsFor(goal).clear('way_in', target);
+    const went = await walkOut.walkBack(bot, task, goal, p, navigate);
+    if (went.tried && !went.ok) { setAside(goal, 'way_in', target, `the way back along it stopped: ${went.why}`, 120000); save(); }
+    cameTo(went.ok ? null : went.why || 'no way kept from here');
     return true;
   }
   if (pick === 'floor_way') {
@@ -5553,6 +5630,13 @@ async function returnFromNether(bot, task, goal, save) {
   }
   rememberPortal(goal, save, portal, 'nether');
   goal.step = { action: 'return_overworld', portal: { ...portal } }; save();
+  // In view but more than sixteen blocks off, with blaze rods carried: back
+  // the way it came in first, as for a portal remembered (note 762).
+  const walkOut = require('./walk-out'), rods = walkOut.rodsCarried(bot);
+  if (rods && bot.entity.position.distanceTo(pos(portal)) > 16 && !isSetAside(goal, 'way_in', pos(portal))) {
+    const went = await walkOut.walkBack(bot, task, goal, portal, navigate);
+    if (went.tried && !went.ok) { setAside(goal, 'way_in', pos(portal), `the way back along it stopped: ${went.why}`, 120000); save(); }
+  }
   try { await enterPortal(bot, task, portal, () => dimension(bot) === 'overworld'); }
   catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
@@ -5561,6 +5645,8 @@ async function returnFromNether(bot, task, goal, save) {
     // the staircase alone was tried, and its rest thrown to the stall
     // question every pass (note 556).
     const walk = `the walk into it failed (${String(err.message || err).slice(0, 80)})`;
+    // Not unasked with rods carried: offered (portal_way dig_across).
+    if (rods) return void await stairsOrWay(bot, task, goal, save, portal, 'nether', `${walk}; the crossing straight at it over open air or lava is not begun unasked while rods are carried`);
     const { crossToward } = require('./nether-travel');
     portalApproach(goal, portal, bot.entity.position);
     const crossed = await crossToward(bot, task, goal, save, pos(portal), { what: 'the portal back', beat: approachBest(goal, portal) });
@@ -7411,4 +7497,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS };
+module.exports = { supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk };
