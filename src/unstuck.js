@@ -743,15 +743,27 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
       return false;
     });
   }
-  // A move that came to nothing from this very cell in the last minute (its
-  // end not reached) is not offered again from it: each of 25581's bridges
-  // laid its block and did not step onto it, and the spell went on to the
-  // next side (note 706).
-  const failedFrom = new Set(kept.filter(r => r.from === `${feet}` && r.reached === false).map(r => r.move));
+  // A move that came to nothing from this very cell (its end not reached,
+  // or the block stood on left unchanged) is withdrawn, not offered again
+  // from here, until the bot's own position moves it to a different cell:
+  // each of 25581's bridges laid its block and did not step onto it, and
+  // the spell went on to the next side (note 706). Not time-limited to a
+  // minute (note 744): a storm of unstuck_move asks held to one spot for
+  // many minutes saw the same tried-and-failed move come back every time
+  // the minute wore off (114 of 308 asks on the record of 2026-09-30
+  // followed an answer that had already changed nothing). Scoped by `from`
+  // alone, this needs no clock: every record with `from` equal to the
+  // cell stood on now was made without the bot ever having left it.
+  const feetKey = `${feet}`;
+  const triedHere = (recent || []).filter(r => r.from === feetKey);
+  const failedFrom = new Map();
+  for (const r of triedHere) if (r.reached === false) failedFrom.set(r.move, r);
   if (failedFrom.size) {
     moves = moves.filter(m => {
-      if (!failedFrom.has(m.key)) return true;
-      notOffered.push(`${m.key.replaceAll('_', ' ')}: chosen from this cell in the last minute and it did not get there`);
+      const r = failedFrom.get(m.key);
+      if (!r) return true;
+      const ago = Number.isFinite(r.at) ? Math.max(1, Math.round((Date.now() - r.at) / 1000)) : null;
+      notOffered.push(`${m.key.replaceAll('_', ' ')}: tried${ago != null ? ` ${ago} s ago` : ''}, changed nothing, from this same cell; not offered again until the bot stands somewhere else`);
       return false;
     });
   }
@@ -1045,7 +1057,22 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null, recent: record.moves, toward });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; delete record.escalated; save(); return true; }
-    if (!moves.length) return false;
+    // How long this stuck spell has run and how many moves it has tried so
+    // far: said on every ask (note 744), not only kept in the record for
+    // this rule's own use.
+    const spellMs = Math.max(0, Date.now() - Date.parse(record.since));
+    const spellSays = `${Math.max(1, Math.round(spellMs / 1000))} s into this stuck spell, ${record.moves.length} move${record.moves.length === 1 ? '' : 's'} tried so far`;
+    // The checked set of moves is empty: nothing here is a dig against a
+    // solid diggable block, a step into a standable cell, or a water move
+    // in water. Asking the same empty set again would only repeat it, so
+    // this escalates to a different question at once (note 744).
+    if (!moves.length) {
+      const says = `working free (${aim.aim}): ${spellSays}; no move here is checked against the world (nothing safe to dig, step onto, or place)`;
+      record.escalated = { at: Date.now(), where: { x: feet.x, y: feet.y, z: feet.z }, says };
+      save();
+      require('./decisions').escalate(bot, goal, 'unstuck_move', says);
+      return false;
+    }
     // A minute of moves that gained nothing toward the aim: the question
     // above is asked with it said, not another move (note 684).
     const minute = judgeMinute(record, aim);
@@ -1066,7 +1093,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const tree = Object.fromEntries(moves.map(m => [m.key, { description: describeMove({ ...m, failedHere: failedHere(m.key) }, { offWorld: !/overworld/.test(String(bot.game?.dimension || 'overworld')) }) + (push.moves.get(m.key) || '') }]));
     const decision = await decide('unstuck_move', { client, bot, task, goal, save, tree,
       // Breath, in seconds: a full bar is fifteen under water.
-      state: { aim: aim.aim, ...(fight ? { theWorkHere: `the blaze rods at ${fight.where}, ${fight.off} blocks off: ${fight.need} still needed` } : {}), here, carried: view.carried, recentMoves: record.moves.slice(-6).map(({ at, measure, fresh, ...r }) => r), ...(minute.says ? { lastMinute: minute.says } : {}), health: bot.health, food: bot.food,
+      state: { aim: aim.aim, spell: spellSays, ...(fight ? { theWorkHere: `the blaze rods at ${fight.where}, ${fight.off} blocks off: ${fight.need} still needed` } : {}), here, carried: view.carried, recentMoves: record.moves.slice(-6).map(({ at, measure, fresh, ...r }) => r), ...(minute.says ? { lastMinute: minute.says } : {}), health: bot.health, food: bot.food,
         ...(view.corrections ? { serverCorrections: view.corrections } : {}),
         // The mobs about while it works free, seen or not (the decision
         // audit), and the shooters farther off whose fire reaches the bot.
@@ -1078,6 +1105,20 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
         // the state (note 477).
         ...(here.inWater || moves.some(m => m.letsWater) ? { breathSecondsLeft: Math.round((bot.oxygenLevel ?? 20) * 0.75) } : {}) } });
     if (decision.stale) continue;
+    // None of the moves offered was a good one, twice in this stuck spell:
+    // the checked set is not answering it, so this escalates to a
+    // different question (a wider way out) rather than asking the same
+    // set a third time (note 744).
+    if (decision.noneGood) {
+      record.noneGoodInSpell = (record.noneGoodInSpell || 0) + 1;
+      if (record.noneGoodInSpell >= 2) {
+        const says = `working free (${aim.aim}): ${spellSays}; none_good came back ${record.noneGoodInSpell} times in this stuck spell, the checked set of moves offered is not answering it`;
+        record.escalated = { at: Date.now(), where: { x: feet.x, y: feet.y, z: feet.z }, says };
+        save();
+        require('./decisions').escalate(bot, goal, 'unstuck_move', says);
+        return false;
+      }
+    }
     const m = moves.find(x => x.key === decision.path.at(-1));
     const before = bot.entity.position.clone(), blocks = m.cell ? bot.blockAt(m.cell)?.name : null;
     goal.step = { action: 'work_free', move: m.key, aim: aim.goal }; save();
