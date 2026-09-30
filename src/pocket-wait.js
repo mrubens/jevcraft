@@ -88,7 +88,7 @@ function watchPocket(state, refuge, about, now = Date.now()) {
 
 // Out of any pocket: its record goes with it, and when the bot was last seen
 // out is kept (a pocket sealed after it is a new wait).
-function leftPocket(state, now = Date.now()) { delete state.pocketWait; state.pocketOutAt = now; }
+function leftPocket(state, now = Date.now()) { delete state.pocketWait; delete state.pocketRests; state.pocketOutAt = now; }
 
 // How one mob outside has gone while the bot waited, or null when it has not
 // been about a minute of it. One come nearer is said with how near and how

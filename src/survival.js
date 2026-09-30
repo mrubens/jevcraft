@@ -8971,7 +8971,15 @@ class Survival {
         || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside ? 'sleep_beside' : null);
       if (!choice) {
         const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.waits ? { waits: o.waits } : {}), ...(o.children ? { children: Object.fromEntries(Object.entries(o.children).map(([ck, c]) => [ck, { description: c.description }])) } : {}) }]));
-        const decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
+        // Every way here resting goes up to survival_priority, which asks
+        // nothing about a pocket: the turn is where it is weighed. Kept for
+        // the claim (pocketRestsOf), said on it until a way comes back.
+        // 25592 (mid-242-wa, 08:15 to 08:26Z) escalated so about ten
+        // thousand times in eleven minutes, sealed at full health 3 blocks
+        // from a fortress, the ghast it sealed against gone, and the turn
+        // was given to the pocket each minute on "asked next" (note 757).
+        let decision;
+        try { decision = await this.decide(task, goal, save, { id: 'pocket_next', tree, context: { rule },
           // The day's fields where there is a day (note 677).
           state: { ...(offWorld ? {} : { timeOfDay: bot.time?.timeOfDay, night, daylight: night ? ((bot.time?.timeOfDay ?? 0) < DAY.DARK ? 'dusk: the sun is going down, and the night is counted from here' : 'night') : (bot.time?.timeOfDay ?? 0) >= 22000 ? 'dawn: zombies and skeletons in the open burn once the sun is up' : 'day' }),
             workWaiting: goal.rungTime?.phase || goal.step?.item || goal.step?.block || goal.request || null,
@@ -8981,7 +8989,13 @@ class Survival {
             ...(waitSays ? { pocketSoFar: waitSays.facts } : {}), ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : {}),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
-            threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity), ...(onLid.some(o => o.entity === t.entity) ? { onLid: true, inReach: false, canReachBot: false } : {}) })) } });
+            threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity), ...(onLid.some(o => o.entity === t.entity) ? { onLid: true, inReach: false, canReachBot: false } : {}) })) } }); }
+        catch (err) {
+          const up = err.name === 'Stalled' && err.stall?.escalated?.from === 'pocket_next' ? err.stall : null;
+          if (up) { this.state.pocketRests = { origin: { ...refuge.origin }, at: Date.now(), until: up.until > Date.now() ? up.until : Date.now() + 60000, says: String(up.escalated.says || up.why).replace(/^pocket next: (every way it had from here rests: )?/, '').slice(0, 400) }; save(); }
+          throw err;
+        }
+        delete this.state.pocketRests;
         if (decision.stale) { onStep(goal); return true; }
         choice = decision.path.at(-1);
         require('./seal-reason').noteAfter(this.state, decision.path[0]);
@@ -9565,6 +9579,16 @@ function sealForWhy(bot, { underground = false, night: dark = false, sleepDebt =
   return { none: why.none, says: why.none ? `no reason to seal: health ${Math.round((bot.health ?? 20) * 10) / 10}, nothing hostile in sight within 24 blocks or within ${require('./seal-reason').HEARD_NEAR}` : why.short };
 }
 
+// Every way pocket_next had in this pocket resting, as its last asking
+// found them (stepOnce keeps it when the question goes up for it): what
+// rests and about how long until the first comes back, or null.
+function pocketRestsOf(state, refuge, now = Date.now()) {
+  const r = state?.pocketRests;
+  if (!r || !(r.until > now) || !refuge?.origin || !r.origin) return null;
+  if (r.origin.x !== refuge.origin.x || r.origin.y !== refuge.origin.y || r.origin.z !== refuge.origin.z) return null;
+  return { says: r.says, forSeconds: Math.max(1, Math.round((r.until - now) / 1000)) };
+}
+
 // What this layer would claim of the turn (src/arbiter.js), read from the
 // same conditions stepOnce acts on and without acting: nothing is walked,
 // searched, reported or set aside here. A plan that failed or rests is a
@@ -9643,8 +9667,12 @@ function claim(bot, goal = {}, survival = null) {
   // at 10:44:57 answered stay each pass and pocket_next was never asked
   // (note 752).
   const pocketHeld = insideRefuge ? pocketHeldOf(bot, state, now) : null;
+  // Every way the pocket had resting, gone up to a question that asks
+  // nothing about it (stepOnce's pocket branch, note 757): said, with when
+  // the first comes back, not "asked next".
+  const pocketRests = insideRefuge ? pocketRestsOf(state, refuge, now) : null;
   if (insideRefuge && (sealedNow || shutOpen || openedSinceSealed)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
-    ...(pocketHeld ? { pocketHeld } : {}), ...(underground ? { underground: true } : {}),
+    ...(pocketRests ? { pocketWaysRest: pocketRests } : pocketHeld ? { pocketHeld } : {}), ...(underground ? { underground: true } : {}),
     ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : openedSinceSealed ? { pocketNotWhole: 'shut before, but not now: a wall was opened since it was last sealed (its own mining, or working free)' } : {}),
     ...(require('./pocket-wait').pocketWaitSays(bot, state, goal, { near: threats(bot, 64), night: shelterNeeded(bot),
       // Whether the wait waits for nothing, as the pocket's own question
@@ -9767,4 +9795,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES };
+module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES };
