@@ -2899,6 +2899,25 @@ function fortressFloors(bot, bricks) {
   return bricks.filter(b => floorBlock(b) && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => floorBlock(b.offset(dx, 0, dz))));
 }
 const NOT_FLOORS = /fence|wart|wall/;
+// Where no floor is seen yet, the nearest brick by raw distance can be one
+// buried in the fortress's own wall or roof, with rock or more bricks on
+// every side: nothing stands beside it to walk to, so every way in asks the
+// pathfinder for a route to a cell that has none, and it comes back
+// "no route" a foot from what looks like the target (25589, mid-242-nc-
+// fortress-3, 05:59:44 and 06:00:24Z: `cross_level` and `walk_route` offered
+// 1 to 15 blocks from "the nearest", `no_route` straight after, note 725).
+// A brick with open air on at least one side (or above) can be walked to
+// from that side; one with none cannot, whatever its distance. Preferred
+// first; every brick is still tried if none here is exposed.
+function exposedBrick(bot, b) {
+  if (typeof bot.blockAt !== 'function') return true;
+  const open = q => { const bl = bot.blockAt(q); return !bl || (bl.boundingBox === 'empty' && !/lava|water/.test(bl.name || '')); };
+  return [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([dx, dy, dz]) => open(b.offset(dx, dy, dz)));
+}
+function exposedBricks(bot, bricks) {
+  const exposed = bricks.filter(b => exposedBrick(bot, b));
+  return exposed.length ? exposed : bricks;
+}
 // In the fortress: standing at the height of one of its floors, within six
 // blocks of it. The one test for the patrol, the approach and staying.
 function onFortressFloor(here, floors) {
@@ -3511,7 +3530,11 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // the nearest, picked afresh at each pass, moved fifteen to forty
     // blocks as mid-242-bb walked a few steps, so each asking was about a
     // new place, every way on offer again, none resting (note 613).
-    const candidates = floors.length ? floors : bricks, a = state.approach;
+    // No floor seen yet: the nearest raw brick can be one buried in the
+    // fortress's own wall or roof with rock or more bricks on every side,
+    // nothing beside it to walk to (note 725: exposedBricks). Preferred
+    // over it, a brick with open air on some side.
+    const candidates = floors.length ? floors : exposedBricks(bot, bricks), a = state.approach;
     const kept = a?.found && a.from && Math.hypot(a.from.x - here.x, a.from.y - here.y, a.from.z - here.z) <= APPROACH_FROM
       ? candidates.find(f => f.x === a.found.x && f.y === a.found.y && f.z === a.found.z) : null;
     if (!onFortressFloor(here, floors)) {
@@ -3756,4 +3779,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}) } };
 }
 
-module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };
+module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks };

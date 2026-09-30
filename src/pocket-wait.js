@@ -162,6 +162,26 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   const starving = noFood && hp < 20 && food < 18;
   const foodSays = starving ? ` Nothing carried is food: hunger ${food} does not rise in here, so health does not come back in this pocket however long it waits.` : '';
   if (starving) facts.health = `${Math.round(hp * 10) / 10}, not coming back: nothing carried to eat and hunger ${food}`;
+  // A trip for food already chosen (note 726): 25598 sealed at 7 health
+  // with nothing to eat, chose return_for_food, and was sealed in again a
+  // few seconds later with no word that the trip it had just begun was
+  // sitting unwalked. Sealing here may still be the safer choice against a
+  // real mob (this is said, not held), but it should never look free:
+  // sitting in this pocket does not walk the trip, and each minute here is
+  // a minute of it spent standing still.
+  let tripSays = '';
+  if (starving) {
+    let held = null;
+    try { const i = require('./intention').holding(bot, goal, now); if (i && /^(return_for_food|restock_food)$/.test(i.choice)) held = i; } catch (_) { held = null; }
+    if (held) {
+      tripSays = ` A trip for food (${name(held.choice)}) was already chosen ${minutesSays(now - held.at)} ago${held.target ? `, toward (${held.target.x}, ${held.target.y}, ${held.target.z})` : ''}: staying here does not walk it, and each minute sealed is a minute of it spent standing still.`;
+      facts.foodTripHeld = `${name(held.choice)}, chosen ${minutesSays(now - held.at)} ago`;
+    } else if (goal?.leaveNether?.reason === 'food') {
+      const at = goal.leaveNether.at;
+      tripSays = ` A trip back for food was already chosen${Number.isFinite(at) ? ` ${minutesSays(now - at)} ago` : ''}: staying here does not walk it.`;
+      facts.foodTripHeld = 'a trip back for food, already chosen';
+    }
+  }
   // How many are about now against the first look: mid-242-ab-nether-3-
   // fortress-1 sealed in twelve blocks from a blaze spawner with five
   // blazes about, and twenty minutes on twenty and more mobs were within 24
@@ -238,7 +258,7 @@ function pocketWaitSays(bot, state, goal, { outside = [], near = [], night = fal
   const stayWaits = waitsForNothing ? waitFor.event('the mobs outside to go', { comes: false, why: `${goneSays}, no daylight comes here, and ${starving ? 'health does not come back without food' : 'health is full'}` }) : null;
   return {
     facts, heldOff, minutes, waitsForNothing, stays, waits: stayWaits,
-    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${nothingComes}${rungLine}`,
+    stay: ` In this pocket ${minutes} so far.${againstSays}${mobsSays}${countSays}${daySays}${healSays}${foodSays}${tripSays}${nothingComes}${rungLine}`,
     leave: `${againstSays ? ` ${againstSays.trim().replace(/^It was/, 'The pocket was')}` : ''}${mobsSays}${countSays}`,
     claim: { inPocketMinutes: facts.minutes, ...(facts.sealedAgainst ? { sealedAgainst: facts.sealedAgainst } : {}), ...(waitsForNothing ? { waitingFor: facts.waitingFor, staysForNothing: stays } : {}) },
   };

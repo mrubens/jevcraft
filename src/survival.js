@@ -205,6 +205,20 @@ function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runS
 function blowsSay(mobs, health) {
   const { MOBS, LIGHTS_AT, FUSE } = require('./combat-estimate');
   const h = Math.round((health ?? 20) * 10) / 10;
+  // A blanket "in sight or within eight blocks" cutoff (as 1d055eda's
+  // per-mob notes use) was tried here and reverted: build-reach.test.js's
+  // sword piglin, 16 blocks off and out of sight, is meant to lead exactly
+  // because it can be at the bot before a slow pocket seals; the fact this
+  // function reports (how soon the hardest biter arrives, at its own blow)
+  // is the same fact whether that biter is close, far, seen or not, and the
+  // pocket's own price depends on it. 25589's magma cube (note 725, critic
+  // 06:04Z), 9 blocks off and out of sight among only magma cubes, was a
+  // real case of this lead-in naming a far mob with nothing nearer to say
+  // instead; distinguishing it from the piglin's own, correct warning needs
+  // more than distance or sight alone (arrival time, on this evidence, does
+  // not separate them either: 4.4s against the piglin's 2.7s), so it is
+  // left as a known gap rather than guessed at here (see note 725's trial
+  // note for what was tried and why it was backed out).
   const biters = (mobs || []).filter(m => !m.apart && !m.shoots && m.name !== 'creeper' && m.hitsBot > 0 && !m.bornOf);
   const creepers = (mobs || []).filter(m => !m.apart && m.name === 'creeper' && m.hitsBot > 0);
   if (!biters.length && !creepers.length) return '';
@@ -230,10 +244,14 @@ function blowsSay(mobs, health) {
   const bare = m.bornOf ? null : MOBS[m.name]?.hit;
   const v = blocksPerSecond(m.name), soon = Math.round(Math.max(0, (m.distance || 0) - (m.reach || 1.5)) / v * 10) / 10;
   const name = m.name.replaceAll('_', ' ');
-  const hardest = biters.length > 1 ? `, the hardest hitter of the ${biters.length} here that can get to the bot,` : '';
+  const hardest = biters.length > 1 ? 'the hardest hitter of the ' + biters.length + ' here that can get to the bot' : '';
   const when = soon <= 0.1 ? 'it is at arm\'s length now' : `at its own speed (about ${Math.round(v * 10) / 10} blocks a second) it can be at arm's length in about ${soon} second${soon === 1 ? '' : 's'}`;
-  // One out of sight is said so: its blow is the same round the rock (note 581).
-  const unseen = m.visible === false ? ', out of sight,' : '';
+  // One out of sight is said so: its blow is the same round the rock (note
+  // 581). Joined with `hardest` by a single comma each, never two in a row
+  // (note 725: "out of sight,, the hardest hitter" when both held).
+  const unseenWord = m.visible === false ? 'out of sight' : '';
+  const clauses = [unseenWord, hardest].filter(Boolean);
+  const unseen = clauses.length ? `, ${clauses.join(', ')},` : '';
   // A blow that varies is said from its least to its hardest, and the
   // blows that end the bot at its hardest; its pace as the jar has it (a
   // hoglin's every two seconds). "Hits for about 3.4 ... 5 blows end the
@@ -244,7 +262,7 @@ function blowsSay(mobs, health) {
   const size = most ? `${m.hitsBotLeast} to ${most} a blow through the armour worn, about ${m.hitsBot} on the average (${MOBS[m.name].least} to ${MOBS[m.name].most} before it)` : `about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}`;
   const pace = every === 1 ? 'a blow a second at arm\'s length' : `a blow every ${every} seconds at arm's length`;
   const ends = most && fewest < blows ? `${fewest === 1 ? 'one blow at its hardest ends' : `${fewest} blows at their hardest end`} the bot from ${h} health (${blows} on the average)` : `${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health`;
-  return `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen}${hardest} hits for ${size}, ${pace}: ${ends}, and ${when}.`;
+  return `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen} hits for ${size}, ${pace}: ${ends}, and ${when}.`;
 }
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -3975,6 +3993,38 @@ class Survival {
     const sealCost = (inCell.length ? ` ${ownCellsSays(inCell)}: ${inCell.length === 1 ? 'it is' : 'they are'} inside the pocket, and closed, it shuts ${inCell.length === 1 ? 'it' : 'them'} in with the bot.` : '') + (sealPriced ? costSays(sealPriced, bot.health, mobs, { doing: 'building', done: 'Shut in' }) : '');
     if (shelter.materialStock(bot) >= 4) options.seal = { ...(sealPriced ? { expects: { damage: sealPriced.damage, seconds: sealPriced.seconds, oneHit } } : {}), description: 'Close a two-block pocket around the bot where it stands and wait inside for the mobs to lose interest; no fighting.' + race + buildCost + creeperNote + sealCost + nightLong + unseen + (high ? ` The bot stands ${high} block${high === 1 ? '' : 's'} above the ground beside it: the walls go up beside nothing, placed against open air.` : ''),
       run: () => this.sealHere(task, goal, save, danger) };
+    // The classic enderman roof (note 727, after 713's and 718's own "not
+    // fixed"): an enderman is 2.9 blocks tall and cannot path into a cell
+    // under three blocks of headroom, so a lid one block above the bot's
+    // own head (or a two-high gap already there) keeps it out for good,
+    // not just until a second one joins the crowd (the single-enderman
+    // fast path above, gated to exactly one within eight blocks and
+    // nothing else); the sword still reaches out and strikes its legs from
+    // under it. Cheap next to `seal`'s full shell (one block and a couple
+    // of seconds, not eight to thirty), and unlike `seal` the bot keeps
+    // fighting instead of waiting blind. Offered only where every threat
+    // about is an enderman: a zombie or a spider fits under the same lid
+    // and would go on landing its own hits.
+    if (danger.length && danger.every(t => t.entity.name === 'enderman')) {
+      const roof = require('./enderman-roof');
+      const plan = roof.roofPlan(bot);
+      if (plan) {
+        // While the lid goes up (or the step into a gap is taken), an
+        // enderman already at arm's length lands the same as any build
+        // costs (armsLength, buildCost above); once up, none can land
+        // another, so the price stops at the setup, not carried through
+        // the fight that follows.
+        const capCost = stanceCost({ mobs: mobs.filter(m => m.name === 'enderman'), setup: plan.seconds, reaches: m => arrives(m) < plan.seconds });
+        const stepWords = plan.kind === 'here' ? 'Already under a two-high ceiling here' : plan.kind === 'gap' ? `Step ${plan.blocks === 0 && plan.cell.distanceTo(feet) < 1.5 ? 'onto' : 'into'} a two-high gap already ${Math.round(plan.cell.distanceTo(feet))} block${Math.round(plan.cell.distanceTo(feet)) === 1 ? '' : 's'} off` : 'Place one block above the bot\'s own head, capping the space here at two blocks high';
+        options.cap_fight = { ...(plan.kind !== 'here' ? { expects: { damage: capCost.damage, seconds: capCost.seconds, oneHit } } : {}),
+          description: `${stepWords}: an enderman cannot path into a cell that low, so once the lid is up none still about can ever land a hit, and the sword goes on reaching its legs from here.` + (plan.kind === 'place' ? buildCost : '') + (plan.kind === 'here' ? '' : costSays(capCost, bot.health, mobs, { doing: plan.kind === 'place' ? 'placing the lid' : 'stepping in', done: 'Capped' })) + (danger.length > 1 ? ` ${danger.length} endermen about; capped, they are taken one at a time, whichever is struck.` : ''),
+          run: async () => {
+            this.report(goal, save, { action: 'cap_overhead', kind: plan.kind, blocks: plan.blocks, threats: danger.length, health: bot.health, stance: true });
+            if (!await roof.takeRoof(bot, task, this.actions, plan)) return false;
+            return fightStance ? fightStance.run() : false;
+          } };
+      }
+    }
     // Down into the ground where the bot stands, a block over its head: a
     // player's pocket in a crowd, two or three digs and one block where the
     // pocket above takes twenty to thirty-four (shelter.shell) on open
@@ -4177,7 +4227,16 @@ class Survival {
       const first = soon[0];
       return ` Of those that can get to the bot, the nearest, the ${first.t.entity.name.replaceAll('_', ' ')} ${Math.round(first.t.distance)} blocks off, can be at it in about ${first.at} seconds at its own speed${soon.length > 1 ? `, and ${soon.length - 1} more after it` : ''}.`;
     })();
-    if (!coming.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work${(w => w ? ` (${w.replaceAll('_', ' ')})` : '')(goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action)} and leave these mobs be for fifteen seconds${coming.length ? ` (nearest that can get to the bot ${Math.round(coming[0].distance)} blocks)` : ''}.${this.workProgress(goal)}${reachSays} The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
+    // At a live spawner with rods still owed (cage-hold.js cageFight), that
+    // is the work in hand, not a stale hunt step: `goal.step` can still
+    // hold `open_a_door` from an earlier chase that ended when the stalk
+    // gave up, and saying "(open a door)" here at the spawner is what was
+    // last tried, not what carrying on means now (25589, critic 05:44Z,
+    // note 725).
+    let atCage = null;
+    try { atCage = require('./cage-hold').cageFight(bot, goal); } catch (_) { atCage = null; }
+    const workLabel = atCage ? 'waiting at the spawner for blazes' : (goal?.step?.action === 'combined_request' ? goal.step.detail?.action : goal?.step?.action);
+    if (!coming.some(t => t.distance <= 3)) options.keep_working = { description: `Carry on with the work${(w => w ? ` (${atCage ? w : w.replaceAll('_', ' ')})` : '')(workLabel)} and leave these mobs be for fifteen seconds${coming.length ? ` (nearest that can get to the bot ${Math.round(coming[0].distance)} blocks)` : ''}.${this.workProgress(goal)}${reachSays} The work stops at once if one comes within three blocks or lands a hit. Suits mobs that are far, slow, cannot reach the bot, or are not coming this way.${creeperCount ? (() => {
       // When the work would stop, against when the creeper lights: the
       // work stops at three blocks, which is where the fuse starts (the
       // decision review, 2026-09-26).

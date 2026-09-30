@@ -347,6 +347,16 @@ function noticeLandmarks(bot, goal, save, { now = Date.now(), every = 30, moved 
     try { place = detector.detect(bot); } catch (_) { place = null; }
     if (!place) continue;
     if (detector.kind === 'ruined_portal' && own.some(p => Math.hypot(p.x - place.x, p.z - place.z) <= 12)) continue;
+    // A fortress already anchored by the search (mob-hunt.js
+    // fortressSearch.fortressAt) is the one being used, not a find: that
+    // search keeps its own record, unseen by `goal.landmarks`, so the first
+    // brick this detector happens to notice read as new and got announced
+    // (25589, 06:05:00Z: "Ooh, a nether fortress at 118, 364!" while already
+    // working the fortress at (119, 71, 337), note 725).
+    if (detector.kind === 'nether_fortress' && goal.fortressSearch?.fortressAt) {
+      const a = goal.fortressSearch.fortressAt;
+      if (Math.hypot(a.x - place.x, a.z - place.z) <= (a.extent || 0) + 96) continue;
+    }
     const { landmark, isNew } = rememberLandmark(goal, detector.kind, where, place, now);
     found.push(landmark);
     if (isNew) {

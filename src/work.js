@@ -394,7 +394,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const untriedBelow = byEscalation && worked?.openBelow?.length ? worked.openBelow : null;
   const untriedSays = untriedBelow ? untriedBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ') : '';
   const setAsideNotOffered = untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}` : null;
-  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion) && !setAsideNotOffered) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
+  // Not offered for the rods while the bot is at a live spawner that still
+  // owes them (cage-hold.js cageFight): the game is handing them over right
+  // there, so leaving them for thirty minutes is not a real choice (25589,
+  // critic 05:44Z, 06:04Z: `set_aside_rung` taken while standing at the
+  // cage with blazes about, note 725).
+  const atLiveSpawnerForRods = rung === 'obtain_blaze_rods' && cage;
+  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion) && !setAsideNotOffered && !atLiveSpawnerForRods) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
     run: async () => {
       setAside(goal, 'rung', rung, `Jev set it aside at the rung's question${worked ? `, worked on ${worked.says}` : `, stalled ${stall.strikes} times`}`.slice(0, 300), RUNG_WAIT_MS); delete goal.rungTime;
       // What it was set aside for, from where, and until when that stands:

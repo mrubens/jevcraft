@@ -58,8 +58,19 @@ const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|re
 // The questions about the plan that are not asked to replace an intention.
 const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
-// is under way: a timed answer of theirs replaces it.
+// is under way: a timed answer of theirs replaces it. Held ordinarily open
+// (not GATED) so a real change can freely redirect a walk in progress; but
+// where the held intention is an errand (below), rung_progress and
+// stillness_detour are gated the same way upkeep's fetch already is (note
+// 703): the errand's own way on stays offered, and an answer that would
+// drop it with nothing said (set_aside_rung, keep_searching) is withheld.
+// 25598's return_for_food (a 370-block trip, chosen at 7 health with
+// nothing to eat) had none of that: rung_progress's set_aside_rung was
+// offered beside it with no word that an errand was under way, and once
+// asked the bot sealed back into a pocket with the trip never said given
+// up (note 726).
 const AT_A_CHANGE = new Set(['stillness_detour', 'rung_progress']);
+const ERRAND_GATED = new Set(['stillness_detour', 'rung_progress']);
 // Answers that keep on with what is under way.
 const KEEP = /^(carry_on|keep_on|go_on|keep_at_it|continue_request|search_on|wait_here)$/;
 // Answers that leave what is under way: chosen, it ends.
@@ -304,7 +315,12 @@ function gate(bot, goal, q, tree, { now = Date.now() } = {}) {
   const out = { tree, underWay: null, withheld: [], ended };
   if (!i || !(GATED.has(q) || AT_A_CHANGE.has(q))) return out;
   out.underWay = says(i, now);
-  if (!GATED.has(q) || q === i.q) return out;
+  // An errand held (fetch_stems, return_for_food, restock_food and the
+  // like) is gated at rung_progress and stillness_detour too, the same as
+  // upkeep's fetch already is (note 703): otherwise asked wide open, they
+  // could drop it with nothing said (note 726).
+  const errandGate = ERRAND_GATED.has(q) && ERRANDS.test(i.choice);
+  if (!(GATED.has(q) || errandGate) || q === i.q) return out;
   const way = wayOf(q, i);
   const kept = Object.fromEntries(Object.entries(tree).filter(([k, n]) => serves(i, q, k, n, way)));
   const withheld = Object.keys(tree).filter(k => !Object.hasOwn(kept, k));
@@ -382,4 +398,4 @@ function yieldWatch(bot, goal, now = Date.now()) {
   try { return require('./stillness').raiseFor(bot, goal, why, now, { escalated: { from: 'intention', to: e.q, says: why } }); } catch (_) { return null; }
 }
 
-module.exports = { ERRANDS, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, startSays, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };
+module.exports = { ERRANDS, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, startSays, TIMED, GATED, AT_A_CHANGE, ERRAND_GATED, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };

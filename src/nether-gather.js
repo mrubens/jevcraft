@@ -109,24 +109,41 @@ function knownPlaces(bot, goal, names) {
     if (place) { place.n++; continue; }
     places.push({ at: p, name, n: 1 });
   }
+  // A forest merely noticed, or read off the biome underfoot, with no
+  // actual stem seen there yet: a guess, not a sighting, kept apart from
+  // `places` so it never crowds out a real one. It stood on equal footing
+  // with confirmed clusters before this (note 726): 25593 had 168 warped
+  // stems confirmed at (-83, 36, 51) and a crimson forest merely noticed
+  // that happened to sit a little nearer as a raw distance; the "one of
+  // each kind first" diversification took the guess into the same three
+  // slots, the final resort put it first for being nearer, and the fetch
+  // asked for crimson stems it could not reach ("No way to crimson stem
+  // from here") while never naming the warped ones it could.
+  const guesses = [];
   if (names.some(n => STEM.test(n))) {
     const { knownLandmarks, biomeView } = require('./exploration');
     for (const [kind, stem] of [['warped_forest', 'warped_stem'], ['crimson_forest', 'crimson_stem']]) {
       if (!names.includes(stem) || places.some(pl => pl.name === stem)) continue;
       let l = null;
       try { l = knownLandmarks(bot, goal, kind, 512)[0]?.landmark || null; } catch (_) { l = null; }
-      if (l) { places.push({ at: new Vec3(l.x, Number.isFinite(l.y) ? l.y : Math.round(here.y), l.z), name: stem, n: 0, forest: `the ${words(kind)} noticed there` }); continue; }
+      if (l) { guesses.push({ at: new Vec3(l.x, Number.isFinite(l.y) ? l.y : Math.round(here.y), l.z), name: stem, n: 0, forest: `the ${words(kind)} noticed there` }); continue; }
       let b = null;
       try { b = (biomeView(bot)?.biomesNearby || []).find(v => v.biome === kind) || null; } catch (_) { b = null; }
-      if (b) places.push({ at: new Vec3(b.x, Math.round(here.y), b.z), name: stem, n: 0, forest: `the ${words(kind)} the ground there is` });
+      if (b) guesses.push({ at: new Vec3(b.x, Math.round(here.y), b.z), name: stem, n: 0, forest: `the ${words(kind)} the ground there is` });
     }
   }
-  // The nearest of each kind first (the crimson forest east as well as the
-  // warped one west), then the next nearest.
+  // The nearest of each confirmed kind first (the crimson forest east as
+  // well as the warped one west), then the next nearest confirmed; a guess
+  // fills a slot only where a confirmed sighting does not, and never ahead
+  // of one merely for sitting closer on the map.
   const d = pl => pl.at.distanceTo(here);
-  const byDistance = places.sort((a, b) => d(a) - d(b));
-  const firsts = byDistance.filter((pl, i) => byDistance.findIndex(q => q.name === pl.name) === i);
-  return [...firsts, ...byDistance.filter(pl => !firsts.includes(pl))].slice(0, PLACES).sort((a, b) => d(a) - d(b));
+  const byDistance = arr => arr.slice().sort((a, b) => d(a) - d(b));
+  const confirmed = byDistance(places);
+  const firsts = confirmed.filter((pl, i) => confirmed.findIndex(q => q.name === pl.name) === i);
+  const rest = confirmed.filter(pl => !firsts.includes(pl));
+  const picked = [...firsts, ...rest].slice(0, PLACES).sort((a, b) => d(a) - d(b));
+  if (picked.length >= PLACES) return picked;
+  return [...picked, ...byDistance(guesses)].slice(0, PLACES);
 }
 
 // The ways to a place from where the bot stands: on foot (the pathfinder's

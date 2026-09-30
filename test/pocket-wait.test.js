@@ -157,7 +157,9 @@ test('a Nether pocket with nothing to eat says its wait from the seal across a r
   assert.match(stay, /the blaze 9 blocks off, about for 12 minutes of the wait, come from 2\d to 9 blocks off, from 5 to 2\d over it, never with the bot in sight/);
   assert.match(stay, /the blaze 11 blocks off, about for 12 minutes of the wait, come from 2\d to 11 blocks off, from 5 to 2\d over it, never with the bot in sight/);
   assert.match(stay, /None of them has had the bot in sight while it waited, and a mob takes the bot as its target only once it has seen it\./);
-  assert.match(stay, /Nothing carried is food: hunger 16 does not rise in here, so health does not come back in this pocket however long it waits\. Neither daylight nor health comes to this wait: the bot goes out at [\d.]+ health whenever it goes, so a stay buys only the chance that the mobs outside move off(, and blazes keep about the fortress they spawn in)?, and each minute of it is a minute of the run\./);
+  // A trip back for food chosen before the seal is held: staying here does
+  // not walk it either (note 726).
+  assert.match(stay, /Nothing carried is food: hunger 16 does not rise in here, so health does not come back in this pocket however long it waits\. A trip back for food was already chosen 27 minutes ago: staying here does not walk it\. Neither daylight nor health comes to this wait: the bot goes out at [\d.]+ health whenever it goes, so a stay buys only the chance that the mobs outside move off(, and blazes keep about the fortress they spawn in)?, and each minute of it is a minute of the run\./);
   assert.match(stay, /The obtain blaze rods has had no new best for 30 minutes/);
   // Held off unseen: the fight is what it costs should they all come.
   assert.match(leave, /Should they all come at the bot at once, fighting them is estimated at about/);
@@ -304,4 +306,22 @@ test('in the Overworld at night the stay says its minutes and not the Nether\'s 
   const { tree } = await askAt(survival, { kind: 'win' }, t0 + 90000);
   assert.match(tree.stay.description, /In this pocket 1\.5 minutes so far\./);
   assert.doesNotMatch(tree.stay.description, /No daylight comes here|staying heals nothing/);
+});
+
+test('a food trip held as an intention (not just goal.leaveNether) is said on the stay too, starving and sealed again (25598, note 726)', async () => {
+  const { bot, origin, a, b } = fortressPocket();
+  bot.health = 7; bot.food = 6;
+  const t0 = 1_800_000_000_000, min = 60000;
+  const goal = { kind: 'win', request: 'beat the game', rungTime: { phase: 'obtain_blaze_rods' },
+    portals: [{ x: 18, y: 58, z: 8, dimension: 'nether' }],
+    // return_for_food chosen three minutes before the seal (note 689's
+    // bookkeeping, as intention.js keeps it), no goal.leaveNether set.
+    intention: { q: 'nether_food_kit', choice: 'return_for_food', path: 'nether_food_kit/return_for_food', at: t0 - 3 * min, target: { x: 18, y: 58, z: 8 }, dimension: 'the_nether', health: 7 },
+    tried: { entries: [], escalations: [], rung: { rung: 'obtain_blaze_rods', since: t0 - 60 * min } } };
+  const persisted = { shelters: [{ origin: { ...origin }, dimension: 'the_nether', emergency: true }],
+    stance: { choice: 'seal', kinds: 'blaze', ids: [a.id, b.id], shooters: ['blaze'], at: t0 - 10, health: 7 },
+    sealing: { origin: { ...origin }, at: t0 } };
+  const survival = new Survival(bot, {}, { state: JSON.parse(JSON.stringify(persisted)), client: { systemOne: async () => ({}) } });
+  const { tree } = await askAt(survival, goal, t0 + 2 * min);
+  assert.match(tree.stay.description, /A trip for food \(return for food\) was already chosen 5 minutes ago, toward \(18, 58, 8\): staying here does not walk it, and each minute sealed is a minute of it spent standing still\./);
 });
