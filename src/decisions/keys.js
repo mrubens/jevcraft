@@ -38,7 +38,11 @@ const P = p => p && Number.isFinite(Number(p.x)) && Number.isFinite(Number(p.z))
 // Kept on `holder` (the goal, saved with it), the last KEEP of each kind.
 // -> [id, ...] in the order of `points`
 function ids(holder, kind, points, { near = 4, base = 0, now = Date.now() } = {}) {
-  const reg = holder && typeof holder === 'object' ? (holder.keyIds ||= {}) : {};
+  // Kept with the world's survival state where the goal carries it: a
+  // detour's scratch goal is made afresh at each detour and shares it (note
+  // 749b: 25591's night mine numbered its ores from 0 again at 13:21:13Z).
+  const home = holder?.survival && typeof holder.survival === 'object' ? holder.survival : holder;
+  const reg = home && typeof home === 'object' ? (home.keyIds ||= {}) : {};
   const r = (reg[kind] ||= { next: base, seen: [] });
   const used = new Set(), out = [];
   for (const raw of points) {

@@ -321,7 +321,10 @@ test('repeat and ledger together: a question under the rung whose answer walks a
   assert.equal(now.escalated.to, 'rung_progress');
   assert(now.asked <= 10, `${now.asked} askings before it was sent up`);
   const old = await run(false);
-  assert.equal(old.escalated, null, 'under the old rule every walk out and back was getting somewhere');
+  // Without the rung's measure every walk out and back was getting somewhere by the ledger's rule; since note 749b
+  // the question's own spell sends it up at its twelfth asking going nowhere, however quick (loops.js).
+  assert.equal(old.asked, 11, 'the ledger alone never sent it up: the spell did');
+  assert.match(old.escalated?.says || '', /12 askings over \d+ seconds? have gone nowhere/);
 });
 
 // ---- 25598, mid-242-bb-nether-1-fortress-9 (23:22 to 00:03Z, 2026-09-28) ----

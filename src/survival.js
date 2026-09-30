@@ -7777,8 +7777,21 @@ class Survival {
     // 347 of 815 askings from 06:00Z to 11:30Z on 2026-09-30.
     const oreIds = require('./decisions/keys').ids(goal, 'ore', choices.map(c => c.position), { near: 0.5 });
     const oreKey = c => `ore_${oreIds[choices.indexOf(c)]}`;
+    // What each costs and whether more is wanted (note 749b): 25591 dug coal
+    // after coal at 135 to 148 carried, 25 askings in 70 seconds, told only
+    // "137 coal carried; fuel for every smelt", until the pickaxe wore out and
+    // it dug by hand from y 22 to 53. Said: past the worth keeping, and the
+    // blocks the dig takes (about the steps to it, and the ore) against the
+    // uses left on the pickaxe.
+    const { capOf } = require('./inventory-tidy');
+    const pickUses = Math.max(0, ...bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => remainingUses(bot, i)).filter(Number.isFinite));
+    const costSays = c => {
+      const cells = Math.max(1, Math.abs(c.position.x - feet.x) + Math.abs(c.position.y - feet.y) + Math.abs(c.position.z - feet.z));
+      return pickUses ? ` The dig takes about ${cells} block${cells === 1 ? '' : 's'} of pickaxe wear, of the ${pickUses} uses left on the best pickaxe carried.` : '';
+    };
+    const pastSays = item => { const cap = capOf(item), n = countOf(bot, item); return cap !== undefined && n >= cap ? ` That is already past the ${cap} worth keeping: more is not wanted.` : ''; };
     const tree = Object.fromEntries(choices.map(c => { const [item, use] = ORE_YIELD[c.kind];
-      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${oreFacts(c.position)}` }]; }));
+      return [oreKey(c), { target: { x: c.position.x, y: c.position.y, z: c.position.z }, description: `Dig to the ${c.name.replaceAll('_', ' ')} ${Math.round(c.position.distanceTo(feet))} blocks off (${countOf(bot, item)} ${item.replaceAll('_', ' ')} carried; ${use}).${pastSays(item)}${costSays(c)}${oreFacts(c.position)}` }]; }));
     const branchY = Math.max(feet.y - 10, 16);
     tree.branch = { description: `Dig a branch down to a working depth and along it, looking for ore on the way: ${branchY < feet.y ? `down to y ${branchY}, ${feet.y - branchY} blocks below here` : branchY > feet.y ? `up to y ${branchY}, ${branchY - feet.y} blocks above here` : `level, at y ${branchY}`}, then twenty-four blocks along.` };
     if (dark.length) tree.light_tunnel = { description: `Put a torch in the tunnel here: ${dark.length} cells around the bot are dark enough for monsters to spawn in, and light stops them (${countOf(bot, 'torch')} torches carried).` };

@@ -618,7 +618,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // it gave resting from here, once none good has been Jev's likeliest at
   // half of it (three times or more) or it has gone nowhere.
   let spell = null;
-  if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !aside) {
+  // Asked aside too (shot_answer, note 749b): said, never sent up.
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area)) {
     spell = loops.before(bot, id);
     if (spell?.why && ledgered && spec.parent && !SAY_ONLY.has(id) && !NEVER_HELD.has(id)) {
       const why = `${id.replaceAll('_', ' ')} was ${spell.says}; ${spell.why}`;
@@ -984,7 +985,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
   if (tracked && !decision.stale && decision.path) unchanged.after(bot, id, { choice: decision.path.join('/'), digest, run: changedNothing?.run || 0 });
-  if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !aside && !decision.stale && decision.path) {
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !decision.stale && decision.path) {
     const weights = decision.judgments?.[0]?.probabilities || {};
     loops.after(bot, id, { choice: decision.path.join('/'), noneGoodTop: decision.noneGood || Object.entries(weights).sort((a, b) => b[1] - a[1])[0]?.[0] === NONE_GOOD_KEY });
   }

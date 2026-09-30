@@ -209,7 +209,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // told only "go without the cobblestone" (2026-09-25).
     // Coal is never tossed by the tidy (kit), but past two stacks it is said:
     // mid-83-a carried four, and two smelt a hundred and twenty-eight things.
-    const cap = n => SURPLUS[n] ?? (n === 'coal' ? 128 : undefined);
+    const cap = capOf;
     const over = n => cap(n) !== undefined && counts[n] > cap(n);
     const junk = n => NO_USE.test(n) || over(n);
     let stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)))
@@ -366,4 +366,7 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpos
   return room();
 }
 
-module.exports = { openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };
+// How many of an item are worth keeping, where there is a cap: past it the
+// tidy drops them first (coal is never tossed, but past two stacks it is said).
+function capOf(name) { return SURPLUS[name] ?? (name === 'coal' ? 128 : undefined); }
+module.exports = { capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

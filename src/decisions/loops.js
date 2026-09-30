@@ -37,6 +37,9 @@ const NONE_GOOD_OF = 5;
 const NOWHERE_ASKS = 6;
 const NOWHERE_MS = 90000;
 const NOWHERE_BLOCKS = 48;
+// Or this many askings going nowhere, however quick (note 749b: 25591's 25
+// in 70 seconds never reached the ninety).
+const NOWHERE_ASKS_ANY = 12;
 // Said, never sent up (index.js SAY_ONLY and NEVER_HELD).
 const NOT_SENT_UP = new Set(['turn_priority', 'stillness_detour', 'encounter_stance', 'shot_answer', 'body_way', 'ranged_response']);
 
@@ -53,16 +56,29 @@ const off = () => process.env.JEV_LOOPS === '0';
 function carriedOf(bot) {
   const kinds = {};
   try { for (const i of bot?.inventory?.items?.() || []) kinds[i.name] = (kinds[i.name] || 0) + i.count; } catch (_) { /* no inventory */ }
-  let worth = 0; try { worth = require('../stillness').worth?.(bot) ?? 0; } catch (_) { /* no measure */ }
-  return { kinds, worth };
+  return { kinds, health: Number.isFinite(bot?.health) ? bot.health : null };
 }
+// More of a thing already carried past what is worth keeping (inventory-
+// tidy.js capOf) is not a gain (note 749b): 25591's night mine dug coal at
+// 135 to 148 carried, 25 askings in 70 seconds, and each coal read as the
+// spell going somewhere. Nor the blocks that fill a tunnel (FILLER).
+// Where no cap is kept, a full stack: 25591's lapis went 65 to 69 in the
+// same spell, 'enchanting', which nothing on the ladder does.
+const STACK = 64;
+const capOf = name => { let c; try { c = require('../inventory-tidy').capOf(name); } catch (_) { c = undefined; } return c ?? STACK; };
+const filler = name => { try { return require('../stillness').FILLER?.test(name); } catch (_) { return false; } };
 function gainedSince(a, b) {
   if (!a || !b) return null;
-  const fresh = Object.keys(b.kinds).filter(k => !a.kinds[k]);
+  const fresh = Object.keys(b.kinds).filter(k => !a.kinds[k] && !filler(k));
   if (fresh.length) return `${fresh.slice(0, 3).map(words).join(', ')} now carried`;
-  if (b.worth > a.worth) return 'more of what is worth keeping carried';
+  const more = Object.keys(b.kinds).filter(k => b.kinds[k] > (a.kinds[k] || 0) && !filler(k) && !((a.kinds[k] || 0) >= capOf(k)));
+  if (more.length) return `more ${more.slice(0, 3).map(words).join(', ')} carried`;
   return null;
 }
+const surplusSays = (a, b) => {
+  const past = Object.keys(b?.kinds || {}).filter(k => !filler(k) && b.kinds[k] > (a?.kinds?.[k] || 0) && (a?.kinds?.[k] || 0) >= capOf(k));
+  return past.length ? `; more ${past.map(k => `${words(k)} (${b.kinds[k]} carried, past the ${capOf(k)} worth keeping)`).join(', ')}, which is not a gain` : '';
+};
 
 // The judgment over a spell as it stands, at `here` with `carried`.
 // -> { says, why } (why: the reason it goes up, or null)
@@ -74,12 +90,13 @@ function judge(s, { here, carried, now }) {
   const top = Object.entries(s.choices).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${words(k)} ${plural(v, 'time')}`).join(', ');
   const says = `asked ${plural(n, 'time')} in the last ${span(ms)}, each within ${span(SPELL_GAP_MS)} of the one before (answered ${top})` +
     `${net !== null ? `; the bot walked ${plural(walked, 'block')} meanwhile and is ${plural(net, 'block')} from where these askings began` : ''}` +
-    `; ${gained ? gained : 'nothing new carried since the first of them'}` +
+    `; ${gained ? gained : 'nothing new carried since the first of them'}${surplusSays(s.start.carried, carried)}` +
+    `${Number.isFinite(s.start.carried?.health) && Number.isFinite(carried?.health) && Math.round(carried.health) !== Math.round(s.start.carried.health) ? `; health ${Math.round(s.start.carried.health)} then, ${Math.round(carried.health)} now` : ''}` +
     `${s.ng ? `; none of its options was good at ${s.ng} of them` : ''}`;
   let why = null;
   const lately = (s.tops || []).slice(-NONE_GOOD_OF), ngLately = lately.filter(Boolean).length;
   if (ngLately >= NONE_GOOD_TOPS) why = `none of its options was good at ${ngLately} of its last ${lately.length} askings`;
-  else if (n >= NOWHERE_ASKS && ms >= NOWHERE_MS && net !== null && net < NOWHERE_BLOCKS && !gained) why = `${n} askings over ${span(ms)} have gone nowhere: ${plural(net, 'block')} from where they began with nothing new carried`;
+  else if (n >= NOWHERE_ASKS && (ms >= NOWHERE_MS || n >= NOWHERE_ASKS_ANY) && net !== null && net < NOWHERE_BLOCKS && !gained) why = `${n} askings over ${span(ms)} have gone nowhere: ${plural(net, 'block')} from where they began with nothing new carried`;
   return { says, why, net, walked, gained };
 }
 
