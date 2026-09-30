@@ -5938,10 +5938,36 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // A walk to water is what the portal frame's cast is waiting for when it
   // has none: said on the travel to a biome that has some (the walk is built
   // from the scratch goal, which does not know the rung; note 630).
+  // With the empty bucket carried or not: "an empty one fills at any water"
+  // was said to 25584 with none carried, the iron for one three blocks off
+  // (note 755).
   if (castWaterWait(bot, goal)) {
     const { biomeFacts } = require('./biomes');
+    const buckets = countOf(bot, 'bucket');
+    const bucketSays = buckets ? `${buckets} empty bucket${buckets === 1 ? '' : 's'} carried, filled at any water` : `no empty bucket is carried either: the water there comes back only in one, three iron ingots (${countOf(bot, 'iron_ingot')} carried, ${countOf(bot, 'raw_iron')} raw iron)`;
     for (const [key, node] of Object.entries(tree)) {
-      if (/^travel_/.test(key) && holdsWater({ biome: key.slice(7), has: biomeFacts(key.slice(7)) })) node.description += " It has water, which is what the portal frame's cast is waiting for: no water bucket is carried, and an empty one fills at any water.";
+      if (/^travel_/.test(key) && holdsWater({ biome: key.slice(7), has: biomeFacts(key.slice(7)) })) node.description += ` It has water, which is what the portal frame's cast is waiting for: no water bucket is carried; ${bucketSays}.`;
+    }
+  }
+  // The job in hand, and how far each walk off ends from it (job-in-hand.js,
+  // note 755): the frame begun and the step's own need, said once on the
+  // question, and on each way that walks away.
+  const job = (() => {
+    try {
+      const here = bot.entity?.position;
+      const pending = goal.kind === 'win' ? framePending(bot, goal) : null;
+      return require('./job-in-hand').jobInHand({ step: goal.step, here,
+        frame: pending ? { at: pending.at, placed: pending.placed, cast: !!pending.frame.cast } : null,
+        carried: { lava: countOf(bot, 'lava_bucket'), water: countOf(bot, 'water_bucket') },
+        find: names => find(bot, names, 32, 1)[0] || null });
+    } catch (_) { return null; }
+  })();
+  if (job) {
+    const { awaySays } = require('./job-in-hand');
+    const ends = Object.fromEntries(require('./exploration').biomeTrips(bot).map(b => [`travel_${b.biome}`, { x: b.x, z: b.z }]));
+    for (const [key, node] of Object.entries(tree)) {
+      if (ends[key]) node.description += awaySays(job, ends[key], bot.entity.position);
+      else if (/^(look_around|explore|deep_dark|trial_chambers|night_mine)$/.test(key)) node.description += ` Leaves the job in hand: ${job.short}.`;
     }
   }
   // The rung's measure has not moved, no pickaxe is carried, and the ways
@@ -5987,7 +6013,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     : stalled
     ? `${Math.round(ms / 1000)} seconds on ${what} without getting anywhere, ${stalled.strikes === 1 ? 'the first time' : `${stalled.strikes} times in ten minutes`}. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
     : `Standing still for ${Math.round(ms / 1000)} seconds on ${what}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.`,
-  ...(stalled ? { stalled } : {}) };
+  ...(stalled ? { stalled } : {}), ...(job ? { jobInHand: job.says } : {}) };
   // What each detour came to the last times this work stood still: chosen,
   // and still again after. mid-220-b, on a beach at sea level taken for
   // underground, chose "another way" sixteen times over, told each time
@@ -6129,7 +6155,10 @@ function framePending(bot, goal) {
   const lava = nearestLava(bot, goal), fromFrame = lava && lavaTrip(f.origin, lava);
   return { frame: f, at, distance: Math.round(bot.entity.position.distanceTo(at)), placed, lava: fromFrame ? fromFrame.distance : null };
 }
-const frameSays = pending => `the frame at (${pending.at.x}, ${pending.at.y}, ${pending.at.z}), ${pending.placed ?? 'some'} of ten ${pending.frame.cast ? 'cast' : 'placed'}, ${pending.distance} blocks from here${pending.lava !== null ? `, its nearest known lava ${pending.lava} blocks from it` : ''}`;
+// With how many blocks it is from done (note 755: 25588 left one 8 of ten
+// cast for a food top-up at hunger 19, told the count but not that two
+// blocks finished it).
+const frameSays = pending => `the frame at (${pending.at.x}, ${pending.at.y}, ${pending.at.z}), ${pending.placed ?? 'some'} of ten ${pending.frame.cast ? 'cast' : 'placed'}${Number.isFinite(pending.placed) && pending.placed < 10 ? ` (${10 - pending.placed} block${10 - pending.placed === 1 ? '' : 's'} from done)` : ''}, ${pending.distance} blocks from here${pending.lava !== null ? `, its nearest known lava ${pending.lava} blocks from it` : ''}`;
 // The food known, each with the trip for it: the walk there, the gathering,
 // and the walk on to the frame (or back here), and about what it gives
 // against what is short. Seconds are a walk at 4.3 blocks a second and about
@@ -6340,7 +6369,9 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
   };
   const tree = {
     go_without: { description: `Go on without more food for now: ${carried} of ${want} points carried.${onHandMore()} The food step is set aside half an hour and the ladder goes on, to the crossing if nothing else is left.` },
-    top_up_food: { description: `Gather food: the home chest, the farm plot if there is one, or hunting animals.${foodTopUpSays(bot, goal, pending, item)}${soFar('food')}` },
+    // With the points carried and the hunger now: the top-up is for the
+    // stay in the Nether, not a meal (note 755: 25588 at hunger 19).
+    top_up_food: { description: `Gather food: the home chest, the farm plot if there is one, or hunting animals. ${carried} of ${want} points carried for the Nether; hunger ${bot.food} of 20 now${(bot.food ?? 0) >= 18 ? ', nothing to eat for' : ''}.${foodTopUpSays(bot, goal, pending, item)}${soFar('food')}` },
   };
   const nearFood = foodNearFrame(bot, goal, pending, want - carried);
   if (nearFood) tree.top_up_food_near = { description: pending

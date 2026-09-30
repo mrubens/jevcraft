@@ -42,6 +42,10 @@ const CEILING = { encounter_stance: 27500, stillness_detour: 16000, pocket_next:
 // note 672's count; this one carries the drop into the lava said twice and
 // the reach said on both options). Held there, not above.
 CEILING.turn_priority = 6600;
+// survival_priority (note 755): its first fixture, 25594's seal under the
+// rock at full health, comes to about 11,900 as sent (the state's death
+// cost, positions and the night's hunts and stash said whole). Held there.
+CEILING.survival_priority = 12000;
 const ceilingOf = id => CEILING[id] ?? CAP;
 
 class Said { constructor(s) { this.s = s; } }

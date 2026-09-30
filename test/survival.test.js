@@ -5500,8 +5500,9 @@ test('underground at dusk, carrying on names the work and says the night changes
   assert.match(tree.continue_request.description, /Keep on with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) underground/);
   assert.match(tree.continue_request.description, /nightfall changes nothing down here/);
   assert.doesNotMatch(tree.continue_request.description, /while outside/);
-  assert.match(tree.secure_shelter.description, /real minutes off: that much of the run with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) waiting/);
-  assert.match(tree.secure_shelter.description, /Underground the dark is the same at any hour/);
+  // Said as what sealing costs, after its reason or that none holds (note 755).
+  assert.match(tree.secure_shelter.description, /real minutes sealed to dawn with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) waiting/);
+  assert.match(tree.secure_shelter.description, /underground, where the night changes nothing|Underground the dark is the same at any hour/);
   // Health and armed-or-not said on secure_shelter itself, not only on
   // continue_request: 25592 walled itself in at full health over one
   // skeleton 26 blocks off, told nothing of either on secure_shelter's own
