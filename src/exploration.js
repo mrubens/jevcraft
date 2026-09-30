@@ -304,7 +304,13 @@ const DETECTORS = [
   } },
   { kind: 'bastion', dimension: 'nether', same: 64, detect: bot => {
     const gilded = find(bot, ['gilded_blackstone', 'gold_block'], 48, 16).filter(p => near(bot, p, ['polished_blackstone_bricks', 'blackstone', 'cracked_polished_blackstone_bricks'], 3));
-    return gilded.length ? at(gilded[0], { gold: gilded.length }) : null;
+    if (gilded.length) return at(gilded[0], { gold: gilded.length });
+    // A piglin brute spawns only in a bastion, once, with it (note 750d):
+    // 25589 was told "3 piglin brutes" at the bricks of what it read as a
+    // fortress, 16 blocks from a bastion.
+    const here = bot.entity?.position;
+    const brute = here && Object.values(bot.entities || {}).find(e => e?.name === 'piglin_brute' && e.position && e.position.distanceTo(here) <= 48);
+    return brute ? at(brute.position.floored(), { brutes: Object.values(bot.entities).filter(e => e?.name === 'piglin_brute').length }) : null;
   } },
 ];
 const LANDMARK_KINDS = DETECTORS.map(d => d.kind);

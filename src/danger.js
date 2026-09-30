@@ -383,8 +383,38 @@ const WALKERS_JUDGED = { has: name => require('./walk-reach').WALKERS.has(name) 
 // on its span 12 of 14 minutes at full health beside a hoglin 3.9 blocks
 // off, the stance and turn_priority answering it every minute, its
 // set_aside_rung answer never carried out; the hoglin never came.
+// A run at a mob that found no way to it (survival.js charge and the
+// fight's stand), kept per mob while the bot stays within NO_RUN_MOVED of
+// where it ran from and the mob lands no hit (note 752e). bot._unreachable
+// keeps the same for twenty seconds only; 25595 (16:43:50 to 16:53Z) was
+// offered the fight about twelve times against a magma cube no run could
+// reach, each ending in no route, the stance never told.
+const NO_RUN_MOVED = 4;
+function noteNoRun(bot, t, now = Date.now()) {
+  const e = t?.entity, p = bot?.entity?.position;
+  if (!e || !p) return;
+  const runs = bot._noRunTo ||= {};
+  const was = runs[e.id];
+  runs[e.id] = { at: now, first: was?.first ?? now, tries: (was?.tries || 0) + 1, from: { x: p.x, y: p.y, z: p.z }, name: e.name };
+}
+// The standing record for a mob, or null: gone once the bot has moved off,
+// or the mob has hit the bot since the run.
+function noRunTo(bot, t, now = Date.now()) {
+  const e = t?.entity, p = bot?.entity?.position, r = bot?._noRunTo?.[e?.id];
+  if (!r || !p) return null;
+  if (Math.hypot(p.x - r.from.x, p.y - r.from.y, p.z - r.from.z) > NO_RUN_MOVED || (bot._hurtById?.[e.id] || 0) > r.at || (bot._hurtBy?.[e.name] || 0) > r.at) { delete bot._noRunTo[e.id]; return null; }
+  return { secondsAgo: Math.max(1, Math.round((now - r.at) / 1000)), tries: r.tries };
+}
 function standsOff(bot, t, now = Date.now()) {
   if (!t?.entity || atItsReach(bot, t)) return null;
+  // No run could reach it and it has not hit since: it stands off from now,
+  // not after a minute (note 752e). Not a shooter (no reach of its own to
+  // judge), nor a creeper or a warden.
+  // Not while the bot has been hurt in the last four seconds by what it
+  // cannot tell (a hit with no source named): as immediateThreat's own.
+  const hurtNow = (bot._recentHurtAt || 0) > now - 4000;
+  const nr = !hurtNow && !shooter(t.entity) && !['creeper', 'warden'].includes(t.entity.name) ? noRunTo(bot, t, now) : null;
+  if (nr) return { seconds: nr.secondsAgo, nearest: Math.round(t.distance * 10) / 10, farthest: Math.round(t.distance * 10) / 10, inSight: !!t.visible, noRun: nr };
   try { return require('./held-off').stoodOff(bot, t, { now, shoots: shooter(t.entity) }); } catch (_) { return null; }
 }
 const r1 = n => Math.round(n * 10) / 10;
@@ -406,13 +436,15 @@ function reachSays(bot, t, { list = null, now = Date.now() } = {}) {
     try { apart = noWayIds(bot, list || [t]).has(e.id); } catch (_) { apart = false; }
     parts.push(apart ? 'no way to the bot is found through the ground between' : 'a way to the bot is found');
   }
-  const runAt = bot?._unreachable;
-  if (runAt?.until > now && runAt.ids?.includes(e.id)) parts.push(`a run at it ${Math.max(1, Math.round((now - (runAt.until - 20000)) / 1000))} seconds ago found no way to it`);
+  const runAt = bot?._unreachable, nr = noRunTo(bot, t, now);
+  if (nr) parts.push(`a run at it ${nr.secondsAgo} seconds ago found no way to it from here${nr.tries > 1 ? ` (${nr.tries} runs in all)` : ''}`);
+  else if (runAt?.until > now && runAt.ids?.includes(e.id)) parts.push(`a run at it ${Math.max(1, Math.round((now - (runAt.until - 20000)) / 1000))} seconds ago found no way to it`);
   let rec = null, off = null;
   try { const h = require('./held-off'); rec = h.recordOf(bot, t, { now }); off = standsOff(bot, t, now); } catch (_) { rec = null; }
   const hitAt = Math.max(bot?._hurtById?.[e.id] || 0, bot?._hurtBy?.[e.name] || 0);
   const hit = hitAt ? `its kind hit the bot ${Math.max(1, Math.round((now - hitAt) / 1000))} seconds ago` : null;
-  if (off && e.name === 'creeper') parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and never within ${require('./held-off').CREEPER_NEAR} (its lighting distance and a second's walk), not walking at the bot: not a threat that stops the work while that holds, and one again the moment it walks at the bot or comes within ${require('./held-off').CREEPER_NEAR}`);
+  if (off?.noRun) parts.push('it has not hit the bot since: not a threat that stops the work while that holds, and one again the moment it lands a hit, comes to its reach, or the bot moves off');
+  else if (off && e.name === 'creeper') parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and never within ${require('./held-off').CREEPER_NEAR} (its lighting distance and a second's walk), not walking at the bot: not a threat that stops the work while that holds, and one again the moment it walks at the bot or comes within ${require('./held-off').CREEPER_NEAR}`);
   else if (off) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and no hit from its kind in that time: not a threat that stops the work while that holds, and one again the moment it comes nearer, to its reach, or its kind lands a hit`);
   else if (rec && rec.seconds >= 10) parts.push(`about ${rec.seconds} seconds, ${rec.nearest} to ${rec.farthest} blocks off${hit && now - hitAt <= rec.seconds * 1000 ? `; ${hit}` : ', no hit from its kind in that time'}`);
   else if (hit && now - hitAt < 60000) parts.push(hit);
@@ -865,4 +897,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

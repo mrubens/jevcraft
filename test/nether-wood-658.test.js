@@ -77,7 +77,7 @@ test('low wood with a pickaxe carried: offered while stems are near, not where n
   // No pickaxe and none to be made there: offered, saying none is known and the search.
   offer = await nw.fetchStemsOffer(spanBot([['oak_planks', 1]]), new Task('work'), { kind: 'win' });
   assert(offer);
-  assert.match(offer.description, /No stem is known: none seen within 128 blocks or remembered, and no crimson or warped forest noticed or in the loaded ground\. The fetch then asks the legs of the gathering's search/);
+  assert.match(offer.description, /No stem is known: none seen within 128 blocks or remembered, and no crimson or warped forest noticed or in the loaded ground\. The fetch is then a blind search: the gathering's legs/);
   // A fetch resting is not offered.
   const goal = { kind: 'win' };
   require('../src/progress').setAside(goal, 'fetch_stems', 'nether', 'No stems were fetched', nw.REST_MS);

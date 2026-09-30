@@ -172,6 +172,7 @@ const CLOCK = 'runClock is the run so far. A practiced player with iron reaches 
 const STOCK = 'blockStock is what can be laid: with no pickaxe carried none comes back, and what is carried is all there will be until one is made (makingAPickaxe).';
 const SCULK = 'sculk is the sculk sensors and shriekers near and what a shrieker calls.';
 const HEALING = 'healing is health, hunger, whether health comes back, the food carried and nearest; standing still spends no hunger.';
+const RODS_AT_RISK = 'rodsAtRisk is the blaze rods carried and what a death now does to them, with the trials\' record of lives that carried as many.';
 // Off the Overworld, hurt with nothing that brings hunger to eighteen: the
 // ways health could come back, each with its cost (healing.js, note 607).
 const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFood is the way back through the portal for food; hoglinHunt, the one food of the Nether.';
@@ -225,7 +226,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
   const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '');
-  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
+  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
 }
@@ -824,6 +825,15 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.lastHit) {
     let hit = null; try { hit = require('../last-hit').lastHit(bot); } catch (_) { /* no body */ }
     if (hit) state = { lastHit: hit.says, ...state };
+  }
+  // The rods at risk (rod-risk.js, note 759), with every such question in
+  // the Nether while a rod is carried and rods are still wanted: 25588 died
+  // among eight blazes carrying 5 of 7, and no question it was asked said
+  // what a death there would take; of 80 lives that carried a rod in the
+  // Nether (2026-09-29T23:00Z to 2026-09-30T17:00Z) none carried one out.
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.rodsAtRisk && !state.rodsCarried) {
+    let atRisk = null; try { atRisk = require('../rod-risk').risk(bot, goal); } catch (_) { /* no body */ }
+    if (atRisk) state = { ...state, rodsAtRisk: atRisk.says };
   }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.

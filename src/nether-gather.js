@@ -551,16 +551,16 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   // Legs of the search, for what is not known yet.
   const legsClosed = [];
   const { biomeRay } = require('./exploration');
-  HEADINGS.forEach((h, i) => {
+  for (const [i, h] of HEADINGS.entries()) {
     const name = HEADING_NAMES[i], survey = travel.surveyLeg(bot, h, { cells: LEG });
-    if (!survey) return;
+    if (!survey) continue;
     // A leg whose line stops or runs out of blocks within its first few
     // cells makes no ground to search from: said, not offered.
     const goes = Math.min(...[survey.stoppedAt, survey.runsOut, survey.cells].filter(Number.isInteger));
-    if (goes < LEG_FIRST) { legsClosed.push(`leg ${name}: ${goes ? `goes ${plural(goes, 'cell')} at y ${Math.round(here.y)}, then` : `closed at the first cell at y ${Math.round(here.y)},`} ${Number.isInteger(survey.runsOut) && survey.runsOut === goes ? `open air with no floor and ${plural(survey.carried, 'block')} carried to lay` : survey.stoppedBy}`); return; }
-    if (wayResting(bot, goal, here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), 'leg')) { legsClosed.push(`leg ${name}: came to nothing from here a few minutes ago, resting`); return; }
+    if (goes < LEG_FIRST) { legsClosed.push(`leg ${name}: ${goes ? `goes ${plural(goes, 'cell')} at y ${Math.round(here.y)}, then` : `closed at the first cell at y ${Math.round(here.y)},`} ${Number.isInteger(survey.runsOut) && survey.runsOut === goes ? `open air with no floor and ${plural(survey.carried, 'block')} carried to lay` : survey.stoppedBy}`); continue; }
+    if (wayResting(bot, goal, here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), 'leg')) { legsClosed.push(`leg ${name}: came to nothing from here a few minutes ago, resting`); continue; }
     const same = sameEnd(goal, `leg_${name}`, aheadOn(here, h, LEG));
-    if (same) { legsClosed.push(sameEndSays(`leg ${name}`, same)); return; }
+    if (same) { legsClosed.push(sameEndSays(`leg ${name}`, same)); continue; }
     let forests = [];
     try { forests = biomeRay(bot, RAY_OF[i]).filter(s => /crimson_forest|warped_forest/.test(s.biome)); } catch (_) { forests = []; }
     const seen = coverage.headingCoverage(state, dim, here, h, { length: LEG, bot });
@@ -575,7 +575,9 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const lastEnd = (goal.gatherEnds || []).filter(e => e.key === `leg_${name}` && Date.now() - e.at < END_WINDOW_MS && aheadOn(here, h, LEG)(e)).at(-1);
     const cameFrom = (goal.gatherEnds || []).filter(e => e.key === `leg_${HEADING_NAMES[(i + 2) % 4]}` && Date.now() - e.at < END_WINDOW_MS && nearEnd(e, here)).at(-1);
     const walkedSays = `${lastEnd ? ` The last leg ${name} ended ${ago(lastEnd.at)} ago at ${at3(lastEnd)}, ${Math.round(flat(lastEnd, here))} blocks ahead${lastEnd.why ? ` (${lastEnd.why})` : ''}: walked again from here it meets the same, having searched nothing new up to there.` : ''}${cameFrom ? ` The bot came here ${ago(cameFrom.at)} ago on a leg ${HEADING_NAMES[(i + 2) % 4]} that ended here${cameFrom.why ? ` (${cameFrom.why})` : ''}: this one goes back over it.` : ''}`;
-    options[`leg_${name}`] = { description: `Search ${name}: ${travel.legSays(survey, { direction: name, length: LEG, y: Math.round(here.y) })} Walked by the pathfinder first, then straight across where the walk gives out.${walkedSays}${forestSays}${unseen}`,
+    // The walk the leg takes first, said with the line (note 751b).
+    const walkFirst = await travel.legWalkSays(bot, task, here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), { state });
+    options[`leg_${name}`] = { description: `Search ${name}: ${travel.legSays(survey, { direction: name, length: LEG, y: Math.round(here.y) })} Walked by the pathfinder first, then straight across where the walk gives out.${walkFirst}${walkedSays}${forestSays}${unseen}`,
       run: async () => {
         const target = here.plus(new Vec3(h[0] * LEG, 0, h[1] * LEG)), before = flat(target, bot.entity.position);
         goal.step = { action: 'nether_gather', way: `leg_${name}`, what: words(resource), target: { x: target.x, y: target.y, z: target.z } }; save();
@@ -596,7 +598,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
           throw new Error(said);
         }
       } };
-  });
+  }
   if (legsClosed.length) facts.legsClosed = legsClosed;
   if (notOffered.length) facts.waysResting = notOffered;
   // A way that takes the bot farther from a known fortress, the rods still

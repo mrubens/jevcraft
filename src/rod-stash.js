@@ -100,8 +100,10 @@ const SIDES = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 // ground, air over it (a chest does not open under a solid block), no lava
 // or fire within two, no body in it, not the bot's own cells, and out of
 // every blaze's and ghast's line. Rock round it first (the room's back),
-// then the nearest. -> { cell, walls } or null
-function chestCell(bot) {
+// then the nearest. Under fire (note 759), a cell in a line is taken where
+// none is out of every line: a fireball does not break a chest or burn it,
+// and the line is said (`seen`). -> { cell, walls, seen } or null
+function chestCell(bot, { underFire = false } = {}) {
   const feet = bot.entity.position.floored(), eye = bot.entity.position.offset(0, 1.62, 0);
   const shots = shooters(bot);
   const bodies = Object.values(bot.entities || {}).filter(e => e?.position && e !== bot.entity);
@@ -114,11 +116,12 @@ function chestCell(bot) {
     if (!solid(floor) || /lava|magma|soul_sand|sand|gravel/.test(floor.name) || !empty(bot.blockAt(c)) || !empty(bot.blockAt(c.offset(0, 1, 0)))) continue;
     if (bodies.some(e => Math.abs(e.position.x - (c.x + 0.5)) < 0.9 && Math.abs(e.position.z - (c.z + 0.5)) < 0.9 && e.position.y > c.y - 2 && e.position.y < c.y + 1)) continue;
     if (lavaNear(bot, c)) continue;
-    if (shots.some(e => lineTo(bot, e, c))) continue;
+    const seen = shots.some(e => lineTo(bot, e, c));
+    if (seen && !underFire) continue;
     const walls = SIDES.filter(([x, z]) => solid(bot.blockAt(c.offset(x, 0, z)))).length;
-    out.push({ cell: c, walls, off: round(eye.distanceTo(c.offset(0.5, 0.5, 0.5))) });
+    out.push({ cell: c, walls, seen, off: round(eye.distanceTo(c.offset(0.5, 0.5, 0.5))) });
   }
-  return out.sort((a, b) => b.walls - a.walls || a.off - b.off)[0] || null;
+  return out.sort((a, b) => a.seen - b.seen || b.walls - a.walls || a.off - b.off)[0] || null;
 }
 
 // The chest: carried, or made from wood carried at a table carried or made.
@@ -151,10 +154,14 @@ const lullNow = (bot, now) => { try { return require('./spawner-clock').lull(bot
 // Whether stash_rods is on offer here, and what it is. In the Nether in
 // Survival, 2 or more rods carried and rods still wanted (with the rods done
 // the next step is the portal walk, which takes them), not resting after a
-// failure, no shooter with a line to the bot (callers ask in the lull or
-// with no blaze near), and a chest here: one known within twelve, or a cell
-// for one and a chest carried or the wood for it.
-function stashOffer(bot, goal, { now = Date.now() } = {}) {
+// failure, and a chest here: one known within twelve, or a cell for one and
+// a chest carried or the wood for it. Without `underFire`, no shooter with
+// a line to the bot (the lull, empty_spawner). With it (the fight's own
+// stance, note 759), the shooters that see the bot are kept in `seenBy`
+// and the caller prices the seconds in their fire: at a swarm some blaze
+// always has a line, and 2 of 70 deaths with rods (2026-09-29T23:00Z to
+// 2026-09-30T17:00Z) had it offered in their last minute.
+function stashOffer(bot, goal, { now = Date.now(), underFire = false } = {}) {
   if (!bot?.entity || !inNether(bot) || bot.game?.gameMode !== 'survival') return null;
   const rods = rodsEquivalent(bot);
   if (rods < ROD_MIN) return null;
@@ -163,18 +170,19 @@ function stashOffer(bot, goal, { now = Date.now() } = {}) {
   if (!left) return null;
   const eyeOf = bot.entity.position.offset(0, 1.62, 0);
   const T = require('./blaze-tactics');
-  if (shooters(bot).some(e => T.lineThrough(bot, e.position.offset(0, (e.height || 1.8) * 0.85, 0), eyeOf, new Set()))) return null;
+  const seenBy = shooters(bot).filter(e => T.lineThrough(bot, e.position.offset(0, (e.height || 1.8) * 0.85, 0), eyeOf, new Set()));
+  if (seenBy.length && !underFire) return null;
   const what = KEPT.filter(n => countOf(bot, n) > 0).map(n => ({ item: n, count: countOf(bot, n) }));
   const near = nearStash(bot, goal);
   if (near) {
     const steps = Math.max(0, Math.round(near.d - 3));
-    return { existing: near.s, what, rods, wanted, seconds: round(steps / WALK + PUT_SECONDS), steps, lull: lullNow(bot, now) };
+    return { existing: near.s, what, rods, wanted, seconds: round(steps / WALK + PUT_SECONDS), steps, seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
   }
-  const site = chestCell(bot);
+  const site = chestCell(bot, { underFire });
   if (!site) return null;
   const making = chestMaking(bot);
   if (!making) return null;
-  return { site, making, what, rods, wanted, seconds: round(PUT_SECONDS + making.seconds), lull: lullNow(bot, now) };
+  return { site, making, what, rods, wanted, seconds: round(PUT_SECONDS + making.seconds), seenBy, lull: seenBy.length ? null : lullNow(bot, now) };
 }
 
 // The option's words: short (note 672). What goes in, where, the seconds
@@ -186,9 +194,10 @@ function offerSays(offer, { riskInState = false } = {}) {
   const what = list.length > 1 ? `${list.slice(0, -1).join(', ')} and ${list.at(-1)}` : list[0];
   const where = offer.existing
     ? `put them in the chest at ${at(offer.existing.position)}, ${offer.steps ? `a ${offer.steps}-block walk` : 'in reach'}`
-    : `set a chest down ${offer.site.off} blocks off at ${at(offer.site.cell)}, out of every blaze's line, and put them in`;
-  const secs = offer.lull ? require('./spawner-clock').jobSays(offer.lull, offer.seconds) : ` About ${offer.seconds} seconds.`;
-  return `Keep the ${what} safe from a death first: ${where}, then asked again with the ways here still open.${secs}${offer.making ? makingSays(offer.making) : ''} A chest keeps them (no mob opens one), counted as held, taken out before the portal.${riskInState ? '' : ` ${carriedSays(offer)}`}`;
+    : `set a chest down ${offer.site.off} blocks off at ${at(offer.site.cell)}, ${offer.site.seen ? 'in a blaze\'s line (no cell in reach is out of every line; a fireball neither breaks a chest nor burns it)' : 'out of every blaze\'s line'}, and put them in`;
+  const fire = offer.seenBy?.length ? ` Done where the bot stands, in the line of ${plural(offer.seenBy.length, offer.seenBy.every(e => e.name === 'blaze') ? 'blaze' : 'shooter')} that ${offer.seenBy.length === 1 ? 'sees' : 'see'} it now.` : '';
+  const secs = offer.lull ? require('./spawner-clock').jobSays(offer.lull, offer.seconds) : ` About ${offer.seconds} second${offer.seconds === 1 ? '' : 's'}.`;
+  return `Keep the ${what} safe from a death first: ${where}, then asked again with the ways here still open.${secs}${fire}${offer.making ? makingSays(offer.making) : ''} A chest keeps them (no mob opens one), counted as held, taken out before the portal.${riskInState ? '' : ` ${carriedSays(offer)}`}`;
 }
 // The rods carried and what a death does to them, with the records' row.
 function carriedSays(offer) {
@@ -309,4 +318,4 @@ async function collect(bot, task, goal, save, actions = {}) {
   }
 }
 
-module.exports = { KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
+module.exports = { nearStash, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };

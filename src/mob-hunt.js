@@ -1765,7 +1765,7 @@ function blazeSpots(bot, goal) {
 // first (note 686).
 function spawnersKnown(bot, state) {
   const here = bot.entity.position;
-  return (state.map?.spawners || []).filter(s => !s.broken)
+  return (state.map?.spawners || []).filter(s => !s.broken && !s.notBlaze && (!s.mob || s.mob === 'blaze'))
     .map(s => ({ s, off: Math.round(Math.hypot(s.x + 0.5 - here.x, s.y + 0.5 - here.y, s.z + 0.5 - here.z)) })).sort((a, b) => a.off - b.off);
 }
 // A spawner as said with a way to it: where, the blazes seen near it, what
@@ -1967,11 +1967,18 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // ninety-six blocks that each ended at once, and asked again and again
   // (note 572).
   const blocked = [];
+  // The walk each level leg takes first, the pathfinder toward its end
+  // (findFortressStep), said with the line read from here (note 751b).
+  const walkFirst = [];
+  for (const [i] of HEADINGS.entries()) {
+    if (legResting(state, HEADING_NAMES[i], here) || surveys[i]?.stoppedAt === 0) continue;
+    walkFirst[i] = await require('./nether-travel').legWalkSays(bot, task, fortressLegTarget({ heading: i, legMode: 'level' }, here), { state });
+  }
   HEADINGS.forEach((h, i) => {
     const rest = legResting(state, HEADING_NAMES[i], here);
     if (rest) { resting.push(restSays(HEADING_NAMES[i], rest)); return; }
     if (surveys[i]?.stoppedAt === 0) { blocked.push(`leg ${HEADING_NAMES[i]}: closed at the first cell at y ${y}, ${surveys[i].stoppedBy}`); return; }
-    options[`leg_${HEADING_NAMES[i]}`] = { description: legLead(i) + legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
+    options[`leg_${HEADING_NAMES[i]}`] = { description: legLead(i) + legSays(surveys[i], { direction: HEADING_NAMES[i], length: FORTRESS_LEG, y }) + (walkFirst[i] || '') + require('./pickaxe-budget').lastPickaxeSays(bot, surveys[i]?.rockBlocks) +
       legHistorySays(state, HEADING_NAMES[i], here) +
       (levelRests[i] ? ` Where the walk and the span give out, ${levelRests[i]}.` : '') + headingSays(i) + backSays(i),
       run: () => { state.heading = i; state.legMode = 'level'; return true; } };
@@ -3826,6 +3833,12 @@ async function findFortressStep(bot, task, goal, save, actions) {
   }
   // A wait by a spawner Jev chose (wait_at_spawner): near its cage until
   // the wait is up; the hunt takes a blaze the moment one is in view.
+  // A wait by a spawner found since not to be a blaze spawner (a bastion's
+  // magma cube spawner, note 750d) ends here, said, and is no fortress.
+  if (state.spawnerWait && typeof bot.blockAt === 'function' && bot.blockAt(new Vec3(state.spawnerWait.x, state.spawnerWait.y, state.spawnerWait.z))?.name === 'spawner') {
+    const kind = require('./fortress-map').spawnerKind(bot, new Vec3(state.spawnerWait.x, state.spawnerWait.y, state.spawnerWait.z));
+    if (!kind.blaze) { state.spawnerWaitEnded = `not a blaze spawner: ${kind.why}`; state.spawnerWaitEndedAt = Date.now(); delete state.spawnerWait; save(); }
+  }
   if (state.spawnerWait) {
     const w = state.spawnerWait, cage = new Vec3(w.x, w.y, w.z);
     const off = cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position);

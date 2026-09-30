@@ -135,6 +135,11 @@ const WAYS = [
   // it the intention goes on. 25591's walk back to the portal was turned
   // round by nether_gather's legs and its without (note 678).
   { q: 'nether_gather', of: /./, drops: /^without$/ },
+  // The way back to a portal asked on a trip through it (portal_way): its
+  // ways toward the portal carry the trip on, and its wait leaves it. Its
+  // options name no target, so gated as any other question every one was
+  // withheld and the trip home set down (25584's return_for_wood, note 751b).
+  { q: 'portal_way', of: /\/(return_for_\w+|go_back|portal_trip)$/, drops: /^wait_rest$/ },
   // Climbing to the surface, or mining ore on the way there, undoes a stand
   // just taken to build or cast a portal (note 714): 25581's surface_trip
   // sent it "back to daylight" in the same second it chose cast_at_lava.

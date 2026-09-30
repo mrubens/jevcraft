@@ -63,7 +63,7 @@ function measureFrames(frames, { end = Infinity } = {}) {
     // episode is this place's.
     if (!e && p && current && !current.at) { e = current; e.at = { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }; }
     if (!e) {
-      e = { sighted: t, at: p ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) } : null, firstAt: firstAt || null, onFloors: null, blazeNear: null, fight: null, rod: null,
+      e = { sighted: t, at: p ? { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) } : null, firstAt: firstAt || null, bricks: false, spawners: [], brutes: 0, onFloors: null, blazeNear: null, fight: null, rod: null,
         byWork: {}, byStep: {}, counts: {}, noRoute: 0, falseFind: 0, blazeNearMs: 0, deferNear: 0, botMs: 0, work: 'before any question', minutes: new Map(), pos: [] };
       if (lastPos) e.pos.push({ t, p: lastPos });
       episodes.push(e);
@@ -83,6 +83,12 @@ function measureFrames(frames, { end = Infinity } = {}) {
     const e = current;
     if (!e) continue;
     if (s.position) e.pos.push({ t: f.t, p: s.position });
+    // What the place was known by (note 750d): the fortress's own bricks (a
+    // brick found that is not a spawner the steps named, or its floors walked),
+    // or only a spawner; and piglin brutes about, which live only in bastions.
+    if (st && /spawner/.test(st.action || '') && (st.target || st.spawner)) { const c = st.target || st.spawner; if (!e.spawners.some(q => q.x === c.x && q.y === c.y && q.z === c.z)) e.spawners.push(c); }
+    if (st?.action === 'find_fortress' && (st.walking || st.patrolling || st.exploring || (st.found && !e.spawners.some(q => Math.abs(q.x - st.found.x) <= 1 && Math.abs(q.y - st.found.y) <= 1 && Math.abs(q.z - st.found.z) <= 1)))) e.bricks = true;
+    if (Array.isArray(s.mobs) && s.mobs.some(m => m.name === 'piglin_brute' && m.d <= 48)) e.brutes++;
     const mobs = f.t - lastMobsAt <= 5000 ? lastMobs : [];
     const blaze = mobs.filter(m => m.name === 'blaze').reduce((d, m) => Math.min(d, m.d ?? Infinity), Infinity);
     if (inv && e.rod === null && (inv.blaze_rod || 0) > (e.rodsAt ??= inv.blaze_rod || 0)) e.rod = f.t;
@@ -152,7 +158,7 @@ function measureFrames(frames, { end = Infinity } = {}) {
       after = { minutes: round((stop - e.fight) / 60000), botMinutes: round(e.after.ms / 60000), byWork: ms(e.after.byWork), noRoute: e.after.noRoute, stillUnasked: still.length, stillFrom: still[0] ?? null };
     }
     const until = Math.min(e.fight ?? end, end);
-    return { sighted: e.sighted, at: e.at, onFloors: e.onFloors, blazeNear: e.blazeNear, fight: e.fight, rod: e.rod,
+    return { sighted: e.sighted, at: e.at, knownBy: e.bricks ? 'bricks' : e.spawners.length ? 'a spawner only' : 'a question only', brutesSeen: e.brutes, onFloors: e.onFloors, blazeNear: e.blazeNear, fight: e.fight, rod: e.rod,
       span: { minutes: round((until - e.sighted) / 60000), botMinutes: round(e.botMs / 60000), reachedFight: e.fight !== null, byWork: ms(e.byWork), byStep: ms(e.byStep), noRoute: e.noRoute, falseFind: e.falseFind, blazeNearMinutes: round(e.blazeNearMs / 60000), deferNear: e.deferNear, counts: e.counts, thrash }, after };
   });
 }
@@ -207,7 +213,7 @@ function main() {
     for (const m of measureFrames(readTrial(tr), { end: Math.min(tr.end, to) })) {
       const from = x => x === null ? null : round((x - m.sighted) / 60000);
       rows.push({ world: tr.world, port: tr.port, start: iso(tr.start), checkpoint: /\/stages\/fortress\//.test(tr.source || '') ? 'fortress' : /\/stages\/nether\//.test(tr.source || '') ? 'nether' : 'fresh',
-        fortress: m.at, sighted: iso(m.sighted), onFloorsAfter: from(m.onFloors), blazeNearAfter: from(m.blazeNear), fightAfter: from(m.fight), rodAfter: from(m.rod), span: m.span, after: m.after });
+        fortress: m.at, sighted: iso(m.sighted), onFloorsAfter: from(m.onFloors), blazeNearAfter: from(m.blazeNear), fightAfter: from(m.fight), rodAfter: from(m.rod), span: m.span, after: m.after, knownBy: m.knownBy, brutesSeen: m.brutesSeen });
     }
   }
   const seen = rows;
@@ -232,6 +238,8 @@ function main() {
     }
   }
   console.log(`\nSighting to first fight (or trial end): ${round(total)} bot-minutes over ${seen.length} fortresses (${round(seen.filter(r => r.fightAfter === null).reduce((n, r) => n + r.span.botMinutes, 0))} of them in episodes never reaching a fight); ${noRoute} no_route frames; ${falseFind} "A fortress!" said at a fortress already known; ${round(blazeNear)} minutes with a blaze within ${REACH_NEAR} blocks and no fight yet; hunt_target answered defer with a blaze within ${REACH_NEAR}: ${deferNear}.`);
+  const by = k => seen.filter(r => r.knownBy === k).length;
+  console.log(`Known by: its bricks ${by('bricks')}, a spawner only ${by('a spawner only')}, a question only ${by('a question only')}; piglin brutes (bastion only) seen near ${seen.filter(r => r.brutesSeen).length} (${seen.filter(r => r.brutesSeen && r.knownBy !== 'bricks').map(r => `${r.world} at ${r.fortress ? `(${r.fortress.x}, ${r.fortress.y}, ${r.fortress.z})` : '?'}`).join('; ') || 'none of them without bricks'}).`);
   const afters = seen.filter(r => r.after);
   if (afters.length) console.log(`First fight to first rod (or trial end): ${round(afters.reduce((n, r) => n + r.after.botMinutes, 0))} bot-minutes over ${afters.length} fortresses, ${afters.filter(r => r.rodAfter === null).length} with no rod; ${afters.reduce((n, r) => n + r.after.noRoute, 0)} no_route frames; ${afters.reduce((n, r) => n + r.after.stillUnasked, 0)} minutes still and unasked.`);
   console.log('\nMinutes by the work question and answer holding them:');
@@ -247,7 +255,7 @@ function main() {
   console.log('\nPer fortress (minutes after it was first known):');
   for (const r of seen) {
     const s = r.span;
-    console.log(`  ${r.world} (port ${r.port}, ${r.checkpoint}) fortress ${r.fortress ? `(${r.fortress.x}, ${r.fortress.y}, ${r.fortress.z})` : '?'}: known ${r.sighted}; floors ${r.onFloorsAfter ?? '-'}, blaze near ${r.blazeNearAfter ?? '-'}, fight ${r.fightAfter ?? '-'}, rod ${r.rodAfter ?? '-'}; span ${s.minutes} min, ${s.noRoute} no_route, ${s.thrash.length} thrash min${s.falseFind ? `, ${s.falseFind} false "A fortress!"` : ''}`);
+    console.log(`  ${r.world} (port ${r.port}, ${r.checkpoint}) fortress ${r.fortress ? `(${r.fortress.x}, ${r.fortress.y}, ${r.fortress.z})` : '?'}: known ${r.sighted} by ${r.knownBy}${r.brutesSeen ? `, piglin brutes about` : ''}; floors ${r.onFloorsAfter ?? '-'}, blaze near ${r.blazeNearAfter ?? '-'}, fight ${r.fightAfter ?? '-'}, rod ${r.rodAfter ?? '-'}; span ${s.minutes} min, ${s.noRoute} no_route, ${s.thrash.length} thrash min${s.falseFind ? `, ${s.falseFind} false "A fortress!"` : ''}`);
     if (has('--verbose')) console.log(`    ${Object.entries(s.byWork).slice(0, 6).map(([k, v]) => `${k} ${v}`).join('; ')}`);
     if (r.after) console.log(`    first fight to ${r.rodAfter === null ? 'end, no rod' : 'first rod'}: ${r.after.minutes} min, ${r.after.noRoute} no_route, ${r.after.stillUnasked} min still and unasked${r.after.stillFrom ? ` (first at ${iso(r.after.stillFrom)})` : ''}; ${Object.entries(r.after.byWork).slice(0, 5).map(([k, v]) => `${k} ${v}`).join('; ')}`);
   }

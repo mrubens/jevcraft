@@ -46,6 +46,17 @@ function mealOf(bot) {
   return { item, after };
 }
 
+// What walling in keeps off: mobs hitting the bot lately, or mobs about
+// that can get to it (not those standing off). With neither, a pocket
+// keeps off nothing, and where health does not come back it heals nothing:
+// 25598 (16:50:57 to 16:52:35Z) at 1 health, hunger 14 and no food chose
+// wall_in_first four times with nothing hitting it (note 752e).
+function pocketGains(bot, now = Date.now()) {
+  let hits = 0, about = [];
+  try { hits = require('./hit-log').recent(bot, { now, ms: FALL_MS }).length; } catch (_) { hits = 0; }
+  try { const d = require('./danger'); about = d.threats(bot, 16).filter(t => !d.standsOff(bot, t, now) && (t.visible || t.distance <= 6)); } catch (_) { about = []; }
+  return { hits, about: about.length, nearest: about[0] || null };
+}
 function pocketOf(bot) {
   try {
     const s = require('./survival');
@@ -65,7 +76,7 @@ function says(bot, { now = Date.now(), mobs = null, health = true } = {}) {
   let hitSays = '';
   try { hitSays = require('./hit-log').says(bot, mobs || require('./danger').threats(bot, 24), { now, ms: FALL_MS }); } catch (_) { hitSays = ''; }
   const heals = (bot.food ?? 0) >= 18;
-  const meal = mealOf(bot), pocket = pocketOf(bot);
+  const meal = mealOf(bot), gains = pocketGains(bot, now), pocket = gains.hits || gains.about ? pocketOf(bot) : null;
   let hitLately = false;
   try { hitLately = require('./hit-log').recent(bot, { now, ms: 20000 }).length > 0; } catch (_) { hitLately = false; }
   const record = require('./low-health-record').says({ hit: hitLately });
@@ -73,7 +84,7 @@ function says(bot, { now = Date.now(), mobs = null, health = true } = {}) {
   const ways = [meal ? `eating the ${meal.item.name.replaceAll('_', ' ')}, ${require('./survival').EAT_SECONDS} seconds standing still${meal.after ? `, hunger to ${meal.after}${meal.after >= 18 && !heals ? ', and health comes back from then' : ''}` : ''}` : null,
     pocket ? `walling in where it stands, ${pocket.blocks} block${pocket.blocks === 1 ? '' : 's'}, about ${pocket.seconds} seconds of building` : null].filter(Boolean);
   const lead = health ? `Health ${low.health}${fell}${heals ? '' : `, and it does not come back at hunger ${bot.food}`}.` : fell ? `Health${fell.replace(/^,/, '')}.` : '';
-  return `${lead}${hitSays ? ` ${hitSays}` : ''} ${record}${ways.length ? ` The body can be seen to first: ${ways.join('; or ')}.` : ' Nothing carried is food and no pocket can be walled here with the blocks carried.'}`;
+  return `${lead}${hitSays ? ` ${hitSays}` : ''} ${record}${ways.length ? ` The body can be seen to first: ${ways.join('; or ')}.` : ` ${meal ? '' : 'Nothing carried is food, and '}${!(gains.hits || gains.about) ? 'nothing is hitting the bot or about to get to it, so walling in keeps off nothing' : 'no pocket can be walled here with the blocks carried'}.`}${!pocket && meal && !(gains.hits || gains.about) ? ' Nothing is hitting the bot or about to get to it: walling in keeps off nothing.' : ''}`;
 }
 
 // The options offered beside a work-side question at low health, each run
@@ -88,8 +99,11 @@ function ways(bot, { task, goal, save = () => {}, now = Date.now() } = {}) {
       const r = await require('./meal').eatThrough(bot, task, meal.item, { eaten: () => (bot.food ?? 0) > before.food || (bot.inventory.items().find(i => i.name === meal.item.name)?.count ?? 0) < before.count });
       return r.eaten;
     } };
-  const pocket = pocketOf(bot), survival = bot._shotSurvival;
-  if (pocket && survival?.sealHere) tree.wall_in_first = { description: `Wall in where the bot stands first, ${pocket.blocks} block${pocket.blocks === 1 ? '' : 's'}, about ${pocket.seconds} seconds of building; whether to stay, leave or go on is asked from the pocket.`,
+  const gains = pocketGains(bot, now);
+  const pocket = gains.hits || gains.about ? pocketOf(bot) : null, survival = bot._shotSurvival;
+  const keepsOff = gains.nearest ? `it keeps off the ${gains.nearest.entity.name.replaceAll('_', ' ')} ${Math.round(gains.nearest.distance)} blocks off${gains.about > 1 ? ` and ${gains.about - 1} more about` : ''}` : `it keeps off whatever landed the ${gains.hits} hit${gains.hits === 1 ? '' : 's'} in the last 30 seconds`;
+  const heals = (bot.food ?? 0) >= 18 ? 'health comes back in it at this hunger' : `health does not come back in it at hunger ${bot.food}${mealOf(bot) ? ' until the bot eats' : ' with nothing carried to eat'}`;
+  if (pocket && survival?.sealHere) tree.wall_in_first = { description: `Wall in where the bot stands first, ${pocket.blocks} block${pocket.blocks === 1 ? '' : 's'}, about ${pocket.seconds} seconds of building: ${keepsOff}; ${heals}; whether to stay, leave or go on is asked from the pocket.`,
     run: async () => !!(await survival.sealHere(task, goal, save, require('./danger').threats(bot, 16).filter(t => t.visible))) };
   if (!Object.keys(tree).length) return { tree, says: words };
   return { tree, says: words };

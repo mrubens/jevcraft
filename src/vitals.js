@@ -1163,6 +1163,39 @@ function cauldronWays(bot, task, onAction, burn, hp) {
   return ways;
 }
 
+// Out of the shooters' line while the body burns (note 759): the ways out
+// of fire end where they end, most of them in a blaze's line, where its next
+// volley lands and lights the body again. 25581, 25592 and 25589 answered
+// out_of_fire ten times and more in a few seconds each among six to eight
+// blazes, every way's end said to be in their line, and burned to death; of
+// 489 body_way askings in the Nether with a blaze seeing the bot
+// (2026-09-29T23:00Z to 2026-09-30T17:00Z), 317 offered only ways that
+// ended in its line, and 149 of those were followed by a death within
+// thirty seconds (79 offered one that ended out of it: 20). The nearest cell
+// within eight blocks of walking that none of the shooters in sight sees now
+// (bunker.js coverWithin: no fire, lava or biter on the way), walked as the
+// run out of fire is. Null with no shooter in sight or no such cell.
+function outOfLineWay(bot, task, onAction, shot, standing) {
+  if (!shot?.entities?.length) return null;
+  let cover = null;
+  const feet = bot.entity.position.floored();
+  try { cover = require('./bunker').coverWithin(bot, shot.entities, { steps: 8, skip: c => standing && c.equals(feet) }); } catch (_) { return null; }
+  if (!cover?.steps || !cover.path?.length) return null;
+  const secs = round(Math.max(0.3, fireRouteSeconds(bot, cover.path)));
+  const names = [...new Set(shot.entities.map(e => e.name.replaceAll('_', ' ')))];
+  const who = shot.entities.length === 1 ? `the ${names[0]}` : `the ${shot.entities.length} ${names.length === 1 ? `${names[0]}s` : 'shooters'}`;
+  const burn = require('./body').lasts(bot, 'fire', { inFire: false }), hp = round(bot.health ?? 20);
+  const left = Math.max(1, Math.round(burn.fireLeftSeconds || 0));
+  const takes = burn.healthItTakes >= 0.5 ? `about ${burn.healthItTakes} health` : 'under a health';
+  const burnsOn = burn.burnsToDeath ? `about ${left} second${left === 1 ? '' : 's'} of it, more than the ${hp} health the bot has` : `about ${left} second${left === 1 ? '' : 's'} of it, ${takes}`;
+  const c = cover.cell;
+  const comes = [shot.entities.some(e => e.name === 'blaze') ? ' A blaze that loses sight of the bot comes on toward it and fires once it has a line again.' : '',
+    shot.entities.some(e => e.name === 'ghast') ? ' A ghast drifts where it will and fires whenever it has a line again.' : ''].join('');
+  return { seconds: secs,
+    description: `Walk ${cover.steps} block${cover.steps === 1 ? '' : 's'} to (${c.x}, ${c.y}, ${c.z}), a cell ${shot.entities.length === 1 ? `${who} in sight has no line to from where it is` : `none of ${who} in sight has a line to from where they are`} now (rock stands between): about ${secs} seconds, in their line until there${standing ? ', out of the fire on the way' : ''}. The fire on the body burns on (${burnsOn}); there no fireball lands and none lights it again while they have no line.${comes}${lineAtEnd(bot, shot, c)}`,
+    run: async () => { onAction({ action: 'out_of_fire', way: 'out_of_their_line', steps: cover.steps, health: bot.health }); await outOfFire(bot, task, () => {}, cover.path); return true; } };
+}
+
 function fireWays(bot, task, onAction = () => {}) {
   const ways = {};
   const standing = inFire(bot), nether = /nether/.test(String(bot.game?.dimension || ''));
@@ -1221,6 +1254,8 @@ function fireWays(bot, task, onAction = () => {}) {
         if (!flamesAbout(bot).length) bot._fireLeftAt = Date.now();
         return !inFire(bot);
       } };
+    const outOfLine = outOfLineWay(bot, task, onAction, shot, true);
+    if (outOfLine) ways.out_of_their_line = outOfLine;
     if (apple) ways.eat_golden_apple = eat();
     const potion = drinkWay();
     if (potion) ways.drink_fire_resistance = potion;
@@ -1251,6 +1286,8 @@ function fireWays(bot, task, onAction = () => {}) {
   const ends = burn.burnsToDeath
     ? `about ${left} second${left === 1 ? '' : 's'} of fire left at a health a second that armour does not stop is about ${left} health, and the bot has ${hp}: it dies of the burning in about ${burn.secondsToDeath} seconds, before the fire ends, unless something puts it out first`
     : `about ${left} second${left === 1 ? '' : 's'} of fire left, a health a second that armour does not stop, about ${burn.healthItTakes} health, leaving about ${round(hp - burn.healthItTakes)}`;
+  const outOfLine = outOfLineWay(bot, task, onAction, shootersAtBody(bot), false);
+  if (outOfLine) ways.out_of_their_line = outOfLine;
   ways.burn_out = { description: `Leave it to burn out and go on: ${ends}${nether ? (Object.keys(cauldrons).length ? '; in the Nether only a cauldron\'s water puts it out' : '; in the Nether nothing else puts it out') : ''}. ${drop < 1 ? 'Asked again at the next hurt of the burning' : `Asked again at about ${round(Math.max(0, (bot.health ?? 20) - require('./body').holdDrop(bot.health)))} health (${drop} more)`}, or when another way to put it out comes.`,
     hold: 15, run: async () => false };
   if (apple) ways.eat_golden_apple = eat();

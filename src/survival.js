@@ -3621,7 +3621,7 @@ class Survival {
         else {
           this.state.stanceWhy = `held ${Math.round((now - held.since) / 1000)} seconds facing ${said}: it came no nearer and nothing was struck${outOfSword}`;
           delete this.state.standing;
-          bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
+          bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 }; require('./danger').noteNoRun(bot, nearest);
           return false;
         }
         this.report(goal, save, { action: 'fight', threats: [nearest.entity.name], health: bot.health, stance: true, stand: true });
@@ -3882,10 +3882,16 @@ class Survival {
           try { return await require('./blaze-stand').takeStand(bot, task, goal, save, o, { navigate: this.actions.navigate }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled', 'StanceFailed'].includes(err.name)) throw err; this.state.stanceWhy = err.message; return false; }
         } };
-      // The rods carried into a chest while no blaze sees the bot (rod-stash.js,
-      // note 704): a death drops them, a chest keeps them.
-      const stash = require('./rod-stash').stashOffer(bot, goal);
-      if (stash) options.stash_rods = { expects: { damage: 0, seconds: stash.seconds }, description: require('./rod-stash').offerSays(stash),
+      // The rods carried into a chest (rod-stash.js, note 704): a death drops
+      // them, a chest keeps them. Offered in the blazes' fire too, priced as
+      // the stances are for its seconds standing here (note 759): at a swarm
+      // some blaze always sees the bot, and 25588 died carrying 5 of 7 among
+      // eight with it never on offer. What a death does to the rods is the
+      // question's own fact (rodsAtRisk, rod-risk.js), not said again here.
+      const stash = require('./rod-stash').stashOffer(bot, goal, { underFire: true });
+      const stashCost = stash?.seenBy?.length ? stanceCost({ mobs, seconds: stash.seconds, shield: shielded, health: bot.health }) : null;
+      if (stash) options.stash_rods = { expects: { damage: stashCost?.damage ?? 0, seconds: stash.seconds, ...(stashCost ? { oneHit } : {}) },
+        description: require('./rod-stash').offerSays(stash, { riskInState: true }) + (stashCost ? costSays(stashCost, bot.health, mobs, { over: `in the ${stash.seconds} second${stash.seconds === 1 ? '' : 's'} it takes` }) + hitsLeft : ''),
         run: async () => {
           this.report(goal, save, { action: 'stash_rods', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
           return require('./rod-stash').stashRods(bot, task, goal, save, this.actions, stash);
@@ -5155,6 +5161,15 @@ class Survival {
         .map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off: ${dz.reachSays(bot, t, { list: danger, now })}`);
     } catch (_) { return []; } })();
     if (reachNow.length) for (const o of Object.values(options)) o.description += ` Reach now: ${reachNow.join('; ')}.`;
+    // The closing stances against a mob no run has reached, said as tried
+    // rather than offered as if the run would work (note 752e: 25595's
+    // fight read "close on the nearest mob when it is within eight blocks"
+    // about twelve times against a magma cube no run could reach).
+    try {
+      const nr = danger[0] && require('./danger').noRunTo(bot, danger[0]);
+      if (nr) for (const k of Object.keys(options)) if (/^(fight|fight_from_footing|charge_nearest|charge_shooter)$/.test(k) && typeof options[k].description === 'string')
+        options[k].description += ` No way to the ${danger[0].entity.name.replaceAll('_', ' ')} ${Math.round(danger[0].distance * 10) / 10} blocks off: ${nr.tries === 1 ? 'a run at it' : `${nr.tries} runs at it`}, the last ${nr.secondsAgo} seconds ago, found none from here; chosen, this closes on nothing and swings only at what comes into reach.`;
+    } catch (_) { /* nothing said */ }
     const farther = fartherShootersSay(bot, danger);
     if (farther) for (const o of Object.values(options)) o.description += farther.says;
     // A ghast about, said with every stance: when it fires, and that it
@@ -6763,7 +6778,7 @@ class Survival {
     const after = nearest.entity.position?.distanceTo?.(bot.entity.position);
     if (Number.isFinite(after)) (bot._charges ||= {})[nearest.entity.id] = { at: Date.now(), from: nearest.distance, to: after, name: nearest.entity.name };
     if (failed && bot.entity.position.distanceTo(from) < 1 && !canStrike(bot, nearest.entity)) {
-      bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 };
+      bot._unreachable = { ids: [...new Set([...(bot._unreachable?.until > Date.now() ? bot._unreachable.ids : []), nearest.entity.id])], until: Date.now() + 20000 }; require('./danger').noteNoRun(bot, nearest);
       return false;
     }
     await defendNearby(bot, task, goal, save);
@@ -9954,4 +9969,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

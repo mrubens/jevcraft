@@ -129,10 +129,38 @@ function features(bot, map, eye, now) {
   for (const p of find('spawner', 4)) {
     if (bot.blockAt(p)?.name !== 'spawner' || !visible(p)) continue;
     const known = map.spawners.find(s => s.x === p.x && s.y === p.y && s.z === p.z);
-    if (known) known.seenAt = now; else map.spawners.push({ x: p.x, y: p.y, z: p.z, seenAt: now });
+    // A blaze spawner only (note 750d): a bastion's treasure room holds a
+    // magma cube spawner, and 25589 (mid-243-ma, 17:13:35Z) took one at
+    // (-238, 39, 26), 16 blocks from a bastion it had just noticed, for its
+    // fortress's cage.
+    const kind = spawnerKind(bot, p);
+    if (known) { known.seenAt = now; known.mob = kind.mob; if (!kind.blaze) known.notBlaze = kind.why; else delete known.notBlaze; }
+    else if (kind.blaze) map.spawners.push({ x: p.x, y: p.y, z: p.z, seenAt: now, ...(kind.mob ? { mob: kind.mob } : {}) });
   }
   if (!map.wart) { const w = find('nether_wart', 8).find(visible); if (w) map.wart = { x: w.x, y: w.y, z: w.z }; }
   for (const p of find('chest', 8)) if (!map.chests.some(c => c.x === p.x && c.y === p.y && c.z === p.z) && visible(p)) map.chests.push({ x: p.x, y: p.y, z: p.z });
+}
+
+// Whether a spawner is a blaze spawner, the fortress's: its mob as the
+// server sent it (survival.js spawnerMob), else, not sent, not where a
+// bastion's own blocks lie within 6 blocks of it and no fortress brick does
+// (a bastion's treasure room holds a magma cube spawner, never a fortress
+// brick). ->
+// { blaze, mob, why }
+const BRICKS = ['nether_bricks', 'nether_brick_fence', 'nether_brick_stairs', 'nether_brick_slab'];
+const BASTION = /^(polished_blackstone_bricks|cracked_polished_blackstone_bricks|gilded_blackstone|chiseled_polished_blackstone|polished_blackstone_brick_(stairs|slab|wall)|gold_block)$/;
+function spawnerKind(bot, p) {
+  let mob = null;
+  try { mob = require('./survival').spawnerMob(bot, p); } catch (_) { mob = null; }
+  if (mob) return { blaze: mob === 'blaze', mob, why: mob === 'blaze' ? null : `a ${mob.replaceAll('_', ' ')} spawner` };
+  if (typeof bot.blockAt !== 'function') return { blaze: true, mob: null, why: null };
+  let bastion = null;
+  for (let dx = -6; dx <= 6; dx++) for (let dy = -6; dy <= 6; dy++) for (let dz = -6; dz <= 6; dz++) {
+    const n = bot.blockAt(p.offset(dx, dy, dz))?.name;
+    if (BRICKS.includes(n)) return { blaze: true, mob: null, why: null };
+    if (!bastion && BASTION.test(n || '')) bastion = n;
+  }
+  return bastion ? { blaze: false, mob: null, why: `its mob not known, a bastion's ${bastion.replaceAll('_', ' ')} beside it and no fortress brick within 6 blocks` } : { blaze: true, mob: null, why: null };
 }
 
 // What came of the bot's time at each spawner the map holds (note 686):
@@ -411,4 +439,4 @@ function mapSays(bot, map, planned, { now = Date.now() } = {}) {
   return out;
 }
 
-module.exports = { look, plan, mapSays, mapOf, noteSpawners, SPAWNER_REACH, gapTo, crossing, crossings, crossingSays, lavaLevel, stepsTo, standing, reach, floorAt, keyOf, parse, FLOORS, FAILED_MS };
+module.exports = { spawnerKind, look, plan, mapSays, mapOf, noteSpawners, SPAWNER_REACH, gapTo, crossing, crossings, crossingSays, lavaLevel, stepsTo, standing, reach, floorAt, keyOf, parse, FLOORS, FAILED_MS };

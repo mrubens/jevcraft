@@ -186,7 +186,13 @@ test('walking to a known portal with no pickaxe from the stems\' foot goes to th
   bot.pathfinder.setGoal = () => {};
   const goal = { kind: 'win', survival: {}, portals: [{ ...PORTAL, dimension: 'nether' }], portalApproach: { '3,42,8': { best: 148 } } };
   const steps = [];
-  await assert.rejects(walkToKnownPortal(bot, new Task('back'), goal, () => steps.push(goal.step?.action), 'nether'), /crimson stems/);
+  // The way on is asked first, toward the portal beside the pickaxe's wood
+  // (note 751b); the pickaxe chosen, the wood is gone for.
+  const task = new Task('back'), asked = [];
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); const keys = Object.keys(questions.branch_0.criteria); return { answers: { branch_0: { choice: keys.includes('pickaxe_first') ? 'pickaxe_first' : keys[0], confidence: 0.9 } } }; } };
+  await assert.rejects(walkToKnownPortal(bot, task, goal, () => steps.push(goal.step?.action), 'nether'), /crimson stems/);
+  assert(asked[0]?.pickaxe_first, 'pickaxe_first offered');
+  assert(!asked[0].dig_across, 'no crossing that ends no nearer than the bot has come');
   assert(!steps.includes('cross_toward'), `the crossing was not begun: ${[...new Set(steps)].join(', ')}`);
   assert(steps.includes('nether_gather'), 'the pickaxe\'s wood was gone for');
 });

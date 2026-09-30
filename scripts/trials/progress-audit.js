@@ -618,6 +618,14 @@ function review({ minutes, frames, positioned, history, from, to, trial, known, 
   if (forts.length) { fortressAt = Math.min(...forts.map(l => l.firstAt)); fortressFrom = 'landmark first seen'; }
   else if (fromTrial('fortress') !== null) { fortressAt = fromTrial('fortress'); fortressFrom = 'trial record'; }
   else { const f = frames.find(f => f.snapshot?.decision?.state?.fortressInView); if (f) { fortressAt = f.t; fortressFrom = 'in view this window'; } }
+  // Retracted where nothing of a fortress's own was seen (note 750d): no
+  // fortress landmark (nether bricks), no floor of one walked this window,
+  // and a bastion known. 25589 (mid-243-ma) read a bastion's magma cube
+  // spawner at (-238, 39, 26) as its fortress's cage at 17:13:35Z.
+  if (fortressAt !== null && !forts.length && (known?.landmarks || []).some(l => l.kind === 'bastion')) {
+    const walked = frames.some(f => { const s = f.snapshot?.step || f.snapshot?.goal?.step; return s?.action === 'find_fortress' && (s.walking || s.patrolling || s.exploring); });
+    if (!walked) { fortressFrom = `retracted: ${fortressFrom}, but no fortress brick seen as a landmark or floor walked, and a bastion known`; fortressAt = null; }
+  }
   let rodAt = firstRodAt, rodFrom = firstRodAt ? 'flight record' : null;
   // A trial from a checkpoint may begin with rods got before it.
   if (rodAt && Number.isFinite(started) && rodAt - started < 120000 && netherAt < started) { rodAt = null; rodFrom = 'when the trial began'; }
@@ -627,7 +635,7 @@ function review({ minutes, frames, positioned, history, from, to, trial, known, 
   }
   const since = t => Number.isFinite(netherAt) && Number.isFinite(t) ? round((t - netherAt) / 60000) : null;
   const firsts = { netherAt: Number.isFinite(netherAt) ? new Date(netherAt).toISOString() : null, minutesInNetherSoFar: since(to),
-    fortress: fortressAt ? { minutes: since(fortressAt), from: fortressFrom } : null,
+    fortress: fortressAt ? { minutes: since(fortressAt), from: fortressFrom } : null, ...(/^retracted/.test(fortressFrom || '') ? { fortressRetracted: fortressFrom } : {}),
     rod: rodAt ? { minutes: since(rodAt), from: rodFrom } : rodFrom ? { minutes: null, from: rodFrom } : null };
 
   // 6. The rung's target: how far at the window's start and end.

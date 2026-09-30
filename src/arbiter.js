@@ -250,7 +250,10 @@ function observe(bot, ctx) {
   // mob at the bot's reach still breaks the ruling below, as it always did.
   let atCage = false;
   try { atCage = !!require('./cage-hold').cageFight(bot, ctx.goal); } catch (_) { atCage = false; }
-  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER && (t.visible !== false || t.distance <= 4) && !(atCage && t.entity?.name === 'blaze')).map(t => t.entity?.id),
+  const near = mobs.filter(t => t.distance <= STANCE_NEWCOMER && (t.visible !== false || t.distance <= 4) && !(atCage && t.entity?.name === 'blaze'));
+  const counts = {};
+  for (const t of mobs) if (t.distance <= 16 && t.entity?.name) counts[t.entity.name] = (counts[t.entity.name] || 0) + 1;
+  return { ids: near.map(t => t.entity?.id), newKinds: near.map(t => t.entity?.name), counts,
     health: bot?.health ?? 20, band: foodBand(bot?.food),
     ...(ctx.pressing || pressing(bot, ctx.look || probe)) };
 }
@@ -300,7 +303,16 @@ function broken(ruling, claims, seen, now, print = fingerprintOf(claims)) {
   if (stoppedAt(winner) > ruling.at && STOPPED_BY_THREAT.test(winner.facts?.lastError || '')) return `its winner was stopped: ${winner.facts.lastError}`;
   if (ruling.idleSince && now - ruling.idleSince >= IDLE_MS) return `its winner did nothing for ${IDLE_MS / 1000} seconds`;
   if (print !== ruling.fingerprint) return 'the claims changed';
-  if (seen.ids.some(id => !ruling.ids.includes(id))) return 'a newcomer within six blocks';
+  // One come within six of a kind already about, their count within
+  // sixteen no higher than the ruling saw, is one of those it was made
+  // with moving about, not news: 25595's magma cubes, hopping in and out of
+  // six blocks, re-asked turn_priority every one to five seconds for "a
+  // newcomer within six blocks" (16:43:50 to 16:53Z, note 752e), as a
+  // spawner's swarm did before note 731 and a stance's kin before note 743.
+  // More of that kind than before is news, as is a new kind; a mob at its
+  // reach breaks the ruling below whatever its kind.
+  const more = kind => !ruling.counts || !kind || (seen.counts?.[kind] || 0) > (ruling.counts[kind] || 0);
+  if (seen.ids.some((id, i) => !ruling.ids.includes(id) && more(seen.newKinds?.[i]))) return 'a newcomer within six blocks';
   // The turn given to a layer other than survival's with no mob at its
   // reach, or nothing to push the bot over the drop beside it: one coming is
   // asked about, whoever holds the turn (note 586). mid-242-ae's work was

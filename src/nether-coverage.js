@@ -310,4 +310,7 @@ function coverageSays(state, dim, here, radius = LEG) {
   return `seen at fortress heights (y ${BAND_LOW} to ${BAND_HIGH - 1}) through open air: about ${chunks(count(cov.seen))} chunks' worth of ground in all, and of the ground within ${radius} blocks of here about ${chunks(seen)} of ${chunks(cells)} chunks; stood on: ${count(cov.stood)} columns of 4 by 4 blocks`;
 }
 
-module.exports = { look, stand, lastGround, groundStood, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };
+// Whether the column at (x, z) has been stood on.
+function stoodAt(state, dim, x, z) { return has(coverageOf(state, dim).stood, Math.floor(x / CELL), Math.floor(z / CELL)); }
+
+module.exports = { stoodAt, look, stand, lastGround, groundStood, watch, headingCoverage, headingSays, backSays, spiralSide, liesThatWay, stoodNear, coverageSays, coverageOf, dimOf, CELL, RAYS, LEG, RING, REVEAL, BAND_LOW, BAND_HIGH };

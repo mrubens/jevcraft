@@ -229,8 +229,10 @@ function wallSite(bot, from, { steps = 8, avoid = [] } = {}) {
 function spawnerAt(bot) {
   const id = bot.registry?.blocksByName?.spawner?.id;
   if (id === undefined || typeof bot.findBlocks !== 'function') return null;
-  const found = bot.findBlocks({ matching: id, maxDistance: SPAWNER_SEARCH, count: 1 })[0] || null;
-  return found && bot.blockAt(found)?.name === 'spawner' ? found : null;
+  // The nearest blaze spawner, not any (note 750d): a bastion's magma cube
+  // spawner is no cage of blazes (fortress-map.js spawnerKind).
+  const { spawnerKind } = require('./fortress-map');
+  return bot.findBlocks({ matching: id, maxDistance: SPAWNER_SEARCH, count: 4 }).find(p => bot.blockAt(p)?.name === 'spawner' && spawnerKind(bot, p).blaze) || null;
 }
 function spawnerSite(bot, spawner = spawnerAt(bot), { steps = 24, avoid = [] } = {}) {
   if (!spawner) return null;

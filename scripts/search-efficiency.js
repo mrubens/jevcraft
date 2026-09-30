@@ -19,6 +19,7 @@
 //     and made), and the pickaxes made on the search by kind
 //
 //   node scripts/search-efficiency.js [--since 2026-09-29T23:00:00Z] [--to ISO]
+// (trials running at --since are measured from then on)
 //                                     [--port N] [--json] [--verbose]
 // JEV_ROOT reads another checkout's records (from a worktree).
 const fs = require('node:fs');
@@ -84,7 +85,9 @@ function frameOf(line) {
 }
 
 function measureTrial(tr) {
-  const start = tr.start, end = Math.min(tr.end, to);
+  // A trial begun before the window is measured from the window's start
+  // (its time to a sighting then counts from the first Nether frame in it).
+  const start = Math.max(tr.start, since), end = Math.min(tr.end, to);
   const frames = [], decisions = [];
   for (const { f, start: fs0 } of portFiles(tr.port)) {
     if (fs0 > end || fs0 < start - 6 * 3600000) continue;
@@ -210,7 +213,8 @@ function summarize(rows) {
 
 function main() {
   const audit = require('./trials/progress-audit');
-  let trials = audit.trialRecords({ since: since - 1, flight: FLIGHT }).filter(t => t.port && t.start < to);
+  // Every trial running in the window, those begun before it clipped to it.
+  let trials = audit.trialRecords({ since: null, flight: FLIGHT }).filter(t => t.port && t.start < to && t.end > since);
   if (onlyPort) trials = trials.filter(t => String(t.port) === String(onlyPort));
   trials = trials.filter(t => !/\/stages\/fortress\//.test(t.source || ''));
   const rows = trials.map(measureTrial).filter(Boolean).filter(r => r.searchMinutes >= 1);

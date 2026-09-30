@@ -981,6 +981,26 @@ async function upkeepOffers(bot, task, goal, save) {
       let homeBy = null, start = null;
       try { homeBy = mh.portalBack(bot, goal, bot.entity.position); start = homeBy ? mh.portalTripStart(bot, goal, homeBy) : null; } catch (_) { homeBy = null; }
       if (homeBy && start?.ok) options.return_for_wood = { description: mh.returnForKitSays(bot, homeBy, { goal }), run: () => returnFromNether(bot, task, goal, save) };
+      // Stems known nearer than the portal: the fetch is named first, and
+      // each says the two distances. 25584 (mid-244-gg, 17:12Z on 2026-09-30)
+      // had warped stems 127 blocks west and its portal 429 off, chose
+      // return_for_wood four times and then carry_on (note 751b).
+      const stemAt = options.fetch_stems?.place?.at, here = bot.entity.position;
+      if (stemAt && options.return_for_wood && homeBy?.portal) {
+        const toStems = Math.round(stemAt.distanceTo(here)), toPortal = Math.round(Math.hypot(homeBy.portal.x - here.x, homeBy.portal.z - here.z));
+        if (toStems < toPortal) {
+          const f = options.fetch_stems, r = options.return_for_wood;
+          delete options.fetch_stems; delete options.return_for_wood;
+          const rest = { ...options };
+          for (const k of Object.keys(options)) delete options[k];
+          Object.assign(options, { fetch_stems: f, return_for_wood: r }, rest);
+          const note = ` The stems known are ${toStems} blocks off, the portal ${toPortal}.`;
+          r.description += note;
+          const describe = f.describe;
+          f.description += note;
+          if (describe) f.describe = async () => `${await describe()}${note}`;
+        }
+      }
     }
   }
   // The wear sampled every pass, and in the Nether a spare offered beside
@@ -1022,7 +1042,10 @@ async function upkeepOffers(bot, task, goal, save) {
   // the night", carried on, and every leg of its search stopped at the
   // first gap until the loop watch ended the trial (2026-09-27).
   const inNether = /nether/.test(String(bot.game?.dimension || ''));
-  if (goal.kind === 'win' && blocksDue(bot, goal)) {
+  // In the Nether with no pickaxe and none to be made, netherrack dug by
+  // hand drops nothing: the reserve cannot be gathered, so it is not offered
+  // (25584 was offered it so, 17:04 to 17:16Z on 2026-09-30, note 751b).
+  if (goal.kind === 'win' && blocksDue(bot, goal) && !(inNether && pickaxeNeeded(bot) && !makeable)) {
     const source = inNether ? await blockSourceSaid(bot, task, goal, 'netherrack') : '';
     options.block_reserve = { description: (inNether
       ? `Mine netherrack for building blocks now: ${blockStock(bot)} carried. Here every crossing over lava or a gap is laid a block a step, and a crossing with none stops at the first gap; a block of netherrack comes out in a moment with any pickaxe once the bot is at it${pickaxeNeeded(bot) ? `, and ${makeable ? 'none is carried: it is made first from what is carried' : 'none is carried and none can be made from what is carried: dug by hand, netherrack drops nothing'}` : ''}.${source} ${BLOCK_RESERVE} also seal a pocket or tower out of a hole.`
@@ -4108,6 +4131,15 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
 async function stairsOrWay(bot, task, goal, save, p, where, walk) {
   const { restingWay } = require('./tunneling');
   if (restingWay(goal, pos(p), bot.entity.position)) return portalWay(bot, task, goal, save, p, where, { walk });
+  // In the Nether, a staircase that first wants a pickaxe from wood not
+  // carried is a gathering's search away from the portal: the ways toward
+  // the portal itself are asked beside it (portal_way's dig_across and
+  // pickaxe_first). 25598 (mid-241-cc, 16:52:37Z on 2026-09-30), at 0.8
+  // health with no food and its portal 50 blocks due north on ground, found
+  // no route on foot and was sent for stems: nether_gather leg_west, "part of
+  // go back", took it 32 blocks away from the portal (note 751b).
+  // Chosen, the pickaxe is got for ten minutes without asking again.
+  if (where === 'nether' && stairPickaxeWanted(bot, goal, pos(p))?.gather && !(goal.portalPickaxeChosen?.at > Date.now() - PORTAL_PICKAXE_HOLD_MS)) return portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted: stairPickaxeWanted(bot, goal, pos(p)) });
   try { await tunnelToward(bot, task, goal, save, pos(p), `portal_${where}`); }
   catch (err) { task.check(); if (err.name !== 'StaircaseStalled') throw err; return portalWay(bot, task, goal, save, p, where, { walk }); }
   return true;
@@ -4165,7 +4197,7 @@ function boatSays(goal) {
 // ended in and what lies on the line between; asked once for each rest
 // from each place (as a frame out of reach is, note 482), and met again,
 // every way resting is said (WaysResting), not a pass repeated.
-async function portalWay(bot, task, goal, save, p, where, { walk, client = task.opportunityClient } = {}) {
+async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted = null, client = task.opportunityClient } = {}) {
   const { staircaseWhy, staircaseUntil, landingKey, WaysResting } = require('./tunneling');
   const target = pos(p), here = bot.entity.position, now = Date.now();
   const distance = Math.round(Math.hypot(p.x - here.x, p.z - here.z));
@@ -4219,6 +4251,23 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   // round and waiting, none good 0.38 (note 580).
   const short = where === 'nether' ? blocksShortSays(bot, goal, target) : null;
   if (short) tree.blocks_then_cross = { description: short.says };
+  // Straight at it now, rock dug by hand where there is no pickaxe, and the
+  // pickaxe for the staircase got first: toward the portal, and away from it
+  // for wood, side by side (note 751b).
+  let across = null;
+  if (where === 'nether' && !nt.crossingResting(bot, goal, target)) {
+    try { across = require('./bridging').surveyCrossing(bot, target, { cells: nt.CROSS_STRETCH }); } catch (_) { across = null; }
+    // Not where its stretch ends no nearer than the bot has already come
+    // (crossToward's own beat, note 629).
+    const best = approachBest(goal, p);
+    if (across?.cells && across.gain >= 1 && !(Number.isFinite(best) && Math.hypot(target.x - across.end.x, target.z - across.end.z) >= best - 1)) tree.dig_across = { description: `Straight at the portal now at this height, ${pickaxeTier(bot) < 1 ? 'the rock in the way dug by hand (no pickaxe carried)' : 'the rock in the way dug with the pickaxe carried'} and a block laid over open air, ${across.cells} cells of the way; then the way on asked again from where it ends. ${nt.crossingSays(across, 'the portal')}` };
+  }
+  if (pickaxeWanted) {
+    let fetch = null;
+    try { fetch = await require('./nether-wood').fetchStemsOffer(bot, task, goal); } catch (_) { fetch = null; }
+    const wood = fetch ? await fetch.describe() : 'No stem is known and none is on offer to fetch: the wood is looked for by the gathering\'s legs.';
+    tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the staircase to the portal, from wood not carried, then the staircase: the gathering goes where the wood is, not toward the portal. ${wood}` };
+  }
   if (until) tree.wait_rest = { description: `Other work until the staircase's rest ends in ${minutes} minute${minutes === 1 ? '' : 's'}, then the way to the portal again from wherever the bot is; the work is asked then.`,
     // Not idle: the work is asked then (the stall's until_rest_ends says whether any is on offer, note 698).
     waits: require('./waits').restEnds(bot, { what: 'the staircase\'s rest', until, cause: stairsWhy, idle: false, now }) };
@@ -4264,6 +4313,16 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
     cameTo(crossed.tried ? goal.lastCrossError : 'no crossing to make after the gather');
     return true;
   }
+  if (pick === 'dig_across') {
+    const crossed = await nt.crossToward(bot, task, goal, save, target, { what: 'the portal back' });
+    cameTo(crossed.tried ? goal.lastCrossError : crossed.madeAlready || 'no crossing to make');
+    return true;
+  }
+  if (pick === 'pickaxe_first') {
+    goal.portalPickaxeChosen = { at: now }; save();
+    await pickaxeForStair(bot, task, goal, save, target, `portal_${where}`, pickaxeWanted.item);
+    return true;
+  }
   if (pick === 'floor_way') {
     const went = await nt.walkFloorToward(bot, task, goal, save, target, down, navigate);
     // Down and nearer is ground made, whatever the four-block measure says.
@@ -4274,6 +4333,8 @@ async function portalWay(bot, task, goal, save, p, where, { walk, client = task.
   cameTo(leg.why);
   return true;
 }
+// How long pickaxe_first, chosen, is carried out before the ways are asked again.
+const PORTAL_PICKAXE_HOLD_MS = 10 * 60000;
 // How long a way from a place that came to nothing is left out from there.
 const PORTAL_WAY_TRIED_MS = 5 * 60000;
 
@@ -4370,6 +4431,24 @@ async function portalHere(bot, task, goal, save) {
   return true;
 }
 
+// The pickaxe a staircase toward `target` wants first, or null: none carried,
+// and the stair not short enough to dig by hand (tunnelToward). `gather` is
+// whether it must be got from outside the pockets (wood gathered), which in
+// the Nether is the gathering's own search.
+function stairPickaxeWanted(bot, goal, target) {
+  if (pickaxeTier(bot) >= 1 || bot.game?.gameMode === 'creative') return null;
+  const tunneling = require('./tunneling');
+  let made = null; try { const p = require('./mob-hunt').pickaxeFirst(bot); made = p.none ? null : p.item; } catch (_) { made = null; }
+  if (!made && Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) <= tunneling.STAIR_ACROSS && tunneling.stairFromHere(bot, goal, target)?.gains) return null;
+  return { item: made || 'stone_pickaxe', gather: !made };
+}
+async function pickaxeForStair(bot, task, goal, save, target, key, item) {
+  const before = bot._wantedFor;
+  bot._wantedFor = { item, what: /^portal_/.test(key) ? 'the stair to the portal' : `the stair to the ${String(key).replaceAll('_', ' ')}`, target: { x: target.x, y: target.y, z: target.z } };
+  const have = bot.inventory.items().filter(i => i.name === item).reduce((n, i) => n + i.count, 0);
+  try { await acquireStep(bot, task, item, have + 1, goal, save); } finally { bot._wantedFor = before; }
+}
+
 // A staircase needs a pickaxe; the planner offers no stone stair without
 // one. The bot stood by its broken pickaxe with eight logs and a stack of
 // cobblestone, so make the tool first.
@@ -4396,15 +4475,8 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   // A pickaxe the pockets make is made first, a few seconds, and the rock
   // then drops and is dug in a fraction of the time (note 705: every rock
   // now digs by hand, slowly, so the stair by hand is not a reason to skip it).
-  const made = () => { try { const p = require('./mob-hunt').pickaxeFirst(bot); return p.none ? null : p.item; } catch (_) { return null; } };
-  const byHand = () => Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) <= tunneling.STAIR_ACROSS && !made() && tunneling.stairFromHere(bot, goal, target)?.gains;
-  if (pickaxeTier(bot) < 1 && bot.game?.gameMode !== 'creative' && !byHand()) {
-    const before = bot._wantedFor, item = made() || 'stone_pickaxe';
-    bot._wantedFor = { item, what: /^portal_/.test(key) ? 'the stair to the portal' : `the stair to the ${String(key).replaceAll('_', ' ')}`, target: { x: target.x, y: target.y, z: target.z } };
-    const have = bot.inventory.items().filter(i => i.name === item).reduce((n, i) => n + i.count, 0);
-    try { await acquireStep(bot, task, item, have + 1, goal, save); } finally { bot._wantedFor = before; }
-    return;
-  }
+  const wanted = stairPickaxeWanted(bot, goal, target);
+  if (wanted) { await pickaxeForStair(bot, task, goal, save, target, key, wanted.item); return; }
   // Straight overhead and out of the stairs' reach: up by a pillar first.
   // The pathfinder builds towers too, but a thirty-block one never came out
   // of its search in time, and the staircase went round a lava pool below

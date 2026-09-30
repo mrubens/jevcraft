@@ -240,7 +240,7 @@ test('after a death the corpse run\'s question says the rods in the chest were n
   assert.match(typeof leave === 'string' ? leave : JSON.stringify(leave), /Not dropped: 4 blaze rods in a chest at \(-153, 81, 166\) in the Nether, kept there and counted as held\./);
 });
 
-test('the stance in the lull offers stash_rods with the record\'s row; with a blaze seeing the bot it does not', () => {
+test('the stance in the lull offers stash_rods with the record\'s row; with a blaze seeing the bot it is offered too, said and priced for its seconds in the fire (note 759)', () => {
   const { Task } = require('../src/skills');
   const { Survival } = require('../src/survival');
   const offered = bot => {
@@ -250,7 +250,15 @@ test('the stance in the lull offers stash_rods with the record\'s row; with a bl
   const o = offered(frameBot());
   assert.ok(o.stash_rods, Object.keys(o).join(', '));
   assert.deepEqual(o.stash_rods.expects, { damage: 0, seconds: 1 });
-  assert.match(o.stash_rods.description, /^Keep the 4 blaze rods safe from a death first: .* Of 63 times a bot in the Nether first held 4 or more rods/);
+  assert.match(o.stash_rods.description, /^Keep the 4 blaze rods safe from a death first: .* A chest keeps them \(no mob opens one\), counted as held, taken out before the portal\. Toward the rods/);
+  assert.doesNotMatch(o.stash_rods.description, /Of 63 times/);
+  // The rods at risk and the record are the question's own fact (note 759, rodsAtRisk).
+  assert.match(require('../src/rod-risk').risk(frameBot(), huntGoal()).says, /^4 rods carried, 7 wanted; 3 still needed\./);
   const seen = offered(frameBot({ blazes: [...rec.blazes, { id: 9, position: { x: -151.5, y: 81, z: 162.5 } }] }));
-  assert.equal(seen.stash_rods, undefined);
+  assert.ok(seen.stash_rods, 'offered in the fire (note 759)');
+  assert.match(seen.stash_rods.description, /Done where the bot stands, in the line of 1 blaze that sees it now\./);
+  assert.match(seen.stash_rods.description, /About [\d.]+ damage from the mobs here in the 1 second it takes, from 8 health\./);
+  assert.ok(seen.stash_rods.expects.damage > 0 && seen.stash_rods.expects.oneHit > 0, JSON.stringify(seen.stash_rods.expects));
+  // The lull's own question still asks it only with no line (empty_spawner).
+  assert.equal(rs.stashOffer(frameBot({ blazes: [...rec.blazes, { id: 9, position: { x: -151.5, y: 81, z: 162.5 } }] }), huntGoal()), null);
 });

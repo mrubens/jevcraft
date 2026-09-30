@@ -41,6 +41,11 @@ const NEAR = 128;
 // The fetch: acquire steps at most, a time for all of them, the steps in a
 // row that gain no wood and come no nearer before it ends.
 const FETCH_STEPS = 24, FETCH_MS = 12 * 60000, IDLE_STEPS = 3;
+// What fetches came to in the record (flight records 2026-09-29 23Z to
+// 2026-09-30 17Z, note 751b): chosen with no stem known, 4 times, none
+// brought wood; to stems known, 337 times, 100 brought wood within twelve
+// minutes. 25584 (mid-244-gg) chose the blind one at 0.66 to 0.77.
+const BLIND_RECORD = 'In the record since 2026-09-29 23Z, none of the 4 fetches chosen with no stem known brought wood; of 337 to stems known, 100 brought some within twelve minutes.';
 // A fetch that gained nothing rests this long.
 const REST_MS = 10 * 60000;
 // An axe's speed on wood by its material (26.1.2 tool tiers).
@@ -179,7 +184,7 @@ async function fetchStemsOffer(bot, task, goal) {
       lead = `The nearest stems: ${said.n ? `${plural(said.n, words(said.name))} known` : `none known yet in ${said.forest}`} at ${at3(said.at)}, ${off} blocks ${compass(here, said.at)}${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}.`;
       where = `${capital(FOREST_SAYS[kind])}${mobs ? `; about it now: ${mobs}` : ''}.` +
         route + (places[1] && places[1] !== said ? ` Next nearest: ${words(places[1].name)}s ${Math.round(places[1].at.distanceTo(here))} blocks ${compass(here, places[1].at)}.` : '');
-    } else lead = 'No stem is known: none seen within 128 blocks or remembered, and no crimson or warped forest noticed or in the loaded ground. The fetch then asks the legs of the gathering\'s search, each said with the Nether forests that way as far as loaded.';
+    } else lead = `No stem is known: none seen within 128 blocks or remembered, and no crimson or warped forest noticed or in the loaded ground. The fetch is then a blind search: the gathering's legs of 64 blocks, each said with the Nether forests that way as far as loaded, until a forest is seen, for up to ${FETCH_MS / 60000} minutes; a forest the fortress search's own legs come on is remembered, and a fetch from there has a place to go. ${BLIND_RECORD}`;
     // What the pickaxe is short of, which this fetch brings (note 705).
     const short = stranded ? require('./mob-hunt').pickaxeFirst(bot).short : null;
     const pick = wanted.picked ? '' : stranded

@@ -27,6 +27,10 @@ const last = frames.filter(f => f.snapshot?.dimension).at(-1)?.snapshot;
 if (!last || last.health === 0) process.exit(0);
 const out = [];
 if (/nether/.test(String(last.dimension))) out.push('nether');
-const step = last.goal?.step || last.step;
-if (frames.slice(-40).some(f => { const s = f.snapshot?.goal?.step || f.snapshot?.step; return s?.action === 'find_fortress' && s.walking; }) || step?.action === 'stalk_mob') out.push('fortress');
+// On its floors (the map's floors are the fortress's own bricks), as
+// midgame.js marks it; a stalk of a mob is not a fortress: 25589 (mid-243-ma)
+// stalked a blaze 25 blocks off at 17:23:47Z by a bastion 16 blocks from
+// where it read a fortress, and a "fortress" stage was saved there
+// (mid-243-ma-172613, note 750d).
+if (frames.slice(-40).some(f => { const s = f.snapshot?.goal?.step || f.snapshot?.step; return s?.action === 'find_fortress' && (s.walking || s.patrolling || s.exploring); })) out.push('fortress');
 process.stdout.write(out.join('\n'));

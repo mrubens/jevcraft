@@ -225,6 +225,36 @@ function surveyLeg(bot, heading, { cells = 96, from = null, blocks = null } = {}
   return out;
 }
 
+// The walk a leg takes first: the pathfinder toward its end (the legs are
+// "walked by the pathfinder first, then straight across where the walk gives
+// out"). Said beside the line's cells, which are read at this height from
+// this cell: 25584 (mid-244-gg, 16:49Z on 2026-09-30) was told leg_east was
+// "64 of rock to dig ... about 256 seconds", and the pathfinder took it 58
+// blocks back along its own span in 17 seconds; then leg_west back, then the
+// search's leg_north walked east again first, three crossings of the same
+// sixty blocks (note 751b). `state` is the search's coverage, for the steps
+// on ground stood on before. '' where no pathfinder is at hand.
+const LEG_WALK_SURVEY_MS = 500;
+async function legWalkSays(bot, task, target, { state = null } = {}) {
+  if (!bot.pathfinder?.movements || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return '';
+  const { goals } = require('mineflayer-pathfinder');
+  let route = null;
+  try { route = await require('./skills').surveyRoute(bot, task, bot.pathfinder.movements, new goals.GoalNearXZ(target.x, target.z, 8), LEG_WALK_SURVEY_MS); }
+  catch (err) { task.check(); if (!retryable(err)) throw err; return ''; }
+  const path = route?.path || [];
+  if (path.length < 2) return ' The pathfinder finds no walk on foot from here: the leg goes straight along the line as said.';
+  const here = bot.entity.position, end = path.at(-1);
+  const gain = Math.round(flat(target, here) - flat(target, end));
+  const coverage = require('./nether-coverage'), dim = coverage.dimOf(bot);
+  const stood = state ? path.filter(n => coverage.stoodAt(state, dim, n.x, n.z)).length : 0;
+  const placed = path.reduce((n, q) => n + (q.toPlace?.length || 0), 0), dug = path.reduce((n, q) => n + (q.toBreak?.length || 0), 0);
+  const seconds = Math.round(path.length / WALK_SPEED + placed * LAY_CELL_SECONDS + dug * ROCK_CELL_SECONDS / 2);
+  const reaches = route.status === 'success';
+  const work = [placed && `laying ${placed} block${placed === 1 ? '' : 's'}`, dug && `digging ${dug}`].filter(Boolean).join(' and ');
+  const back = stood * 2 >= path.length ? `, a walk back over ground already walked and looked from` : '';
+  return ` Walked first by the pathfinder, before any digging: its route ${reaches ? 'reaches the leg\'s end' : gain >= 1 ? `goes ${gain} blocks nearer the leg's end, to (${Math.round(end.x)}, ${Math.round(end.y)}, ${Math.round(end.z)})` : 'makes no ground toward the leg\'s end'} in ${path.length} steps${work ? `, ${work}` : ''}, about ${seconds} seconds, ${stood} of them on ground the bot has stood on before${back}; ${reaches ? 'the line\'s cells said here are dug only where that walk fails' : 'from where it ends the leg goes straight on'}.`;
+}
+
 // The leg as a fact: what is open, what is rock and about how long, that
 // nothing is seen from inside the rock, and the blocks it needs laid
 // against the blocks carried.
@@ -905,4 +935,4 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   return answers;
 }
 
-module.exports = { mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, downRoute, withDownMovements, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, keepOnFightSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
+module.exports = { legWalkSays, mobsPriceSays, standingTripSays, HOGLIN_HUNTS, walkFloorToward, downRoute, withDownMovements, floorKey, floorBelow, wayDown, walkFloor, floorWay, goDown, floorToward, floorTowardSays, floorWalkSays, wayDownSays, backUpSays, headingColumns, lineColumns, FLOOR_WALKABLE, LAY_CELL_SECONDS, WALK_SPEED, crossingResting, CROSS_REST_MS, inNether, nearer, crossToward, surveyLeg, legSays, ROCK_CELL_SECONDS, CAVERN_DROP, crossingSays, crossingSeconds, foodReason, keepOnWhy, keepOnSays, keepOnFightSays, chooseReturnForFood, legTarget, hoglinsKnown, hoglinFight, hoglinSays, portalHereSays, netherAnswers, CROSS_STRETCH };
