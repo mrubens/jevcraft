@@ -105,7 +105,7 @@ test('a night mine chosen from a pocket holds the turn under the rock until dawn
   const { claimSays } = require('../src/arbiter');
   const bot = world({ farmland: null, sky: false, at: new Vec3(0.5, 40, 0.5), open: [{ x: 0, y: 40, z: 0 }, { x: 0, y: 41, z: 0 }], time: 14000 });
   bot.food = 20;
-  const state = { sleptAtAge: 1000, nightMine: { startedAt: Date.now() - 120000, origin: { x: 2, y: 40, z: 0 }, mined: 5 } };
+  const state = { sleptAtAge: 1000, nightMine: { startedAt: Date.now() - 100000, origin: { x: 2, y: 40, z: 0 }, mined: 5, minedAt: Date.now() - 10000 } };
   const c = claim(bot, { kind: 'win' }, { state, currentShelter: () => null });
   assert.equal(c?.action, 'night_mine');
   assert.equal(c.urgency, 'routine');

@@ -8128,7 +8128,7 @@ class Survival {
       if (NIGHT_ORES.has(mine.targetOre) && target.distanceTo(bot.entity.position.offset(0, 1.6, 0)) <= 4.5) {
         const before = bot.inventory.items().length;
         await this.actions.dig(bot, task, target, { requireDrops: false });
-        mine.mined++; delete mine.target; mine.failures = 0;
+        mine.mined++; mine.minedAt = Date.now(); delete mine.target; mine.failures = 0;
         // What fell is picked up on the next step into the cell.
         await sleep(300);
         if (bot.inventory.items().length === before) {
@@ -9300,7 +9300,9 @@ class Survival {
     // the work six times at 12 then 8 health, and the next fireball ended
     // it (note 541).
     else if (hunt && !immediateThreat(bot) && await this.huntStep(task, goal, save)) { onStep(goal); return true; }
-    if (!shelterNeeded(bot) || (this.state.nightMine && !nightMineOn(bot, this.state.nightMine))) delete this.state.nightMine;
+    // Nor one that will not dig, has mined nothing for two minutes, or a food
+    // errand chosen since has replaced (nightMineHolds, note 755c).
+    if (!shelterNeeded(bot) || (this.state.nightMine && !nightMineHolds(bot, this.state, this))) delete this.state.nightMine;
     else if (this.state.nightMine && !immediateThreat(bot) &&
         await this.nightMine(task, goal, save)) { onStep(goal); return true; }
     // Or one that has stood off, whose claim Jev gave the turn to (note
@@ -9944,6 +9946,19 @@ function shellUnfinishedSays(bot, refuge) {
 // on) climbed out, went to its portal cast in open water at y 68, and was
 // told "the night mine from the pocket, chosen 3 minutes ago (3 mined),
 // goes on under the rock" for six minutes (note 753c).
+// A night mine Jev chose holds the turn (note 755b) while it is one (note
+// 755c): under the rock and near where it began (nightMineOn), able to dig
+// (nightMineOff says why not), with a block mined in the last two minutes
+// (or begun within them), and no food errand the bot chose under way.
+const NIGHT_MINE_IDLE_MS = 2 * 60000;
+function nightMineHolds(bot, state, survival = null, now = Date.now()) {
+  const mine = state?.nightMine;
+  if (!nightMineOn(bot, mine)) return false;
+  try { if (survival?.nightMineOff?.()) return false; } catch (_) { return false; }
+  if (now - (mine.minedAt || mine.startedAt || now) > NIGHT_MINE_IDLE_MS) return false;
+  if (state.foodPlan?.until > now || state.searchFoodHold?.until > now || state.pocketPlan?.choice && /^(go_for_food|seen_food_\w+|search_food|hunt_\w+|return_for_food|hoglin_food)$/.test(state.pocketPlan.choice) && state.pocketPlan.until > now) return false;
+  return true;
+}
 function nightMineOn(bot, mine) {
   if (!mine) return false;
   const p = bot.entity.position;
@@ -10143,7 +10158,13 @@ function claim(bot, goal = {}, survival = null) {
   // night "free" below, survival claimed nothing, the work's sheep search
   // took the turn and climbed 25590 out of it three times at 18:43Z, and the
   // next pocket chose the mine again.
-  if (!needsShelter && shelterNeeded(bot) && nightMineOn(bot, state.nightMine) && !threat) return make('night_mine', 'routine', {
+  // Only while it is a mine (note 755c: 25592 and 25584 held the turn for
+  // minutes on "the night mine chosen ... (0 and 2 mined)" while the pocket
+  // said no mine would dig from there, and 25592's walk to food it had
+  // chosen was dropped for it): not when the mine would not dig a block,
+  // not when it has mined nothing for NIGHT_MINE_IDLE_MS, and never over a
+  // food errand the bot chose.
+  if (!needsShelter && shelterNeeded(bot) && nightMineHolds(bot, state, survival, now) && !threat) return make('night_mine', 'routine', {
     nightMine: { minutes: Math.round((now - (state.nightMine.startedAt || now)) / 60000), mined: state.nightMine.mined || 0 }, minutesToDawn: minutesToDawn(bot) });
   if (!needsShelter && !needsFood) return null;
   // "Carry on" is Jev's own answer, held: the work's turn by his choice.
@@ -10174,4 +10195,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
