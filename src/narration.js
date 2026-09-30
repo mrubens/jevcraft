@@ -168,9 +168,36 @@ const fortressLeft = goal => (goal?.fortressSearch?.shunned || []).some(sh => sh
 // was standing in and leaving and re-finding (note 739). Read only, by the
 // anchor's own firstAt (set once, kept while the fortress is); narrate()
 // records it once said.
+//
+// By its place too (note 750): the anchor's firstAt is made anew whenever the
+// search re-anchors the fortress, and a step with no `fortress` field (the
+// spawner wait's fallback) carries none, so 25590 (mid-242-yc) said "A
+// fortress! I'm heading for it." at 11:13:42Z standing level with the floor
+// of the fortress it had been at for 54 minutes (announced under firstAt
+// ...68572, the anchor by then ...80826), and the trials of 2026-09-29 23Z to
+// 09-30 11:30Z said it 158 times at a fortress already known. A place within
+// the same Nether region (one fortress to a region, nether-regions.js) or
+// within FORTRESS_SAME of one announced is that fortress.
+const FORTRESS_SAME = 128;
+const fortressPlace = step => { const p = step?.fortress || step?.found; return p && Number.isFinite(p.x) && Number.isFinite(p.z) ? { x: p.x, z: p.z } : null; };
+const sameFortressPlace = (a, b) => {
+  if (Math.hypot(a.x - b.x, a.z - b.z) <= FORTRESS_SAME) return true;
+  try { const { regionOf } = require('./nether-regions'), ra = regionOf(a.x, a.z), rb = regionOf(b.x, b.z); return ra.rx === rb.rx && ra.rz === rb.rz; } catch (_) { return false; }
+};
 const fortressAlreadyAnnounced = (goal, step) => {
   const at = step?.fortress?.firstAt;
-  return at != null && goal?.narrated?.fortressFirstAt === at;
+  if (at != null && goal?.narrated?.fortressFirstAt === at) return true;
+  const p = fortressPlace(step);
+  return !!p && (goal?.narrated?.fortressesSaid || []).some(s => sameFortressPlace(s, p));
+};
+// The fortress the search knows, where the step is not a find: going back to
+// it (its point the leg's target), or searching past it. -> the line or null.
+const knownFortressSays = (goal, step) => {
+  const s = goal?.fortressSearch, f = s?.fortressAt;
+  if (!f || !Number.isFinite(f.x) || !Number.isFinite(f.z)) return null;
+  const t = step?.target;
+  if (s.rememberedTarget && t && Math.hypot(t.x - f.x, t.z - f.z) <= 16) return `Going back to the fortress at ${Math.round(f.x)}, ${Math.round(f.z)}.`;
+  return `Searching past the fortress I know at ${Math.round(f.x)}, ${Math.round(f.z)} (leg ${step.legs || 1}${legHeading(goal)}).`;
 };
 // Which way the leg goes, so a person watching sees the search turn (note 689).
 const legHeading = goal => { const h = goal?.fortressSearch?.lastHeading; return Number.isInteger(h) && h >= 0 && h < 4 ? `, heading ${['east', 'south', 'west', 'north'][h]}` : ''; };
@@ -202,7 +229,11 @@ function stepVariants(goal, step, bot = null) {
     case 'find_fortress': return step.walking ? "I'm in the fortress. Now, where are the blazes?"
       : step.found && fortressAlreadyAnnounced(goal, step) ? null
       : step.found ? "A fortress! I'm heading for it."
-      : fortressLeft(goal) ? `Leaving the fortress for now, searching on (leg ${step.legs || 1}${legHeading(goal)}).` : `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
+      : fortressLeft(goal) ? `Leaving the fortress for now, searching on (leg ${step.legs || 1}${legHeading(goal)}).`
+      // A fortress already known is not searched for as if none were (note
+      // 750): 25590 said "I'm looking for a fortress (leg 37, heading north)"
+      // 98 minutes after reaching one.
+      : knownFortressSays(goal, step) || `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
     case 'collect': return `I'm picking up the ${name(step.item || step.drops)}.`;
     case 'place': case 'build': case 'build_schematic': {
       const what = goal.kind === 'house' ? ' the house' : goal.design?.source?.name ? ` ${goal.design.source.name}` : '';
@@ -324,6 +355,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     state.step = key;
     // Once said, this fortress's own find is not said again (above).
     if (goal.step.action === 'find_fortress' && goal.step.fortress?.firstAt != null) state.fortressFirstAt = goal.step.fortress.firstAt;
+    if (goal.step.action === 'find_fortress' && line === "A fortress! I'm heading for it." && fortressPlace(goal.step)) state.fortressesSaid = [...(state.fortressesSaid || []), fortressPlace(goal.step)].slice(-16);
     return line;
   }
   return null;

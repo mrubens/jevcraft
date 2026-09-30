@@ -609,10 +609,18 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // last rod, each told nothing of the one before it.
   const deferStreak = liveCage ? goal.huntDeferStreak || 0 : 0;
   const deferStreakSays = deferStreak ? ` Chosen ${deferStreak} time${deferStreak === 1 ? '' : 's'} running against this cage: nothing has changed since, and the rods still needed are the same.` : '';
+  // The ones with no way on foot to them from here, said: with every fight
+  // left out and nothing said of why, defer read as the one answer to a
+  // blaze come to the bot at its fortress (25590, mid-242-yc, 11:14:20Z:
+  // box_here, leave_and_heal and defer, 3 rods owed; note 750).
+  const unreached = [];
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
-      if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement, 400, { pushed })) continue;
+      if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement, 400, { pushed })) {
+        if (!pushed.includes(target)) { const d = target.position.distanceTo(bot.entity.position), dy = Math.round(target.position.y - bot.entity.position.y); unreached.push(`the ${target.name.replaceAll('_', ' ')} ${Math.round(d)} blocks off${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}: no way on foot to within a sword's reach of it from here, so no fight with it is offered; the ways that wait for it to come (a stand, a box) are`); }
+        continue;
+      }
       positions.set(target.id, target.position.clone());
       // What this one fight costs, and what is beside the mob (the decision
       // audit, 2026-09-25): a hoglin's toss or a blaze's knockback beside
@@ -751,6 +759,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     fitness: { ...fit, said: fitSaid },
     // A blaze whose every way to fight it in the open ends within a push of
     // lava or a deep drop: fought from a stand, not walked under.
+    ...(unreached.length ? { noWayToStrike: unreached.map(u => `${u} ${Object.keys(tree).some(k => /^(box|hole|wall|stand|back_to|corner|cage|spawner)/.test(k)) ? 'offered' : 'not on offer here'}`) } : {}),
     ...(pushed.length ? { notFoughtInTheOpen: pushed.map(e => ({ entity: e.name, distance: Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10, why: 'every way to it ends within a fireball\'s push (about two blocks) of lava or a deep drop' })) } : {}) };
   let decision;
   {
@@ -1557,7 +1566,7 @@ async function pickaxeWays(bot, task, goal, save, actions, { handSays = '', afte
   if (pick.none) {
     const nw = require('./nether-wood');
     const fetch = await nw.fetchStemsOffer(bot, task, goal);
-    if (fetch) ways.fetch_stems = { description: `${await fetch.describe()}${handSays} ${after}`.trim(),
+    if (fetch) ways.fetch_stems = { description: `${await fetch.describe()}${handSays} ${after}`.trim(), place: fetch.place,
       run: async () => {
         const done = await nw.fetchStems(bot, task, goal, save, { acquireStep: actions.acquireStep });
         if (done.unmade) throw new Error(done.unmade);
@@ -1869,6 +1878,39 @@ function sightingsThatWay(bot, goal, state, here, heading) {
 // later, back at the same fortress's far side, its bricks still filtered
 // as left behind, leg_north again, told "from y 49 none is seen" five
 // blocks from the bricks (note 507).
+// The fortress the search already knows, when none is in view and rods are
+// still owed: where, how far, how long known, whether and why it is set
+// aside, and the walk back to it as a way. -> { at, off, says, option } or null.
+function knownFortressOutOfView(bot, goal, state, here, now = Date.now()) {
+  let rods = 0; try { rods = require('./blaze-stand').rodsNeeded(bot, goal); } catch (_) { rods = 0; }
+  if (!(rods > 0) || !/nether/.test(String(bot.game?.dimension || ''))) return null;
+  let p = state.fortressAt || state.approach?.found || state.found || null;
+  if (!p) {
+    let known = [];
+    try { known = require('./exploration').knownLandmarks(bot, goal, 'nether_fortress'); } catch (_) { known = []; }
+    p = known[0]?.landmark || null;
+  }
+  if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return null;
+  const at = { x: Math.round(p.x), y: Math.round(Number.isFinite(p.y) ? p.y : here.y), z: Math.round(p.z) };
+  const off = Math.round(Math.hypot(at.x - here.x, at.z - here.z));
+  const reach = Math.max(p.extent || 0, 16);
+  const aside = (state.shunned || []).filter(sh => sh.until > now && Math.hypot(sh.x - at.x, sh.z - at.z) <= Math.max(sh.radius || 16, reach)).sort((a, b) => b.until - a.until)[0];
+  const mins = ms => { const m = Math.max(1, Math.round(ms / 60000)); return `${m} minute${m === 1 ? '' : 's'}`; };
+  const knownFor = p.firstAt ? `, known ${mins(now - p.firstAt)}` : '';
+  const asideSays = aside ? ` It is set aside ${mins(aside.until - now)} more: ${aside.why || 'left for now'}${aside.from ? `, from (${aside.from.x}, ${aside.from.y}, ${aside.from.z})` : ''}${aside.left?.length ? `, its ways in then: ${aside.left.slice(0, 6).join(', ')}` : ''}.` : ' It is not set aside.';
+  const says = `The fortress at (${at.x}, ${at.y}, ${at.z}), ${off} blocks off and out of view${knownFor}; ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and it is where they are known to be.${asideSays} Every leg from here searches for another fortress.`;
+  const option = save => ({ description: `Go back to the fortress known at (${at.x}, ${at.y}, ${at.z}), ${off} blocks off: ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and it is where they are known to be. The walk is the leg's own (the pathfinder, then straight across, then the staircase), and once its bricks are in view the way in is asked.${aside ? ` Taken, it is no longer set aside (${aside.why || 'left for now'}).` : ''}`,
+    target: at,
+    run: () => {
+      state.shunned = (state.shunned || []).filter(sh => Math.hypot(sh.x - at.x, sh.z - at.z) > Math.max(sh.radius || 16, reach));
+      delete state.leaving;
+      state.target = { ...at }; state.rememberedTarget = true; state.legSince = Date.now(); state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) };
+      save(); return 'fortress';
+    } });
+  // Within the leg's own arrival (8 blocks) the walk there is no walk.
+  return { at, off, says, option: off >= 8 ? option : null };
+}
+
 async function chooseLeg(bot, task, goal, save, actions, state, fortress = null) {
   const here = bot.entity.position, y = Math.round(here.y);
   const current = headingIndex(state);
@@ -2058,6 +2100,24 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       o.description = `${end < now - 8 ? 'Toward' : end > now + 8 ? 'Away from' : 'Across from'} the fortress in view: its end is ${end} blocks from its nearest brick (${now} now). ${o.description}`;
     });
   }
+  // A fortress already known, out of view, with rods still owed: the Nether's
+  // work is that fortress, so the legs say it and why it is left, and the
+  // way back to it is a way of its own (note 750). 25590 (mid-242-yc) reached
+  // the fortress milestone at (160, 60, 260) and 98 minutes later was on leg
+  // 37 "looking for a fortress", north, away from it and from the stems it
+  // wanted, told of neither (critic-20260930T1157Z item 1).
+  let knownFortress = null;
+  if (!fortress) knownFortress = knownFortressOutOfView(bot, goal, state, here);
+  if (knownFortress) {
+    const kf = knownFortress;
+    HEADINGS.forEach((h, i) => {
+      const o = options[`leg_${HEADING_NAMES[i]}`];
+      if (!o) return;
+      const end = Math.round(Math.hypot(here.x + h[0] * FORTRESS_LEG - kf.at.x, here.z + h[1] * FORTRESS_LEG - kf.at.z));
+      o.description = `${end < kf.off - 8 ? 'Toward' : end > kf.off + 8 ? 'Away from' : 'Across from'} the fortress known at (${kf.at.x}, ${kf.at.y}, ${kf.at.z}), out of view: its end is ${end} blocks from it (${kf.off} now). ${o.description}`;
+    });
+    if (kf.option) options.back_to_fortress = kf.option(save);
+  }
   // A blaze spawner the map holds is the place the blazes come from: each
   // not seen broken is a way of its own, nearest first (note 686). 25589
   // fought blazes at the cage at (-108, 77, 155), left it, and walked the
@@ -2222,7 +2282,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     // the played record's row (blaze-record.js rowSays) is added, since the
     // search is toward the fights that need it.
     ...((bot.health < 20 || (bot.food ?? 20) < 20) ? { fitness: `${fitnessSays(bot)}${bot.health < HUNT_FLOOR ? ` ${require('./blaze-record').rowSays(bot.health, bot.food ?? 20)}.` : ''}` } : {}),
-    ...(fortress ? { fortressInView: fortress.facts } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
+    ...(fortress ? { fortressInView: fortress.facts } : {}), ...(knownFortress ? { fortressKnown: knownFortress.says } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
   // The old order's facts (the most ground unseen, the open air each
   // heading's blocks reach): context, read by the tests' stand-in only (note 707).
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
@@ -2499,6 +2559,17 @@ const APPROACH_FROM = 16;
 const DESCEND_FLOOR = 12;
 // As far as a span toward a fortress was ever laid.
 const APPROACH_CROSS = 64;
+// Ground gained toward the fortress, the approach's own "came nearer": a
+// block, what one step of the staircase or one cell of a span makes, less
+// the quarter block the feet sit off a cell's centre. The approach had
+// counted 1.5, and a staircase digs one step a pass: 94 of the 96 staircase
+// passes it recorded as "tunnel: came no nearer" from 2026-09-29 23Z to
+// 09-30 11:30Z had moved the bot a block or more toward the bricks, and each
+// was said to Jev as a way that failed (note 750).
+const STEP_GAIN = 0.75;
+// From here, as a failed way's own spot: the cell the bot stands in and the
+// ones beside it (note 750).
+const TRIED_HERE = 2;
 const retryable = err => !['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
 const flatTo = (a, b) => Math.hypot(a.x + 0.5 - b.x, a.z + 0.5 - b.z);
 
@@ -2787,6 +2858,11 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     // nether-4 was offered "the pathfinder found no route toward it from
     // here" as a way in, and chose it (note 591).
     if (route && !route.cells) noRoute = 'the pathfinder found no route toward it from here (it walks, bridges and climbs, and digs no netherrack)';
+    // A route that ends no nearer is no way in either: surveyed, it gains
+    // under a block (the approach's own measure of nearer), and walked it
+    // ends where it began, "No route from here" (note 750: 35 of the 50
+    // walks offered on a survey gaining two blocks or less failed so).
+    else if (route && route.gain < 1) noRoute = `the pathfinder's route toward it from here (${route.cells} cells) ends no nearer to it`;
     else options.walk_route = { description: `Walk the pathfinder's route to the fortress, ${where}: to a point level with the bot beside it first, then on up or down to the floor itself. ${surveyed} The pathfinder walks upright on open ground and crouched beside lava or a drop that kills: a crouch stops the body at an edge, but a push there carries it over.${edge}`,
       run: async () => {
         const from = bot.entity.position.clone();
@@ -2919,6 +2995,36 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     options.tunnel = { description: `Dig a staircase through the rock toward the fortress, ${where}, a step at a time with rock round the bot: no block is dug with lava or water behind it, and it stops where every step nearer would be one.${rest ? ` ${capital(rest)}: taken now, it digs nothing until then.` : ''}${stairByHand.says}${stairDigs(bot, goal, nearest)}`,
       run: async () => { await actions.tunnel(bot, task, goal, save, nearest, 'fortress'); return null; } };
   }
+  // A way that already came to nothing from where the bot stands, with the
+  // same blocks and pickaxe, meets the same world again: it is said as tried,
+  // in the facts, not offered as if it would work (note 750). 25590
+  // (mid-242-yc, 11:12-11:14Z) stood 7 blocks from its fortress's floor and
+  // was offered its walk, crossing, staircase and pillar again and again,
+  // each ending no nearer, no_route between, and took them in turn.
+  const kitNow = { carried: blocksCarried(bot), tier: bot.inventory?.items ? pickaxeTier(bot) : 0 };
+  const triedHere = {};
+  for (const f of record?.failed || []) {
+    if (!options[f.choice] || !f.from || !f.kit) continue;
+    if (Math.hypot(f.from.x - here.x, f.from.y - here.y, f.from.z - here.z) > TRIED_HERE) continue;
+    if (f.kit.carried !== kitNow.carried || f.kit.tier !== kitNow.tier) continue;
+    triedHere[f.choice] = f.why;
+  }
+  for (const k of Object.keys(triedHere)) delete options[k];
+  // The trip home for the kit says what it is for as it stands here: "every
+  // way on here needs one of them" is false beside a way in offered with what
+  // is carried (25590 at 11:12:46Z: return_for_blocks said so beside pillar_up,
+  // its floor 2 blocks off by the walk that followed, note 750).
+  if (options.return_for_blocks) {
+    const beside = ['walk_route', 'cross_level', 'descend', 'pillar_up', 'tunnel', 'head_toward'].filter(k => options[k]);
+    if (beside.length) options.return_for_blocks.description = options.return_for_blocks.description.replace('every way on here needs one of them.', `the ${beside.map(k => k.replaceAll('_', ' ')).join(', ')} offered beside it ${beside.length === 1 ? 'goes' : 'go'} with what is carried; the other ways on need one of them.`);
+  }
+  // An errand away from the fortress says how far it takes the bot from it
+  // and what it leaves (fortress-away.js): the fetch of stems was taken from
+  // 7 blocks off the floor for stems 173 blocks away (25590, 11:14:36Z).
+  if (options.fetch_stems?.place?.at) {
+    const away = require('./fortress-away').awaySays(bot, goal, options.fetch_stems.place.at, { owed: true, from: nearest });
+    if (away) options.fetch_stems.description += ` ${away}`;
+  }
   const minutes = state.legSince ? Math.round((Date.now() - state.legSince) / 60000) : null;
   // The fortress left is all of it in view, not sixteen blocks of it:
   // mid-235-p-nether-3 chose to leave its fortress seven times in three
@@ -2965,6 +3071,13 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
   // arrives among blazes arrives at it (note 515).
   let hits = null; try { hits = require('./crossing-kit').netherHitSays(bot); } catch (_) { /* no body */ }
   if (waiting) for (const [key, option] of Object.entries(options)) if (!PICKAXE_WAYS.includes(key)) option.description += ` Within sixteen blocks of the bricks, seen or not: ${waiting}; a way that arrives among them arrives in their fight.${hits && key !== 'keep_searching' ? ` ${hits}` : ''}`;
+  // The blazes at the bricks are the rods themselves, and a fight with one
+  // wants the sword, not a pickaxe or blocks: said on the ways that take the
+  // bot from them for a pickaxe or blocks (note 750; 25590's fetch of stems
+  // 173 blocks off, a blaze come to it at the floor's edge).
+  if (counted.blaze) for (const key of ['fetch_stems', 'return_for_blocks']) {
+    if (options[key]) options[key].description += ` ${counted.blaze} blaze${counted.blaze === 1 ? ' is' : 's are'} within sixteen blocks of the bricks now: a blaze is fought with the sword, and the fight wants no pickaxe and no blocks; this takes the bot away from ${counted.blaze === 1 ? 'it' : 'them'}.`;
+  }
   // What each way came to on this approach, said with it.
   for (const [key, option] of Object.entries(options)) {
     const tries = (record?.failed || []).filter(f => f.choice === key);
@@ -2984,7 +3097,8 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     ...(waiting ? { atTheBricks: waiting } : {}),
     // Blazes at the bricks: what the bot's fights with blazes came to, by the health and hunger begun at (blaze-record.js, note 631).
     ...(counted.blaze ? { playedRecord: require('./blaze-record').says(bot) } : {}),
-    ...(record?.failed?.length ? { failed: record.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}) } };
+    ...(record?.failed?.length ? { failed: record.failed.map(f => `${f.choice.replaceAll('_', ' ')}: ${f.why}`) } : {}),
+    ...(Object.keys(triedHere).length ? { triedFromHere: Object.entries(triedHere).map(([k, why]) => `${k.replaceAll('_', ' ')}: tried from where the bot stands, with the same blocks and pickaxe, and ended no nearer (${why}); not offered again from here`) } : {}) } };
 }
 
 // Standing on the fortress's floors as its map has them (fortress-map.js
@@ -3074,7 +3188,7 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     approach.choice = pick; approach.until = Date.now() + APPROACH_HOLD_MS; save();
   }
   goal.step = { action: 'find_fortress', found, ...(fortressAt ? { fortress: fortressAt } : {}), ...(onFloors ? { walking: found } : {}), approach: pick, legs: state.legs }; save();
-  const from = nearest.distanceTo(bot.entity.position);
+  const from = nearest.distanceTo(bot.entity.position), startedAt = bot.entity.position.clone();
   let why = null;
   try { why = await options[pick].run(); }
   catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
@@ -3089,9 +3203,13 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   if (PICKAXE_WAYS.includes(pick) && pickaxeTier(bot) >= 1) { delete approach.choice; delete approach.until; save(); return null; }
   // Gone home for the kit: the way in is asked again on the way back.
   if (pick === 'return_for_blocks' && why === 'returned') { delete approach.choice; delete approach.until; save(); return null; }
-  // Closer counts; a shuffle along the shelf does not.
-  if (nearest.distanceTo(bot.entity.position) < from - 1.5) { approach.failed = []; save(); return null; }
-  approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now() }].slice(-8);
+  // Closer counts, by a step's ground (STEP_GAIN); a shuffle along the shelf
+  // does not.
+  if (nearest.distanceTo(bot.entity.position) < from - STEP_GAIN) { approach.failed = []; save(); return null; }
+  // Where it failed from and with what, so the same way is not offered
+  // again from the same spot with the same pockets (fortressApproaches).
+  const stood = startedAt;
+  approach.failed = [...approach.failed, { choice: pick, why: why || 'came no nearer', at: Date.now(), from: { x: Math.round(stood.x * 10) / 10, y: Math.round(stood.y * 10) / 10, z: Math.round(stood.z * 10) / 10 }, kit: { carried: blocksCarried(bot), tier: bot.inventory?.items ? pickaxeTier(bot) : 0 } }].slice(-8);
   delete approach.choice; delete approach.until; save();
   return `${pick.replaceAll('_', ' ')}: ${why || 'came no nearer'}`;
 }

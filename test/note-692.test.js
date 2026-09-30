@@ -52,7 +52,7 @@ test('under its fortress with no pickaxe, wood or blocks: what a hand gets here 
   assert.equal(state.fortress.height, 26, 'the floor is 26 up, not the pier\'s bricks 2 down');
   assert.match(state.byHand, /^Nothing dug by hand within 16 blocks drops a block that can be laid: rock is dug by hand, netherrack about 2 s, basalt about 6\.25 s, blackstone about 7\.5 s, nether bricks about 10 s a block by hand, dropping nothing \(the game's rule: rock drops only to a pickaxe\), and no soul sand, soul soil or wart block can be dug from ground walked to here/);
   assert.equal(state.pillar, undefined, 'no pillar to be had here at all');
-  assert.match(options.return_for_blocks, /^Go back through the portal \(the nearest known \d+ blocks off at 4, 50, 13\) for a pickaxe, blocks and wood: every way on here needs one of them\. Here a hand gets no block: netherrack dug by hand drops nothing; a span or pillar needs blocks \(0 carried\); a pickaxe needs wood \(none carried\)\. /);
+  assert.match(options.return_for_blocks, /^Go back through the portal \(the nearest known \d+ blocks off at 4, 50, 13\) for a pickaxe, blocks and wood: the tunnel offered beside it goes with what is carried; the other ways on need one of them\. Here a hand gets no block: netherrack dug by hand drops nothing; a span or pillar needs blocks \(0 carried\); a pickaxe needs wood \(none carried\)\. /);
   assert.match(options.return_for_blocks, /Walks back like this made 17 to 30 blocks a minute \(about 31 to 55 minutes\); of 181 over 60 blocks, 22 came out, 18 died/);
   assert.equal(options.blocks_then_pillar, undefined, 'nothing here to pillar with');
   assert.equal(options.pillar_up, undefined, 'no block carried');

@@ -595,6 +595,25 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   });
   if (legsClosed.length) facts.legsClosed = legsClosed;
   if (notOffered.length) facts.waysResting = notOffered;
+  // A way that takes the bot farther from a known fortress, the rods still
+  // wanted, says on itself how far from the fortress it goes and what it
+  // leaves (fortress-away.js awaySays): 25590 (mid-242-yc, 11:14:36Z) took
+  // cross_to_2 for stems 173 blocks north from 7 blocks off its fortress's
+  // floor, owing 3 rods, told the stems' distance from the bot and nothing of
+  // the fortress (note 750). Said on the option, not only in the facts'
+  // fortressLeft, since it is the option's own cost.
+  {
+    const fa = require('./fortress-away'), fort = fa.fortressAt(goal);
+    if (fort) {
+      const legEnd = k => { const i = HEADING_NAMES.findIndex(n => k === `leg_${n}`); return i >= 0 ? here.plus(new Vec3(HEADINGS[i][0] * LEG, 0, HEADINGS[i][1] * LEG)) : null; };
+      for (const [k, o] of Object.entries(options)) {
+        const to = o.target || legEnd(k);
+        if (!to || fort.distanceTo(new Vec3(to.x, Number.isFinite(to.y) ? to.y : here.y, to.z)) <= fort.distanceTo(here)) continue;
+        const away = fa.awaySays(bot, goal, to, { owed: true });
+        if (away) o.description += ` ${away}`;
+      }
+    }
+  }
 
   const without = withoutOption(bot, goal, save, { forItem, resource });
   if (without?.none) facts.without = without.none;

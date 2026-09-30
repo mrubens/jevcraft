@@ -184,7 +184,7 @@ test('the whole flow: sighted, visited, the walk failing said on the next asking
   const asked = [];
   // Jev: go in; walk the route first; with it failed, fetch the stems; with a pickaxe, straight across; on the floors, wait by the spawner.
   const client = { systemOne: async ({ state, questions }) => {
-    const keys = Object.keys(questions.branch_0.criteria), q = keys.includes('go_in') ? 'fortress_visit' : keys.includes('keep_searching') || keys.includes('walk_route') ? 'fortress_approach' : keys.includes('stay_in_fortress') || keys.some(k => k.startsWith('leg_')) ? 'fortress_leg' : 'other';
+    const keys = Object.keys(questions.branch_0.criteria), q = keys.includes('go_in') ? 'fortress_visit' : ['keep_searching', 'walk_route', 'fetch_stems', 'cross_level', 'tunnel', 'pillar_up'].some(k => keys.includes(k)) && !keys.some(k => k.startsWith('leg_') || k.startsWith('walk_to_')) ? 'fortress_approach' : keys.includes('stay_in_fortress') || keys.some(k => k.startsWith('leg_')) ? 'fortress_leg' : 'other';
     asked.push({ q, keys, state, options: questions.branch_0.criteria });
     const order = { fortress_visit: ['go_in'], fortress_approach: ['walk_route', 'fetch_stems', 'cross_level'], fortress_leg: ['wait_at_spawner', 'go_to_spawner', 'stay_in_fortress'], other: [] }[q];
     const tries = asked.filter(a => a.q === q && a.keys.includes('walk_route')).length;
@@ -214,6 +214,10 @@ test('the whole flow: sighted, visited, the walk failing said on the next asking
   const second = asked.at(-1);
   assert.equal(second.q, 'fortress_approach');
   assert.match(second.options.walk_route || second.state.failed.join(' '), /No path to the goal!/);
+  // Failed from where it still stands, with the same pockets: said as tried,
+  // not offered again (note 750).
+  assert.equal(second.options.walk_route, undefined);
+  assert.match(second.state.triedFromHere.join(' '), /^walk route: tried from where the bot stands/);
   assert(second.keys.includes('fetch_stems'), second.keys.join(', '));
   assert(items.some(i => /_pickaxe$/.test(i.name) && i.count > 0), 'the stems fetched made the pickaxe');
   assert.equal(goal.intention?.choice, 'go_in', 'the visit still holds after the fetch: it was its way');

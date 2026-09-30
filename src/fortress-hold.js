@@ -157,7 +157,11 @@ function leave(bot, state, { anchor, target = null, radius = 16, left = [], why 
   // off and this chat say 3, then 1, of the one fortress, because this line
   // measured from the anchor while the option measured from the target.
   const from3 = target || anchor;
-  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${round(Math.hypot(from3.x + 0.5 - p.x, from3.z + 0.5 - p.z))} blocks off. Searching on for another.${owed}`);
+  // At its bricks it is not "1 blocks off": 25588 (mid-242-xa-fortress-2,
+  // 11:34Z) said so of the fortress it had just walked, and it read as a
+  // fortress somewhere else (note 750).
+  const off = round(Math.hypot(from3.x + 0.5 - p.x, from3.z + 0.5 - p.z));
+  bot.chat?.(`Leaving the fortress at ${at3(anchor)} for now, ${off <= 2 ? 'at its bricks as I leave it' : `${off} blocks off`}. Searching on for another.${owed}`);
 }
 
 // 5. A fetch of stems chosen under the fortress work and still holding: it

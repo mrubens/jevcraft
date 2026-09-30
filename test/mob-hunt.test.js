@@ -657,7 +657,10 @@ test('the way chosen to a fortress holds while it makes ground, and a failure is
   assert.equal(goal.fortressSearch.approach.choice, undefined, 'let go once it came no nearer');
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions);
   assert.equal(client.asked.length, 2);
-  assert.match(client.asked[1].options.tunnel, /Tried on this approach once and ended no nearer: No safe way toward/);
+  // Failed from where the bot still stands, with the same pockets: said as
+  // tried, not offered again as if it would work (note 750).
+  assert.equal(client.asked[1].options.tunnel, undefined);
+  assert.match(client.asked[1].state.triedFromHere.join(' '), /^tunnel: tried from where the bot stands, with the same blocks and pickaxe, and ended no nearer \(No safe way toward \(30, 64, 0\): lava\); not offered again from here$/);
   assert.deepEqual(client.asked[1].state.failed, ['tunnel: No safe way toward (30, 64, 0): lava']);
   assert(goal.fortressSearch.shunned.some(s => s.x === 30), 'left for now, as Jev chose');
   assert.equal(tunnels, 2);

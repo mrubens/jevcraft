@@ -36,9 +36,14 @@ function walksWith(bot) {
 }
 // -> the words, or null where no fortress is known or the rods are not wanted.
 // `to`: where the errand goes (a Vec3-like), when known.
-function awaySays(bot, goal, to = null) {
+// `owed`: the rods still needed said with it, and that the fortress is where
+// they are known to be (note 750: 25590 took a fetch of stems 173 blocks
+// from a fortress 7 blocks off, owing 3 rods, told only the stems' distance).
+// `from`: the fortress's point to measure from, where the caller has one
+// nearer than the search's kept brick.
+function awaySays(bot, goal, to = null, { owed = false, from = null } = {}) {
   if (!bot?.entity?.position || !inNether(bot) || !rodsWanted(bot, goal)) return null;
-  const fort = fortressAt(goal);
+  const fort = from && Number.isFinite(from.x) ? new Vec3(from.x, Number.isFinite(from.y) ? from.y : 64, from.z) : fortressAt(goal);
   if (!fort) return null;
   const here = bot.entity.position;
   const now = r(fort.distanceTo(here));
@@ -46,7 +51,10 @@ function awaySays(bot, goal, to = null) {
   const leaves = there != null
     ? `It takes the bot from the fortress ${now} blocks off now to ${there} blocks from it, and the way back after is as far.`
     : `The fortress is ${now} blocks off now; the errand leaves it.`;
-  return `${leaves} ${walksWith(bot)}`;
+  let rods = 0;
+  if (owed) { try { rods = require('./blaze-stand').rodsNeeded(bot, goal); } catch (_) { rods = 0; } }
+  const owes = rods ? ` ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and the fortress is where they are known to be.` : '';
+  return `${leaves}${owes} ${walksWith(bot)}`;
 }
 // The same, as a fact for a question's state.
 function awayFacts(bot, goal) {

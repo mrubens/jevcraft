@@ -187,7 +187,7 @@ async function fetchStemsOffer(bot, task, goal) {
       : ' No pickaxe is carried.';
     const later = LATER;
     const makes = wanted.picked ? '' : ' The pickaxe is made as soon as the wood for it is carried.';
-    return `Fetch ${plural(wanted.stems, 'stem')} of the Nether's forests now. ${lead}${pick} ${wanted.says}${where ? ` ${where}` : ''} ${capital(stemSeconds(bot))}.${makes}${later}`;
+    return `Fetch ${plural(wanted.stems, 'stem')} of the Nether's forests now. ${lead}${pick} ${wanted.says}${where ? ` ${where}` : ''} ${capital(stemSeconds(bot))}.${makes}${triesSays(goal, here)}${later}`;
   };
   return { wanted, place, stranded, description: say(place, ''),
     describe: async () => {
@@ -217,10 +217,36 @@ async function fetchStems(bot, task, goal, save, { acquireStep, count = (b, n) =
   // (nether-gather.js withoutOption, note 700).
   const errandWas = bot._errand;
   bot._errand = { key: 'fetch_stems', stems: wanted.stems, for: wanted.picked ? 'a spare pickaxe and sticks' : 'a pickaxe' };
-  try { return await fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted, start, began }); }
-  finally { bot._errand = errandWas; }
+  const from = bot.entity?.position ? { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) } : null;
+  const ran = { why: null };
+  let threw = null;
+  try { return await fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted, start, began, ran }); }
+  catch (err) { threw = err; throw err; }
+  finally {
+    bot._errand = errandWas;
+    // A fetch that ended, however (its own rest, a preemption, a question
+    // above it), with no stem gained, kept with where from and why: the next
+    // offer says it (fetchStemsOffer). 25590 (mid-242-yc) was sent by upkeep's
+    // fetch_stems for stems 81 blocks south eight times in ten minutes
+    // (11:48-11:57Z), each cut before its own rest was reached, 14 no_route
+    // between, and each offer said nothing of the ones before (note 750).
+    if (woodCarried(bot).planks - start <= 0 && from) {
+      const why = ran.why || (threw ? String(threw.message || threw).slice(0, 200) : null) || 'ended before any stem was gained';
+      goal.fetchStemsTries = [...(goal.fetchStemsTries || []).filter(t => Date.now() - t.at < TRIES_MS), { at: Date.now(), from, why: why.slice(0, 200) }].slice(-8);
+      try { save(); } catch (_) { /* kept in memory */ }
+    }
+  }
 }
-async function fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted, start, began }) {
+// How long a fetch that gained nothing is said with the next offer.
+const TRIES_MS = 30 * 60000, TRIES_NEAR = 32;
+// The fetches that gained nothing from about here, said: '' or the words.
+function triesSays(goal, here, now = Date.now()) {
+  const tries = (goal?.fetchStemsTries || []).filter(t => now - t.at < TRIES_MS && Math.hypot(t.from.x - here.x, t.from.z - here.z) <= TRIES_NEAR);
+  if (!tries.length) return '';
+  const last = tries.at(-1), mins = Math.max(1, Math.round((now - tries[0].at) / 60000));
+  return ` This fetch was chosen ${tries.length === 1 ? 'once' : `${tries.length} times`} in the last ${mins} minute${mins === 1 ? '' : 's'} from within ${TRIES_NEAR} blocks of here, and no stem came of ${tries.length === 1 ? 'it' : 'any'}; the last ended: ${last.why}.`;
+}
+async function fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted, start, began, ran = {} }) {
   const target = start + wanted.stems * 4;
   let idle = 0, why = null, stepped = 0;
   const near = () => { const p = stemPlaces(bot, goal, { fresh: true })[0]; return p ? p.at.distanceTo(bot.entity.position) : null; };
@@ -231,7 +257,7 @@ async function fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted
     const before = woodCarried(bot).planks, was = place ? place.at.distanceTo(bot.entity.position) : null;
     const left = Math.ceil((target - before) / 4);
     try { await acquireStep(bot, task, stem, count(bot, stem) + left, goal, save); stepped++; }
-    catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 200); }
+    catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 200); ran.why = why; }
     // Jev chose to go on without the wood (nether_gather's without).
     if (goal.step?.action === 'go_without' || goal.stemsWithout?.at >= began) return { gained: woodCarried(bot).planks - start, without: true };
     const now = near();
@@ -258,4 +284,4 @@ async function fetchStemsRun(bot, task, goal, save, { acquireStep, count, wanted
   return { gained };
 }
 
-module.exports = { LATER, woodCarried, woodWanted, fetchStemsOffer, fetchStems, stemPlaces, FOREST_SAYS, NEAR, REST_MS };
+module.exports = { triesSays, LATER, woodCarried, woodWanted, fetchStemsOffer, fetchStems, stemPlaces, FOREST_SAYS, NEAR, REST_MS };
