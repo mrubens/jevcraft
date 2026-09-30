@@ -2953,6 +2953,28 @@ function fortressAnchor(state, bricks, nearest, now = Date.now()) {
   state.fortressAt = { x: nearest.x, y: nearest.y, z: nearest.z, extent: fortressExtent(bricks, nearest), firstAt: now, seenAt: now };
   return state.fortressAt;
 }
+// The anchor, seeded from bricks near the cage itself, for a fortress not
+// yet known this way: findFortressStep's own bricks search (below) only
+// runs where the atCage gate does not return first, so a trial that reaches
+// a live cage before that search ever ran (a saved position, or every early
+// tick quieted by the flat GO_TO_NEAR gate) never learns the fortress's own
+// extent, and cageExtent stays false for as long as the trial runs: 25594
+// (mid-242-sc) was asked fortress_approach 9 blocks from its cage and again
+// four minutes later, from a box built 13.2 blocks off (note 720). Cheap (a
+// second bricks search, the same as the one below): only run where the
+// anchor is still unknown.
+function seedFortressAt(bot, state, cage) {
+  if (state.fortressAt) return state.fortressAt;
+  const ids = FORTRESS_BLOCKS.map(name => bot.registry.blocksByName[name]?.id).filter(id => id !== undefined);
+  if (!ids.length) return null;
+  let own; try { own = require('./own-blocks').ownSet(bot, state); } catch (_) { own = new Set(); }
+  let near = [];
+  try { near = bot.findBlocks({ matching: ids, maxDistance: 48, count: FORTRESS_MIN_BRICKS + own.size }).filter(b => !own.has(`${b.x},${b.y},${b.z}`)); } catch (_) { near = []; }
+  if (near.length < FORTRESS_MIN_BRICKS) return null;
+  const cageV = new Vec3(cage.x, cage.y, cage.z);
+  const nearest = near.slice().sort((a, b) => a.distanceTo(cageV) - b.distanceTo(cageV))[0];
+  return fortressAnchor(state, near, nearest);
+}
 // Two places of the one fortress known (its anchor's reach), or failing
 // one, within SAME_FORTRESS of each other.
 function sameFortress(state, p, q) {
@@ -3279,6 +3301,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // wanted, the bot is still where the search is for however far the box or
   // the wait stands from the cage itself.
   const atCage = !state.spawnerWait && !state.goTo ? require('./cage-hold').cageFight(bot, goal) : null;
+  if (atCage) seedFortressAt(bot, state, atCage.cage);
   const fa = state.fortressAt;
   const cageExtent = atCage && fa && Math.hypot(atCage.cage.x - fa.x, atCage.cage.z - fa.z) <= Math.max(fa.extent || 0, GO_TO_NEAR)
     ? Math.hypot(bot.entity.position.x - fa.x, bot.entity.position.z - fa.z) <= Math.max(fa.extent || 0, GO_TO_NEAR) : false;
@@ -3724,4 +3747,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}) } };
 }
 
-module.exports = { tripHomeClosed, fortressAnchor, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };
+module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };

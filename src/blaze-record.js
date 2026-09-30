@@ -123,45 +123,73 @@ const CLASS_SAYS = {
 const MIN_FIGHTS = 5;
 const BLAZES_ABOUT = n => n <= 1 ? '0-1' : n <= 3 ? '2-3' : '4+';
 const HEALTH_BAND = h => h > 16 ? '>16' : h > 8 ? '8-16' : '<8';
-// The keys of the cells an answer given here falls in: finest first.
-const cellKeys = ({ spawner, blazes, health }) => [`${spawner ? 'spawner' : 'none'}|${BLAZES_ABOUT(blazes)}|${HEALTH_BAND(health)}`, `${spawner ? 'spawner' : 'none'}|${BLAZES_ABOUT(blazes)}|*`];
+// The keys of the cells an answer given here falls in: finest first. A
+// shield carried or not is its own, finer cell where one is on record
+// (note 720: charging into one blaze and into fourteen, with a shield or
+// without, are not one row); where none is, it falls back to the plain
+// spawner|blazes|health cell as before, then to any health.
+const cellKeys = ({ spawner, blazes, health, shield }) => [
+  ...(typeof shield === 'boolean' ? [`${spawner ? 'spawner' : 'none'}|${BLAZES_ABOUT(blazes)}|${HEALTH_BAND(health)}|${shield ? 'shield' : 'no shield'}`] : []),
+  `${spawner ? 'spawner' : 'none'}|${BLAZES_ABOUT(blazes)}|${HEALTH_BAND(health)}`, `${spawner ? 'spawner' : 'none'}|${BLAZES_ABOUT(blazes)}|*`];
 // The rows, by situation (spawner|blazes within 16|health, `*` for any
 // health) and kind: [fights, took a rod after, died after]; only rows of
 // MIN_FIGHTS or more (`node scripts/blaze-record.js --answers`).
 const ANSWERS = {
-  'none|0-1|*': { charge: [6, 1, 0], close_in: [18, 7, 3], cover: [20, 1, 6], heal: [9, 0, 2] },
-  'none|0-1|8-16': { close_in: [5, 1, 2] },
-  'none|0-1|>16': { close_in: [15, 6, 2], cover: [16, 1, 4] },
-  'none|2-3|*': { charge: [14, 7, 4], close_in: [5, 1, 3], cover: [9, 1, 4] },
-  'none|2-3|>16': { charge: [12, 5, 2], cover: [8, 1, 3] },
-  'none|4+|*': { heal: [6, 0, 4] },
-  'spawner|0-1|*': { close_in: [9, 4, 4] },
-  'spawner|0-1|>16': { close_in: [9, 4, 4] },
-  'spawner|2-3|*': { charge: [8, 1, 5], cover: [11, 2, 6], heal: [9, 1, 2], retreat: [8, 3, 4] },
-  'spawner|2-3|8-16': { cover: [6, 1, 2], heal: [8, 1, 2] },
-  'spawner|2-3|<8': { cover: [5, 0, 4] },
-  'spawner|2-3|>16': { charge: [8, 1, 5], retreat: [6, 3, 2] },
-  'spawner|4+|*': { box_stand: [32, 1, 6], charge: [32, 3, 7], cover: [87, 3, 16], fight: [5, 0, 1], heal: [47, 4, 11], retreat: [16, 1, 7] },
-  'spawner|4+|8-16': { box_stand: [8, 0, 3], cover: [30, 0, 9], heal: [38, 3, 10], retreat: [6, 0, 4] },
-  'spawner|4+|<8': { box_stand: [5, 1, 2], cover: [8, 0, 4], heal: [9, 0, 1] },
-  'spawner|4+|>16': { box_stand: [24, 0, 5], charge: [32, 3, 7], cover: [70, 3, 12], heal: [15, 1, 6], retreat: [8, 1, 2] },
+  'none|0-1|*': { box_stand: [6, 0, 3], charge: [13, 6, 2], close_in: [31, 10, 5], cover: [30, 3, 8], fight: [6, 0, 1], heal: [13, 1, 3], retreat: [7, 0, 1] },
+  'none|0-1|>16': { charge: [10, 4, 2], close_in: [27, 8, 4], cover: [24, 2, 5], fight: [5, 0, 0], heal: [5, 0, 1] },
+  'none|0-1|>16|shield': { charge: [10, 4, 2], close_in: [27, 8, 4], cover: [22, 2, 5], fight: [5, 0, 0], heal: [5, 0, 1] },
+  'none|0-1|8-16': { close_in: [7, 2, 3], cover: [6, 1, 4], heal: [8, 1, 2] },
+  'none|0-1|8-16|shield': { close_in: [6, 1, 3], heal: [7, 1, 2] },
+  'none|2-3|*': { box_stand: [5, 0, 1], charge: [23, 9, 4], close_in: [7, 2, 4], cover: [15, 1, 6], heal: [6, 2, 2] },
+  'none|2-3|>16': { charge: [19, 7, 2], close_in: [5, 1, 3], cover: [11, 1, 3] },
+  'none|2-3|>16|shield': { charge: [19, 7, 2], close_in: [5, 1, 3], cover: [11, 1, 3] },
+  'none|2-3|8-16': { heal: [6, 2, 2] },
+  'none|2-3|8-16|shield': { heal: [5, 2, 2] },
+  'none|4+|*': { cover: [13, 1, 4], heal: [11, 0, 5] },
+  'none|4+|<8': { cover: [5, 0, 2] },
+  'none|4+|>16': { cover: [9, 1, 2] },
+  'none|4+|>16|shield': { cover: [5, 0, 2] },
+  'none|4+|8-16': { heal: [7, 0, 3] },
+  'none|4+|8-16|shield': { heal: [6, 0, 3] },
+  'spawner|0-1|*': { charge: [6, 4, 2], close_in: [19, 6, 5] },
+  'spawner|0-1|>16': { charge: [6, 4, 2], close_in: [17, 6, 5] },
+  'spawner|0-1|>16|shield': { charge: [6, 4, 2], close_in: [17, 6, 5] },
+  'spawner|0-1|8-16': { close_in: [6, 0, 1] },
+  'spawner|0-1|8-16|shield': { close_in: [6, 0, 1] },
+  'spawner|2-3|*': { box_stand: [7, 1, 2], charge: [18, 5, 6], cover: [13, 2, 7], heal: [13, 1, 2], retreat: [12, 5, 6] },
+  'spawner|2-3|<8': { cover: [6, 0, 5] },
+  'spawner|2-3|>16': { box_stand: [6, 0, 2], charge: [17, 5, 6], retreat: [9, 4, 4] },
+  'spawner|2-3|>16|shield': { box_stand: [6, 0, 2], charge: [17, 5, 6], retreat: [9, 4, 4] },
+  'spawner|2-3|8-16': { cover: [6, 1, 2], heal: [12, 1, 2] },
+  'spawner|2-3|8-16|shield': { cover: [5, 1, 2], heal: [10, 1, 2] },
+  'spawner|4+|*': { box_stand: [53, 4, 11], charge: [66, 6, 16], cover: [161, 11, 33], fight: [16, 2, 4], heal: [70, 5, 17], retreat: [33, 4, 13] },
+  'spawner|4+|<8': { box_stand: [9, 1, 5], cover: [26, 2, 12], heal: [17, 0, 4], retreat: [5, 0, 2] },
+  'spawner|4+|<8|no shield': { cover: [16, 1, 7], heal: [8, 0, 2] },
+  'spawner|4+|<8|shield': { box_stand: [6, 1, 3], cover: [10, 1, 5], heal: [9, 0, 2] },
+  'spawner|4+|>16': { box_stand: [41, 3, 8], charge: [65, 6, 16], cover: [131, 10, 24], fight: [12, 2, 2], heal: [20, 2, 8], retreat: [20, 2, 7] },
+  'spawner|4+|>16|no shield': { charge: [11, 0, 3], cover: [36, 3, 3], retreat: [5, 0, 1] },
+  'spawner|4+|>16|shield': { box_stand: [38, 3, 8], charge: [54, 6, 13], cover: [97, 7, 21], fight: [10, 2, 2], heal: [17, 2, 8], retreat: [16, 2, 6] },
+  'spawner|4+|8-16': { box_stand: [11, 0, 4], cover: [47, 0, 14], heal: [55, 3, 14], retreat: [13, 2, 6] },
+  'spawner|4+|8-16|no shield': { cover: [22, 0, 5], heal: [18, 1, 3] },
+  'spawner|4+|8-16|shield': { box_stand: [7, 0, 3], cover: [25, 0, 9], heal: [37, 2, 11], retreat: [10, 1, 6] },
 };
-// note 712: superseding the ANSWERS above (2026-09-28 to 2026-09-29T11:38Z,
-// 624 fights, the old single 'strike' class), from the 156 fights of
-// 2026-09-29T21:00Z to 2026-09-30T01:50Z, after the deploys since 21:00Z;
-// 'strike' is now 'charge' and 'close_in' apart, and 'box_stand' (a held
-// stand at the cage: box_here, box_at_spawner, fight_at_spawner,
-// break_spawner) and 'hole' (dig_in_and_fight, dig_in_at_spawner) are their
-// own class rather than folded into 'fight' or 'cover'; 'hole' has no row
-// here because it was never chosen at MIN_FIGHTS or more (once, in the whole
-// window: note 712). At a live spawner with four or more blazes within
-// sixteen (the busiest cell, chosen 87, 32 and 32 times): box_stand was
-// chosen almost as often as charge (32 times) but brought a rod after it
-// only 3% of the time (1 of 32) against charge's 9% (3 of 32) and cover's 3%
-// (3 of 87), and it died after just as often as the others (6 of 32, 19%,
-// against charge's 7 of 32 and cover's 16 of 87): it is not safer and not
-// more productive, just chosen as if it were a real option.
-const ANSWERS_OF = { fights: 156, from: '2026-09-29T21:00Z', to: '2026-09-30T01:50Z' };
+// note 712: superseded the ANSWERS of 2026-09-28 to 2026-09-29T11:38Z (624
+// fights, the old single 'strike' class) with the 156 fights of
+// 2026-09-29T21:00Z to 2026-09-30T01:50Z, splitting 'strike' into 'charge'
+// and 'close_in' and giving 'box_stand' and 'hole' their own class. note 720
+// supersedes note 712's rows in turn, from the 292 fights of the same
+// 2026-09-29T21:00Z start out to 2026-09-30T04:30Z, and adds a shield-carried
+// cell (`|shield` or `|no shield`) wherever MIN_FIGHTS of one kind fall in
+// it, finer than the plain spawner|blazes|health cell (cellKeys, rowOf): a
+// charge into four or more blazes at a live spawner over 16 health with a
+// shield (54 fights) brought a rod 11% of the time and died 24%; without a
+// shield (11 fights) it brought none and died 27% — 25592 (mid-243-ia,
+// critic-20260930T0414Z item 4) charged 14 blazes at 18 health with no
+// shield on the strength of a row that did not say either. Not every cell
+// has enough of both to split (spawner|4+|>16|box_stand has none at all
+// under 8 fights without a shield to call its own row, so the plain
+// spawner|4+|>16 row is what is said there still).
+const ANSWERS_OF = { fights: 292, from: '2026-09-29T21:00Z', to: '2026-09-30T04:30Z' };
 // HOW below was counted on the day's fights only (note 645), not on the rows above.
 const HOW_OF = { fights: 511, day: '2026-09-28' };
 
@@ -320,13 +348,16 @@ function situationOf(bot, { spawner } = {}) {
   }
   return { spawner: !!near, blazes, health: bot?.health ?? 20, shield: bot?.inventory?.slots?.[45]?.name === 'shield' };
 }
-const situationSays = s => `${s.spawner ? 'a live blaze spawner within 16' : 'no spawner within 16'}, ${{ '0-1': 'one blaze or none', '2-3': 'two or three blazes', '4+': 'four or more blazes' }[BLAZES_ABOUT(s.blazes)]} within 16`;
+const situationSays = s => `${s.spawner ? 'a live blaze spawner within 16' : 'no spawner within 16'}, ${{ '0-1': 'one blaze or none', '2-3': 'two or three blazes', '4+': 'four or more blazes' }[BLAZES_ABOUT(s.blazes)]} within 16, ${s.shield ? 'a shield carried' : 'no shield carried'}`;
 // The row of a kind for a situation: the finest with the sample (health as
 // well), else the one for any health, else none.
 function rowOf(s, kind) {
-  const [fine, wide] = cellKeys(s);
-  const f = ANSWERS[fine]?.[kind], w = ANSWERS[wide]?.[kind];
-  return f ? { n: f[0], rods: f[1], died: f[2], any: false } : w ? { n: w[0], rods: w[1], died: w[2], any: true } : null;
+  const keys = cellKeys(s);
+  for (let i = 0; i < keys.length; i++) {
+    const r = ANSWERS[keys[i]]?.[kind];
+    if (r) return { n: r[0], rods: r[1], died: r[2], any: i === keys.length - 1 };
+  }
+  return null;
 }
 const answerRowSays = (row, s) => `${row.n} fights, ${row.rods} took a rod after it (${pctOf(row.rods, row.n)}%), ${row.died} died after it (${pctOf(row.died, row.n)}%)${row.any ? ` (at any health: the sample is under ${MIN_FIGHTS} at ${HEALTH_BAND(s.health) === '>16' ? 'over 16' : HEALTH_BAND(s.health) === '8-16' ? '8 to 16' : 'under 8'} health)` : ''}`;
 

@@ -272,7 +272,12 @@ function describe(frames, e) {
     hp0: round1(e.hp0), hunger0: e.hunger0, minHp: round1(minHp), iron: e.iron, shield, weapon, bow, snowballs,
     n24start: startIds.size, peak24, peak16, peak8, spawnerNear, spawnerMin, toFour, terrain, height: round1(height), moved: round1(moved),
     soloPct: pct(solo, solo + multi), seenPct: pct(seenT, seenT + unseenT), breaks,
-    chain, seq: stances.filter(x => x.id !== 'fortress_visit').map(x => [x.t, x.choice, x.hp, x.n16, x.sp, x.shield, x.id]), first: firstStance && firstStance.choice, stances: stances.length, acts: acts.slice(0, 12), shieldFrames,
+    chain, seq: stances.filter(x => x.id !== 'fortress_visit').map(x => [x.t, x.choice, x.hp, x.n16, x.sp, x.shield, x.id]), first: firstStance && firstStance.choice,
+    // The blazes within 16 and the shield carried at the first stance itself
+    // (note 720): charge_nearest into one blaze and into fourteen are not
+    // the one row "charge" was, and a shield changes what a stance costs.
+    firstN16: firstStance ? firstStance.n16 : null, firstShield: firstStance ? firstStance.shield : null,
+    stances: stances.length, acts: acts.slice(0, 12), shieldFrames,
     kills: kills.length, killTimes: kills.map(k => Math.round(k.t)), lost: round1(lost), lostBy: by,
     lostPerKill: kills.length ? round1(lost / kills.length) : null, landings: e.landings,
     rodT: rodT == null ? null : Math.round(rodT), rodKill: rodPrev && { after: round1(rodT - rodPrev.t), d: round1(rodPrev.d), others: rodPrev.others },
@@ -305,11 +310,11 @@ function answerRows(list) {
   const cells = {};
   for (const f of list) {
     const seen = new Set();
-    for (const [t, choice, hp, n16, sp, , id] of f.seq || []) {
+    for (const [t, choice, hp, n16, sp, sh, id] of f.seq || []) {
       const cls = CLASS_OF[choice];
       if (!cls || id !== 'encounter_stance' || sp == null || hp == null) continue;
       const rodAfter = f.rod && (f.rodT == null || f.rodT >= t);
-      for (const k of cellKeys({ spawner: sp === 1, blazes: n16, health: hp })) {
+      for (const k of cellKeys({ spawner: sp === 1, blazes: n16, health: hp, shield: typeof sh === 'boolean' ? sh : undefined })) {
         const key = k + '|' + cls;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -347,6 +352,34 @@ function sequenceTable(list, key) {
   const by = {};
   for (const f of list) { const k = key(f); (by[k] ||= []).push(f); }
   return Object.entries(by).map(([k, v]) => ({ sequence: k, ...row(v.map(f => ({ died: f.died, rodsGain: f.rods }))), medianLost: round1(median(v.map(f => f.lost))) })).sort((a, b) => b.fights - a.fights);
+}
+
+// The first stance chosen in a fight, by its class (src/blaze-record.js
+// CLASS_OF), the blazes within 16 at that first ask (1, 2 to 3, or 4 or
+// more) and whether a shield was carried then (note 720): charge_nearest
+// into one blaze and into fourteen are not one row, and note 712's rows
+// did not say which. Rows under MIN_FIGHTS are kept as { n, tooFew: true }
+// so the caller can drop them and say why, rather than silently rounding a
+// handful of fights into a rate.
+const MIN_FIRST_CELL = 5;
+function firstStanceCells(list) {
+  const { CLASS_OF, BLAZES_ABOUT } = require('../src/blaze-record');
+  const cells = {};
+  for (const f of list) {
+    const cls = CLASS_OF[f.first], bucket = f.firstN16 == null ? null : BLAZES_ABOUT(f.firstN16);
+    if (!cls || !bucket || f.firstShield == null) continue;
+    const key = `${cls}|${bucket}|${f.firstShield ? 'shield' : 'no shield'}`;
+    (cells[key] ||= []).push(f);
+  }
+  const out = {};
+  for (const [key, fs] of Object.entries(cells).sort()) {
+    const n = fs.length;
+    if (n < MIN_FIRST_CELL) { out[key] = { n, tooFew: true }; continue; }
+    const died = fs.filter(f => f.died).length, rod = fs.filter(f => f.rod).length;
+    const minutes = fs.reduce((s, f) => s + f.secs, 0) / 60;
+    out[key] = { n, diedPct: pct(died, n), rodPct: pct(rod, n), rodsPerMin: minutes ? round1(fs.reduce((s, f) => s + f.rods, 0) / minutes) : null };
+  }
+  return out;
 }
 
 // What came of each way out of fire in a fight with blazes (note 661): every
@@ -495,6 +528,9 @@ if (require.main === module) {
     const cells = answerRows(list), min = require('../src/blaze-record').MIN_FIGHTS;
     const last = new Date(Math.max(...list.map(f => f.start))).toISOString();
     console.log(JSON.stringify({ fights: list.length, lastFightStart: last, rows: Object.fromEntries(Object.entries(cells).filter(([, c]) => c[0] >= min).sort()) }, null, 1));
+  } else if (args['first-cells']) {
+    const list = args['records-in'] ? fs.readFileSync(args['records-in'], 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l)).filter(f => f.start >= from && f.start <= to) : describedFights(dir, from, to);
+    console.log(JSON.stringify({ fights: list.length, rows: firstStanceCells(list) }, null, 1));
   } else if (args.wins || args.sequence) {
     // --wins: the fights that brought a rod (alive) against the deaths, each
     // feature side by side; --sequence: the stance chains and the first stance
@@ -526,4 +562,4 @@ if (require.main === module) {
     console.log(JSON.stringify(Object.fromEntries(Object.entries(by).map(([c, list]) => [c, row(list)])), null, 1));
   } else console.log(JSON.stringify(tables(readFights(dir, from, to)), null, 1));
 }
-module.exports = { countsTable, wayRows, waysTable, MIN_WAY, recentTable, runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS };
+module.exports = { countsTable, wayRows, waysTable, MIN_WAY, recentTable, runs, runsTable, answerRows, describe, describedFights, winsTable, sequenceTable, wilson, rate, slimFrame, fights, tables, row, hurts, landings, deaths, readFights, eachFile, GAP_MS, MIN_MS, firstStanceCells, MIN_FIRST_CELL };

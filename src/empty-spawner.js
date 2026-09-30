@@ -32,6 +32,7 @@ const RANGE = 16, DELAY = '10 to 40', COUNT = 4, CAP = 6, MEDIAN_FOUR = 32;
 
 const ROUTE_WORDS = { hoglin_walk: 'a hoglin on foot', hoglin_pillar: 'a hoglin from a pillar', mushroom_stew: 'mushroom stew', raid_bastion: "a bastion's chests", cook_meat: 'the raw meat carried cooked', return_for_food: 'the trip back' };
 const round = n => Math.round(n * 10) / 10;
+const words = s => String(s || '').replaceAll('_', ' ');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const inNether = bot => /nether/.test(String(bot?.game?.dimension || ''));
 const P = v => ({ x: v.x, y: v.y, z: v.z });
@@ -207,12 +208,17 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     const inLine = here?.inLine;
     if (inLine && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says, secs: w.secs }); }
     // A hole in the rock beside the cage, its mouth toward it: rock behind,
-    // beside and over, only the front open.
-    const pick = bot.inventory?.items?.().some(i => /_pickaxe$/.test(i.name));
-    const hole = pick ? (() => { try { return stand.spawnerHoleSite(bot, cage); } catch (_) { return null; } })() : null;
+    // beside and over, only the front open. Not gated on a pickaxe carried:
+    // netherrack, basalt, blackstone and nether bricks all break by hand
+    // (hand-dig.js, note 705), only slower and dropping nothing, and
+    // spawnerHoleSite's own digMs already prices whichever tool is at hand.
+    // 25594 (mid-242-sc, note 720) carried no pickaxe, was told "no covered
+    // cell found near it" by the stand, and was never offered this at all.
+    const hole = (() => { try { return stand.spawnerHoleSite(bot, cage); } catch (_) { return null; } })();
     if (hole) {
-      const secs = (hole.steps || 0) / WALK + 2 * 0.75;
-      tree.dig_in_at_spawner = { description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage, the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
+      const digSecs = round((hole.digMs ?? 1500) / 1000);
+      const secs = (hole.steps || 0) / WALK + digSecs;
+      tree.dig_in_at_spawner = { description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage (${words(hole.rock)}, dug ${hole.with}, about ${digSecs} s), the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
         run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: hole, key: 'dig_in_at_spawner' }, secs) };
     }
     // Out past sixteen: the spawner makes none and its delay stops counting.

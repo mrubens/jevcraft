@@ -8594,7 +8594,12 @@ class Survival {
       // for four and a half minutes (note 679).
       const plan = this.state.pocketPlan;
       const forNothing = plan?.choice === 'stay' && waitSays?.waitsForNothing && Date.now() - (plan.at || 0) >= require('./tried').WAIT_JUDGED_MS;
-      const held = plan?.key === key && plan.until > Date.now() && options[plan.choice] && !forNothing ? plan.choice : null;
+      // A choice among go_for_food's own ways (return_for_food, hoglin_food,
+      // ...) lives in foodWays, not options: checking options[plan.choice]
+      // alone found nothing for it, so the hold never took and a food way
+      // chosen here was asked again at once, every second, never given the
+      // 90 seconds its own leave and walk need to run (25592, note 720).
+      const held = plan?.key === key && plan.until > Date.now() && (options[plan.choice] || foodWays[plan.choice]) && !forNothing ? plan.choice : null;
       // The nook Jev chose for tonight when the pocket was sealed (shelter
       // method bed_nook) is carried out at bedtime, not asked again.
       // So is the wait for daylight chosen sealed (wait_for_day_sealed), while

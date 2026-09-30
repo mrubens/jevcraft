@@ -99,11 +99,15 @@ test('the paragraph says the rows in this situation, that they are not a trial, 
   const blazes = Object.fromEntries([1, 2, 3, 4, 5].map(i => [i, { name: 'blaze', position: new Vec3(i * 2, 60, 0), isValid: true }]));
   const bot = { health: 20, food: 20, entity: { position: new Vec3(0, 60, 0) }, entities: blazes, inventory: { slots: {} } };
   const says = record.answersSay(bot, { spawner: true });
-  const s = record.ANSWERS['spawner|4+|>16'];
-  assert.match(says, /^In this situation \(a live blaze spawner within 16, four or more blazes within 16, health 20\)/);
-  assert(says.includes(`a charge (charge_nearest: running straight at the nearest blaze): ${s.charge[0]} fights, ${s.charge[1]} took a rod after it`));
+  // No shield carried here (note 720): charge and cover have their own row
+  // at this cell (spawner|4+|>16|no shield), finer than the plain
+  // spawner|4+|>16 row; box_stand has none of its own here, so it still
+  // falls back to the plain row.
+  const noShield = record.ANSWERS['spawner|4+|>16|no shield'], s = record.ANSWERS['spawner|4+|>16'];
+  assert.match(says, /^In this situation \(a live blaze spawner within 16, four or more blazes within 16, no shield carried, health 20\)/);
+  assert(says.includes(`a charge (charge_nearest: running straight at the nearest blaze): ${noShield.charge[0]} fights, ${noShield.charge[1]} took a rod after it`));
   assert(says.includes(`a stand at the cage (box_here, box_at_spawner, fight_at_spawner, break_spawner): ${s.box_stand[0]} fights`));
-  assert(says.includes(`cover (take_cover, back_to_wall, out_of_sight, corner_ambush, seal, shield_guard, dig_down, nook): ${s.cover[0]} fights`));
+  assert(says.includes(`cover (take_cover, back_to_wall, out_of_sight, corner_ambush, seal, shield_guard, dig_down, nook): ${noShield.cover[0]} fights`));
   assert.match(says, /not what an answer caused/);
   assert.match(says, /How the rods came in the fights of 2026-09-28 \(511 fights\), of the 61 that ended with a rod: 56 had a strike in them/);
   assert.match(says, /Fights with no strike took a rod in 5 of 360, and 60 of the 96 deaths with no rod were in them\./);

@@ -217,12 +217,12 @@ test('a death by a blaze is read from the game\'s own line, its last minute\'s d
 test('each option of a kind ends with what followed answers of that kind in a situation like this one, with its count', () => {
   const fine = record.ANSWERS['none|2-3|>16'], wide = record.ANSWERS['none|2-3|*'];
   const options = stance(20);
-  const said = (kind, row, any) => new RegExp(`In the fights of 2026-09-29T21:00Z to 2026-09-30T01:50Z after an answer of this kind \\(${kind}\\) in a situation like this \\(no spawner within 16, two or three blazes within 16\\): ${row[0]} fights, ${row[1]} took a rod after it \\(${Math.round(100 * row[1] / row[0])}%\\), ${row[2]} died after it \\(${Math.round(100 * row[2] / row[0])}%\\)${any ? ` \\(at any health: the sample is under 5 at ${any}\\)` : ''}\\.`);
+  const said = (kind, row, any) => new RegExp(`In the fights of ${record.ANSWERS_OF.from} to ${record.ANSWERS_OF.to} after an answer of this kind \\(${kind}\\) in a situation like this \\(no spawner within 16, two or three blazes within 16, a shield carried\\): ${row[0]} fights, ${row[1]} took a rod after it \\(${Math.round(100 * row[1] / row[0])}%\\), ${row[2]} died after it \\(${Math.round(100 * row[2] / row[0])}%\\)${any ? ` \\(at any health: the sample is under 5 at ${any}\\)` : ''}\\.`);
   assert.match(options.charge_nearest.description, said('a charge', fine.charge));
   assert.match(options.take_cover.description, said('cover', fine.cover));
-  // close_in has no row at this health (fine cell): the row at any health is said, and says so.
-  assert.equal(fine.close_in, undefined, 'the close_in row at over 16 health has under five fights');
-  assert.match(options.close_in.description, said('closing in', wide.close_in, 'over 16 health'));
+  // box_stand has no row at this health (fine cell): the row at any health is said, and says so.
+  assert.equal(fine.box_stand, undefined, 'the box_stand row at over 16 health has under five fights');
+  assert.match(options.box_here.description, said('a stand at the cage', wide.box_stand, 'over 16 health'));
   // retreat has no row here at all, fine or wide: no sentence follows the base description.
   assert.doesNotMatch(options.retreat.description, /In the fights of/);
   // Hurt (5 health, under 8): no row at all at this fine cell, so every kind falls back to the wide row.
@@ -240,7 +240,7 @@ test('the stance\'s state carries playedAnswers with the rows for the situation,
   survival.stanceStep(new Task('x'), {}, () => {}, Object.values(bot.entities).map(e => threat(bot, e)), false).catch(() => {});
   await new Promise(resolve => setTimeout(resolve, 200));
   assert(state, 'the stance was asked');
-  assert.match(state.playedAnswers, /^In this situation \(no spawner within 16, two or three blazes within 16, health 20\), what followed each kind of answer/);
+  assert.match(state.playedAnswers, /^In this situation \(no spawner within 16, two or three blazes within 16, a shield carried, health 20\), what followed each kind of answer/);
   const charge = record.ANSWERS['none|2-3|>16'].charge;
   assert.match(state.playedAnswers, new RegExp(`a charge \\(charge_nearest: running straight at the nearest blaze\\): ${charge[0]} fights, ${charge[1]} took a rod after it \\(${Math.round(100 * charge[1] / charge[0])}%\\), ${charge[2]} died after it \\(${Math.round(100 * charge[2] / charge[0])}%\\)`));
   assert.match(state.playedAnswers, /How the rods came in the fights of 2026-09-28 \(511 fights\), of the 61 that ended with a rod: 56 had a strike in them/);
