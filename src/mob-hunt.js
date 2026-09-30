@@ -1928,7 +1928,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
   if (homeBy && !homeStart.ok) blocked.push(`back through the portal (${homeBy.says}): ${homeStart.why}`);
   if (homeBy && homeStart.ok) {
-    options.return_for_blocks = { description: returnForKitSays(bot, homeBy),
+    options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { goal }),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   // A fortress floor known overhead within a climb's reach: the climb with
@@ -2096,7 +2096,7 @@ async function backToGround(bot, task, goal, state, plan) {
 // line for half an hour under its fortress with no pickaxe, no wood and no
 // blocks, and return_for_blocks said only "for stone to lay spans with" and
 // was never chosen (note 692). The walks back's record is said with it.
-function returnForKitSays(bot, homeBy, { hand = null } = {}) {
+function returnForKitSays(bot, homeBy, { hand = null, goal = null } = {}) {
   const bs = require('./block-stock'), gp = require('./game-progress');
   const here = bot.entity.position, d = Math.round(Math.hypot(homeBy.portal.x - here.x, homeBy.portal.z - here.z));
   if (!bot.inventory?.items || bs.pickaxeCarried(bot)) {
@@ -2109,10 +2109,27 @@ function returnForKitSays(bot, homeBy, { hand = null } = {}) {
   const lacks = bs.kitLacks(bot);
   if (!hand) try { hand = bs.handGather(bot); } catch (_) { hand = null; }
   const got = !hand ? '' : hand.n ? `Here a hand gets only ${kindsSaid(hand.found.reachable)}: ` : 'Here a hand gets no block: ';
-  const needs = ['netherrack dug by hand drops nothing', ...(laid < bs.KIT_BLOCKS ? [`a span or pillar needs blocks (${laid} carried)`] : []), wood ? null : 'a pickaxe needs wood (none carried)'].filter(Boolean);
+  // The wood here too, where the Nether's stems are known: the trip home and
+  // the fetch, each with its distance. 25589 was offered only the portal,
+  // 325 blocks off, "a pickaxe needs wood (none carried)", with a warped
+  // forest noticed 376 blocks off (note 703).
+  const stems = wood ? '' : stemsKnownSays(bot, goal, d);
+  const needs = ['netherrack dug by hand drops nothing', ...(laid < bs.KIT_BLOCKS ? [`a span or pillar needs blocks (${laid} carried)`] : []), wood ? null : `a pickaxe needs wood (none carried${stems})`].filter(Boolean);
   const t = gp.NETHER_TRIPS, r = n => Math.max(1, Math.round(n));
   const record = dimension(bot) === 'nether' && d >= t.over ? ` Walks back like this made ${t.slow} to ${t.fast} blocks a minute (about ${r(d / t.fast)} to ${r(d / t.slow)} minutes); of ${t.trips} over ${t.over} blocks, ${t.arrived} came out, ${t.died} died, the rest were given up or stalled.` : '';
   return `Go back through the portal (${homeBy.says}) for ${bs.listSays(lacks)}: every way on here needs one of them. ${got}${needs.join('; ')}. Back through the same portal after.${record}`;
+}
+// The nearest stems known, against the portal's distance: '; the nearest
+// stems known: ...' or ''.
+function stemsKnownSays(bot, goal, portalOff) {
+  if (!goal || typeof bot.findBlocks !== 'function') return '';
+  let place = null;
+  try { place = require('./nether-wood').stemPlaces(bot, goal)[0] || null; } catch (_) { place = null; }
+  if (!place?.at) return '';
+  const here = bot.entity.position, off = Math.round(Math.hypot(place.at.x - here.x, place.at.z - here.z));
+  const kind = /^warped/.test(place.name) ? 'warped' : 'crimson';
+  const what = place.n ? `${kind} stems seen` : `a ${kind} forest noticed, no stem seen in it yet`;
+  return `; the nearest Nether wood known: ${what}, ${off} blocks ${compass(place.at.x - here.x, place.at.z - here.z)}, ${off < portalOff ? 'nearer than' : 'farther than'} the portal`;
 }
 // And how far the search has come from it: the nearest known in the Nether.
 const compass = (dx, dz) => { const ns = dz < -0.38 * Math.hypot(dx, dz) ? 'north' : dz > 0.38 * Math.hypot(dx, dz) ? 'south' : '', ew = dx > 0.38 * Math.hypot(dx, dz) ? 'east' : dx < -0.38 * Math.hypot(dx, dz) ? 'west' : ''; return ns && ew ? `${ns}-${ew}` : ns || ew || 'here'; };
@@ -2546,7 +2563,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const homeBy = actions.returnOverworld ? portalBack(bot, goal, here) : null;
     const homeStart = homeBy ? portalTripStart(bot, goal, homeBy) : null;
     if (homeBy && !homeStart.ok) byHand = `${byHand} Back through the portal (${homeBy.says}) is not offered: ${homeStart.why}.`;
-    if (homeBy && homeStart.ok) options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { hand }),
+    if (homeBy && homeStart.ok) options.return_for_blocks = { description: returnForKitSays(bot, homeBy, { hand, goal }),
       run: async () => { await actions.returnOverworld(bot, task, goal, save); return 'returned'; } };
   }
   // With no pickaxe, the staircase only where a step toward it can be dug

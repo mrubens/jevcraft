@@ -62,6 +62,9 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // froze to death at y 121 with the way out tried once, note 308).
   // Standing in fire, the same way (vitals.js inFire): mid-229-g burned from
   // eleven health to none in a fire a ghast's fireball lit (note 340).
+  // The bot's own hit on a neutral of a group angers the group (anger.js,
+  // note 703).
+  require('./anger').install(bot);
   bot._client.on('damage_event', packet => {
     if (!bot.entity || packet.entityId !== bot.entity.id) return;
     const type = bot._damageTypeNames?.[packet.sourceTypeId];

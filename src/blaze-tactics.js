@@ -275,7 +275,13 @@ async function strikeInReach(bot, task) {
   const { canStrike, strike, lowerShield } = require('./combat');
   const live = e => e && bot.entities[e.id] === e && e.isValid !== false;
   const hurt = bot._struck && Date.now() - bot._struck.at < 4000 ? bot.entities[bot._struck.id] : null;
-  const reach = Object.values(bot.entities).filter(e => ['blaze', 'wither_skeleton', 'magma_cube', 'zombified_piglin', 'piglin_brute'].includes(e.name) && live(e) && canStrike(bot, e))
+  // A zombified piglin only once it is angry: a hit on a calm one turns its
+  // whole group on the bot. 25592's box struck at whatever was in reach, a
+  // calm one 2.9 blocks off among them, and three of them ended it from 20
+  // health two seconds later (note 703).
+  const { provoked } = require('./danger');
+  const reach = Object.values(bot.entities).filter(e => ['blaze', 'wither_skeleton', 'magma_cube', 'zombified_piglin', 'piglin_brute'].includes(e.name) && live(e) && canStrike(bot, e)
+    && (e.name !== 'zombified_piglin' || provoked(bot, e)))
     .sort((a, b) => (b === hurt) - (a === hurt) || a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   const target = reach[0];
   if (!target) return false;

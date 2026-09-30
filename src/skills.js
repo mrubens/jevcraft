@@ -777,17 +777,36 @@ async function openWindow(bot, task, open, { block = null, what = 'the window', 
     if (eye.distanceTo(block.position.offset(0.5, 0.5, 0.5)) > REACH) throw new Error(`${what} is out of reach`);
   }
   let settled = false, value, failure, abandoned = false;
-  const pending = open();
+  // A crouched click on a block with anything in either hand uses the item,
+  // not the block (the game's secondary use): no window comes. 25588 crouched
+  // on magma with a shield in the off hand, and its crafting table "did not
+  // open" four times in 33 seconds (note 703). Upright for the click, and
+  // crouched again once the window is there or given up (the magma crouch's
+  // hold waits for it: vitals.js crouchOnHotFloor).
+  const crouched = !!(bot.getControlState ? bot.getControlState('sneak') : bot.controlState?.sneak);
+  if (crouched && block && typeof bot.setControlState === 'function') {
+    bot._uncrouchedFor = Date.now() + timeoutMs + 500;
+    bot.setControlState('sneak', false);
+    await sleep(60);
+  }
+  let recrouched = false;
+  const recrouch = () => { if (recrouched || !crouched || !block || typeof bot.setControlState !== 'function') return; recrouched = true; bot.removeListener?.('windowOpen', recrouch); delete bot._uncrouchedFor; bot.setControlState('sneak', true); };
+  // Crouched again as soon as the window is there: a click inside a window
+  // is the same crouched or not.
+  if (crouched && block) bot.once?.('windowOpen', recrouch);
+  let pending;
+  try { pending = open(); } catch (err) { recrouch(); throw err; }
   pending.then(v => { settled = true; value = v; if (abandoned && v && typeof bot.closeWindow === 'function') { try { bot.closeWindow(v); } catch (_) { /* gone */ } } },
     e => { settled = true; failure = e; });
   const end = Date.now() + timeoutMs;
   try {
     while (!settled) {
       task.check();
-      if (Date.now() > end) throw new Error(`${what} did not open`);
+      if (Date.now() > end) throw new Error(`${what} did not open${crouched && block ? ' (clicked upright)' : ''}`);
       await sleep(50);
     }
-  } catch (err) { abandoned = true; throw err; }
+  } catch (err) { abandoned = true; recrouch(); throw err; }
+  recrouch();
   if (failure) throw failure;
   return value;
 }

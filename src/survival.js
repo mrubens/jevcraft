@@ -4987,12 +4987,20 @@ class Survival {
       const towardNow = comingAt(bot), following = held?.ids ? towardNow.filter(t => held.ids.includes(t.entity.id)) : [];
       // Which mobs about cannot get to the bot, first (note 525, note 560).
       const kept = this.lastApart?.mobs.length || this.lastApart?.round?.length ? apartSays(bot, this.lastApart).trim() : null;
+      const anger = require('./anger');
+      let calmNeutrals = null;
+      try { calmNeutrals = anger.calmAbout(bot); } catch (_) { calmNeutrals = null; }
+      const angryOf = t => { let a = null; try { a = anger.angerOf(bot, t.entity); } catch (_) { a = null; } return a ? { angry: `${a.why}: hunting the bot with its group, any way round` } : {}; };
       const state = { ...(kept ? { noWayToTheBot: kept } : {}), health: bot.health, food: bot.food, dimension: String(bot.game?.dimension || ''), armour, weapon: defenseWeapon(bot)?.name || 'bare hands',
         shield: bot.inventory.slots?.[45]?.name === 'shield', arrows: countOf(bot, 'arrow'), buildingBlocks: shelter.materialStock(bot),
         dropWithinThreeBlocks: require('./terrain').dropFacts(bot, feetCell(bot), 3) || false,
         darkHere: darkHere(bot),
-        // Listed apart, those that cannot get to the bot (note 566).
-        threats: danger.filter(t => !this.lastApart?.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible })),
+        // The calm zombified piglins close by, and what a swing near them
+        // turns (anger.js, note 703).
+        ...(calmNeutrals ? { calmNeutralsNear: calmNeutrals } : {}),
+        // Listed apart, those that cannot get to the bot (note 566). An
+        // angry one of a group says why (note 703).
+        threats: danger.filter(t => !this.lastApart?.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, shoots: shooter(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, ...angryOf(t) })),
         ...(this.lastApart?.ids.size ? { cannotGetToTheBot: danger.filter(t => this.lastApart.ids.has(t.entity.id)).slice(0, 8).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}) })) } : {}),
         // This bot's numbers: each mob's hit after its armour, swings to
         // kill with its weapon, and what fighting all of them here costs.

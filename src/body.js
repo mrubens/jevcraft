@@ -221,10 +221,15 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   if (way.hold && (by === 'jev' || by === 'only')) bot._bodyHeld = { key, choice, by, at: Date.now(), until: Date.now() + way.hold * 1000, health: bot.health ?? 20, drop: holdDrop(bot.health), offered: keys };
   else if (bot?._bodyHeld?.key === key) delete bot._bodyHeld;
   const began = Date.now();
+  if (bot) delete bot._bodyWayWhy;
   const acted = await way.run();
   // A way a mob's blow stopped (cauldron.js struck) is said to the next
   // question, with what stopped it.
   if (acted === false && bot?._blowAt > began) bot._bodyWayStopped = { way: choice, at: Date.now(), after: round((bot._blowAt - began) / 1000), why: `a blow from ${bot._blowBy ? `the ${String(bot._blowBy).replaceAll('_', ' ')}` : 'a mob'} at arm's length knocked the body back` };
+  // And one that came to nothing on its own, with what its run found (note
+  // 703): 25592's rise_on_block was chosen three times in three seconds and
+  // the body never rose, each asking told nothing of the one before.
+  else if (acted === false && bot?._bodyWayWhy) bot._bodyWayStopped = { way: choice, at: Date.now(), after: round((Date.now() - began) / 1000), why: bot._bodyWayWhy };
   return { key: choice, by, acted: acted !== false };
 }
 

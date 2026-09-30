@@ -139,7 +139,7 @@ function standingAmong(bot, seconds, { what = 'here', radius = 24 } = {}) {
   const { stanceCost } = require('./combat-estimate');
   const cost = stanceCost({ mobs: estimate.mobs.filter(m => !m.apart), setup: seconds, seconds, health });
   const said = require('./arbiter').mobWouldSays;
-  const line = t => `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}, ${said(t)}`;
+  const line = t => `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}, ${said(t, { bot })}`;
   const n = reach.length, h = Math.round(health * 10) / 10;
   const says = `Standing ${what} for those ${Math.round(seconds)} seconds with ${n} hostile ${n === 1 ? 'mob' : 'mobs'} that can get to the bot within ${radius} blocks (the shooters to ${SHOOTER_REACH}): ${reach.slice(0, 4).map(line).join('; ')}${n > 4 ? `; ${n - 4} more` : ''}. About ${cost.damage} damage from them over those seconds if none is fought, from ${h} health${cost.damage >= health ? ' (more than the bot has)' : ''}.`;
   return { says, damage: cost.damage, count: n };

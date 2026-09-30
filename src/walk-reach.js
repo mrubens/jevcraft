@@ -152,8 +152,14 @@ function walkersApart(bot, danger, { radius = RADIUS, cap = CAP, at = null, dug 
   // every look (note 566). A walker outside the bounds is not judged: the
   // search never came near it, and its way may be straight (a zombie
   // fourteen blocks off on open ground was said to have none).
+  // Not an angry one of a group (anger.js): it hunts the bot any way round,
+  // the long way too, and its group with it. 25592's zombified piglins came
+  // at a box two seconds after the stance was asked with the piglin about
+  // said to have "no way to the bot" (note 703).
   const cheb = p => Math.max(Math.abs(Math.floor(p.x) - feet.x), Math.abs(Math.floor(p.z) - feet.z));
-  const within = kept.filter(t => inside(t.entity.position.floored()));
+  let anger = null;
+  try { anger = require('./anger'); } catch (_) { anger = null; }
+  const within = kept.filter(t => inside(t.entity.position.floored()) && !anger?.angry(bot, t.entity));
   const round = within.map(t => ({ t, atLeast: Math.max(0, radius + 1 - cheb(t.entity.position)) + Math.max(0, radius - Math.ceil(SIDEWAYS)) }));
   return { ids: new Set(within.map(t => t.entity.id)), mobs: [], radius, round };
 }

@@ -666,15 +666,32 @@ function sendBack(goal, q, why, now = Date.now()) {
   t.escalations.push({ from: 'rung_progress', to: q, why: String(why).slice(0, 300), at: now, back: true });
 }
 
+// Every wall-clock time in a record moved on by `gap`: a key that names a
+// time (at, since, until, and their ...At, ...Since, ...Until), holding an
+// epoch in milliseconds. Durations (ms, seconds) are left.
+const CLOCK_KEY = /^(at|since|until)$|(At|Since|Until)$/;
+function shiftClocks(o, gap, depth = 0) {
+  if (!o || typeof o !== 'object' || depth > 6) return;
+  for (const [k, v] of Object.entries(o)) {
+    if (typeof v === 'number' && CLOCK_KEY.test(k) && v > 1e12) o[k] = v + gap;
+    else if (v && typeof v === 'object') shiftClocks(v, gap, depth + 1);
+  }
+}
 // A saved ledger taken up again (a restart, a trial begun from a stage's
 // save): its times are its own, moved on by the time it lay saved, so what
 // was tried a minute before the save is a minute old, not the half hour
 // the save waited (note 583).
 function resumed(goal, { savedAt, now = Date.now() } = {}) {
-  const t = goal?.tried;
-  if (!t || !Number.isFinite(savedAt)) return 0;
+  if (!Number.isFinite(savedAt)) return 0;
   const gap = now - savedAt;
   if (!(gap > 0)) return 0;
+  // The fortress search's own clocks too (when it began, the time in the
+  // fortress, the rests, the walks' starts): 25589's keep_searching said
+  // "1146 minutes searching" 20 minutes into a trial begun from a save made
+  // the day before (note 703).
+  if (goal?.fortressSearch) shiftClocks(goal.fortressSearch, gap);
+  const t = goal?.tried;
+  if (!t) return gap;
   const move = (o, keys) => { for (const k of keys) if (Number.isFinite(o?.[k]) && o[k] > 0) o[k] += gap; };
   for (const e of t.entries || []) move(e, ['at', 'settledAt', 'until']);
   for (const e of t.escalations || []) move(e, ['at', 'consumed']);

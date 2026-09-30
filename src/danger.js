@@ -62,7 +62,10 @@ function provoked(bot, entity) {
     return false;
   }
   if (bot._hurtById?.[entity.id] > Date.now() - STRUCK_MS) return true;
-  return Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name];
+  if (Object.hasOwn(GROUP_ANGER, entity.name) && bot._hurtBy?.[entity.name] > Date.now() - GROUP_ANGER[entity.name]) return true;
+  // The bot's own hit on one of a group, or one with its arms up coming at
+  // the bot (anger.js, note 703).
+  return require('./anger').angry(bot, entity);
 }
 // Animals that hit a player unprovoked, now and then: a goat rams whoever
 // is near every half-minute to five minutes, a polar bear goes for one near

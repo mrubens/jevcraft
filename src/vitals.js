@@ -575,6 +575,11 @@ function riseOutOfFire(bot) {
   const open = p => { const b = bot.blockAt(p); return !!b && b.boundingBox === 'empty' && !FIRE.has(b.name) && !/lava|water/.test(b.name); };
   const top = feet.offset(0, 1, 0);
   if (!open(top) || !open(top.offset(0, 1, 0))) return null;
+  // Offered by the check its run makes first (pillarUp's climbStop: lava or
+  // water in or beside the cells the body rises through, what is over the
+  // head): 25592 chose it three times in three seconds on fire at
+  // (-170, 81, 195) and the body never left y 81 (note 703).
+  if (require('./pillar-recovery').climbStop(bot, feet, { canDig: () => false })) return null;
   // Flames beside the body standing there can spread to it; those beside
   // the block under it, a level down, do not touch it.
   const around = dy => [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].filter(([dx, dz]) => dy.some(y => FIRE.has(bot.blockAt(top.offset(dx, y, dz))?.name))).length;
@@ -587,10 +592,16 @@ async function riseOnBlock(bot, task, onAction = () => {}, { action = 'out_of_fi
   bot.pathfinder?.setGoal?.(null);
   const { pillarUp } = require('./pillar-recovery');
   const from = bot.entity.position.floored();
-  try { await pillarUp(bot, task, rise.top.y, { maxBlocks: 1, threats: false, canDig: () => false, blocks: [...RISE_BLOCKS] }); }
-  catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+  let placed = 0, why = null;
+  try { placed = await pillarUp(bot, task, rise.top.y, { maxBlocks: 1, threats: false, canDig: () => false, blocks: [...RISE_BLOCKS] }); }
+  catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 120); }
   leftFire(bot, from);
-  return done();
+  const out = done();
+  // What came of it, for the next body_way (body.js lastWay): a rise that
+  // put no block down left the body where it was.
+  if (!out) bot._bodyWayWhy = placed ? `the block went down and the body stood on it at y ${Math.floor(bot.entity.position.y)}, but ${action === 'off_hot_floor' ? 'it is still on the hot floor' : 'it is still in fire there'}`
+    : `no block went down${why ? ` (${why})` : ''}: the body is where it was, y ${Math.floor(bot.entity.position.y)}`;
+  return out;
 }
 
 // The hot floor (note 579): a magma block, or a lit campfire, under the
@@ -651,17 +662,32 @@ async function offHotFloor(bot, task, onAction = () => {}, route = hotFloorRoute
 // Crouched where it stands: held while the body stays on the magma and no
 // held-key walk is running, let go once it is off (whatever walked it off).
 // A walk that stands it up on the magma again meets the question again.
+// Held means held: whatever else lets the crouch go while the body still
+// stands on the magma (a step's clearControlStates, a window's click), it is
+// taken up again on the next tick unless a held-key walk or the pathfinder is
+// moving the body, or a click that needs the body upright is being made
+// (bot._uncrouchedFor, skills.js openWindow). 25588 (mid-243-hf) chose it
+// five times from 00:09:23 to 00:10:12Z and was hurt after each: the leg's
+// walk that followed stood it up on the magma and the crouch was not taken
+// up again (note 703).
+const pathMoving = bot => { try { return !!bot.pathfinder?.isMoving?.(); } catch (_) { return false; } };
 function crouchOnHotFloor(bot, onAction = () => {}) {
   onAction({ action: 'off_hot_floor', way: 'crouch_on_hot_floor', health: bot.health });
   bot.setControlState?.('sneak', true);
   if (typeof bot.on === 'function' && !bot._hotFloorCrouch) {
     const release = () => {
-      if (bot._controller) return;
       const still = require('./terrain').hotUnderfoot(bot);
-      if (still?.crouchSafe && sneaking(bot)) return;
+      if (still?.crouchSafe) {
+        if (!sneaking(bot) && !bot._controller && !pathMoving(bot) && !(bot._uncrouchedFor > Date.now())) {
+          bot.setControlState?.('sneak', true);
+          bot._crouchTakenUp = (bot._crouchTakenUp || 0) + 1;
+        }
+        return;
+      }
+      if (bot._controller) return;
       bot.removeListener?.('physicsTick', release);
       if (bot._hotFloorCrouch === release) delete bot._hotFloorCrouch;
-      if (!still?.crouchSafe && sneaking(bot)) bot.setControlState?.('sneak', false);
+      if (sneaking(bot)) bot.setControlState?.('sneak', false);
     };
     bot._hotFloorCrouch = release;
     bot.on('physicsTick', release);
@@ -1160,7 +1186,10 @@ function fireWays(bot, task, onAction = () => {}) {
         run: () => outOfFire(bot, task, onAction, edgeRoute) };
     }
     const rise = riseOutOfFire(bot);
-    if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the fire's cell underfoot, which puts that flame out, and stand on it a block up: about ${round(PILLAR_RISE_SECONDS)} seconds; ${rise.flamesBeside ? `${rise.flamesBeside} flame${rise.flamesBeside === 1 ? '' : 's'} still beside the cell it rises to, so the body may stand beside fire there` : 'no flame beside the cell it rises to'}${rise.flamesBelow ? ` (${rise.flamesBelow} beside the block under it, a level down, which do not touch a body standing on it)` : ''}${rise.fall ? `, and ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}; then burning on up to eight seconds.${lineAtEnd(bot, shot, rise.top)}`,
+    // Both ways leave the body alight: standing on the block puts out the
+    // flame under it, not the fire on the body (note 703).
+    const burnsOn = `then the body burns on up to eight seconds, about ${Math.round(Math.min(8, bot.health ?? 20))} health at a health a second, unless it ends in water`;
+    if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the fire's cell underfoot, which puts that flame out, and stand on it a block up, in the same spot: about ${round(PILLAR_RISE_SECONDS)} seconds; ${rise.flamesBeside ? `${rise.flamesBeside} flame${rise.flamesBeside === 1 ? '' : 's'} still beside the cell it rises to, so the body may stand beside fire there` : 'no flame beside the cell it rises to'}${rise.flamesBelow ? ` (${rise.flamesBelow} beside the block under it, a level down, which do not touch a body standing on it)` : ''}${rise.fall ? `, and ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}; ${burnsOn}: standing on the block does not put out the fire on the body.${lineAtEnd(bot, shot, rise.top)}`,
       run: () => riseOnBlock(bot, task, onAction) };
     // The flame punched out where the body stands, as a player does: fire
     // breaks at the first hit. mid-242-ah-fortress-2 stood at y 44 on the
@@ -1247,7 +1276,7 @@ function hotFloorWays(bot, task, onAction = () => {}, hot = onHotFloor(bot)) {
     ways.step_off_hot_floor = { description: `Step off the ${floor} crouched, ${route.length} step${route.length === 1 ? '' : 's'} to (${end.x}, ${end.y}, ${end.z}) on ${onto}${crossed ? `, over ${crossed} more magma on the way` : ''}: crouched, a magma block does not hurt and a body does not walk off an edge${worst ? ` (${worst.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside the way)` : ''}; about ${round(Math.max(0.3, route.length / SNEAK))} seconds at about ${round(SNEAK)} blocks a second.`,
       run: () => offHotFloor(bot, task, onAction, route) };
   }
-  if (hot.crouchSafe) ways.crouch_on_hot_floor = { description: `Crouch where it stands and stay crouched: the game does not hurt a crouched body on a magma block, so it stops at once, and the bot can rest, eat or wait here crouched. The crouch is let go once the body is off the magma; a walk that stands it up on the magma again is asked about again. Crouched, a body moves at about ${round(SNEAK)} blocks a second.`,
+  if (hot.crouchSafe) ways.crouch_on_hot_floor = { description: `Crouch where it stands and stay crouched: the game does not hurt a crouched body on a magma block, so it stops at once, and the bot can rest, eat or wait here crouched. The crouch is held until the body is off the magma, taken up again after anything lets it go; a walk stands it up and is hurt on the way. A crafting table or furnace opens only to an upright click: the crouch is let go for that moment. Crouched, a body moves at about ${round(SNEAK)} blocks a second.`,
     run: async () => crouchOnHotFloor(bot, onAction) };
   const rise = hot.crouchSafe && bot.entity.position.floored().equals(hot.cell) ? riseOutOfFire(bot) : null;
   if (rise) ways.rise_on_block = { description: `Jump and put a block of ${rise.block.name.replaceAll('_', ' ')} (${rise.block.count} carried) in the cell over the ${floor}, and stand on it a block up, off the magma: about ${round(PILLAR_RISE_SECONDS)} seconds${rise.fall ? `, with ${rise.fall.into === 'lava' ? 'a drop into lava' : 'a fall that costs half the health or more'} beside it` : ''}.`,

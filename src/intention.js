@@ -40,7 +40,15 @@ const TIMED = {
   portal_way: /^(climb_here|around_\w+)$/,
   stillness_detour: /^(return_for_food|restock_food|explore|cross_toward|floor_toward|pillar_up|blocks_then_pillar|fetch_stems|mine_nearby|night_mine|cook_food|stock_wood|pearls_\w+)$/,
   rung_progress: /^(fetch_stems|cross_toward|floor_toward|pillar_up|blocks_then_pillar|restock_food|return_for_food|pearls_\w+)$/,
+  // Upkeep's fetch too (note 703): 25589 chose it at 00:05:38Z, a wither
+  // skeleton's preemption cut it a tenth of a second in, and the work came
+  // back to the fortress leg with nothing held; the stems were never fetched.
+  upkeep: /^fetch_stems$/,
 };
+// An errand is the same errand whichever question offers it: the fetch
+// chosen at upkeep is carried on by fortress_leg's or the approach's
+// fetch_stems (note 703).
+const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks)$/;
 // The questions about the plan that are not asked to replace an intention.
 const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
@@ -248,6 +256,7 @@ function serves(i, q, key, node, way = wayOf(q, i)) {
   if (KEEP.test(key) || key === 'none_good') return true;
   if (way) return !way.drops.test(key);
   if (q === i.q && key === i.choice) return true;
+  if (key === i.choice && ERRANDS.test(key)) return true;
   const t = P(node?.target);
   return !!(t && i.target && dist(t, i.target) <= NEAR);
 }
@@ -287,7 +296,7 @@ function after(bot, goal, q, pathKeys, { target = null, now = Date.now(), state 
   const choice = String(pathKeys.at(-1)), path = pathKeys.join('/');
   const i = holding(bot, goal, now);
   if (i && DROP.test(choice)) { end(goal, `dropped: Jev chose ${words(choice)} (${words(q)})`, now); return null; }
-  if (i && q !== i.q && (wayOf(q, i) || !committing(q, choice) || (P(target) && i.target && dist(P(target), i.target) <= NEAR))) {
+  if (i && q !== i.q && (wayOf(q, i) || !committing(q, choice) || (choice === i.choice && ERRANDS.test(choice)) || (P(target) && i.target && dist(P(target), i.target) <= NEAR))) {
     if (committing(q, choice)) { i.way = `${q}/${choice}`; i.wayAt = now; }
     return i;
   }
@@ -325,4 +334,4 @@ function yieldWatch(bot, goal, now = Date.now()) {
   try { return require('./stillness').raiseFor(bot, goal, why, now, { escalated: { from: 'intention', to: e.q, says: why } }); } catch (_) { return null; }
 }
 
-module.exports = { yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };
+module.exports = { ERRANDS, yieldWatch, yieldSays, YIELD_MS, WALKS, wayOf, DROP, committing, holding, gate, after, end, serves, says, TIMED, GATED, AT_A_CHANGE, KEEP, WAYS, MAX_MS, NEAR, ARRIVED, HURT };

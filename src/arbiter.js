@@ -328,8 +328,14 @@ function stoppedSays(bot, state, layer, now = Date.now()) {
 // given the turn at 4 health beside "a piglin 9.8 blocks off" (in sight, no
 // gold worn), and a ghast 60 blocks off, past the sixteen then said, ended
 // it eighteen seconds later (note 607).
-function mobWouldSays(t, { noWay = false } = {}) {
+function mobWouldSays(t, { noWay = false, bot = null } = {}) {
   const ce = require('./combat-estimate'), name = t.entity.name;
+  // An angry one of a group (anger.js): hunting the bot, not "no way".
+  // 25592's stance said of what was about "it has no way to the bot" two
+  // seconds before three zombified piglins killed it (note 703).
+  let angry = null;
+  try { angry = bot ? require('./anger').angrySays(bot, t.entity) : null; } catch (_) { angry = null; }
+  if (angry) return noWay ? `${angry}; no way to the bot is found within 12 blocks now` : angry;
   // A walker with no way to the bot (walk-reach.js) is about, not coming:
   // 25593's creeper through the rock read "once it sees the bot it comes at
   // it, about 2 seconds at its walk" (note 696).
@@ -355,6 +361,9 @@ function workBodySays(bot, mobs) {
   try { apart = probe.noWay(bot, said.filter(t => !t.visible)) || new Set(); } catch (_) { apart = new Set(); }
   const line = t => {
     const h = hit(t.entity.name), noWay = !t.visible && apart.has(t.entity.id);
+    let angry = false;
+    try { angry = require('./anger').angry(bot, t.entity); } catch (_) { angry = false; }
+    if (angry) return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn` : ''}; ${mobWouldSays(t, { noWay, bot })}`;
     return `${/^[aeiou]/.test(t.entity.name) ? 'an' : 'a'} ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible ? '' : ' (out of sight)'}${h ? `, about ${h} a hit through the armour worn${h >= hp && !noWay ? ' (as much as the health left)' : ''}` : ''}${heals && !noWay ? '' : `; ${mobWouldSays(t, { noWay })}`}`;
   };
   // Each mob its own sentence where what it would do is said.
