@@ -116,16 +116,37 @@ function stemSeconds(bot) {
   const hand = Math.round(hardness * 1.5 * 10) / 10;
   return `a stem needs no tool to drop and breaks by hand in about ${hand} seconds${axe ? `, about ${Math.round(hardness * 1.5 / AXE_SPEED[axe] * 10) / 10} with the ${axe} axe carried` : ''}`;
 }
-// The pathfinder's look at the walk there, half a second.
+// The pathfinder's look at the walk there, half a second: the same survey
+// nether-gather.js's own wayTo makes of its "on foot" way (both call
+// skills.js surveyRoute), so a place said reachable here is one the fetch's
+// own walk option would find too.
 async function routeSays(bot, task, at) {
   const m = bot.pathfinder?.movements;
-  if (!m || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return '';
+  if (!m || !(bot.pathfinder.getPathFromTo || bot.pathfinder.getPathTo)) return { found: false, says: '' };
   let r = null;
   try { r = await require('./skills').surveyRoute(bot, task, m, new goals.GoalNear(at.x, at.y, at.z, 3), 500); }
-  catch (err) { if (!retryable(err) || err.name === 'Stalled') throw err; return ''; }
-  if (r?.status === 'success') return ` A route survey from here found a way there on foot, ${plural(r.path?.length || 0, 'step')}.${r.lava?.beside ? ` ${require('./movement').lavaAlongSays(r.lava, bot)}` : ''}`;
-  if (r?.status === 'noPath') return ' A route survey from here found no way there on foot (the bot\'s own walks in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot); the way there is asked on the spot as the gathering asks it: on foot as far as it goes, straight across at this height with the blocks carried, or down to the floor and along it.';
-  return ' A half-second route survey from here did not finish (far, or a long way round); the way there is asked on the spot as the gathering asks it.';
+  catch (err) { if (!retryable(err) || err.name === 'Stalled') throw err; return { found: false, says: '' }; }
+  if (r?.status === 'success') return { found: true, says: ` A route survey from here found a way there on foot, ${plural(r.path?.length || 0, 'step')}.${r.lava?.beside ? ` ${require('./movement').lavaAlongSays(r.lava, bot)}` : ''}` };
+  if (r?.status === 'noPath') return { found: false, says: ' A route survey from here found no way there on foot (the bot\'s own walks in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot); the way there is asked on the spot as the gathering asks it: on foot as far as it goes, straight across at this height with the blocks carried, or down to the floor and along it.' };
+  return { found: false, says: ' A half-second route survey from here did not finish (far, or a long way round); the way there is asked on the spot as the gathering asks it.' };
+}
+// The place said as "the nearest stems" is one the survey backs, not just
+// the nearest by raw distance: 25583 (mid-242-mh, note 716) was told
+// crimson stems were close, the survey itself saying "no way there on foot"
+// in the same breath, and still went for that one, "No stems were fetched"
+// three times running. Tried nearest first among the places known (up to
+// three, nether-gather.js PLACES): the first the survey finds a way to on
+// foot is said as the one fetched; where none of them do, the nearest is
+// still said, with the survey's own words on why (unchanged from before, so
+// a single known place that cannot be walked to says exactly what it did).
+async function reachablePlace(bot, task, places) {
+  let first = null;
+  for (const place of places) {
+    const route = await routeSays(bot, task, place.at);
+    first ||= { place, route };
+    if (route.found) return { place, says: route.says };
+  }
+  return first ? { place: first.place, says: first.route.says } : { place: null, says: '' };
 }
 
 // The option, said: the shortfall and what it is for, the nearest forest
@@ -148,14 +169,14 @@ async function fetchStemsOffer(bot, task, goal) {
   // Where the stems are leads, before the wood's sums: 25590's upkeep
   // (2026-09-30 01:35Z) said them after four hundred characters of planks
   // and sticks, and carry_on was taken over it 0.68 to 0.31 (note 709).
-  const say = route => {
+  const say = (said, route) => {
     let lead, where = '';
-    if (place) {
-      const kind = kindOf(place.name), off = Math.round(place.at.distanceTo(here)), dy = Math.round(place.at.y - here.y);
-      const mobs = mobsAbout(bot, place.at);
-      lead = `The nearest stems: ${place.n ? `${plural(place.n, words(place.name))} known` : `none known yet in ${place.forest}`} at ${at3(place.at)}, ${off} blocks ${compass(here, place.at)}${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}.`;
+    if (said) {
+      const kind = kindOf(said.name), off = Math.round(said.at.distanceTo(here)), dy = Math.round(said.at.y - here.y);
+      const mobs = mobsAbout(bot, said.at);
+      lead = `The nearest stems: ${said.n ? `${plural(said.n, words(said.name))} known` : `none known yet in ${said.forest}`} at ${at3(said.at)}, ${off} blocks ${compass(here, said.at)}${Math.abs(dy) >= 2 ? ` and ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}.`;
       where = `${capital(FOREST_SAYS[kind])}${mobs ? `; about it now: ${mobs}` : ''}.` +
-        route + (places[1] ? ` Next nearest: ${words(places[1].name)}s ${Math.round(places[1].at.distanceTo(here))} blocks ${compass(here, places[1].at)}.` : '');
+        route + (places[1] && places[1] !== said ? ` Next nearest: ${words(places[1].name)}s ${Math.round(places[1].at.distanceTo(here))} blocks ${compass(here, places[1].at)}.` : '');
     } else lead = 'No stem is known: none seen within 128 blocks or remembered, and no crimson or warped forest noticed or in the loaded ground. The fetch then asks the legs of the gathering\'s search, each said with the Nether forests that way as far as loaded.';
     // What the pickaxe is short of, which this fetch brings (note 705).
     const short = stranded ? require('./mob-hunt').pickaxeFirst(bot).short : null;
@@ -166,7 +187,12 @@ async function fetchStemsOffer(bot, task, goal) {
     const makes = wanted.picked ? '' : ' The pickaxe is made as soon as the wood for it is carried.';
     return `Fetch ${plural(wanted.stems, 'stem')} of the Nether's forests now. ${lead}${pick} ${wanted.says}${where ? ` ${where}` : ''} ${capital(stemSeconds(bot))}.${makes}${later}`;
   };
-  return { wanted, place, stranded, description: say(''), describe: async () => say(place ? await routeSays(bot, task, place.at) : '') };
+  return { wanted, place, stranded, description: say(place, ''),
+    describe: async () => {
+      if (!place) return say(null, '');
+      const found = await reachablePlace(bot, task, places);
+      return say(found.place, found.says);
+    } };
 }
 const capital = s => `${s[0].toUpperCase()}${s.slice(1)}`;
 // What the wood does later, said last: left out where the pickaxe is not

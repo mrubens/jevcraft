@@ -121,7 +121,7 @@ test('the trip home is not offered where it cannot begin, and is said for what i
   try {
     const start = mh.portalTripStart(bot, goal, homeBy);
     assert.equal(start.ok, false);
-    assert.match(start.why, /^the way back to it cannot begin from here: a leg of 32 blocks on foot toward it made no ground a moment ago \(resting\); no crossing now: a piglin 17 blocks off can see the bot.*; no stair to it by hand from here \((more than 16 blocks across|no step toward it gains)\), and no pickaxe is carried or can be made from what is carried$/);
+    assert.match(start.why, new RegExp(`^the way back to it cannot begin from here: a leg of 32 blocks on foot toward it made no ground a moment ago \\(resting\\); no crossing now: a piglin 17 blocks off can see the bot.*; no stair to it by hand from here \\((more than ${require('../src/tunneling').STAIR_ACROSS} blocks across|no step toward it gains)\\), and no pickaxe is carried or can be made from what is carried$`));
   } finally { danger.threats = threats; }
   // With the leg not resting the trip can begin.
   assert.equal(mh.portalTripStart(bot, goalOf(), homeBy).ok, true);

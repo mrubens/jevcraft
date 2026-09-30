@@ -257,7 +257,13 @@ function digSeconds(bot, block) {
 // pickaxe, and the way back went for wood for one it did not need.
 // Said and offered only for a target this near across: farther, the stair
 // is one way among the crossing's and the walk's, not the way to it.
-const STAIR_ACROSS = 16;
+// Sixteen (note 678) still sent a stair no pickaxe could dig off after
+// wood: 25583's chosen return_for_blocks, its portal 22 blocks off, went
+// for a stem instead of taking a single step, twelve times in twenty-five
+// minutes (mid-242-mh, note 716). Widened past that: a stair this short by
+// hand is under a minute even through basalt, well inside what a wood
+// fetch's own search risks losing to a single noPath.
+const STAIR_ACROSS = 32;
 function stairFromHere(bot, goal, target) {
   if (typeof bot?.blockAt !== 'function' || !bot.entity?.position || !target) return null;
   const feet = bot.entity.position.floored(), here = feet.distanceTo(target);

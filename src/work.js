@@ -4167,11 +4167,19 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   // is made only where no step from here gains without one. 25591 stood 10
   // blocks above its portal in netherrack and went for wood for a pickaxe
   // it did not need, the trip back never made (note 678). A short stair,
-  // the target within sixteen across as the pillar's is (STAIR_ACROSS):
-  // farther, the pickaxe first (a stair of a hundred and fifty blocks by
-  // hand is twenty minutes' digging; with a wooden pickaxe, three). What
-  // the pickaxe is wanted for is kept while it is got (wantedFor), so a
-  // question asked on the way does not offer the very trip that wants it.
+  // the target within STAIR_ACROSS blocks as the pillar's is: farther, the
+  // pickaxe first (a stair of a hundred and fifty blocks by hand is twenty
+  // minutes' digging; with a wooden pickaxe, three). Getting that pickaxe
+  // means gathering wood, and with none carried that is the Nether's own
+  // gathering, a search of its own that can run long or fail outright
+  // (noPath): worth it for a stair that long, not for one a couple of
+  // dozen blocks by hand would finish in under a minute. 25583 (mid-242-mh,
+  // note 716) had its chosen return_for_blocks turned into a stem hunt this
+  // way, its portal only 22 blocks off, twelve times in twenty-five
+  // minutes, and never took a step toward it; STAIR_ACROSS (tunneling.js)
+  // was widened past that to cover it. What the pickaxe is wanted for is
+  // kept while it is got (wantedFor), so a question asked on the way does
+  // not offer the very trip that wants it.
   const tunneling = require('./tunneling');
   // A pickaxe the pockets make is made first, a few seconds, and the rock
   // then drops and is dug in a fraction of the time (note 705: every rock
@@ -6800,4 +6808,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut };
+module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, smelt, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay };
