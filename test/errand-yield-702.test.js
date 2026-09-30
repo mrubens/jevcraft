@@ -28,12 +28,13 @@ test('the food option says the hunger, the points carried of the reserve and wha
   const supply = require('../src/foraging').foodSupply(bot);
   assert.equal(supply, 15 * 3 + 14 * 2 + 4 * 6);
   const says = fe.says(bot, { preparingNether: true }, { supply, desired: 80, hungry: false });
-  assert.match(says, /^Get food\. Hunger 20, full: health comes back; the 97 points carried are eaten as it falls\. This tops up the reserve\. 97 food points carried of the 80 kept for the Nether stay \(about 40 hunger an hour there, and health comes back only at hunger 18 or more\): 0 short\./);
+  assert.match(says, /^Get food\. Hunger 20, full: health is full; the 97 points carried are eaten as it falls\. This trip is for the reserve alone\. 97 food points carried of the 80 kept for the Nether stay \(about 40 hunger an hour there, and health comes back only at hunger 18 or more\): 0 short\./);
   assert.match(says, /Cooking the raw meat carried \(15 beef, 14 mutton\) adds 131 points\./);
   // Hungry, with what is carried filling the bar: eating meets it.
   const hungry = bareBot({ items: [['bread', 3]], food: 12 });
-  assert.match(fe.says(hungry, {}, { supply: 15, desired: 24, hungry: true }), /Hunger 12, under eighteen: health does not come back until it is eaten back to eighteen, 6 points short; the 15 food points carried cover that\. Eating what is carried meets that; this tops up the reserve\. 15 food points carried of the 24 kept for healing and the night: 9 short\./);
-  assert.match(fe.says(bareBot({ food: 10 }), {}, { supply: 0, desired: 12, hungry: true }), /Hunger 10, under eighteen: health does not come back until it is eaten back to eighteen, 8 points short; nothing carried covers any of it\. This is for the hunger\./);
+  assert.match(fe.says(hungry, {}, { supply: 15, desired: 24, hungry: true }), /Hunger 12, health full: nothing waits on the hunger now; the 15 food points carried bring it to eighteen or more when eaten, in seconds\. This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 15 food points carried of the 24 kept for healing and the night: 9 short\./);
+  assert.match(fe.says(bareBot({ food: 10 }), {}, { supply: 0, desired: 12, hungry: true }), /Hunger 10, health full: nothing waits on the hunger now; nothing carried to eat\. This is for the hunger\./);
+  assert.match(fe.says(bareBot({ food: 10, health: 15 }), {}, { supply: 0, desired: 12, hungry: true }), /Hunger 10, under eighteen: health does not come back until it is eaten back to eighteen, 8 points short; nothing carried covers any of it\. This is for the hunger\./);
 });
 
 test('a stock-up that keeps nothing in three minutes has no yield; a gain measures it again from there', () => {
@@ -182,7 +183,7 @@ test('25595\'s stock-up: met at full hunger with food carried, it is not asked (
     bot.food = 17;
     await survival.step(new Task('t', 'food'), goal, () => {});
     assert.equal(trees.length, 1);
-    assert.match(trees[0].obtain_food.description, /^Get food\. Hunger 17, under eighteen: health does not come back until it is eaten back to eighteen, 1 point short; the 76 food points carried cover that\. Eating what is carried meets that; this tops up the reserve\. 76 food points carried of the 80 kept for the Nether stay/);
+    assert.match(trees[0].obtain_food.description, /^Get food\. Hunger 17, health full: nothing waits on the hunger now; the 76 food points carried bring it to eighteen or more when eaten, in seconds\. This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 76 food points carried of the 80 kept for the Nether stay/);
     assert.match(trees[0].obtain_food.description, /Cooking the raw meat carried \(12 beef, 8 mutton\) adds 92 points\./);
     // Three and a half minutes on, the reserve no higher: it rests.
     delete survival.state.foodPlan;

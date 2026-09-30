@@ -9811,10 +9811,26 @@ class Survival {
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
     // Said with the hunger, the points carried and what the reserve is for
     // and wants, and the errand so far (food-errand.js, note 702).
-    if (needsFood) tree.obtain_food = { description: `${errands.says(bot, goal, { supply: supplyNow, desired: desiredFood, hungry, errand, now })} Keep the player request saved.` + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; starvation at hunger 0.` : '') +
+    if (needsFood) tree.obtain_food = { description: `${errands.says(bot, goal, { supply: supplyNow, desired: desiredFood, hungry, errand, now, holder: this.state })} Keep the player request saved.` + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; starvation at hunger 0.` : '') +
         (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state, { target: desiredFood }) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
+    // Hunger that the food carried meets is a meal of seconds, offered as
+    // one beside the trips (note 761b): 25593 (mid-237-cc, 19:47 to 19:50Z)
+    // at hunger 17, full health and 35 points carried was offered only trips
+    // for food and walked home and on to a hunt; 25598 (19:56Z) at 3 health,
+    // hunger 16 and 18 points carried was offered only the herds seen.
+    const meal = needsFood && errands.covered(bot, supplyNow) ? chooseFood(bot) : null;
+    if (meal) {
+      const points = bot.registry?.foodsByName?.[meal.name]?.foodPoints || 0;
+      const hp = Math.round((bot.health ?? 20) * 10) / 10;
+      tree.eat_carried = { description: `Eat the ${meal.name.replaceAll('_', ' ')} carried now: about two seconds standing still, hunger ${bot.food} to ${Math.min(20, bot.food + points)}, eighteen or more. ${hp >= 20 ? 'Health is full: nothing waits on it now; eaten, the hunger holds up the healing for later.' : `Health ${hp} comes back from then, about one each four seconds while hunger stays at eighteen or more.`} No walk; the reserve stays where it is, ${supplyNow - points} points after.${nowAboutFood(bot)}`,
+        run: async () => {
+          const before = bot.food;
+          this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, why: 'eat_carried' });
+          await require('./meal').eatThrough(bot, task, meal, { eaten: () => (bot.food ?? 0) > before, helps: () => (bot.food ?? 20) < 20 });
+        } };
+    }
     // The trip home left out for its walk cannot begin from here (note 706).
     if (needsFood && offWorld && !tree.obtain_food?.children?.return_for_food) { try { const c = require('./mob-hunt').tripHomeClosed(bot, goal); if (c) state.tripHome = c.says; } catch (_) { /* none */ } }
     // Waiting sealed for daylight, anywhere in the Overworld, when health
@@ -9908,7 +9924,9 @@ class Survival {
     if (decision.stale) return true;
     const foodKey = decision.path[0] === 'obtain_food' ? decision.path.at(-1) : null;
     if (foodKey === 'search_food') this.state.searchFoodHold = { key: foodKey, until: Date.now() + 45000, at: Date.now() };
-    else if (foodKey && /^seen_food_\d+$/.test(foodKey)) this.state.searchFoodHold = { key: foodKey, until: Date.now() + 120000, at: Date.now() };
+    // The walk home and to a village are trips too (note 761b): 25593 was
+    // asked six times in two minutes on its way home, and turned to a hunt.
+    else if (foodKey && /^(seen_food_\d+|go_home_for_food|village_food)$/.test(foodKey)) this.state.searchFoodHold = { key: foodKey, until: Date.now() + 120000, at: Date.now() };
     else delete this.state.searchFoodHold;
     if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
     if (decision.path[0] === 'continue_request') {
@@ -10053,9 +10071,17 @@ function nightMineOn(bot, mine) {
 // (mid-241-ce, 17:08 to 17:16Z) gave the turn to "Find food ... Hunger 13, 0
 // food points carried of 80 wanted" fourteen times over its own nether-food
 // step's climb, the claim silent on both.
+// The mobs about, for the meal's words: one within eight blocks.
+function nowAboutFood(bot) {
+  const near = threats(bot, 8);
+  return near.length ? ` ${near.length} hostile mob${near.length === 1 ? '' : 's'} within eight blocks now.` : '';
+}
+
 function foodCost(bot, goal, state, supply, hungry, now = Date.now()) {
   const errands = require('./food-errand');
-  const out = { hungerSays: errands.hungerSays(bot, supply), foodFor: hungry ? 'hunger' : (bot.food ?? 20) >= errands.HEALS_AT ? 'the reserve' : 'the reserve, with hunger under eighteen' };
+  // Hunger the food carried meets is a meal, and the claim is for the
+  // reserve (note 761b).
+  const out = { hungerSays: errands.hungerSays(bot, supply), foodFor: errands.covered(bot, supply) ? 'the reserve (the hunger is a meal of what is carried, eaten in seconds)' : hungry ? 'hunger' : (bot.food ?? 20) >= errands.HEALS_AT ? 'the reserve' : 'the reserve, with hunger under eighteen' };
   const cost = errands.costSays(state.foodErrand && now - state.foodErrand.lastAt <= errands.GAP_MS ? state.foodErrand : null, now);
   if (cost) out.errandSoFar = cost;
   if (goal?.gameProgress?.phase === 'nether_food') out.workIsFood = 'the work\'s own step now is the food for the Nether (the food step, which asks where it comes from)';

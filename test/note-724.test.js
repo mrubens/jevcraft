@@ -52,7 +52,7 @@ test('asked live with the recorded facts: held for the stated wait, then asked w
     assert.ok(seen[1].at - seen[0].at >= 180, 'the second asking waited the first hold');
   });
   assert.equal(seen[0].state.answerChangedNothing, undefined);
-  assert.match(seen[1].state.answerChangedNothing, /^secure shelter was chosen \d+ seconds? ago and changed nothing \(the bot on the same block, carrying the same, no block dug or placed, health as it was\); this question was held \d+ seconds? for something to change, and nothing changed meanwhile\.$/);
+  assert.match(seen[1].state.answerChangedNothing, /^secure shelter was chosen \d+ seconds? ago and changed nothing \(the bot on the same block, carrying the same, no block dug or placed, health as it was\); this question was held \d+ seconds? for something to change, and nothing changed meanwhile; recorded as failed: listed last from here while the bot is within 16 blocks of where it was chosen and carries nothing new \(up to 10 minutes\), and not offered there once it has changed nothing twice\.$/);
   // Said on the option once: here the ledger's own words say it (tried.js), and the rule's are not added beside them.
   assert.match(JSON.stringify(seen[1].options), /The secure shelter way\. Tried once from here in the last \d+ seconds?, and it came to nothing/);
   assert.doesNotMatch(JSON.stringify(seen[1].options), /Chosen \d+ seconds? ago, and it changed nothing/);

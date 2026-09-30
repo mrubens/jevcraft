@@ -79,7 +79,7 @@ function ledger(goal) {
 function prune(t, now) {
   const live = t.entries.filter(e => e.outcome === 'pending' ? now - e.at < 3 * WINDOW_MS : now - e.at < 2 * WINDOW_MS);
   const kept = new Set(live.slice(-KEEP));
-  t.entries = live.filter(e => kept.has(e) || (e.held && e.until > now));
+  t.entries = live.filter(e => kept.has(e) || (e.held && e.until > now) || (e.noop && e.noop.until > now));
   t.escalations = t.escalations.filter(e => now - e.at < WINDOW_MS).slice(-20);
 }
 function workOf(goal, now) { try { return require('./stillness').actionOf(goal, now).key; } catch (_) { return null; } }
@@ -301,10 +301,15 @@ function cut(goal, why, now = Date.now()) {
 
 // The entries that bear on an option now: the same question and answer,
 // from about here or toward about the same target, in the window.
-function about(goal, { q, method, target = null, here, now = Date.now(), work = null }) {
+function about(goal, { q, method, target = null, here, now = Date.now(), work = null, kinds = null, dimension = null }) {
   const t = goal?.tried;
   if (!t?.entries || !here) return [];
   const tp = P(target);
+  // An answer whose run changed nothing (decisions/outcome.js, note 765)
+  // bears on it from anywhere in the same stall: within its `near` of where
+  // it was chosen, nothing new carried, whatever its target (the exit a
+  // climb aimed at moves as the bot does).
+  const noop = t.entries.filter(e => e.q === q && e.method === method && e.noop && require('./decisions/outcome').noopHolds(e, { here, kinds, dimension, now }));
   // A hold on answers that came back at once whatever the facts (repeats.js
   // quickBefore) holds from about here whatever their target: the target is
   // among the facts that moved between them (note 611).
@@ -316,7 +321,9 @@ function about(goal, { q, method, target = null, here, now = Date.now(), work = 
   // 629). On foot and straight across were the same tunnel to the same stems, and
   // with the crossing resting the walk was taken six of six.
   const kin = tp ? t.entries.filter(e => e.q === q && e.method !== method && e.outcome === 'blocked' && e.noNearer && e.target && dist(e.target, tp) <= TARGET_NEAR && e.place && dist(e.place, here) <= TARGET_FROM && now - e.at < WINDOW_MS && (!work || !e.work || e.work === work)) : [];
-  return kin.length ? [...same, ...kin] : same;
+  const all = kin.length ? [...same, ...kin] : same;
+  for (const e of noop) if (!all.includes(e)) all.push(e);
+  return all;
 }
 function blockedOf(list) { return list.filter(e => e.outcome === 'blocked'); }
 // Resting: blocked REST_AFTER times in the window, until REST_MS after the
@@ -340,8 +347,16 @@ function triedSays(list, { here, now = Date.now(), toward = false } = {}) {
     return `Held from about here ${blocked.length === 1 ? 'once' : `${blocked.length} times`} in the last ${ago(now - first)}, ${ago(all)} in all, and nothing changed in any of them: ${String(blocked.at(-1).why || '').replace(/^held [^:]*: /, '').replace(/\.$/, '')}.`;
   }
   const first = Math.min(...blocked.map(e => e.at));
-  const why = blocked.map(e => e.why).filter(Boolean).at(-1);
-  return `Tried ${blocked.length === 1 ? 'once' : `${blocked.length} times`} ${toward ? 'toward the same place from about here' : 'from here'} in the last ${ago(now - first)}, and it came to nothing${why ? `: ${why.replace(/\.$/, '')}` : ' (no new ground, nothing gained, no block dug or placed)'}.`;
+  // The last reason said, and a run that changed nothing beside it (note
+  // 765): the no-op's own words do not stand in for why an earlier try
+  // ended.
+  const NOOP_WORDS = /(^|; )its run changed nothing .*$/;
+  const reason = blocked.map(e => String(e.why || '').replace(NOOP_WORDS, '')).filter(Boolean).at(-1);
+  const noopSaid = blocked.filter(e => e.noop).map(e => String(e.why || '').match(NOOP_WORDS)?.[0]?.replace(/^; /, '')).filter(Boolean).at(-1);
+  const why = [reason, noopSaid].filter(Boolean).join('; ') || null;
+  // Runs that changed nothing (note 765): that the next such from here rests it.
+  const noops = blocked.filter(e => e.noop).length;
+  return `Tried ${blocked.length === 1 ? 'once' : `${blocked.length} times`} ${toward ? 'toward the same place from about here' : 'from here'} in the last ${ago(now - first)}, and it came to nothing${why ? `: ${why.replace(/\.$/, '')}` : ' (no new ground, nothing gained, no block dug or placed)'}.${noops === 1 && blocked.length < REST_AFTER ? ' Its run changed nothing; changing nothing again from about here, it rests.' : ''}`;
 }
 
 // The same answer to the same question, come to nothing moments ago from
@@ -412,12 +427,18 @@ function leafAt(tree, key) {
 function read(bot, goal, q, tree, { target = null, sayOnly = false, leave = null, now = Date.now() } = {}) {
   const here = P(bot?.entity?.position);
   if (!goal?.tried?.entries?.length || !here) return { tree, resting: [], allResting: false };
-  const nodes = new Map(), resting = [];
+  const nodes = new Map(), resting = [], lastListed = new Set();
+  let kinds = null;
+  try { kinds = typeof bot?.inventory?.items === 'function' ? [...new Set(bot.inventory.items().map(i => i.name))] : null; } catch (_) { kinds = null; }
+  const dimension = String(bot?.game?.dimension || '').replace(/^minecraft:/, '') || null;
   for (const { key, node } of leavesOf(tree)) {
     const t = P(node?.target) || P(target);
     // A stance, the body's way out, the shield: only their waits are read
     // (note 521: failedHereJustNow says their failures).
-    const list = about(goal, { q, method: key, target: t, here, now }).filter(e => !sayOnly || e.wait);
+    const list = about(goal, { q, method: key, target: t, here, now, kinds, dimension }).filter(e => !sayOnly || e.wait);
+    // A run that changed nothing from this stall is not listed first again
+    // (note 765): it goes to the end of the list, said.
+    if (!sayOnly && list.some(e => e.noop)) lastListed.add(key.split('/')[0]);
     const said = [triedSays(list, { here, now, toward: !!t }), sayOnly ? null : justNow(goal, { q, method: key, here, now, counted: list })].filter(Boolean).join(' ') || null;
     const until = restsUntil(list, now);
     // Held by the repeat rule (decisions/repeats.js), and still held.
@@ -425,7 +446,7 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, leave = null
     if (until) { resting.push({ key, until, held, wait: blockedOf(list).every(e => e.wait), said, says: `${label(key)}: ${said} It rests ${ago(until - now)} more from here.` }); nodes.set(key, node); continue; }
     nodes.set(key, said ? addSays(node, said) : node);
   }
-  if (!resting.length) return { tree: rebuilt(tree, nodes), resting: [], allResting: false };
+  if (!resting.length) return { tree: listedLast(rebuilt(tree, nodes), lastListed), resting: [], allResting: false };
   const isResting = k => resting.some(r => r.key === k);
   const onOffer = () => [...nodes.keys()].filter(k => nodes.get(k) && k !== 'none_good');
   // Every way resting with nothing above to ask stays on offer, each with
@@ -462,7 +483,17 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, leave = null
   }
   for (const r of resting) if (!left.includes(r) && !waits.includes(r) && nodes.get(r.key)) nodes.set(r.key, addSays(nodes.get(r.key), `${r.said} It rests ${ago(r.until - now)} more from here.`));
   if (!sayOnly && !left.length && !onOffer().some(k => !isResting(k))) return allResting({ say: false });
-  return { tree: rebuilt(tree, nodes), resting: left.map(r => r.says), allResting: false };
+  return { tree: listedLast(rebuilt(tree, nodes), lastListed), resting: left.map(r => r.says), allResting: false };
+}
+// The options with a run that changed nothing from here moved to the end of
+// the list, none_good kept last of all (note 765).
+function listedLast(tree, keys) {
+  if (!keys?.size) return tree;
+  const order = Object.keys(tree);
+  const moved = order.filter(k => keys.has(k) && k !== 'none_good');
+  if (!moved.length || moved.length === order.filter(k => k !== 'none_good').length) return tree;
+  const rest = order.filter(k => !moved.includes(k) && k !== 'none_good');
+  return Object.fromEntries([...rest, ...moved, ...(order.includes('none_good') ? ['none_good'] : [])].map(k => [k, tree[k]]));
 }
 
 // A repeat hold (decisions/index.js): the answers held rest from here for

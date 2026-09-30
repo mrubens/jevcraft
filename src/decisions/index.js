@@ -59,6 +59,7 @@ const leastBad = require('./least-bad');
 const unchanged = require('./unchanged');
 const loops = require('./loops');
 const commit = require('./commit');
+const outcome = require('./outcome');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -101,6 +102,11 @@ function define(spec) {
   // where there is none above: the stall question takes it as before.
   if (spec.tree && GAMEPLAY_AREAS.has(spec.area) && !Object.hasOwn(spec, 'parent')) problems.push('a parent (the question asked when this one has nothing left to try), or parent: null');
   if (spec.parent != null && (typeof spec.parent !== 'string' || spec.parent === spec.id)) problems.push('a parent that is another question\'s id');
+  // Where an answer that changed nothing bears (outcome.js, note 765): blocks
+  // from where it was chosen, 16 unless the question says less.
+  if (spec.sameStall !== undefined && !(Number.isFinite(spec.sameStall) && spec.sameStall > 0)) problems.push('a sameStall that is a number of blocks');
+  // A wait meant to change nothing says so where it is declared (note 765).
+  if (spec.tree && Array.isArray(spec.options)) for (const o of spec.options) if (o.wait && !/\ba wait\b/.test(`${o.label} ${o.when}`)) problems.push(`option ${o.key || o.pattern}, declared a wait, to say so in its label or when ("a wait: ...")`);
   if (problems.length) throw new Error(`Decision ${spec.id || '(unnamed)'} needs ${problems.join(', ')}`);
   const frozen = Object.freeze({ ...spec });
   QUESTIONS.set(spec.id, frozen);
@@ -186,6 +192,8 @@ const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet 
 // Note 724 (unchanged.js): the answer before this one changed nothing, and
 // options whose goal is already so.
 const CHANGED_NOTHING = 'answerChangedNothing: this question\'s last answer ended with the bot on the same block, carrying the same, no block dug or placed and health as it was; the same answer again changes nothing unless something else has.';
+// Note 765 (outcome.js): said only where one was recorded failed.
+const RECORDED_FAILED = 'One recorded as failed is listed last from about there, and rests once it has changed nothing there twice.';
 const ALREADY_SO = 'alreadySo: options not offered because what they would bring about is already so.';
 // Note 749 (loops.js): the askings of this question just before, each within
 // a minute of the one before, wherever the bot walked between.
@@ -228,7 +236,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}${/recorded as failed/.test(state.answerChangedNothing) ? ` ${RECORDED_FAILED}` : ''}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -651,6 +659,17 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // second: rested from where it was chosen, and said below (at-once.js,
   // note 695).
   if (ledgered) require('../at-once').check(bot, goal, id);
+  // What the answers given before changed (outcome.js, note 765): each
+  // answer whose own time has passed is judged at any question asked, and
+  // this question's last answer now, its run having come back (unless its
+  // commitment carries it on: then by its time alone). Changed nothing, it is
+  // recorded failed in the ledger, its commitment ends, and it is said here.
+  let outcomeSaid = null;
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area)) {
+    outcome.sweep(bot, goal, { except: id });
+    if (ledgered) outcome.judge(bot, goal, id, { asked: !commit.holding(bot, id) });
+    outcomeSaid = outcome.says(bot, id);
+  }
   if (ledgered) {
     tried.settle(bot, goal, { q: id });
     lastLeastBad = leastBad.before(bot, goal, id, original);
@@ -750,6 +769,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (bot) bot._lastDecision = { id, choice: one.path.at(-1), at: Date.now() };
     if (decision.action?.valid && !decision.action.valid()) decision.stale = true;
     if (ledgered && !decision.stale) tried.begin(bot, goal, { q: id, method: one.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, one.path), offered: offeredOf(original, target) });
+    if (ledgered && !decision.stale) outcome.begin(bot, goal, spec, one.path, decision.action, { target, held: !!held });
     if (ledgered && !decision.stale && !held) require('../intention').after(bot, goal, id, one.path, { target: decision.action?.target || target, state, chosen: false });
     if (ledgered && !decision.stale && !held) require('../plan-chain').note(bot, goal, id, one.path);
     return decision;
@@ -902,10 +922,13 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       state = { ...state, answerChangedNothing: w.facts };
       // On the option too, unless the ledger's words on it say it already.
       const leaf = tried.leafAt(tree, last.choice);
-      if (leaf && !/came to nothing/.test(typeof leaf.description === 'string' ? leaf.description : JSON.stringify(leaf.description || ''))) tree = leastBad.sayOn(tree, last.choice, w.option);
+      if (leaf && !/came to nothing|changed nothing/.test(typeof leaf.description === 'string' ? leaf.description : JSON.stringify(leaf.description || ''))) tree = leastBad.sayOn(tree, last.choice, w.option);
       changedNothing = last;
     }
   }
+  // Judged failed (outcome.js, note 765): said with the rest of it, or in
+  // its own words where the rule above had nothing to say.
+  if (outcomeSaid && state && typeof state === 'object') state = { ...state, answerChangedNothing: state.answerChangedNothing ? `${state.answerChangedNothing.replace(/\.$/, '')}; ${outcomeSaid.recorded}` : outcomeSaid.says };
   // The stance's only (note 693): elsewhere a none good changes the next
   // asking (least-bad.js) instead of the likeliest listed being taken unasked.
   const spentHere = tracked && !leastBad.applies(id) ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
@@ -1126,6 +1149,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
   }
   if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, decision.path), offered: offeredOf(original, target) });
+  if (ledgered && !decision.stale && decision.path) outcome.begin(bot, goal, spec, decision.path, decision.action, { target });
   // The least bad is not Jev's choice, and a walk taken as one begins no
   // intention (note 693): abandoning a walk costs only the time spent, and
   // its own yield measure already ends it once it gains nothing (note 699),

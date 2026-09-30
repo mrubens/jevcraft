@@ -53,8 +53,8 @@ test('the hunger is said against what health needs and what the food carried cov
   const says = fe.says(bot, netherGoal(), { supply: 0, desired: 80, hungry: false });
   assert.doesNotMatch(says, /no hunger to meet/i);
   assert.match(says, /^Get food\. Hunger 13, under eighteen: health does not come back until it is eaten back to eighteen, 5 points short; nothing carried covers any of it\. This is for the hunger and the reserve\. 0 food points carried of the 80 kept for the Nether stay/);
-  assert.match(fe.hungerSays({ food: 12 }, 3), /^Hunger 12, under eighteen: .*6 points short; the 3 food points carried cover 3 of them\.$/);
-  assert.match(fe.hungerSays({ food: 18 }, 3), /^Hunger 18: health comes back; the 3 points carried are eaten as it falls\.$/);
+  assert.match(fe.hungerSays({ food: 12, health: 18 }, 3), /^Hunger 12, under eighteen: .*6 points short; the 3 food points carried cover 3 of them\.$/);
+  assert.match(fe.hungerSays({ food: 18, health: 18 }, 3), /^Hunger 18: health comes back; the 3 points carried are eaten as it falls\.$/);
 });
 
 test('the errand counts the blocks it climbed and says them (25588: y -9 to 103)', () => {

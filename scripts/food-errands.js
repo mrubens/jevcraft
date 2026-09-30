@@ -65,7 +65,11 @@ function readFile(file) {
     }
     if (d.id !== 'survival_priority' || d.path?.[0] !== 'obtain_food') continue;
     const text = String(d.options?.obtain_food?.description || '');
-    const mode = /no hunger to meet/.test(text) ? 'top-up' : /fills it/.test(text) ? 'hungry, carried fills it' : /does not fill/.test(text) ? 'hungry, carried short' : 'other';
+    // The words before note 761, and after it.
+    const mode = /no hunger to meet|This tops up the reserve\./.test(text) ? 'top-up'
+      : /fills it|Eating what is carried meets that|[Ee]at what is carried/.test(text) ? 'hunger, carried covers it'
+        : /does not fill|This is for the hunger\./.test(text) ? 'hungry, carried short'
+          : /for the hunger and the reserve/.test(text) ? 'under 18, reserve' : 'other';
     const win = { port: p, at: d.at, food, health: s.health, carried, leaf: d.path.at(-1), mode, y: s.position?.y, dim: s.dimension, step: s.goal?.step?.action || null };
     R.wins.push(win);
     const t = Date.parse(d.at);
@@ -91,6 +95,8 @@ const out = {
   winsByHungerCarrying: byBand(R.wins.filter(w => w.carried > 0)),
   winsByMode: R.wins.reduce((o, w) => (o[w.mode] = (o[w.mode] || 0) + 1, o), {}),
   winsTopUpUnder18: R.wins.filter(w => w.mode === 'top-up' && w.food < 18).length,
+  winsCarriedCoversHunger: R.wins.filter(w => w.food < 18 && w.carried >= 18 - w.food).length,
+  winsCarriedCoversHungerFullHealth: R.wins.filter(w => w.food < 18 && w.carried >= 18 - w.food && w.health >= 20).length,
   winsMet: R.wins.filter(w => w.food >= 18 && w.carried > 0).length,
   winsInNether: R.wins.filter(w => w.dim === 'the_nether').length,
   winsInNetherAt18: R.wins.filter(w => w.dim === 'the_nether' && w.food >= 18).map(w => `${w.port} ${w.at} ${w.leaf} hunger ${w.food} hp ${round(w.health)}`),

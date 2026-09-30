@@ -38,7 +38,9 @@ function fingerprint(state, tree) {
     return out;
   };
   const options = {};
-  const visit = (children, into) => { for (const [k, n] of Object.entries(children || {})) { into[k] = { d: norm(n?.description) }; if (n?.children) visit(n.children, into[k].c = {}); } };
+  // By key, not the order listed: an option moved to the end of the list
+  // (tried.js, note 765) is the same fact.
+  const visit = (children, into) => { for (const [k, n] of Object.entries(children || {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) { into[k] = { d: norm(n?.description) }; if (n?.children) visit(n.children, into[k].c = {}); } };
   visit(tree, options);
   return JSON.stringify([norm(state), options]);
 }

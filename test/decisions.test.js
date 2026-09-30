@@ -423,7 +423,8 @@ test('answers that come back at once with nothing coming of them are said and he
   // Something coming of an answer starts afresh.
   delete bot._stalls.stall;
   picks.push('around_left', 'around_left');
-  bot.entity.position = new Vec3(-157.5, 107, 60.1); await ask(6); bot.entity.position = new Vec3(-150.5, 107, 60.1); await ask(7);
+  // Out of the stall the answers changed nothing in (sixteen blocks, note 765), then seven blocks more.
+  bot.entity.position = new Vec3(-147.5, 107, 60.1); await ask(6); bot.entity.position = new Vec3(-140.5, 107, 60.1); await ask(7);
   assert.equal(seen.at(-1).lastAnswersCameToNothing, undefined, 'moved seven blocks: something came of it');
 });
 

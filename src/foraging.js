@@ -244,7 +244,7 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     const seconds = Math.round(distance / 4.3), tod = bot.time?.timeOfDay ?? 6000;
     const dark = tod >= DAY.DARK && tod < DAY.DAWN;
     return { walkSeconds: seconds, ...passes(to), ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
-      healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}) };
+      healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}) };
   };
   const home = homeFood(bot, goal);
   if (home) choices.go_home_for_food = {
