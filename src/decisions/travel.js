@@ -98,7 +98,7 @@ define({
 define({
   id: 'empty_spawner', area: 'endgame', parent: 'rung_progress', kind: 'fortress', primitive: 'choice', stakes: 'high', tree: true,
   ungated: 'every way offered is a real route from here (the stand is the fortress search\'s wait by a spawner, a minute at a covered cell; the heal eats what is carried and ends at full health, three minutes or a mob; the trip back and the food ways are the ones leave_nether and restock_food run); none refuses anything for health',
-  question: 'A blaze spawner is known here and no blaze is near or in sight: take a stand by it for its next blazes, build or dig cover by it first, heal or eat first, pick up rods, step out past sixteen, go after the blazes out of sight, go back for food, or get food here?',
+  question: 'A blaze spawner is known here and no blaze is near or in sight: take a stand by it for its next blazes, build or dig cover by it first, heal or eat first, pick up rods, put the rods in a chest, step out past sixteen, go after the blazes out of sight, go back for food, or get food here?',
   trigger: 'On a blaze hunt in the Nether, each pass with a spawner the fortress map holds (or one in sight) within 48 blocks, not seen broken, and no blaze within 32 that is not set aside; or, within 16 of a live cage, no blaze in the bot\'s sight and none within two blocks (where a blaze swings instead of shooting) (the lull between its tries, note 691: spawner-clock.js), unless Jev chose to go after the ones out of sight within the last minute; not while a stand or wait by a spawner is going on, a heal chosen here is going on, or the trip back for food is held. The search is not offered: the spawner is the target.',
   source: 'src/empty-spawner.js (atSpawner, options), src/mob-hunt.js (prepareMobHunt, findFortressStep\'s wait by a spawner)',
   options: [
@@ -112,12 +112,14 @@ define({
     { key: 'step_out', label: 'walk out past sixteen blocks of the cage, eat and heal there up to a minute, then be asked again', when: 'the lull and a cell past seventeen from the cage within forty steps of walking; said with the steps and that the spawner makes none and its clock stops while no one is within sixteen', level: 'root' },
     { key: 'pick_up_rods', label: 'pick up the blaze rods on the ground within twenty-four blocks', when: 'the lull and rods on the ground within twenty-four (the hunt\'s own pickup takes those within twelve first)', level: 'root' },
     { key: 'hunt_on', label: 'go after the blazes out of sight, as the hunt does', when: 'the lull with a blaze within sixteen out of sight; the question is not asked again for a minute after', level: 'root' },
+    { key: 'stash_rods', label: 'put the rods carried (and the powder, pearls and eyes) in a chest here, counted as held and taken out before the portal', when: 'two or more rods carried, rods still wanted, no blaze or ghast with a line to the bot, and a chest known within twelve or a cell for one in reach (out of every blaze\'s and ghast\'s line, on solid ground, air over it, no lava within two, rock round it first) with a chest carried or the wood for one (8 planks, 4 more for a table when none is carried); said with the seconds and the flight records\' row for the rods carried (rod-stash.js, note 704)', level: 'root' },
   ],
   instructions: {
     task: 'A blaze spawner is known here and no blaze is near. Choose what the bot does now.',
     guidance: 'The stand begins fights at the health the bot has; the trials\' rows are fights begun there, not a forecast.',
   },
   fallback: children => {
+    if (children.stash_rods) return 'stash_rods';
     if (children.heal_first) return 'heal_first';
     if (children.box_at_spawner) return 'box_at_spawner';
     if (children.box_here) return 'box_here';

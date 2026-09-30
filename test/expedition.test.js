@@ -281,7 +281,7 @@ test('without Jev, the ladder gathers two stacks of blocks to bridge and pillar 
   const { kitRungs } = require('../src/crossing-kit');
   const registry = require('minecraft-data')('26.1');
   const items = [{ name: 'cooked_beef', count: 10, type: registry.itemsByName.cooked_beef.id }, { name: 'cobblestone', count: 20, type: registry.itemsByName.cobblestone.id },
-    { name: 'iron_pickaxe', count: 1 }, { name: 'stone_pickaxe', count: 1 }];
+    { name: 'iron_pickaxe', count: 1 }, { name: 'stone_pickaxe', count: 1 }, { name: 'chest', count: 1 }];
   const bot = { registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, health: 20, food: 20,
     inventory: { items: () => items, emptySlotCount: () => 10, slots: [] }, entity: { position: { x: 0, y: 64, z: 0 } } };
   assert.deepEqual(kitRungs(bot, {}).map(r => [r.phase, r.item, r.count]), [['nether_blocks', 'cobblestone', 128]], 'twenty carried, a hundred and eight more');

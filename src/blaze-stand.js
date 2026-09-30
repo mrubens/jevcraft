@@ -1048,7 +1048,9 @@ function rodsNeeded(bot, goal) {
   const h = goal?.mobHunt;
   if (!h || h.entity !== 'blaze' || !(h.targetCount > 0)) return 0;
   if (ladderHunt(goal)) return require('./eye-need').need(bot, goal).rodsLeft;
-  return Math.max(0, h.targetCount - require('./skills').countOf(bot, h.item || 'blaze_rod'));
+  // Rods left in a chest here are held (rod-stash.js, note 704).
+  const kept = (h.item || 'blaze_rod') === 'blaze_rod' ? require('./rod-stash').stashed(goal).blaze_rod : 0;
+  return Math.max(0, h.targetCount - require('./skills').countOf(bot, h.item || 'blaze_rod') - kept);
 }
 // The rods a hunt is done at: the number rodsNeeded counts to.
 function rodsTarget(bot, goal) {

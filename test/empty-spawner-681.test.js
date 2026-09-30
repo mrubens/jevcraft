@@ -85,7 +85,10 @@ test('at 20 health with food the stand is on offer and the outage default takes 
   const tree = es.options(bot, task(), goal, () => {}, { returnOverworld: async () => {} }, known);
   assert.ok(tree.stand_by_spawner);
   assert.equal(tree.go_back, undefined, 'health comes back: the trip back for food is not the way offered');
-  assert.equal(question('empty_spawner').fallback(tree), 'stand_by_spawner');
+  // The rods carried go in a chest first without Jev (note 704), then the stand.
+  assert.equal(question('empty_spawner').fallback(tree), tree.stash_rods ? 'stash_rods' : 'stand_by_spawner');
+  const { stash_rods: _stash, ...rest } = tree;
+  assert.equal(question('empty_spawner').fallback(rest), 'stand_by_spawner');
 });
 
 test('the stand is the search\'s wait by the spawner, a minute, with the spawner as the step\'s target', async () => {

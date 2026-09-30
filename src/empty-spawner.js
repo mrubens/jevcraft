@@ -127,6 +127,11 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
   // The lull by a live spawner (note 691): the time before its next try is
   // the time to prepare. Each way says its seconds against that clock.
   if (quiet) Object.assign(tree, lullOptions(bot, task, goal, save, actions, known, quiet, { now }));
+  // The rods carried into a chest first (rod-stash.js, note 704): a death
+  // drops them, a chest keeps them.
+  const stash = require('./rod-stash').stashOffer(bot, goal, { now });
+  if (stash) tree.stash_rods = { description: require('./rod-stash').offerSays(stash, { riskInState: true }), secs: stash.seconds, rodsCarried: require('./rod-stash').carriedSays(stash),
+    run: () => require('./rod-stash').stashRods(bot, task, goal, save, { ...actions, place: actions?.place || require('./work').place }, stash) };
   const canFeed = f.hunger < 18 && f.points > 0;
   if ((f.health < 20 && f.healable) || canFeed) {
     tree.heal_first = { description: `${f.items && f.hunger < 20 ? `Eat what is carried (hunger to ${f.eatenTo}) and w` : 'W'}ait here${f.health < 20 && f.healable ? ` until health is full: about ${f.seconds} seconds` : ''}, at most three minutes, then asked again. ${off <= RANGE ? 'Within sixteen of the spawner, as the bot is now, blazes may come meanwhile; a mob ends the wait.' : 'Beyond sixteen of the spawner none come from it meanwhile.'}${quiet && f.health < 20 && f.healable ? require('./spawner-clock').jobSays(quiet, f.seconds) : ''} No rod meanwhile.`,
@@ -309,6 +314,8 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // What the stay at this cage has come to, on each hold (cage-yield.js, note 702).
   const soFar = (() => { try { return require('./cage-yield').annotate(bot, goal, tree, now); } catch (_) { return null; } })();
   if (soFar) state.cageSoFar = soFar;
+  // The rods carried and what a death does to them, where the chest is offered (note 704).
+  if (tree.stash_rods) state.rodsCarried = tree.stash_rods.rodsCarried;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
   if (decision.stale) return true;

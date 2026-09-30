@@ -114,12 +114,15 @@ async function corpseRunStep(bot, task, goal, save, { move = navigate, collect =
     const far = Math.round(flat(bot.entity.position, spot));
     const left = run.loadedAt ? Math.max(0, Math.round((DESPAWN_MS - (Date.now() - Date.parse(run.loadedAt))) / 1000)) : null;
     const t = bot.time?.timeOfDay ?? 0, night = t >= 12500 && t < 23500;
+    // What a chest in the Nether keeps did not drop (rod-stash.js, note 704).
+    let kept = ''; try { kept = require('./rod-stash').stashSays(goal); } catch (_) { kept = ''; }
+    const keptSays = kept ? ` Not dropped: ${kept}, kept there and counted as held.` : '';
     const tree = {
       go_back: { description: `Go back for ${listed(run.items)}: ${far} blocks off${Math.abs(spot.y - bot.entity.position.y) > 4 ? `, at y ${Math.round(spot.y)}` : ''}. ${left === null ? 'They last until the bot comes within 128 blocks, then five minutes.' : `About ${left} seconds before they vanish.`} When the bot died there, ${about ? `about it were ${about}` : 'nothing hostile was in view'}; it wore ${death.worn?.length ? death.worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} then and wears ${wornNow.length ? wornNow.map(n => n.replaceAll('_', ' ')).join(', ') : 'no armour'} now. It is ${night ? 'night' : 'day'}.` },
-      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later.` },
+      leave_them: { description: `Leave them and go on with what is carried: ${listed(worth(Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])))) || 'nothing worth listing'}. What was dropped is made again, or found, later.${keptSays}` },
     };
     const decision = await require('./decisions').decide('corpse_run', { client, bot, task, goal, save, tree,
-      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night } });
+      state: { distance: far, secondsLeft: left, aboutAtDeath: death.about || [], wornAtDeath: death.worn || [], wornNow, night, ...(kept ? { inAChest: kept } : {}) } });
     if (decision.stale) return false;
     if (decision.fallback && !fitToGo(bot, run.position)) { save(); return false; }
     run.choice = decision.fallback ? 'go_back' : decision.path.at(-1); save();

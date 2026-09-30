@@ -325,7 +325,7 @@ test('the question says what the Nether waits on, and never that every step come
   // And the kit for the crossing, which had been gates at the portal said nowhere (the decision review, 2026-09-26).
   assert.match(state.beforeTheNether, /At the portal the kit is said and topping any of it up is a choice, not a wait: short now of 0 of 80 food points; 0 of 128 blocks; 1 of 2 pickaxes; a piece of gold to wear \(piglins go for a player with none\); 0 of 8 logs and no crafting table\./);
   // The kit is rungs last before the portal now, said as that and not as waiting until after the Nether (note 673).
-  assert.match(state.beforeTheNether, /The crossing's kit, last before the portal, each of which may be gone without: a spare pickaxe for the Nether, blocks for bridging and pillaring in the Nether, food carried for the Nether stay\./);
+  assert.match(state.beforeTheNether, /The crossing's kit, last before the portal, each of which may be gone without: a spare pickaxe for the Nether, blocks for bridging and pillaring in the Nether, food carried for the Nether stay, a chest to leave the blaze rods in at the fortress\./);
   assert.doesNotMatch(state.beforeTheNether, /May wait until after it: [^.]*nether/);
   assert.match(asked[0].tree.nether_first.description, /short now of 0 of 80 food points/);
   assert.doesNotMatch(state.note, /every step is done before the Nether/);

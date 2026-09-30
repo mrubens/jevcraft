@@ -3822,6 +3822,14 @@ class Survival {
           try { return await require('./blaze-stand').takeStand(bot, task, goal, save, o, { navigate: this.actions.navigate }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled', 'StanceFailed'].includes(err.name)) throw err; this.state.stanceWhy = err.message; return false; }
         } };
+      // The rods carried into a chest while no blaze sees the bot (rod-stash.js,
+      // note 704): a death drops them, a chest keeps them.
+      const stash = require('./rod-stash').stashOffer(bot, goal);
+      if (stash) options.stash_rods = { expects: { damage: 0, seconds: stash.seconds }, description: require('./rod-stash').offerSays(stash),
+        run: async () => {
+          this.report(goal, save, { action: 'stash_rods', threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
+          return require('./rod-stash').stashRods(bot, task, goal, save, this.actions, stash);
+        } };
     }
     // Out of the shooters' line, as a player under arrows steps behind a
     // corner of rock or back into the tunnel it came by, or digs a short L

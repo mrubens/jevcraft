@@ -123,7 +123,7 @@ function preparationStage(bot, goal = {}) {
 // option, hit by hit, for the mobs there.
 const ARMOUR_PIECES = ['iron_armour', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots'];
 // The crossing's kit may wait too (crossing-kit.js kitRungs, note 673).
-const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food']);
+const DEFERRABLE = new Set(['bed', 'home_site', 'home_level', 'home_stash', 'home_bed', 'home_water', 'home_plot', 'home_pen', 'shield', 'iron_sword', 'bucket', 'golden_boots', 'bow', 'arrows', 'diamond_sword', ...ARMOUR_PIECES, 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest']);
 const RUNG_BUDGET_MS = 20 * 60 * 1000, RUNG_WAIT_MS = 30 * 60 * 1000;
 function preparationRung(bot, goal = {}, now = Date.now()) {
   const resting = attemptsFor(goal).of('rung', now);
@@ -705,7 +705,14 @@ function nextGameStage(bot, goal, skip = new Set()) {
     const restock = wants.length && restockStage(bot, goal, wants);
     if (restock) { const supply = restock.items.filter(m => m.want); if (supply.length) return { ...restock, phase: 'restock_supplies', action: 'home', home: { ...restock, items: supply, wants } }; }
   }
-  const rodsShort = count(bot, 'blaze_rod') < rods;
+  // In the Nether a chest the bot left rods in is held (rod-stash.js, note
+  // 704): the hunt counts it, and it is taken out before the portal walk.
+  // Elsewhere the rods carried are what the eyes are made of.
+  const kept = where === 'nether' ? require('./rod-stash').stashed(goal) : null;
+  const keptRods = kept ? rodsFor(target - eyes - kept.ender_eye, count(bot, 'blaze_powder') + kept.blaze_powder) : rods;
+  const rodsShort = count(bot, 'blaze_rod') + (kept?.blaze_rod || 0) < keptRods;
+  const pearlsHereShort = count(bot, 'ender_pearl') + (kept?.ender_pearl || 0) < target - eyes - (kept?.ender_eye || 0);
+  const collect = where === 'nether' && kept?.chests.length ? require('./rod-stash').collectStage(bot, goal) : null;
   // The pearls from the Overworld's endermen, Jev's route while the rods
   // wait (pearl-routes.js): back through the portal, and there the pearls
   // before the Nether again. Without it, short of rods in the Overworld the
@@ -713,23 +720,24 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // no route at all while the rods were short (note 588).
   const pearlsShort = count(bot, 'ender_pearl') < target - eyes;
   const overworldPearls = pearlsShort && pearlRouteHeld(goal)?.pick === 'overworld';
+  if (overworldPearls && where === 'nether' && !rodsShort && collect) return collect;
   if (overworldPearls && where === 'nether') return { phase: 'obtain_ender_pearls', action: 'return_overworld', item: 'ender_pearl', count: target - eyes, via: 'overworld_hunt' };
   if (rodsShort && where !== 'nether' && !overworldPearls) return { phase: 'reach_nether', action: 'enter_nether' };
   if (rodsShort) {
-    const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: rods }, skip);
+    const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: keptRods - (kept?.blaze_rod || 0) }, skip);
     if (rodStage) return rodStage;
   }
   // Short of pearls with gold on hand and a piglin in view: barter before
   // going back. The enderman hunt in the Overworld is the other way.
-  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && barterReady(bot, goal)) return { phase: 'obtain_ender_pearls', action: 'barter', item: 'ender_pearl', count: target - eyes };
+  if (where === 'nether' && pearlsHereShort && barterReady(bot, goal)) return { phase: 'obtain_ender_pearls', action: 'barter', item: 'ender_pearl', count: target - eyes };
   // No gold to throw (none, or too little for the boots worn first and a
   // throw, note 616), and a bastion remembered: its gold blocks first.
-  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && !barterGold(bot).throwable && bastionKnown(bot, goal) && !isSetAside(goal, 'rung', 'bastion_gold'))
+  if (where === 'nether' && pearlsHereShort && !barterGold(bot).throwable && bastionKnown(bot, goal) && !isSetAside(goal, 'rung', 'bastion_gold'))
     return { phase: 'obtain_ender_pearls', action: 'bastion_gold', item: 'gold_ingot' };
   // Pearls from the warped forest while here: one known, or a sweep for one
   // (warped-pearls.js), before the walk back.
   const warped = require('./warped-pearls');
-  if (where === 'nether' && count(bot, 'ender_pearl') < target - eyes && warped.warpedOpen(goal, Date.now(), { bot }))
+  if (where === 'nether' && pearlsHereShort && warped.warpedOpen(goal, Date.now(), { bot }))
     return { phase: 'obtain_ender_pearls', action: 'warped_pearls', item: 'ender_pearl', count: target - eyes };
   // Short of rods here only when that step waits (asideStage): the way back
   // is said as that, not as rods carried home.
@@ -739,6 +747,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   if (where === 'nether' && rodsShort) {
     return netherLeaveHeld(goal, 'obtain_blaze_rods') ? { phase: 'return_overworld', action: 'return_overworld' } : { phase: 'obtain_blaze_rods', action: 'rods_waiting', ...rodsRest(goal) };
   }
+  if (where === 'nether' && collect) return collect;
   if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // A cleric's pearls, when a village is remembered and a pearl trade has
@@ -865,6 +874,7 @@ async function gameStep(bot, task, goal, save, actions) {
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save, { elsewhere: away => elsewhereStep(bot, task, goal, save, stage, away, actions) });
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
+  else if (stage.action === 'collect_rod_stash') await require('./rod-stash').collect(bot, task, goal, save, actions.stashActions || actions);
   else if (stage.action === 'nether_food') {
     if (!actions.nether_food) throw Object.assign(new Error('Game progression is blocked at the food for the Nether: the nether food action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.nether_food(bot, task, goal, save, stage);

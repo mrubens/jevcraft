@@ -32,7 +32,11 @@ const CAP = 2500;
 const CEILING = { encounter_stance: 27500, stillness_detour: 16000, pocket_next: 15500, nether_gather: 14000, unstuck_move: 12500,
   fortress_approach: 12000, portal_method: 11500, hunt_target: 11500, kit_food: 10500, fortress_leg: 9500, upkeep: 8500,
   bastion_raid: 8500, body_way: 7000, fortress_visit: 6000, shelter_method: 5000, nether_food_kit: 5000, rung_progress: 5000,
-  way_down: 4500, while_cooking: 4500, climb_out: 4000, leave_nether: 4000, surface_trip: 3000 };
+  way_down: 4500, while_cooking: 4500, climb_out: 4000, leave_nether: 4000, empty_spawner: 3900, surface_trip: 3000 };
+// empty_spawner (note 704): the plain cap was set on its full-health cases;
+// in the lull at low health, with heal_first and the lull's ways, it came to
+// about 3,080 as built before stash_rods, and 3,820 with it and the rods'
+// fact (rodsCarried), which moved the replay case from 0 of 5 to 10 of 10.
 const ceilingOf = id => CEILING[id] ?? CAP;
 
 class Said { constructor(s) { this.s = s; } }

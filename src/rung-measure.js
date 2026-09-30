@@ -86,7 +86,10 @@ function parts(bot, goal, { rung, items = [], target = null, stepItems = [] } = 
   const put = (key, v, what, extra = {}) => { if (Number.isFinite(v)) out[key] = { v: round1(v), what, ...extra }; };
   const carried = names => (bot?.inventory?.items?.() || []).filter(i => names.includes(i.name)).reduce((n, i) => n + i.count, 0);
   items = [...new Set(items)];
-  if (items.length) put('items', carried(items), items.map(label).join(' or '));
+  // What a chest in the Nether holds of them is held (rod-stash.js, note 704):
+  // putting rods in it is not a fall in the measure.
+  const kept = () => { try { const s = require('./rod-stash').stashed(goal); return items.reduce((n, name) => n + (s[name] || 0), 0); } catch (_) { return 0; } };
+  if (items.length) put('items', carried(items) + kept(), items.map(label).join(' or '));
   const own = [...new Set(stepItems)].filter(n => !items.includes(n));
   if (own.length) put(`step_items:${own.slice().sort().join('+')}`, carried(own), own.map(label).join(' or '));
   const registry = bot?.registry?.foodsByName;

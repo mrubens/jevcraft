@@ -35,11 +35,16 @@ const rodsFor = (eyes, powder = 0) => Math.ceil(Math.max(0, eyes - powder) / 2);
 
 // What is wanted and what is carried, from the inventory each time: nothing
 // here is a counter that a loss, a craft or a partial pickup could leave wrong.
+// What a chest left in the Nether holds is held too (rod-stash.js, note 704):
+// `stashed` is it, `rods`, `pearls`, `powder` and `eyes` are carried.
 function need(bot, goal) {
+  let s = null; try { s = require('./rod-stash').stashed(goal); } catch (_) { s = null; }
+  const st = { rods: s?.blaze_rod || 0, powder: s?.blaze_powder || 0, pearls: s?.ender_pearl || 0, eyes: s?.ender_eye || 0 };
   const target = eyeTarget(goal), eyes = countOf(bot, 'ender_eye'), powder = countOf(bot, 'blaze_powder');
   const rods = countOf(bot, 'blaze_rod'), pearls = countOf(bot, 'ender_pearl');
-  const rodsWanted = rodsFor(target - eyes, powder), pearlsWanted = Math.max(0, target - eyes);
-  return { target, eyes, powder, rods, pearls, rodsWanted, rodsLeft: Math.max(0, rodsWanted - rods), pearlsWanted, pearlsLeft: Math.max(0, pearlsWanted - pearls), located: portalFrames(goal) !== null };
+  const rodsWanted = rodsFor(target - eyes - st.eyes, powder + st.powder), pearlsWanted = Math.max(0, target - eyes - st.eyes);
+  return { target, eyes, powder, rods, pearls, rodsWanted, rodsLeft: Math.max(0, rodsWanted - rods - st.rods), pearlsWanted, pearlsLeft: Math.max(0, pearlsWanted - pearls - st.pearls), located: portalFrames(goal) !== null,
+    ...(s?.chests?.length ? { stashed: st, stashSays: require('./rod-stash').stashSays(goal) } : {}) };
 }
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -53,13 +58,14 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // The reasons are said where the question is about the rods or the leaving.
 function says(bot, goal, { brief = false } = {}) {
   const n = need(bot, goal);
-  if (brief) return `Blaze rods: ${n.rods} carried, ${n.rodsWanted} wanted in all (${n.target} eyes for the portal and the search), ${n.rodsLeft ? `${n.rodsLeft} still needed` : 'none still needed, the rods are done'}.`;
+  const kept = n.stashed ? ` (and ${n.stashSays}, counted as held)` : '';
+  if (brief) return `Blaze rods: ${n.rods} carried${kept}, ${n.rodsWanted} wanted in all (${n.target} eyes for the portal and the search), ${n.rodsLeft ? `${n.rodsLeft} still needed` : 'none still needed, the rods are done'}.`;
   const why = n.located
     ? `the portal has ${n.target} frames still empty, an eye is one pearl and one blaze powder, and a rod makes two powder`
     : `an End portal takes ${PORTAL_EYES} eyes, an eye is one pearl and one blaze powder, a rod makes two powder, and the stronghold search throws only the eyes above ${PORTAL_EYES} (a thrown eye comes back four times in five), so ${EYES_WANTED} eyes are what it begins on: ${plural(rodsFor(EYES_WANTED), 'rod')} and ${EYES_WANTED} pearls`;
   const held = [`${plural(n.rods, 'blaze rod')}`, n.powder ? `${n.powder} blaze powder` : null, n.eyes ? plural(n.eyes, 'eye') : null, `${plural(n.pearls, 'ender pearl')}`].filter(Boolean).join(', ');
   const done = n.rodsLeft ? `${plural(n.rodsLeft, 'rod')} still needed` : 'no rod is still needed: the rods are done, and the fortress has nothing more the goal needs';
-  return `The goal wants ${plural(n.rodsWanted, 'blaze rod')} in all for ${n.target} eyes (${why}). Carried: ${held}; ${done}.`;
+  return `The goal wants ${plural(n.rodsWanted, 'blaze rod')} in all for ${n.target} eyes (${why}). Carried: ${held}${n.stashed ? `; in a chest: ${n.stashSays}` : ''}; ${done}.`;
 }
 
 module.exports = { PORTAL_EYES, SEARCH_SPARE, EYES_WANTED, eyeTarget, rodsFor, need, says };

@@ -6276,6 +6276,8 @@ function gameHandlers(bot, decisionClient) {
         strategy: (bot, task, goal, save, stage) => strategyStep(bot, task, goal, save, stage, { client: decisionClient, decide, sides: sideTrips(bot, goal, decisionClient),
           planFor: (b, item, count, g) => catalogPlan(b, item, count, planningInventory(b), g) }),
         acquireStep, acquireSetStep, return_overworld: returnFromNether, client: decisionClient,
+        // The rods left in a chest in the Nether, taken out before the portal (rod-stash.js, note 704).
+        stashActions: homeActions(),
         // Other work until a rung's rest ends, Jev's leave_nether wait_here:
         // the waiting stage's own work (note 605).
         hold_for_rest: (b, t, g, sv, { reason, until, why, idle }) => holdForRest(b, t, g, sv, { client: decisionClient, reason, until, why, idle }),

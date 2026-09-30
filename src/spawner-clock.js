@@ -128,7 +128,7 @@ function lull(bot, { cage = undefined, threats = null, now = Date.now() } = {}) 
 function jobSays(l, seconds) {
   if (!l) return '';
   const p = Math.round(100 * doneBefore(l.next, seconds));
-  return ` About ${round(seconds)} seconds of it; done before the spawner's next try about ${p} times in 100${l.next.lastAgo == null ? ' (its last try not seen)' : ''}.`;
+  return ` About ${round(seconds)} second${round(seconds) === 1 ? '' : 's'} of it; done before the spawner's next try about ${p} times in 100${l.next.lastAgo == null ? ' (its last try not seen)' : ''}.`;
 }
 
 module.exports = { watch, noteTry, nextTry, doneBefore, lull, jobSays, clockSays, nearSince, MIN_S, MAX_S, PER_TRY, CAP, RANGE };
