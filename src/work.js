@@ -315,7 +315,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const differentlyOpen = !bound.any || bound.byPlace > 0;
   const noDifferently = !differentlyOpen ? `another way from ground eight blocks off is not offered: every way tried for the ${thing} lately (${bound.byTarget}) was toward its own target and rests from anywhere near here, so a step off leaves none of them behind` : null;
   if (!idle && differentlyOpen) answers.differently = { description: mine
-    ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.`
+    ? `Keep at the ${thing} another way: leave this patch of ${String(mine.block).replaceAll('_', ' ')} for one further off.${moveOnHistorySays(goal, mine.drops || mine.block)}`
     : `Keep at the ${thing} another way: step eight blocks off to fresh ground and come at it again from there; the search turns to a heading not tried, and the shaft or site it was using is dropped.${shortSays ? ` Chosen before: ${shortSays}.` : ''}`,
   run: async () => {
     // After failures, first out of whatever it is wedged in.
@@ -712,10 +712,25 @@ async function makePickaxe(bot, task, goal, save, item) {
   if (pickaxeNeeded(bot)) throw new Error(`The ${item.replaceAll('_', ' ')} was not made from what is carried`);
   return true;
 }
+// When a spare was last made, and how many since: said with the next
+// spare_pickaxe offer, not left for the pickaxe count alone to explain
+// (note 746: 25594 crafted a stone pickaxe six times in 31 minutes, each
+// one worn straight back down re-mining the same ball of ground; without
+// this, the option only ever said what was carried right then, never how
+// often that had already happened).
+const PICKAXE_CRAFT_MEMORY_MS = 40 * 60000;
+function pickaxeCraftHistorySays(goal) {
+  const list = (goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS);
+  if (!list.length) return '';
+  const minutes = Math.max(0, Math.round((Date.now() - list.at(-1).at) / 60000));
+  return ` Made ${list.length} spare${list.length === 1 ? '' : 's'} in the last ${Math.round(PICKAXE_CRAFT_MEMORY_MS / 60000)} minutes, the last ${minutes < 1 ? 'under a minute' : `${minutes} minute${minutes === 1 ? '' : 's'}`} ago.`;
+}
 async function maintainPickaxe(bot, task, goal, save, budget = null) {
   if (!spareDue(bot, budget)) return false;
   if (!(goal.spareAnnouncedAt > Date.now() - 10 * 60 * 1000)) { goal.spareAnnouncedAt = Date.now(); bot.chat('My pickaxe is nearly done. Making a spare before it goes.'); }
   await acquireStep(bot, task, 'stone_pickaxe', countOf(bot, 'stone_pickaxe') + 1, goal, save);
+  goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: 'stone_pickaxe' }].slice(-10);
+  save();
   return true;
 }
 
@@ -943,9 +958,10 @@ async function upkeepOffers(bot, task, goal, save) {
   const wear = require('./pickaxe-budget');
   if (worn.length && goal.kind === 'win') wear.wearOf(bot, goal);
   const netherSpare = inNetherNow(bot) && goal.kind === 'win' && bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0) === 1 && reserveWeather(bot) && !spareDue(bot, budget) ? require('./mob-hunt').bestMakeable(bot) : null;
-  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), a few seconds at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.`; },
-    run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`); } };
-  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
+  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), a few seconds at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}`; },
+    run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`);
+      goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: netherSpare.item || 'pickaxe' }].slice(-10); save(); } };
+  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
@@ -1815,20 +1831,45 @@ async function continueSource(bot, task, step, goal, save, onStep) {
 }
 
 // When the same resource keeps failing where the bot stands, the answer is
-// somewhere else. Everything of that block within sixteen blocks is set
-// aside and the ordinary exploration walks toward the next known or unknown
-// source. A rule rather than a judgment: there is no request that is better
-// served by a sixth attempt at the same tree.
+// somewhere else. Everything of that block within thirty-two blocks is set
+// aside for twenty minutes (not sixteen blocks for two: 25594 dug and laid
+// about 1874 blocks each, all inside a 19-block ball, because the ore just
+// left behind was back in view well before the next "differently" - the
+// walk that "looks somewhere else" never actually left the ball it had
+// already dug, note 746) and the ordinary exploration walks toward the
+// next known or unknown source. A rule rather than a judgment: there is no
+// request that is better served by a sixth attempt at the same tree.
+const MOVE_ON_MEMORY_MS = 30 * 60000;
+// What this same move-on has come to lately, said with the next one: how
+// many times this resource's patch was left for another in the last half
+// hour, and what was gained meanwhile (0 if nothing was, which is the fact
+// itself: leaving the patch got nothing new note 746 asks be said, not
+// hidden behind "I'll look somewhere else").
+function moveOnHistorySays(goal, resource) {
+  const list = (goal.moveOnHistory?.[resource] || []).filter(e => Date.now() - e.at < MOVE_ON_MEMORY_MS);
+  if (!list.length) return '';
+  const gained = list.reduce((n, e) => n + Math.max(0, e.gained || 0), 0);
+  return ` Left for another spot ${list.length} time${list.length === 1 ? '' : 's'} in the last 30 minutes, ${gained} gained meanwhile.`;
+}
 async function moveOnFromResource(bot, task, goal, save) {
   const step = goal.step;
   if (step?.action !== 'mine' || !step.block) return false;
-  const nearby = find(bot, step.sources || [step.block], 16, 64);
-  for (const p of nearby) setAside(goal, 'reach', p, 'set aside with the rest of this area', 120000);
+  const resource = step.drops || step.block;
+  const nearby = find(bot, step.sources || [step.block], 32, 128);
+  for (const p of nearby) setAside(goal, 'reach', p, 'set aside with the rest of this area', 1200000);
   // The marker shows in the step log during the walk and is taken down
   // after it: left in place, the work loop had no step to run and spun on it
   // for eighty-four seconds (trial 23).
-  const marker = { action: 'move_on', resource: step.drops || step.block, setAside: nearby.length };
+  const marker = { action: 'move_on', resource, setAside: nearby.length };
   goal.step = marker; save();
+  // What this patch actually yielded, kept so the next "differently" can
+  // say it (note 746): a snapshot each time this resource is left, gained
+  // read off the one before it.
+  const history = goal.moveOnHistory ||= {};
+  const list = (history[resource] || []).filter(e => Date.now() - e.at < MOVE_ON_MEMORY_MS);
+  const now = countOf(bot, resource);
+  const gained = list.length ? now - list.at(-1).count : 0;
+  history[resource] = [...list, { at: Date.now(), count: now, gained }].slice(-10); save();
   bot.chat?.(`I can't get at the ${String(step.block).replaceAll('_', ' ')} here. I'll look somewhere else.`);
   try { await explore(bot, task, goal, save, step.block); }
   finally { if (goal.step === marker) { goal.step = step; save(); } }
@@ -6952,4 +6993,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood };
+module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS };

@@ -244,7 +244,14 @@ function rungOption(rung, first, bot, goal, planFor = null) {
   // "ahead of the ladder's order" was a thumb on the scale (the critical
   // review, 2026-09-26). The first is marked the ladder's next (ladderNext).
   const kit = rung.kit && bot ? require('./crossing-kit').kitRungSays(bot, goal || {}, rung) : '';
-  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}`, rung, ladderNext: first };
+  // What this rung costs against the Nether, when the reach nether was set
+  // aside to work on it: the same fact nether_first already says of itself,
+  // said here too (note 746: 25594 chose rung_iron_leggings three times
+  // after setting the reach nether aside "I keep getting stuck", never told
+  // by this option that the Nether was the thing waiting on it).
+  let netherCost = '';
+  if (bot && goal && rung.phase !== 'reach_nether') { try { const s = require('./game-progress').rungAsideSays(goal, 'reach_nether'); if (s) netherCost = ` ${s}`; } catch (_) { netherCost = ''; } }
+  return { description: `Get ${what}${why ? ` (${why})` : ''}.${kit}${rung.kit ? '' : spareSays(bot, goal, rung)}${bot && goal ? searchSoFar(bot, goal, rung) : ''}${bot && goal ? woolTrip(bot, goal, rung) : ''}${homeWhere(bot, goal, rung)}${rungTakes(bot, goal, rung, planFor)}${spent}${without}${netherCost}`, rung, ladderNext: first };
 }
 // A pickaxe rung with a pickaxe still carried is a spare: the ladder counts
 // one under a fifth of its uses (or sixty-four) as worn, and said only
