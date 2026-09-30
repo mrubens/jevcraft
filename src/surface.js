@@ -589,7 +589,28 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   // Asked again only when something new is on offer, the staircase kept
   // has come to rest since, or the way kept has run long.
   if (kept && !overdue && !(state.climb.method === 'staircase' && rests) && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column, walkTo: state.climb.walkTo };
+  // What ends a climb held as the intention (below) by name: the pickaxes
+  // carried changed, the way kept failed here (its column would not rise, or
+  // it was dropped), it has run to twice what it was said to take, or the
+  // staircase came to rest. A new way coming on offer does not: 25584 chose
+  // straight_up at 14:37:26Z and walk_then_up fourteen seconds later, when
+  // that way came on offer, and staircase after.
+  if (goal.intention?.q === 'climb_out' && state.climb?.method) {
+    const why = state.climb.tools !== tools ? `the pickaxes carried changed (${state.climb.tools} then, ${tools} now)`
+      : state.climb.method === 'straight_up' && !column?.cells ? 'the column overhead would not rise'
+        : state.climb.method === 'walk_then_up' && !state.climb.walkTo ? 'the walk to the column did not arrive'
+          : overdue ? facts.climbSoFar : state.climb.method === 'staircase' && rests ? 'the staircase came to rest' : null;
+    if (why) require('./intention').end(goal, `a named change: ${why}`);
+  }
   const quicker = Object.keys(estimate).sort((a, b) => estimate[a] - estimate[b])[0];
+  // Each way out is a trip to open sky (note 749c): its target is where it
+  // comes out, so the answer is held as the intention until it is there, has
+  // failed or ten minutes pass, and a stall's question or the rung's is asked
+  // with only what carries it on (intention.js). 25593 and 25584 each had a
+  // climb dropped within 15 to 30 seconds, again and again, by
+  // stillness_detour and rung_progress (critic ~14:40Z items 1 and 4).
+  const outAt = { straight_up: column?.cells ? { x: feet.x, y: column.top, z: feet.z } : null, walk_then_up: options.walk_then_up?.walkTo ? { x: options.walk_then_up.walkTo.x, y: Math.max(options.walk_then_up.walkTo.y, target?.y ?? options.walk_then_up.walkTo.y), z: options.walk_then_up.walkTo.z } : null };
+  for (const [k, node] of Object.entries(options)) { const at = outAt[k] || (target && Number.isFinite(target.x) ? { x: Math.floor(target.x), y: Math.floor(target.y), z: Math.floor(target.z) } : null); if (at && !node.target) node.target = at; }
   const decision = await require('./decisions').decide('climb_out', { client: task.opportunityClient, bot, task, goal, save, tree: options, state: facts, context: { quicker } });
   // Held through an outage (note 707): asked fresh.
   if (decision.stale) return chooseClimb(bot, task, goal, save, state, target, { landing });

@@ -37,6 +37,8 @@ const WORN = { helmet: 5, chestplate: 6, leggings: 7, boots: 8 };
 // gold, carried beside the iron. Counted as boots no better than the iron
 // ones worn, the pair was crafted and tossed twice in one day audit, and
 // the golden-boots rung ran out its time mining gold for a third.
+// The uses a tool needs to count as a spare: the crossing kit's own measure.
+const soundUses = () => { try { return require('./crossing-kit').SPARE_PICKAXE_DURABILITY ?? 24; } catch (_) { return 24; } };
 function spares(bot, keep = new Set()) {
   const gold = bot.inventory.items().find(i => i.name === 'golden_boots');
   const items = bot.inventory.items().filter(i => !keep.has(i.name) && i !== gold);
@@ -46,8 +48,16 @@ function spares(bot, keep = new Set()) {
     const kind = TOOL.test(item.name) ? item.name.match(TOOL)[1] : ARMOUR.test(item.name) ? item.name.match(ARMOUR)[1] : SINGLES.has(item.name) ? item.name : null;
     if (kind) (byKind[kind] ||= []).push(item);
   }
+  // A tool with the uses a spare needs (crossing-kit.js, 24) is kept before
+  // a better tier nearly worn out (note 749c): 25598 at 14:14:57Z made a
+  // stone pickaxe (131 uses) for the crossing's spare, the tidy kept its two
+  // iron ones (247 and 22 uses) and threw the stone one, and the kit, which
+  // counts only pickaxes with 24 uses or more, asked for it again: made and
+  // thrown twice in 13 seconds, win_strategy asked 11 times in 36 seconds.
+  const usesOf = i => { const max = bot.registry?.itemsByName?.[i.name]?.maxDurability; return max ? max - (i.durabilityUsed || 0) : Infinity; };
+  const SOUND_USES = soundUses(), sound = i => usesOf(i) >= SOUND_USES;
   for (const [kind, list] of Object.entries(byKind)) {
-    list.sort((a, b) => tier(b.name) - tier(a.name));
+    list.sort((a, b) => (sound(b) - sound(a)) || (tier(b.name) - tier(a.name)) || (usesOf(b) - usesOf(a)));
     if (kind in WORN) {
       const worn = bot.inventory.slots?.[WORN[kind]];
       const keepOne = worn ? list.filter(i => tier(i.name) > tier(worn.name)).slice(0, 1) : list.slice(0, 1);

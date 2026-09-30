@@ -576,6 +576,13 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // Held through an outage (note 707): nothing is done this step; the
     // next asks it fresh.
     if (decision.stale) return { stale: true };
+    // None good far above the least bad, and no option that changes nothing
+    // on offer (decide's weakLeastBad, note 749c): the ladder's stage goes on
+    // as it was, nothing set aside or taken up on a guess.
+    if (decision.weakLeastBad) {
+      console.log(`[strategy] none good at ${decision.weakLeastBad.noneGood} against ${label(decision.weakLeastBad.key)} at ${decision.weakLeastBad.p}: the ladder's stage goes on as it was`);
+      return null;
+    }
     choice = decision.path.at(-1);
     // Only a ladder rung (openRungs, `rung_${phase}`) is held by its own
     // progress: a side trip's rung-shaped object (home_base, carry_bed) is

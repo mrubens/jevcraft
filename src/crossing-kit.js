@@ -295,4 +295,4 @@ function kitRungSays(bot, goal, rung) {
   return ` ${rung.carried} food points carried, ${rung.wants} wanted: the Nether stay the goal still needs, about ${stay.minutes} minutes for ${left}, at about ${NETHER_HUNGER_AN_HOUR} hunger an hour. Health comes back only at hunger 18 or more, and in the Nether a hoglin is the only meat. At the crossing ${c.none} of ${c.n} carried no food and ${c.shortOfStay} were short of the stay (note 664).${ways}`;
 }
 
-module.exports = { KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

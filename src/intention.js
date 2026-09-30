@@ -104,7 +104,7 @@ function tripOf(q, key, node = null) {
   return P(node?.target) ? 'its target' : null;
 }
 // The questions about the plan that are not asked to replace an intention.
-const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip', 'kit_food']);
+const GATED = new Set(['climb_out', 'fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip', 'kit_food']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
 // is under way: a timed answer of theirs replaces it. Held ordinarily open
 // (not GATED) so a real change can freely redirect a walk in progress; but
@@ -390,6 +390,10 @@ function gate(bot, goal, q, tree, { now = Date.now() } = {}) {
   const kept = Object.fromEntries(Object.entries(tree).filter(([k, n]) => serves(i, q, k, n, way)));
   const withheld = Object.keys(tree).filter(k => !Object.hasOwn(kept, k));
   if (!withheld.length) return out;
+  // A trip held at a stall or the rung's question (note 749c): an answer that
+  // keeps on with what is under way carries it on. Before, a stall's
+  // question with only keep_on left serving the climb set the climb down.
+  if (errandGate && Object.keys(kept).some(k => KEEP.test(k))) return { tree: kept, underWay: `${out.underWay}; not offered while it holds: ${withheld.map(words).join(', ')}`, withheld, ended };
   if (!Object.keys(kept).filter(k => !KEEP.test(k) && k !== 'none_good').length && !way) {
     // Nothing on offer here carries it on: what it needs is something else.
     end(goal, `set down: ${words(q)} was asked and none of its options carries it on (${withheld.map(words).join(', ')})`, now);

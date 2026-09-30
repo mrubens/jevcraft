@@ -311,12 +311,33 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
   let path, passedOver = null, why = safety.why;
   if (why) { path = down(safety.key).path; console.log(`[none good] ${id}: took ${safety.key}, not the next by weight: ${why}`); }
   else ({ path, passedOver } = leastBad.choose(id, keys, weights, last, k => down(k).path));
+  // None good far above the best listed (note 749c): the listed are not
+  // Jev's choice in any sense, and the least bad taken on a sliver of weight
+  // is a guess acted on. 25598 at 14:15:14Z: none_good 0.83, take_up_nether_
+  // chest 0.09 taken ("I'll make the nether chest first after all"), and
+  // undone seven seconds later. At twice the best listed or more, the option
+  // that changes nothing is taken instead where one is on offer (the ladder's
+  // own next, ladderNext; one that keeps on with what is under way, KEEP);
+  // where none is, the least bad is taken as before and marked weak, for a
+  // caller with its own way to go on as it was (strategy.js: the ladder's
+  // stage). Not the body's own questions nor the stance (pickWhenNoneGood's
+  // safety comes first there).
+  let weak = null;
+  const bestKey = keys.filter(k => k !== NONE_GOOD_KEY).sort((a, b) => (weights[b] || 0) - (weights[a] || 0))[0];
+  const ng = weights[NONE_GOOD_KEY] || 0, bestW = weights[bestKey] || 0;
+  if (!why && !SAY_ONLY.has(id) && ng >= 2 * bestW && ng > 0) {
+    const KEEP = require('../intention').KEEP;
+    const calm = keys.find(k => k !== NONE_GOOD_KEY && (listed[k]?.ladderNext || KEEP.test(k)));
+    const r = n => Math.round(n * 100) / 100;
+    if (calm && calm !== path[0]) { passedOver = `none good at ${r(ng)} was twice the best listed or more (${bestKey.replaceAll('_', ' ')} ${r(bestW)}): ${calm.replaceAll('_', ' ')}, which changes nothing, was taken rather than a guess`; path = down(calm).path; }
+    else if (!calm) weak = { key: path[0], p: r(weights[path[0]] || 0), noneGood: r(ng) };
+  }
   let node = { children: listed };
   for (const k of path) node = node.children[k];
   const took = { path, action: node };
   recordMissing(id, decision, listed, { bot, goal, state }, { took: took.path, ...(why ? { tookBecause: why } : {}), ...(passedOver ? { passedOver } : {}), ...(last ? { lastLeastBad: last.says } : {}) });
   console.log(`[missing option] ${id}: none of the options was good; took ${took.path.join('/')} instead${passedOver ? ` (${passedOver})` : ''}`);
-  return { ...decision, ...took, noneGood: true, ...(passedOver ? { passedOver } : {}) };
+  return { ...decision, ...took, noneGood: true, ...(passedOver ? { passedOver } : {}), ...(weak ? { weakLeastBad: weak } : {}) };
 }
 function recordMissing(id, decision, listed, { bot, goal, state }, { near = false, took = [], ...more } = {}) {
   const weights = decision.judgments?.[0]?.probabilities || {};

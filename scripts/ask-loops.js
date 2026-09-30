@@ -59,7 +59,7 @@ function leaves(tree, pre = [], out = {}) {
 }
 
 async function readFile(file) {
-  const asks = [], takenBack = [], stale = [], positions = [];
+  const asks = [], takenBack = [], stale = [], positions = [], weak = [];
   let first = null, last = null;
   const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
   for await (const line of rl) {
@@ -82,11 +82,20 @@ async function readFile(file) {
     const s = o.snapshot || {}, d = s.decision;
     if (!d?.id || !d.path) continue;
     const probs = d.judgments?.[0]?.probabilities || {};
+    // A least bad taken on a sliver (note 749c): none good at twice the best
+    // listed or more, and something other than none good acted on.
+    { const listedW = Object.entries(probs).filter(([k]) => k !== 'none_good').sort((a, b) => b[1] - a[1]);
+      const ngW = probs.none_good || 0, bestW = listedW[0]?.[1] || 0;
+      if (ngW > 0 && ngW >= 2 * bestW && d.path[0] !== 'none_good') {
+        const KEEP = /^(carry_on|keep_on|go_on|keep_at_it|continue_request|search_on|wait_here)$/;
+        const calm = Object.entries(d.options || {}).find(([k, n]) => k !== 'none_good' && (n?.ladderNext || KEEP.test(k)));
+        weak.push({ t, id: d.id, took: d.path.join('/'), calm: calm ? calm[0] : null, safety: /^(encounter_stance|body_way|shot_answer|ranged_response)$/.test(d.id) });
+      } }
     const topKey = Object.entries(probs).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     asks.push({ t, id: d.id, choice: d.path.join('/'), pos: P(s.position), dimension: s.dimension, kinds: Object.keys(s.inventory || {}), top: topKey, noneGood: topKey === 'none_good',
       ids: leaves(d.options), state: d.state, options: d.options, health: s.health, inventory: s.inventory });
   }
-  return { asks, takenBack, stale, positions, minutes: first && last ? (last - first) / 60000 : 0 };
+  return { asks, takenBack, stale, positions, weak, minutes: first && last ? (last - first) / 60000 : 0 };
 }
 
 // The figures over one record's asks (all, or those a replay lets through).
@@ -148,6 +157,7 @@ function tripsMeasure(asks, out) {
   let cur = null;
   const oldServes = (i, q, key, node, way) => I.KEEP.test(key) || key === 'none_good' || (way ? !way.drops.test(key) : q === i.q ? key === i.choice : (key === i.choice && OLD_ERRANDS.test(key)) || !!(P(node?.target) && i.target && dist(P(node.target), i.target) <= I.NEAR));
   const oldOffers = (i, q, key, node) => {
+    if (i.q === 'climb_out') return true; // not an intention before note 749c
     const gated = (I.GATED.has(q) || (I.ERRAND_GATED.has(q) && OLD_ERRANDS.test(i.choice))) && !(q === i.q && !OLD_ERRANDS.test(i.choice));
     return !gated || oldServes(i, q, key, node, I.wayOf(q, i));
   };
@@ -173,8 +183,11 @@ function tripsMeasure(asks, out) {
         cur = null;
       }
     }
-    const trip = I.tripOf(a.id, key, node);
-    if (I.committing(a.id, key, node)) { cur = { q: a.id, choice: key, t: a.t, target: P(node?.target), trip, dimension: a.dimension, health: a.health }; out.trips++; }
+    // climb_out's ways carry their target from note 749c on; the records
+    // before it do not: read as the trips they now are.
+    const climb = a.id === 'climb_out' && !/^none_good$/.test(key);
+    const trip = I.tripOf(a.id, key, node) || (climb ? 'open sky' : null);
+    if (I.committing(a.id, key, node) || climb) { cur = { q: a.id, choice: key, t: a.t, target: P(node?.target), trip, dimension: a.dimension, health: a.health }; out.trips++; }
   }
 }
 function leafNode(tree, choice) {
@@ -192,9 +205,10 @@ async function main() {
   let minutes = 0, asksAll = 0, sentAll = 0;
   const held = {};
   const trips = { trips: 0, turned: 0, before: 0, after: 0, pairsBefore: {}, pairsAfter: {} };
-  const extra = { takenBack: 0, takenBackHeld: 0, stale: 0, staleWatched: 0, staleBy: {} };
+  const extra = { takenBack: 0, takenBackHeld: 0, stale: 0, staleWatched: 0, staleBy: {}, weak: 0, weakCalm: 0, weakNone: 0, weakBy: {} };
   for (const f of files) {
-    const { asks, takenBack, stale, positions, minutes: m } = await readFile(path.join(dir, f));
+    const { asks, takenBack, stale, positions, weak, minutes: m } = await readFile(path.join(dir, f));
+    for (const w of weak) { if (w.safety) continue; extra.weak++; (extra.weakBy[w.id] = (extra.weakBy[w.id] || 0) + 1); if (w.calm && w.calm !== w.took.split('/')[0]) extra.weakCalm++; else if (!w.calm) extra.weakNone++; }
     // Set-asides taken back (asides.js): held had the bot been within 16
     // blocks of where it was set aside (read from the record's positions
     // then) within five minutes; a new kind carried or health are not read.
@@ -244,6 +258,7 @@ async function main() {
   console.log(`${files.length} records since ${new Date(since).toISOString()}, ${hours.toFixed(1)} bot-hours, ${asksAll} asks weighed by Jev`);
   console.log(`rungs set aside and taken back ("Back to the ... after all: I set it aside ..."): ${extra.takenBack}; within five minutes and 16 blocks of where set aside (held under asides.js): ${extra.takenBackHeld}`);
   console.log(`answers thrown away as stale (the facts changed while out): ${extra.stale} (${Object.entries(extra.staleBy).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(', ')}); third or later in a row within 30 s of the one before, watched first and not sent while still changing: ${extra.staleWatched}`);
+  console.log(`least bad taken with none good at twice the best listed or more (not the stance or the body's own): ${extra.weak} (${Object.entries(extra.weakBy).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k} ${v}`).join(', ')}); an option that changes nothing was on offer and not taken: ${extra.weakCalm} (now taken); none on offer: ${extra.weakNone} (marked weak; win_strategy goes on with the ladder's stage)`);
   if (argv.includes('--trips')) {
     console.log(`\ntrips and timed answers to plan questions: ${trips.trips}; turned round within ${WITHIN / 1000} s by a plan answer that does not carry them on, before arriving or failing: ${trips.turned}`);
     console.log(`  that answer on offer under the gate as it was (the ERRANDS list): ${trips.before}; under note 749's (a trip by what its option is): ${trips.after}`);
