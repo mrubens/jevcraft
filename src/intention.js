@@ -79,7 +79,20 @@ const TIMED = {
 // fourteen health with no food, and a find_fortress stall's stillness_detour
 // picked cross_toward instead a moment later with nothing said of the trip
 // under way; it never returned to the portal and died).
-const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks|go_back)$/;
+// blocks_then_cross joined the list at note 745: 25593 chose return_for_blocks
+// seven times running at fortress_leg, each undone within seconds because
+// fortress_leg was its own question (gate() below, `q === i.q`) and was
+// asked wide open there, not held to the errand: "in, then out" in four
+// seconds, with "Leaving the fortress" said each time nothing had been left.
+// back_to_fortress joined at note 745's third item: 25581 said "Walked what
+// I can reach of this fortress" having walked none of it (stuck atop its
+// own pillar, fixed at the source in mob-hunt.js onFortressFloor below),
+// and in the same second answered keep_searching (a leave), back_to_fortress
+// and leg_east, none of the three given even a breath to be carried out.
+// back_to_fortress is not a supply run, but the same unconditional q===i.q
+// bypass tore it down exactly as return_for_blocks was torn down in item 1,
+// so it is held the same way.
+const ERRANDS = /^(fetch_stems|return_for_blocks|return_for_food|restock_food|restock_blocks|blocks_then_cross|back_to_fortress|go_back)$/;
 // The questions about the plan that are not asked to replace an intention.
 const GATED = new Set(['fortress_leg', 'fortress_approach', 'fortress_visit', 'nether_gather', 'leave_nether', 'nether_food_kit', 'restock_food', 'empty_spawner', 'portal_way', 'bastion_raid', 'portal_method', 'surface_trip', 'kit_food']);
 // Asked at a real change (a stall, ten minutes without a new best), whatever
@@ -325,7 +338,7 @@ const endedSays = (e, now = Date.now()) => e && now - e.endedAt < 2 * 60000 ? `$
 function serves(i, q, key, node, way = wayOf(q, i)) {
   if (KEEP.test(key) || key === 'none_good') return true;
   if (way) return !way.drops.test(key);
-  if (q === i.q && key === i.choice) return true;
+  if (q === i.q) return key === i.choice;
   if (key === i.choice && ERRANDS.test(key)) return true;
   const t = P(node?.target);
   return !!(t && i.target && dist(t, i.target) <= NEAR);
@@ -348,7 +361,18 @@ function gate(bot, goal, q, tree, { now = Date.now() } = {}) {
   // upkeep's fetch already is (note 703): otherwise asked wide open, they
   // could drop it with nothing said (note 726).
   const errandGate = ERRAND_GATED.has(q) && ERRANDS.test(i.choice);
-  if (!(GATED.has(q) || errandGate) || q === i.q) return out;
+  // Its own question, asked again, ordinarily goes unfiltered: what holds
+  // is one of its own answers, so the full menu is put to Jev afresh. Not
+  // while the intention is an errand (note 745): 25593's return_for_blocks
+  // (fortress_leg) was re-asked at fortress_leg itself as a stall came
+  // round, given the whole leg menu with nothing held, and back_to_fortress
+  // undid it in the same second fortress_visit's go_in and fortress_
+  // approach's own return_for_blocks were still "back to it after"; the
+  // errand never got the trip it started. An errand held to its own
+  // question is filtered the same as everywhere else: only itself, its
+  // ways, and the safe answers (KEEP, none_good) stay on offer.
+  const sameQ = q === i.q && !ERRANDS.test(i.choice);
+  if (!(GATED.has(q) || errandGate) || sameQ) return out;
   const way = wayOf(q, i);
   const kept = Object.fromEntries(Object.entries(tree).filter(([k, n]) => serves(i, q, k, n, way)));
   const withheld = Object.keys(tree).filter(k => !Object.hasOwn(kept, k));

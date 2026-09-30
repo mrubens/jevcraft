@@ -462,8 +462,17 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
     try {
       const feet = bot.entity.position.floored();
       // A walk back along a span to the rock it came from is longer than
-      // one within the near reach: timed by its cells.
-      if (!feet.equals(s.from)) await navigate(bot, task, new goals.GoalBlock(s.from.x, s.from.y, s.from.z), { timeoutMs: Math.max(15000, s.walk * 600), stallMs: 4000 });
+      // one within the near reach: timed by its cells. Skipped where the
+      // block is already in reach from right here, even when the source's
+      // own walk-cell (`s.from`, from the survey's BFS) is some other cell:
+      // a stale survey or a stance the BFS did not model exactly can name a
+      // walk that gains nothing a dig in place already has (note 745,
+      // 25590: blocks_then_cross at (-23, 32, 44) chose four times running,
+      // "no route" each time to a target a few blocks off, and never mined
+      // the netherrack in reach).
+      const { miningReach } = require('./mining-access');
+      const already = miningReach(bot, bot.entity.position, s.p);
+      if (!feet.equals(s.from) && !already) await navigate(bot, task, new goals.GoalBlock(s.from.x, s.from.y, s.from.z), { timeoutMs: Math.max(15000, s.walk * 600), stallMs: 4000 });
       await mineAt(s);
     } catch (err) {
       task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name)) throw err;

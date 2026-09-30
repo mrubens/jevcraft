@@ -47,9 +47,16 @@ function makingSays(bot) {
 // 16) and wood is missing. Said the same on the option and in chat as it
 // starts: 25591's chat said "for a pickaxe and blocks" with 146 blocks
 // carried, its option "for a pickaxe and wood" (note 695).
+// note 745: the chat line that starts the trip ("Going back through the
+// portal for stone", intention.js kitSays) still said "stone" in the Nether
+// with a pickaxe carried, whatever was diggable at the feet: note 729 fixed
+// only the option's own description (returnForKitSays); 25590 stood in
+// netherrack with a pickaxe, chose blocks_then_cross (which found nothing to
+// mine there, note 745 item 2), and was then sent "back through the portal
+// for stone" in the same breath.
 const KIT_BLOCKS = 16;
 function kitLacks(bot) {
-  if (!bot?.inventory?.items || pickaxeCarried(bot)) return ['stone to lay spans with'];
+  if (!bot?.inventory?.items || pickaxeCarried(bot)) return [`${inNether(bot) ? 'netherrack' : 'stone'} to lay spans with`];
   const laid = require('./bridging').blocksCarried(bot);
   const wood = carriedOf(bot, /_(log|stem|hyphae|wood|planks)$/) > 0;
   return ['a pickaxe', ...(laid < KIT_BLOCKS ? ['blocks'] : []), ...(wood ? [] : ['wood'])];
