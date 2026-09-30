@@ -9162,6 +9162,13 @@ class Survival {
     // blocks off, told only of monsters within eight of it, and was blown up
     // putting it down (note 503), where the shelter said the race.
     const creeperRaceSays = creeperSays(bot);
+    // The game's own rule, said plainly on every way to sleep, not only
+    // where a monster is already within it: 25594 ran fourteen blocks from
+    // a creeper, was told nothing of it or the rule on sleep_in_bed's own
+    // text (the fact sat unused in the question's state, within twenty-four
+    // blocks), slept, and the creeper closed the distance and went off
+    // beside the bed, 20 to 1.2 (note 747).
+    const sleepRuleSays = ' The game refuses the sleep while a monster is within about eight blocks sideways and five up or down of the bed, seen or not; one farther off now can still close that ground and go off beside the bed before or during the sleep.';
     // Sleep is an option where the bed fits: two level cells beside the
     // feet. In a one-wide shaft it is not, and the shelter path digs in.
     if (needsShelter && bedReady && sleepable(bot) && ((homeBed && !underground) || bedSite(bot))) {
@@ -9173,14 +9180,14 @@ class Survival {
       // outside the eight and five that refuse a sleep.
       const byBed = monstersByBed(bot, homeBed && !bed ? homeBed.foot : bot.entity.position);
       const refused = byBed ? refusalSays(bot, homeBed && !bed ? homeBed.foot : bot.entity.position) : '';
-      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}${creeperRaceSays}` : `Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${refused}${creeperRaceSays}`, run: () => this.sleepStep(task, goal, save) };
+      tree.sleep_in_bed = { description: homeBed && !bed ? `Walk to the bed ${walk} blocks away (about ${Math.round(walk / 4.3)} seconds) and sleep in it. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${nowAbout}${sleepRuleSays}${refused}${creeperRaceSays}` : `Put the carried bed down here and sleep. The night passes in seconds, nothing is built or spent, and the request resumes at dawn.${nowAbout}${sleepRuleSays}${refused}${creeperRaceSays}`, run: () => this.sleepStep(task, goal, save) };
     }
     // Where the carried bed does not fit (a staircase, a shaft), a nook dug
     // for it beside the bot: the bed that went down in the midgame trials
     // of 2026-09-26 was offered only on two level cells, and the bot sealed
     // itself in eleven times with it on its back.
     const nook = needsShelter && bed && bedReady && sleepable(bot) && !bedSite(bot) && !isSetAside(this, 'bed_nook', 'here') && bedNook(bot, goal);
-    if (nook) tree.sleep_in_nook = { description: `Where the bed does not fit as the ground lies, ${nookSays(bot, nook)} Nothing is built or spent, and the request resumes at dawn.${creeperRaceSays}`, run: () => this.nookSleep(task, goal, save) };
+    if (nook) tree.sleep_in_nook = { description: `Where the bed does not fit as the ground lies, ${nookSays(bot, nook)} Nothing is built or spent, and the request resumes at dawn.${nowAbout}${creeperRaceSays}`, run: () => this.nookSleep(task, goal, save) };
     // Beside a bed a shelter is the worse answer, and the option says so
     // rather than being hidden.
     // A creeper about, and how soon it could go off beside the bot, said on
@@ -9221,7 +9228,12 @@ class Survival {
     else if (sealedNow && (needsShelter || woundedBelow)) state.secureShelterNotOffered = 'already sealed in the shelter it would build';
     if ((needsShelter || woundedBelow) && !sealedNow && !shelterRests) tree.secure_shelter = { description: (woundedBelow
       ? `Seal a pocket here underground and wait in it for dawn, about ${minutesToDawn(bot)} real minutes off: ${Math.round(bot.health * 10) / 10} health, which does not come back meanwhile (hunger ${bot.food}, below eighteen), and hunger drops slowly while still. The surface above is night, with its mobs, until dawn, when those in the open burn; underground the dark is the same at any hour.${nowAbout}${threatFightSays}`
-      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}` : ''}${nowAbout}${threatFightSays}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
+      // Health and gear said here too, not only on continue_request: 25592
+      // walled itself in at full health over one skeleton 26 blocks off,
+      // and 25584 asked secure_shelter and rest_to_heal back and forth four
+      // times healing from 17 to 20, the threat never named on
+      // secure_shelter's own text (note 747).
+      : `Prepare and enter a sealed shelter before hostile mobs spawn at night. Reserve a nearby site, obtain missing blocks, then seal the room; keep the player request saved. Dawn is about ${minutesToDawn(bot)} real minutes off: that much of the run${waiting ? ` with ${waiting} waiting` : ''}. ${(() => { const off = this.nightMineOff(); return off ? `In the shelter it can only wait: ${off}.` : 'In the shelter it can mine or wait.'; })()}${underground ? ` ${BELOW_NIGHT}${BELOW_NIGHT_SURFACE}` : ''} Health ${Math.round(bot.health * 10) / 10} of 20, ${kitSaysNow}.${nowAbout}${threatFightSays}`) + shelterWaySays + comingNow + creeperRaceSays + (this.placeAbout(goal)?.says || '') + (bedReady ? ` A bed is in reach: sleeping in it (possible from ${SLEEP_FROM}) passes the night in seconds, and a shelter spends the night awake.` : ''),
       run: async () => { this.state.nightPlan = { plan: 'shelter', until: Date.now() + 120000 }; await this.refugeStep(task, goal, save); } };
     // At night too, with what it risks said, not hidden (the decision
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
@@ -9295,10 +9307,22 @@ class Survival {
     // One option is not a question. Jev was asked to pick the only shelter
     // on offer every night the bot could not stay up.
     if (Object.keys(tree).length === 1 && !Object.values(tree)[0].children) { const [key, only] = Object.entries(tree)[0]; await runChosen(key, only); onStep(goal); return true; }
+    // A search already chosen and under way is not asked about again at
+    // once: 25598 was asked "obtain_food -> search_food" every twenty to
+    // forty seconds for fifteen minutes while it climbed to the surface
+    // for it, told each time only that the errand's minute count had gone
+    // up (note 747). Held briefly, while the same search is still on offer
+    // and nothing about the bot has gotten worse.
+    const searchFoodHold = this.state.searchFoodHold;
+    if (searchFoodHold?.until < Date.now()) delete this.state.searchFoodHold;
+    if (this.state.searchFoodHold && tree.obtain_food?.children?.search_food && !immediateThreat(bot)) {
+      await runChosen('obtain_food', { run: () => tree.obtain_food.children.search_food.run() }); onStep(goal); return true;
+    }
     const decision = await this.decide(task, goal, save, { id: 'survival_priority', state, tree, interrupt: () => checkThreats(bot),
       isFresh: () => bot.health === state.health && bot.food === state.food && !immediateThreat(bot) });
     onStep(goal);
     if (decision.stale) return true;
+    if (decision.path.at(-1) === 'search_food') this.state.searchFoodHold = { until: Date.now() + 45000 }; else delete this.state.searchFoodHold;
     if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
     if (decision.path[0] === 'continue_request') {
       delete this.state.foodPlan;

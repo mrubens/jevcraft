@@ -123,6 +123,19 @@ test('the crossing question no longer offers the food, blocks or pickaxe: it say
   assert.equal(asked, null);
 });
 
+test('cross_now weighs the hunger crossed at against the food carried, not just a bare count left from the rungs', async () => {
+  // 25597 answered cross_now at hunger 9 with 6 of 80 food points carried,
+  // went 36 blocks down, and fifty seconds later win_strategy said "nether
+  // food first" and climbed back (note 747).
+  const { crossingKitReady } = require('../src/work');
+  const bot = atPortal({ cobblestone: 10, golden_boots: 0, cooked_beef: 3 });
+  bot.food = 9;
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
+  assert.equal(await crossingKitReady(bot, new Task('win'), { kind: 'win' }, () => {}, client), true);
+  assert.match(asked.cross_now, /Hunger 9 now, already below eighteen: health does not come back; \d+ of 80 food points carried for the stay, spent there at about 40 an hour\./);
+});
+
 test('the food rung taken: going without sets it aside as a choice, which the crossing offers back', async () => {
   const { kitFoodStep } = require('../src/work');
   const { nextGameStage, asideRungs } = require('../src/game-progress');

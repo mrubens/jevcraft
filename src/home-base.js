@@ -816,6 +816,13 @@ async function buildPen(bot, task, goal, save, home, actions) {
 // and forests, not deserts or oceans), beside exploring on from here. The
 // pick holds until the bot is there or the walk fails.
 const BIOME_REST_MS = 10 * 60000;
+// A failed walk is not asked about again at once: 25585 was asked
+// sheep_search ten times in ninety seconds at y 4 to 10, underground, a
+// different biome offered and chosen each time, low on air twice, each
+// walk failing within a second or two of being picked (note 747). A short
+// rest before the next ask gives the last answer's walk room to have begun
+// (or plainly failed) before a fresh one is asked for.
+const SEARCH_REST_MS = 15000;
 async function searchForSheep(bot, task, goal, save, actions) {
   // A search last worked on over half an hour ago is a new search: one
   // carried from the first days' world said "searching for sheep for 1033
@@ -851,6 +858,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
       // it was chosen again at once, six times a second for three hours in
       // mid-229-b (2026-09-26).
       if (!held.seen) (search.unreachable ||= {})[`${held.x},${held.z}`] = Date.now();
+      search.restUntil = Date.now() + SEARCH_REST_MS;
       delete search.toward; save(); return;
     }
   }
@@ -858,9 +866,25 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // it has moved on, and the place is not offered again.
   if (held?.seen && goal.sightings?.sheep) goal.sightings.sheep = goal.sightings.sheep.filter(s => Math.hypot(s.x - held.x, s.z - held.z) > 24);
   delete search.toward;
+  // Resting from a walk that just failed: carry on with a plain search
+  // instead of asking sheep_search again at once (note 747).
+  if (search.restUntil > Date.now()) { await actions.explore(bot, task, goal, save, 'sheep', { surfaceOnly: true }); return; }
   const exploration = require('./exploration');
   const view = exploration.biomeView(bot);
   const client = task.opportunityClient;
+  // Underground or underwater, a biome walk is not the surface trip it
+  // sounds like: 25585 was offered "the jungle 32 blocks west" and the
+  // like from a cave at y 4 to 10, each one failing within a second or
+  // two, low on air twice while it kept trying (note 747). Said plainly
+  // rather than left for the walk itself to find out.
+  const { surfaceObserver, climbToSurface, climbMinutes } = require('./surface');
+  let underground = false, underwater = false, climb = null;
+  try {
+    underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
+    underwater = !!bot.entity?.isInWater;
+    if (underground) climb = climbToSurface(bot, bot.entity.position);
+  } catch (_) { /* best effort */ }
+  const belowSays = underground ? ` Underground here (${climb != null ? `about ${climb} blocks up to the surface, roughly ${climbMinutes(climb)} minutes to climb out` : 'how far up is not known'}): a walk toward a biome seen from here often fails before it arrives.` : underwater ? ' Underwater here: a walk toward a biome seen from here often fails before it arrives, and the air runs out.' : '';
   const resting = search.unreachable || {};
   const nearby = exploration.biomeTrips(bot, { limit: 6 }).filter(b => !(Date.now() - (resting[`${b.x},${b.z}`] || 0) < BIOME_REST_MS));
   // String carried is wool too: four string a white wool.
@@ -885,9 +909,9 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // decision audit, 2026-09-25).
   const tod = bot.time?.timeOfDay ?? 6000;
   const walk = d => { const s = Math.round(d / 4.3); return ` About ${s} seconds at a walk${tod >= DAY.DARK && tod < DAY.DAWN ? ', in the dark: mobs spawn along the way' : tod + s * 20 >= DAY.DARK && tod < DAY.DARK ? ', arriving after dark' : ''}.`; };
-  const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}` }]));
-  flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.${walk(s.distance)}` }; });
-  tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}` };
+  const tree = Object.fromEntries(nearby.map((b, i) => [`biome_${i}`, { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}${belowSays}` }]));
+  flocks.forEach((s, i) => { tree[`seen_${i}`] = { description: `Walk back to where ${s.says}; sheep wander, but not far.${walk(s.distance)}${belowSays}` }; });
+  tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
   if (webs.length >= 2 && stringWanted) {
     const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     const webDy = Math.round(nearWeb.y - bot.entity.position.y);
@@ -899,7 +923,8 @@ async function searchForSheep(bot, task, goal, save, actions) {
   try {
     const decision = await require('./decisions').decide('sheep_search', { client, bot, task, goal, save, tree,
       state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
-        timeOfDay: tod, ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
+        timeOfDay: tod, ...(underground ? { underground: true, climbToSurface: climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known' } : {}), ...(underwater ? { underwater: true, oxygen: bot.oxygenLevel } : {}),
+        ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
         withoutSheep: 'Four string craft a white wool, twelve a bed\'s three: spiders drop up to two string each (they come out at night), and cobwebs cut with a sword drop one (abandoned mineshafts are full of them). An igloo, in snowy plains and taiga, always has a bed in it, and so do most village houses. Phantoms only come after three nights without sleep.' } });
     // Held through an outage (note 707): asked fresh at the next step.
     if (decision.stale) return;

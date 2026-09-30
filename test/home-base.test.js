@@ -655,6 +655,36 @@ test('a biome the sheep search could not walk to rests, and a bed is three wool 
   assert(goal.woolSearch.unreachable['0,400'], 'no nearer: rests');
 });
 
+test('sheep_search says the bot is underground, and rests briefly after a failed walk instead of asking again at once', async () => {
+  // 25585 was asked sheep_search ten times in ninety seconds at y 4 to 10,
+  // underground, a different biome offered and chosen each time, low on
+  // air twice, each walk failing within a second or two of being picked
+  // (note 747).
+  const w = await establishedHome(), { bot, goal, task, save } = w;
+  bot.entity.position = new Vec3(0.5, 10, 0.5); // well below the grass at y 63: underground
+  const exploration = require('../src/exploration');
+  const realTrips = exploration.biomeTrips;
+  exploration.biomeTrips = () => [{ x: 100, z: 0, biome: 'plains', distance: 100, direction: 'east', says: 'the plains 100 blocks east' }];
+  const decisions = require('../src/decisions');
+  const realDecide = decisions.decide;
+  try {
+    let asked;
+    decisions.decide = async (id, opts) => { asked = opts; return { path: ['biome_0'], stale: false }; };
+    let exploredWith = null;
+    await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async (b, t, g, sv, target, opts) => { exploredWith = opts; } });
+    assert.equal(asked?.state?.underground, true, 'the state says the bot is underground');
+    assert.match(asked.tree.biome_0.description, /Underground here/, 'the biome walk itself says the bot is underground');
+    // The walk that biome_0 leads to fails at once (no route): the biome
+    // rests, and the very next call carries on with a plain search instead
+    // of asking sheep_search again right away.
+    await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async (b, t, g, sv, target, opts) => { exploredWith = opts; } });
+    asked = null;
+    await home.searchForSheep(bot, task, goal, save, { navigate: async () => { throw new Error('No route'); }, explore: async (b, t, g, sv, target, opts) => { exploredWith = opts; } });
+    assert.equal(asked, null, 'not asked again while resting');
+    assert(exploredWith?.surfaceOnly, 'a plain surface search carries on instead');
+  } finally { exploration.biomeTrips = realTrips; decisions.decide = realDecide; }
+});
+
 test('wool of mixed colours with a bone to hand makes a white bed by dyeing, and the plan dyes it', () => {
   // mid-202-e carried two black, a light gray and a gray for three hours, a bone's dye from a bed (2026-09-27).
   const home = require('../src/home-base');

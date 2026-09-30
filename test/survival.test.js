@@ -1237,6 +1237,21 @@ test('a reserve top-up once chosen is held: "get food or carry on" is not asked 
   assert(offered.slice(1).every(keys => !keys.includes('continue_request')), `then held: ${JSON.stringify(offered)}`);
 });
 
+test('search_food, once chosen, is not asked about again at once: 25598 was asked every twenty to forty seconds while it climbed for it', async () => {
+  const { Survival } = require('../src/survival');
+  const client = { systemOne: async () => { throw new Error('offline'); } };
+  const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 3000 },
+    entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 17, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
+    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
+  const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client });
+  let asked = 0;
+  survival.decide = async (task, goal, save, { tree }) => { asked++; return { path: ['obtain_food', 'search_food'], action: tree.obtain_food.children.search_food, stale: false }; };
+  const goal = { kind: 'win', request: 'beat the game', stockFood: true };
+  for (let i = 0; i < 4; i++) await survival.step(new Task('test', 'food'), goal, () => {});
+  assert.equal(asked, 1, `asked once, then held while the same search is still on offer: asked ${asked} times`);
+});
+
 test('after two nights awake, staying up says phantoms come on the third; it is still Jev\'s to weigh', async () => {
   const { Survival, SLEEP_DEBT_TICKS } = require('../src/survival');
   const seen = [];
@@ -3277,7 +3292,10 @@ test('"carry on" by day is held like a food trip: not asked again every step, an
   assert.equal(asked, 2, 'hunger fell two: asked again');
 });
 
-test('a mob nine blocks off does not hide the bed: sleep is offered with the monsters by it counted, and worn kit is said beside armed-and-armoured', async () => {
+test('a mob nine blocks off does not refuse the bed itself, but the game\'s sleep rule and the monsters within 24 blocks are said on sleep_in_bed regardless, and worn kit is said beside armed-and-armoured', async () => {
+  // 25594 ran fourteen blocks from a creeper, was told nothing of it or of
+  // the rule on sleep_in_bed's own text, slept, and the creeper closed the
+  // distance and went off beside the bed, 20 to 1.2 (note 747).
   const { Survival } = require('../src/survival');
   let seen;
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 13000, age: 100000 },
@@ -3289,7 +3307,8 @@ test('a mob nine blocks off does not hide the bed: sleep is offered with the mon
   survival.decide = async (task, goal, save, q) => { seen = q; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
   await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert(seen.tree.sleep_in_bed, Object.keys(seen.tree).join(','));
-  assert.doesNotMatch(seen.tree.sleep_in_bed.description, /monster/, 'nine blocks off is outside the eight that refuse a sleep');
+  assert.match(seen.tree.sleep_in_bed.description, /refuses the sleep while a monster is within about eight blocks/, 'the game\'s sleep rule is stated whatever the nearest monster\'s distance');
+  assert.match(seen.tree.sleep_in_bed.description, /Within \d+ blocks now: 1 hostile mob/, 'the monster within 24 blocks is listed on sleep_in_bed itself');
   assert.deepEqual(seen.state.survivalFacts.armourWorn, ['iron_helmet', 'iron_chestplate']);
   assert.equal(seen.state.survivalFacts.weapon, 'iron_sword');
 });
@@ -5483,6 +5502,12 @@ test('underground at dusk, carrying on names the work and says the night changes
   assert.doesNotMatch(tree.continue_request.description, /while outside/);
   assert.match(tree.secure_shelter.description, /real minutes off: that much of the run with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) waiting/);
   assert.match(tree.secure_shelter.description, /Underground the dark is the same at any hour/);
+  // Health and armed-or-not said on secure_shelter itself, not only on
+  // continue_request: 25592 walled itself in at full health over one
+  // skeleton 26 blocks off, told nothing of either on secure_shelter's own
+  // text (note 747).
+  assert.match(tree.secure_shelter.description, /Health 20 of 20, (no weapon|the [a-z ]+) carried, (no armour worn|[0-9]+ pieces? of armour worn)\./);
+  assert.doesNotMatch(tree.secure_shelter.description, /Within \d+ blocks now/, 'no hostile mob here: nothing to list');
 });
 
 // Note 534: a block in a creeper's line. Its fuse burns only while it sees

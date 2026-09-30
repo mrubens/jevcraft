@@ -141,7 +141,7 @@ async function withUsableWorkstations(bot, task, stock, requested = []) {
 
 // The pickaxe that goes down must have enough left to come back up, and
 // eight logs go with it (crossing-kit.js, where the Nether's kit is said).
-const { SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS, logsCarried, kitItems, valuablesAt } = require('./crossing-kit');
+const { SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS, logsCarried, kitItems, valuablesAt, NETHER_HUNGER_AN_HOUR } = require('./crossing-kit');
 const WOOD = /_log$|_planks$|^stick$/;
 const woodCarried = bot => bot.inventory.items().filter(i => WOOD.test(i.name)).reduce((n, i) => n + i.count, 0);
 // A pickaxe about to break with no wood in the pockets is a bot sealed in its
@@ -6214,8 +6214,17 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const pending = framePending(bot, goal);
   const going = pending ? ` No portal is lit yet: going on is ${frameSays(pending)}, finished first, then the crossing.` : '';
   const leftSays = left.length ? ` Left from the ladder's kit steps: ${left.map(i => `${i.key} ${i.carried} of ${i.wants}`).join(', ')}.` : '';
+  // cross_now weighed the food left as a bare "6 of 80" and never the
+  // hunger the bot was crossing at: 25597 crossed at hunger 9 with 6 of 80
+  // food points carried, went 36 blocks down, and fifty seconds later
+  // win_strategy said "nether food first" and climbed back (note 747).
+  // Said here against the hour the Nether spends about forty hunger, and
+  // that health does not come back below hunger eighteen.
+  const foodItem = items.find(i => i.key === 'food');
+  const hungerNow = bot.food ?? 20;
+  const hungerWeigh = foodItem ? ` Hunger ${hungerNow} now${hungerNow < 18 ? ', already below eighteen: health does not come back' : ''}; ${foodItem.carried} of ${foodItem.wants} food points carried for the stay, spent there at about ${NETHER_HUNGER_AN_HOUR} an hour.` : '';
   const tree = {
-    cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
+    cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
   if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
   for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'health' ? healWaitSays(bot, i) : ''} ${i.says}${soFar(i)}` };
