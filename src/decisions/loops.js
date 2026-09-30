@@ -67,17 +67,25 @@ function carriedOf(bot) {
 const STACK = 64;
 const capOf = name => { let c; try { c = require('../inventory-tidy').capOf(name); } catch (_) { c = undefined; } return c ?? STACK; };
 const filler = name => { try { return require('../stillness').FILLER?.test(name); } catch (_) { return false; } };
+// Nor what nothing on the way to the dragon uses (note 749d): the tidy's
+// no-use list, and the ores the night mine itself says "nothing on the
+// ladder wants it" of (survival.js ORE_YIELD): 25588's 22 night_mine_target
+// answers read "more raw copper carried" as the spell going somewhere.
+const unwanted = name => { try { if (require('../inventory-tidy').NO_USE?.test(name)) return true; } catch (_) { /* none */ }
+  try { return Object.values(require('../survival').ORE_YIELD || {}).some(([item, use]) => item === name && /nothing on the ladder wants it/.test(use)); } catch (_) { return false; } };
 function gainedSince(a, b) {
   if (!a || !b) return null;
-  const fresh = Object.keys(b.kinds).filter(k => !a.kinds[k] && !filler(k));
+  const fresh = Object.keys(b.kinds).filter(k => !a.kinds[k] && !filler(k) && !unwanted(k));
   if (fresh.length) return `${fresh.slice(0, 3).map(words).join(', ')} now carried`;
-  const more = Object.keys(b.kinds).filter(k => b.kinds[k] > (a.kinds[k] || 0) && !filler(k) && !((a.kinds[k] || 0) >= capOf(k)));
+  const more = Object.keys(b.kinds).filter(k => b.kinds[k] > (a.kinds[k] || 0) && !filler(k) && !unwanted(k) && !((a.kinds[k] || 0) >= capOf(k)));
   if (more.length) return `more ${more.slice(0, 3).map(words).join(', ')} carried`;
   return null;
 }
 const surplusSays = (a, b) => {
   const past = Object.keys(b?.kinds || {}).filter(k => !filler(k) && b.kinds[k] > (a?.kinds?.[k] || 0) && (a?.kinds?.[k] || 0) >= capOf(k));
-  return past.length ? `; more ${past.map(k => `${words(k)} (${b.kinds[k]} carried, past the ${capOf(k)} worth keeping)`).join(', ')}, which is not a gain` : '';
+  const useless = Object.keys(b?.kinds || {}).filter(k => b.kinds[k] > (a?.kinds?.[k] || 0) && unwanted(k));
+  return (past.length ? `; more ${past.map(k => `${words(k)} (${b.kinds[k]} carried, past the ${capOf(k)} worth keeping)`).join(', ')}, which is not a gain` : '') +
+    (useless.length ? `; more ${useless.map(words).join(', ')}, which nothing on the way to the dragon uses, not a gain` : '');
 };
 
 // The judgment over a spell as it stands, at `here` with `carried`.

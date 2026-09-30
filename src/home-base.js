@@ -931,9 +931,13 @@ async function searchForSheep(bot, task, goal, save, actions) {
   const K = require('./decisions/keys'), y = Math.round(bot.entity.position.y);
   const ways = {};
   const tree = {};
-  for (const b of nearby) { const key = `biome_${K.name(b.biome)}`; ways[key] = { biome: b }; tree[key] = { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}${belowSays}`, target: { x: Math.round(b.x), y, z: Math.round(b.z) } }; }
+  // A flock seen is the one place sheep are known to be, and leads the
+  // options (note 749d): 25585 hopped jungle, forest and birch forest
+  // between x 188 and 215, "No sheep here" eight times, before taking seen_0,
+  // "the sheep I saw 158 blocks north-east", on offer all along below them.
   const flockIds = K.ids(goal, 'sheep_flock', flocks, { near: 24 });
-  for (const [i, s] of flocks.entries()) { const key = `seen_${flockIds[i]}`; ways[key] = { flock: s }; tree[key] = { description: `Walk back to where ${s.says}; sheep wander, but not far.${walk(s.distance)}${belowSays}`, target: { x: Math.round(s.x), y: Math.round(s.y ?? y), z: Math.round(s.z) } }; }
+  for (const [i, s] of flocks.entries()) { const key = `seen_${flockIds[i]}`; ways[key] = { flock: s }; tree[key] = { description: `Walk back to where ${s.says}; sheep wander, but not far. The one place sheep are known to be.${walk(s.distance)}${belowSays}`, target: { x: Math.round(s.x), y: Math.round(s.y ?? y), z: Math.round(s.z) } }; }
+  for (const b of nearby) { const key = `biome_${K.name(b.biome)}`; ways[key] = { biome: b }; tree[key] = { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}${belowSays}`, target: { x: Math.round(b.x), y, z: Math.round(b.z) } }; }
   // The long walk one way (note 749): 25594 hopped between biomes 32 blocks
   // apart for thirteen minutes, each hop ending about 25 blocks from where it
   // began, none good Jev's likeliest at 52 of 67 askings; the biomes further

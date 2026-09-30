@@ -1377,6 +1377,7 @@ const oreKind = name => (/(?:deepslate_)?(\w+?)_ore$/.exec(name || '') || [])[1]
 // The nearest of each kind of ore the night mine could go for: dry, not
 // above the feet (a tunnel up is a tunnel toward the surface), in the
 // working depth, and not a target that failed lately.
+const VEIN = 3;
 function nightOreChoices(bot, feet, attempts) {
   const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => ORE_YIELD[oreKind(n)] && /_ore$/.test(n));
   const ids = names.map(name => bot.registry.blocksByName[name].id);
@@ -1384,7 +1385,14 @@ function nightOreChoices(bot, feet, attempts) {
   const wet = q => [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0]]
     .some(([x, y, z]) => /water|lava|bubble_column|kelp|seagrass/.test(bot.blockAt(q.offset(x, y, z))?.name || ''));
   const byKind = new Map();
-  for (const q of found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !attempts?.resting('night_mine', q) && !wet(q)).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))) {
+  // An ore beside one whose way failed is behind the same failure (note 749d):
+  // 25588 from 14:57 to 14:59Z chose 22 copper and iron ores one after
+  // another, ore_39 to ore_67, each walk stalling within about four seconds
+  // round (38-50, 40-53, 47-53), each block rested alone and the next of its
+  // vein offered at once. A way that failed rests every ore within VEIN of it.
+  const now = Date.now();
+  const failedNear = q => Object.values(attempts?.entries || {}).some(e => e.action === 'night_mine' && e.until > now && e.wayFailed && e.target && Math.abs(e.target.x - q.x) + Math.abs(e.target.y - q.y) + Math.abs(e.target.z - q.z) <= VEIN);
+  for (const q of found.filter(q => q.y <= feet.y + 1 && q.y >= -48 && !attempts?.resting('night_mine', q) && !failedNear(q) && !wet(q)).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))) {
     const name = bot.blockAt(q)?.name, kind = oreKind(name);
     if (kind && !byKind.has(kind)) byKind.set(kind, { position: q, name, kind });
   }
@@ -8056,7 +8064,11 @@ class Survival {
   // chose the same nearest ore again, and the mine turned eighty times in
   // one place.
   abandonTarget(mine, why, { recorded = false } = {}) {
-    if (NIGHT_ORES.has(mine.targetOre) && mine.target && !recorded) attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
+    if (NIGHT_ORES.has(mine.targetOre) && mine.target && !recorded) {
+      const e = attemptsFor(this).fail('night_mine', mine.target, why, { restMs: 600000 });
+      // The way failed, not the block: its vein rests with it (note 749d).
+      if (/no route|not gaining|navigation timed out|without moving|without getting closer|no safe|stall/i.test(String(why))) e.wayFailed = true;
+    }
     if (mine.target) unwatch(this, 'night_mine', mine.target);
     mine.lastAbandoned = { target: mine.target, why, at: new Date().toISOString() };
     // Boxed in is every heading refused, not every block of one vein: four
@@ -9907,4 +9919,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES };
+module.exports = { routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD };

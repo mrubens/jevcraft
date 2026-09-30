@@ -379,4 +379,4 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpos
 // How many of an item are worth keeping, where there is a cap: past it the
 // tidy drops them first (coal is never tossed, but past two stacks it is said).
 function capOf(name) { return SURPLUS[name] ?? (name === 'coal' ? 128 : undefined); }
-module.exports = { capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };
+module.exports = { NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

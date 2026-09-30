@@ -5829,11 +5829,28 @@ function sideTrips(bot, goal, client) {
   }
   // Another biome in view, with what it holds (biomes.js): the ground
   // underfoot decides what a step can find, and a desert has no sheep.
+  // Underground, a biome is under the bot's feet as much as over it, and a
+  // walk "to" it can arrive in the cave beneath (note 749d): 25597 answered
+  // travel_river, travel_savanna and the like from 14:55 to 15:03Z about 36
+  // blocks under open sky, said "In the river now" by the biome at its feet,
+  // and was offered the next biome at once. There the climb is the first leg,
+  // said with its cost, and arriving is being on the ground of it.
+  const { surfaceObserver, climbToSurface, climbMinutes } = require('./surface');
+  const onSurface = b2 => { try { return !/overworld/.test(String(b2.game?.dimension || '')) || surfaceObserver(b2)(b2.entity.position); } catch (_) { return true; } };
+  const underfoot = !onSurface(bot);
+  let up = null; try { if (underfoot) up = climbToSurface(bot, bot.entity.position); } catch (_) { up = null; }
+  const climbSays = underfoot ? ` Underground here (${up != null ? `about ${up} blocks up to open sky, roughly ${climbMinutes(up)} minutes to climb` : 'how far up is not known'}): the climb to the surface is the first leg, and the walk is on the surface after it.` : '';
   for (const b of require('./exploration').biomeTrips(bot)) {
-    trips[`travel_${b.biome}`] = { description: `Travel: walk to ${b.says} and carry on from there.${tripTime(bot, b.distance)}`,
+    trips[`travel_${b.biome}`] = { description: `Travel: walk to ${b.says} and carry on from there.${climbSays}${tripTime(bot, b.distance)}`,
       says: `I'll head to the ${b.biome.replaceAll('_', ' ')} to the ${b.direction}`, walkBlocks: b.distance,
-      run: async (b2, t) => {
+      run: async (b2, t, g, sv) => {
+        if (!onSurface(b2)) {
+          b2.chat?.(`Climbing out first, for the ${b.biome.replaceAll('_', ' ')}.`);
+          await surfaceTrip(b2, t, g || goal, sv || (() => {}), `the ${b.biome.replaceAll('_', ' ')}`);
+          if (!onSurface(b2)) return;
+        }
         await navigate(b2, t, new goals.GoalNearXZ(b.x, b.z, 8), { timeoutMs: Math.max(60000, b.distance * 500), stallMs: 8000, sprint: true });
+        if (!onSurface(b2)) throw new Error(`The walk to the ${b.biome.replaceAll('_', ' ')} ended under it, not on it`);
         b2.chat?.(`In the ${b.biome.replaceAll('_', ' ')} now.`);
       } };
   }
