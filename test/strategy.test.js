@@ -179,7 +179,7 @@ test('a rung that spends the last wood says what it leaves for the next pickaxe,
   assert.match(d, /The chest is made from the pockets where the bot stands, then carried there/);
   assert.match(d, /It leaves 0 logs, 0 planks, 0 sticks and 3 iron ingots/);
   assert.match(d, /and no sticks can be made from what is left\. Pickaxes carried: the iron pickaxe \(194 uses left\)/);
-  assert.match(d, /about 71 blocks under the surface: when the last pickaxe breaks, none can be made down here, and the way up is dug by hand at about 2 blocks a minute \(about 36 minutes\)/);
+  assert.match(d, /about 71 blocks under the surface: when the last pickaxe breaks, none can be made down here, and the way up is dug by hand \(stone comes away by hand at about 7\.5 s a block, dropping nothing: a staircase climbs about 2\.5 blocks a minute by hand, straight up about 7\.1\), about 28 minutes by stairs/);
 });
 
 test('a rung that spends the ingots and sticks says a pickaxe can no longer be made (mid-87-a)', () => {

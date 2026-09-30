@@ -181,7 +181,7 @@ test('the way back to the surface says how far up and how long, by staircase or 
   bot.findBlocks = () => [];
   const observed = await recoveryOptions(bot, task, goal, { catalogPlan, planningInventory });
   const up = observed.options.find(o => o.kind === 'surface');
-  assert.match(up.description, /About 34 blocks up to open sky: roughly 17 minutes by hand, with no pickaxe/);
+  assert.match(up.description, /About 34 blocks up to open sky: roughly 14 minutes by hand, with no pickaxe \(stone comes away by hand at about 7\.5 s a block, dropping nothing: a staircase climbs about 2\.5 blocks a minute by hand/);
 });
 
 test('pending recovery defers to immediate safety and failed actions do not replace the player objective', async () => {

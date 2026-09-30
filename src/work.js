@@ -710,7 +710,7 @@ const pickaxeNeeded = bot => bot.game?.gameMode !== 'creative' && !bot.inventory
 function makePickaxeSays(bot, made) {
   const nether = /nether/.test(String(bot.game?.dimension || ''));
   const uses = bot.registry?.itemsByName?.[made.item]?.maxDurability;
-  return `Make ${made.name} now from what is carried (${made.from}), a few seconds at a crafting table: ${uses ? `${uses} uses` : 'a pickaxe'}. No pickaxe is carried: ${nether ? 'rock dug by hand takes about two seconds a block for netherrack and six to seven and a half for basalt and blackstone, and drops nothing' : 'dirt and gravel dig by hand in about a second and drop, but stone takes about seven and a half seconds a block by hand and drops nothing'}${nether ? ', so no block comes back to lay over a gap or lava, and every leg, staircase, tunnel or crossing through rock is dug by hand' : ', and ore and stone need a pickaxe to drop at all'}.`;
+  return `Make ${made.name} now from what is carried (${made.from}), a few seconds at a crafting table: ${uses ? `${uses} uses` : 'a pickaxe'}. No pickaxe is carried: ${nether ? 'rock dug by hand takes about two seconds a block for netherrack and six to seven and a half for basalt and blackstone, and drops nothing' : `dirt and gravel dig by hand in about a second and drop, but ${require('./hand-dig').handPaceSays(bot, { climb: false })}`}${nether ? ', so no block comes back to lay over a gap or lava, and every leg, staircase, tunnel or crossing through rock is dug by hand' : ', and ore and stone need a pickaxe to drop at all'}.`;
 }
 // The pickaxe made from the pockets, one craft at a time (acquireStep
 // takes one step a call), until one is carried.
@@ -750,6 +750,14 @@ async function maintainPickaxe(bot, task, goal, save, budget = null) {
 // hundred and twenty minutes climbing to the surface for wood, some of it
 // by hand (2026-09-25).
 const WOOD_RESERVE = 6;
+// What having no wood deep underground has cost in the record (note 754,
+// scripts/infeasible-options.js, 2026-09-29 00Z to 2026-09-30 12:50Z): spells
+// of a minute or more in the Overworld under y 16 with no pickaxe and no log,
+// plank or stick carried, until either was carried again. Said with
+// wood_reserve underground: it kept losing to carry_on on 25589 and 25592,
+// and each bot ended deep with no wood.
+const NO_WOOD_DEEP = { from: '2026-09-29', spells: 7, minutes: 120, median: 17.5, longest: 28, afterCarryOn: 4 };
+const noWoodDeepSays = () => ` In the record since ${NO_WOOD_DEEP.from}, a bot was under y 16 with no pickaxe and no wood ${NO_WOOD_DEEP.spells} times: a median ${NO_WOOD_DEEP.median} minutes each before it carried either again (the longest ${NO_WOOD_DEEP.longest}, ${NO_WOOD_DEEP.minutes} bot-minutes in all), ${NO_WOOD_DEEP.afterCarryOn} of them within half an hour of carry on chosen over this.`;
 const inNetherNow = bot => /nether/.test(String(bot.game?.dimension || ''));
 const woodUnits = bot => bot.inventory.items().reduce((n, i) => n + (/_log$|_stem$|_hyphae$|_wood$/.test(i.name) ? i.count : /_planks$/.test(i.name) ? i.count / 4 : i.name === 'stick' ? i.count / 8 : 0), 0);
 const reserveWeather = bot => bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater && !(bot.game?.dimension === 'overworld' && shelterNeeded(bot));
@@ -956,6 +964,19 @@ async function upkeepOffers(bot, task, goal, save) {
       const done = await nw.fetchStems(bot, task, goal, save, { acquireStep });
       if (done.unmade) throw new Error(done.unmade);
     } };
+    // Wood the one input missing, and a portal to go back by: the trip home
+    // for it (iron, stone and trees there), priced beside the stems with the
+    // walk back's record. 25595 (critic-20260930T1328Z item 1) stood in the
+    // Nether with no pickaxe, 78 raw iron and no wood, offered only
+    // fetch_stems (the one forest known 120 blocks off, no route) and
+    // carry_on, its portal known (note 754).
+    const mh = require('./mob-hunt');
+    const pick = pickaxeNeeded(bot) ? mh.pickaxeFirst(bot) : null;
+    if (pick?.none && goal.kind === 'win') {
+      let homeBy = null, start = null;
+      try { homeBy = mh.portalBack(bot, goal, bot.entity.position); start = homeBy ? mh.portalTripStart(bot, goal, homeBy) : null; } catch (_) { homeBy = null; }
+      if (homeBy && start?.ok) options.return_for_wood = { description: mh.returnForKitSays(bot, homeBy, { goal }), run: () => returnFromNether(bot, task, goal, save) };
+    }
   }
   // The wear sampled every pass, and in the Nether a spare offered beside
   // the one pickaxe carried while the pockets make one, said with the wear:
@@ -968,7 +989,7 @@ async function upkeepOffers(bot, task, goal, save) {
   if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), ${netherSpare.smelted ? 'about half a minute with the smelting' : 'a few seconds'} at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}`; },
     run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`);
       goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: netherSpare.item || 'pickaxe' }].slice(-10); save(); } };
-  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand at seven seconds a block.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
+  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand: ${require('./hand-dig').handPaceSays(bot)}.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
@@ -980,7 +1001,7 @@ async function upkeepOffers(bot, task, goal, save) {
     const depth = depthOf();
     // With the pickaxes' uses said against the step and the way home, the
     // by-hand rates are in that; said alone, they led (note 543).
-    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down${budget ? '.' : '; with no wood when a pickaxe wears out down here, the climb is by hand at about two blocks a minute by stairs, or seven straight up where the column overhead is open.'}`;
+    if (depth >= 8) return ` The bot is about ${depth} blocks under the surface: choosing this now means that climb now (roughly ${require('./surface').climbMinutes(depth)} minutes with a pickaxe), and back down${budget ? '.' : `; with no wood when a pickaxe wears out down here, the climb is by hand: ${require('./hand-dig').handPaceSays(bot)} where the column overhead is open, about ${require('./hand-dig').handPace(bot).minutesUp(depth)} minutes by stairs from here.`}`;
     let treeNear = null;
     try { treeNear = typeof bot.findBlocks === 'function' ? find(bot, bot.registry.blocksArray.filter(b => /_log$|_stem$/.test(b.name)).map(b => b.name), 48, 1)[0] : null; } catch (_) { treeNear = null; }
     return treeNear ? ` A tree is ${Math.round(treeNear.distanceTo(bot.entity.position))} blocks away.` : ' No tree is in view from here.';
@@ -990,7 +1011,7 @@ async function upkeepOffers(bot, task, goal, save) {
     // new pickaxes carried, only the sticks are missing (note 543).
     const heads = [['iron ingots', countOf(bot, 'iron_ingot')], ['cobblestone', countOf(bot, 'cobblestone') + countOf(bot, 'cobbled_deepslate')]].filter(([, n]) => n >= 3).map(([k, n]) => `${n} ${k}`);
     const up = depthOf() >= 8;
-    return `${up ? `Go up for wood now${budget?.ahead ? ', before the step in hand' : ''}` : 'Cut a few logs now'}: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is${heads.length ? ` (${heads.join(' and ')} carried for the heads)` : ''}.${where()}${budget ? said() : ` The pickaxes carried: ${worn.join(', ') || 'none'}.`}`; }, run: () => gatherWood(bot, task, goal, save) };
+    return `${up ? `Go up for wood now${budget?.ahead ? ', before the step in hand' : ''}` : 'Cut a few logs now'}: ${Math.floor(woodUnits(bot) * 10) / 10} logs' worth of wood carried, and ${WOOD_RESERVE} make the sticks for three pickaxes and a crafting table wherever the bot is${heads.length ? ` (${heads.join(' and ')} carried for the heads)` : ''}.${where()}${budget ? said() : ` The pickaxes carried: ${worn.join(', ') || 'none'}.`}${up ? noWoodDeepSays() : ''}`; }, run: () => gatherWood(bot, task, goal, save) };
   // In the Nether the blocks are the crossings: mid-235-k, at its fortress
   // with none carried, was offered them three times as "seal a pocket for
   // the night", carried on, and every leg of its search stopped at the
@@ -2295,9 +2316,22 @@ async function workstation(bot, task, name, goal) {
 
 async function craft(bot, task, step, goal) {
   // A craft that made nothing twice in ten minutes rests, said (note 690).
-  const { noteCraftFailure, noteCraftMade, craftRest } = require('./craft-failures');
+  const { noteCraftFailure, noteCraftMade, craftRest, forRoom, clearCraftFailures } = require('./craft-failures');
+  // A craft that made nothing for want of a free slot is not a craft that
+  // fails: the room is asked for, every time, before its rest is said
+  // (note 754). 25597 (mid-241-ba, 12:12 to 12:19Z) was told "Crafting oak
+  // planks made nothing twice ... 0 free slots" thirty-six times running and
+  // "My pockets are full" to attempt 70, and the drop question was never
+  // asked: the rest was thrown before the room was looked at.
   const rest = craftRest(bot, step.item);
-  if (rest) throw new Blocked(rest.says);
+  if (rest && forRoom(bot, step.item) && !craftSlotFree(bot)) {
+    await makeRoom(bot, task, step.item, { goal, keep: new Set(Object.keys(step.consumes || {})), room: () => craftSlotFree(bot),
+      purpose: `the craft in hand (${step.item.replaceAll('_', ' ')}), which made nothing for want of a free slot` });
+    task.check();
+    if (!craftSlotFree(bot)) throw new Blocked(`No free slot for crafting ${step.item.replaceAll('_', ' ')}; the inventory is full and nothing was dropped for it`);
+    clearCraftFailures(bot, step.item);
+  } else if (rest && forRoom(bot, step.item)) clearCraftFailures(bot, step.item);
+  else if (rest) throw new Blocked(rest.says);
   // No other window open: while one is, the server takes no click in the
   // pockets' grid and says nothing (25588's furnace, opened by a block
   // placed against it, note 690).
@@ -2322,7 +2356,12 @@ async function craft(bot, task, step, goal) {
   // stack the craft uses up frees its slot, and that slot is room: the four
   // sticks from mid-241-v's last two planks cost it its flint and steel.
   const made = recipe.result.count, what = `${made} ${step.item.replaceAll('_', ' ')}`;
-  const fits = () => roomFor(bot, step.item, made) || freesSlot(bot, recipe);
+  // A free slot, always: the click takes the output to the cursor and puts
+  // it back, and with none free the server confirmed nothing, whatever stack
+  // it could have merged into or ingredient slot it would have emptied: of
+  // 3,638 "timed out ... after crafting" in the flight records, 3,566 had 0
+  // free slots, and all 2,648 since 2026-09-30T06Z (note 754).
+  const fits = () => craftSlotFree(bot) && roomFor(bot, step.item, made);
   const roomForOutput = async () => {
     if (fits()) return;
     await makeRoom(bot, task, step.item, { count: made, goal, keep: new Set(Object.keys(step.consumes || {})), away: table?.position, room: fits,
@@ -2349,7 +2388,7 @@ async function craft(bot, task, step, goal) {
     catch (err) {
       task.check();
       // A first try that timed out with no free slot for the output
-      // (freesSlot's guess that an ingredient stack would empty its slot
+      // (a guess that an ingredient stack would empty its slot
       // did not hold, or the room checked before the batch has since gone)
       // will time out the same way again: made room first, or fail at once
       // with that reason, rather than waiting out the same timeout twice
@@ -2385,15 +2424,8 @@ async function craft(bot, task, step, goal) {
   }
 }
 
-// A slot the craft empties: an ingredient carried as one stack of just what
-// one craft uses leaves the grid with nothing to put back.
-function freesSlot(bot, recipe) {
-  return (recipe.delta || []).some(d => d.count < 0 && (() => {
-    const stacks = bot.inventory.items().filter(i => i.type === d.id);
-    return stacks.length === 1 && stacks[0].count === -d.count;
-  })());
-}
-
+// A free slot in the pockets for a craft's click (note 754).
+const craftSlotFree = bot => (bot.inventory.emptySlotCount?.() ?? 1) > 0;
 async function settleCraftInventory(bot, task) {
   task.check();
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);
@@ -5571,7 +5603,9 @@ function idleOptions(bot, goal) {
     const stage = nextGameStage(bot, goal);
     if (stage.phase !== 'complete') options.long_game = { description: `Work toward beating the game. The next stage is ${stage.phase.replaceAll('_', ' ')}${stage.item ? ` (${stage.count} ${stage.item.replaceAll('_', ' ')})` : ''}; it may mean a long trip and a real fight, so choose it with supplies, tools and daylight in hand.`, phase: stage.phase, stage };
   }
-  return options;
+  // Each craft said with what its chain lacks from the pockets, and no walk
+  // offered from a cell no walk leaves (option-feasibility.js, note 754).
+  return require('./option-feasibility').screenOffers(bot, goal, options, { withheld: sides.withheld });
 }
 
 // The trips worth making from wherever the bot is, each already checked
@@ -5591,10 +5625,25 @@ function crossingWater(bot, now = Date.now()) {
 // A trip's walk against the daylight left, said with it (the decision
 // audit, 2026-09-25): the loot, trade, explore and cache trips said how far
 // and nothing of whether the day would last.
+// Blocks of rock and ground between the bot and open sky (surface.js), or 0.
+function underSky(bot) {
+  if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return 0;
+  try { return require('./surface').climbToSurface(bot, bot.entity.position) ?? 0; } catch (_) { return 0; }
+}
 function tripTime(bot, blocks) {
   if (!Number.isFinite(blocks)) return '';
   const there = Math.round(blocks * 2 / 4.3), t = bot.time?.timeOfDay ?? 0;
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return ` About ${there} seconds there and back at a walk.`;
+  // Underground the sky's clock is not the trip's: 25589, 105 blocks under
+  // open sky with no pickaxe, was told "326 seconds of daylight left" with a
+  // walk to a river on the surface (note 754). The climb to the sky is said
+  // instead, at the pace the pockets give.
+  const up = underSky(bot);
+  if (up >= 8) {
+    const pick = bot.inventory?.items?.().some(i => /_pickaxe$/.test(i.name));
+    const climb = pick ? `about ${require('./surface').climbMinutes(up)} minutes by staircase with a pickaxe` : `about ${require('./hand-dig').handPace(bot).minutesUp(up)} minutes by staircase by hand (${require('./hand-dig').handPaceSays(bot)})`;
+    return ` About ${there} seconds there and back at a walk where the way is open; the bot is about ${up} blocks under open sky, and a way that leads up there climbs that first: ${climb}.`;
+  }
   // At night the trip is in the dark from the first step, and says so.
   if (t >= DAY.DUSK && t < DAY.DAWN) return ` About ${there} seconds there and back at a walk, all of it in the dark: it is night, and mobs spawn about the bot for about ${Math.round((DAY.DAWN - t) / 1200)} real minutes more.`;
   const light = Math.max(0, Math.round((DAY.DUSK - t) / 20));
@@ -5618,6 +5667,23 @@ function waitingThere(bot, at) {
   } catch (_) { return ''; }
 }
 
+// What the ladder's next step takes of the ore, against the batch: 25585
+// (mid-239-ba, 12:32Z) fired a furnace for 56 iron ingots, three and a half
+// minutes of waiting, with the next rung needing 3 and a lava pool known
+// (note 754).
+function smeltNeedSays(bot, goal, raw) {
+  if (goal?.kind !== 'win') return '';
+  try {
+    const stage = require('./game-progress').nextGameStage(bot, goal);
+    if (!stage || stage.phase === 'complete') return '';
+    const plan = stage.item ? catalogPlan(bot, stage.item, stage.count || 1, planningInventory(bot), goal) || [] : [];
+    const spends = require('./strategy').planSpends(plan);
+    const need = (spends.raw_iron || 0) + (spends.raw_gold || 0);
+    const name = String(stage.phase).replaceAll('_', ' ');
+    if (!need) return ` The ladder's next step (${name}) smelts none of it: the whole batch, about ${Math.round(raw * 10 / 6) / 10} minutes at one furnace, is stock for later.`;
+    return ` The ladder's next step (${name}) smelts ${need} of it: about ${need * 10} seconds for just those; the rest of the batch is stock for later.`;
+  } catch (_) { return ''; }
+}
 function sideTrips(bot, goal, client) {
   const trips = {};
   // Looting: the nearest remembered ruined portal, dungeon or temple whose
@@ -5664,7 +5730,7 @@ function sideTrips(bot, goal, client) {
     const uses = i => (bot.registry?.itemsByName?.[i.name]?.maxDurability ?? 0) - (i.durabilityUsed || 0);
     const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => `the ${i.name.replaceAll('_', ' ')} (${uses(i)} uses left)`);
     const list = [rawIron && `${rawIron} raw iron`, rawGold && `${rawGold} raw gold`].filter(Boolean).join(' and ');
-    trips.smelt_stock = { description: `Smelt the raw ore carried into ingots now: ${list}, with the ${smeltFuel.replaceAll('_', ' ')} carried, at the nearest furnace${furnaces > 1 ? ` and ${furnaces - 1} more set beside it` : ''}: about ${minutes} minutes at ten seconds an item${furnaces > 1 ? ` shared across ${furnaces} furnaces` : ''}. Iron ingots are three a pickaxe, one a shield, three a bucket, twenty-four a set of armour; gold is four for golden boots. Raw ore and ingots drop alike on a death. Now: ${countOf(bot, 'iron_ingot')} iron ingots in hand; pickaxes carried: ${picks.join(', ') || 'none'}.`,
+    trips.smelt_stock = { description: `Smelt the raw ore carried into ingots now: ${list}, with the ${smeltFuel.replaceAll('_', ' ')} carried, at the nearest furnace${furnaces > 1 ? ` and ${furnaces - 1} more set beside it` : ''}: about ${minutes} minutes at ten seconds an item${furnaces > 1 ? ` shared across ${furnaces} furnaces` : ''}. Iron ingots are three a pickaxe, one a shield, three a bucket, twenty-four a set of armour; gold is four for golden boots. Raw ore and ingots drop alike on a death. Now: ${countOf(bot, 'iron_ingot')} iron ingots in hand; pickaxes carried: ${picks.join(', ') || 'none'}.${smeltNeedSays(bot, goal, raw)}`,
       says: "I'll smelt the ore I'm carrying", anyTime: true,
       run: async (b, t, g, sv) => {
         if (countOf(b, 'raw_iron')) await acquireStep(b, t, 'iron_ingot', countOf(b, 'iron_ingot') + countOf(b, 'raw_iron'), g, sv);
@@ -5773,7 +5839,8 @@ function sideTrips(bot, goal, client) {
   if (enchantReady(bot, goal)) trips.enchant = { description: `Enchant the ${enchantable(bot)[0].item.name.replaceAll('_', ' ')} at the enchanting table with ${bot.experience?.level} levels and the lapis carried: Sharpness, Protection or Power for the fights ahead.`,
     says: `I'll enchant my ${enchantable(bot)[0].item.name.replaceAll('_', ' ')}`,
     run: (b, t, g, sv) => enchantStep(b, t, g, sv, { workstation }) };
-  return trips;
+  // No walk offered from a cell no walk leaves (note 754).
+  return require('./option-feasibility').screenOffers(bot, goal, trips);
 }
 
 async function idleWork(bot, task, goal, save, client, onStep = () => {}, { acquire = acquireStep, handlers, actions } = {}) {
@@ -5835,10 +5902,23 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     });
-  if (!dark && overworld) for (const [key, option] of Object.entries(idleOptions(bot, scratch))) {
-    if (key === 'long_game') continue;
-    add(key, option.description, () => option.run ? option.run(bot, bounded, scratch, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, scratch, save));
+  // What is not offered for want of a way out of the cell, said with the
+  // question (option-feasibility.js, note 754).
+  const feasibility = require('./option-feasibility');
+  let withheld = [];
+  if (!dark && overworld) {
+    const idle = idleOptions(bot, scratch);
+    withheld = [...(idle.withheld?.keys || [])];
+    for (const [key, option] of Object.entries(idle)) {
+      if (key === 'long_game') continue;
+      add(key, option.description, () => option.run ? option.run(bot, bounded, scratch, save, homeActions()) : acquireStep(bot, bounded, option.item, option.count, scratch, save));
+    }
   }
+  // Walled in with no pickaxe, a walk does not leave the cell: the look
+  // round is not offered either.
+  const walled = overworld ? feasibility.walledIn(bot) : null;
+  const walkable = !walled || !!walled.pickaxe;
+  if (!walkable) withheld.push('look_around');
   // Ore only where nothing flows beside it: in the Nether the quartz is in
   // the walls of the lava sea.
   // And only ore the bot carries a tool to harvest: dig() refuses it
@@ -5859,7 +5939,7 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
     () => dig(bot, bounded, ore.p, {}));
   // A walk to see what is there is an Overworld thing by day; in the Nether
   // twenty-four blocks in a straight line is a walk to the lava sea.
-  if (!dark && overworld) {
+  if (!dark && overworld && walkable) {
     // Kept with the world's survival state, not written onto the player's goal.
     const turn = goal.survival || scratch;
     const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; if (!preview) turn.detourHeading = heading;
@@ -5871,7 +5951,7 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
   // Nothing else on offer: a walk to new ground, dusk or not, rather than
   // standing where the work stalled. Trial 17, a desert at dusk with no wood
   // and so no tools, had no detour at all and stood a minute (2026-09-24).
-  if (!out.length && overworld) {
+  if (!out.length && overworld && walkable) {
     const turn = goal.survival || scratch;
     const heading = ((turn.detourHeading ?? Math.floor(Math.random() * 8)) + 3) % 8; if (!preview) turn.detourHeading = heading;
     const angle = heading * Math.PI / 4, here = bot.entity.position.floored();
@@ -5898,6 +5978,7 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
       add(key, description, o.run);
     }
   }
+  if (withheld.length) out.withheld = feasibility.withheldSays(walled || feasibility.walledIn(bot), [...new Set(withheld)].map(key => ({ key })));
   return out;
 }
 async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null, id = 'stillness_detour', above = undefined } = {}) {
@@ -5934,7 +6015,8 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // rung left for later. They run on the player's goal, not the scratch one.
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
   // The work on offer from here (restWork), each run bounded as above.
-  for (const w of await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) })) offer(w.key, w.description, w.run);
+  const work = await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) });
+  for (const w of work) offer(w.key, w.description, w.run);
   // A walk to water is what the portal frame's cast is waiting for when it
   // has none: said on the travel to a biome that has some (the walk is built
   // from the scratch goal, which does not know the rung; note 630).
@@ -6014,6 +6096,8 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     ? `${Math.round(ms / 1000)} seconds on ${what} without getting anywhere, ${stalled.strikes === 1 ? 'the first time' : `${stalled.strikes} times in ten minutes`}. Choose: keep at it another way, leave it for later, or something useful from here for a few minutes.`
     : `Standing still for ${Math.round(ms / 1000)} seconds on ${what}. Choose something useful to do from here for a few minutes; the stalled work gets its turn again afterwards.`,
   ...(stalled ? { stalled } : {}), ...(job ? { jobInHand: job.says } : {}) };
+  // What was left out for want of a way from here (note 754).
+  if (work.withheld) context.situation += ` ${work.withheld}`;
   // What each detour came to the last times this work stood still: chosen,
   // and still again after. mid-220-b, on a beach at sea level taken for
   // underground, chose "another way" sixteen times over, told each time
@@ -6069,8 +6153,9 @@ function idleWhy(bot) {
 // minutes.
 function restWorkSays(bot, work, { until, now = Date.now() } = {}) {
   const minutes = Math.max(1, Math.ceil((until - now) / 60000));
-  if (work.length) return `Work on offer meanwhile from here: ${work.map(w => clauseOf(w.description)).join('; ')}.`;
-  return `Nothing else is on offer from here meanwhile (${idleWhy(bot)}): chosen, this is standing here idle about ${minutes} minute${minutes === 1 ? '' : 's'}, until about ${new Date(until).toISOString().slice(11, 16)}Z.`;
+  const left = work.withheld ? ` ${work.withheld}` : '';
+  if (work.length) return `Work on offer meanwhile from here: ${work.map(w => clauseOf(w.description)).join('; ')}.${left}`;
+  return `Nothing else is on offer from here meanwhile (${idleWhy(bot)})${left ? `;${left.replace(/\.$/, '')}` : ''}: chosen, this is standing here idle about ${minutes} minute${minutes === 1 ? '' : 's'}, until about ${new Date(until).toISOString().slice(11, 16)}Z.`;
 }
 // `idle`: the hold was chosen said as standing idle. Chosen as other work
 // and the work on offer run out, the hold ends and the question above is
@@ -7062,4 +7147,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS };
+module.exports = { NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS };

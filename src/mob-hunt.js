@@ -2154,14 +2154,25 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       target: { x: p.x, y: p.y, z: p.z }, run: () => { state.goTo = { x: p.x, y: p.y, z: p.z, kind: 'blazes_about', since: Date.now() }; save(); return 'goto'; } };
   }
   if (spots.length) {
-    const best = spots[0], s = best.spot, ended = state.goToEnded?.blazes;
+    // The last try at this place, not at any place blazes were seen: 25581
+    // (mid-243-jd, 12:58:18Z) was offered (-132, 57, 511) said "the hunt walked
+    // back toward it 2 times, the last ending: No route ... beside lava" and,
+    // in the same option, "The last try at it ended: reached it", which was
+    // the walk to (-159, 59, 510) a moment before (note 750b).
+    const best = spots[0], s = best.spot, spotKey = `${s.x},${s.y},${s.z}`, ended = state.goToEnded?.[`blazes:${spotKey}`];
+    // The walk surveyed from here before it is offered, as the spawner's is:
+    // a place whose route was refused says so from here now, not only from
+    // an older walk's ending.
+    const route = actions.navigate ? await routeSurvey(bot, task, new goals.GoalNear(s.x, s.y, s.z, 4), new Vec3(s.x, s.y, s.z)) : null;
+    const routeSays = !route ? '' : !route.cells ? ' The pathfinder finds no route toward it from here now: the walk ends at once, and the way there is asked (fortress_approach).'
+      : ` The pathfinder finds ${route.status === 'success' ? 'a whole route' : 'a route part of the way'} of ${route.cells} cells from here now, ending ${route.gain} blocks nearer.`;
     // Whether the bot has been near it on foot: the ground the search has
     // stood on is the one sign that there is a walk there.
     const stood = coverage.stoodNear(state, dim, s, 32);
     const way = HEADINGS.findIndex(h => coverage.liesThatWay(here, s, h));
     const reach = ` It lies ${way >= 0 ? `${HEADING_NAMES[way]} of here` : 'here'}; ${stood === null ? 'the bot has not stood within 32 blocks of it, so whether it can be walked to is not known' : `the bot has stood ${stood} blocks from it before`}.`;
-    options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view.${reach} The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
-      target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', since: Date.now() }; save(); return 'goto'; } };
+    options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view.${reach} The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${routeSays}${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
+      target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', key: spotKey, since: Date.now() }; save(); return 'goto'; } };
   }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
   // With no pickaxe carried and none to be made from what is carried, rock
@@ -3690,7 +3701,7 @@ async function goToWay(bot, task, goal, save, actions, state) {
   (state.goToEnded ||= {})[g.key ? `${g.kind}:${g.key}` : g.kind] = { why: reached ? 'reached it' : why || 'came no nearer', at: Date.now() };
   // Floors not reached are passed over a while, their why said (the map's
   // waysFailed); reached, the next look walks them.
-  if (g.key && !reached && state.map?.failed) state.map.failed[g.key] = { why: why || 'came no nearer', at: Date.now() };
+  if (g.kind === 'unwalked' && g.key && !reached && state.map?.failed) state.map.failed[g.key] = { why: why || 'came no nearer', at: Date.now() };
   if (g.kind === 'blazes') {
     const spot = (goal.mobHunt?.sightings || []).find(s => s.x === g.x && s.y === g.y && s.z === g.z);
     if (spot && !reached) { spot.tries = (spot.tries || 0) + 1; spot.why = why || 'came no nearer'; }
@@ -4014,7 +4025,18 @@ async function findFortressStep(bot, task, goal, save, actions) {
       // walked thirty times in three seconds (mid-242-ae-nether-2-fortress-1,
       // note 583).
       if (off > 1.75) { map.failed[next.key] = { why: why || `the walk ended ${Math.round(off)} blocks short`, at: Date.now() }; save(); }
-      fm.look(bot, state, { force: true }); save();
+      fm.look(bot, state, { force: true });
+      // A way on is walked when stood on (the look's visit marks it), not when
+      // the walk ends near it: 25581 (mid-243-jd) stood a block under the
+      // floor it was exploring to, at (-145, 57, 550), after a dig down, and
+      // "reached" it every pass for four minutes (12:59:24-13:03:51Z), never
+      // on it, never asked anything (note 750b). Not stood on, it is passed
+      // over as any failed walk is, with where the bot ended.
+      if (off <= 1.75 && exploring && map.cells[next.key] && !map.cells[next.key][0]) {
+        const p = bot.entity.position, dy = Math.round(y + 1 - p.y);
+        map.failed[next.key] = { why: `the walk ended beside it, not on it (${dy ? `${Math.abs(dy)} block${Math.abs(dy) === 1 ? '' : 's'} ${dy > 0 ? 'under' : 'over'} its floor` : 'at its height'})${why ? `: ${why}` : ''}`, at: Date.now() };
+      }
+      save();
       return;
     }
     else {
@@ -4222,4 +4244,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

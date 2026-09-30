@@ -960,7 +960,9 @@ test('on a fortress floor it had left, with blazes seen there forty times and ev
   assert(options.other_way && !options.keep_searching, 'leaving the way, not the fortress');
   assert.equal(search.shunned.length, 1, 'the fortress is not set aside again');
   assert.equal(search.goTo, undefined);
-  assert.equal(search.goToEnded.blazes.why, 'Jev chose to leave that way for now');
+  // Kept by the place (note 750b), not for every place blazes were seen.
+  const s0 = goal.mobHunt.sightings[0];
+  assert.equal(search.goToEnded[`blazes:${s0.x},${s0.y},${s0.z}`].why, 'Jev chose to leave that way for now');
   assert.equal(goal.mobHunt.sightings[0].tries, 1);
 });
 
@@ -2244,4 +2246,19 @@ test('the ladder\'s blaze hunt ends at its one number (note 648): seven rods car
   assert.match(asked.state.rodsTheGoalWants, /^The goal wants 7 blaze rods in all for 13 eyes .*Carried: 5 blaze rods, 0 ender pearls; 2 rods still needed\.$/);
   assert.match(asked.state.blazes, /: 2 blaze rods still needed, and nothing else gives them$/);
   assert.match(asked.options.defer, /; 2 rods still needed \(the goal wants 7 in all for 13 eyes, 5 carried\)\. Left, these are not offered again/);
+});
+
+test('a way on of the floors the walk ends beside, not on, is passed over with where it ended, not walked to again every pass (25581 mid-243-jd, 12:59-13:03Z, note 750b)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const { bot } = corridor();
+  const goal = { fortressSearch: { axis: 1, legs: 13 } };
+  const walks = [];
+  const client = jevStub(['stay_in_fortress', 'leg_north']);
+  // The walk ends a block under the floor it was sent to, beside it.
+  const actions = { client, navigate: async (b, t, g, o = {}) => { walks.push({ x: g.x, y: g.y, z: g.z }); bot.entity.position = new Vec3(g.x + 0.5, g.y - 1, g.z + 1.5); } };
+  for (let i = 0; i < 6; i++) await findFortressStep(bot, new Task('hunt'), goal, () => {}, actions).catch(() => {});
+  const failed = Object.values(goal.fortressSearch.map?.failed || {});
+  assert(failed.some(f => /^the walk ended beside it, not on it/.test(f.why)), JSON.stringify(failed));
+  const repeats = walks.filter((w, i) => i && w.x === walks[i - 1].x && w.y === walks[i - 1].y && w.z === walks[i - 1].z);
+  assert.equal(repeats.length, 0, `the same way on walked to pass after pass: ${JSON.stringify(walks)}`);
 });

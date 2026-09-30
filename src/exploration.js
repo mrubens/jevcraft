@@ -353,9 +353,20 @@ function noticeLandmarks(bot, goal, save, { now = Date.now(), every = 30, moved 
     // brick this detector happens to notice read as new and got announced
     // (25589, 06:05:00Z: "Ooh, a nether fortress at 118, 364!" while already
     // working the fortress at (119, 71, 337), note 725).
+    //
+    // Kept as the one landmark all the same, at the search's own anchor,
+    // said nothing: skipped outright, a fortress the search anchored first
+    // was never in `goal.landmarks`, and the two records disagreed (25581,
+    // mid-243-jd: the search at (-65, 62, 520), the landmarks and so the
+    // audit's rung target "the fortress: none known", note 750b).
     if (detector.kind === 'nether_fortress' && goal.fortressSearch?.fortressAt) {
       const a = goal.fortressSearch.fortressAt;
-      if (Math.hypot(a.x - place.x, a.z - place.z) <= (a.extent || 0) + 96) continue;
+      if (Math.hypot(a.x - place.x, a.z - place.z) <= (a.extent || 0) + 96) {
+        const { landmark } = rememberLandmark(goal, detector.kind, where, { x: a.x, y: a.y, z: a.z, bricks: place.bricks }, a.firstAt || now);
+        landmark.seenAt = now;
+        found.push(landmark);
+        continue;
+      }
     }
     const { landmark, isNew } = rememberLandmark(goal, detector.kind, where, place, now);
     found.push(landmark);

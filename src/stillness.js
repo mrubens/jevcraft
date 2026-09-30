@@ -158,6 +158,13 @@ function stepWait(bot, goal, now = Date.now()) {
   // right after keep_searching had walked it off and the search found the
   // same bricks again. The unchanged-passes count (work.js) is about moving
   // toward an unfound target, not about a bot already there and deciding.
+  // Not a walk the step itself names (a way on of the floors, a patrol, a
+  // place gone to): that pass is to move, and one that moved nothing is no
+  // progress there as anywhere (note 750b). 25581 (mid-243-jd) walked to a
+  // floor a block over its head every pass for four minutes, 12:59-13:03Z,
+  // excused as "at a known fortress", and nothing asked.
+  const walk = goal?.step && (goal.step.exploring || goal.step.patrolling || goal.step.goingTo);
+  if (walk) return null;
   if (action === 'find_fortress' && goal?.step?.found && bot?.entity?.position) {
     const f = goal.step.found;
     if (Math.hypot(f.x - bot.entity.position.x, f.z - bot.entity.position.z) <= 8 && Math.abs(f.y - bot.entity.position.y) <= 8) return 'at a known fortress';
@@ -287,10 +294,19 @@ function look(bot, goal, { now = Date.now(), dt = TICK_MS } = {}) {
     r.blocks[k] = now;
   }
   const waiting = permittedWait(bot, goal, now);
+  // A block being dug where this action has not dug is work under way, at
+  // the game's own pace: a stair by hand in deepslate is three blocks of 15
+  // seconds and a step, 46 seconds, over the 45 of the rule, and 25589
+  // (mid-243-je, 12:17 to 12:26Z) was called stalled at each stair of a
+  // climb that went from y -27 to y -13, its staircase cut off by the
+  // stillness question nine times (note 754). Each dig is bounded by its own
+  // time (vitals.js digBound), and a cell dug again is not new.
+  const dug = bot.targetDigBlock?.position;
+  const digging = !!dug && !r.blocks[blockKey(dug)];
   if (progress) { r.idle = 0; stalls.progressAt = now; }
-  else if (!waiting) r.idle += dt;
+  else if (!waiting && !digging) r.idle += dt;
   stalls.current = r;
-  return { action, record: r, progress, waiting, idle: r.idle };
+  return { action, record: r, progress, waiting: waiting || (digging ? 'a new block being dug' : null), idle: r.idle };
 }
 
 // The supervisor: a look a second, and a stall raised when the current

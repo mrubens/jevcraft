@@ -128,7 +128,8 @@ function pickaxeBudget(bot, goal = {}, { look = true } = {}) {
   if (home && home.up >= 4) parts.push(`The way home from ${ahead ? 'there' : 'here'} is ${home.up} blocks up to open sky: about ${home.straight} digs straight up the column, ${home.stairs} by stairs.`);
   if (short) {
     const gap = need - usesLeft;
-    parts.push(`That is ${gap} more digs than the uses carried: the last ${gap} by hand, about ${Math.round(gap / 3 * HAND_STAIR_SECONDS / 60)} minutes at ${HAND_STAIR_SECONDS} seconds a stair, unless another pickaxe is made first.`);
+    const pace = require('./hand-dig').handPace(bot);
+    parts.push(`That is ${gap} more digs than the uses carried: the last ${gap} by hand, about ${Math.max(1, Math.round(gap / 3 * pace.stairSeconds / 60))} minutes at ${Math.round(pace.stairSeconds)} seconds a stair in ${words(pace.rock)}, unless another pickaxe is made first.`);
   } else if (need > 0 && picks.length) parts.push(`The uses carried cover it, ${usesLeft - need} to spare.`);
   parts.push(wood.count ? `The pockets make ${wood.count} more pickaxe${wood.count === 1 ? '' : 's'} (${wood.kinds.map(words).join(' or ')}).`
     : `No other pickaxe can be made from the pockets: ${wood.lacks}.`);

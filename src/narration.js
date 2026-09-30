@@ -191,10 +191,17 @@ const fortressAlreadyAnnounced = (goal, step) => {
   return !!p && (goal?.narrated?.fortressesSaid || []).some(s => sameFortressPlace(s, p));
 };
 // The fortress the search knows, where the step is not a find: going back to
-// it (its point the leg's target), or searching past it. -> the line or null.
+// it (its point the leg's target), or searching past it. -> the line, null
+// (none known: the search's own line), or false (nothing to say).
 const knownFortressSays = (goal, step) => {
   const s = goal?.fortressSearch, f = s?.fortressAt;
   if (!f || !Number.isFinite(f.x) || !Number.isFinite(f.z)) return null;
+  // On its floors, or on a walk to a place of it (where blazes were seen, a
+  // spawner, a floor unwalked): no search at all, said by the walk's own
+  // chat. 25581 (mid-243-jd, 12:57:55Z) said "Searching past the fortress I
+  // know at -65, 520" standing on that fortress's floor 80 blocks from its
+  // anchor, on its way to blazes seen in it (note 750b).
+  if (s.inFortressSince || step?.goingTo || s.goTo || s.spawnerWait) return false;
   const t = step?.target;
   if (s.rememberedTarget && t && Math.hypot(t.x - f.x, t.z - f.z) <= 16) return `Going back to the fortress at ${Math.round(f.x)}, ${Math.round(f.z)}.`;
   return `Searching past the fortress I know at ${Math.round(f.x)}, ${Math.round(f.z)} (leg ${step.legs || 1}${legHeading(goal)}).`;
@@ -233,6 +240,7 @@ function stepVariants(goal, step, bot = null) {
       // A fortress already known is not searched for as if none were (note
       // 750): 25590 said "I'm looking for a fortress (leg 37, heading north)"
       // 98 minutes after reaching one.
+      : knownFortressSays(goal, step) === false ? null
       : knownFortressSays(goal, step) || `I'm looking for a fortress (leg ${step.legs || 1}${legHeading(goal)}).`;
     case 'collect': return `I'm picking up the ${name(step.item || step.drops)}.`;
     case 'place': case 'build': case 'build_schematic': {

@@ -808,6 +808,13 @@ function idleSince(bot, b, now, waiting) {
   if (seen.waiting) return 0;
   return Math.min(RUNG_MS, gap);
 }
+// On the way up to open sky: the step or the survival layer's climb out.
+function climbingOut(goal, now = Date.now()) {
+  const step = goal?.step?.action === 'combined_request' ? goal.step.detail : goal?.step;
+  if (step?.action === 'ascend_to_surface') return true;
+  const sa = goal?.survivalAction;
+  return sa?.action === 'return_to_surface' && now - Date.parse(sa.at || 0) < 8000;
+}
 // -> null, or { rung, says, facts } when the rung's question is due
 function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   // Not in Creative, nor in the End, whose fight owns its turn (as the
@@ -859,6 +866,15 @@ function watchRung(bot, goal, { now = Date.now(), waiting = null } = {}) {
   }
   const far = b.origin ? dist(b.origin, here) : 0;
   if (far > b.best.far + 16) { b.best.far = far; news.push(`new country, ${Math.round(far)} blocks from where the rung began`); }
+  // A climb out to open sky gaining height is the way to whatever the rung
+  // wants from the surface (wood, the sky): a new height on it is a new
+  // best. 25589 climbed by hand from y -27 to y -13 in nine minutes while
+  // "16 minutes on the stone pickaxe without a new best" was said over it
+  // (note 754).
+  if (climbingOut(goal, now)) {
+    if (!Number.isFinite(b.best.upY)) b.best.upY = here.y;
+    else if (here.y >= b.best.upY + 2) { b.best.upY = here.y; news.push(`higher on the climb to open sky (y ${Math.floor(here.y)})`); }
+  }
   if (news.length) { b.idleMs = 0; b.bestAt = now; b.lastBest = news.join(', '); goal.struggles = 0; delete b.due; return null; }
   // A hold at its cap hands off here (holds.js): due at once.
   const due = b.due && b.due.at >= b.bestAt ? b.due : null;

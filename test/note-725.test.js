@@ -106,7 +106,10 @@ test('a fortress already anchored by the search (fortressSearch.fortressAt) is n
   const bot = world(many, 'the_nether', new Vec3(118, 70, 364));
   const goal = { fortressSearch: { fortressAt: { x: 119, y: 71, z: 337, extent: 16 } } };
   noticeLandmarks(bot, goal, () => {}, { force: true });
-  assert.equal((goal.landmarks || []).length, 0, 'the fortress already anchored by the search is not a new landmark');
+  // One record (note 750b): the landmark is the search's own anchor, kept
+  // silently, not a new find at the brick noticed.
+  assert.equal(goal.landmarks.length, 1, 'the search\'s fortress is the one landmark');
+  assert.deepEqual([goal.landmarks[0].x, goal.landmarks[0].y, goal.landmarks[0].z], [119, 71, 337]);
   assert.equal(goal.survivalAction, undefined, 'nothing is announced');
 });
 

@@ -903,7 +903,7 @@ function aimFor(bot, { walksFailing = false } = {}) {
   if (surface.hasSurface(bot) && !surface.surfaceObserver(bot)(bot.entity.position) && !atSurface(view, feet)) {
     let up = null;
     try { up = surface.climbToSurface(bot, feet); } catch (_) { up = null; }
-    const says = Number.isFinite(up) && up >= 8 ? `open sky is ${up} blocks over the head${view.pickaxe ? '' : ', and no pickaxe is carried: rock comes away by hand at about 7.5 seconds a block and drops nothing'}; the climb out digs its way up, and single moves are for a trap a few blocks across` : null;
+    const says = Number.isFinite(up) && up >= 8 ? `open sky is ${up} blocks over the head${view.pickaxe ? '' : `, and no pickaxe is carried: ${require('./hand-dig').handPaceSays(bot)}`}; the climb out digs its way up, and single moves are for a trap a few blocks across` : null;
     return { goal: 'sky', aim: 'up to dry ground at the surface', ...(says ? { says } : {}) };
   }
   // On the surface with every walk failing from here: trial 34 stood six

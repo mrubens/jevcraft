@@ -26,6 +26,15 @@ function noteCraftFailure(bot, item, reason, now = Date.now()) {
   recent(bot, now).push({ item, at: now, reason: String(reason || '').slice(0, 200), ...(p ? { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) } : {}) });
 }
 
+// Whether the item's last failure was for want of room (a free slot, a full
+// inventory): room is the drop question's, not a rest (note 754).
+const ROOM = /\b0 free slots|no free slot|inventory is full/i;
+function forRoom(bot, item, now = Date.now()) {
+  const last = recent(bot, now).filter(f => f.item === item).at(-1);
+  return !!last && ROOM.test(last.reason);
+}
+function clearCraftFailures(bot, item) { noteCraftMade(bot, item); }
+
 // A craft that made its output ends the item's run of failures.
 function noteCraftMade(bot, item) {
   if (bot._craftFailures?.length) bot._craftFailures = bot._craftFailures.filter(f => f.item !== item);
@@ -49,4 +58,4 @@ function craftFailuresSay(bot, now = Date.now()) {
   return lines.length ? lines.join(' ') : null;
 }
 
-module.exports = { noteCraftFailure, noteCraftMade, craftRest, craftFailuresSay };
+module.exports = { noteCraftFailure, noteCraftMade, craftRest, craftFailuresSay, forRoom, clearCraftFailures };

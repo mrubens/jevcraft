@@ -19,7 +19,7 @@
 // Read-only; it changes no behavior.
 //
 //   node scripts/fortress-arrival.js [--since 2026-09-29T23:00:00Z] [--to ISO]
-//                                    [--port N] [--json] [--verbose]
+//                                    [--frames-from ISO] [--port N] [--json] [--verbose]
 // JEV_ROOT reads another checkout's records (from a worktree).
 const fs = require('fs');
 const path = require('path');
@@ -86,7 +86,18 @@ function measureFrames(frames, { end = Infinity } = {}) {
     const mobs = f.t - lastMobsAt <= 5000 ? lastMobs : [];
     const blaze = mobs.filter(m => m.name === 'blaze').reduce((d, m) => Math.min(d, m.d ?? Infinity), Infinity);
     if (inv && e.rod === null && (inv.blaze_rod || 0) > (e.rodsAt ??= inv.blaze_rod || 0)) e.rod = f.t;
-    if (e.fight !== null) continue;
+    // From the first fight to the first rod (note 750b): the same clock,
+    // kept apart, and each minute with no work question asked and the bot
+    // under 2 blocks from where the minute began (still, unasked).
+    if (e.fight !== null) {
+      if (e.rod !== null) continue;
+      const a = e.after ||= { byWork: {}, noRoute: 0, ms: 0, work: e.work, asked: new Set() };
+      if (f.kind === 'no_route') a.noRoute++;
+      if (q && !REFLEX.test(q)) { a.asked.add(Math.floor((f.t - e.fight) / 60000)); if (!GO_ON.test(f.label || '')) a.work = `${q} ${f.label || '?'}`; }
+      const next = Math.min(frames[i + 1]?.t ?? end, end), dt = next - f.t;
+      if (dt > 0 && dt <= GAP_MS) { a.ms += dt; a.byWork[a.work] = (a.byWork[a.work] || 0) + dt; }
+      continue;
+    }
     if (e.onFloors === null && ON_FLOORS(st)) e.onFloors = f.t;
     if (e.blazeNear === null && blaze <= REACH_NEAR) e.blazeNear = f.t;
     const stepFight = st && FIGHT_STEP.test(st.action || '') && (st.action !== 'hunt_mob' || st.entity === 'blaze') && blaze <= FIGHT_NEAR;
@@ -130,9 +141,19 @@ function measureFrames(frames, { end = Infinity } = {}) {
       if (!a || !z || Math.hypot(a.x - z.x, a.y - z.y, a.z - z.z) >= 12) continue;
       thrash.push({ at: b.at, shape: [...b.qs.keys()].sort().join(' + '), answers: [...b.ans.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, n]) => `${k}${n > 1 ? ` x${n}` : ''}`) });
     }
+    let after = null;
+    if (e.after) {
+      const stop = Math.min(e.rod ?? end, end), still = [];
+      for (let m = 0; e.fight + (m + 1) * 60000 <= stop; m++) {
+        if (e.after.asked.has(m)) continue;
+        const a = at(e.fight + m * 60000), z = at(e.fight + (m + 1) * 60000);
+        if (a && z && Math.hypot(a.x - z.x, a.y - z.y, a.z - z.z) < 2) still.push(e.fight + m * 60000);
+      }
+      after = { minutes: round((stop - e.fight) / 60000), botMinutes: round(e.after.ms / 60000), byWork: ms(e.after.byWork), noRoute: e.after.noRoute, stillUnasked: still.length, stillFrom: still[0] ?? null };
+    }
     const until = Math.min(e.fight ?? end, end);
     return { sighted: e.sighted, at: e.at, onFloors: e.onFloors, blazeNear: e.blazeNear, fight: e.fight, rod: e.rod,
-      span: { minutes: round((until - e.sighted) / 60000), botMinutes: round(e.botMs / 60000), reachedFight: e.fight !== null, byWork: ms(e.byWork), byStep: ms(e.byStep), noRoute: e.noRoute, falseFind: e.falseFind, blazeNearMinutes: round(e.blazeNearMs / 60000), deferNear: e.deferNear, counts: e.counts, thrash } };
+      span: { minutes: round((until - e.sighted) / 60000), botMinutes: round(e.botMs / 60000), reachedFight: e.fight !== null, byWork: ms(e.byWork), byStep: ms(e.byStep), noRoute: e.noRoute, falseFind: e.falseFind, blazeNearMinutes: round(e.blazeNearMs / 60000), deferNear: e.deferNear, counts: e.counts, thrash }, after };
   });
 }
 
@@ -147,7 +168,13 @@ function main() {
   const onlyPort = opt('--port', null) ? Number(opt('--port', null)) : null;
   process.env.JEV_ROOT = ROOT;
   const audit = require('./trials/progress-audit');
-  let trials = audit.trialRecords({ since: since - 1, flight: FLIGHT, dir: path.join(ROOT, 'artifacts', 'midgame') }).filter(t => t.port && t.start < to);
+  // --frames-from: only the frames from then on, of every trial still
+  // running then, however long before it began (a deploy's own records,
+  // note 750b); a fortress known before then starts its episode at the first
+  // frame after it that names it.
+  const framesFrom = opt('--frames-from', null) ? Date.parse(opt('--frames-from', null)) : null;
+  let trials = audit.trialRecords({ since: framesFrom !== null ? -Infinity : since - 1, flight: FLIGHT, dir: path.join(ROOT, 'artifacts', 'midgame') }).filter(t => t.port && t.start < to);
+  if (framesFrom !== null) trials = trials.filter(t => t.end > framesFrom).map(t => ({ ...t, start: Math.max(t.start, framesFrom) }));
   if (onlyPort) trials = trials.filter(t => Number(t.port) === onlyPort);
   const midgameStart = at => { const m = at.match(/(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z/); return m ? Date.parse(`${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z`) : NaN; };
   let names = []; try { names = fs.readdirSync(FLIGHT); } catch (_) {}
@@ -180,7 +207,7 @@ function main() {
     for (const m of measureFrames(readTrial(tr), { end: Math.min(tr.end, to) })) {
       const from = x => x === null ? null : round((x - m.sighted) / 60000);
       rows.push({ world: tr.world, port: tr.port, start: iso(tr.start), checkpoint: /\/stages\/fortress\//.test(tr.source || '') ? 'fortress' : /\/stages\/nether\//.test(tr.source || '') ? 'nether' : 'fresh',
-        fortress: m.at, sighted: iso(m.sighted), onFloorsAfter: from(m.onFloors), blazeNearAfter: from(m.blazeNear), fightAfter: from(m.fight), rodAfter: from(m.rod), span: m.span });
+        fortress: m.at, sighted: iso(m.sighted), onFloorsAfter: from(m.onFloors), blazeNearAfter: from(m.blazeNear), fightAfter: from(m.fight), rodAfter: from(m.rod), span: m.span, after: m.after });
     }
   }
   const seen = rows;
@@ -205,6 +232,8 @@ function main() {
     }
   }
   console.log(`\nSighting to first fight (or trial end): ${round(total)} bot-minutes over ${seen.length} fortresses (${round(seen.filter(r => r.fightAfter === null).reduce((n, r) => n + r.span.botMinutes, 0))} of them in episodes never reaching a fight); ${noRoute} no_route frames; ${falseFind} "A fortress!" said at a fortress already known; ${round(blazeNear)} minutes with a blaze within ${REACH_NEAR} blocks and no fight yet; hunt_target answered defer with a blaze within ${REACH_NEAR}: ${deferNear}.`);
+  const afters = seen.filter(r => r.after);
+  if (afters.length) console.log(`First fight to first rod (or trial end): ${round(afters.reduce((n, r) => n + r.after.botMinutes, 0))} bot-minutes over ${afters.length} fortresses, ${afters.filter(r => r.rodAfter === null).length} with no rod; ${afters.reduce((n, r) => n + r.after.noRoute, 0)} no_route frames; ${afters.reduce((n, r) => n + r.after.stillUnasked, 0)} minutes still and unasked.`);
   console.log('\nMinutes by the work question and answer holding them:');
   for (const [k, v] of Object.entries(sum).sort((a, b) => b[1] - a[1]).slice(0, has('--verbose') ? 60 : 25)) console.log(`  ${k}: ${round(v)}`);
   console.log('\nMinutes by step:');
@@ -220,6 +249,7 @@ function main() {
     const s = r.span;
     console.log(`  ${r.world} (port ${r.port}, ${r.checkpoint}) fortress ${r.fortress ? `(${r.fortress.x}, ${r.fortress.y}, ${r.fortress.z})` : '?'}: known ${r.sighted}; floors ${r.onFloorsAfter ?? '-'}, blaze near ${r.blazeNearAfter ?? '-'}, fight ${r.fightAfter ?? '-'}, rod ${r.rodAfter ?? '-'}; span ${s.minutes} min, ${s.noRoute} no_route, ${s.thrash.length} thrash min${s.falseFind ? `, ${s.falseFind} false "A fortress!"` : ''}`);
     if (has('--verbose')) console.log(`    ${Object.entries(s.byWork).slice(0, 6).map(([k, v]) => `${k} ${v}`).join('; ')}`);
+    if (r.after) console.log(`    first fight to ${r.rodAfter === null ? 'end, no rod' : 'first rod'}: ${r.after.minutes} min, ${r.after.noRoute} no_route, ${r.after.stillUnasked} min still and unasked${r.after.stillFrom ? ` (first at ${iso(r.after.stillFrom)})` : ''}; ${Object.entries(r.after.byWork).slice(0, 5).map(([k, v]) => `${k} ${v}`).join('; ')}`);
   }
 }
 

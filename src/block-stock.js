@@ -152,7 +152,9 @@ function aheadByHandSays(bot, goal) {
   const off = Math.round(bot.entity.position.distanceTo(new (require('vec3').Vec3)(t.x, t.y, t.z)));
   const stop = line.stopName ? `, then ${line.stopName} ${line.stopAt} blocks along, which no hand breaks` : '';
   const part = line.steps < Math.max(...['x', 'y', 'z'].map(k => Math.abs(t[k] - Math.floor(bot.entity.position[k])))) ? ` on its first ${line.steps} blocks` : '';
-  return ` The ${what} in hand heads for (${t.x}, ${t.y}, ${t.z}), ${off} blocks off: straight there${part} digs ${line.dug} cell${line.dug === 1 ? '' : 's'} of rock by hand, ${handTime(line.handSeconds)}, nothing dropped${stop}.`;
+  // Whole blocks: a target taken from an entity's position was said as
+  // (195.49999972280747, 48, 39.112767804520985) (25595, note 754).
+  return ` The ${what} in hand heads for (${Math.floor(t.x)}, ${Math.floor(t.y)}, ${Math.floor(t.z)}), ${off} blocks off: straight there${part} digs ${line.dug} cell${line.dug === 1 ? '' : 's'} of rock by hand, ${handTime(line.handSeconds)}, nothing dropped${stop}.`;
 }
 
 // A way that digs, said with what digging by hand does to it: where no

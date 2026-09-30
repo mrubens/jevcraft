@@ -218,7 +218,7 @@ function pickaxeLeft(bot, spends = {}) {
   const { WOOD_RESERVE } = require('./work');
   const wood = Math.floor((logs + planks / 4 + sticks / 8) * 10) / 10;
   const none = !sticksOk ? 'no sticks can be made' : !headOk ? 'no pickaxe head can be made (3 ingots or 3 cobblestone)' : '';
-  return ` It leaves ${logs} logs, ${planks} planks, ${sticks} sticks and ${ingots} iron ingots (${wood} logs' worth of wood of the ${WOOD_RESERVE} kept for pickaxes and a table); a new pickaxe takes 2 sticks and 3 ingots or 3 cobblestone${none ? `, and ${none} from what is left` : ', and that is left'}. Pickaxes carried: ${picks.join(', ') || 'none'}.${depth >= 8 ? ` The bot is about ${depth} blocks under the surface${none ? `: when the last pickaxe breaks, none can be made down here, and the way up is dug by hand at about ${HAND_BLOCKS_PER_MINUTE} blocks a minute (about ${Math.round(depth / HAND_BLOCKS_PER_MINUTE)} minutes)` : ''}.` : ''}`;
+  return ` It leaves ${logs} logs, ${planks} planks, ${sticks} sticks and ${ingots} iron ingots (${wood} logs' worth of wood of the ${WOOD_RESERVE} kept for pickaxes and a table); a new pickaxe takes 2 sticks and 3 ingots or 3 cobblestone${none ? `, and ${none} from what is left` : ', and that is left'}. Pickaxes carried: ${picks.join(', ') || 'none'}.${depth >= 8 ? ` The bot is about ${depth} blocks under the surface${none ? `: when the last pickaxe breaks, none can be made down here, and the way up is dug by hand (${require('./hand-dig').handPaceSays(bot)}), about ${require('./hand-dig').handPace(bot).minutesUp(depth)} minutes by stairs` : ''}.` : ''}`;
 }
 
 // Where a home step is done, from where the bot is (the decision audit,

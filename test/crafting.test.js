@@ -175,13 +175,38 @@ test('a craft with the pockets full and no room made fails as that, named, not "
   }
 });
 
-test('a craft that uses up an ingredient stack takes its slot for the output, with nothing dropped', async () => {
+test('a craft with no free slot asks for room even where its ingredient stack would empty (note 754)', async () => {
+  // Of 3,638 "timed out ... after crafting" in the flight records, 3,566 had
+  // 0 free slots, 1,129 of them "have 0 of 4": the slot a last log would
+  // free was not room the server gave the output.
   const registry = require('minecraft-data')('26.1');
-  const { bot, client, asked, tossed, slots } = fullPockets(registry);
+  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_dirt'] });
   slots[9].count = 1;
   const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
   await acquireStep(bot, task, 'acacia_planks', 4, {}, () => {});
-  assert.deepEqual(tossed, []);
-  assert.equal(asked.length, 0, 'Jev is not asked to drop anything for a slot the craft frees');
+  assert.equal(asked.length, 1, 'Jev is asked what to drop before the click');
+  assert.equal(tossed.length, 1);
   assert(slots.some(s => s?.name === 'acacia_planks' && s.count === 4));
+});
+
+test('a craft resting for want of a free slot goes to the drop question, not the rest (note 754)', async () => {
+  // 25597 (mid-241-ba): "Crafting oak planks made nothing twice ... 0 free
+  // slots" thirty-six times running, the drop question never asked.
+  const registry = require('minecraft-data')('26.1');
+  const { noteCraftFailure, craftRest } = require('../src/craft-failures');
+  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_dirt'] });
+  for (let n = 0; n < 2; n++) noteCraftFailure(bot, 'acacia_planks', 'no output: acacia planks after crafting, twice (have 0 of 4, 0 free slots)');
+  assert(craftRest(bot, 'acacia_planks'), 'the craft rests');
+  const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
+  await acquireStep(bot, task, 'acacia_planks', 4, {}, () => {});
+  assert.equal(asked.length, 1, 'the room is asked for');
+  assert.equal(tossed.length, 1);
+  assert(slots.some(s => s?.name === 'acacia_planks' && s.count === 4), 'and the craft is made');
+  // A rest for any other reason is still said as the rest.
+  const other = fullPockets(registry);
+  other.slots[12] = null;
+  for (let n = 0; n < 2; n++) noteCraftFailure(other.bot, 'acacia_planks', 'no output: acacia planks after crafting, twice (have 0 of 4, 3 free slots)');
+  const t2 = new Task('craft', 'acacia planks'); t2.opportunityClient = other.client;
+  await assert.rejects(acquireStep(other.bot, t2, 'acacia_planks', 4, {}, () => {}), err => err.name === 'Blocked' && /made nothing twice/.test(err.message));
+  assert.equal(other.asked.length, 0);
 });

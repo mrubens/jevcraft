@@ -594,6 +594,13 @@ async function makeTorches(bot, task, want) {
     const recipe = bot.recipesFor(id, null, 1, null)?.[0];
     if (!recipe) break;
     const times = Math.max(1, Math.min(Math.ceil((want - torchesCarried(bot)) / 4), makeable(bot) / 4));
+    // A craft's click wants a free slot: with none, the drop question is
+    // asked, as for every craft (work.js craft, note 754).
+    const free = () => (bot.inventory.emptySlotCount?.() ?? 1) > 0;
+    if (!free()) {
+      try { await require('./inventory-tidy').makeRoom(bot, task, 'torch', { count: times * 4, room: free, purpose: 'the torches for the spawner' }); } catch (err) { task.check(); }
+      if (!free()) break;
+    }
     try { await bot.craft(recipe, times, null); made += times * 4; } catch (err) { task.check(); debug('torch craft', err.message); break; }
   }
   return made;

@@ -59,7 +59,7 @@ async function recoveryOptions(bot, task, goal, actions) {
     const up = climbToSurface(bot, bot.entity.position);
     const pick = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
     const straight = up > 0 ? `, or about ${climbStraightMinutes(up, { pickaxe: pick })} straight up where the column overhead is open` : '';
-    const climb = up == null ? ' How far up the sky is is not known from here.' : up > 0 ? ` About ${up} blocks up to open sky: roughly ${pick ? `${climbMinutes(up)} minutes by staircase with a pickaxe` : `${Math.round(up / 2)} minutes by hand, with no pickaxe`}${straight}.` : '';
+    const climb = up == null ? ' How far up the sky is is not known from here.' : up > 0 ? ` About ${up} blocks up to open sky: roughly ${pick ? `${climbMinutes(up)} minutes by staircase with a pickaxe` : `${require('./hand-dig').handPace(bot).minutesUp(up)} minutes by hand, with no pickaxe (${require('./hand-dig').handPaceSays(bot)})`}${straight}.` : '';
     add(`Return toward the observed surface using inspected routes or an explicit staircase; pause the current worksite.${climb}`, { kind: 'surface' });
   }
   // The option that changes the situation when every footing nearby has
