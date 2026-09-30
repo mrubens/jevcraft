@@ -1981,6 +1981,24 @@ function shaftCap(bot, refuge) {
 }
 // A pocket shut to walkers but not whole (shelter.js closedIn), said.
 const pocketOpenSays = open => `shut to walkers, but ${open.length} cell${open.length === 1 ? '' : 's'} of its shell ${open.length === 1 ? 'holds' : 'hold'} ${[...new Set(open.map(c => c.name))].join(' and ')}, which no block goes into (${open.slice(0, 3).map(c => `${c.x}, ${c.y}, ${c.z}`).join('; ')})`;
+// Whether the bot stands in its pocket, and which way: sealed; shut to
+// walkers with only lava or water open (closedIn, note 697); or sealed once
+// (refuge.verifiedAt) with a wall opened since, by its own mining or working
+// free (note 736), the cells open named. One reading for claim() and
+// stepOnce: 25589 (mid-242, 09:41-09:44Z) had the claim read the opened
+// pocket as the pocket and win the turn for pocket_next again and again,
+// while stepOnce read only sealed or closedIn as the pocket, fell past it,
+// and asked nothing (note 758).
+function pocketNow(bot, refuge) {
+  if (!refuge || !shelter.inside(bot, refuge)) return null;
+  if (shelter.sealed(bot, refuge)) return { sealed: true };
+  const shutOpen = shelter.closedIn(bot, refuge);
+  if (shutOpen) return { shutOpen };
+  if (!refuge.verifiedAt) return null;
+  return { opened: shelter.missingShell(bot, refuge).map(p => ({ x: p.x, y: p.y, z: p.z })) };
+}
+const pocketOpenedSays = open => `shut before, but not now: a wall was opened since it was last sealed (its own mining, or working free)${open.length ? `: ${open.length} cell${open.length === 1 ? '' : 's'} of its wall ${open.length === 1 ? 'is' : 'are'} open (${open.slice(0, 3).map(c => `${c.x}, ${c.y}, ${c.z}`).join('; ')})` : ''}`;
+const pocketNotWhole = pocket => pocket?.shutOpen ? { pocketNotWhole: pocketOpenSays(pocket.shutOpen) } : pocket?.opened ? { pocketNotWhole: pocketOpenedSays(pocket.opened) } : {};
 // A pocket being sealed where the bot stands, as its last pass left it: the
 // blocks of it in place, and a mob standing in a cell of it, which no block
 // goes into while it stands there. Said on the claim and the stance, not
@@ -4702,12 +4720,28 @@ class Survival {
     // sight under two seconds off chose the shield and keep_on, and died).
     const hitNow = require('./hit-log').recent(bot).length > 0;
     const quick = Object.entries(options).filter(([, o]) => o.quick).sort((a, b) => a[1].quick.seconds - b[1].quick.seconds);
-    if (hitNow && quick.length && (bot.health ?? 20) <= STANCE_HEALTH) {
-      const said = ` At ${Math.round((bot.health ?? 20) * 10) / 10} health and being hit, the ways out of the hits here, quickest first: ${quick.map(([, o]) => o.quick.says).join('; ')}.`;
+    // Low as a work question reads it too (low-health.js, note 752c): at 6
+    // or under, or four and more lost to hits in the last 30 seconds. 25598
+    // (14:32:32 to 14:33:01Z) went 20 to 8 under a zombie and a skeleton,
+    // asked twice on the way down with neither eating nor breaking the line
+    // led, the rule waiting for 6.
+    let lowNow = null;
+    try { lowNow = require('./low-health').lowNow(bot); } catch (_) { lowNow = null; }
+    if (hitNow && quick.length && lowNow) {
+      const said = ` At ${Math.round((bot.health ?? 20) * 10) / 10} health${lowNow.fell ? `, down from ${lowNow.fell.from} in the last ${lowNow.fell.seconds} seconds,` : ''} and being hit, the ways out of the hits here, quickest first: ${quick.map(([, o]) => o.quick.says).join('; ')}.`;
       const ordered = Object.fromEntries([...quick, ...Object.entries(options).filter(([, o]) => !o.quick)]);
       for (const k of Object.keys(options)) delete options[k];
       Object.assign(options, ordered);
       for (const o of Object.values(options)) o.description = `${said.trim()} ${o.description}`;
+    }
+    // A stance that moves runs with the shield down (stanceStep lowers it
+    // for any stance not held behind it): a shot_answer of shield_up lasts
+    // only to the stance's next step. 25598's retreat (14:32:28Z) was taken
+    // with shield_up answered twice about the skeleton, and the arrow at
+    // 14:32:36 landed "shield down" (note 752c). Said where a shooter is
+    // about and a shield is carried.
+    if (bot.inventory?.slots?.[45]?.name === 'shield' && danger.some(t => shooter(t.entity))) for (const [k, o] of Object.entries(options)) {
+      if (MOVING_STANCES.has(k) && !SHIELD_STANCES.has(k) && !/^(eat|drink)/.test(k) && typeof o.description === 'string') o.description += ' The shield is lowered while it moves: a shot that lands on the way lands whole, whatever the shield was answered to the shots.';
     }
     return options;
   }
@@ -5395,9 +5429,23 @@ class Survival {
     // and that failed at once is still said to the next question.
     const closeOrHold = !!require('./shot-reflex').stanceShotsOf(choice);
     const keepFailedHold = !done && !askedNow && soloHeld && physical && !damageOver && inTime && closeOrHold;
+    // A stance just chosen in place of one still holding (asked again with
+    // nothing physical changed: a way come on offer, the hold's end) that
+    // fails at once without acting (no route, nothing struck) is said as
+    // tried, and the one it replaced goes on rather than a fresh ask at once:
+    // 25591 (14:29:17 to 14:30:45Z) went take_cover, fight, out_of_sight,
+    // fight, out_of_sight, take_cover, fight in 90 seconds at full health,
+    // no hit, each fight ending in no route (note 752c).
+    const resumable = !done && askedNow && held && held.choice !== choice && !triggered && !damageOver && options[held.choice] && !stanceActed(bot, stance.start) && !/^eat/.test(choice) ? held : null;
     if (!done && !keepFailedHold) {
       delete this.state.stance; delete bot._stance;
       this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }];
+      if (resumable) {
+        const now = Date.now();
+        this.state.stance = { ...resumable, at: now, health: bot.health, hold: require('./holds').begin({ choice: resumable.choice, health: bot.health, expects: resumable.expects || null, mobs: danger, offered: Object.keys(options) }) };
+        bot._stance = this.state.stance;
+        console.log(`[stance] ${choice.replaceAll('_', ' ')} failed at once${why ? ` (${String(why).slice(0, 80)})` : ''}: ${resumable.choice.replaceAll('_', ' ')} goes on, the failure said at the next asking`);
+      }
     }
     if (!done) {
       // Ended without acting: left out while nothing here changes.
@@ -6359,6 +6407,20 @@ class Survival {
   // register it as tonight's pocket, so the next loop sees a sealed shelter
   // and waits inside until nothing is watching, instead of digging straight
   // back out into the arrows. The eighth death was exactly that.
+  // A pocket sealed once and opened since, closed again where the bot
+  // stands: each open cell of its shell, with the blocks carried (note 758).
+  async closeOpened(task, goal, save, refuge) {
+    const bot = this.bot;
+    let failedInRow = 0;
+    for (const p of shelter.missingShell(bot, refuge)) {
+      task.check();
+      const name = shelter.buildingItem(bot)?.name; if (!name) break;
+      try { await this.actions.place(bot, task, p, name, { stay: true }); failedInRow = 0; }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety'].includes(err.name)) throw err; if (++failedInRow >= 3) break; }
+    }
+    if (shelter.inside(bot, refuge) && shelter.sealed(bot, refuge)) { refuge.verifiedAt = new Date().toISOString(); save(); return true; }
+    return false;
+  }
   async sealHere(task, goal, save, danger) {
     const bot = this.bot;
     if (shelter.materialStock(bot) < 12) return this.digIn(task, goal, save, danger);
@@ -8385,8 +8447,12 @@ class Survival {
     const refuge = this.currentShelter();
     // Or shut to walkers with only lava or water left open in its shell,
     // which no block goes into: the pocket as far as it closes (note 697).
-    const shutOpen = refuge && shelter.inside(bot, refuge) && !shelter.sealed(bot, refuge) ? shelter.closedIn(bot, refuge) : null;
-    const sealedIn = refuge && shelter.inside(bot, refuge) && (shelter.sealed(bot, refuge) || !!shutOpen);
+    // Or sealed once and opened since (note 736): the pocket as claim()
+    // reads it, so the question its claim promises is the one asked
+    // (pocketNow, note 758).
+    const pocket = pocketNow(bot, refuge);
+    const opened = pocket?.opened || null;
+    const sealedIn = !!pocket;
     // The wait's own record goes with the pocket (pocket-wait.js, note 584).
     if (!sealedIn) require('./pocket-wait').leftPocket(this.state);
     if (sealedIn) {
@@ -8661,6 +8727,17 @@ class Survival {
       if (quietSays && options.stay) options.stay.description += quietSays;
       // By day, what the stay waits for and when, said (note 698); by night the minutes to daylight are said already.
       if (options.stay && !night && options.stay.waits?.comes) options.stay.description += ` ${options.stay.waits.says}`;
+      // Opened since it was sealed (pocketNow, note 758): staying closes the
+      // opening first, with the blocks carried, and says so; with none to
+      // close it, the stay is said with its wall open.
+      if (opened?.length && options.stay) {
+        const n = opened.length, stock = shelter.materialStock(bot), cells = `${n} open cell${n === 1 ? '' : 's'} of the pocket's wall`;
+        const lead = stock >= n ? `Close the ${cells} (${n} block${n === 1 ? '' : 's'}, ${stock} carried) and stay`
+          : `Stay in the pocket with ${n} cell${n === 1 ? '' : 's'} of its wall open (${stock ? `${n} blocks to close it, ${stock} carried` : 'no blocks carried to close it'})`;
+        options.stay.description = options.stay.description.replace(/^Stay in the pocket/, lead);
+        const stayRun = options.stay.run;
+        options.stay.run = async () => { if (stock) await this.closeOpened(task, goal, save, refuge); return stayRun(); };
+      }
       // What a way out costs, by where it opens: the leave's door, or a
       // passage's far end (tunnel_out).
       const priceOut = exit => {
@@ -8986,7 +9063,7 @@ class Survival {
             ...(night ? { underground: below, minutesToDawn: minutesToDawn(bot) } : {}), ...(mineOff ? { nightMineOff: mineOff } : {}), ...(Object.keys(notNow).length ? { notNow } : {}),
             stillNeeded: require('./game-progress').rungsAhead(bot, goal, this.actions.planFor),
             inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
-            ...(waitSays ? { pocketSoFar: waitSays.facts } : {}), ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : {}),
+            ...(waitSays ? { pocketSoFar: waitSays.facts } : {}), ...pocketNotWhole(pocket),
             riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot),
             health: bot.health, food: bot.food, armedAndArmoured: kitReady(bot), armourWorn: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, watchedForSeconds: this.state.watchedSince ? Math.round((Date.now() - this.state.watchedSince) / 1000) : 0,
             threats: threats(bot).filter(t => t.distance < 20).slice(0, 6).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: t.visible, shoots: shooter(t.entity), ...(onLid.some(o => o.entity === t.entity) ? { onLid: true, inReach: false, canReachBot: false } : {}) })) } }); }
@@ -9647,17 +9724,15 @@ function claim(bot, goal = {}, survival = null) {
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
   const insideRefuge = refuge && shelter.inside(bot, refuge);
-  const sealedNow = insideRefuge && shelter.sealed(bot, refuge);
-  const shutOpen = insideRefuge && !sealedNow ? shelter.closedIn(bot, refuge) : null;
-  // Sealed once before (refuge.verifiedAt) and standing in it now, even with
-  // a wall open that is neither whole nor only a fluid gap (closedIn's own
-  // case): its own mining or working free opened it, not a shelter never
-  // begun, so this is still the pocket's question, not a fresh "shelter for
-  // the night" read as if none existed. 25589 (mid-242-wb) had turn_priority
+  // Sealed, shut but for a fluid, or sealed once before (refuge.verifiedAt)
+  // and standing in it now with a wall opened since by its own mining or
+  // working free: still the pocket's question, not a fresh "shelter for the
+  // night" read as if none existed. 25589 (mid-242-wb) had turn_priority
   // read "Shelter for the night... asked next" nine times in under three
   // minutes while sitting and working in a pocket sealed once already
-  // (critic 08:17Z, note 736).
-  const openedSinceSealed = insideRefuge && !sealedNow && !shutOpen && refuge.verifiedAt;
+  // (critic 08:17Z, note 736). The step reads it the same way (pocketNow,
+  // note 758).
+  const inPocket = pocketNow(bot, refuge);
   // A pocket answer that holds is carried out by the step without asking
   // (stepOnce's held choice, the wait for daylight chosen sealed, the nook
   // or the bed chosen for tonight): said so, not "asked next". 25594
@@ -9671,9 +9746,8 @@ function claim(bot, goal = {}, survival = null) {
   // nothing about it (stepOnce's pocket branch, note 757): said, with when
   // the first comes back, not "asked next".
   const pocketRests = insideRefuge ? pocketRestsOf(state, refuge, now) : null;
-  if (insideRefuge && (sealedNow || shutOpen || openedSinceSealed)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
-    ...(pocketRests ? { pocketWaysRest: pocketRests } : pocketHeld ? { pocketHeld } : {}), ...(underground ? { underground: true } : {}),
-    ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : openedSinceSealed ? { pocketNotWhole: 'shut before, but not now: a wall was opened since it was last sealed (its own mining, or working free)' } : {}),
+  if (inPocket) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
+    ...(pocketRests ? { pocketWaysRest: pocketRests } : pocketHeld ? { pocketHeld } : {}), ...(underground ? { underground: true } : {}), ...pocketNotWhole(inPocket),
     ...(require('./pocket-wait').pocketWaitSays(bot, state, goal, { near: threats(bot, 64), night: shelterNeeded(bot),
       // Whether the wait waits for nothing, as the pocket's own question
       // reads it (note 679): nothing to eat, and no spawner in reach.

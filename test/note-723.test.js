@@ -160,10 +160,14 @@ test('encounter_stance says a closing option reverses a defer hunt_target chose 
     world: { raycast: () => null }, findBlocks: () => [], lookAt: async () => {}, look: async () => {}, equip: async () => {}, attack() {}, _hurtBy: {},
   });
   const survival = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] }, client: { systemOne: async () => ({}) } });
-  const goal = { lastHuntDefer: { at: Date.now() - 1000, position: { x: 0.5, y: 70, z: 0.5 } } };
+  // The clock held still: under load the step itself took over half a
+  // second and "1 second ago" read "2 seconds ago".
+  const t0 = Date.now(), real = Date.now;
+  const goal = { lastHuntDefer: { at: t0 - 1000, position: { x: 0.5, y: 70, z: 0.5 } } };
   let seen = null;
   survival.decide = async (task, g, save, q) => { seen = q; return { path: [Object.keys(q.tree)[0]] }; };
-  await survival.stanceStep(new Task('x'), goal, () => {}, [{ entity: blaze, distance: 6, visible: true }], false);
+  Date.now = () => t0;
+  try { await survival.stanceStep(new Task('x'), goal, () => {}, [{ entity: blaze, distance: 6, visible: true }], false); } finally { Date.now = real; }
   assert.equal(seen.state.huntAnswerJustNow, 'defer (hunt target), chosen 1 second ago from about here: the observed situation was unsuitable to hunt.');
   const closing = [...reflex.STANCE_SHOTS.closing].find(k => seen.tree[k]);
   assert(closing, `no closing option offered: ${Object.keys(seen.tree).join(',')}`);

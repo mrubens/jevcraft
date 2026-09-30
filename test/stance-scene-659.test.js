@@ -124,7 +124,10 @@ test('replayed through the stance step, an answer holds while the scene is uncha
   assert.match(lastAsk.state.notOfferedNow.find(f => f.choice === 'shield_guard').why, /^(came to nothing once in this same scene, the last \d+ seconds ago: the guard ran 0 swings, no health lost; nothing a stance turns on has changed since \(sameSceneSoFar\), so it would come to the same; offered again when the scene changes|ended here without acting, the last \d+ seconds ago: held \d+ seconds: nothing was struck, not a step was taken and no block was placed or dug; nothing has changed here since \(the bot, the mobs and the health as they were\), so it would end the same; offered again when something changes)$/);
   // The question says the scene unchanged, its facts, and what each answer came to.
   assert.match(lastAsk.state.sameSceneSoFar, /^Nothing a stance turns on has changed here for \d+ minutes: health 3 \(2 hearts\), hunger 17, the magma cube within 8 blocks and out of the sword's reach, in sight, the piglin 8 to 16 blocks off, in sight, 0 blocks carried, the shield in the off hand, no blaze rod, no hit taken and the bot on the same block\./);
-  assert.match(lastAsk.state.sameSceneSoFar, /In that time the stance was answered \d+ times \(\d askings\): .*hold on span \d+ times \(\d+ of them held without asking\), held; shield guard 1 time, it came to nothing \(the last: the guard ran 0 swings, no health lost\)/);
+  // In either order: a stance that failed at once goes back to the one it
+  // replaced (note 752c), which moves the tally's order.
+  assert.match(lastAsk.state.sameSceneSoFar, /In that time the stance was answered \d+ times \(\d askings\): .*hold on span \d+ times \(\d+ of them held without asking\), held/);
+  assert.match(lastAsk.state.sameSceneSoFar, /In that time [^.]*shield guard 1 time, it came to nothing \(the last: the guard ran 0 swings, no health lost\)/);
   assert.match(lastAsk.state.sameSceneSoFar, /An answer that holds is kept without asking while none of this changes/);
   // The none-good count is keyed on the scene, not the whole state.
   assert.equal(lastAsk.situation, `stance:${book.key}`);

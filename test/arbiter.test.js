@@ -488,7 +488,7 @@ test('a layer whose turns were each stopped at once by the threat check says so 
     const decide = async (id, { tree }) => { trees.push(tree); return { path: ['vitals'] }; };
     for (let i = 0; i < 3; i++) await assert.rejects(arbiter.take(bot, [survival, vitals, work], { state, mobs: [blaze], decide }), /Threat nearby/);
     assert.equal(trees.length, 3, 'asked again after each stop');
-    assert.equal(trees[0].vitals.description.does, 'Eat beef now, about 1.6 seconds standing still. Health 10.6. Hunger 17 to 20. It does not come back at hunger 17.');
+    assert.equal(trees[0].vitals.description.does, 'Eat beef now, about 1.6 seconds standing still. Health 10.6. Hunger 17 to 20. It does not come back at hunger 17; eaten, it comes back from then, at hunger eighteen or more.');
     assert.match(trees[1].vitals.description.does, /Its last turn was stopped at once by the threat check its run is given: Threat nearby: blaze at 6 blocks\. That check still finds one now: the blaze 6 blocks off \(out of sight\), one the seal stance was chosen against; given the turn again, it is stopped again at once\.$/);
     assert.match(trees[2].vitals.description.does, /Its last 2 turns, in the last 1 second, were each stopped at once/);
     assert.match(trees[2].vitals.description.facts.stoppedAtOnce, /stopped again at once/);

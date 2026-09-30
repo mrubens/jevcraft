@@ -114,7 +114,10 @@ function question(id) {
 
 // Every key in the tree must be one its question declares. Under the test
 // runner an undeclared key fails; in play it is logged once as a bug.
-const declared = (spec, key) => key === NONE_GOOD_KEY || spec.options.some(o => o.key === key || (o.pattern && new RegExp(`^(?:${o.pattern})$`).test(key)));
+// The body's own ways offered beside a work question at low health
+// (low-health.js, note 752c) are every such question's, as none_good is.
+const BODY_KEYS = new Set(['eat_first', 'wall_in_first']);
+const declared = (spec, key) => key === NONE_GOOD_KEY || BODY_KEYS.has(key) || spec.options.some(o => o.key === key || (o.pattern && new RegExp(`^(?:${o.pattern})$`).test(key)));
 // "None of these options are good", on every question about playing the
 // game: Jev's way of saying the move a player would make is not on the
 // list. It is recorded for us to add what is missing, and the best of the
@@ -568,6 +571,21 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (done.facts.length) {
       console.log(`[already so] ${id}: ${done.facts.join(' | ')}`);
       if (state && typeof state === 'object') state = { ...state, alreadySo: done.facts };
+    }
+  }
+  // At low health (6 or under, or four and more lost to hits in the last 30
+  // seconds), a question about the work says the body, the hits and what
+  // the work at this health came to in the played record, and offers eating
+  // or walling in first, each with its time (low-health.js, note 752c):
+  // 25588 at 2 health, nine zombie hits in eight seconds, was asked which
+  // coal ore to dig with nothing said of either. Not the questions that are
+  // the body's own (the fight, the shelter, the turn, the pocket).
+  let bodyFirst = null;
+  if (bot && goal && !aside && GAMEPLAY_AREAS.has(spec.area) && spec.area !== 'combat' && !BODY_QUESTIONS.has(id)) {
+    try { bodyFirst = require('../low-health').ways(bot, { task: task || { check() {} }, goal, save }); } catch (_) { bodyFirst = null; }
+    if (bodyFirst) {
+      tree = { ...tree, ...bodyFirst.tree };
+      state = { ...(state && typeof state === 'object' ? state : {}), lowHealth: bodyFirst.says };
     }
   }
   const original = tree;
@@ -1066,8 +1084,20 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     // lost between (note 530).
     if (bot && typeof bot.emit === 'function') { try { bot.emit('jev_decision', goal); } catch (_) { /* the record only */ } }
   }
+  // The body seen to first, chosen: done here, and the question comes back
+  // stale for its caller to ask again from where the bot is then.
+  const bodyKey = decision.path?.[0];
+  if (bodyFirst && !decision.stale && bodyFirst.tree[bodyKey]) {
+    let ran = false;
+    try { ran = !!(await bodyFirst.tree[bodyKey].run()); }
+    catch (err) { task?.check?.(); if (['NeedsAir', 'Cancelled'].includes(err?.name)) throw err; ran = false; }
+    console.log(`[low health] ${id}: ${bodyKey} ${ran ? 'done' : 'did nothing'} before the question is asked again`);
+    return { ...decision, stale: true, bodyFirst: { key: bodyKey, ran } };
+  }
   return decision;
 }
+// The questions that are the body's own, not the work's (note 752c).
+const BODY_QUESTIONS = new Set(['turn_priority', 'survival_priority', 'shelter_method', 'pocket_next', 'body_way', 'unstuck_move', 'way_down', 'climb_out']);
 
 // Batched questions (intake and the rest): each defined question builds its
 // typed question from the caller's arguments, and they go in one call. The

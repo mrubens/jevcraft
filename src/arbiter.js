@@ -411,6 +411,11 @@ function withSays(option, c, bot, state, mobs, now) {
   const stop = stoppedSays(bot, state, c.layer, now);
   if (stop) add.push(stop);
   if (c.layer === 'work') { const body = workBodySays(bot, mobs); if (body) add.push(body); }
+  // At low health, the work's option says the fall, the hits and what the
+  // work given the turn at this health came to, beside the meal and the
+  // pocket with their times (low-health.js, note 752c): 25588 gave the work
+  // "craft (stick)" 0.51 over "Eat cooked beef now" 0.46 at 2.3 health.
+  if (c.layer === 'work') { let low = ''; try { low = require('./low-health').says(bot, { mobs, health: false }).trim(); } catch (_) { low = ''; } if (low) add.push(`At low health: ${low}`); }
   // Where the bot stands now, with a ghast in sight whose fireball's push
   // carries it over a drop that kills: said on the work too, as on the
   // survival claim (note 612). mid-242-bb-fortress-2's work was offered
@@ -500,7 +505,10 @@ function claimSays(c) {
     case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on` : notAsked(f) || 'the stance is asked next'}. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     // Said with the biters walking up while it eats, standing still (note 552).
-    case 'eat': return `Eat ${f.item ? (f.item === 'chicken' ? 'raw chicken' : String(f.item).replaceAll('_', ' ')) : 'food'} now, about ${c.cost?.seconds || 1.6} seconds standing still.${hp} Hunger ${f.food}${f.foodPoints ? ` to ${Math.min(20, f.food + f.foodPoints)}` : ''}.${heals}${f.effect ? ` It is the last resort: ${f.effect}.` : ''}${(f.comingAtTheBot || []).map(m => ` ${mob(m)[0].toUpperCase()}${mob(m).slice(1)} is coming at about ${m.blocksASecond} blocks a second, at the bot in about ${m.atBotInSeconds} seconds${m.atBotInSeconds <= (c.cost?.seconds || 1.6) ? ', before the meal is done' : ''}${m.hitsFor ? `; each hit about ${m.hitsFor} through the armour worn${f.health !== undefined && m.hitsFor >= f.health ? ' (as much as the health left)' : ''}` : ''}${m.note ? ` (${m.note})` : ''}.`).join('')}`;
+    // Said with what eating does to healing: "It does not come back at
+    // hunger 17" was said of the meal that takes hunger to 20 (25588,
+    // 14:09:28Z, note 752c).
+    case 'eat': return `Eat ${f.item ? (f.item === 'chicken' ? 'raw chicken' : String(f.item).replaceAll('_', ' ')) : 'food'} now, about ${c.cost?.seconds || 1.6} seconds standing still.${hp} Hunger ${f.food}${f.foodPoints ? ` to ${Math.min(20, f.food + f.foodPoints)}` : ''}.${f.healing === false && f.foodPoints && f.food + f.foodPoints >= 18 ? ` It does not come back at hunger ${f.food}; eaten, it comes back from then, at hunger eighteen or more.` : heals}${f.effect ? ` It is the last resort: ${f.effect}.` : ''}${(f.comingAtTheBot || []).map(m => ` ${mob(m)[0].toUpperCase()}${mob(m).slice(1)} is coming at about ${m.blocksASecond} blocks a second, at the bot in about ${m.atBotInSeconds} seconds${m.atBotInSeconds <= (c.cost?.seconds || 1.6) ? ', before the meal is done' : ''}${m.hitsFor ? `; each hit about ${m.hitsFor} through the armour worn${f.health !== undefined && m.hitsFor >= f.health ? ' (as much as the health left)' : ''}` : ''}${m.note ? ` (${m.note})` : ''}.`).join('')}`;
     case 'leave_lava': return 'Get out of the lava.';
     case 'out_of_fire': return 'Put out the fire on the bot.';
     case 'dig_out_of_block': return 'Dig the head out of the block it is in.';
