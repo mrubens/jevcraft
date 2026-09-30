@@ -56,6 +56,7 @@ const { stage } = require('../typesafe');
 const repeats = require('./repeats');
 const tried = require('../tried');
 const leastBad = require('./least-bad');
+const unchanged = require('./unchanged');
 
 const QUESTIONS = new Map();
 const STAKES = new Set(['low', 'medium', 'high']);
@@ -169,6 +170,10 @@ const LEAST_BAD = 'leastBadLast: at this question\'s last asking Jev said none o
 const LAST_HIT = 'lastHit: one hit ends the bot and only food brings health back.';
 const AT_ONCE = 'failedAtOnce: answers chosen a moment ago whose action ended within two seconds, and why; each rests from where it was chosen.';
 const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet arrived, done or failed; lastIntention is how the last one ended.';
+// Note 724 (unchanged.js): the answer before this one changed nothing, and
+// options whose goal is already so.
+const CHANGED_NOTHING = 'answerChangedNothing: this question\'s last answer ended with the bot on the same block, carrying the same, no block dug or placed and health as it was; the same answer again changes nothing unless something else has.';
+const ALREADY_SO = 'alreadySo: options not offered because what they would bring about is already so.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
 // Off the Overworld the clock is only minutes (note 677): no day comes to
 // end a wait, nothing burns off, and a wait in a sealed pocket ends only when
@@ -204,7 +209,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -520,6 +525,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       console.log(`[waits] ${id}: ${w.facts.join(' | ')}`);
       if (state && typeof state === 'object') state = { ...state, waitsForNothing: w.facts };
     }
+    // An option whose goal is already so (a node's `satisfied`, unchanged.js,
+    // note 724): not offered, said as a fact.
+    const done = unchanged.satisfiedGate(tree);
+    tree = done.tree;
+    if (done.facts.length) {
+      console.log(`[already so] ${id}: ${done.facts.join(' | ')}`);
+      if (state && typeof state === 'object') state = { ...state, alreadySo: done.facts };
+    }
   }
   const original = tree;
   // One way: taken and said, not asked. A question with one option was
@@ -717,6 +730,36 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // stands: the best of the options by that answer's weights is taken, as
   // it was each time, and the question above has been told (below).
   const sit = tracked ? (situation ?? repeats.situation(state, plainOf(tree, original))) : null;
+  // The answer before this one changed nothing (unchanged.js, note 724): the
+  // block, what is carried, the blocks dug or placed and the health band are
+  // as they were when it was given. With the question's facts the same too,
+  // it is not asked yet: the bot holds, its reflexes watching as they do
+  // while a question is out, until one of those changes (then the question
+  // is built afresh: stale) or the stated wait passes. Either way the answer
+  // that changed nothing is said, in the facts and on its option. The body's
+  // own questions, the stance and the routing are said, never held.
+  const digest = tracked ? unchanged.digest(state, plainOf(tree, original)) : null;
+  let changedNothing = null;
+  if (tracked) {
+    const last = unchanged.before(bot, id, digest);
+    if (last) {
+      let held = { heldMs: 0, ended: null };
+      if (last.holdMs > 0 && !unchanged.NOT_HELD.has(id) && !aside) {
+        console.log(`[unchanged] ${id}: ${last.choice} changed nothing ${Math.round((Date.now() - last.at) / 100) / 10}s ago, the same facts; held up to ${Math.round(last.holdMs / 1000)}s for something to change`);
+        const { takeTurn, giveBack } = require('../turn');
+        const before = takeTurn(bot, 'decision', `held: ${id}, its last answer changed nothing`), heldMark = bot._turn;
+        try { held = await unchanged.hold(bot, last, last.holdMs, { check: () => { task?.check(); if (watchAir) checkAir(bot); interrupt(); } }); }
+        finally { if (bot._turn === heldMark) giveBack(bot, before); }
+        if (held.changed) { console.log(`[unchanged] ${id}: held ${(held.heldMs / 1000).toFixed(1)}s, then ${held.changed}; asked afresh`); return { id, stale: true, heldUnchanged: { choice: last.choice, heldMs: held.heldMs, changed: held.changed } }; }
+      }
+      const w = unchanged.says(last, held);
+      state = { ...state, answerChangedNothing: w.facts };
+      // On the option too, unless the ledger's words on it say it already.
+      const leaf = tried.leafAt(tree, last.choice);
+      if (leaf && !/came to nothing/.test(typeof leaf.description === 'string' ? leaf.description : JSON.stringify(leaf.description || ''))) tree = leastBad.sayOn(tree, last.choice, w.option);
+      changedNothing = last;
+    }
+  }
   // The stance's only (note 693): elsewhere a none good changes the next
   // asking (least-bad.js) instead of the likeliest listed being taken unasked.
   const spentHere = tracked && !leastBad.applies(id) ? repeats.noneGoodSpent(bot, id, sit, { here: bot.entity?.position }) : null;
@@ -728,11 +771,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   if (tracked) {
     const waiting = waitingByChoice(goal, id);
-    const again = repeats.before(bot, goal, id, print, { waiting });
+    const again = repeats.before(bot, goal, id, print);
     // And whatever the facts: the last answers in a row that each came
     // back at once with nothing coming of them (note 570).
     const quick = repeats.quickBefore(bot, goal, id, { waiting });
-    const holding = again?.hold ? again : quick?.hold ? quick : null;
+    // The same facts and the same answer come back at once are unchanged.js's
+    // (note 724): held there, before this, until something changes. What is
+    // held here is a run of answers back at once whatever the facts.
+    const holding = quick?.hold ? quick : null;
     if (holding) {
       const why = `${id.replaceAll('_', ' ')}: ${holding.says}`;
       repeats.held(bot, id, holding.says);
@@ -740,8 +786,8 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
       // Held, the answers rest from here (the ledger), and the question
       // above is asked with this failure said: not the same question, and
       // not a detour that walks eight blocks and comes back to it (note 571).
-      const methods = holding.run ? [holding.run.choice] : holding.streak.map(s => s.choice);
-      if (ledgered) tried.hold(bot, goal, id, methods, holding.says, { target, targets: Object.fromEntries(methods.map(m => [m, tried.leafAt(tree, m)?.target])), anyTarget: !holding.run });
+      const methods = holding.streak.map(s => s.choice);
+      if (ledgered) tried.hold(bot, goal, id, methods, holding.says, { target, targets: Object.fromEntries(methods.map(m => [m, tried.leafAt(tree, m)?.target])), anyTarget: true });
       // The answers held rest; a question with other ways left is asked
       // with those, the hold said, and escalates only once they rest too:
       // on 25583 fortress_leg's hold on back_to_fortress and leg_east would
@@ -862,6 +908,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   }
   decision.id = id;
   if (tracked && !decision.stale && decision.path) repeats.after(bot, id, print, decision.path.join('/'), { goal });
+  if (tracked && !decision.stale && decision.path) unchanged.after(bot, id, { choice: decision.path.join('/'), digest, run: changedNothing?.run || 0 });
   if (bot && client && !decision.stale && decision.path && GAMEPLAY_AREAS.has(spec.area)) leastBad.after(bot, goal, id, original, decision, lastLeastBad);
   if (bot && client && ledgered) leastBad.chosenAfter(bot, goal, id, original, decision, lastChosen);
   // "None of these is good", sure, twice running to the same situation:

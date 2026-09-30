@@ -14,6 +14,8 @@ const jevDown = require('../../src/jev-down');
 
 // A held question under the test runner comes round in milliseconds.
 jevDown.setBackoff([5, 10, 20]);
+// And a question held for its last answer changing nothing (note 724).
+require('../../src/decisions/unchanged').setHold([5, 10, 20]);
 
 // Shelter before food before the request: the order a careful player
 // keeps when nobody is weighing the trade.

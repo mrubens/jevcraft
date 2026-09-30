@@ -16,9 +16,10 @@
 // same answer, with nothing measurable between (no new ground, nothing
 // worth keeping gained, no block dug or placed, no progress the stall
 // watch saw), the answer is said to have come to nothing, in the question's
-// own facts. And when it came back at once, twice running, it is not asked
-// a third time: it is held as failed, said, and the stall path (a detour,
-// Jev's) takes the step.
+// own facts. Held, it is no longer here: an answer that changed nothing is
+// held by unchanged.js (note 724) until something changes, for every
+// question; what is held here is a run of answers back at once whatever the
+// facts (quickBefore), which the same facts never meet.
 
 // What changes with time alone: never part of the facts compared.
 const CLOCK = /^(at|askedAt|since|until|t0|stages|secondsAgo|minutesAgo|timeOfDay|time|age|runClock|recentPositions|recentDeaths|daylight|daylightTicksRemaining|lastHalfHourBy|minutesBy|minutesPlayed|minutesSinceStart|hasHadTheTurnSeconds|didNothingWithItSeconds|sameAnswerAgain|lastAnswersCameToNothing|answersThatCameToNothing|workWaits)$/i;
@@ -82,10 +83,6 @@ function whyItEnded(bot, goal, since) {
 // loops that went nowhere asked again every 0.1 to 4 seconds; a wait asks
 // again at ten seconds or more.
 const AT_ONCE_MS = 5000;
-// Held after the second such answer, not the first: one answer that ends
-// at once can be a step taken (a block dug down a pillar, a door opened);
-// two in a row with the same facts and nothing between are a loop.
-const HOLD_AFTER = 2;
 // What is remembered: a run of the same answer, broken by new facts, a
 // new answer, or something measurable coming of it.
 const KEEP_MS = 10 * 60000;
@@ -99,8 +96,8 @@ function says(run, now) {
 }
 
 // Before asking: the run this question is in, if its last answer came to
-// nothing with these same facts. -> { run, says, hold } or null
-function before(bot, goal, id, print, { now = Date.now(), waiting = false } = {}) {
+// nothing with these same facts, said. -> { run, says } or null
+function before(bot, goal, id, print, { now = Date.now() } = {}) {
   const memo = bot?._repeats;
   const run = memo?.[id];
   if (!run || now - run.at > KEEP_MS) return null;
@@ -112,8 +109,7 @@ function before(bot, goal, id, print, { now = Date.now(), waiting = false } = {}
     run.gaps.push(now - run.at);
     run.why = whyItEnded(bot, goal, run.at) || run.why;
   }
-  const hold = !waiting && run.times >= HOLD_AFTER && run.gaps.length >= HOLD_AFTER && run.gaps.slice(-HOLD_AFTER).every(g => g <= AT_ONCE_MS);
-  return { run, says: says(run, now), hold };
+  return { run, says: says(run, now) };
 }
 
 // The answers that came back at once, whatever the facts (note 570). The
@@ -230,4 +226,4 @@ function noneGoodSpent(bot, id, print, { now = Date.now(), here = null } = {}) {
   return { weights: run.spent.weights, since: run.at, times: run.times };
 }
 
-module.exports = { fingerprint, situation, noneGoodAfter, noneGoodSpent, NONE_GOOD_SURE, NONE_GOOD_RUN, SPENT_MS, mark, cameOf, whyItEnded, before, quickBefore, after, held, heldSays, says, quickSays, AT_ONCE_MS, HOLD_AFTER, QUICK_HOLD, GROUND };
+module.exports = { fingerprint, situation, noneGoodAfter, noneGoodSpent, NONE_GOOD_SURE, NONE_GOOD_RUN, SPENT_MS, mark, cameOf, whyItEnded, before, quickBefore, after, held, heldSays, says, quickSays, AT_ONCE_MS, QUICK_HOLD, GROUND };

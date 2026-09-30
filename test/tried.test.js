@@ -96,25 +96,27 @@ test('the same failing question asked ten times: at most two askings, then escal
   assert.equal(asks, 2);
 });
 
-test('a hold by the repeat rule rests the answer held: asked again, it is left out (note 573)', async () => {
+test('the same answer to the same facts, having changed nothing, is held and then asked with that said, not rested unasked (notes 573, 724)', async () => {
   // The same answer to the same facts, each time toward a place six blocks on, so no place in the ledger
-  // matches: the repeat rule holds it at the third asking, and the hold is kept in the ledger.
+  // matches. The repeat rule used to hold it at the third asking and rest it, the one way left taken unasked
+  // (note 573); an answer that changed nothing is now held until something changes or its wait passes, and
+  // asked with it said (unchanged.js, note 724).
   const { decide } = require('../src/decisions');
   const bot = { entity: { position: new Vec3(0.5, 12, 0.5) }, game: { dimension: 'overworld' }, inventory: { items: () => [] } };
   const goal = { kind: 'obtain', item: 'iron_ingot', step: { action: 'night_mine' } };
-  let asks = 0;
-  const client = { systemOne: async () => { asks++; return { answers: { branch_0: { choice: 'ore_0', confidence: 0.9 } } }; } };
+  const seen = [];
+  const client = { systemOne: async ({ state, questions }) => { seen.push({ state, options: questions.branch_0 }); return { answers: { branch_0: { choice: 'ore_0', confidence: 0.9 } } }; } };
   const tree = n => ({ ore_0: { description: 'Iron ore in the wall.', target: { x: 6 * n, y: 12, z: 5 } }, branch: { description: 'A branch tunnel.' } });
   await decide('night_mine_target', { client, bot, goal, tree: tree(1), state: {} });
   await decide('night_mine_target', { client, bot, goal, tree: tree(2), state: {} });
-  // Held at the third asking: the held answer rests, and with a way left the question is not passed up (note 583):
-  // the one way left is taken.
+  assert.match(seen[1].state.answerChangedNothing, /^ore 0 was chosen \d+ seconds? ago and changed nothing .*; this question was held/);
   const third = await decide('night_mine_target', { client, bot, goal, tree: tree(3), state: {} });
-  assert.deepEqual(third.path, ['branch'], 'the held answer rests; the one way left is taken, not escalated');
+  assert.deepEqual(third.path, ['ore_0'], 'Jev\'s answer, told it changed nothing');
+  assert.match(seen[2].state.answerChangedNothing, /the last 2 answers to this question in a row changed nothing/);
+  // Said on the option once: by the ledger's words where it has them, else the rule's.
+  assert.match(JSON.stringify(seen[2].options), /Iron ore in the wall\. .*(came to nothing|Chosen \d+ seconds? ago, and it changed nothing)/);
   assert.equal(bot._stalls?.stall, undefined);
-  const next = await decide('night_mine_target', { client, bot, goal, tree: tree(3), state: {} });
-  assert.deepEqual(next.path, ['branch'], 'and stays resting');
-  assert.equal(asks, 2);
+  assert.equal(seen.length, 3);
 });
 
 test('a rung with no new best for ten working minutes raises the rung\'s question, with what was tried; busy going nowhere does not reset it', async t => {
