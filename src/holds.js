@@ -81,9 +81,18 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
     if (lost > priced + (e.oneHit || 0)) return `${Math.round(lost * 10) / 10} health lost in ${secs(now - hold.at)}, more than the ${Math.round(priced * 10) / 10} it was priced at by then`;
   }
   const solo = soloArrowShooter(mobs, hold.choice);
+  // One gone of several is news only when it was the nearest of them, or
+  // the last: the rest are still what the stance answers. 25583 (mid-244-fe,
+  // 13:06:10Z) on its pillar over two hoglins was asked again for "the
+  // piglin brute it was chosen against is gone", 10.5 blocks off behind
+  // them, and at 13:06:26 for a piglin the same, nothing else changed
+  // (note 752b).
+  const nearestAgainst = hold.against.reduce((a, m) => (!a || m.distance < a.distance ? m : a), null);
+  const stillHere = hold.against.filter(m => mobs.some(x => x?.entity?.id === m.id));
   for (const m of hold.against) {
     const t = mobs.find(x => x?.entity?.id === m.id);
-    if (!t) return `the ${name(m.name)} it was chosen against is gone`;
+    if (!t && (m === nearestAgainst || !stillHere.length)) return `the ${name(m.name)} it was chosen against is gone`;
+    if (!t) continue;
     // Come to arm's length, one that bites, from out of it: mid-242-ah-
     // fortress-3's retreat was held on past its run with the wither skeleton
     // it ran from at 4.2, 6.7 and then 2 blocks, never four nearer; it was
@@ -96,7 +105,11 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
     if ((hurtBy[m.name] || 0) > hold.at) return `the ${name(m.name)} it was chosen against hit the bot`;
   }
   if (shot) return `a shot came at the bot${shot.name ? ` (${name(shot.name)})` : ''}`;
-  const fresh = offered.filter(k => k !== 'none_good' && !hold.offered.includes(k));
+  // A shot at one mob or another is the one way (shoot_<id> per target):
+  // a new target's key is not a new way (25583, 13:05:51Z: "shoot 5353").
+  const way = k => String(k).replace(/^shoot_\d+$/, 'shoot');
+  const had = new Set(hold.offered.map(way));
+  const fresh = offered.filter(k => k !== 'none_good' && !had.has(way(k)));
   if (fresh.length) return `a way not on offer when it was chosen is on offer now: ${fresh.map(name).join(', ')}`;
   return null;
 }

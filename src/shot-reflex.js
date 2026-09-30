@@ -519,6 +519,13 @@ function shotOptions(bot, warned) {
     ? ` Held here (${held.choice.replaceAll('_', ' ')}) so far: ${faced.landed ? `${faced.landed} of ${faced.landed + faced.not} shots on the way have landed` : `none of ${faced.not} shot${faced.not === 1 ? '' : 's'} on the way has landed`}.`
     : '';
   tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.${heldSays}` };
+  // What has been hitting the bot, first on every answer, and a hit taken
+  // with the shield up from a side it does not face (note 752b: 25594 took
+  // two hits "(shield up)" and was offered shield_up and keep_on five times
+  // with neither said).
+  let hitSays = '';
+  try { hitSays = require('./hit-log').says(bot, require('./danger').threats(bot, 32)); } catch (_) { hitSays = ''; }
+  if (hitSays) for (const o of Object.values(tree)) o.description = `${hitSays} ${o.description}`;
   return tree;
 }
 // The rest of the room against that facing: the blazes within sixteen, in

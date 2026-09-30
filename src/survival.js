@@ -2350,6 +2350,8 @@ class Survival {
         // Who did it, by kind: a neutral mob that hits the bot has turned.
         if (source?.name) (bot._hurtBy ||= {})[source.name] = Date.now();
         if (source?.id !== undefined) (bot._hurtById ||= {})[source.id] = Date.now();
+        // Each hit by its source, its side and the shield (note 752b).
+        try { require('./hit-log').note(bot, source); } catch (_) { /* no log */ }
         // Where a mob hurt it, for what is said of the place (mobSourceAbout).
         if (source?.name && ['hostile', 'mob'].includes(source.type) && bot.entity?.position) {
           const p = bot.entity.position;
@@ -3906,8 +3908,13 @@ class Survival {
       const regain = regainAt(cover.cell, { setup: secs });
       const hiddenCost = stanceCost({ mobs, setup: secs, fight: { atOnce, only: m => !m.shoots }, reaches: reachesAgain(regain), shield: shielded });
       const off = Math.round(cover.cell.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) * 10) / 10;
-      const biters = biting.length ? ` What bites comes round to it and is fought at arm's length, at most ${atOnce} at once there.` : '';
-      options.out_of_sight = { expects: { damage: hiddenCost.damage, seconds: hiddenCost.seconds, oneHit },
+      // Named, so the option says which mobs it answers and which it does
+      // not: 25597's out_of_sight (13:21:06Z) spoke of "the skeleton" 20
+      // blocks off while the creeper 7.3 blocks off was what held the turn
+      // (note 752b).
+      const bitersNamed = danger.filter(t => !shooter(t.entity)).slice(0, 3).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ');
+      const biters = biting.length ? ` It answers the shooters only: what does not shoot (${bitersNamed}) comes round to it${biting.some(e => e.name === 'creeper') ? ', a creeper to go off beside it,' : ''} and is fought at arm's length, at most ${atOnce} at once there.` : '';
+      options.out_of_sight = { expects: { damage: hiddenCost.damage, seconds: hiddenCost.seconds, oneHit }, quick: { seconds: secs, says: cover.steps ? `out of sight, a ${plural(cover.steps, 'block')} walk of about ${secs} seconds` : 'out of sight where it stands' },
         description: (cover.steps
           ? `Walk ${plural(cover.steps, 'block')} to a spot ${off} blocks off that no line from ${shooterNames(shooting)} reaches (rock stands between), about ${secs} seconds in their fire on the way, and stay there.`
           : `Stay where the bot stands: no line from ${shooterNames(shooting)} reaches it here (rock stands between).`) + biters + regainSays(regain) +
@@ -4131,7 +4138,7 @@ class Survival {
     // at 2.7 a second: within three and lit 1.5 seconds in, the meal done
     // with the fuse all but burning where it stands (note 604).
     const eatCreeper = meal ? creeperAfterMeal(bot, this.creepersOfRun(danger)) : '';
-    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatFinish.says + eatCreeper + eatLeaves,
+    if (meal && !(this.state.mealCutAt > Date.now() - MEAL_CUT_MS)) options.eat = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, quick: { seconds: EAT_SECONDS, says: `eat the ${meal.name.replaceAll('_', ' ')}, ${EAT_SECONDS} seconds standing still` }, description: eatSays(bot, meal) + (armsLength ? ' Something that bites is at arm\'s length now, and it hits freely while the bot eats.' : '') + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + eatSight + EAT_AFTER + eatFinish.says + eatCreeper + eatLeaves,
       run: async () => {
         this.report(goal, save, { action: 'eat', item: meal.name, food: bot.food, health: bot.health, stance: true });
         // Marked before the meal and cleared when it is eaten: a meal cut
@@ -4264,7 +4271,7 @@ class Survival {
     // Priced as every stance is (mid-205-q, note 475: the only one without
     // its damage and health said, and taken at 0.04 against take_cover's
     // "0.8 damage from 2.8 health").
-    if (apple && bot.health < 20) options.eat_golden_apple = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit },
+    if (apple && bot.health < 20) options.eat_golden_apple = { expects: { damage: eatCost.damage, seconds: EAT_SECONDS, oneHit }, quick: { seconds: EAT_SECONDS, says: `eat the ${apple.name.replaceAll('_', ' ')}, ${EAT_SECONDS} seconds standing still` },
       description: (apple.name === 'enchanted_golden_apple'
         ? `Eat the enchanted golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then sixteen extra health as absorption, strong regeneration for twenty seconds, and resistance and fire resistance for five minutes. Worth more later in the game than any other food.`
         : `Eat the golden apple now (${countOf(bot, apple.name)} carried): about 1.6 seconds eating while the mobs hit, then four extra health as absorption and regeneration of about eight health over five seconds. Eight gold ingots and an apple to make another.`) + costSays(eatCost, bot.health, mobs, { over: 'while it eats' }) + creeperAfterMeal(bot, this.creepersOfRun(danger)),
@@ -4509,7 +4516,7 @@ class Survival {
       // cover is put from one that holds (ghast.js, note 551).
       const ghastCovered = cut.some(p => p.t.entity.name === 'ghast');
       const openSays = open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '';
-      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSetup ? `, the ${coverMade.item.replaceAll('_', ' ')} for it made first from the logs carried (${coverMade.available}), about a second more` : ''}` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
+      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, quick: { seconds: Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10, says: coverBlocks ? `cover of ${plural(coverBlocks, 'block')}, about ${Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10} seconds` : 'cover already standing' }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSetup ? `, the ${coverMade.item.replaceAll('_', ' ')} for it made first from the logs carried (${coverMade.available}), about a second more` : ''}` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
         run: async () => {
           if (madeSetup && shelter.materialStock(bot) < coverBlocks) {
             try { await this.actions.acquireStep(bot, task, coverMade.item, countOf(bot, coverMade.item) + Math.min(coverMade.available, Math.ceil(coverBlocks / 4) * 4), goal, save); }
@@ -4661,7 +4668,13 @@ class Survival {
     // (blowsSay, note 576): each says after it whether that mob still
     // reaches the bot its way.
     const blows = blowsSay(mobs, bot.health);
-    if (blows) for (const o of Object.values(options)) o.description = `${blows} ${o.description}`;
+    // What is hitting the bot now, by the hits themselves, before any mob
+    // ranked by its blow (hit-log.js, note 752b): 25594 at 4 health was told
+    // of "the spider 18 blocks off, the hardest hitter" while a skeleton six
+    // blocks off landed every hit.
+    const hitSays = require('./hit-log').says(bot, danger);
+    const lead = [hitSays, blows].filter(Boolean).join(' ');
+    if (lead) for (const o of Object.values(options)) o.description = `${lead} ${o.description}`;
     // Every mob here with a fact worth telling (combat-estimate.js MOBS'
     // own `note`: an enderman's 2.9 blocks and the two-high pocket that
     // keeps it out, a spider's poison, a wither skeleton's wither, a wolf's
@@ -4683,6 +4696,19 @@ class Survival {
     const mobNotes = [...new Map(mobs.filter(m => m.note && bearing(m)).map(m => [m.name, m.note])).values()];
     const notesSay = mobNotes.length ? ` ${mobNotes.map(n => `${n[0].toUpperCase()}${n.slice(1)}.`).join(' ')}` : '';
     if (notesSay) for (const o of Object.values(options)) o.description += notesSay;
+    // Low and being hit: the ways out of the hits (eating, breaking the
+    // line) are named first, quickest first, with their times, and listed
+    // first (note 752b: 25594 at 4 health with a beef carried and out of
+    // sight under two seconds off chose the shield and keep_on, and died).
+    const hitNow = require('./hit-log').recent(bot).length > 0;
+    const quick = Object.entries(options).filter(([, o]) => o.quick).sort((a, b) => a[1].quick.seconds - b[1].quick.seconds);
+    if (hitNow && quick.length && (bot.health ?? 20) <= STANCE_HEALTH) {
+      const said = ` At ${Math.round((bot.health ?? 20) * 10) / 10} health and being hit, the ways out of the hits here, quickest first: ${quick.map(([, o]) => o.quick.says).join('; ')}.`;
+      const ordered = Object.fromEntries([...quick, ...Object.entries(options).filter(([, o]) => !o.quick)]);
+      for (const k of Object.keys(options)) delete options[k];
+      Object.assign(options, ordered);
+      for (const o of Object.values(options)) o.description = `${said.trim()} ${o.description}`;
+    }
     return options;
   }
 
@@ -4912,6 +4938,12 @@ class Survival {
     const scoutFresh = () => { const s = this.state.retreatScout; return !!s && s.feet === `${feet}` && Date.now() - s.at < 2000; };
     if (!holding && !extendable && !scoutFresh()) await this.scoutRetreat(task, danger);
     let options = this.stanceOptions(task, goal, save, danger, swung);
+    // The ways that come on offer while the stance carries itself out
+    // within its own time (the pillar's come_down, once up) are its own
+    // consequence, not news for the hold (holds.js diverged): 25583's
+    // pillar was asked again at 13:05:08Z for "a way not on offer when it
+    // was chosen is on offer now: come down" (note 752b).
+    if (holding && held?.hold && !held.hold.extended) held.hold.offered = [...new Set([...held.hold.offered, ...Object.keys(options).filter(k => k !== 'none_good')])];
     if (extendable) {
       const holds = require('./holds');
       let shot = null; try { shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0] || null; } catch (_) { shot = null; }
@@ -8643,7 +8675,18 @@ class Survival {
         const creeperCount = pricedOut.filter(t => t.entity.name === 'creeper').length;
         // Every one of them held off out of sight through the wait: the fight
         // is what it costs should they all come, not what leaving is.
-        return (outCost ? `${waitSays?.heldOff ? ' Should they all come at the bot at once, fighting them is estimated at about' : way.apart.length ? ` Out among the ones in the way (${pricedOut.slice(0, 4).map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}), fighting them is estimated at about` : ' Out among them, fighting them all is estimated at about'} ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}${creeperCount ? `, the ${creeperCount === 1 ? 'creeper' : `${creeperCount} creepers`} not counted in it: each that reaches the bot goes off for about ${outCost.creeper?.match(/about ([\d.]+)/)?.[1] || 18} health` : ''}.` : '') + require('./way-out').apartSays(way.apart) + quietSays;
+        const allSays = (outCost ? `${waitSays?.heldOff ? ' Should they all come at the bot at once, fighting them is estimated at about' : way.apart.length ? ` Out among the ones in the way (${pricedOut.slice(0, 4).map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')}), fighting them is estimated at about` : ' Out among them, fighting them all is estimated at about'} ${outCost.seconds} seconds and ${outCost.damageTaken} damage, from ${outCost.healthNow} health${outCost.healthAfter <= 0 ? ' (more than the bot has)' : ''}${creeperCount ? `, the ${creeperCount === 1 ? 'creeper' : `${creeperCount} creepers`} not counted in it: each that reaches the bot goes off for about ${outCost.creeper?.match(/about ([\d.]+)/)?.[1] || 18} health` : ''}.` : '') + require('./way-out').apartSays(way.apart) + quietSays;
+        // The nearest alone beside the all-at-once figure, and a slime's or a
+        // magma cube's size where it is not known (priced as a big one, its
+        // splits with it): 25595 (mid-243-jf, 13:25:36Z) was told 345.8
+        // damage for five magma cubes 8 to 18 blocks off, out of sight, each
+        // priced big with its twelve splits, and stayed sealed (note 752b).
+        const near1 = pricedOut.length > 1 ? fightEstimate({ threats: [pricedOut[0]].map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true })),
+          armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' }).fightHere : null;
+        const unsized = pricedOut.filter(t => ['magma_cube', 'slime'].includes(t.entity.name) && !sizeOf(t.entity).size).length;
+        const nearSays = outCost && near1 ? ` The nearest alone, the ${pricedOut[0].entity.name.replaceAll('_', ' ')} ${Math.round(pricedOut[0].distance)} blocks off: about ${near1.seconds} seconds and ${near1.damageTaken} damage.` : '';
+        const sizeSays = outCost && unsized ? ` The size of ${unsized === 1 ? 'one' : unsized} of them is not known, so ${unsized === 1 ? 'it is' : 'each is'} priced as a big one with the smaller ones it splits into.` : '';
+        return allSays + nearSays + sizeSays;
       };
       const outSays = priceOut(doorOut);
       const passageExit = p => ({ door: p.path?.[0]?.at || p.end, outside: p.end });

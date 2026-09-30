@@ -73,7 +73,8 @@ async function readFile(file, { since = -Infinity, to = Infinity } = {}) {
       const chosen = d.options?.[d.path[0]]?.description;
       const words = typeof chosen === 'string' ? chosen : chosen?.does || '';
       out.decisions.push({ t: Date.parse(d.askedAt || o.at) || t, id: d.id, path: d.path, words, action: chosen?.action || null, facts: chosen?.facts || null,
-        why: d.state?.why || null, standIn: !!d.standIn });
+        why: d.state?.why || null, standIn: !!d.standIn, again: d.state?.previousStance?.askedAgainFor || null, heldS: d.state?.previousStance?.heldSeconds ?? null,
+        health: d.state?.health ?? null, lead: d.id === 'encounter_stance' ? (Object.values(d.options || {}).map(o => typeof o.description === 'string' ? o.description : o.description?.does || '').find(Boolean) || '').slice(0, 200) : null });
     }
     // The mobs listed on any frame that carries them (observation frames
     // do not; the step, decision and chat frames do).
@@ -127,8 +128,10 @@ function reachAfter(tr, t, threat, words) {
 // without coming nearer by NEARER, no hit by its kind in that time, a
 // shooter out of sight, never a creeper or warden, beyond arm's length.
 function heldOffThen(tr, t, threat) {
-  if (!threat || threat.projectile || threat.atArm || ['creeper', 'warden'].includes(threat.name)) return null;
-  if (!(threat.d > ARM)) return null;
+  if (!threat || threat.projectile || threat.atArm || threat.name === 'warden') return null;
+  // A creeper past its lighting distance and a second's walk (note 752b).
+  const near = threat.name === 'creeper' ? 6 : ARM;
+  if (!(threat.d > near)) return null;
   if (tr.hurts.some(h => h.by === threat.name && h.t <= t && h.t > t - QUIET_MS)) return null;
   const win = tr.mobs.filter(m => m.t <= t && m.t >= t - QUIET_MS);
   const seenAt = win.map(f => ({ t: f.t, m: f.list.filter(m => m.name === threat.name).sort((a, b) => a.d - b.d)[0] })).filter(x => x.m);
@@ -136,7 +139,7 @@ function heldOffThen(tr, t, threat) {
   // Continuously about: no gap over a minute in the window.
   for (let i = 1; i < seenAt.length; i++) if (seenAt[i].t - seenAt[i - 1].t > 60000) return null;
   const first = seenAt[0].m.d, min = Math.min(threat.d, ...seenAt.map(x => x.m.d));
-  if (min < first - NEARER || min <= ARM) return null;
+  if (min < first - NEARER || min <= near) return null;
   if (SHOOTERS.has(threat.name) && seenAt.some(x => x.m.seen)) return null;
   return { minutes: round((t - seenAt[0].t) / 60000), first, min };
 }
@@ -194,6 +197,28 @@ function analyse(tr, { simulate = false, examples = 0 } = {}) {
     const next = stances[i + 1];
     if (next && next.t - d.t <= 2000 && !tr.hurts.some(h => h.t > d.t && h.t <= next.t)) r.strikeReasked++;
   });
+  // Why a stance was asked again (note 752b), and those the hold's rules
+  // now keep: a new shoot_<id> key, a way that came on offer within the
+  // stance's own first time (come_down), one mob of several gone.
+  r.againBy = {}; r.againKept = 0; r.againAll = 0;
+  for (const d of stances) {
+    if (!d.again) continue;
+    const k = d.again.replace(/\d+(\.\d+)? (blocks|seconds|minutes)/g, 'N $2').replace(/: .*$/, '').replace(/the [a-z ]+ it was chosen against/, 'the mob it was chosen against').slice(0, 70);
+    r.againBy[k] = (r.againBy[k] || 0) + 1; r.againAll++;
+    const ways = /^a way not on offer when it was chosen is on offer now: (.*)$/.exec(d.again);
+    if (ways && ways[1].split(', ').every(w => /^shoot \d+$/.test(w) || (w === 'come down' && (d.heldS ?? 99) <= 20))) r.againKept++;
+  }
+  // Stances asked at 6 health or under within 20 s of a hit, whose lead
+  // named another kind than the one that hit (25594's spider for its skeleton).
+  r.lowAsks = 0; r.leadWrong = 0;
+  for (const d of stances) {
+    if (!(d.health <= 6)) continue;
+    const hit = tr.hurts.filter(h => h.by && h.t <= d.t && h.t > d.t - 20000).at(-1);
+    if (!hit) continue;
+    r.lowAsks++;
+    const lead = (/^(?:Hitting the bot now: )?[Tt]he ([a-z ]+?) [\d.]+ blocks off/.exec(d.lead || '') || [])[1];
+    if (lead && lead.replaceAll(' ', '_') !== hit.by) r.leadWrong++;
+  }
   // A pocket answer that opens the pocket (leave, a hunt, the stash, food)
   // followed by the step waiting in it, not leaving (25585).
   r.leaveAnswers = 0; r.leaveNoop = 0;
@@ -221,7 +246,8 @@ function total(rows) {
     for (const k of ['answers', 'survivalMob', 'survivalMobMin', 'neverReached', 'neverReachedMin', 'shelterMin', 'released', 'releasedMin', 'releasedHit']) t[k] += r[k];
     for (const [k, v] of Object.entries(r.byLayer)) t.byLayer[k] = (t.byLayer[k] || 0) + v;
     for (const [k, b] of Object.entries(r.byThreat)) { const a = t.byThreat[k] ||= {}; for (const [f, v] of Object.entries(b)) a[f] = round((a[f] || 0) + v); }
-    for (const k of ['strikeReasked', 'strikeAnswers', 'leaveAnswers', 'leaveNoop']) t[k] = (t[k] || 0) + (r[k] || 0);
+    for (const k of ['strikeReasked', 'strikeAnswers', 'leaveAnswers', 'leaveNoop', 'againKept', 'againAll', 'lowAsks', 'leadWrong']) t[k] = (t[k] || 0) + (r[k] || 0);
+    for (const [k, v] of Object.entries(r.againBy || {})) (t.againBy ||= {})[k] = (t.againBy[k] || 0) + v;
     for (const [k, p] of Object.entries(r.promises)) {
       const a = t.promises[k] ||= { made: 0, kept: 0, instead: {} };
       a.made += p.made; a.kept += p.kept;
@@ -263,6 +289,8 @@ async function main() {
   for (const [k, b] of Object.entries(all.byThreat).sort((a, b) => b[1].min - a[1].min)) console.log(`  ${k}: ${b.wins}, ${b.min} min, ${b.never} (${b.neverMin} min), hit ${b.hit}, closed ${b.closed}, sight ${b.sight}, noWay ${b.noWaySaid}, noRoute ${b.noRoute}`);
   console.log(`Striking stances (fight, a charge) asked again within 2 s with no hit between: ${all.strikeReasked} of ${all.strikeAnswers}.`);
   console.log(`Pocket answers that open the pocket (leave, a hunt, the stash, the bed) followed by waiting in it, not leaving, within 10 s: ${all.leaveNoop} of ${all.leaveAnswers}.`);
+  console.log(`Stances asked again for a reason (${all.againAll}): ${Object.entries(all.againBy || {}).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => `${k} ${v}`).join('; ')}; a new shoot key or a way come on within the stance's own time: ${all.againKept}.`);
+  console.log(`Stances asked at 6 health or under within 20 s of a hit: ${all.lowAsks}; led by a mob of another kind than the one that hit: ${all.leadWrong}.`);
   console.log('\nOptions promising a question "asked next" (made, asked within 30 s; what ran instead):');
   for (const [k, p] of Object.entries(all.promises).sort((a, b) => (b[1].made - b[1].kept) - (a[1].made - a[1].kept)).slice(0, 25)) {
     const inst = Object.entries(p.instead).sort((a, b) => b[1] - a[1]).slice(0, has('--verbose') ? 12 : 4).map(([w, n]) => `${w} ${n}`).join(', ');

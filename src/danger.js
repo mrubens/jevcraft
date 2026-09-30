@@ -412,7 +412,8 @@ function reachSays(bot, t, { list = null, now = Date.now() } = {}) {
   try { const h = require('./held-off'); rec = h.recordOf(bot, t, { now }); off = standsOff(bot, t, now); } catch (_) { rec = null; }
   const hitAt = Math.max(bot?._hurtById?.[e.id] || 0, bot?._hurtBy?.[e.name] || 0);
   const hit = hitAt ? `its kind hit the bot ${Math.max(1, Math.round((now - hitAt) / 1000))} seconds ago` : null;
-  if (off) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and no hit from its kind in that time: not a threat that stops the work while that holds, and one again the moment it comes nearer, to its reach, or its kind lands a hit`);
+  if (off && e.name === 'creeper') parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and never within ${require('./held-off').CREEPER_NEAR} (its lighting distance and a second's walk), not walking at the bot: not a threat that stops the work while that holds, and one again the moment it walks at the bot or comes within ${require('./held-off').CREEPER_NEAR}`);
+  else if (off) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and no hit from its kind in that time: not a threat that stops the work while that holds, and one again the moment it comes nearer, to its reach, or its kind lands a hit`);
   else if (rec && rec.seconds >= 10) parts.push(`about ${rec.seconds} seconds, ${rec.nearest} to ${rec.farthest} blocks off${hit && now - hitAt <= rec.seconds * 1000 ? `; ${hit}` : ', no hit from its kind in that time'}`);
   else if (hit && now - hitAt < 60000) parts.push(hit);
   return parts.join('; ');

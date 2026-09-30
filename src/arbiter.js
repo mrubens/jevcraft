@@ -166,7 +166,11 @@ function observeReflexes(bot, held = bot?._arbiter?.reflexes || [], look = probe
   const creepers = mobs.filter(t => t.entity?.name === 'creeper' && t.distance <= creeperLine && (t.visible || t.distance <= 4));
   let apart = new Set();
   if (creepers.length) { try { apart = look.noWay?.(bot, mobs) || new Set(); } catch (_) { apart = new Set(); } }
-  const creeper = creepers.filter(t => !apart.has(t.entity.id)).sort((a, b) => a.distance - b.distance)[0];
+  // Nor one that has stood off (danger.js standsOff, note 752b): parked past
+  // a second's walk from its lighting distance for a minute and more, not
+  // walking at the bot. It is the claim's, beside the work, with that said.
+  const stood = t => { try { return !!require('./danger').standsOff(bot, t); } catch (_) { return false; } };
+  const creeper = creepers.filter(t => !apart.has(t.entity.id) && !stood(t)).sort((a, b) => a.distance - b.distance)[0];
   if (creeper) add('creeper', { creeper: Math.round(creeper.distance * 10) / 10, seen: !!creeper.visible, lightsAt: LIGHTS_AT, blocksASecond: APPROACH, fuse: FUSE });
   const armLine = ARM + (was.has('arm') ? HYSTERESIS : 0);
   // At the stance's six health or under, or with no more than BLOWS_LEFT of
