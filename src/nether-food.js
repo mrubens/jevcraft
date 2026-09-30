@@ -352,7 +352,12 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   const lastHit = require('./last-hit').lastHit(bot);
   if (lastHit) notOffered.push(`going on without food: ${lastHit.says}`);
   if (!options.keep_on && !lastHit && ((bot.food ?? 20) < 18 || options.raid_bastion)) {
-    options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, ${(bot.food ?? 20) < 18 ? `health comes back only at eighteen or more. ${nv.keepOnFightSays(bot)}` : 'health comes back at eighteen or more, as it does now.'}`,
+    // What twenty minutes at this hunger with nothing to eat has cost in
+    // the record, not just the rule that says it will not heal (note 741,
+    // 25584: keep_on was chosen at 6.4 health, hunger 15, no food, without
+    // ever being told what fights begun in that row came to).
+    const ff = require('./food-facts');
+    options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, ${(bot.food ?? 20) < 18 ? `health comes back only at eighteen or more. ${nv.keepOnFightSays(bot)}` : 'health comes back at eighteen or more, as it does now.'} ${(bot.food ?? 20) < 18 ? ff.recordSays(bot) : ''}`,
       run: async () => { const { setAside } = require('./progress'); setAside(goal, 'nether_return', 'food', nv.keepOnWhy(bot), 20 * 60000); delete goal.stockFood; save?.(); } };
   }
   if (!Object.keys(options).length) throw new Error(`No way to food from here: ${notOffered.join('; ')}`.slice(0, 500));

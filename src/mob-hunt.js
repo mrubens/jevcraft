@@ -538,6 +538,30 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const handler = handlers[state.entity] || {};
   stakeHunt(bot, goal);
   if (!canBegin(bot, handler)) return false;
+  // Hungry off the Overworld with nothing to eat: prepareMobHunt's own
+  // fitness gate reaches foodLeave (the tested leave_nether question:
+  // go_back, keep_on, restock_food) before a fight begins, but this call
+  // path (the live arbiter's hunt claim, note 672) had no way to it at
+  // all, so a hunt observed here fell straight to fortress_visit's
+  // thinner food branch or another box built to wait out a hunger that
+  // never comes back (note 741, 25584: sealed at 6.4 health, hunger 15,
+  // no food, 181 blocks from its portal, for over five minutes with the
+  // trip never once asked). Asked here the same way, before anything
+  // else, and held off for the twenty minutes keep_on or restock_food buys
+  // (isSetAside, as prepareMobHunt's own gate already honours).
+  if (dimension(bot) === 'nether' && bot.food < 18 && !hasFood(bot) && actions.returnOverworld && !isSetAside(goal, 'nether_return', 'food')) {
+    const { netherLeaveHeld } = require('./game-progress');
+    const foodActionsHere = { ...actions, client: actions.client || client };
+    const pick = netherLeaveHeld(goal, 'food') && !tripHomeClosed(bot, goal) ? 'go_back' : await foodLeave(bot, task, goal, save, foodActionsHere);
+    if (pick === null) return false;
+    if (pick === 'go_back') {
+      goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+      await actions.returnOverworld(bot, task, goal, save); return true;
+    }
+    // keep_on or restock_food already ran, or a trip home held is closed
+    // from here (tripHomeClosed): the hunt goes on, as prepareMobHunt's
+    // own gate lets it once keepOn holds.
+  }
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
     !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
@@ -819,7 +843,11 @@ async function foodLeave(bot, task, goal, save, actions) {
   const exposed = hits ? ` The search goes on where the Nether's mobs are: a blaze in sight shoots from as far as forty-eight blocks and a ghast from sixty-four, fight or no fight. ${hits}` : '';
   const tree = {
     go_back: { description: `Go back to the Overworld for food, hunted and cooked there. ${portalTrip(bot, goal)} The hunt waits till the bot is fed and back.` },
-    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more. ${require('./nether-travel').keepOnFightSays(bot)} ${fitnessSays(bot)}${exposed}` },
+    // What twenty minutes at this health and hunger with nothing to eat has
+    // cost in the record, not just the rule that it will not heal (note
+    // 741, 25584: chosen at 6.4 health with the trip 181 blocks off and
+    // never told what fights begun in that row came to).
+    keep_on: { description: `Stay and go on without food for twenty minutes: hunger ${bot.food}, and health comes back only at eighteen or more. ${require('./nether-travel').keepOnFightSays(bot)} ${fitnessSays(bot)}${exposed} ${require('./food-facts').recordSays(bot)}` },
   };
   // Food as a resource of the stay (nether-food.js): the ways to more here,
   // each priced, asked next.
