@@ -4608,7 +4608,12 @@ class Survival {
     // enter it, and every other mob's own fact was silent here the same
     // way, general to all of them, not just the one this drill happened to
     // measure).
-    const mobNotes = [...new Map(mobs.filter(m => m.note).map(m => [m.name, m.note])).values()];
+    // Only the mobs that bear on this stance: in sight or within eight
+    // blocks. A magma cube 15 blocks off out of sight opened every option of
+    // 25589's spawner fight with its five blows (critic 05:43Z), which read
+    // as a reason to take cover from the blazes at three blocks.
+    const bearing = m => m.visible || (Number.isFinite(m.distance) && m.distance <= 8);
+    const mobNotes = [...new Map(mobs.filter(m => m.note && bearing(m)).map(m => [m.name, m.note])).values()];
     const notesSay = mobNotes.length ? ` ${mobNotes.map(n => `${n[0].toUpperCase()}${n.slice(1)}.`).join(' ')}` : '';
     if (notesSay) for (const o of Object.values(options)) o.description += notesSay;
     return options;
