@@ -181,8 +181,25 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
   // Food stays where it is all there is (food-keep.js, note 690): 25598
   // dropped 12 cooked beef in a fortress for a chest's gold ingot.
   const { foodStays, foodSays, isFood } = require('./food-keep');
+  const { VALUABLES } = require('./home-stash');
+  // A golden apple is not ordinary food (note 656, note 722): a bite is an
+  // emergency heal (regeneration and four absorption hearts), the
+  // enchanted one five minutes of fire resistance besides, the one steady
+  // answer to a blaze's fire. 25581 dropped its only one for a stick, told
+  // just "4 food points". Said as what it is, not folded into "food".
+  const LIFESAVER = /^(golden_apple|enchanted_golden_apple)$/;
   goal ||= bot._goal || null;
   const foodKept = foodStays(bot, goal);
+  // Food outranks a stick, a fence, an egg: with nothing flagged as junk,
+  // 25597 was offered its mutton to make room for a stick, dropped it, and
+  // spent six minutes hunting the food back (note 730). Ordinary food is
+  // the last resort to drop, not an equal choice beside everything else
+  // carried; it is only offered up front for something that itself
+  // outranks food (a valuable ore, or more food). A golden apple is not
+  // ordinary food (note 656, note 722): it keeps its own place in line,
+  // offered once no junk is left, same as before.
+  const worthMoreThanFood = Object.hasOwn(VALUABLES, name) || isFood(bot, name) || LIFESAVER.test(name);
+  const ordinaryFood = n => isFood(bot, n) && !LIFESAVER.test(n);
   for (let round = 0; round < 3 && !room(); round++) {
     const counts = {};
     for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] || 0) + i.count;
@@ -197,6 +214,11 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     const junk = n => NO_USE.test(n) || over(n);
     let stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)))
       .sort((a, b) => (junk(b.name) ? 1 : 0) - (junk(a.name) ? 1 : 0));
+    if (!worthMoreThanFood) {
+      const withoutFood = stacks.filter(i => !ordinaryFood(i.name));
+      // Ordinary food is offered only once nothing else carried is left to drop.
+      if (withoutFood.length) stacks = withoutFood;
+    }
     if (!stacks.length) return false;
     // Junk goes before anything the run cannot easily replace: 25581 dropped
     // its only golden apple for a stick with cobblestone and dirt sitting
@@ -228,13 +250,6 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     } catch (_) { nextRung = null; }
     const food = n => !!bot.registry?.foodsByName?.[n];
     const weapon = n => /_(sword|axe)$|^(bow|crossbow|trident)$/.test(n);
-    // A golden apple is not ordinary food (note 656, note 722): a bite is an
-    // emergency heal (regeneration and four absorption hearts), the
-    // enchanted one five minutes of fire resistance besides, the one steady
-    // answer to a blaze's fire. 25581 dropped its only one for a stick, told
-    // just "4 food points". Said as what it is, not folded into "food".
-    const LIFESAVER = /^(golden_apple|enchanted_golden_apple)$/;
-    const { VALUABLES } = require('./home-stash');
     const tree = {};
     stacks.slice(0, 24).forEach((stack, n) => {
       const notes = [];
@@ -272,6 +287,12 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       else if (needed.has(`rung:${stack.name}`)) notes.push(`needed by the ladder's next step (${nextRung.replaceAll('_', ' ')})`);
       if (NO_USE.test(stack.name)) notes.push('no use on the way to the dragon');
       if (over(stack.name)) notes.push(`more than the ${cap(stack.name)} worth keeping`);
+      // Nothing flagged is not nothing lost: with no junk to offer, 25597
+      // was shown its oak fence and raw copper with no word of what either
+      // costs, next to its mutton with none either, and picked the mutton
+      // (note 730). What is not flagged one of the above still costs a way
+      // to get another, said so rather than left blank.
+      if (!notes.length) notes.push('no flagged use for the run ahead, but not junk either: another would mean finding, mining, trading or crafting one again');
       tree[`drop_${n}`] = { description: `Drop ${stack.count} ${stack.name.replaceAll('_', ' ')} (${counts[stack.name]} carried in all)${notes.length ? `: ${notes.join('; ')}` : ''}.`, stack };
     });
     const unlisted = stacks.length - Math.min(stacks.length, 24);

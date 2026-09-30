@@ -410,3 +410,33 @@ test('a golden apple is not offered for a stick while junk sits over its cap; dr
   const offeredText2 = Object.values(offered).join('\n');
   assert.match(offeredText2, /golden apple.*an emergency heal, not ordinary food.*regeneration and four absorption hearts.*the only one carried.*made again only from an apple and 8 gold nuggets/);
 });
+
+test('food is not offered for a stick when nothing is junk; each unflagged stack says what it costs, and none of it is food (25597, note 730)', async () => {
+  // 25597's own pockets when it dropped its mutton for a stick: no
+  // building blocks or fuel over any cap, no flowers, nothing junk at all
+  // (oak_fence, raw_copper and lapis_lazuli, cooked mutton, an egg and a
+  // spider eye), yet the room question offered its food and the run spent
+  // six minutes hunting it back.
+  const { makeRoom } = require('../src/inventory-tidy');
+  const items = [];
+  const add = (name, count) => { const it = registry.itemsByName[name]; items.push({ name, count, type: it.id, stackSize: it.stackSize }); };
+  add('oak_fence', 15); add('raw_copper', 16); add('lapis_lazuli', 9); add('blue_egg', 2); add('spider_eye', 1); add('wooden_hoe', 1); add('mutton', 7);
+  let offered;
+  const client = { systemOne: async ({ questions }) => {
+    offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria };
+    const drops = Object.keys(questions.branch_1.criteria);
+    return { answers: { branch_0: { choice: 'drop', confidence: 0.6 }, branch_1: { choice: drops[0], confidence: 0.6 } } };
+  } };
+  const tossed = [];
+  const before = items.length;
+  // One free slot the moment anything is dropped, so the question is asked
+  // (and checked) once, the way the room the stick needs is actually made.
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => (items.length < before ? 1 : 0), slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {},
+    tossStack: async st => { tossed.push(st.name); items.splice(items.indexOf(st), 1); } };
+  await makeRoom(bot, { check() {}, opportunityClient: client }, 'stick');
+  const offeredText = Object.values(offered).join('\n');
+  assert.doesNotMatch(offeredText, /mutton/, 'no junk was carried, but the mutton is not offered for a stick');
+  assert.match(offeredText, /oak fence.*no flagged use for the run ahead, but not junk either: another would mean finding, mining, trading or crafting one again/);
+  assert.match(offeredText, /raw copper.*no flagged use for the run ahead, but not junk either/);
+  assert(!tossed.includes('mutton'), 'the mutton was kept, not thrown for the stick');
+});

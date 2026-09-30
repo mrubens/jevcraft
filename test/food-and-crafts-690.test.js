@@ -47,12 +47,23 @@ test('in the Overworld with the crossing ahead food is kept; with none ahead it 
   assert.doesNotMatch(Object.values(j.offered()).join('\n'), /cooked beef/);
   assert.match(j.state().foodNotListed, /crossing is ahead/);
 
+  // Unprotected food may still go, but only for something that outranks
+  // it (note 730): a gold ingot, not a stick (a stick is never worth the
+  // food, whatever else is carried).
   const free = roomBot(pockets([['cooked_beef', 3], ['cobblestone', 64]]), 'overworld');
   const k = { client: { systemOne: async ({ questions }) => { const pick = Object.entries(questions.branch_1.criteria).find(([, d]) => /cooked beef/.test(d))[0];
     return { answers: { branch_0: { choice: 'drop', confidence: 0.9 }, branch_1: { choice: pick, confidence: 0.9 } } }; } } };
-  await makeRoom(free, { check() {}, opportunityClient: k.client }, 'stick', { goal: { kind: 'obtain' } });
+  await makeRoom(free, { check() {}, opportunityClient: k.client }, 'gold_ingot', { goal: { kind: 'obtain' } });
   assert.deepEqual(free.tossed, ['cooked_beef']);
-  assert.match(free.said.join('\n'), /Dropping 3 cooked beef \(24 food points\) to make room for the stick/);
+  assert.match(free.said.join('\n'), /Dropping 3 cooked beef \(24 food points\) to make room for the gold ingot/);
+
+  // For a stick, food is not offered even with nothing protecting it and
+  // no junk to offer instead (25597, note 730): the cobblestone goes first.
+  const forAStick = roomBot(pockets([['cooked_beef', 3], ['raw_copper', 5]]), 'overworld');
+  const m = lastOne();
+  await makeRoom(forAStick, { check() {}, opportunityClient: m.client }, 'stick', { goal: { kind: 'obtain' } });
+  assert.doesNotMatch(Object.values(m.offered()).join('\n'), /cooked beef/, 'food is not offered for a stick while raw copper (or anything else) is carried');
+  assert(!forAStick.tossed.includes('cooked_beef'), 'the food was kept, not thrown for the stick');
 });
 
 test('the stash takes no food on the valuables trip before the Nether or while the crossing is ahead; the plain chore still stocks the kit', () => {
