@@ -386,3 +386,27 @@ test('making room says the flint and steel lights the Nether portal on the way t
   assert.match(offered, /1 iron pickaxe.*needed by the step in hand/);
   assert.doesNotMatch(offered, /stone pickaxe[^\n]*needed by the step in hand/);
 });
+
+test('a golden apple is not offered for a stick while junk sits over its cap; dropped, it is said as an emergency heal, not food (25581, note 722)', async () => {
+  const { makeRoom } = require('../src/inventory-tidy');
+  let items = [];
+  const add = (name, count) => { const it = registry.itemsByName[name]; items.push({ name, count, type: it.id, stackSize: it.stackSize }); };
+  // 25581's own pockets when it dropped its golden apple: cobblestone and
+  // dirt both a little over their caps, a golden apple, and no free slot.
+  add('golden_apple', 1); add('cobblestone', 131); add('dirt', 34); add('iron_sword', 1); add('cooked_mutton', 10);
+  let offered;
+  const client = { systemOne: async ({ questions }) => { offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; return { answers: { branch_0: { choice: 'drop', confidence: 0.6 }, branch_1: { choice: Object.keys(questions.branch_1.criteria)[0], confidence: 0.6 } } }; } };
+  const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 0, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {} };
+  await makeRoom(bot, { check() {}, opportunityClient: client }, 'stick');
+  const offeredText = Object.values(offered).join('\n');
+  assert.doesNotMatch(offeredText, /golden apple/, 'the golden apple is not offered while cobblestone and dirt sit over their caps');
+  assert.match(offeredText, /cobblestone.*more than the \d+ worth keeping/);
+  assert.match(offeredText, /dirt.*more than the \d+ worth keeping/);
+
+  // With no junk left, the golden apple is offered, and said for what it is.
+  items = [];
+  add('golden_apple', 1); add('iron_sword', 1); add('cooked_mutton', 10);
+  await makeRoom(bot, { check() {}, opportunityClient: client }, 'stick');
+  const offeredText2 = Object.values(offered).join('\n');
+  assert.match(offeredText2, /golden apple.*an emergency heal, not ordinary food.*regeneration and four absorption hearts.*the only one carried.*made again only from an apple and 8 gold nuggets/);
+});

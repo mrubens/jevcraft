@@ -883,8 +883,22 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     }
   }
   if (ledgered && !decision.stale && decision.path) tried.begin(bot, goal, { q: id, method: decision.path.join('/'), target: decision.action?.target || target, waiting: ledgerWaits(goal, id, decision.path), offered: offeredOf(original, target) });
-  // The least bad is not Jev's choice: it begins no intention (note 693).
-  if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state, chosen: !decision.noneGood });
+  // The least bad is not Jev's choice, and a walk taken as one begins no
+  // intention (note 693): abandoning a walk costs only the time spent, and
+  // its own yield measure already ends it once it gains nothing (note 699),
+  // so nether_gather's leg_west or fortress_leg's back_to_ground taken none
+  // good still is not held, and note 693's churn is unchanged. A stand taken
+  // as the least bad is not so cheap to abandon: it has already put down
+  // real, harder-to-redo progress (a portal frame's obsidian, a wait at a
+  // found spawner), and the very next, unrelated question undoing it costs
+  // the same whether Jev was confident or not (note 714). 25590 chose
+  // cast_at_lava none good at 0.22 (none_good on top at 0.48), and because
+  // that stand began no intention, surface_trip's climb nine seconds later
+  // was never withheld by portal_method's own WAYS entry and undid it,
+  // leaving a 6-of-ten frame for one with none cast, thirty blocks from the
+  // lava (note 722). A stand still holds when it is the least bad; only a
+  // walk does not.
+  if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state, chosen: !decision.noneGood || !require('../intention').WALKS.test(decision.path.at(-1)) });
   if (ledgered && !decision.stale && decision.path) require('../plan-chain').note(bot, goal, id, decision.path);
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;

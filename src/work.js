@@ -1966,6 +1966,20 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   if (lava && cost) {
     const above = bot.entity.position.floored().y + cost.up - lava.y;
     tree.climb.description += ` The frame then goes down up there, about ${above} blocks above the lava chosen to cast beside (y ${lava.y}): each bucket of the cast a trip down to it and back up.`;
+    // A frame already begun is progress by the rung's measure, its obsidian
+    // standing (note 722): picking a fresh site up top leaves it, and that
+    // is said as what it costs, not left for Jev to find out later. 25590
+    // climbed for a new site with six of ten standing twenty blocks away,
+    // and ended with a fourth site, none cast, thirty blocks from the lava.
+    if (goal.portalFrame && !goal.portalFrame.ruin) {
+      const placedNow = goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length;
+      if (placedNow) {
+        const o = goal.portalFrame.origin, away = Math.round(bot.entity.position.distanceTo(pos(o)));
+        const leaves = ` The frame already begun at (${o.x}, ${o.y}, ${o.z}), ${placedNow} of ten standing${away ? `, ${away} blocks from here` : ''}, is left as it stands if a new site is picked up top instead of coming back to it: its obsidian comes out only with a diamond pickaxe (${diamondPickaxeCarried(bot) ? 'one carried' : 'none carried'}).`;
+        tree.climb.description += leaves;
+        if (tree.mine_first) tree.mine_first.description += leaves;
+      }
+    }
   }
   if (siteDig && client && pickaxeTier(bot) >= 1) {
     const o = siteDig.origin, n = siteDig.cells.length;

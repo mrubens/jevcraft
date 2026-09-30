@@ -194,9 +194,17 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // mid-83-a carried four, and two smelt a hundred and twenty-eight things.
     const cap = n => SURPLUS[n] ?? (n === 'coal' ? 128 : undefined);
     const over = n => cap(n) !== undefined && counts[n] > cap(n);
-    const stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)))
-      .sort((a, b) => (NO_USE.test(b.name) || over(b.name) ? 1 : 0) - (NO_USE.test(a.name) || over(a.name) ? 1 : 0));
+    const junk = n => NO_USE.test(n) || over(n);
+    let stacks = bot.inventory.items().filter(i => i.name !== name && !keep.has(i.name) && !(foodKept && isFood(bot, i.name)))
+      .sort((a, b) => (junk(b.name) ? 1 : 0) - (junk(a.name) ? 1 : 0));
     if (!stacks.length) return false;
+    // Junk goes before anything the run cannot easily replace: 25581 dropped
+    // its only golden apple for a stick with cobblestone and dirt sitting
+    // over their caps a step away (note 722). Where dirt, surplus stone or a
+    // flower alone would give the room, that is what is offered; a valuable,
+    // a life-saver or a tool is only asked about once no junk is left.
+    const junkOnly = stacks.filter(i => junk(i.name));
+    if (junkOnly.length) stacks = junkOnly;
     const kind = n => (TOOL.test(n) && n.match(TOOL)[1]) || null;
     // What each stack is to the work in hand and the ladder's next step,
     // and the stacks that matter most when gone: the only food, the only
@@ -220,6 +228,12 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     } catch (_) { nextRung = null; }
     const food = n => !!bot.registry?.foodsByName?.[n];
     const weapon = n => /_(sword|axe)$|^(bow|crossbow|trident)$/.test(n);
+    // A golden apple is not ordinary food (note 656, note 722): a bite is an
+    // emergency heal (regeneration and four absorption hearts), the
+    // enchanted one five minutes of fire resistance besides, the one steady
+    // answer to a blaze's fire. 25581 dropped its only one for a stick, told
+    // just "4 food points". Said as what it is, not folded into "food".
+    const LIFESAVER = /^(golden_apple|enchanted_golden_apple)$/;
     const { VALUABLES } = require('./home-stash');
     const tree = {};
     stacks.slice(0, 24).forEach((stack, n) => {
@@ -227,7 +241,11 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       const k = kind(stack.name);
       if (k && !bot.inventory.items().some(i => i !== stack && kind(i.name) === k)) notes.push(`the only ${k}`);
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
-      if (food(stack.name)) notes.push(bot.inventory.items().some(i => i !== stack && food(i.name)) ? 'food' : 'the only food carried');
+      if (LIFESAVER.test(stack.name)) {
+        const enchanted = stack.name === 'enchanted_golden_apple';
+        const only = !bot.inventory.items().some(i => i !== stack && LIFESAVER.test(i.name));
+        notes.push(`an emergency heal, not ordinary food: a bite gives a few seconds of regeneration and four absorption hearts${enchanted ? ', and five minutes of fire resistance, the one steady answer to a blaze\'s fire' : ''}${only ? `; the only one carried, and made again only from an apple and ${enchanted ? '8 gold blocks (72 gold ingots)' : '8 gold nuggets'}` : ''}`);
+      } else if (food(stack.name)) notes.push(bot.inventory.items().some(i => i !== stack && food(i.name)) ? 'food' : 'the only food carried');
       if (weapon(stack.name) && !bot.inventory.items().some(i => i !== stack && weapon(i.name))) notes.push('the only weapon');
       // The cast frame's buckets, said for the frame whether it is begun or
       // only chosen: mid-211-f dropped its water bucket twice for planks
@@ -264,9 +282,9 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // "nothing" 0.24 won, and a stone pickaxe went uncrafted for want of a
     // slot, again and again (2026-09-25).
     const drops = Object.entries(tree).filter(([k]) => k !== 'none');
-    const junk = drops.filter(([, o]) => NO_USE.test(o.stack.name) || over(o.stack.name)).length;
+    const junkCount = drops.filter(([, o]) => junk(o.stack.name)).length;
     const asked = {
-      drop: { description: `Drop one stack to make room for the ${count > 1 ? `${count} ` : ''}${name.replaceAll('_', ' ')}: ${drops.length} stacks to choose from${junk ? `, ${junk} of them with no use on the way to the dragon or more than is worth keeping` : ', none of them without a use: each is gear, food or material the run needs'}. Which one is the next question.`,
+      drop: { description: `Drop one stack to make room for the ${count > 1 ? `${count} ` : ''}${name.replaceAll('_', ' ')}: ${drops.length} stacks to choose from${junkCount ? `, ${junkCount} of them with no use on the way to the dragon or more than is worth keeping` : ', none of them without a use: each is gear, food or material the run needs'}. Which one is the next question.`,
         children: Object.fromEntries(drops.map(([k, o]) => [k, { description: o.description }])) },
       none: { description: tree.none.description },
     };
