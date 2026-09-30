@@ -265,6 +265,71 @@ const carrySeconds = (here, lava, to) => legSeconds(here, lava) + (to ? legSecon
 // is not tried again from here to the next spot along the same shore.
 const walkArea = p => ({ x: Math.floor(p.x / 16) * 16, y: Math.floor(p.y / 16) * 16, z: Math.floor(p.z / 16) * 16 });
 
+// The lava a fetch is going for, held from one pass to the next until a
+// bucket is filled there, its way fails or ten minutes pass (note 753):
+// each pass chose afresh, from wherever the bot then stood, and the choice
+// turned as the bot moved. 25581 (mid-243-jd, 2026-09-30 11:44-11:51Z)
+// went a block a pass toward two cells of one pool, the tunnel's target
+// turning between (16, 68, -11) and (21, 68, -15), every pass surveying
+// the same eight scooping spots first; 25592 (mid-237-ad, 11:57:52Z) left
+// a known pool at (96, 18, 64), 27 blocks off, whose walk came no nearer,
+// and dug for the deep lava at y -56. A new lava is taken over the one held
+// only when it beats the held one's carry by a third, the rule note 748
+// gave a dig with real steps in it.
+const HOLD_MS = 600000, HOLD_MARGIN = 1.5, SAME_LAVA = 8;
+function heldLava(bot, goal) {
+  const h = goal.lavaFetch;
+  if (!h) return null;
+  const dim = String(bot.game?.dimension || 'overworld');
+  if (h.dimension !== dim || countOf(bot, 'lava_bucket') > (h.carried ?? 0) || Date.now() - h.since > HOLD_MS) { delete goal.lavaFetch; return null; }
+  return h;
+}
+const sameLava = (a, b) => !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= SAME_LAVA;
+// The seconds a way to lava takes from here: a walk at four blocks a
+// second and a staircase of three seconds a block of height where it rises
+// or falls more than eight (legSeconds); a dig is a stair for each block of
+// height or across, whichever is more, at three seconds a stair
+// (surface.js climbMinutes).
+function waySeconds(here, at, way) {
+  const across = Math.hypot(at.x - here.x, at.z - here.z), dy = Math.abs(at.y - here.y);
+  return way === 'walk' ? legSeconds(here, at) : Math.max(across, dy) * 3;
+}
+const minutesSays = s => s < 90 ? `about ${Math.max(5, Math.round(s / 5) * 5)} seconds` : `about ${Math.round(s / 60)} minutes`;
+// The lava taken up, held and said once: where, how far, the height to go
+// and what that takes. "I'm fetching lava in a bucket" said none of it,
+// and a trip sixty blocks down read the same as one across a field.
+function holdLava(bot, goal, save, { way, lava, dest = lava, why = '' }) {
+  const here = bot.entity.position, prev = goal.lavaFetch;
+  const same = prev && prev.way === way && (way === 'deep' || sameLava(prev.lava, lava));
+  const held = { way, lava: { x: lava.x, y: lava.y, z: lava.z }, dest: { x: dest.x, y: dest.y, z: dest.z }, since: same ? prev.since : Date.now(),
+    carried: countOf(bot, 'lava_bucket'), dimension: String(bot.game?.dimension || 'overworld'), switches: (prev?.switches || 0) + (prev && !same ? 1 : 0) };
+  goal.lavaFetch = held; save();
+  if (same) return held;
+  const dy = Math.round(lava.y - here.y), across = Math.round(Math.hypot(lava.x - here.x, lava.z - here.z));
+  const height = dy <= -4 ? `, ${-dy} blocks down` : dy >= 4 ? `, ${dy} blocks up` : '';
+  const takes = minutesSays(waySeconds(here, dest, way === 'pool' || way === 'to_lava' ? 'walk' : 'dig'));
+  const at = `(${Math.round(lava.x)}, ${Math.round(lava.y)}, ${Math.round(lava.z)})`;
+  const line = way === 'deep' ? `Digging down for the deep lava at y ${Math.round(lava.y)}${height}, ${takes} by staircase${why}.`
+    : way === 'pool' ? `Walking to the lava pool at ${at}, ${across} blocks off${height}, ${takes}${why}.`
+    : way === 'to_lava' ? `Walking to the lava at ${at}, ${across} blocks off${height}, ${takes}${why}.`
+    : `Digging toward the lava at ${at}, ${across} blocks off${height}, ${takes}${why}.`;
+  held.says = line;
+  bot.chat?.(line);
+  return held;
+}
+// A scooping spot's route search, remembered for a minute from where it
+// was made: every pass searched up to eight spots at half a second each
+// before its one step of the staircase, four seconds a step (25581,
+// 11:44-11:51Z: forty-five blocks in seven minutes). A search that found no
+// path, or ran out of time where the walk from here is already set aside,
+// is not made again from within six blocks of where it was.
+const SURVEY_MS = 60000, SURVEY_NEAR = 6;
+function surveyMemo(goal, here) {
+  const m = goal.lavaSurvey;
+  if (m && Date.now() - m.at <= SURVEY_MS && Math.hypot(m.from.x - here.x, m.from.y - here.y, m.from.z - here.z) <= SURVEY_NEAR) return m;
+  return (goal.lavaSurvey = { at: Date.now(), from: { x: here.x, y: here.y, z: here.z }, spots: {} });
+}
+
 // Lava in buckets, for a portal frame cast in place (portal-cast.js): from
 // dry ground at a pool's edge, the same shore a pour of water is made from,
 // an empty bucket used on each surface source in reach. The feet are a block
@@ -304,7 +369,9 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // more steps in it, a pool has to beat its carry by a third, not by any
   // margin, so the next call's noise does not flip it back and forth.
   const site = goal.miningSites?.[`${bot.game?.dimension || 'overworld'}:lava`];
-  const margin = (site?.steps || 0) >= 8 ? 1.5 : 1;
+  const held = heldLava(bot, goal);
+  // A dig held (note 753) is a dig under way however few its steps.
+  const margin = (site?.steps || 0) >= 8 || (held && /^(deep|dig)$/.test(held.way)) ? HOLD_MARGIN : 1;
   if (to) {
     // Known lava that is a shorter carry than any in sight and the deep lava
     // below: walked to first, the nearest carry first. Not the pool in sight
@@ -312,18 +379,25 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     const bound = Math.min(surface.length ? Math.min(...surface.map(carry)) : Infinity, deep ? carry(deep) : Infinity);
     const shorter = l => pool(l) && carry(landmarkAt(l)) * margin < bound && !surface.some(p => Math.hypot(p.x - l.x, p.z - l.z) <= 16);
     if ((goal.landmarks || []).some(l => l.kind === 'lava_pool' && shorter(l))) {
-      const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: l => carry(landmarkAt(l)) });
+      const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter: shorter, cost: l => carry(landmarkAt(l)),
+        onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
       if (arrived === false) return;
-      // Arrived and no lava in sight there: that pool is spent.
-      if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
+      // Arrived and no lava of its own there: that pool is spent.
+      if (arrived && !ownLava(bot, arrived)) { arrived.spent = new Date().toISOString(); save(); return; }
     }
   }
   const spots = scoopSpots(bot, surface, { want: step.count || 1 });
   let unsurveyed = null;
+  const memo = surveyMemo(goal, here);
   for (const spot of spots) {
     task.check();
     const destination = new goals.GoalBlock(spot.feet.x, spot.feet.y, spot.feet.z);
+    // Searched already from about here (surveyMemo): not again for a result
+    // that cannot change what is done.
+    const known = memo.spots[`${spot.feet}`];
+    if (known === 'noPath' || (known === 'timeout' && isSetAside(goal, 'lava_walk', walkArea(here)))) continue;
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 500);
+    if (route.status !== 'success') memo.spots[`${spot.feet}`] = route.status;
     if (route.status !== 'success') {
       if (route.status === 'timeout' && !unsurveyed && !isSetAside(goal, 'lava_walk', walkArea(here))) unsurveyed = spot;
       continue;
@@ -366,6 +440,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // the way from here meanwhile.
   if (unsurveyed) {
     const feet = unsurveyed.feet, start = bot.entity.position.clone(), from = start.distanceTo(feet);
+    if (from > 16) holdLava(bot, goal, save, { way: 'to_lava', lava: feet.offset(0, -1, 0), dest: feet });
     goal.step = { ...step, phase: 'to_lava', position: { ...feet } }; save();
     try { await navigate(bot, task, new goals.GoalBlock(feet.x, feet.y, feet.z), { timeoutMs: 60000, stallMs: 8000, sprint: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
@@ -386,19 +461,54 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     // For a cast, not a pool farther to carry from than the deep lava, the
     // same margin as above once the dig has real steps in it.
     const filter = to ? l => pool(l) && !(deep && carry(landmarkAt(l)) * margin >= carry(deep)) : pool;
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, ...(to ? { cost: l => carry(landmarkAt(l)) } : {}) });
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, ['lava_pool'], { navigate, filter, ...(to ? { cost: l => carry(landmarkAt(l)) } : {}),
+      onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
     // On the way, or at a pool found dry. At one still holding lava, whose
     // every way rests, it is not done: the other ways below are.
     if (arrived === false) return;
-    if (arrived && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
+    if (arrived && !ownLava(bot, arrived)) { arrived.spent = new Date().toISOString(); save(); return; }
   }
-  const nearest = diggable.sort((a, b) => to ? carry(a) - carry(b) : a.distanceTo(here) - b.distanceTo(here))[0];
-  // The deep lava is the first heading whose staircase is not resting.
-  const spot = spots.find(s => open(s.feet))?.feet;
-  const dest = spot || (nearest ? lavaWay(nearest) : deep);
+  const rank = (a, b) => to ? carry(a) - carry(b) : a.distanceTo(here) - b.distanceTo(here);
+  let nearest = diggable.sort(rank)[0];
+  // The lava held stays the lava dug for while it is still there to dig
+  // for, unless the new nearest beats it by a third (note 753).
+  const heldDig = held && held.way === 'dig' ? at(held.lava) : null;
+  const heldCell = heldDig && diggable.filter(p => sameLava(p, heldDig)).sort((a, b) => a.distanceTo(heldDig) - b.distanceTo(heldDig))[0];
+  if (nearest && heldCell && (sameLava(nearest, heldCell) || !(carry(nearest) * HOLD_MARGIN < carry(heldCell)))) nearest = heldCell;
+  // With no lava in sight to dig to, a known pool before the deep lava: a
+  // pool whose walk came no nearer is still lava at its depth, and the
+  // staircase goes to it, not past it to y -56 (25592 mid-237-ad, 11:57:52Z:
+  // a pool at (96, 18, 64) 27 blocks off, dug past for the deep lava). Not
+  // one whose way into it rests, and only where its carry is shorter than
+  // the deep lava's (note 753).
+  const knownPools = nearest ? [] : (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && pool(l) && l.y !== undefined
+    && open(lavaWay(landmarkAt(l))) && landmarkAt(l).distanceTo(here) <= 96 && !(deep && carry(landmarkAt(l)) >= carry(deep)))
+    .sort((a, b) => carry(landmarkAt(a)) - carry(landmarkAt(b)));
+  const poolDig = knownPools.find(l => held && held.way === 'dig' && sameLava(landmarkAt(l), held.lava)) || knownPools[0];
+  // The deep lava is the first heading whose staircase is not resting. A
+  // scooping spot dug toward is held the same way as the lava.
+  const openSpots = spots.filter(s => open(s.feet));
+  let spot = openSpots[0]?.feet;
+  const heldSpot = spot && held && held.way === 'dig' && openSpots.map(s => s.feet).filter(f => sameLava(f, at(held.dest))).sort((a, b) => a.distanceTo(at(held.dest)) - b.distanceTo(at(held.dest)))[0];
+  if (heldSpot && (sameLava(spot, heldSpot) || !(spot.distanceTo(here) * HOLD_MARGIN < heldSpot.distanceTo(here)))) spot = heldSpot;
+  const dest = spot || (nearest ? lavaWay(nearest) : poolDig ? lavaWay(landmarkAt(poolDig)) : deep);
   if (!dest) { goal.step = { ...step, phase: 'no_lava_way' }; save(); throw noLavaWay(bot, goal, surface); }
+  if (spot || nearest || poolDig) holdLava(bot, goal, save, { way: 'dig', lava: spot ? spot.offset(0, -1, 0) : nearest || landmarkAt(poolDig), dest,
+    why: poolDig && !spot && !nearest ? ', a pool known there whose walk did not get there' : '' });
+  else holdLava(bot, goal, save, { way: 'deep', lava: dest, why: ', no lava in sight and no pool known nearer' });
   goal.step = { ...step, phase: 'reach_lava', target: { ...dest } }; save();
   await resourceTunnelStep(bot, task, goal, save, dest, 'lava', { dig, navigate, within: goal.step });
+}
+
+// A pool arrived at still holds lava of its own: a source with open air
+// over it within sixteen blocks of where it was seen. Any lava in sight at
+// all had kept it: 25589 (mid-243-je, 2026-09-30 11:49Z) reached a pool
+// noted at (102, -29, 25), found none to scoop there, and with the lake at
+// y -55 in sight the pool stayed on the books to be walked to again
+// (note 753).
+function ownLava(bot, landmark) {
+  const at = new Vec3(landmark.x, landmark.y ?? bot.entity.position.y, landmark.z);
+  return poolSurface(bot).some(p => Math.hypot(p.x - at.x, p.z - at.z) <= 16 && (landmark.y === undefined || Math.abs(p.y - at.y) <= 16));
 }
 
 // Every way to lava resting, as the fact Jev is given: the lava known, how
@@ -425,4 +535,4 @@ function noLavaWay(bot, goal, surface = []) {
   return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
-module.exports = { makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
+module.exports = { heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };

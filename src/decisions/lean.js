@@ -37,6 +37,11 @@ const CEILING = { encounter_stance: 27500, stillness_detour: 16000, pocket_next:
 // in the lull at low health, with heal_first and the lull's ways, it came to
 // about 3,080 as built before stash_rods, and 3,820 with it and the rods'
 // fact (rodsCarried), which moved the replay case from 0 of 5 to 10 of 10.
+// turn_priority (note 752): its first fixture, 25595's hoglin on the span,
+// comes to about 6,500 as sent (live asks were a median 4,666 characters in
+// note 672's count; this one carries the drop into the lava said twice and
+// the reach said on both options). Held there, not above.
+CEILING.turn_priority = 6600;
 const ceilingOf = id => CEILING[id] ?? CAP;
 
 class Said { constructor(s) { this.s = s; } }

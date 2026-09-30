@@ -119,7 +119,9 @@ test('replayed through the stance step, an answer holds while the scene is uncha
   assert.deepEqual(lastAsk.offered.filter(k => ['shield_guard', 'fight'].includes(k)), [], lastAsk.offered.join(','));
   const out = lastAsk.state.notOfferedNow.map(f => f.choice).sort();
   assert(out.includes('shield_guard') && out.includes('fight'), out.join(','));
-  assert.match(lastAsk.state.notOfferedNow.find(f => f.choice === 'shield_guard').why, /^came to nothing once in this same scene, the last \d+ seconds ago: the guard ran 0 swings, no health lost; nothing a stance turns on has changed since \(sameSceneSoFar\), so it would come to the same; offered again when the scene changes$/);
+  // Held its time before it is judged (note 752: a stance under way is not
+  // judged by one run of it), then left out for having struck nothing.
+  assert.match(lastAsk.state.notOfferedNow.find(f => f.choice === 'shield_guard').why, /^(came to nothing once in this same scene, the last \d+ seconds ago: the guard ran 0 swings, no health lost; nothing a stance turns on has changed since \(sameSceneSoFar\), so it would come to the same; offered again when the scene changes|ended here without acting, the last \d+ seconds ago: held \d+ seconds: nothing was struck, not a step was taken and no block was placed or dug; nothing has changed here since \(the bot, the mobs and the health as they were\), so it would end the same; offered again when something changes)$/);
   // The question says the scene unchanged, its facts, and what each answer came to.
   assert.match(lastAsk.state.sameSceneSoFar, /^Nothing a stance turns on has changed here for \d+ minutes: health 3 \(2 hearts\), hunger 17, the magma cube within 8 blocks and out of the sword's reach, in sight, the piglin 8 to 16 blocks off, in sight, 0 blocks carried, the shield in the off hand, no blaze rod, no hit taken and the bot on the same block\./);
   assert.match(lastAsk.state.sameSceneSoFar, /In that time the stance was answered \d+ times \(\d askings\): .*hold on span \d+ times \(\d+ of them held without asking\), held; shield guard 1 time, it came to nothing \(the last: the guard ran 0 swings, no health lost\)/);

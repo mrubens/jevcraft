@@ -313,6 +313,32 @@ test('the way into the Nether is asked with no ruin known, and a frame cast in p
   assert.equal(quiet.portalMethod.kind, 'build');
 });
 
+test('buckets chosen first are said as the two steps they are, and the question they bring back says why it came (25592 mid-237-ad 11:55:40-51Z, note 753)', async () => {
+  const { portalMethod, portalStep } = require('../src/work');
+  const { Task } = require('../src/skills');
+  const { bot } = castingBot({ bucket: 1, water_bucket: 1, cobblestone: 30, iron_ingot: 8 });
+  bot.findBlocks = () => [];
+  bot.health = 20; bot.food = 20;
+  const said = [];
+  bot.chat = m => said.push(m);
+  let offered = null, pick = 'craft_buckets';
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.8 } } }; } };
+  const goal = {};
+  assert.equal(await portalMethod(bot, task, goal, () => {}), false);
+  assert.deepEqual(said, ['Making 2 more buckets first, then choosing how to make the portal with 3.']);
+  assert.doesNotMatch(offered.cast_frame, /Asked again because/);
+  // The buckets made (as acquireStep would), the next pass asks again, and says why.
+  const bucket = bot.inventory.items().find(i => i.name === 'bucket');
+  bucket.count = 3;
+  bot.inventory.items().find(i => i.name === 'iron_ingot').count = 2;
+  pick = 'cast_frame';
+  await portalStep(bot, task, goal, () => {}, task.opportunityClient).catch(() => {});
+  assert.match(offered.cast_frame, /Asked again because the buckets chosen \d+ seconds? ago are made: 3 carried now, against 1 when they were chosen\./);
+  assert.equal(goal.portalBucketsMade, undefined, 'said once');
+  assert.equal(goal.portalMethod.kind, 'cast');
+});
+
 test('the way into the Nether is asked again every twenty working minutes, with the minutes, what they made and the same facts for every way', async () => {
   // The decision review (2026-09-26): held for good, one trial cast for three hours (834 bucket passes) and
   // another spent a whole run on the diamond route. mid-237-d cast at y 68 with its lava at y -54 and one
@@ -356,7 +382,8 @@ test('the way into the Nether is asked again every twenty working minutes, with 
   // Buckets first, the way held going on with them.
   goal.portalMethod.activeMs = 20 * 60000; pick = 'craft_buckets';
   assert.equal(await portalMethod(bot, task, goal, () => {}), false);
-  assert.deepEqual(goal.portalBuckets, { target: 3 });
+  assert.equal(goal.portalBuckets.target, 3);
+  assert.equal(goal.portalBuckets.before, 1, 'the buckets carried when they were chosen, said when the question comes back (note 753)');
   assert.equal(goal.portalMethod.reasked, 1); assert.deepEqual(goal.portalMethod.near, { x: 20, y: -54, z: 40 });
   // A frame begun by hand is finished as a cast when the cast is chosen.
   const built = { portalFrame: { ...newFrame('x'), cast: undefined }, portalMethod: { kind: 'build', activeMs: 20 * 60000, from: {} } };

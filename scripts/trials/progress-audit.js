@@ -260,6 +260,27 @@ function firstCarried({ identity, item, from, dir = FLIGHT }) {
 const GROUND = /^(cobblestone|cobbled_deepslate|netherrack|dirt|coarse_dirt|rooted_dirt|gravel|stone|deepslate|andesite|diorite|granite|tuff|calcite|basalt|smooth_basalt|blackstone|sand|red_sand|sandstone|soul_sand|soul_soil|end_stone|nether_bricks|magma_block|glowstone|crimson_nylium|warped_nylium|clay|mud)$/;
 const isBlockItem = name => GROUND.test(name);
 
+// A count series with its excursions taken out: a change of more than 8
+// that the series undoes (comes back to within 8 of where it was) within
+// thirty seconds is read as no change. A frame taken mid-click, a stack on
+// the cursor, or a stack dropped and walked back over with full pockets
+// is not a block dug or laid (note 753). `times` in ms, beside the values;
+// without them, one frame is the reach.
+function steady(values, times = null, reachMs = 30000) {
+  const out = values.slice();
+  for (let i = 1; i < out.length; i++) {
+    const base = out[i - 1];
+    if (Math.abs(out[i] - base) <= 8) continue;
+    const up = out[i] > base;
+    for (let j = i + 1; j < out.length; j++) {
+      if (times ? times[j] - times[i - 1] > reachMs : j > i + 1) break;
+      if (Math.abs(out[j] - base) <= 8) { for (let k = i; k < j; k++) out[k] = base; break; }
+      if (up ? out[j] < base : out[j] > base) break;
+    }
+  }
+  return out;
+}
+
 const cellOf = (p, dim) => `${String(dim || '?').replace(/^minecraft:/, '')}:${Math.floor(p.x / CELL)}:${Math.floor(p.z / CELL)}`;
 const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 const human = s => String(s).replaceAll('_', ' ');
@@ -309,17 +330,20 @@ function measure({ frames, history, from, to, trial = {}, botLog = null, minutes
   for (const f of positioned) if (f.snapshot.dimension === first.dimension) far = Math.max(far, flat(f.snapshot.position, first.position));
   const net = first && last.position && first.dimension === last.dimension ? flat(first.position, last.position) : null;
 
-  // Blocks dug and laid, from the block items carried frame to frame.
-  let dug = 0, laid = 0, prev = null;
-  for (const f of frames) {
-    const inv = f.snapshot?.inventory;
-    if (!inv || typeof inv !== 'object') continue;
-    if (prev) for (const k of new Set([...Object.keys(prev), ...Object.keys(inv)])) {
-      if (!isBlockItem(k)) continue;
-      const d = (+inv[k] || 0) - (+prev[k] || 0);
-      if (d > 0) dug += d; else laid -= d;
-    }
-    prev = inv;
+  // Blocks dug and laid, from the block items carried frame to frame, with
+  // each item's excursions undone within thirty seconds taken out (steady):
+  // a frame taken mid-click, a stack on the cursor, or a stack dropped and
+  // picked back up read as blocks laid and dug. Counted raw, 25581 (mid-243-jd) read 246, 128, 246 cobblestone
+  // across 11:55:20-26Z on 2026-09-30, "about 3,400 dug and 3,400 laid" in
+  // a window that dug a few hundred (the live critic's report of 11:57Z,
+  // note 753).
+  const carrying = frames.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
+  const invs = carrying.map(f => f.snapshot.inventory), invAt = carrying.map(f => f.t);
+  const names = new Set(invs.flatMap(inv => Object.keys(inv)).filter(isBlockItem));
+  let dug = 0, laid = 0;
+  for (const k of names) {
+    const series = steady(invs.map(inv => +inv[k] || 0), invAt.every(Number.isFinite) ? invAt : null);
+    for (let i = 1; i < series.length; i++) { const d = series[i] - series[i - 1]; if (d > 0) dug += d; else laid -= d; }
   }
 
   // What it asked: each decision once, by its id and time.
@@ -1066,5 +1090,5 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { readFlight, readBotLog, scanBotLog, firstCarried, measure, reviewLines, thresholds, table, trialWindow, runningPorts, worldOn, ROOT,
+module.exports = { steady, readFlight, readBotLog, scanBotLog, firstCarried, measure, reviewLines, thresholds, table, trialWindow, runningPorts, worldOn, ROOT,
   waitsOf, stanceOf, noneGoodStreakOf, decisionsOf, timeline, deathsInLog, resolveDeaths, trialRecords, trialSides, cohort, cohortTable };

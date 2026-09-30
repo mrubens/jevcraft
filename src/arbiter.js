@@ -381,7 +381,11 @@ function workBodySays(bot, mobs) {
   const said = [...(mobs || []), ...far].filter(t => t.entity?.name);
   let apart = new Set();
   try { apart = probe.noWay(bot, said.filter(t => !t.visible)) || new Set(); } catch (_) { apart = new Set(); }
-  const line = t => {
+  // One that has stood off (danger.js standsOff, note 752) is said with it:
+  // the work is given the turn beside it, and why it is no threat now.
+  const stood = t => { try { return require('./danger').standsOff(bot, t) ? `; ${require('./danger').reachSays(bot, t)}` : ''; } catch (_) { return ''; } };
+  const line = t => stood(t) ? lineOf(t) + stood(t) : lineOf(t);
+  const lineOf = t => {
     const h = hit(t.entity.name), noWay = !t.visible && apart.has(t.entity.id);
     let angry = false;
     try { angry = require('./anger').angry(bot, t.entity); } catch (_) { angry = false; }
@@ -414,6 +418,60 @@ function withSays(option, c, bot, state, mobs, now) {
   return { ...option, description: { ...d, does: `${d.does} ${add.join(' ')}`, ...(stop ? { facts: { ...d.facts, stoppedAtOnce: stop } } : {}) } };
 }
 
+// The questions a claim's words say are asked next (claimSays), by its
+// action. An option that says a question is asked next must cause it
+// (note 752): 25594's pocket_next was promised every minute for eight
+// minutes and never asked. Each one given the turn is watched (take,
+// promised); one not asked within PROMISE_MS is said so on the claim the
+// next time it is offered, in place of the promise (notAsked), until that
+// question is asked. test/note-752.test.js checks every claimSays text
+// that says "asked next" has its questions here.
+const ASKS = {
+  escape_threat: ['encounter_stance', 'ranged_response'],
+  creeper_back_off: ['encounter_stance'],
+  pocket_next: ['pocket_next'],
+  secure_shelter: ['survival_priority', 'shelter_method'],
+  obtain_food: ['survival_priority', 'resource_source', 'kit_food', 'restock_food', 'leave_nether', 'sheep_search', 'opportunistic_animal'],
+  hunt: ['hunt_target', 'empty_spawner'],
+};
+const PROMISE_MS = 30000;
+// The promise a claim makes: its questions, or null for none.
+const promiseOf = c => (/asked next/.test(claimSays(c)) ? ASKS[c.action] || [] : null);
+// Said in place of the promise once it was not kept.
+function notAsked(f) {
+  const n = f?.askedNextNotAsked;
+  if (!n) return null;
+  return `this said ${n.secondsAgo} seconds ago that ${n.asks.map(q => q.replaceAll('_', ' ')).join(' or ')} is asked next, and it has not been asked since${n.did ? `: the survival step went on with ${String(n.did).replaceAll('_', ' ')} instead` : ''}; given the turn, it goes on so`;
+}
+const UNDERGROUND = ' Underground here: daylight does not come down to it, and mobs spawn in the dark by day as by night.';
+// Each pass the turn is given: the promise of the claim given it is kept
+// from the first time it was given (the same layer and action), ended when
+// one of its questions is asked, and marked not kept once PROMISE_MS has
+// gone by without one.
+function promised(bot, state, w, now = Date.now(), log = console.log) {
+  const asks = w ? promiseOf(w) : null;
+  const p = state.promise;
+  if (p && !(w && p.layer === w.layer && p.action === w.action)) delete state.promise;
+  if (asks?.length && !state.promise) state.promise = { layer: w.layer, action: w.action, asks, at: now };
+  const q = state.promise;
+  if (!q) return null;
+  const askedAt = Math.max(0, ...q.asks.map(id => bot?._askedAt?.[id] || 0));
+  if (askedAt >= q.at) { delete state.promise; if (state.unkept) delete state.unkept[q.action]; return null; }
+  if (now - q.at < PROMISE_MS || state.unkept?.[q.action]?.since === q.at) return null;
+  const did = bot?._survivalGoal?.survivalAction?.action || null;
+  (state.unkept ||= {})[q.action] = { asks: q.asks, since: q.at, did };
+  log(`[arbiter] ${q.layer} ${q.action} said ${q.asks.join(' or ')} is asked next ${Math.round((now - q.at) / 1000)} seconds ago; not asked${did ? ` (the step did ${did})` : ''}`);
+  return state.unkept[q.action];
+}
+// A claim offered with its promise not kept: the fact on it, in place of
+// the promise. Cleared once one of its questions has been asked since.
+function withUnkept(bot, state, c, now = Date.now()) {
+  const u = state.unkept?.[c.action];
+  if (!u) return c;
+  if (u.asks.some(id => (bot?._askedAt?.[id] || 0) >= u.since)) { delete state.unkept[c.action]; return c; }
+  return { ...c, facts: { ...(c.facts || {}), askedNextNotAsked: { asks: u.asks, secondsAgo: Math.round((now - u.since) / 1000), did: u.did } } };
+}
+
 // What giving a layer the turn does, in words: mid-218-n chose the work
 // ("recover_before_nether") over "escape_threat" at seven health with a
 // drowned five blocks off, the options named by their code (note 490).
@@ -431,8 +489,11 @@ function claimSays(c) {
     // times (note 520).
     // A stance chosen and holding goes on (note 535): said so, not as a
     // question to come.
-    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen against it ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.edge ? ` ${f.edge}` : ''}${f.push ? ` ${f.push}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
-    case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on` : 'the stance is asked next'}. The work waits.`;
+    // Whether it can reach the bot, said of it (danger.js reachSays, note
+    // 752): 25595's hoglin was answered every minute for twelve with
+    // nothing said of the no route and no hit.
+    case 'escape_threat': return `Answer ${f.threat ? mob(f.threat) : f.atArm ? `${f.atArm.map(mob).join(', ')}, at arm's length` : f.mob ? mob({ name: f.mob, distance: f.distance }) : 'the mob about'}${fire(f.threat)}: ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.other ? '' : 'against it '}${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago${f.stance.other ? ' (against the mobs about then)' : ''} goes on (asked again when it fails, when a mob it was not chosen against comes within six blocks, or once it has cost more than it was said to)` : notAsked(f) || 'the stance is asked next (fight, back off, pillar, a pocket, dig down, eat, and the rest)'}.${f.threat?.canReach ? ` Whether it can reach the bot: ${f.threat.canReach}.` : ''}${f.edge ? ` ${f.edge}` : ''}${f.push ? ` ${f.push}` : ''}${f.pocket ? ` ${f.pocket}` : ''}${f.onPillar ? ` ${f.onPillar}` : ''} The work waits.${hp}${heals}`;
+    case 'creeper_back_off': return `Answer the creeper ${f.creeper} blocks off${f.seen === false ? ' (out of sight)' : ''}: it lights about ${f.lightsAt} blocks off and goes off ${f.fuse} seconds after, walking about ${f.blocksASecond} blocks a second; ${f.stance ? `the ${String(f.stance.choice).replaceAll('_', ' ')} chosen ${f.stance.secondsAgo} second${f.stance.secondsAgo === 1 ? '' : 's'} ago goes on` : notAsked(f) || 'the stance is asked next'}. The work waits.`;
     case 'surface': return `Swim up for air: the head is under water, air ${f.air} of 20; at none, drowning takes 2 health a second.${hp}`;
     // Said with the biters walking up while it eats, standing still (note 552).
     case 'eat': return `Eat ${f.item ? (f.item === 'chicken' ? 'raw chicken' : String(f.item).replaceAll('_', ' ')) : 'food'} now, about ${c.cost?.seconds || 1.6} seconds standing still.${hp} Hunger ${f.food}${f.foodPoints ? ` to ${Math.min(20, f.food + f.foodPoints)}` : ''}.${heals}${f.effect ? ` It is the last resort: ${f.effect}.` : ''}${(f.comingAtTheBot || []).map(m => ` ${mob(m)[0].toUpperCase()}${mob(m).slice(1)} is coming at about ${m.blocksASecond} blocks a second, at the bot in about ${m.atBotInSeconds} seconds${m.atBotInSeconds <= (c.cost?.seconds || 1.6) ? ', before the meal is done' : ''}${m.hitsFor ? `; each hit about ${m.hitsFor} through the armour worn${f.health !== undefined && m.hitsFor >= f.health ? ' (as much as the health left)' : ''}` : ''}${m.note ? ` (${m.note})` : ''}.`).join('')}`;
@@ -441,17 +502,19 @@ function claimSays(c) {
     case 'dig_out_of_block': return 'Dig the head out of the block it is in.';
     case 'swim_up': return `Swim up: air ${f.air} of 20.`;
     // With its minutes so far and what it was sealed against (note 584).
-    case 'pocket_next': return `In a sealed pocket${f.inPocketMinutes !== undefined ? `, ${f.inPocketMinutes} minutes so far` : ''}${f.sealedAgainst ? `, sealed against ${f.sealedAgainst}` : ''}: whether to stay, leave or do something else there is asked next.${f.waitingFor ? ` The wait there waits for ${f.waitingFor}${f.staysForNothing ? `; stay chosen ${f.staysForNothing} time${f.staysForNothing === 1 ? '' : 's'} in it, nothing changed in any` : ''}.` : ''}${hp}${heals}`;
-    case 'secure_shelter': return `Shelter for the night: the way (a room, a pocket here, a shaft, the bed) is asked next.${hp}${heals}`;
+    // A pocket answer held is carried out without asking (survival.js
+    // pocketHeldOf): said so, not "asked next" (25594, note 752).
+    case 'pocket_next': return `In a sealed pocket${f.inPocketMinutes !== undefined ? `, ${f.inPocketMinutes} minutes so far` : ''}${f.sealedAgainst ? `, sealed against ${f.sealedAgainst}` : ''}: ${f.pocketHeld ? `${String(f.pocketHeld.choice).replaceAll('_', ' ')} goes on, as chosen (${f.pocketHeld.why})${f.pocketHeld.secondsAgo !== undefined ? ` ${f.pocketHeld.secondsAgo} seconds ago` : ''}, about ${f.pocketHeld.forSeconds} seconds more before whether to stay, leave or do something else there is asked again` : notAsked(f) || 'whether to stay, leave or do something else there is asked next'}.${f.waitingFor ? ` The wait there waits for ${f.waitingFor}${f.staysForNothing ? `; stay chosen ${f.staysForNothing} time${f.staysForNothing === 1 ? '' : 's'} in it, nothing changed in any` : ''}.` : ''}${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
+    case 'secure_shelter': return `Shelter for the night: ${f.nightMine ? `the night mine from the pocket, chosen ${f.nightMine.minutes} minute${f.nightMine.minutes === 1 ? '' : 's'} ago (${f.nightMine.mined} mined), goes on under the rock; a shelter is asked for once it ends` : notAsked(f) || 'the way (a room, a pocket here, a shaft, the bed) is asked next'}.${f.underground ? ` Underground here the night up top changes nothing: mobs spawn in the dark by day as by night${f.sleepDebt ? '; it is claimed for the sleep owed (no bed slept in for two game days and more), not for a mob named' : ''}.` : ''}${hp}${heals}`;
     // Said with the last resort carried and, when health does not come back,
     // the sealed wait for daylight among the ways asked next (note 515).
-    case 'obtain_food': return `Find food: where is asked next${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for daylight, about ${f.waitSealedMinutes} real minutes, standing still and spending no hunger` : ''}. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}.${hp}${heals}`;
-    case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${hp}${heals}`;
+    case 'obtain_food': return `Find food: ${notAsked(f) || 'where is asked next'}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for daylight, about ${f.waitSealedMinutes} real minutes, standing still and spending no hunger` : ''}. Hunger ${f.food}${f.foodCarried !== undefined ? `, ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}.${hp}${heals}`;
+    case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
     // at 5.5 health beside the work (note 509): what it goes for, and why.
     // Out of sight and walled in, the fight begins only through the walls
     // (note 708): said, not left as "close on it".
-    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance, seen: f.outOfSight ? false : undefined }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: ${f.walledIn ? `the bot is walled in (${f.walledIn}), so it closes on it only by digging out first` : f.cage ? 'which one, in the open or from a box or slit built at the cage' : 'close on it and fight it'}; which one, and the fight's cost, is asked next. The work waits.${hp}`;
+    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance, seen: f.outOfSight ? false : undefined }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: ${f.walledIn ? `the bot is walled in (${f.walledIn}), so it closes on it only by digging out first` : f.cage ? 'which one, in the open or from a box or slit built at the cage' : 'close on it and fight it'}; ${notAsked(f) || 'which one, and the fight\'s cost, is asked next'}. The work waits.${hp}`;
     case 'night_hunt': return `Go on with ${f.forFood ? 'the hunt for food' : 'tonight\'s hunt'}${f.hunting ? ` of ${plural(f.hunting)}` : ''}, as chosen${f.forFood ? '' : ' for the night'}: close on those met and fight them.${hp}${heals}${f.hoglinFight ? ` ${f.hoglinFight}` : ''}`;
     case 'recover_items': return `Go back for the items dropped at the death${f.dropsAt ? ` at ${Math.round(f.dropsAt.x)}, ${Math.round(f.dropsAt.y)}, ${Math.round(f.dropsAt.z)}` : ''}: the way there is walked; items left lying in a loaded area vanish five minutes after they drop.${hp}`;
     case 'go_home_for_night': return `Go home for the night, as planned: the walk to the bed and sleep.${hp}`;
@@ -479,7 +542,7 @@ async function arbitrate(bot, claims, ctx = {}) {
     const state = stateOf(bot, ctx);
     const held = state.holder || null;
     const mobsNow = ctx.mobs || (() => { try { return probe.mobs(bot, 16); } catch (_) { return []; } })();
-    const tree = Object.fromEntries(live.map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
+    const tree = Object.fromEntries(live.map(c => withUnkept(bot, state, c, now)).map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
     let setAside = false;
     const askedAt = Date.now();
     const asking = decide('turn_priority', { client: ctx.client, bot, task: ctx.task, goal: ctx.goal, save: ctx.save, tree,
@@ -703,6 +766,7 @@ async function take(bot, claims, ctx = {}) {
     throw err;
   }
   idled(state, w, acted, ctx.now ?? Date.now());
+  try { promised(bot, state, w, ctx.now ?? Date.now()); } catch (err) { failedOnce(err); }
   if (bot) bot._arbiterShadow = { would: { layer: w.layer, action: w.action, by: r.by, ...(r.ask ? { ask: true } : {}) }, gave: w.layer, at: now, live: true };
   return { ...r, layer: w.layer, acted, unclaimed };
 }
@@ -854,4 +918,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };
+module.exports = { ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, IDLE_MS, WATCH_MS, FOOD_BANDS };

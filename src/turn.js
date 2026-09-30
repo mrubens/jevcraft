@@ -13,6 +13,9 @@ function takeTurn(bot, holder, phase, detail = null) {
   if (!bot) return null;
   const previous = bot._turn || null;
   bot._turn = { holder, phase, ...(detail ? { detail } : {}), since: Date.now() };
+  // When each question was last asked, for a claim that said it is asked
+  // next (arbiter.js promised, note 752).
+  if (holder === 'decision' && typeof phase === 'string' && phase.startsWith('asking Jev: ')) (bot._askedAt ||= {})[phase.slice(12)] = bot._turn.since;
   return previous;
 }
 // The mark as the record keeps it: holder, phase, detail and the time held.

@@ -4234,7 +4234,9 @@ async function portalLeg(bot, task, goal, p) {
   portalApproach(goal, p, here);
   const step = Math.min(32, before - 8) / before;
   const leg = { x: here.x + (p.x - here.x) * step, z: here.z + (p.z - here.z) * step };
-  try { await navigate(bot, task, new goals.GoalNearXZ(leg.x, leg.z, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
+  // Not a leg down a cave under the portal: it ends no farther from the
+  // portal's height than it began (exploration.js legGoal, note 753).
+  try { await navigate(bot, task, require('./exploration').legGoal(leg.x, leg.z, 4, p.y, here.y), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   return portalApproach(goal, p, bot.entity.position);
 }
@@ -4489,7 +4491,15 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // The part-cast frame failing at its site: said with every way, and a
   // new site offered beside keeping it (note 527).
   const siteFailed = due && method.siteFailed && goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame : null;
-  const facts = portalFacts(bot, goal, ruins, lava) + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
+  // Buckets Jev chose to make first, made since: the change the question is
+  // asked again for, said. 25592 (mid-237-ad, 2026-09-30 11:55:40-51Z) chose
+  // craft_buckets and eleven seconds later cast_at_lava, the ask saying
+  // nothing of why it came again; a watcher read it as the answer flipping
+  // (note 753).
+  const made = goal.portalBucketsMade && Date.now() - goal.portalBucketsMade.at < 120000 ? goal.portalBucketsMade : null;
+  const madeAgo = made ? Math.max(1, Math.round((Date.now() - made.chosenAt) / 1000)) : 0;
+  const madeSays = made ? ` Asked again because the buckets chosen ${madeAgo} second${madeAgo === 1 ? '' : 's'} ago are made: ${made.carried} carried now, against ${made.before} when they were chosen.` : '';
+  const facts = portalFacts(bot, goal, ruins, lava) + madeSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
   const current = due ? methodKey(method, ruins) : null;
   // Trips for lava are measured from the frame, where each one starts and
   // ends, not from the bot: mid-244-v, standing at its lava with the frame
@@ -4657,9 +4667,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
       buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
       ...(current ? { wayHeld: current, minutesOnWay: Math.round((method.activeMs || 0) / 60000) } : {}),
+      ...(made ? { bucketsJustMade: made.carried } : {}),
       riskNow: require('./risk').riskNow(bot) } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
+  if (made) { delete goal.portalBucketsMade; save(); }
   const nearWalked = method?.nearFailed;
   // The failed walk is answered, whatever the answer.
   if (method?.nearFailed || method?.frameFailed || method?.siteFailed) { delete method.nearFailed; delete method.frameFailed; delete method.siteFailed; save(); }
@@ -4676,8 +4688,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // Buckets first: made on the next passes (netherStep), the way held
   // going on with them, or none held and the question asked with them.
   if (pick === 'craft_buckets') {
-    goal.portalBuckets = { target: countOf(bot, 'bucket') + countOf(bot, 'lava_bucket') + more };
+    goal.portalBuckets = { target: carriers + more, before: carriers, at: Date.now() };
     if (current) method.reasked = (method.reasked || 0) + 1;
+    // Said as the two steps it is, so the question that comes back once they
+    // are made is heard as the plan, not a change of mind (note 753).
+    bot.chat?.(`Making ${more} more bucket${more === 1 ? '' : 's'} first, ${current ? `then on with the ${current.replaceAll('_', ' ')}` : `then choosing how to make the portal with ${carriers + more}`}.`);
     save(); return false;
   }
   // Kept: the clock runs on to the next twenty minutes.
@@ -4877,7 +4892,10 @@ async function portalStep(bot, task, goal, save, client) {
   const buckets = goal.portalBuckets;
   if (buckets) {
     const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket');
-    if (carriers >= buckets.target || countOf(bot, 'iron_ingot') < 3) { delete goal.portalBuckets; save(); }
+    if (carriers >= buckets.target || countOf(bot, 'iron_ingot') < 3) {
+      if (carriers > (buckets.before ?? carriers)) goal.portalBucketsMade = { at: Date.now(), chosenAt: buckets.at ?? Date.now(), carried: carriers, before: buckets.before };
+      delete goal.portalBuckets; save();
+    }
     else {
       goal.step = { action: 'buckets_for_portal', carried: carriers, target: buckets.target }; save();
       try { await acquireStep(bot, task, 'bucket', countOf(bot, 'bucket') + buckets.target - carriers, goal, save); }

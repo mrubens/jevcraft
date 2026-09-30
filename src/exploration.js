@@ -442,7 +442,24 @@ const planningTimedOut = err => err?.name === 'Timeout' || /took to long to deci
 // allows. A landmark the walk makes no ground toward rests half an hour.
 // Returns the landmark when the bot is within `arrive` of it, false while on
 // the way, and null when there is none to go to.
-async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 512, arrive = 12, filter = () => true, cost = null } = {}) {
+// A leg of the way toward a place at a known height ends no farther from
+// that height than it began (and a few blocks' play): judged by the map
+// alone, the leg's cheapest end can be a cave under the place. 25581
+// (mid-243-jd, 2026-09-30 11:53:49-11:54:26Z) set out from its frame at
+// y 36 for a lava pool at (21, 67, -4), the walk ran out of search time,
+// and the leg toward it went down a cave to (30, 10, 5): the pickaxe worn
+// out there, and the climb back up by hand to y 67 took the next four
+// minutes (note 753).
+function legGoal(x, z, range, y, fromY) {
+  const g = new goals.GoalNearXZ(x, z, range);
+  if (!Number.isFinite(y) || !Number.isFinite(fromY)) return g;
+  const band = Math.abs(fromY - y) + 3, isEnd = g.isEnd.bind(g), heuristic = g.heuristic.bind(g);
+  g.isEnd = node => isEnd(node) && Math.abs(node.y - y) <= band;
+  g.heuristic = node => heuristic(node) + Math.max(0, Math.abs(node.y - y) - band);
+  return g;
+}
+
+async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 512, arrive = 12, filter = () => true, cost = null, onWalk = null } = {}) {
   let choice = null;
   for (const kind of kinds) {
     const known = knownLandmarks(bot, goal, kind, reach).filter(k => filter(k.landmark) && !isSetAside(goal, 'landmark_trip', `${k.landmark.kind}:${k.landmark.x},${k.landmark.z}`));
@@ -453,6 +470,8 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   const { landmark } = choice, key = `${landmark.kind}:${landmark.x},${landmark.z}`;
   if (choice.distance <= arrive) return landmark;
   const before = choice.distance, from = bot.entity.position.clone();
+  // The walk taken up, said by the caller that chose it (obsidian.js holdLava).
+  try { onWalk?.(landmark, before); } catch (_) { /* a word, not the walk */ }
   goal.step = { action: 'go_to_landmark', kind: landmark.kind, target: { x: landmark.x, y: landmark.y, z: landmark.z }, distance: before }; save();
   // To the place itself, depth and all: a walk that judged only the map
   // stopped on the grass over a buried dungeon and "looted" nothing.
@@ -468,7 +487,7 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   const flat = Math.hypot(landmark.x - from.x, landmark.z - from.z);
   if (timedOut && distanceNow() > arrive && before - distanceNow() < 8 && flat > 16) {
     const k = Math.min(32, flat - 8) / flat;
-    try { await navigate(bot, task, new goals.GoalNearXZ(from.x + (landmark.x - from.x) * k, from.z + (landmark.z - from.z) * k, 4), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
+    try { await navigate(bot, task, legGoal(from.x + (landmark.x - from.x) * k, from.z + (landmark.z - from.z) * k, 4, landmark.y, from.y), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   }
   const after = distanceNow();
@@ -509,4 +528,4 @@ function foundEntries(known = {}) {
     dimension: l.dimension, firstAt: l.firstAt }));
 }
 
-module.exports = { biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
+module.exports = { legGoal, biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };

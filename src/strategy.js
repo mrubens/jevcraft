@@ -360,6 +360,11 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       ...(netherAside ? { takeBack: 'reach_nether' } : {}),
       description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
+      // Said whole: "Before the diamond sword, I'll leave the diamond sword
+      // for later" named the rung skipped as the one done first (25592
+      // mid-237-ad 11:55:39Z and 11:57:59Z, the nether chest the same; the
+      // live critic's report of 11:57Z, note 753).
+      chat: `I'll leave the ${left.map(label).join(' and the ')} for later and go for the Nether now.`,
       side: true, aside: true,
       run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); },
     };
@@ -580,7 +585,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     goal.strategy = { choice, rungPhase, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev',
       ...(rungPhase ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}) };
     save();
-    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
+    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].chat ? options[choice].chat : options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }
   const option = heldOption || options[choice];
   // A rung set aside, taken back: its rest cut short and said (note 694).

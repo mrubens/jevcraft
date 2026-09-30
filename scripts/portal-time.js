@@ -10,7 +10,10 @@
 // the plan's own dispatch label (enter_nether: see the note below), upkeep
 // (food, tools, restocking), night_mine, and shelter. This does not change
 // any behavior; it is the measure the fixes in note 748 are checked
-// against next run.
+// against next run. Note 753 added the lava fetch's own measures (lavaFetch
+// below): buckets, minutes by phase, target switches, the deep dig with a
+// pool near, height a bucket, portal_method's changed answers, the route
+// searches before a phase, and walks that went down a cave under a pool.
 //
 //   node scripts/portal-time.js [--since 2026-09-29T23:00:00Z] [--to ISO]
 //                                [--port N] [--json] [--verbose]
@@ -67,7 +70,10 @@ function portFiles(port, dir = FLIGHT) {
   return files;
 }
 
-// The frames of one trial, start to end, each just {t, dim, action}.
+// The frames of one trial, start to end: {t, dim, action, phase}, and for
+// the lava fetch's measures (note 753) where the bot stood, the step's
+// target, the lava and empty buckets carried (on frames that carry the
+// inventory), a lava pool newly found, and a portal_method answer.
 function readTrial({ port, start, end, dir = FLIGHT }) {
   const frames = [];
   for (const { f, start: fs0, next } of portFiles(port, dir)) {
@@ -80,7 +86,13 @@ function readTrial({ port, start, end, dir = FLIGHT }) {
       let o; try { o = JSON.parse(line); } catch (_) { continue; }
       const s = o.snapshot || {};
       const st = s.step || s.goal?.step;
-      frames.push({ t, dim: s.dimension ? dimOf(s.dimension) : null, action: st?.action || null, phase: st?.phase || null });
+      const sa = s.survivalAction || s.goal?.survivalAction;
+      const d = o.kind === 'decision' ? s.decision : null;
+      frames.push({ t, dim: s.dimension ? dimOf(s.dimension) : null, action: st?.action || null, phase: st?.phase || null,
+        pos: s.position || null, target: st?.target || st?.position || null, kind: st?.kind || null,
+        lava: s.inventory ? (+s.inventory.lava_bucket || 0) : null,
+        pool: sa?.action === 'landmark_found' && sa.kind === 'lava_pool' && sa.position ? sa.position : null,
+        answer: d?.id === 'portal_method' && Array.isArray(d.path) ? d.path.at(-1) : null });
     }
   }
   frames.sort((a, b) => a.t - b.t);
@@ -123,8 +135,9 @@ function measureTrial(tr) {
     botMs += dt;
     if (phase === 'other' && f.action) otherActions[f.action] = (otherActions[f.action] || 0) + dt;
   }
+  const lava = lavaFetch(frames.filter(f => f.t < cut));
   return {
-    world: tr.world, port: tr.port, startedAt: new Date(start).toISOString(),
+    world: tr.world, port: tr.port, startedAt: new Date(start).toISOString(), lava,
     reachedNether: !!netherFrame, minutesToNether: netherFrame ? round((netherFrame.t - start) / 60000) : null,
     minutesMeasured: round(botMs / 60000), minutesRun: round((cap - start) / 60000),
     byPhase: Object.fromEntries(Object.entries(byPhase).sort((a, b) => b[1] - a[1]).map(([k, ms]) => [k, round(ms / 60000)])),
@@ -132,6 +145,98 @@ function measureTrial(tr) {
   };
 }
 const round = n => Math.round(n * 10) / 10;
+
+// The lava fetch, measured (note 753): buckets filled (the rises in lava
+// buckets carried, a change undone within thirty seconds not counted: a
+// frame taken mid-click reads as a drop and a pick-up; progress-audit.js
+// steady),
+// the fetch's minutes (fill_bucket and go_to_landmark), how often the lava
+// it was going for changed, the minutes spent digging for the deep lava
+// with a lava pool found this trial within 64 blocks, the height climbed
+// and descended while fetching, and portal_method's answers and the ones
+// changed within a minute.
+const FETCH = /^(fill_bucket|go_to_landmark|to_lava_for_portal)$/;
+const LAVA_DEPTH = -56;
+const near3 = (a, b, r) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= r;
+const { steady } = audit;
+function lavaFetch(frames) {
+  const over = frames.filter(f => f.dim === 'overworld' || f.dim === null);
+  const carrying = over.filter(f => f.lava !== null);
+  const lavaSeries = steady(carrying.map(f => f.lava), carrying.map(f => f.t));
+  let buckets = 0;
+  for (let i = 1; i < lavaSeries.length; i++) if (lavaSeries[i] > lavaSeries[i - 1]) buckets += lavaSeries[i] - lavaSeries[i - 1];
+  const byPhase = {};
+  let fetchMs = 0, deepMs = 0, deepPoolMs = 0, climbed = 0, descended = 0, switches = 0, lastKey = null, lastAt = null;
+  const pools = [];
+  const answers = [];
+  for (let i = 0; i < over.length; i++) {
+    const f = over[i], next = over[i + 1];
+    if (f.pool && !pools.some(p => near3(p, f.pool, 8))) pools.push({ ...f.pool, t: f.t });
+    if (f.answer) answers.push({ t: f.t, answer: f.answer });
+    if (!FETCH.test(f.action || '')) continue;
+    const dt = next ? next.t - f.t : 0;
+    if (dt > 0 && dt <= GAP_MS) {
+      fetchMs += dt;
+      const ph = f.action === 'fill_bucket' ? (f.phase === 'tunnel' ? (f.target && f.target.y <= LAVA_DEPTH + 2 ? 'tunnel (deep)' : 'tunnel (to lava in sight)') : f.phase || 'before a phase (the survey)') : f.action;
+      byPhase[ph] = (byPhase[ph] || 0) + dt;
+      if (f.pos && next?.pos) { const dy = next.pos.y - f.pos.y; if (Math.abs(dy) < 20) { if (dy > 0) climbed += dy; else descended -= dy; } }
+      const deep = f.phase === 'tunnel' && f.target && f.target.y <= LAVA_DEPTH + 2;
+      if (deep) {
+        deepMs += dt;
+        if (f.pos && pools.some(p => p.t < f.t && p.y > LAVA_DEPTH + 2 && near3(p, f.pos, 64))) deepPoolMs += dt;
+      }
+    }
+    // The lava it is going for: the deep lava is one target however its
+    // heading moves a block a step; any other, its place, a switch when it
+    // moves more than eight blocks.
+    const tgt = f.target;
+    if (!tgt) continue;
+    const key = f.phase === 'tunnel' && tgt.y <= LAVA_DEPTH + 2 ? 'deep' : tgt;
+    if (lastKey !== null && (key === 'deep' ? lastKey !== 'deep' : lastKey === 'deep' || !near3(lastKey, key, 8))) switches++;
+    lastKey = key; lastAt = f.t;
+  }
+  let flips = 0;
+  for (let i = 1; i < answers.length; i++) if (answers[i].answer !== answers[i - 1].answer && answers[i].t - answers[i - 1].t < 60000) flips++;
+  // The scooping spots' route search before each pass's phase (a
+  // fill_bucket frame with no phase yet), as segments: where it began, how
+  // long, and the phase it led to. One that began within six blocks and a
+  // minute of the last, both leading to no scoop, is a search note 753's
+  // memo makes once, not again: an upper bound on what it saves, since the
+  // memo also wants the walk from there set aside where the search ran out
+  // of time.
+  const surveys = [];
+  for (let i = 0; i < over.length; i++) {
+    const f = over[i];
+    if (f.action !== 'fill_bucket' || f.phase || !f.pos) continue;
+    let j = i; while (j + 1 < over.length && over[j + 1].action === 'fill_bucket' && !over[j + 1].phase && over[j + 1].t - over[j].t <= GAP_MS) j++;
+    const after = over[j + 1];
+    if (after && after.t - over[j].t <= GAP_MS) surveys.push({ t: f.t, pos: f.pos, ms: after.t - f.t, led: after.action === 'fill_bucket' ? after.phase : after.action });
+    i = j;
+  }
+  let surveyMs = 0, skippableMs = 0;
+  for (let k = 0; k < surveys.length; k++) {
+    surveyMs += surveys[k].ms;
+    const prev = surveys[k - 1], cur = surveys[k];
+    if (prev && cur.t - prev.t <= 60000 && near3(prev.pos, cur.pos, 6) && !/scoop/.test(prev.led || '') && !/scoop/.test(cur.led || '')) skippableMs += cur.ms;
+  }
+  // A walk to a remembered pool that went down more than sixteen blocks
+  // below both where it began and the pool: a leg into a cave under it
+  // (note 753's legGoal). Counted per walk (go_to_landmark, one target),
+  // with the minutes from where it first went that low to the walk's end.
+  let caveLegs = 0, caveLegMs = 0;
+  for (let i = 0; i < over.length; i++) {
+    const f = over[i];
+    if (f.action !== 'go_to_landmark' || !f.target || !f.pos) continue;
+    let j = i; while (j + 1 < over.length && over[j + 1].action === 'go_to_landmark' && over[j + 1].target && near3(over[j + 1].target, f.target, 1) && over[j + 1].t - over[j].t <= GAP_MS) j++;
+    const floor = Math.min(f.pos.y, f.target.y ?? f.pos.y) - 16;
+    const low = over.slice(i, j + 1).findIndex(g => g.pos && g.pos.y < floor);
+    if (low >= 0) { caveLegs++; caveLegMs += (over[j + 1] && over[j + 1].t - over[j].t <= GAP_MS ? over[j + 1].t : over[j].t) - over[i + low].t; }
+    i = j;
+  }
+  return { buckets, minutes: round(fetchMs / 60000), byPhase: Object.fromEntries(Object.entries(byPhase).map(([k, ms]) => [k, ms / 60000])), deepMinutes: round(deepMs / 60000), deepWithPoolMinutes: round(deepPoolMs / 60000),
+    switches, climbed: Math.round(climbed), descended: Math.round(descended), poolsFound: pools.length, portalMethodAnswers: answers.length, portalMethodFlips: flips,
+    surveys: surveys.length, surveyMinutes: round(surveyMs / 60000), surveySkippableMinutes: round(skippableMs / 60000), caveLegs, caveLegMinutes: round(caveLegMs / 60000) };
+}
 
 function main() {
   let trials = audit.trialRecords({ since: since - 1, flight: FLIGHT }).filter(t => t.port && t.start < to);
@@ -152,15 +257,35 @@ function main() {
   console.log('\nMinutes by phase, summed over every fresh trial\'s pre-Nether time:');
   for (const [k, m] of Object.entries(totalsByPhase).sort((a, b) => b[1] - a[1])) console.log(`  ${k}: ${round(m)} min`);
 
+  // The lava fetch (note 753), summed over every fresh trial's
+  // pre-Nether Overworld time.
+  const L = rows.map(r => r.lava);
+  const sum = k => L.reduce((a, l) => a + (l[k] || 0), 0);
+  const buckets = sum('buckets'), fetchMin = sum('minutes');
+  const per = (n, d) => d ? round(n / d) : '-';
+  console.log('\nThe lava fetch (fill_bucket and go_to_landmark), pre-Nether:');
+  console.log(`  ${round(fetchMin)} min for ${buckets} lava buckets filled: ${per(buckets, fetchMin / 60)} buckets an hour, ${per(fetchMin, buckets)} min a bucket.`);
+  const phases = {};
+  for (const l of L) for (const [k, m] of Object.entries(l.byPhase || {})) phases[k] = (phases[k] || 0) + m;
+  console.log(`  By phase: ${Object.entries(phases).sort((a, b) => b[1] - a[1]).map(([k, m]) => `${k} ${round(m)}`).join(', ')}.`);
+  console.log(`  Target switches: ${sum('switches')} (${per(sum('switches'), buckets)} a bucket).`);
+  console.log(`  Digging for the deep lava: ${round(sum('deepMinutes'))} min, ${round(sum('deepWithPoolMinutes'))} of them with a lava pool found this trial within 64 blocks (${sum('poolsFound')} pools found in all).`);
+  console.log(`  Height while fetching: ${sum('climbed')} climbed, ${sum('descended')} descended (${per(sum('climbed') + sum('descended'), buckets)} a bucket).`);
+  console.log(`  portal_method: ${sum('portalMethodAnswers')} answers, ${sum('portalMethodFlips')} changed within a minute of the one before.`);
+  console.log(`  Route searches before a phase: ${sum('surveys')}, ${round(sum('surveyMinutes'))} min; at most ${round(sum('surveySkippableMinutes'))} min of them repeated within six blocks and a minute with no scoop (note 753's memo).`);
+  console.log(`  Walks to a remembered pool that went 16+ blocks below both their start and the pool: ${sum('caveLegs')}, ${round(sum('caveLegMinutes'))} min from there to the walk's end.`);
+
   console.log('\nPer trial:');
   for (const r of rows) {
     const nether = r.reachedNether ? `Nether at ${r.minutesToNether} min` : `never reached the Nether (ran ${r.minutesRun} min)`;
     console.log(`  ${r.world} (port ${r.port}, ${r.startedAt}): ${nether}, ${r.minutesMeasured} min measured`);
     const parts = Object.entries(r.byPhase).map(([k, m]) => `${k} ${m}`);
     if (parts.length) console.log(`    ${parts.join(', ')}`);
+    const l = r.lava;
+    if (l.minutes || l.buckets) console.log(`    lava: ${l.buckets} buckets in ${l.minutes} min, ${l.switches} switches, deep ${l.deepMinutes} min (${l.deepWithPoolMinutes} with a pool found within 64), up ${l.climbed} down ${l.descended}, portal_method ${l.portalMethodAnswers} (${l.portalMethodFlips} changed within a minute)`);
     if (verbose && r.topOther.length) console.log(`    other: ${r.topOther.map(([k, m]) => `${k} ${m}`).join(', ')}`);
   }
 }
 
-module.exports = { measureTrial, phaseOf };
+module.exports = { measureTrial, phaseOf, lavaFetch };
 if (require.main === module) main();

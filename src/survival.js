@@ -2468,7 +2468,9 @@ class Survival {
     // is getting them: mid-226-h's seal, "resting ten seconds" after each
     // failure, ran again at once forty times, its hold excusing it by name
     // (note 520).
-    if (flip || (!EMERGENCIES.has(action.action) && !excused(this.bot, action.action, now) && (refused(this, key) || refused(goal, key)))) {
+    // Jev's own answer (action.chosen, the pocket's ways out when the stall
+    // was said on them, note 752) is not refused for a stall; a flip is.
+    if (flip || (!action.chosen && !EMERGENCIES.has(action.action) && !excused(this.bot, action.action, now) && (refused(this, key) || refused(goal, key)))) {
       const entry = (flip && attemptsFor(goal).of('flip')[key]) || attemptsFor(this).of('act')[key] || attemptsFor(goal).of('act')[key];
       throw Object.assign(new Error(`${action.action.replaceAll('_', ' ')} is set aside: ${entry?.why || 'it stalled'}`), { name: 'SetAside', until: entry?.until });
     }
@@ -2577,7 +2579,7 @@ class Survival {
   encounterDanger() {
     const bot = this.bot;
     const danger = threats(bot).filter(t => t.visible || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24));
-    const urgent = require('./danger').immediateThreat(bot);
+    const urgent = require('./danger').immediateThreat(bot) || require('./danger').immediateThreat(bot, { stoodOff: true });
     if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
     // A ghast in sight past the twenty-four looked at, whose push can put
     // the bot over a drop that kills beside it (danger.js pushOverDrop):
@@ -4999,11 +5001,20 @@ class Survival {
     // left, leaving these out would be the code's choice, taken unasked;
     // then each stays on offer with the same said on it.
     const idle = this.stanceIdleNow(danger);
+    // The stance held and holding is under way: its outcome is not in from
+    // one run of it. A fight standing for a mob to come (its run a quarter
+    // second at a time) read as "came to nothing" after its first quarter
+    // second, was left out of its own next pass, and so was asked again at
+    // once: 25589 (mid-242, 11:34:53Z) answered fight at 0.77 and was asked
+    // again 0.5 seconds later, shield_guard, fourteen answers in three
+    // minutes (note 752). Its end is judged when it ends (the striking rule
+    // below, note 596; the hold's own, holds.js).
+    const underWay = holding && held?.choice ? held.choice : null;
     const leftOut = [];
     const rest = () => Object.keys(options).filter(k => k !== 'none_good' && !leftOut.includes(k));
     const idleSays = f => `${f.times > 1 ? `ended ${f.times} times` : 'ended'} here without acting, the last ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago${f.why ? `: ${f.why}` : ''}; nothing has changed here since (the bot, the mobs and the health as they were), so it would end the same`;
     for (const f of idle) {
-      if (!options[f.choice]) continue;
+      if (!options[f.choice] || f.choice === underWay) continue;
       if (rest().length > 2) { leftOut.push(f.choice); continue; }
       const s = idleSays(f);
       options[f.choice].description += ` It ${s}.`;
@@ -5018,7 +5029,7 @@ class Survival {
     const sceneOut = [];
     const sceneSays = f => `came to nothing ${f.times === 1 ? 'once' : `${f.times} times`} in this same scene, the last ${Math.max(1, Math.round((Date.now() - f.at) / 1000))} seconds ago${f.why ? `: ${f.why}` : ''}; nothing a stance turns on has changed since (sameSceneSoFar), so it would come to the same`;
     for (const f of scenes.nothingHere(book)) {
-      if (!options[f.choice] || leftOut.includes(f.choice)) continue;
+      if (!options[f.choice] || leftOut.includes(f.choice) || f.choice === underWay) continue;
       if (rest().length > 2) { leftOut.push(f.choice); sceneOut.push(f); continue; }
       options[f.choice].description += ` It ${sceneSays(f)}.`;
     }
@@ -5035,6 +5046,17 @@ class Survival {
     // Held off for minutes: priced at what each has done, on every option.
     const quietSays = this.lastQuiet?.size ? require('./held-off').says(bot, [...this.lastQuiet.values()]) : '';
     if (quietSays) for (const o of Object.values(options)) o.description += quietSays;
+    // Whether each can reach the bot, where that is in doubt (note 752): one
+    // that has stood off, or one a run at found no way to. 25589's fight was
+    // offered against a magma cube a run had just found no way to, and 25595's
+    // stances named a hoglin "that can get to the bot" that stood 3.9 blocks
+    // off for nine minutes with no route and no hit.
+    const reachNow = (() => { try {
+      const dz = require('./danger'), now = Date.now();
+      return danger.slice(0, 6).filter(t => dz.standsOff(bot, t, now) || (bot._unreachable?.until > now && bot._unreachable.ids?.includes(t.entity.id)))
+        .map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off: ${dz.reachSays(bot, t, { list: danger, now })}`);
+    } catch (_) { return []; } })();
+    if (reachNow.length) for (const o of Object.values(options)) o.description += ` Reach now: ${reachNow.join('; ')}.`;
     const farther = fartherShootersSay(bot, danger);
     if (farther) for (const o of Object.values(options)) o.description += farther.says;
     // A ghast about, said with every stance: when it fires, and that it
@@ -7184,7 +7206,8 @@ class Survival {
     // after Jev chose to sleep in a nook, and no path in the code read as
     // the one (note 422).
     const via = (new Error().stack || '').split('\n').slice(2, 5).map(l => (l.match(/at (?:async )?([\w.<>]+)/) || [])[1]).filter(Boolean).join(' < ');
-    this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason, via });
+    this.report(goal, save, { action: 'leave_shelter', origin: refuge.origin, reason, via, ...(this.state.leaveChosen ? { chosen: true } : {}) });
+    delete this.state.leaveChosen;
     // Opening our temporary closure is necessary even if the last pick broke.
     // Bare-handed stone clearing loses its drop but must not imprison the bot
     // inside a one-cell shelter with no room to place a crafting table.
@@ -8501,7 +8524,11 @@ class Survival {
       const foodTrip = tripHeld && require('./game-progress').foodTripDrives(bot, goal, Date.now(), tripOpts)
         ? { renew: () => { if (goal.leaveNether) { goal.leaveNether.at = Date.now(); save(); } }, to: `go on with the way back to the Overworld for food, as Jev chose at ${new Date(goal.leaveNether.at).toISOString().slice(11, 16)}${this.state.pocketWait?.since > goal.leaveNether.at ? ', before this pocket was sealed on it' : ''}`,
           says: ` ${require('./game-progress').portalTrip(bot, goal)} ${waiting ? `${waiting.charAt(0).toUpperCase()}${waiting.slice(1)}` : 'The work'} waits till the bot is fed and back.` } : null;
-      const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}: the daylight waited out here is the time in which the surface's zombies and skeletons burn${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
+      // Underground the day is not waited out: the surface's burning is up
+      // there, and the dark here spawns by day as by night. 25585 (mid-239-ba,
+      // 11:54Z) stayed at y 11 told "the daylight waited out here is the time
+      // in which the surface's zombies and skeletons burn" (note 752).
+      const dayLeft = night ? '' : (() => { const d = require('./healing').daylightSays(bot); return d && /^day/.test(d) ? ` It is ${d.replace(/^day: /, 'day, ')}${below ? `, up on the surface: underground here the daylight does not come down, mobs spawn in the dark by day as by night, and waiting out the day sends none of them away` : ': the daylight waited out here is the time in which the surface\'s zombies and skeletons burn'}${(bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? ', and staying brings no health back' : ''}.` : ''; })();
       options.stay = { description: (night ? `Stay in the pocket until daylight, about ${minutesToDawn(bot)} real minutes of the run${healthNow.startsWith(', healing') ? '' : ' with nothing gained'}${waiting ? ` and ${waiting} waiting` : ''}${healthNow}${who ? `; ${who} is outside` : ''}.${bedLater}${mineOff ? ` No night mine from here: ${mineOff}.` : ''}` : `Stay in the pocket${who ? ` while ${who} is outside` : farSays ? '' : ', though nothing is watching it'}${healthNow}.${dayLeft}`) +
         // Blazes are not waited out (note 585): mid-242-ab-nether-3 stayed
         // five minutes at full health in a pocket beside its fortress's
@@ -8745,6 +8772,32 @@ class Survival {
           description: `Open the pocket and go for food, the way chosen next: ${known}. Food is the only way health comes back: ${hp} health and hunger ${bot.food}, and health returns only at eighteen or more${(bot.food ?? 20) <= 6 ? `; at hunger 0 the bot starves, a health every four seconds` : ''}. ${heal?.daylight ? `${heal.daylight.charAt(0).toUpperCase()}${heal.daylight.slice(1)}.` : ''}${night ? ' Mobs spawn in the dark on the way.' : ''}${who ? ` Outside is ${who}.` : ''}${outSays}${outHealth}`,
           children: foodWays };
       }
+      // Leaving refused now by the stall watch (report's refusal of
+      // survival:leave_shelter): every way here that opens the pocket runs
+      // through leave(), and chosen, did nothing but wait. 25585 (mid-239-ba,
+      // 11:55:32Z) chose leave, "Open the pocket and go back to the home bed
+      // step", and stayed shut: leaving had been set aside at 11:50:38 as
+      // "isn't getting me anywhere" (note 752). A stall's refusal is the
+      // code's own guard against a loop it runs unasked; Jev's answer, with
+      // the stall said on it, is carried out. A flip of leaving and sealing
+      // in again still rests (the loop is the code's), and that is said on
+      // each way it stops, with when it ends.
+      const leaveOff = (() => {
+        const key = 'survival:leave_shelter', now = Date.now();
+        if (excused(bot, 'leave_shelter', now)) return null;
+        const flip = flipped(goal, key) ? attemptsFor(goal).of('flip')[key] : null;
+        const act = refused(this, key) ? attemptsFor(this).of('act')[key] : refused(goal, key) ? attemptsFor(goal).of('act')[key] : null;
+        const e = flip || act;
+        if (!e) return null;
+        return { flip: !!flip, says: `${e.why || 'it stalled'}; back in about ${Math.max(1, Math.round(((e.until || now) - now) / 1000))} seconds` };
+      })();
+      const leaveStalled = !!leaveOff && !leaveOff.flip;
+      if (leaveOff) {
+        const opens = ['leave', 'go_to_bed', 'sleep_beside', 'stash_valuables', 'cache_valuables', 'go_for_food', ...Object.keys(options).filter(k => /^hunt_/.test(k))];
+        for (const k of opens) if (options[k]) options[k].description += leaveOff.flip
+          ? ` Leaving is set aside now for turning between leaving and sealing in again (${leaveOff.says}): chosen now, the pocket stays shut and the bot waits in it.`
+          : ` Leaving stalled here before (${leaveOff.says}); chosen, the pocket is opened all the same.`;
+      }
       // A choice that did nothing when it ran is not on offer again for a
       // minute, and why is said: the stay it fell back to was asked about
       // again five seconds later, the same choice came back, and did nothing
@@ -8847,8 +8900,12 @@ class Survival {
       // and the next pass asks pocket_next fresh rather than holding a dead
       // choice.
       let ranOk = false, why = null;
+      // Jev's answer, the stall said on it: its leave is not refused for it
+      // (leaveOff above, note 752), for this run only.
+      if (leaveStalled) this.state.leaveChosen = true;
       try { ranOk = await (options[choice] || foodWays[choice]).run(); }
       catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} way out`); else if (err.name !== 'SetAside') throw err; ranOk = false; }
+      finally { delete this.state.leaveChosen; }
       if (!ranOk) {
         delete this.state.pocketPlan;
         if (choice !== 'stay') { setAside(this, 'pocket_option', choice, why || `chosen at ${new Date().toISOString().slice(11, 19)} and it did nothing from this pocket${this.state.leaveRefused ? ` (${this.state.leaveRefused.charAt(0).toLowerCase()}${this.state.leaveRefused.slice(1)})` : ''}`, 60000); delete this.state.leaveRefused; save(); }
@@ -8870,7 +8927,9 @@ class Survival {
     if (!shelterNeeded(bot)) delete this.state.nightMine;
     else if (this.state.nightMine && !immediateThreat(bot) && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0)) &&
         await this.nightMine(task, goal, save)) { onStep(goal); return true; }
-    const emergency = immediateThreat(bot);
+    // Or one that has stood off, whose claim Jev gave the turn to (note
+    // 752): answered as any, by the stance.
+    const emergency = immediateThreat(bot) || immediateThreat(bot, { stoodOff: true });
     if (emergency) {
       // Sealing a nearby prepared site is faster than a long retreat. Otherwise
       // get clear first; ordinary digging must never continue under fire.
@@ -9362,6 +9421,23 @@ function onPillarTop(bot, pillar, rise = 2) {
   return Math.abs(p.x - (pillar.x + 0.5)) < reach && Math.abs(p.z - (pillar.z + 0.5)) < reach && Math.floor(p.y + 0.01) >= pillar.y + rise;
 }
 
+// A pocket answer the step carries out without asking (stepOnce's pocket
+// branch): the wait for daylight chosen sealed while health does not come
+// back, the nook or the bed beside chosen for tonight, or pocket_next's own
+// answer held its ninety seconds. -> { choice, secondsAgo, forSeconds, why }
+// or null. The held answer is read as the step reads it, but for its key
+// (the options on offer), which only the step builds: said as held "while
+// the pocket and what is about stay as they were".
+function pocketHeldOf(bot, state, now = Date.now()) {
+  const left = until => Math.max(1, Math.round((until - now) / 1000));
+  if (state.bedNookPlan?.until > now) return { choice: 'sleep_in_nook', forSeconds: left(state.bedNookPlan.until), why: 'the nook chosen for tonight when the pocket was sealed' };
+  if (state.sealedWait?.until > now && (bot.food ?? 20) < 18) return { choice: 'stay', forSeconds: left(state.sealedWait.until), why: 'the wait for daylight chosen sealed (survival priority), until dawn or hunger eighteen' };
+  if (state.bedBesidePlan?.until > now) return { choice: 'sleep_beside', forSeconds: left(state.bedBesidePlan.until), why: 'the bed beside chosen for tonight' };
+  const p = state.pocketPlan;
+  if (p?.until > now && p.choice) return { choice: p.choice, secondsAgo: Math.round((now - (p.at || now)) / 1000), forSeconds: left(p.until), why: 'pocket next\'s own answer, held while the pocket and what is about stay as they were' };
+  return null;
+}
+
 // What this layer would claim of the turn (src/arbiter.js), read from the
 // same conditions stepOnce acts on and without acting: nothing is walked,
 // searched, reported or set aside here. A plan that failed or rests is a
@@ -9414,8 +9490,9 @@ function claim(bot, goal = {}, survival = null) {
   // holder's longer reach (danger.js atItsReach, note 586). In sight, or
   // within two.
   const atArm = require('./danger').atReach(bot, threats(bot, 8));
-  if (atArm.length) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(t => ({ ...mob(t), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}) })), ...edgeFact, ...pocket });
+  if (atArm.length) return make('escape_threat', 'pressing', { atArm: atArm.slice(0, 3).map(t => ({ ...mob(t), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), canReach: 'at its reach of the bot now' })), ...edgeFact, ...pocket });
   const refuge = survival?.currentShelter?.();
+  const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   // With how long it has been in the pocket and what it was sealed against
   // (pocket-wait.js, note 584).
   const insideRefuge = refuge && shelter.inside(bot, refuge);
@@ -9430,7 +9507,17 @@ function claim(bot, goal = {}, survival = null) {
   // minutes while sitting and working in a pocket sealed once already
   // (critic 08:17Z, note 736).
   const openedSinceSealed = insideRefuge && !sealedNow && !shutOpen && refuge.verifiedAt;
+  // A pocket answer that holds is carried out by the step without asking
+  // (stepOnce's held choice, the wait for daylight chosen sealed, the nook
+  // or the bed chosen for tonight): said so, not "asked next". 25594
+  // (mid-239-ae, 10:45 to 10:53Z) was told "whether to stay, leave or do
+  // something else there is asked next" every minute for eight minutes
+  // sealed at y 8 with nothing to eat, while the wait for daylight chosen
+  // at 10:44:57 answered stay each pass and pocket_next was never asked
+  // (note 752).
+  const pocketHeld = insideRefuge ? pocketHeldOf(bot, state, now) : null;
   if (insideRefuge && (sealedNow || shutOpen || openedSinceSealed)) return make('pocket_next', 'routine', { inPocket: true, night: shelterNeeded(bot),
+    ...(pocketHeld ? { pocketHeld } : {}), ...(underground ? { underground: true } : {}),
     ...(shutOpen ? { pocketNotWhole: pocketOpenSays(shutOpen) } : openedSinceSealed ? { pocketNotWhole: 'shut before, but not now: a wall was opened since it was last sealed (its own mining, or working free)' } : {}),
     ...(require('./pocket-wait').pocketWaitSays(bot, state, goal, { near: threats(bot, 64), night: shelterNeeded(bot),
       // Whether the wait waits for nothing, as the pocket's own question
@@ -9438,7 +9525,7 @@ function claim(bot, goal = {}, survival = null) {
       noFood: foodSupply(bot) === 0 && !(lastResortSupply(bot).points > 0), spawner: (() => { try { return survival?.placeAbout?.(goal)?.spawner || null; } catch (_) { return null; } })() })?.claim || {}) });
   const nightPlan = state.nightPlan?.until > now ? state.nightPlan : null;
   // The wait for daylight Jev chose, sealed, while it is being sealed.
-  if (state.sealedWait?.until > now && (bot.food ?? 20) < 18) return make('wait_for_day_sealed', 'routine', { minutesToDawn: minutesToDawn(bot), healing: false });
+  if (state.sealedWait?.until > now && (bot.food ?? 20) < 18) return make('wait_for_day_sealed', 'routine', { minutesToDawn: minutesToDawn(bot), healing: false, ...(underground ? { underground: true } : {}) });
   const hunting = nightPlan?.plan === 'hunt' && (nightPlan.food || shelterNeeded(bot));
   // A shooter is a threat as far as its own fire reaches (combat-estimate
   // RANGE, danger.js immediateThreat), hurt or not: being in its sight is
@@ -9478,21 +9565,37 @@ function claim(bot, goal = {}, survival = null) {
     // One still coming at the bot once that stance is over (danger.js
     // followers): said with its speed and how soon it is at the bot, the
     // stance asked again with it (note 544).
-    : threat?.following ? { comingAtTheBot: { after: threat.following, blocksASecond: round(threat.speed), atBotInSeconds: round(threat.atBotIn) } } : {};
+    : threat?.following ? { comingAtTheBot: { after: threat.following, blocksASecond: round(threat.speed), atBotInSeconds: round(threat.atBotIn) } }
+    // A stance Jev chose that holds, the threat another than its own: the
+    // step carries that stance out and asks none (flee asks only while none
+    // holds), so it is said to go on, not "asked next". 25595's hold on its
+    // span was held on for minutes (holds.js) while every turn_priority said
+    // "the stance is asked next" of the hoglin beside it (note 752).
+    : heldStance.stance ? { stance: { ...heldStance.stance, other: true } } : {};
+  const reachOf = t => { try { const r = require('./danger').reachSays(bot, t); return r ? { canReach: r } : {}; } catch (_) { return {}; } };
   // Up on its own pillar, how the hold has gone (pillar-wait.js, note 590).
   const pillarSays = onPillarTop(bot, state.pillar) ? require('./pillar-wait').pillarClaimSays(state, now) : null;
   const onPillar = pillarSays ? { onPillar: pillarSays } : {};
   if (threat) return make('escape_threat', 'pressing', { ...(threat.projectile ? { threat: { name: threat.entity.name, distance: round(threat.distance), projectile: true } }
-    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: mob(threat) }), ...holding, ...edgeFact, ...pocket, ...onPillar });
+    : shooter(threat.entity) ? { threat: { ...mob(threat), ...firing(threat), ...reachOf(threat) }, healing: (bot.food ?? 0) >= 18 } : { threat: { ...mob(threat), ...reachOf(threat) } }), ...holding, ...edgeFact, ...pocket, ...onPillar });
+  // One that has stood off (danger.js standsOff, note 752): no threat that
+  // stops the work, but still Jev's to answer or leave be, offered beside
+  // the work as routine with that fact said: never at its reach, no nearer
+  // and no hit from its kind for a minute and more. Chosen, the stance is
+  // asked of it as of any (stepOnce); left, the work runs, and the moment it
+  // comes nearer, to its reach, or its kind lands a hit, it is a threat
+  // again and the work is stopped for it as before.
+  const off = immediateThreat(bot, { stoodOff: true });
+  if (off) return make('escape_threat', 'routine', { threat: { ...mob(off), ...(shooter(off.entity) ? firing(off) : {}), ...reachOf(off) }, standsOff: off.stoodOff.seconds,
+    ...(off.stance && bot._stance ? { stance: { choice: off.stance, secondsAgo: Math.round((now - bot._stance.at) / 1000) } } : heldStance.stance ? { stance: { ...heldStance.stance, other: true } } : {}), ...edgeFact, ...pocket, ...onPillar });
   // Something that can push the bot over a deadly drop beside it, though
   // it is no threat by the counts above (a shooter in sight past the
   // sixteen counted, a biter the hunt has not claimed at eight): a push is
   // the fall's whole cost (note 586).
   if (pushOver) {
     const t = pushOver.pushers[0];
-    return make('escape_threat', 'pressing', { threat: t.projectile ? { name: t.entity.name, distance: round(t.distance), projectile: true } : shooter(t.entity) ? { ...mob(t), ...firing(t) } : mob(t), ...edgeFact, ...pocket });
+    return make('escape_threat', 'pressing', { threat: t.projectile ? { name: t.entity.name, distance: round(t.distance), projectile: true } : shooter(t.entity) ? { ...mob(t), ...firing(t), ...reachOf(t) } : { ...mob(t), ...reachOf(t) }, ...(heldStance.stance ? { stance: { ...heldStance.stance, other: true } } : {}), ...edgeFact, ...pocket });
   }
-  const underground = bot.game?.dimension === 'overworld' && !surfaceObserver(bot)(bot.entity.position);
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;
   const nightFree = underground && !debt && nightPlan?.plan !== 'shelter';
@@ -9518,8 +9621,14 @@ function claim(bot, goal = {}, survival = null) {
   // with neither (note 515).
   const last = needsFood ? lastResortSupply(bot) : null;
   const wait = sealedWaitSays(bot);
+  // The night mine chosen from a pocket goes on under the rock before any
+  // shelter is asked (stepOnce): said so, not "the way is asked next". Of
+  // 608 secure_shelter wins since 2026-09-29 23Z, 360 saw no shelter
+  // question in the next 30 seconds, 169 of them mining (note 752).
+  const mining = needsShelter && state.nightMine && !surfaceObserver(bot)(bot.entity.position.offset(0, 1, 0))
+    ? { nightMine: { minutes: Math.round((now - (state.nightMine.startedAt || now)) / 60000), mined: state.nightMine.mined || 0 } } : {};
   return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', needsShelter || bot.food <= 6 ? 'pressing' : 'routine',
-    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}) } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}) } : {}),
+    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...(underground && debt ? { sleepDebt: true } : {}), ...mining } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}) } : {}),
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 

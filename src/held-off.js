@@ -22,6 +22,19 @@ const QUIET_MS = 3 * 60000;
 // coming; a shooter out of its range drifting is not.
 const NEARER = 2;
 const SAMPLE_MS = 5000, GONE_MS = 60000;
+// A mob that stands off (note 752): about STANDOFF_MS, never at arm's
+// length (ARM) in that time, no nearer than at the window's start by
+// NEARER, no hit from its kind, and a shooter out of sight all that while.
+// 25595 (mid-242-ya) held on a span 12 of 14 minutes at full health beside
+// a hoglin 3.9 blocks off that never came and never hit; survival answered
+// it every minute and the work never had the turn. Measured over the flight
+// records of 2026-09-29 23Z to 2026-09-30 11:30Z (scripts/turn-owners.js):
+// of 5,057 survival wins against a mob, 736 (414.8 bot-minutes) were
+// against one that neither closed nor hit in the minute after. Such a mob
+// is said with that fact (danger.js reachSays) and is no threat that ends
+// the work while it holds; it is one again the moment it comes nearer, to
+// its reach, or its kind lands a hit.
+const STANDOFF_MS = 60000, ARM = 3, GAP_MS = 15000;
 
 const name = n => String(n || '').replaceAll('_', ' ');
 const minutes = ms => Math.max(1, Math.round(ms / 60000));
@@ -38,7 +51,11 @@ function observe(bot, list, now = Date.now()) {
     if (!!t.visible && !m.visible) m.sightAt = now;
     m.visible = !!t.visible;
     const last = m.samples.at(-1);
-    if (!last || now - last.t >= SAMPLE_MS) m.samples.push({ t: now, d: Math.round(t.distance * 10) / 10 });
+    // One sample each SAMPLE_MS, holding the nearest and whether it was in
+    // sight at any look within it: a mob that steps in and back between
+    // samples came that near.
+    if (!last || now - last.t >= SAMPLE_MS) m.samples.push({ t: now, d: Math.round(t.distance * 10) / 10, v: !!t.visible });
+    else { last.d = Math.min(last.d, Math.round(t.distance * 10) / 10); if (t.visible) last.v = true; }
     m.samples = m.samples.filter(s => now - s.t <= QUIET_MS + SAMPLE_MS);
     m.lastAt = now;
   }
@@ -64,6 +81,36 @@ function quiet(bot, t, { now = Date.now(), record = null } = {}) {
   return null;
 }
 
+// Whether a mob has stood off for STANDOFF_MS (note 752): about that long
+// with no gap in the looks over GAP_MS, never within ARM, no nearer than at
+// the window's start by NEARER, no hit by it or its kind, and, a shooter,
+// out of sight at every look. A creeper or a warden never stands off: one
+// goes off through a wall, the other's boom goes through it.
+// -> { seconds, nearest, farthest, inSight } or null
+function stoodOff(bot, t, { now = Date.now(), ms = STANDOFF_MS, shoots = false } = {}) {
+  const id = t?.entity?.id, kind = t?.entity?.name;
+  if (id == null || !Number.isFinite(t.distance) || kind === 'creeper' || kind === 'warden') return null;
+  if ((bot?._hurtBy?.[kind] || 0) > now - ms || (bot?._hurtById?.[id] || 0) > now - ms) return null;
+  const m = bot?._heldOff?.[id];
+  if (!m || now - m.since < ms) return null;
+  const win = m.samples.filter(s => now - s.t <= ms + SAMPLE_MS);
+  if (win.length < 2 || now - win[0].t < ms - SAMPLE_MS) return null;
+  for (let i = 1; i < win.length; i++) if (win[i].t - win[i - 1].t > GAP_MS) return null;
+  if (now - win.at(-1).t > GAP_MS) return null;
+  const nearest = Math.min(t.distance, ...win.map(s => s.d)), farthest = Math.max(t.distance, ...win.map(s => s.d));
+  if (nearest <= ARM || nearest < win[0].d - NEARER) return null;
+  if (shoots && (t.visible || win.some(s => s.v))) return null;
+  return { seconds: Math.round((now - m.since) / 1000), nearest: Math.round(nearest * 10) / 10, farthest: Math.round(farthest * 10) / 10, inSight: !!t.visible };
+}
+// How long a mob has been about by the record, its nearest and farthest,
+// whatever it did: for the reach said of it (danger.js reachSays).
+function recordOf(bot, t, { now = Date.now() } = {}) {
+  const m = bot?._heldOff?.[t?.entity?.id];
+  if (!m?.samples?.length) return null;
+  const d = [t.distance, ...m.samples.map(s => s.d)].filter(Number.isFinite);
+  return { seconds: Math.round((now - m.since) / 1000), nearest: Math.round(Math.min(...d) * 10) / 10, farthest: Math.round(Math.max(...d) * 10) / 10 };
+}
+
 // The quiet ones among a list, each with its record.
 function quietOf(bot, list, opts = {}) {
   return (list || []).map(t => ({ t, q: quiet(bot, t, opts) })).filter(x => x.q);
@@ -84,4 +131,4 @@ function says(bot, quietList) {
   return ` Held off: ${each.join('; ')}. ${one ? 'It has' : 'Each has'} been about ${one ? 'that long' : 'as long as said'} without coming nearer, coming into sight or hurting the bot, so ${one ? 'it is' : 'they are'} priced at what ${one ? 'it has' : 'they have'} done, nothing, on every option here that does not go at ${one ? 'it' : 'them'}, the hold and the ways off alike; a fight that goes at ${one ? 'it' : 'them'} is priced as that fight.`;
 }
 
-module.exports = { observe, quiet, quietOf, says, QUIET_MS, NEARER };
+module.exports = { observe, quiet, quietOf, says, stoodOff, recordOf, QUIET_MS, NEARER, STANDOFF_MS };

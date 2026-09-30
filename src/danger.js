@@ -228,6 +228,10 @@ function threats(bot, radius = 24) {
   if (seen.size > 64) for (const [id, at] of seen) if (now - at > 3000) seen.delete(id);
   // Where each was a moment ago, for how fast it is coming (approach).
   trackMobs(bot, list, now);
+  // And where each has been over the last minutes, and whether it came into
+  // sight: from every look, not only the stance's and the pocket's, so a
+  // mob that stands off is known as one wherever the turn is (note 752).
+  try { require('./held-off').observe(bot, list, now); } catch (_) { /* no record */ }
   return list;
 }
 
@@ -372,6 +376,47 @@ function noWayIds(bot, list = null) {
 // knock, a gap it fits). What it holds is its own: a crossbow piglin
 // shoots, and walk-reach judges no shooter.
 const WALKERS_JUDGED = { has: name => require('./walk-reach').WALKERS.has(name) };
+// A mob that has stood off for held-off.js's STANDOFF_MS (note 752): never
+// at its reach, no nearer, no hit from its kind in that time, a shooter
+// out of sight all the while. It is said with that fact (reachSays) and is
+// not a threat that ends the work while it holds. 25595 (mid-242-ya) stood
+// on its span 12 of 14 minutes at full health beside a hoglin 3.9 blocks
+// off, the stance and turn_priority answering it every minute, its
+// set_aside_rung answer never carried out; the hoglin never came.
+function standsOff(bot, t, now = Date.now()) {
+  if (!t?.entity || atItsReach(bot, t)) return null;
+  try { return require('./held-off').stoodOff(bot, t, { now, shoots: shooter(t.entity) }); } catch (_) { return null; }
+}
+const r1 = n => Math.round(n * 10) / 10;
+// Whether a mob can reach the bot, as a fact said on every threat claim and
+// stance (note 752): at its reach now; a shooter's line of sight; a
+// walker's way to the bot (walk-reach.js) and the bot's own way to it (a
+// run at it that found none, bot._unreachable); and what it has done over
+// the time it has been about (held-off.js): how near it came and whether
+// it or its kind hit the bot. -> words, or '' for nothing known.
+function reachSays(bot, t, { list = null, now = Date.now() } = {}) {
+  const e = t?.entity;
+  if (!e) return '';
+  if (atItsReach(bot, t)) return 'at its reach of the bot now';
+  const parts = [];
+  const shoots = shooter(e);
+  if (shoots) parts.push(t.visible ? 'in sight: it can shoot the bot from where it is' : 'out of sight: no line to shoot the bot along now');
+  else if (WALKERS_JUDGED.has(e.name) && !e.vehicle) {
+    let apart = false;
+    try { apart = noWayIds(bot, list || [t]).has(e.id); } catch (_) { apart = false; }
+    parts.push(apart ? 'no way to the bot is found through the ground between' : 'a way to the bot is found');
+  }
+  const runAt = bot?._unreachable;
+  if (runAt?.until > now && runAt.ids?.includes(e.id)) parts.push(`a run at it ${Math.max(1, Math.round((now - (runAt.until - 20000)) / 1000))} seconds ago found no way to it`);
+  let rec = null, off = null;
+  try { const h = require('./held-off'); rec = h.recordOf(bot, t, { now }); off = standsOff(bot, t, now); } catch (_) { rec = null; }
+  const hitAt = Math.max(bot?._hurtById?.[e.id] || 0, bot?._hurtBy?.[e.name] || 0);
+  const hit = hitAt ? `its kind hit the bot ${Math.max(1, Math.round((now - hitAt) / 1000))} seconds ago` : null;
+  if (off) parts.push(`it has stood off ${off.seconds} seconds, ${off.nearest} to ${off.farthest} blocks off, no nearer and no hit from its kind in that time: not a threat that stops the work while that holds, and one again the moment it comes nearer, to its reach, or its kind lands a hit`);
+  else if (rec && rec.seconds >= 10) parts.push(`about ${rec.seconds} seconds, ${rec.nearest} to ${rec.farthest} blocks off${hit && now - hitAt <= rec.seconds * 1000 ? `; ${hit}` : ', no hit from its kind in that time'}`);
+  else if (hit && now - hitAt < 60000) parts.push(hit);
+  return parts.join('; ');
+}
 const cannotGetToTheBot = (bot, t, list) =>!shooter(t.entity) && !(bot._hurtById?.[t.entity.id] > Date.now() - ATTRIBUTE_MS) && noWayIds(bot, list).has(t.entity.id);
 
 // At a live blaze spawner the bot still owes rods to, a blaze beyond arm's
@@ -386,7 +431,18 @@ const cannotGetToTheBot = (bot, t, list) =>!shooter(t.entity) && !(bot._hurtById
 // arm's length is still the body's own danger: the stance answers it as
 // any melee mob (fight, back off, box), same as before.
 const SPAWNER_MELEE = 3;
-function immediateThreat(bot) {
+// { stoodOff: true }: the mob that would be the threat but that it has
+// stood off (standsOff), for the claim that offers it beside the work
+// (survival.js claim, note 752); undefined when a real threat is about.
+function immediateThreat(bot, { stoodOff = false } = {}) {
+  if (stoodOff) {
+    if (immediateThreat(bot)) return undefined;
+    const t = immediateThreat(bot, { keepStoodOff: true });
+    return t && !t.projectile && standsOff(bot, t) ? { ...t, stoodOff: standsOff(bot, t) } : undefined;
+  }
+  return threatScan(bot, arguments[1]?.keepStoodOff);
+}
+function threatScan(bot, keepStoodOff = false) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
   // Computed at most once a call: cageFight reads the goal's rods and the
   // fortress map, not cheap to ask of every mob in the scan below.
@@ -480,6 +536,9 @@ function immediateThreat(bot) {
   const about = threats(bot, 64);
   const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) && !spawnerCombat(t) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)) &&
+    // Nor one that has stood off (note 752): about a minute and more, never
+    // at its reach, no nearer, no hit from its kind, a shooter out of sight.
+    (keepStoodOff || !standsOff(bot, t)) &&
     // Last, as it is the dearest: a walker that cannot get to the bot.
     !cannotGetToTheBot(bot, t, about));
   if (mob) return mob;
@@ -490,7 +549,7 @@ function immediateThreat(bot) {
   // was a threat any more, the claim became shelter, survival_priority was
   // asked in the pillar's place, and the shelter's route searches stood the
   // bot on the pillar's edge five seconds under a skeleton's arrows (note 535).
-  const kept = stanceMobs(bot)[0];
+  const kept = stanceMobs(bot, Date.now(), { keepStoodOff })[0];
   if (kept) return kept;
   // And once it is over, those of them still coming at the bot (followers):
   // mid-244-a's run ended with four zombies ten blocks behind and walking
@@ -605,7 +664,7 @@ function stanceHeld(bot, now = Date.now()) {
 // is asked again when a mob it was not chosen against comes near; not
 // because one of its mobs stepped out of sight or out of a count. Leaving
 // the mobs be (keep_working) holds nothing against them.
-function stanceMobs(bot, now = Date.now()) {
+function stanceMobs(bot, now = Date.now(), { keepStoodOff = false } = {}) {
   const s = bot?._stance;
   if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
   if (s.hold?.extended ? now >= s.hold.until : now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
@@ -620,7 +679,9 @@ function stanceMobs(bot, now = Date.now()) {
   // against a wall already shut, while the box could not be touched).
   let sealed;
   const walledAllRound = () => { if (sealed === undefined) { try { const u = require('./unstuck'); sealed = !!u.walledOf(u.liveView(bot), bot.entity.position.floored()); } catch (_) { sealed = false; } } return sealed; };
-  return threats(bot, 64).filter(t => s.ids.includes(t.entity.id) && t.distance <= stanceReach(t.entity) && !combatTarget(bot, t.entity) && (t.visible || !walledAllRound())).map(t => ({ ...t, stance: s.choice }));
+  // Nor one that has stood off since (note 752): a stance held on and on
+  // (holds.js) against a hoglin that never came kept 25595 on its span.
+  return threats(bot, 64).filter(t => s.ids.includes(t.entity.id) && t.distance <= stanceReach(t.entity) && !combatTarget(bot, t.entity) && (t.visible || !walledAllRound()) && (keepStoodOff || !standsOff(bot, t, now))).map(t => ({ ...t, stance: s.choice }));
 }
 // How far a mob a stance was chosen against is kept: the twenty-four a
 // stance counts, and a shooter as far as it fires from (a ghast's sixty-
@@ -681,7 +742,7 @@ function pushersAbout(bot) {
     const { RANGE } = require('./combat-estimate');
     const about = threats(bot, 64);
     list = about.filter(t => shooter(t.entity) ? t.visible && t.distance <= Math.max(16, RANGE[t.entity.name] || 0)
-      : t.distance <= (t.visible ? PUSH_REACH : 4) && !cannotGetToTheBot(bot, t, about));
+      : t.distance <= (t.visible ? PUSH_REACH : 4) && !standsOff(bot, t, now) && !cannotGetToTheBot(bot, t, about));
     if (!list.length) {
       const shot = require('./projectile-guard').incoming(bot, { reach: 24 })[0];
       if (shot) list = [{ entity: shot, distance: shot.position.distanceTo(bot.entity.position), visible: true, projectile: true }];
@@ -803,4 +864,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

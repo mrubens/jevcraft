@@ -5782,7 +5782,9 @@ test('sealed in a shaft by day, hurt and hungry with nothing to eat: going for f
   assert.match(tree.go_for_food.description, /Day: dusk in about \d+ real minutes/);
   assert(tree.go_for_food.children.search_food, 'the search, as the food question has it');
   assert(tree.go_for_food.children.seen_food_0, 'and the walk back to the rabbits');
-  assert.match(tree.stay.description, /It is day, dusk in about \d+ real minutes: the daylight waited out here .* and staying brings no health back/);
+  // Down a shaft the day is the surface's (note 752, 25585): said as such,
+  // not as what the wait here is for.
+  assert.match(tree.stay.description, /It is day, dusk in about \d+ real minutes, up on the surface: underground here the daylight does not come down, mobs spawn in the dark by day as by night, and waiting out the day sends none of them away, and staying brings no health back/);
 });
 
 test('fed, the pocket offers no food trip', async () => {
