@@ -479,7 +479,7 @@ function spellRests(goal, feet, now = Date.now()) {
 // of water onto solid ground) or 'sky' (open sky over dry ground).
 // `breathS` is the breath there is, in seconds, less the margin (a full bar
 // by default).
-function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, stuckAt = [], breathS = 13, last = null, toward = null } = {}) {
+function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from = null, stuckAt = [], breathS = 13, last = null, recent = null, toward = null } = {}) {
   let moves = [];
   const notOffered = [];
   const inWater = isWater(view.name(feet));
@@ -714,12 +714,33 @@ function localMoves(view, feet, { goal = 'sky', visits = {}, target = null, from
   // 25583 (mid-243-ge) pillared and dug down, a cell up and back, eight
   // times in a minute, each from the cell the move before had left it in
   // (note 684).
-  const lastChange = last && !(Number.isFinite(last.at) && Date.now() - last.at > JUDGE_MS) ? changeOf(last) : null;
-  if (lastChange) {
+  // Any move of the last minute, not only the one before: 25581 (mid-243-hg)
+  // pillared, bridged west, north and east, and then dug down its own pillar
+  // block, four moves after it was laid, ending two blocks from where the
+  // spell began (note 706). The latest change the spell made at each cell
+  // is the one a move there would take back.
+  const kept = (recent || (last ? [last] : [])).filter(r => !(Number.isFinite(r.at) && Date.now() - r.at > JUDGE_MS));
+  const latest = new Map();
+  for (const r of kept) { const c = changeOf(r); if (c) latest.set(c.cell, { ...c, move: r.move }); }
+  if (latest.size) {
+    const newest = kept.at(-1);
     moves = moves.filter(m => {
       const c = changeOf({ ...m, cell: m.kind === 'pillar' ? `${feet}` : m.cell && `${m.cell}` });
-      if (!c || c.cell !== lastChange.cell || c.sense === lastChange.sense) return true;
-      notOffered.push(`${m.key.replaceAll('_', ' ')}: it takes back the move before (${last.move.replaceAll('_', ' ')}), back where the bot was`);
+      const before = c && latest.get(c.cell);
+      if (!before || c.sense === before.sense) return true;
+      notOffered.push(`${m.key.replaceAll('_', ' ')}: it takes back ${before.move === newest?.move && changeOf(newest)?.cell === c.cell ? 'the move before' : 'a move of the last minute'} (${String(before.move).replaceAll('_', ' ')}), back where the bot was`);
+      return false;
+    });
+  }
+  // A move that came to nothing from this very cell in the last minute (its
+  // end not reached) is not offered again from it: each of 25581's bridges
+  // laid its block and did not step onto it, and the spell went on to the
+  // next side (note 706).
+  const failedFrom = new Set(kept.filter(r => r.from === `${feet}` && r.reached === false).map(r => r.move));
+  if (failedFrom.size) {
+    moves = moves.filter(m => {
+      if (!failedFrom.has(m.key)) return true;
+      notOffered.push(`${m.key.replaceAll('_', ' ')}: chosen from this cell in the last minute and it did not get there`);
       return false;
     });
   }
@@ -1010,7 +1031,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const feet = bot.entity.position.floored();
     record.visits[`${feet}`] = (record.visits[`${feet}`] || 0) + 1;
     const view = liveView(bot);
-    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null, toward });
+    const { moves, done, here } = localMoves(view, feet, { goal: aim.goal, visits: record.visits, from: aim.from ? new Vec3(aim.from.x, aim.from.y, aim.from.z) : null, stuckAt: aim.goal === 'away' ? stuckAt : [], breathS: require('./vitals').breathSeconds(bot), last: record.moves.at(-1) || null, recent: record.moves, toward });
     const surfaced = aim.goal === 'sky' && here.dryFooting && require('./surface').surfaceObserver(bot)(bot.entity.position);
     if (done || surfaced) { record.out = true; delete record.escalated; save(); return true; }
     if (!moves.length) return false;

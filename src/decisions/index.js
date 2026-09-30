@@ -157,6 +157,7 @@ const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFo
 const AGAIN = 'sameAnswerAgain, lastAnswersCameToNothing and answersThatCameToNothing are this question\'s recent answers that came to nothing; the same answer again seldom ends differently.';
 const LEDGER = 'An option tried from about here lately says how it ended; waysResting are options left out after coming to nothing here, and when they come back; whatFailedBelow is what the question below tried and why it ended.';
 const LEAST_BAD = 'leastBadLast: at this question\'s last asking Jev said none of its options was good; it says what was taken as the least bad and what came of it.';
+const LAST_HIT = 'lastHit: one hit ends the bot and only food brings health back.';
 const AT_ONCE = 'failedAtOnce: answers chosen a moment ago whose action ended within two seconds, and why; each rests from where it was chosen.';
 const UNDER_WAY = 'underWay is the answer under way, chosen earlier and not yet arrived, done or failed; lastIntention is how the last one ended.';
 const TRAIL = 'recentPositions is where the bot has been these last minutes: the same few places over and over is a loop, and the same answer again seldom breaks it.';
@@ -194,7 +195,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -651,6 +652,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !WALLED_OWN.has(id) && !state.walledIn) {
     let walled = null; try { walled = require('../walled-in').walledInSays(bot, { survival: goal?.survival }); } catch (_) { /* no body */ }
     if (walled) state = { ...state, walledIn: walled.says };
+  }
+  // One hit ends the bot and health cannot come back (last-hit.js, note
+  // 706), with every such question and said first: 25588 at 0.2 health and
+  // no food was asked for stems, a spare pickaxe and twenty minutes on
+  // without food, none of them saying it.
+  if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.lastHit) {
+    let hit = null; try { hit = require('../last-hit').lastHit(bot); } catch (_) { /* no body */ }
+    if (hit) state = { lastHit: hit.says, ...state };
   }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.

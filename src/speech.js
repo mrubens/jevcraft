@@ -144,7 +144,9 @@ function friendlyProblem(error, { known = null } = {}) {
   if (stalled) { try { step = JSON.parse(stalled[1]); } catch (_) { step = null; } }
   // The step's own find, else the one the search keeps (`known`, the
   // fortress search's found) for a stall on the fortress search.
-  const found = step?.found || (known && (!step || step.action === 'find_fortress') ? known : null);
+  // The fortress by its one place (mob-hunt.js fortressAnchor, note 706), not
+  // the brick the approach aims at.
+  const found = step?.fortress || step?.found || (known && (!step || step.action === 'find_fortress') ? known : null);
   if ((stalled || /find_fortress|fortress/i.test(text)) && found && Number.isFinite(found.x) && Number.isFinite(found.z)) {
     const what = !step || step.action === 'find_fortress' ? 'the fortress' : 'it';
     return `I know where ${what} is, near ${Math.round(found.x)}, ${Math.round(found.z)}, but I'm not getting any closer to it.`;

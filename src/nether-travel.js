@@ -854,7 +854,8 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   // answered none good (0.82); the hoglin was taken as the best listed
   // (note 607). Offered while keep_on holds too, said with when it was
   // chosen and at what health.
-  if (food && actions.returnOverworld) {
+  let tripClosed = null; try { tripClosed = food ? require('./mob-hunt').tripHomeClosed(bot, goal) : null; } catch (_) { tripClosed = null; }
+  if (food && actions.returnOverworld && !tripClosed) {
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { there = ''; }
     answers.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${keepOnSays(bot, goal)}${standingTripSays(bot, goal, 'return_for_food')}`,
       run: async () => {
@@ -863,7 +864,9 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
         await actions.returnOverworld(bot, task, goal, save);
       } };
   }
-  if (food && !isSetAside(goal, 'nether_return', 'food')) {
+  // Going on without food is not offered where one hit ends the bot and
+  // health cannot come back (last-hit.js, note 706).
+  if (food && !isSetAside(goal, 'nether_return', 'food') && !require('./last-hit').lastHit(bot)) {
     const { foodSupply } = require('./foraging');
     const points = foodSupply(bot);
     const meals = bot.inventory.items().filter(i => require('./vitals').safeFood(bot, i)).map(i => `${i.count} ${i.name.replaceAll('_', ' ')}`).join(', ');

@@ -444,6 +444,12 @@ function portalTrip(bot, goal = {}) {
   // remembered only its Overworld portal, and its way back was said as
   // looked for first (note 607).
   const came = where === 'nether' && !known.length ? cameThrough(goal, here) : null;
+  // Every way the walk back begins with resting or refused from here: said
+  // as that, not as seconds at a walk (mob-hunt.js tripHomeClosed, note 706).
+  if (where === 'nether' && (came || known.length)) {
+    let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
+    if (closed) return closed.says;
+  }
   if (came) {
     const d = Math.round(Math.hypot(came.x - here.x, came.z - here.z));
     const pace = netherPaceSays(bot, d);
@@ -628,7 +634,8 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   if (held?.reason === stage.phase && held.pick === 'wait_here' && stage.until && held.until === stage.until && !heldForNothing) return otherWork(held.idle !== false);
   const search = goal.fortressSearch;
   const searched = search ? ` The fortress search so far: ${search.legs || 0} leg${search.legs === 1 ? '' : 's'} in ${search.since ? Math.round((now - search.since) / 60000) : 0} minutes${search.lastLegError ? `; the last ended: ${search.lastLegError}` : ''}.` : '';
-  const tree = {
+  let tripClosed = null; try { tripClosed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { tripClosed = null; }
+  const tree = tripClosed ? {} : {
     go_back: { description: `Go back to the Overworld while the rods wait. ${portalTrip(bot, goal)} Back there the ladder's next step is the Nether again for the rods; the trip is for what the Overworld gives meanwhile (food, ore, the stash), and the way in again is the same portal.${searched}` },
   };
   // Not taken up again where what they were set aside for still stands
@@ -649,8 +656,10 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
     // for nothing and is not offered (waits.js, note 698): 25591 chose it 32
     // times of 32 for "go on without the warped stem" (mid-242-jb).
     waits: require('./waits').restEnds(bot, { what: 'the rods step\'s rest', until: stage.until, cause: stage.why, idle: !!idle, now }) };
+  // With nothing else on offer the trip stays, said as it stands.
+  if (!Object.keys(tree).length) tree.go_back = { description: `Go back to the Overworld while the rods wait. ${portalTrip(bot, goal)}` };
   const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
-    state: { waiting: stage.phase.replaceAll('_', ' '), why: stage.why, rodsTheGoalWants: require('./eye-need').says(bot, goal), ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
+    state: { ...(tripClosed && !tree.go_back ? { tripHome: tripClosed.says } : {}), waiting: stage.phase.replaceAll('_', ' '), why: stage.why, rodsTheGoalWants: require('./eye-need').says(bot, goal), ...(minutes ? { minutesLeft: minutes } : {}), ...(standing ? { searchOnNotOffered: standing } : {}), dimension: dimension(bot), health: bot.health, food: bot.food, blazeRods: count(bot, 'blaze_rod') } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
   goal.leaveNether = { reason: stage.phase, pick, until: stage.until || 0, at: now, ...(pick === 'wait_here' && idle !== undefined ? { idle } : {}) }; save();

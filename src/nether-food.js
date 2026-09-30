@@ -308,8 +308,10 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
     else notOffered.push('a bastion\'s chests: none remembered within 384 blocks (or a raid is already on)');
   } catch (_) { /* no bastion route from here */ }
 
-  // The trip back.
-  if (actions.returnOverworld) {
+  // The trip back, where its walk can begin from here (note 706).
+  let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
+  if (closed && actions.returnOverworld) notOffered.push(`the trip back through the portal: ${closed.says}`);
+  if (actions.returnOverworld && !closed) {
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { there = ''; }
     const nv = require('./nether-travel');
     routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}`,
@@ -345,7 +347,11 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   const { routes, notOffered, stock } = found;
   const options = { ...routes };
   const nv = require('./nether-travel');
-  if (!options.keep_on && ((bot.food ?? 20) < 18 || options.raid_bastion)) {
+  // Not where one hit ends the bot and health cannot come back (last-hit.js,
+  // note 706): 25588 was offered twenty minutes on without food at 0.2.
+  const lastHit = require('./last-hit').lastHit(bot);
+  if (lastHit) notOffered.push(`going on without food: ${lastHit.says}`);
+  if (!options.keep_on && !lastHit && ((bot.food ?? 20) < 18 || options.raid_bastion)) {
     options.keep_on = { description: `Stay in the Nether and go on without more food for twenty minutes: ${stock.points ? `eat what is carried (${stock.points} food points)` : 'nothing edible is carried'}, hunger ${bot.food}, ${(bot.food ?? 20) < 18 ? 'health comes back only at eighteen or more. No fight is started while it does not.' : 'health comes back at eighteen or more, as it does now.'}`,
       run: async () => { const { setAside } = require('./progress'); setAside(goal, 'nether_return', 'food', nv.keepOnWhy(bot), 20 * 60000); delete goal.stockFood; save?.(); } };
   }

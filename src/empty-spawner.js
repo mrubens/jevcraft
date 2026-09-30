@@ -137,7 +137,8 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
     tree.heal_first = { description: `${f.items && f.hunger < 20 ? `Eat what is carried (hunger to ${f.eatenTo}) and w` : 'W'}ait here${f.health < 20 && f.healable ? ` until health is full: about ${f.seconds} seconds` : ''}, at most three minutes, then asked again. ${off <= RANGE ? 'Within sixteen of the spawner, as the bot is now, blazes may come meanwhile; a mob ends the wait.' : 'Beyond sixteen of the spawner none come from it meanwhile.'}${quiet && f.health < 20 && f.healable ? require('./spawner-clock').jobSays(quiet, f.seconds) : ''} No rod meanwhile.`,
       run: () => { goal.emptySpawner = { ...es, pick: 'heal_first', at: now, cage: P(cage) }; save?.(); } };
   }
-  if (actions?.returnOverworld && !f.healable) {
+  let tripClosed = null; try { tripClosed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { tripClosed = null; }
+  if (actions?.returnOverworld && !f.healable && !tripClosed) {
     const gp = require('./game-progress');
     const d = gp.portalDistance(bot, goal);
     const t = gp.NETHER_TRIPS;
@@ -316,6 +317,8 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   if (soFar) state.cageSoFar = soFar;
   // The rods carried and what a death does to them, where the chest is offered (note 704).
   if (tree.stash_rods) state.rodsCarried = tree.stash_rods.rodsCarried;
+  // The trip home not offered for its walk cannot begin from here (note 706).
+  if (!tree.go_back && (bot.food ?? 20) < 18) { try { const c = require('./mob-hunt').tripHomeClosed(bot, goal); if (c) state.tripHome = c.says; } catch (_) { /* none */ } }
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
   if (decision.stale) return true;

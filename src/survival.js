@@ -376,6 +376,8 @@ const BLOCK_SECONDS = 0.6, EAT_SECONDS = 1.6, SHAFT_BLOCK_SECONDS = 1;
 // again: more than a standing one is nudged (a push, a knockback's slide),
 // about a quarter second of its walk.
 const CREEPER_WALKS = 0.75;
+// How far a creeper's blast reaches (combat-estimate creeperBlast: none at six).
+const CREEPER_BLAST_REACH = 6;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
 const SPRINT = 5.6, SCOUT_MS = 300;
@@ -6674,9 +6676,18 @@ class Survival {
     if (!e?.position || e.isValid === false) return null;
     const r1 = v => Math.round(v * 10) / 10, d = r1(e.position.distanceTo(bot.entity.position));
     if (!require('./creeper-sight').sightLine(bot, e).stoppedBy) return `the creeper has come round the block to a line to the bot, ${d} blocks off${creeperSwelling(bot, e) ? ', lit' : ''}`;
+    if (creeperSwelling(bot, e)) return `the creeper is lit behind the block, ${d} blocks off`;
+    // Nearer by what the block turns on: into its blast's reach (six blocks,
+    // combat-estimate creeperBlast), then each whole block nearer inside it.
+    // Out of its line it does not light however near it mills (26.1.2
+    // SwellGoal: no line, the fuse runs down), so moving about within three
+    // is not asked for. 25581 (mid-243-hg) answered block_creeper twelve
+    // times in 24 seconds behind the one block it had laid, five of them for
+    // a creeper milling at 2.5 to 3 blocks, and five for each 0.75 it came
+    // from 9.4 to 3.3 (note 706).
     const moved = Math.hypot(e.position.x - hold.creeperAt.x, e.position.z - hold.creeperAt.z) + Math.abs(e.position.y - hold.creeperAt.y);
-    const { LIGHTS_AT } = require('./combat-estimate');
-    if (moved >= CREEPER_WALKS && (d <= hold.distance - CREEPER_WALKS || d <= LIGHTS_AT)) return `the creeper is ${d <= hold.distance - CREEPER_WALKS ? 'coming nearer' : `moving within ${LIGHTS_AT} blocks`}: ${r1(moved)} blocks since its line was cut, from ${r1(hold.distance)} to ${d} blocks off the bot`;
+    const band = x => x >= CREEPER_BLAST_REACH ? CREEPER_BLAST_REACH : Math.floor(x);
+    if (moved >= CREEPER_WALKS && d <= hold.distance - CREEPER_WALKS && band(d) < band(hold.distance)) return `the creeper is coming nearer: ${r1(moved)} blocks since its line was cut, from ${r1(hold.distance)} to ${d} blocks off the bot${hold.distance >= CREEPER_BLAST_REACH ? `, into its blast's reach of ${CREEPER_BLAST_REACH}` : ''}`;
     return null;
   }
 
@@ -6731,7 +6742,7 @@ class Survival {
     const goesOffIn = walk.sees && !walk.within ? Math.round((walk.seconds + FUSE) * 10) / 10 : null;
     const walkSays = walk.noWay ? ` It has no way to walk to the bot from where it is: it stays about there, and behind the block it does not see the bot.`
       : walk.within ? (walk.sees ? '' : ` It is within ${LIGHTS_AT} blocks: it stands where it is while the bot stays, and its fuse ${lit ? 'burns back down' : 'does not light'}.`)
-      : walk.sees ? ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where it sees the bot past the block: it lights there with its whole fuse and goes off about ${goesOffIn} seconds from now, about ${Math.round(afterArmour(creeperBlast(walk.distance), worn))} after the armour worn, unless the bot is more than ${FUSE_KEPT} off or out of its sight by then. The block buys those seconds, not the end of it: they are for backing out past ${BLAST_CLEAR} blocks, where its blast does nothing, or for striking it; staying behind the block, the blast is the price, and the stance is asked again as soon as it comes nearer.`
+      : walk.sees ? ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where it sees the bot past the block: it lights there with its whole fuse and goes off about ${goesOffIn} seconds from now, about ${Math.round(afterArmour(creeperBlast(walk.distance), worn))} after the armour worn, unless the bot is more than ${FUSE_KEPT} off or out of its sight by then. The block buys those seconds, not the end of it: they are for backing out past ${BLAST_CLEAR} blocks, where its blast does nothing, or for striking it; staying behind the block, the blast is the price, and the stance is asked again as it comes into its blast's reach of ${CREEPER_BLAST_REACH} blocks and at each block nearer inside it, or as it lights or its line opens.`
       : ` It is more than ${LIGHTS_AT} off, so it walks on toward the bot round the block, making its way anew about every second whether it sees the bot or not; it stops at the first point of that way within ${LIGHTS_AT} blocks. Here that point is about ${walk.blocks} blocks' walk from it, about ${walk.seconds} seconds, ${walk.distance} blocks from the bot, where the block still stops its line: it stands there and does not light.`;
     const next = ` Behind it: within ${LIGHTS_AT} blocks of the bot the creeper stands where it is, lit or not, and out of its sight it does not light.${walkSays} Out of its sight three seconds on end, it forgets the bot and stops following it until it sees it again. If the bot backs off past ${LIGHTS_AT} blocks from it, it walks round the block and lights again where it comes within ${LIGHTS_AT} in sight. Neither strikes the other through the block.`;
     const others = creepers.slice(1);
@@ -7391,13 +7402,20 @@ class Survival {
     const trip = (() => { try { return ` ${require('./game-progress').portalTrip(bot, goal)}`; } catch (_) { return ''; } })();
     const there = (() => { try { const s = require('./healing').overworldFoodSays(bot, goal); return s ? ` ${s}` : ''; } catch (_) { return ''; } })();
     const keptOn = require('./nether-travel').keepOnSays(bot, goal);
-    children.return_for_food = { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked.' + (/nether/.test(String(bot.game?.dimension || '')) ? ' In the Nether hoglins are the only meat.' : ' Nothing here is safe to eat.') + trip + there + keptOn,
+    // Not offered where its walk cannot begin from here (mob-hunt.js
+    // tripHomeClosed): 25588 chose it eight times at 0.2 health, each run
+    // ending "cannot be reached from here" (note 706). The bastion's chests
+    // are a way to food here too (nether-food.js foodRoutes).
+    let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
+    if (!closed) children.return_for_food = { description: 'Go back through the portal to the Overworld, where food can be hunted and cooked.' + (/nether/.test(String(bot.game?.dimension || '')) ? ' In the Nether hoglins are the only meat.' : ' Nothing here is safe to eat.') + trip + there + keptOn,
       run: async () => { require('./nether-travel').chooseReturnForFood(goal); goal.survivalAction = { action: 'return_for_food', at: new Date().toISOString() }; save(); await this.actions.returnOverworld(bot, task, goal, save); } };
     if (/nether/.test(String(bot.game?.dimension || ''))) {
       const { hoglinsKnown, hoglinSays } = require('./nether-travel');
       const known = hoglinsKnown(bot, goal);
       if (known.inView.length || known.seen.length) children.hoglin_food = { description: hoglinSays(bot, known),
         run: () => require('./nether-food').huntHoglin(bot, task, goal, save, known, { navigate: this.actions.navigate, survival: this, method: 'walk' }) };
+      let raid = null; try { raid = require('./bastion-raid').foodRoute(bot, goal, { navigate: this.actions.navigate, loot: this.actions.loot }); } catch (_) { raid = null; }
+      if (raid) children.raid_bastion = { description: raid.description, run: () => raid.run(task, save) };
     }
     return children;
   }
@@ -8875,7 +8893,7 @@ class Survival {
         : goal.kind === 'survive' ? 'Wait nearby between player requests when survival preparations are already sufficient.'
           : underground ? `Keep on with ${waiting || 'the request'} underground. ${BELOW_NIGHT} Nightfall on the surface is about ${Math.round(((DAY.NIGHT - (bot.time?.timeOfDay ?? 0) + 24000) % 24000) / 1200)} real minutes off.${nowAbout}${healing}`
             // No daylight to spend off the Overworld (note 677).
-            : !/overworld/.test(String(bot.game?.dimension || 'overworld')) ? `Spend the next action on ${waiting || 'the player request'}. No day or night comes here: what it is weighed against is the hunger and the health, which comes back only at hunger eighteen or more.${nowAbout}${healing}`
+            : !/overworld/.test(String(bot.game?.dimension || 'overworld')) ? `Spend the next action on ${waiting || 'the player request'}. No day or night comes here: what it is weighed against is the hunger and the health, which comes back only at hunger eighteen or more.${nowAbout}${healing}${require('./last-hit').riskSays(bot)}`
             : 'Spend the next action on the player request while outside. Suitable when hunger and the remaining daylight leave time for survival preparations afterwards, or when a verified shelter is already close enough to reach.',
         run: async () => { if (stayUp) { this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000 }; this.report(goal, save, { action: 'stay_up', armed }); } } },
     };
@@ -8956,6 +8974,8 @@ class Survival {
         (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state, { target: desiredFood }) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
+    // The trip home left out for its walk cannot begin from here (note 706).
+    if (needsFood && offWorld && !tree.obtain_food?.children?.return_for_food) { try { const c = require('./mob-hunt').tripHomeClosed(bot, goal); if (c) state.tripHome = c.says; } catch (_) { /* none */ } }
     // Waiting sealed for daylight, anywhere in the Overworld, when health
     // does not come back and no shelter is on offer already: by day, on the
     // surface, it was never a choice. mid-231-q and mid-211-x went on hunting

@@ -178,8 +178,16 @@ function looseEnds(goal, now = Date.now()) {
   if (goal.mobHunt) { attemptsFor(goal).clearAction('hunt_target'); delete goal.mobHunt.stalking; }
   if (goal.fortressSearch) {
     delete goal.fortressSearch.target;
-    const found = goal.fortressSearch.found;
-    if (found) { (goal.fortressSearch.shunned ||= []).push({ x: found.x, z: found.z, until: now + 600000 }); delete goal.fortressSearch.found; }
+    const fs = goal.fortressSearch, found = fs.found;
+    // A fortress known by its extent (mob-hunt.js fortressAnchor) is one
+    // place: the stall is the way that stalled, kept on its approach, not
+    // sixteen blocks of it set aside for the next pass to take the nearest
+    // brick past them as a fortress found anew (25588, note 706).
+    if (found && fs.fortressAt && fs.approach?.found && require('./mob-hunt').sameFortress(fs, fs.approach.found, found)) {
+      const a = fs.approach;
+      a.failed = [...(a.failed || []), { choice: a.choice || 'the approach', why: 'the step stalled on the way in (no measurable progress)', at: now }].slice(-8);
+      delete a.choice; delete a.until;
+    } else if (found) { (fs.shunned ||= []).push({ x: found.x, z: found.z, until: now + 600000 }); delete fs.found; }
   }
   goal.lastStallAt = now;
 }
@@ -267,7 +275,9 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // found fortress already set aside ten minutes and the shaft dropped.
   const droppedSays = (() => {
     const d = [];
-    if (goal.fortressSearch?.found) d.push('the fortress found is set aside ten minutes');
+    const fs = goal.fortressSearch;
+    if (fs?.found && fs.fortressAt && fs.approach?.found && require('./mob-hunt').sameFortress(fs, fs.approach.found, fs.found)) d.push('the way in that stalled is kept as failed on the fortress\'s approach');
+    else if (fs?.found) d.push('the fortress found is set aside ten minutes');
     else if (goal.fortressSearch?.target) d.push('the search\'s target is dropped');
     if (goal.tunnel) d.push('the shaft it was digging is dropped');
     if (goal.surfaceReturn) d.push('the climb out is dropped');
@@ -5219,7 +5229,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message, from: goal.lastErrorFrom };
   if (goal.struggles === 1 || goal.struggles % 5 === 0) {
-    bot.chat?.(`${friendlyProblem(err, { known: goal.fortressSearch?.found || null })} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
+    bot.chat?.(`${friendlyProblem(err, { known: (goal.fortressSearch?.found && goal.fortressSearch.fortressAt) || goal.fortressSearch?.found || null })} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
   }
   const failed = goal.lastStruggleStep || goal.step;
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;

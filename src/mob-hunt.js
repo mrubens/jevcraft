@@ -773,8 +773,15 @@ async function foodLeave(bot, task, goal, save, actions) {
   let restock = null;
   try { restock = require('./nether-food').restockFoodOption(bot, task, goal, save, { actions: foodActions(bot, task, goal, save, actions), client: actions.client || task.opportunityClient }); } catch (_) { restock = null; }
   if (restock) tree.restock_food = { description: restock.description };
+  // The trip home whose walk cannot begin from here, and going on without
+  // food where one hit ends the bot and health cannot come back, are said,
+  // not offered (note 706); going on stays only where nothing else is.
+  let closed = null; try { closed = tripHomeClosed(bot, goal); } catch (_) { closed = null; }
+  if (closed) delete tree.go_back;
+  const lastHit = require('./last-hit').lastHit(bot);
+  if (lastHit && Object.keys(tree).length > 1) delete tree.keep_on;
   const decision = await decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
-    state: { for: 'food', ...rodsFact(bot, goal, {}), health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot), ...(hits ? { whatAHitCosts: hits } : {}) } });
+    state: { for: 'food', ...rodsFact(bot, goal, {}), health: bot.health, food: bot.food, foodCarried: false, dimension: dimension(bot), ...(hits ? { whatAHitCosts: hits } : {}), ...(closed ? { tripHome: closed.says } : {}) } });
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
   if (pick === 'restock_food') { await restock.run(); save(); return null; }
@@ -848,7 +855,9 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     let keepOn = isSetAside(goal, 'nether_return', 'food');
     if (bot.food < 18 && !hasFood(bot) && dimension(bot) !== 'overworld' && actions.returnOverworld && !keepOn) {
       const { netherLeaveHeld } = require('./game-progress');
-      const pick = netherLeaveHeld(goal, 'food') ? 'go_back' : await foodLeave(bot, task, goal, save, actions);
+      // A trip held whose walk cannot begin from here is asked again, not
+      // walked into its first failure (note 706).
+      const pick = netherLeaveHeld(goal, 'food') && !tripHomeClosed(bot, goal) ? 'go_back' : await foodLeave(bot, task, goal, save, actions);
       if (pick === null) return;
       if (pick === 'go_back') {
         goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
@@ -2034,11 +2043,34 @@ function portalTripStart(bot, goal, homeBy) {
       closed.push(refused ? `no crossing now: ${refused.says}` : `a crossing straight at it goes nowhere (${survey.stoppedBy || 'no ground made'})`);
     }
   }
-  if (pickaxeTier(bot) >= 1 || !pickaxeFirst(bot).none) return { ok: true };
+  // The staircase resting toward it (by its area, or from here): the walk
+  // back goes straight to the portal's way question (work.js stairsOrWay),
+  // which offers the legs round and other work. 25588 (mid-243-hf) was
+  // offered the trip home eight times at 0.2 health with its legs, crossing
+  // and staircase all resting, each ending "cannot be reached from here"
+  // (note 706).
   const t = require('./tunneling');
+  const stairRest = t.restingWay(goal, p, here);
+  if (stairRest) {
+    closed.push(`${stairRest.what} rests (${String(stairRest.why).slice(0, 100)}), ${stairRest.minutes} more minute${stairRest.minutes === 1 ? '' : 's'}`);
+    return { ok: false, why: `the way back to it cannot begin from here: ${closed.join('; ')}`, until: stairRest.until };
+  }
+  if (pickaxeTier(bot) >= 1 || !pickaxeFirst(bot).none) return { ok: true };
   if (Math.hypot(p.x - here.x, p.z - here.z) <= t.STAIR_ACROSS && t.stairFromHere(bot, goal, p)?.gains) return { ok: true };
   closed.push(`no stair to it by hand from here (${Math.hypot(p.x - here.x, p.z - here.z) > t.STAIR_ACROSS ? `more than ${t.STAIR_ACROSS} blocks across` : 'no step toward it gains'}), and no pickaxe is carried or can be made from what is carried`);
   return { ok: false, why: `the way back to it cannot begin from here: ${closed.join('; ')}` };
+}
+// The trip home through a portal, closed from here: every way its walk
+// begins with is resting or refused (portalTripStart), said with the portal.
+// null where the trip can begin, or off the Nether. Read by every offer of
+// the trip (for food, for blocks, for the kit) and by portalTrip's words.
+function tripHomeClosed(bot, goal) {
+  if (!/nether/.test(String(bot?.game?.dimension || '')) || !bot.entity?.position) return null;
+  let homeBy = null; try { homeBy = portalBack(bot, goal, bot.entity.position); } catch (_) { homeBy = null; }
+  if (!homeBy) return null;
+  let start = null; try { start = portalTripStart(bot, goal, homeBy); } catch (_) { start = null; }
+  if (!start || start.ok) return null;
+  return { portal: homeBy.portal, says: `The way back to the portal (${homeBy.says}) cannot be reached from here: ${start.why.replace(/^the way back to it cannot begin from here: /, '')}.`, until: start.until || null };
 }
 // How far a search on from here goes with what is carried, each heading at
 // this height (nether-travel.js surveyLeg): what searching on can reach
@@ -2219,6 +2251,8 @@ const SAME_FORTRESS = 32;
 // The place the way in was asked about is kept from within this of where
 // the bot stood when it was first asked: tried.js's "from about here".
 const APPROACH_FROM = 16;
+// The health under which a descent goes no lower (descent.js descendTo's hpFloor).
+const DESCEND_FLOOR = 12;
 // As far as a span toward a fortress was ever laid.
 const APPROACH_CROSS = 64;
 const retryable = err => !['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
@@ -2516,7 +2550,12 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
         return `${nearer ? 'came nearer, ' : ''}ended ${off} blocks from the floor${why ? `: ${why}` : ''}`;
       } };
   }
-  if (flatTo(nearest, here) <= 12 && nearest.y < here.y - 2) {
+  // Under the health the descent keeps (descent.js hpFloor, 12) it goes no
+  // lower: not offered, said. 25588 at 1.2 health was offered it as the one
+  // way in, took it, and left the fortress in the same second (note 706).
+  let noDescend = null;
+  if (flatTo(nearest, here) <= 12 && nearest.y < here.y - 2 && (bot.health ?? 20) < DESCEND_FLOOR) noDescend = `digging straight down toward the bricks goes no lower under ${DESCEND_FLOOR} health (${Math.round((bot.health ?? 20) * 10) / 10} now)`;
+  else if (flatTo(nearest, here) <= 12 && nearest.y < here.y - 2) {
     const column = columnBelow(bot);
     const under = !column ? '' : column.lava ? ` Lava is ${column.depth} blocks under the bot's feet.` : column.open ? ' Nothing solid within sixteen blocks under the bot\'s feet.' : ` The first floor under the bot's feet is ${column.name.replaceAll('_', ' ')}, ${column.depth} blocks down.`;
     options.descend = { description: `Dig straight down where the bot stands toward the bricks, ${Math.round(here.y - nearest.y - 1)} blocks below and ${flat} across, a block at a time.${under} A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is; under 12 health it goes no lower at all (${Math.round((bot.health ?? 20) * 10) / 10} now), and it stops after 24 steps (note 677).`,
@@ -2641,7 +2680,7 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     const tries = (record?.failed || []).filter(f => f.choice === key);
     if (tries.length) option.description += ` Tried on this approach ${tries.length === 1 ? 'once' : `${tries.length} times`} and ended no nearer: ${tries.at(-1).why}.`;
   }
-  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), ...(byHand ? { byHand } : {}), ...(noPillar ? { pillar: noPillar } : {}), ...(crossNotNow ? { crossLevel: crossNotNow } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
+  return { options, facts: { fortress: { distance: flat, height: dy }, ...(noRoute ? { walkRoute: noRoute } : {}), ...(noStair ? { staircase: noStair } : {}), ...(byHand ? { byHand } : {}), ...(noPillar ? { pillar: noPillar } : {}), ...(noDescend ? { descend: noDescend } : {}), ...(crossNotNow ? { crossLevel: crossNotNow } : {}), health: bot.health, food: bot.food, ...(hits ? { whatAHitCosts: hits } : {}), blocksCarried: blocksCarried(bot),
     ...(bot.inventory?.items ? { pickaxe: pickaxeSays(bot, goal) } : {}),
     threatsInView: inView.map(t => `${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`),
     ...(waiting ? { atTheBricks: waiting } : {}),
@@ -2672,7 +2711,11 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   catch (err) { task.check(); if (!retryable(err)) throw err; }
   const found = { x: nearest.x, y: nearest.y, z: nearest.z };
   const kind = stretch ? 'stretchWay' : 'approach', same = stretch ? 2 : SAME_FORTRESS;
-  if (!state[kind] || Math.hypot(state[kind].found.x - found.x, state[kind].found.z - found.z) > same || (stretch && Math.abs(state[kind].found.y - found.y) > 1)) {
+  // The approach is the fortress's, not the brick's (note 706): an aim moved
+  // within the same fortress keeps what failed on the way to it.
+  const apart = stretch ? Math.hypot(state[kind]?.found.x - found.x, state[kind]?.found.z - found.z) > same || Math.abs(state[kind]?.found.y - found.y) > 1
+    : !!state[kind] && !sameFortress(state, state[kind].found, found);
+  if (!state[kind] || apart) {
     state[kind] = { found, failed: stretch ? [{ choice: 'walk_route', why: stretch.why, at: Date.now() }] : [] };
   }
   const approach = state[kind];
@@ -2686,7 +2729,8 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
   // no walk in it. 25585 said "I'm in the fortress" 44 blocks under it
   // (note 687).
   const onFloors = !!stretch && onFortressFloors(bot, state);
-  goal.step = { action: 'find_fortress', found, ...(onFloors ? { walking: found } : {}), legs: state.legs }; save();
+  const fortressAt = !stretch && state.fortressAt ? { x: state.fortressAt.x, y: state.fortressAt.y, z: state.fortressAt.z } : null;
+  goal.step = { action: 'find_fortress', found, ...(fortressAt ? { fortress: fortressAt } : {}), ...(onFloors ? { walking: found } : {}), legs: state.legs }; save();
   const approaches = await fortressApproaches(bot, task, goal, save, actions, state, nearest, bricks, approach);
   const { options } = approaches;
   // The blazes lead: they are what the search is for, and the ones about
@@ -2723,7 +2767,7 @@ async function approachFortress(bot, task, goal, save, actions, state, nearest, 
     pick = decision.path.at(-1);
     approach.choice = pick; approach.until = Date.now() + APPROACH_HOLD_MS; save();
   }
-  goal.step = { action: 'find_fortress', found, ...(onFloors ? { walking: found } : {}), approach: pick, legs: state.legs }; save();
+  goal.step = { action: 'find_fortress', found, ...(fortressAt ? { fortress: fortressAt } : {}), ...(onFloors ? { walking: found } : {}), approach: pick, legs: state.legs }; save();
   const from = nearest.distanceTo(bot.entity.position);
   let why = null;
   try { why = await options[pick].run(); }
@@ -2794,6 +2838,53 @@ function fortressExtent(bricks, from, link = 8) {
   }
   return far;
 }
+// Whether `to` lies among the bricks joined to `from` (fortressExtent's links).
+function linkedTo(bricks, from, to, link = 8) {
+  const key = (x, z) => `${Math.floor(x / link)},${Math.floor(z / link)}`;
+  const grid = new Map();
+  for (const b of bricks) { const k = key(b.x, b.z); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(b); }
+  const flat = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const joined = new Set(), queue = [from];
+  while (queue.length) {
+    const b = queue.pop(), gx = Math.floor(b.x / link), gz = Math.floor(b.z / link);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const c of grid.get(`${gx + dx},${gz + dz}`) || []) {
+      if (joined.has(c) || flat(b, c) > link) continue;
+      if (flat(c, to) <= link) return true;
+      joined.add(c); queue.push(c);
+    }
+  }
+  return false;
+}
+// One fortress, one place (note 706): the bricks seen are matched to the
+// fortress already known, by its extent (the bricks joined to it, eight
+// blocks a link, or within the extent measured before, at least
+// SAME_FORTRESS), and only bricks apart from it are another fortress. The
+// nearest brick is the approach's aim, not the fortress's name. 25588
+// (mid-243-hf) named five places of one fortress in twenty minutes, from
+// (-328, -293) to (-264, -308), each stall setting aside sixteen blocks
+// round the nearest brick and the next pass taking the nearest brick past
+// them as a fortress found anew, its approach begun again from nothing.
+const FORTRESS_KEPT_MS = 60 * 60000;
+function fortressAnchor(state, bricks, nearest, now = Date.now()) {
+  const a = state.fortressAt;
+  if (a && now - (a.seenAt || 0) < FORTRESS_KEPT_MS) {
+    const d = Math.hypot(nearest.x - a.x, nearest.z - a.z);
+    if (d <= Math.max(a.extent || 0, SAME_FORTRESS) || linkedTo(bricks, a, nearest)) {
+      a.extent = Math.max(a.extent || 16, Math.ceil(d) + 2); a.seenAt = now;
+      return a;
+    }
+  }
+  state.fortressAt = { x: nearest.x, y: nearest.y, z: nearest.z, extent: fortressExtent(bricks, nearest), firstAt: now, seenAt: now };
+  return state.fortressAt;
+}
+// Two places of the one fortress known (its anchor's reach), or failing
+// one, within SAME_FORTRESS of each other.
+function sameFortress(state, p, q) {
+  const a = state?.fortressAt, reach = a ? Math.max(a.extent || 0, SAME_FORTRESS) : 0;
+  if (a && Math.hypot(p.x - a.x, p.z - a.z) <= reach && Math.hypot(q.x - a.x, q.z - a.z) <= reach) return true;
+  return Math.hypot(p.x - q.x, p.z - q.z) <= SAME_FORTRESS;
+}
+
 // How far the fortress's bricks in view run from here along each heading
 // (east, south, west, north): a corridor goes on past its last brick seen.
 function fortressRuns(bricks, here) {
@@ -3245,6 +3336,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
     // was "inside", and set out for bricks it had no way to (note 523).
     const floors = fortressFloors(bot, bricks);
     const nearest = byNear(bricks)[0];
+    const anchor = fortressAnchor(state, bricks, nearest);
     state.found = { x: nearest.x, y: nearest.y, z: nearest.z };
     // The way in is asked about one place, kept while the bot is about
     // where it was first asked and the place is still one of the floors:
@@ -3258,9 +3350,10 @@ async function findFortressStep(bot, task, goal, save, actions) {
       const target = kept || byNear(candidates)[0];
       // Whether the visit happens now is asked before the way in (note 638):
       // the bot's health and hunger are what a fight's outcome turns on.
-      const visit = await require('./fortress-visit').ask(bot, task, goal, save, actions, { fortress: { distance: Math.round(flatTo(target, here)), height: Math.round(target.y + 1 - here.y), at: { x: target.x, y: target.y, z: target.z } },
+      const visit = await require('./fortress-visit').ask(bot, task, goal, save, actions, { fortress: { distance: Math.round(flatTo(target, here)), height: Math.round(target.y + 1 - here.y), at: { x: anchor.x, y: anchor.y, z: anchor.z } },
         leave: () => {
-          state.shunned.push({ x: target.x, z: target.z, radius: fortressExtent(bricks, target), until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on',
+          // The whole fortress, by its one place and extent (note 706).
+          state.shunned.push({ x: anchor.x, z: anchor.z, radius: Math.max(anchor.extent || 0, fortressExtent(bricks, anchor)), until: Date.now() + 600000, at: Date.now(), why: 'Jev chose to leave it and search on',
             from: { x: Math.round(here.x), y: Math.round(here.y), z: Math.round(here.z) }, left: ['the visit itself'] });
           delete state.target; save();
           bot.chat?.('Leaving this fortress for now. Searching on for another way in.');
@@ -3482,4 +3575,4 @@ function claim(bot, goal = {}) {
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health } };
 }
 
-module.exports = { climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };
+module.exports = { tripHomeClosed, fortressAnchor, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays };
