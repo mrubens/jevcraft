@@ -55,6 +55,11 @@ const SHOTS = {
   llama_spit: { from: ['llama', 'trader_llama'], miss: 1.0 }, dragon_fireball: { from: ['ender_dragon'], miss: 2.5 },
 };
 const BOWMEN = new Set(['skeleton', 'stray', 'bogged', 'parched']);
+// What a mob's shot is called, from SHOTS above (a blaze's and a ghast's
+// are both fireballs; note 715, item 1: keep_on's "cost the ghast's about
+// 4.8 health a shot" named no shot at all).
+const MOB_SHOT_WORD = Object.fromEntries(Object.entries(SHOTS).flatMap(([shot, { from }]) => from.map(mob => [mob, shot === 'small_fireball' ? 'fireball' : shot.replaceAll('_', ' ')])));
+const shotWord = name => MOB_SHOT_WORD[name] || 'shot';
 // A warning: what the shooter shows before it shoots, from the game's own
 // goals (26.1.2 jar). `dueFrom`: seconds into the warning the shots can
 // come; `after`: seconds after it ends that a shot fired at its end is
@@ -453,7 +458,7 @@ function shotOptions(bot, warned) {
     const { left, point } = facingFor(bot, points);
     const secs = Math.max(...warned.map(e => e._shotWarn?.kind === 'blaze' ? require('./blaze-stand').DUE_SECONDS : e._shotWarn?.kind === 'ghast' ? 2 : 1.5));
     const behind = behindSays(bot, point, warned);
-    tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after. The shield blocks only the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}.${behind.says} ${blockedSays(bot)}`,
+    tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after. The shield blocks only the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}.${behind.says} ${blockedSays(bot, warned)}`,
       // Split: a warned shooter, or a blaze in sight, outside the half faced.
       split: left.length > 0 || behind.seeing > 0 };
   }
@@ -468,8 +473,8 @@ function shotOptions(bot, warned) {
     const swings = Math.ceil(hp / dmg), seconds = round(swings / speed);
     tree.strike_first = { description: `Strike the ${near.name} at arm's length with ${weapon.replaceAll('_', ' ')}: about ${swings} swing${swings === 1 ? '' : 's'}, ${seconds} seconds, against ${round(firesIn(bot, near))} seconds before it shoots; if it lives, its shots land.`, target: near.id };
   }
-  const hits = warned.map(e => { const m = MOBS[e.name]; return m ? `the ${e.name}'s about ${round(afterArmour(m.hit, worn))} health a shot${e.name === 'blaze' ? ' (three shots, each setting the bot alight five seconds more, about one health a second)' : ''}` : null; }).filter(Boolean);
-  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land cost ${hits.join('; ') || 'what they cost'}, at ${round(bot.health ?? 20)} health.` };
+  const hits = warned.map(e => { const m = MOBS[e.name]; return m ? `the ${e.name.replaceAll('_', ' ')}'s ${shotWord(e.name)}, about ${round(afterArmour(m.hit, worn))} health a landing${e.name === 'blaze' ? ' (three shots, each setting the bot alight five seconds more, about one health a second)' : ''}` : null; }).filter(Boolean);
+  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.` };
   return tree;
 }
 // The rest of the room against that facing: the blazes within sixteen, in
@@ -516,17 +521,22 @@ function coverCell(bot, warned) {
     return found;
   } catch (_) { return null; }
 }
-// The measured rates of the shield, for Jev.
-function blockedSays(bot) {
+// The measured rates of the shield, for Jev. The blaze probe's own numbers
+// (MEASURED.blaze) are said only where a blaze is among the warned: a
+// ghast 40 to 49 blocks off was once told "Measured at work with blazes
+// seven blocks off" (note 715, item 1), its own shooter never named.
+function blockedSays(bot, warned = []) {
   const t = bot._shotTally;
   const run = t && (t.up.landed + t.up.not + t.down.landed + t.down.not) ? ` This run, of the shots on a line to the bot: with the shield up ${t.up.landed} landed and ${t.up.not} did not; with it down ${t.down.landed} landed and ${t.down.not} did not.` : '';
-  return `${MEASURED.says}${run}`;
+  const blaze = warned.some(e => e.name === 'blaze') ? ` ${MEASURED.blaze}` : '';
+  return `${MEASURED.general}${blaze}${run}`;
 }
 // The shield against blazes, measured on a scratch server (note 676,
 // scripts/shot-reflex-probe.js: a minute each, walking eight blocks and
 // standing three seconds facing away, blazes seven blocks to the side).
 const MEASURED = {
-  says: 'Measured at work with blazes seven blocks off, two minutes a round: the shield never raised, 11 of 39 fireballs landed (one blaze) and 13 of 126 (three); raised and faced at each glow, 2 of 45 and 3 of 128, the walk about 40% slower with three. In the trials to 2026-09-29, 71% of the shots that landed on the bot with a shield carried came with it down.',
+  general: 'In the trials to 2026-09-29, 71% of the shots that landed on the bot with a shield carried came with it down.',
+  blaze: 'Measured at work with blazes seven blocks off, two minutes a round: the shield never raised, 11 of 39 fireballs landed (one blaze) and 13 of 126 (three); raised and faced at each glow, 2 of 45 and 3 of 128, the walk about 40% slower with three.',
 };
 
 function shotState(bot, warned) {
@@ -574,6 +584,26 @@ function stanceAnswer(bot, tree, now = Date.now()) {
   return rule ? { choice: rule, stance: s.choice, how } : { choice: 'reflex', stance: s.choice, how };
 }
 
+// One shooter alone, far enough off that its shot is seen coming (a
+// ghast's fireball, slow, past FAR blocks): the last answer given holds
+// for its next warning too, while it has not come FAR_NEARER_BY blocks
+// nearer, said for FAR_HOLD_MS. 25583 (mid-242-mh, note 715 item 1) had a
+// ghast 40 to 49 blocks off ask shot_answer 8 times in 24 seconds, flipping
+// shield_up and keep_on at 0.02 to 0.14 confidence: nothing about a ghast
+// that far off and that slow to shoot had changed between one charge and
+// the next. -> the held choice, or null (asked fresh: near, come closer,
+// too long since, or more than one shooter warned at once).
+const FAR = 20, FAR_HOLD_MS = 20000, FAR_NEARER_BY = 6;
+function farHeld(bot, warned, now = Date.now()) {
+  if (warned.length !== 1) return null;
+  const e = warned[0];
+  const d = e.position?.distanceTo?.(bot.entity?.position);
+  if (!Number.isFinite(d) || d < FAR) return null;
+  const h = bot._shotFarHeld?.get(e.id);
+  if (!h || now - h.at > FAR_HOLD_MS || h.distance - d >= FAR_NEARER_BY) return null;
+  return h.choice;
+}
+
 // The question about these warnings, not waited for: the answer lands on
 // bot._shotAnswers when it comes. Until it comes the reflex answers a shot
 // in the air.
@@ -587,7 +617,13 @@ function ask(bot, survival, warned) {
   catch (err) { if (!bot._shotErrAt || Date.now() - bot._shotErrAt > 10000) { bot._shotErrAt = Date.now(); console.log(`[shot] options: ${err.message}`); } return; }
   const answers = bot._shotAnswers ||= new Map();
   const until = new Map(warned.map(e => [e.id, e._shotWarn.at + WARNS[e._shotWarn.kind].most * 1000]));
-  const record = (choice, by, extra = {}) => { for (const [id, key] of keys) answers.set(id, { key, choice, at: Date.now(), until: until.get(id), ...(choice === 'behind_cover' ? { cell: tree.behind_cover.cell } : {}), by, ...extra }); };
+  const record = (choice, by, extra = {}) => {
+    for (const [id, key] of keys) answers.set(id, { key, choice, at: Date.now(), until: until.get(id), ...(choice === 'behind_cover' ? { cell: tree.behind_cover.cell } : {}), by, ...extra });
+    if (warned.length === 1) {
+      const e = warned[0], d = e.position?.distanceTo?.(bot.entity?.position);
+      if (Number.isFinite(d) && d >= FAR) (bot._shotFarHeld ||= new Map()).set(e.id, { choice, at: Date.now(), distance: d });
+    }
+  };
   // The stance Jev chose answers it (note 709).
   const byStance = stanceAnswer(bot, tree);
   if (byStance) {
@@ -600,6 +636,12 @@ function ask(bot, survival, warned) {
   // shield; split round the bot, a cell out of their line. Jev not
   // reachable, decide() answers by the same rule (note 707).
   if (!survival.client || process.env.JEV_ENCOUNTERS === '0') { const rule = shotRule(tree); if (rule) record(rule, 'rules'); return; }
+  const held = farHeld(bot, warned);
+  if (held && tree[held]) {
+    record(held, 'held');
+    console.log(`[shot] the ${warned[0].name} warning, ${Math.round(warned[0].position.distanceTo(bot.entity.position))} blocks off: the last answer (${held.replaceAll('_', ' ')}) holds`);
+    return;
+  }
   const state = shotState(bot, warned);
   const goal = bot._survivalGoal || bot._goal || {}, save = bot._goalSave || (() => {});
   const only = { get cancelled() { return false; }, label: 'shot_answer', check() {} };
@@ -647,4 +689,4 @@ function install(bot, survival) {
 // shooter's line, strike it first or take its shots.
 const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up' && a.choice !== 'reflex'; };
 
-module.exports = { STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };
+module.exports = { STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS, ask, farHeld, FAR, FAR_HOLD_MS, FAR_NEARER_BY, shotWord };

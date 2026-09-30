@@ -4759,11 +4759,23 @@ class Survival {
     // next, three seconds later, threw it into the lava (note 610).
     const shotLanded = !!held && (held.shooters || []).some(k => (bot._hurtBy?.[k] || 0) > held.at);
     const pushedOpen = shotLanded && (() => { const over = shotOverEdge(bot, feet); return !!over && !over.walledNow; })();
+    // Alone against one bow or crossbow shooter (note 715): a closing or
+    // other non-hiding stance is the outcome's to end (it is killed or
+    // gone, the bot is hurt past damageOver's health, or the bot moves off
+    // its spot), not a failed try at closing the ground or a hold's own
+    // clock (its extension in holds.js diverged, extend). A stance that
+    // hid the bot (out_of_sight, nook, take_cover) keeps its own rule
+    // below (lineAgain, shotThrough): a shooter regaining the line to
+    // where the bot hid, or landing a shot through the hide, is that hide
+    // failing, not skirmish noise (mid-242-y, note 522), so it is not
+    // loosened here even alone against one.
+    const soloRanged = require('./danger').soloRangedThreat(bot, danger);
+    const soloHeld = !!held && !!soloRanged && held.ids?.length === 1 && held.ids[0] === soloRanged.entity.id;
     // The physical triggers, whatever the stance's clock: six health, a
     // newcomer within six, a hit while leaving them be, a shooter's line
     // where it hid, the bot off its spot, a creeper's line, a shot through,
     // a push come through open over the drop.
-    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !blockAgain && !shotThrough && !pushedOpen && !held.lethalAgain;
+    const physical = !!held && !leftBe && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -5171,9 +5183,24 @@ class Survival {
     // What it came to in this scene; a meal cut short is not the place's
     // doing (note 475).
     scenes.ran(this.state, { choice, done: done || /^eat/.test(choice), acted: stanceActed(bot, stance.start) || /^eat/.test(choice), why });
-    if (!done) {
+    // Held without asking, against one bow or crossbow shooter alone, and
+    // still good on its own clock and health (soloHeld, physical, above):
+    // a run that failed to land this tick (no firm step, no closer ground,
+    // its own three-second give-up) is one attempt, not the stance's
+    // outcome; it is kept, and the next tick's run tries again over the
+    // ground as it is then, rather than a fresh question going out to Jev
+    // (note 715). Only while it is a closing or holding stance (shot-
+    // reflex.js STANCE_SHOTS): a run once (a meal, a step off) is not
+    // retried this way, and one Jev was just asked and answered (askedNow)
+    // is idled as any answer that failed at once is, so a stance Jev chose
+    // and that failed at once is still said to the next question.
+    const closeOrHold = !!require('./shot-reflex').stanceShotsOf(choice);
+    const keepFailedHold = !done && !askedNow && soloHeld && physical && !damageOver && inTime && closeOrHold;
+    if (!done && !keepFailedHold) {
       delete this.state.stance; delete bot._stance;
       this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }];
+    }
+    if (!done) {
       // Ended without acting: left out while nothing here changes.
       // Not a meal cut short with the food still carried: nothing about the
       // place made it fail (note 475).

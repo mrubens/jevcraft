@@ -579,6 +579,25 @@ function stanceReach(entity) {
   return Math.max(24, RANGE[entity.name] || 0);
 }
 
+// Skeletons, strays, bogged, parched, pillagers and piglins with a
+// crossbow: the arrow shooters shot-reflex.js answers for on their own
+// (SHOTS.arrow.from), a bow drawn about a second before the loose. Alone,
+// with no other threat about, a chosen stance against this one is the
+// outcome's to end (killed or gone, the bot hurt past a hold's health, or
+// the bot moved off its spot), not one tick's line of sight or one failed
+// try at closing the ground (note 715: 25588 stood within five blocks of
+// one skeleton for three minutes, full health throughout, and
+// encounter_stance flipped every two to three seconds as fight and
+// charge_shooter each failed to close in a single tick and take_cover was
+// retaken at each of the skeleton's steps round the block it hid behind).
+const ARROW_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'piglin']);
+// -> the one entry in `danger`, if it is alone and one of these, else null
+function soloRangedThreat(bot, danger = []) {
+  if (!Array.isArray(danger) || danger.length !== 1) return null;
+  const t = danger[0];
+  return t?.entity && ARROW_SHOOTERS.has(t.entity.name) && shooter(t.entity) ? t : null;
+}
+
 // What can push the bot where it stands, now: a shooter in sight within
 // its own reach (a shot that lands pushes, shield raised or not: note 517),
 // anything that bites within eight blocks in sight or four out of it, a
@@ -729,4 +748,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

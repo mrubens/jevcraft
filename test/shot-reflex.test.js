@@ -141,7 +141,7 @@ test('a blaze begins to glow while the work holds the turn: shot_answer is asked
   assert.equal(q.aside, true, 'asked aside: the work keeps the turn');
   assert.ok(q.tree.shield_up && q.tree.keep_on, Object.keys(q.tree).join());
   assert.match(q.tree.shield_up.description, /Measured at work/);
-  assert.match(q.tree.keep_on.description, /the blaze's about \d(\.\d)? health a shot/);
+  assert.match(q.tree.keep_on.description, /the blaze's fireball, about \d(\.\d)? health a landing/);
   assert.equal(q.state.shooters[0].name, 'blaze');
   assert.equal(reflex.answerFor(bot, 775)?.choice, 'keep_on');
   // Taken, as chosen: its fireball in the air is left to land.

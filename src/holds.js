@@ -33,6 +33,26 @@ const SPOT_MOVED = 1.5;
 // Where a biter's blow lands (a block and a half centre to centre), with room.
 const ARMS = 2;
 const isShooter = e => { try { return !!e && require('./combat').shooter(e); } catch (_) { return false; } };
+// A stance whose point is to close the ground to what it was chosen
+// against (fight, charge_shooter and the rest of shot-reflex.js's
+// STANCE_SHOTS.closing): moving is the stance acting, not the bot straying
+// off a spot it was ever meant to keep (note 715: closing on a lone
+// skeleton, the spot extend() fixed on the first hold's end was a stride
+// behind by the very next tick, chasing it, and the hold ended there every
+// time, asked again every two or three seconds though the skeleton itself
+// had not come to anything, gone, or landed a hit past what was priced).
+const isClosing = choice => { try { return require('./shot-reflex').STANCE_SHOTS.closing.has(choice); } catch (_) { return false; } };
+// One arrow shooter alone (skeleton, stray, bogged, parched, pillager, or a
+// piglin with a crossbow; danger.js's soloRangedThreat), with no other
+// threat about: the sight it loses and regains, and the few blocks it
+// closes or backs off skirmishing, is not the encounter changing while it
+// is still that one mob. Only its being gone, or the health lost past what
+// the hold priced (the check above), ends it (note 715). Not for a stance
+// that hid the bot (survival.js's HIDING_STANCES): a shooter regaining the
+// line to where the bot hid is that hide failing, not skirmish noise, even
+// alone against the one it hid from (mid-242-y, note 522).
+const HIDING = new Set(['out_of_sight', 'nook', 'take_cover']);
+const soloArrowShooter = (mobs, choice) => !HIDING.has(choice) && (() => { try { return !!require('./danger').soloRangedThreat(null, mobs); } catch (_) { return false; } })();
 
 const name = n => String(n || '').replaceAll('_', ' ');
 const secs = ms => { const s = Math.round(ms / 1000); return s < 90 ? `${s} second${s === 1 ? '' : 's'}` : `${Math.round(s / 60)} minute${Math.round(s / 60) === 1 ? '' : 's'}`; };
@@ -60,6 +80,7 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
     const priced = e.damage * elapsed / e.seconds;
     if (lost > priced + (e.oneHit || 0)) return `${Math.round(lost * 10) / 10} health lost in ${secs(now - hold.at)}, more than the ${Math.round(priced * 10) / 10} it was priced at by then`;
   }
+  const solo = soloArrowShooter(mobs, hold.choice);
   for (const m of hold.against) {
     const t = mobs.find(x => x?.entity?.id === m.id);
     if (!t) return `the ${name(m.name)} it was chosen against is gone`;
@@ -69,6 +90,7 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
     // struck twice standing, 13.5 to 5.3, before the stance was asked again
     // (note 601).
     if (t.distance <= ARMS && m.distance > ARMS + 1 && !t.shoots && !isShooter(t.entity)) return `the ${name(m.name)} it was chosen against came to arm's length, ${Math.round(t.distance * 10) / 10} blocks off`;
+    if (solo) continue;
     if (t.distance <= m.distance - NEARER_BY) return `the ${name(m.name)} it was chosen against came from ${Math.round(m.distance)} to ${Math.round(t.distance)} blocks off`;
     if (!!t.visible !== m.visible) return `the ${name(m.name)} it was chosen against ${t.visible ? 'came into sight' : 'went out of sight'}, ${Math.round(t.distance)} blocks off`;
     if ((hurtBy[m.name] || 0) > hold.at) return `the ${name(m.name)} it was chosen against hit the bot`;
@@ -83,7 +105,7 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
 // cap. -> { extend: ms } or { capped: says }
 function extend(hold, now = Date.now(), at = null) {
   if (now - hold.at >= HOLD_CAP_MS) return { capped: `held ${secs(now - hold.at)} and nothing it was chosen on changed` };
-  if (!hold.spot && at) hold.spot = { x: Math.round(at.x * 10) / 10, y: Math.round(at.y * 10) / 10, z: Math.round(at.z * 10) / 10 };
+  if (!hold.spot && at && !isClosing(hold.choice)) hold.spot = { x: Math.round(at.x * 10) / 10, y: Math.round(at.y * 10) / 10, z: Math.round(at.z * 10) / 10 };
   const ms = EXTEND_MS[Math.min(hold.extended, EXTEND_MS.length - 1)];
   hold.extended++;
   hold.until = Math.min(now + ms, hold.at + HOLD_CAP_MS);
