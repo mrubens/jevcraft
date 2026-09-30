@@ -712,7 +712,9 @@ function pondNear(bot) {
   for (let r = 1; r <= 8; r++) for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (const dy of [0, -1, 1]) {
     if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
     const c = here.offset(dx, dy, dz);
-    if (bot.blockAt(c)?.name === 'water' && !/lava|fire/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '')) return c;
+    // Run at straight, at a sprint: the pond's cell, its floor and the cells
+    // on the way read for lava and fire (lava-escape.js targetHot, note 756).
+    if (bot.blockAt(c)?.name === 'water' && !/lava|fire/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '') && !require('./lava-escape').targetHot(bot, c)) return c;
   }
   return null;
 }

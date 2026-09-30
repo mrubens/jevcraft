@@ -543,6 +543,16 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   // while it is out, for the flight frames; on the decision's record after.
   const trace = { id, t0: performance.now(), at: new Date().toISOString(), stages: [{ stage: 'queued', ms: 0 }] };
   if (!tree || !Object.keys(tree).length) throw new Error(`No feasible options for ${id}`);
+  // No question while the body is in lava with nothing to keep it from
+  // burning: the way out is the body's safety rule, taken at once
+  // (lava-escape.js, note 756). Thrown as the lava's own safety stop, which
+  // every caller already meets from task.check, so the loop's next pass
+  // gives the turn to the escape. 25595 asked turn_priority and 25593
+  // win_strategy with the body in lava (scripts/lava-deaths.js).
+  if (bot && require('../lava-escape').mustEscape(bot)) {
+    console.log(`[lava-escape] ${id} not asked: the body is in lava`);
+    throw new (require('../danger').NeedsSafety)({ entity: { name: 'lava' }, distance: 0 });
+  }
   // A question about the plan waits while a fight is on (note 696); the
   // options it was built with are asked only if still fresh after a wait.
   if (bot && goal && FIGHT_WAITS.has(id)) {

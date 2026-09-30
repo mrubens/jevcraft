@@ -54,7 +54,26 @@ function portalSiteClear(bot, origin) {
   return true;
 }
 
-function selectPortalSite(bot, { avoid = [] } = {}) {
+// For a frame cast in place, where it stands is paid for once a bucket:
+// every block still owed is a trip from the site to the lava and back, so
+// the sites are ranked by the walk to them plus those trips (portal-cast.js
+// lavaTrip), not by nearness to the bot alone. 25589 (mid-243-jg,
+// 2026-09-30 12:53-13:06Z) climbed from beside its lava for a site, found
+// one 43 blocks off and 18 up, and made each of its ten buckets a round
+// trip of about two and a half minutes (note 753b). `cast`: { lava, trips }.
+// A bucket's round trip from a site to the lava, in seconds: the walk there
+// and back at four blocks a second, and three seconds a block of height
+// where it rises or falls more than eight (a staircase each trip).
+function bucketTrip(site, lava) {
+  const distance = Math.hypot(lava.x - site.x, lava.y - site.y, lava.z - site.z), rise = Math.abs(site.y - lava.y);
+  return { distance: Math.round(distance), rise: Math.round(rise), below: Math.round(site.y - lava.y), seconds: Math.round(distance * 2 / 4.3 + (rise > 8 ? rise * 3 : 0)) };
+}
+function siteCost(feet, p, cast) {
+  const walk = p.distanceTo(feet) / 4.3;
+  if (!cast?.lava) return walk;
+  return walk + bucketTrip(p, cast.lava).seconds * Math.max(1, cast.trips || 1);
+}
+function selectPortalSite(bot, { avoid = [], cast = null } = {}) {
   const feet = bot.entity.position.floored();
   // A portal can stand on deepslate beside the lava lake the obsidian came
   // from; climbing sixty blocks to find grass is a wasted hour.
@@ -62,7 +81,7 @@ function selectPortalSite(bot, { avoid = [] } = {}) {
     .map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
   const surfaces = bot.findBlocks({ matching: ids, maxDistance: 24, count: 128,
     useExtraInfo: b => air(bot.blockAt(b.position.offset(0, 1, 0))) && air(bot.blockAt(b.position.offset(0, 2, 0))),
-  }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet));
+  }).map(p => p.offset(0, 1, 0)).sort((a, b) => siteCost(feet, a, cast) - siteCost(feet, b, cast));
   // Not within six of a site left for failing (work.js buildPortalFrame).
   return surfaces.find(p => portalSiteClear(bot, p) && !avoid.some(q => q.distanceTo(p) < 6)) || null;
 }
@@ -83,13 +102,25 @@ function portalSiteCells(o) {
   for (let x = 0; x < 4; x++) for (let z = -1; z <= 1; z++) for (let y = 0; y < (z === 0 ? 5 : 2); y++) cells.push(o.offset(x, y, z));
   return cells;
 }
-function portalSiteDig(bot, { avoid = [] } = {}) {
+// Not only the cells about the feet (`radius`): a flat floor cut within a
+// few blocks, at the feet's level or a block either way, each priced by its
+// digging, the walk to it and, for a cast, its bucket trips (siteCost). With
+// the feet's own site the only one looked at, 25598 (mid-241-bc,
+// 2026-09-30 13:24:25Z), gone down to y 50 to cast beside its lava, was
+// offered only the climb, 78 blocks above that lava, and took it (note 753b).
+function portalSiteDig(bot, { avoid = [], radius = 0, cast = null } = {}) {
   const feet = bot.entity.position.floored();
   let best = null;
+  const origins = [];
   // Its floor the bot's own: a site whose floor is under the feet digs
   // out the block the bot stands on.
-  for (let x = 0; x < 4; x++) for (let z = -1; z <= 1; z++) {
-    const o = feet.offset(-x, 0, -z);
+  for (let x = 0; x < 4; x++) for (let z = -1; z <= 1; z++) origins.push(feet.offset(-x, 0, -z));
+  if (radius > 0) for (let dx = -radius; dx <= radius; dx++) for (let dz = -radius; dz <= radius; dz++) for (const dy of [0, -1, 1]) {
+    const o = feet.offset(dx, dy, dz);
+    if (!origins.some(q => q.equals(o))) origins.push(o);
+  }
+  const price = (o, n) => n * 1.5 + siteCost(feet, o, cast);
+  for (const o of origins) {
     if (avoid.some(q => q.distanceTo(o) < 6)) continue;
     const cells = portalSiteCells(o), keys = new Set(cells.map(String));
     let ok = true;
@@ -116,7 +147,7 @@ function portalSiteDig(bot, { avoid = [] } = {}) {
         if (!b || LIQUID.test(b.name) || [true, 'true'].includes(b.getProperties?.().waterlogged) || (d[1] === 1 && FALLS.test(b.name))) { ok = false; break; }
       }
     }
-    if (ok && (!best || dig.length < best.cells.length)) best = { origin: o, cells: dig };
+    if (ok && (!best || price(o, dig.length) < price(best.origin, best.cells.length))) best = { origin: o, cells: dig };
   }
   if (!best) return null;
   const kinds = [...new Set(best.cells.map(c => bot.blockAt(c).name.replaceAll('_', ' ')))].slice(0, 4);
@@ -134,4 +165,4 @@ function portalSupports(bot) {
   return { count: materials.reduce((sum, [, count]) => sum + count, 0), material: materials[0]?.[0] };
 }
 
-module.exports = { reservedForConstruction, portalSiteClear, selectPortalSite, portalSiteDig, portalSiteCells, portalSupports };
+module.exports = { bucketTrip, siteCost, reservedForConstruction, portalSiteClear, selectPortalSite, portalSiteDig, portalSiteCells, portalSupports };

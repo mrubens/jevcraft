@@ -370,6 +370,30 @@ function feedingSources(bot, p) {
 // Cast the frame's missing slots in order. True when all ten are obsidian;
 // false when a pass ends for a trip (lava, the water bucket, blocks for the
 // walls) or a wait, and the loop comes back to it.
+// The ways to a stand for a slot, counted and said: stands a pour reaches
+// the slot from, cells a block put under would make one (an anchor within
+// two), cells to dig out beside it, and open cells with a floor whose line
+// into the slot is blocked. For the failure's words, and the check made
+// before a lava fetch (note 753b).
+function standWays(bot, frame, p, w) {
+  const stands = standsFor(frame, p, w).length;
+  const top = p.plus(UP);
+  const make = portalSupports(bot).material ? standsFor(frame, p, w, { floorless: true })
+    .filter(s => { const chain = anchorPath(s.feet.plus(DOWN), w.solidAt, [p, top, s.feet, s.feet.plus(UP), ...frame.blocks.map(at)]); return chain && chain.length <= 2; }).length : 0;
+  const axis = frame.axis || 'x', X = across(axis);
+  const keep = new Set([...frame.blocks.map(at), ...(wallsFor(p, w.solidAt) || []), ...(frame.castTemp || []).map(at)].map(key));
+  let cut = 0, blocked = 0;
+  for (const side of [-1, 1]) for (const dist of [2, 1]) for (const dy of [0, 1]) {
+    const feet = p.plus(X.scaled(side * dist)).offset(0, dy, 0), head = feet.plus(UP);
+    if (!w.solidAt(feet.plus(DOWN)) || keep.has(key(feet)) || keep.has(key(head))) continue;
+    const digs = [feet, head].filter(c => !w.openAt(c));
+    if (!digs.length) blocked++;
+    else if (digs.every(c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'block' && b.diggable !== false && !/obsidian|bedrock/.test(b.name); })) cut++;
+  }
+  const says = `${stands} stand${stands === 1 ? '' : 's'} beside it a pour reaches it from, ${make} to make with a block put under, ${cut} to dig out, and ${blocked} open cell${blocked === 1 ? '' : 's'} with a floor that ${blocked === 1 ? 'is' : 'are'} not yet a stand (the slot's walls not up, or the line into it blocked)`;
+  return { stands, make, cut, blocked, says };
+}
+
 async function castFrame(bot, task, goal, save, actions) {
   const { navigate, place, dig, acquireStep } = actions;
   const route = actions.surveyRoute || surveyRoute;
@@ -436,6 +460,17 @@ async function castFrame(bot, task, goal, save, actions) {
       }
       if (!countOf(bot, 'water_bucket')) { stepIs(p, 'water_bucket'); await acquireStep(bot, task, 'water_bucket', 1, goal, save); return false; }
       if (!countOf(bot, 'lava_bucket')) {
+        // The site is checked before the lava is fetched, not after: a frame
+        // with nothing cast in it whose first slot has no stand, none to make
+        // and none to dig out fails here, at the frame, not after a trip
+        // down. 25593 (mid-237-ag, 2026-09-30) fetched lava 73 blocks down,
+        // climbed back five minutes, and at 13:48:39Z left the site: "This
+        // spot will not take the portal" (note 753b).
+        if (!frame.standChecked && !order.some(q => w.name(q) === 'obsidian') && bot.entity.position.distanceTo(p) <= 8) {
+          const ways = standWays(bot, frame, p, w);
+          if (!ways.stands && !ways.make && !ways.cut && !ways.blocked) throw new Error(`Nowhere to stand to pour into the frame slot at ${p}, found before fetching lava: ${ways.says}`);
+          frame.standChecked = true; save();
+        }
         // As many as the empty buckets carried hold, up to what is left.
         const left = order.filter(q => w.name(q) !== 'obsidian').length;
         const want = Math.max(1, Math.min(left, countOf(bot, 'bucket')));
@@ -593,11 +628,29 @@ async function castFrame(bot, task, goal, save, actions) {
         if (digs.every(diggable)) cut.push({ feet, digs });
       }
       cut.sort((a, b) => a.digs.length - b.digs.length || a.feet.distanceTo(bot.entity.position) - b.feet.distanceTo(bot.entity.position));
-      if (cut[0]?.digs.length) {
-        for (const c of cut[0].digs) { stepIs(p, 'dig_stand', { at: { x: c.x, y: c.y, z: c.z } }); await dig(bot, task, c, { requireDrops: false }); }
+      const toCut = cut.find(c => c.digs.length);
+      if (toCut) {
+        for (const c of toCut.digs) { stepIs(p, 'dig_stand', { at: { x: c.x, y: c.y, z: c.z } }); await dig(bot, task, c, { requireDrops: false }); }
         return false;
       }
-      throw new Error(`Nowhere to stand to pour into the frame slot at ${p}`);
+      // Cells beside it open, with a floor, from which the line into the slot
+      // is blocked: the block in the line comes out, as a player clears the
+      // view into the slot, a few times a slot at most. 25581 (mid-243-jh,
+      // 2026-09-30 13:43:48-13:44:04Z), five of ten cast, failed "Nowhere to
+      // stand" four times in twelve seconds, each an ask of the way, and left
+      // the frame for a new site (note 753b).
+      const cleared = ((frame.linesCleared ||= {})[slotKey] ||= 0);
+      if (cleared < 4) {
+        for (const c of cut.filter(c => !c.digs.length)) {
+          const hit = firstHit(w.blocksRay, c.feet.offset(0.5, EYE, 0.5), p.offset(0.5, 0.98, 0.5));
+          if (!hit || hit.cell.equals(p) || !diggable(hit.cell)) continue;
+          frame.linesCleared[slotKey] = cleared + 1; save();
+          stepIs(p, 'clear_line', { at: { x: hit.cell.x, y: hit.cell.y, z: hit.cell.z }, from: { x: c.feet.x, y: c.feet.y, z: c.feet.z } });
+          await dig(bot, task, hit.cell, { requireDrops: false });
+          return false;
+        }
+      }
+      throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: ${standWays(bot, frame, p, w).says}`);
     }
     const eye = () => bot.entity.position.offset(0, EYE, 0);
     const exclude = () => { const f = bot.entity.position.floored(); return [f, f.plus(UP)]; };
@@ -686,4 +739,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };
+module.exports = { standWays, castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };

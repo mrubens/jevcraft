@@ -375,6 +375,35 @@ function goalGuardPlugin(bot) {
 // end: a walk that stopped for gold was booked by its caller as a walk that
 // came no nearer, and the fortress patrol marked the floor it was going to
 // as failed. The detour's time is added to the walk's.
+// Where walks have stalled, remembered: a spot the walks stall at again and
+// again is a bad step, and the next walk is routed round it where the ground
+// allows (a cost on the cells about it, not a wall: with no other way, it is
+// still walked). 25589 (mid-243-jg, 2026-09-30) stalled at the same climb,
+// (22-23, 77-80, -3 to -4), on five round trips between its lava and its
+// frame, 12:59:38 to 13:06:06Z, each stall the watchdog's eight seconds or
+// more and a recovery (note 753b). Kept on the bot, by dimension; a spot is
+// forgotten after STALL_SPOT_MS.
+const STALL_SPOT_MS = 15 * 60000, STALL_SPOT_NEAR = 3, STALL_SPOT_TIMES = 2, STALL_SPOT_COST = 40;
+function noteStallSpot(bot, position, now = Date.now()) {
+  if (!position) return null;
+  const dim = String(bot.game?.dimension || 'overworld'), cell = new Vec3(Math.floor(position.x), Math.floor(position.y), Math.floor(position.z));
+  const spots = (bot._stallSpots ||= []).filter(s => now - s.last < STALL_SPOT_MS);
+  let spot = spots.find(s => s.dim === dim && Math.hypot(s.x - cell.x, s.y - cell.y, s.z - cell.z) <= STALL_SPOT_NEAR);
+  if (spot) { spot.n++; spot.last = now; }
+  else { spot = { dim, x: cell.x, y: cell.y, z: cell.z, n: 1, first: now, last: now }; spots.push(spot); }
+  bot._stallSpots = spots.slice(-32);
+  if (spot.n === STALL_SPOT_TIMES) console.log(`[stall-spot] walks have stalled ${spot.n} times at (${spot.x}, ${spot.y}, ${spot.z}); the next walks go round it where they can`);
+  return spot;
+}
+// The spots stalled at often enough to route round, in this dimension, not
+// within four blocks of where the walk is going (the goal itself is not
+// avoided).
+function badSteps(bot, goal, now = Date.now()) {
+  const dim = String(bot.game?.dimension || 'overworld'), there = goalPoint(goal);
+  return (bot._stallSpots || []).filter(s => s.dim === dim && s.n >= STALL_SPOT_TIMES && now - s.last < STALL_SPOT_MS &&
+    !(there && Math.hypot(s.x - there.x, s.y - there.y, s.z - there.z) <= 4));
+}
+
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false } = {}) {
   task.check();
   const look = passing && bot._goal && bot.pathfinder?.movements ? passingLook(bot, task) : null;
@@ -412,6 +441,11 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   const perch = movements && !foot ? wayDown.livePerch(bot) : null;
   const stillUp = perch && !wayDown.goalOnTop(goal, perch) ? { allow1by1towers: movements.allow1by1towers } : null;
   if (stillUp) movements.allow1by1towers = false;
+  // Round a bad step remembered (noteStallSpot): the cells within a block of
+  // it cost more to step into.
+  const bad = movements ? badSteps(bot, goal) : [];
+  const hadAreas = bad.length && Object.hasOwn(movements, 'exclusionAreasStep'), areasWere = bad.length ? movements.exclusionAreasStep : undefined;
+  if (bad.length) movements.exclusionAreasStep = [...(areasWere || []), block => bad.some(s => Math.abs(block.position.x - s.x) <= 1 && Math.abs(block.position.y - s.y) <= 1 && Math.abs(block.position.z - s.z) <= 1) ? STALL_SPOT_COST : 0];
   // The goal's height, for the climb rule (movement.js climbOverFall).
   const hadGoalY = !!movements && Object.hasOwn(movements, 'walkGoalY'), walkGoalY = hadGoalY ? movements.walkGoalY : undefined;
   if (movements) movements.walkGoalY = goalPoint(goal)?.y;
@@ -450,6 +484,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
     if (stillUp) Object.assign(movements, stillUp);
     if (hadGoalY) movements.walkGoalY = walkGoalY;
     else if (movements) delete movements.walkGoalY;
+    if (bad.length) { if (hadAreas) movements.exclusionAreasStep = areasWere; else delete movements.exclusionAreasStep; }
   }
 }
 
@@ -638,6 +673,7 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen }
           feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name,
           route: latestRoute };
           bot.emit?.('navigation_stall', bot._lastNavigationFailure);
+          if (Date.now() - started < timeoutMs) noteStallSpot(bot, bot.entity.position);
         }
         bot.pathfinder.setGoal(null);
         reject(task.cancelled ? new Cancelled(task.label) : Date.now() - started >= timeoutMs
@@ -827,7 +863,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { noteStallSpot, badSteps, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

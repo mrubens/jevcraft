@@ -148,7 +148,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('flight_route', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });
   on('path_reset', () => { route = []; });
-  for (const kind of ['shot', 'health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'view_resync', 'dig_unconfirmed', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
+  for (const kind of ['shot', 'health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'view_resync', 'dig_unconfirmed', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result', 'lava_escape', 'join_survey']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
   // Every answer from Jev, at the moment it came (decisions/index.js decide).
   on('jev_decision', goal => sample('decision', undefined, goal));

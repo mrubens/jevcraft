@@ -1540,31 +1540,48 @@ const lavaSpreads = bot => /nether/.test(String(bot.game?.dimension || ''))
 // Straight-line distance went through rock: mid-244-ab was told of a dry
 // cell 2.9 blocks off behind the tunnel's corner and swam into the wall
 // (note 569).
+// A binary heap on each entry's `blocks`, and each cell's blocks read once:
+// the search picked its next cell by reading the whole open list, and on
+// 25597 (mid-241-bf, 14:14:53Z) the ways out of the lava took about four
+// seconds to be said, the body in the lava all the while (note 756; about
+// half a second a search on an idle machine, several on a loaded one).
 function lavaRoutes(bot, feet, radius = 6) {
-  const fits = c => [c, c.offset(0, 1, 0)].every(p => bot.blockAt(p)?.boundingBox === 'empty');
+  const empty = new Map();
+  const isEmpty = p => { const k = `${p.x},${p.y},${p.z}`; let v = empty.get(k); if (v === undefined) { v = bot.blockAt(p)?.boundingBox === 'empty'; empty.set(k, v); } return v; };
+  const fits = c => isEmpty(c) && isEmpty(c.offset(0, 1, 0));
   const key = c => `${c.x},${c.y},${c.z}`;
   const out = new Map([[key(feet), { blocks: 0, from: null, cell: feet }]]);
-  const open = [feet], done = new Set();
+  const heap = [[0, feet]], done = new Set();
+  const push = e => { heap.push(e); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let i = 0; ;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; }
+    }
+    return top;
+  };
   // A diagonal step where both cells beside it at its level fit, as a body
   // slides past a corner only with room.
-  const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
-  while (open.length) {
-    let bi = 0;
-    for (let i = 1; i < open.length; i++) if (out.get(key(open[i])).blocks < out.get(key(open[bi])).blocks) bi = i;
-    const c = open.splice(bi, 1)[0], ck = key(c);
+  // And straight up, a block at a time, as a body rises in lava holding
+  // jump: from the bottom of a pool two deep the way out began with it, and
+  // with none the ledge beside was "in a straight line" (note 756).
+  const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2], [0, 0, 1]];
+  while (heap.length) {
+    const [, c] = pop(), ck = key(c);
     if (done.has(ck)) continue;
     done.add(ck);
     const here = out.get(ck);
-    for (const [dx, dz, cost] of steps) for (const dy of dx && dz ? [0] : [0, 1, -1]) {
+    for (const [dx, dz, cost] of steps) for (const dy of dx && dz ? [0] : !dx && !dz ? [1] : [0, 1, -1]) {
       const to = c.offset(dx, dy, dz), k = key(to);
       if (done.has(k) || Math.abs(to.x - feet.x) > radius + 1 || Math.abs(to.z - feet.z) > radius + 1 || to.y < feet.y - 2 || to.y > feet.y + 6) continue;
-      if (dy === 1 && bot.blockAt(c.offset(0, 2, 0))?.boundingBox !== 'empty') continue;
-      if (dy === -1 && bot.blockAt(to.offset(0, 2, 0))?.boundingBox !== 'empty') continue;
+      if (dy === 1 && !isEmpty(c.offset(0, 2, 0))) continue;
+      if (dy === -1 && !isEmpty(to.offset(0, 2, 0))) continue;
       if (dx && dz && !(fits(c.offset(dx, 0, 0)) && fits(c.offset(0, 0, dz)))) continue;
       if (!fits(to)) continue;
       const blocks = here.blocks + cost;
       if (out.has(k) && out.get(k).blocks <= blocks) continue;
-      out.set(k, { blocks, from: c, cell: to }); open.push(to);
+      out.set(k, { blocks, from: c, cell: to }); push([blocks, to]);
     }
   }
   return out;
@@ -1656,7 +1673,7 @@ async function eatApple(bot, task, apple) {
 }
 // `dryOnly`: the same ranking as `water`, with the water cells left out, for
 // the dry way offered beside the wet one (body_way).
-function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
+function lavaExit(bot, radius = 6, { water = false, dryOnly = false, routes: given = null } = {}) {
   const feet = feetCell(bot), cells = [];
   if (dryOnly) water = true;
   // Water is a way out too, and the best one: it puts the fire out. Making
@@ -1683,7 +1700,8 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
   // By the way through, not the straight line: a cell behind rock is as
   // far as the walk round it. One out of a jump's reach (two or more up)
   // keeps its straight line: the pillar rises to it.
-  const routes = lavaRoutes(bot, feet, radius);
+  // The routes a caller already has from here (lavaWays), else searched.
+  const routes = given || lavaRoutes(bot, feet, radius);
   const routed = c => routes.get(`${c.x},${c.y},${c.z}`);
   const far = c => routed(c) ? routed(c).blocks : c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
   for (let i = cells.length - 1; i >= 0; i--) if (!routed(cells[i]) && cells[i].y <= feet.y + 1) cells.splice(i, 1);
@@ -1699,8 +1717,10 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false } = {}) {
   // what is level with the lava's top and no higher (lavaTop, note 592).
   const reach = swimReach(feet, lavaTop(bot));
   const high = c => c.y > reach ? 8 : 0;
-  const cost = c => far(c) + (water ? lavaBy(c) : 0) + edge(c) + high(c);
-  const best = cells.sort((a, b) => cost(a) - cost(b))[0] || null;
+  // Each cell's cost read once, not at every comparison of the sort (the
+  // edge's test reads the drop under four cells beside; note 756).
+  const costs = new Map(cells.map(c => [c, far(c) + (water ? lavaBy(c) : 0) + edge(c) + high(c)]));
+  const best = cells.sort((a, b) => costs.get(a) - costs.get(b))[0] || null;
   // The way to it, for the walk and its seconds.
   if (best && routed(best)) { best.route = routeOf(routes, best); best.blocks = routed(best).blocks; }
   return best;
@@ -8138,16 +8158,17 @@ class Survival {
     const bot = this.bot;
     const feet = feetCell(bot), feetY = feet.y;
     const isWater = c => [c, c.offset(0, 1, 0)].some(p => bot.blockAt(p)?.name === 'water');
-    const exit = lavaExit(bot, 6, { water: true });
+    // By the way through the lava (lavaRoutes), not the straight line: one
+    // search from here for every way below (note 756).
+    const routes = lavaRoutes(bot, feet, 8);
+    const exit = lavaExit(bot, 6, { water: true, routes });
     const wet = exit && isWater(exit) ? exit : null;
-    const dry = exit && !wet ? exit : lavaExit(bot, 6, { dryOnly: true });
+    const dry = exit && !wet ? exit : lavaExit(bot, 6, { dryOnly: true, routes });
     const { SCAFFOLD } = require('./pillar-recovery');
     const scaffold = bot.inventory.items().filter(i => SCAFFOLD.includes(i.name)).reduce((n, i) => n + i.count, 0);
     // Of this dimension; one kept before the dimension was recorded counts.
     const last = this.state.lastDry && (!this.state.lastDry.dimension || String(this.state.lastDry.dimension) === String(bot.game?.dimension || '')) ? pos(this.state.lastDry) : null;
     const round = n => Math.round(n * 10) / 10;
-    // By the way through the lava (lavaRoutes), not the straight line.
-    const routes = lavaRoutes(bot, feet, 8);
     const routed = c => routes.get(`${c.x},${c.y},${c.z}`);
     const far = c => round(routed(c) ? routed(c).blocks : c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position));
     // What a swim reaches: a cell whose floor is no higher than the lava's
@@ -8201,6 +8222,17 @@ class Survival {
         for (let i = 0; i < points.length; i++) {
           const wp = points[i], last = i === points.length - 1;
           const toward = wp ? wp.offset(0.5, 1, 0.5) : null;
+          // Up first, jump alone, where the cell is over the feet: pressed
+          // against the ledge, the body is lifted out of a liquid only with
+          // no water over the ledge, and 25597's lava lay beside its cast's
+          // water sheet; held at the ledge it bobbed half a block under its
+          // top and burned, where rising first it was over it in half a
+          // second (prismarine-physics, the pool of note 756).
+          // Only for the next cell of a way through, a step off.
+          if (wp && route?.length && inLava(bot) && wp.y > bot.entity.position.y + 0.05 && Math.hypot(wp.x + 0.5 - bot.entity.position.x, wp.z + 0.5 - bot.entity.position.z) <= 1.6) {
+            await move(bot, task, { label: 'out_of_lava', keys: ['jump'], sneak: false, why, maxMs: Math.min(2000, Math.round(Math.max(0, wp.y - bot.entity.position.y) / LAVA_JUMP_RISE * 1000 + 600)), tick: 50,
+              until: () => bot.entity.position.y >= wp.y - 0.05 || !inLava(bot) });
+          }
           const centre = () => wp && Math.hypot(bot.entity.position.x - (wp.x + 0.5), bot.entity.position.z - (wp.z + 0.5)) < 0.35;
           const done = await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false, why, look: toward || undefined,
             maxMs: last && !route ? 2500 : Math.round(1000 / LAVA_BLOCKS_A_SECOND + 1000), tick: 50,
@@ -8350,8 +8382,14 @@ class Survival {
         if (acted || (r.acted && r.key !== 'burn_out')) { onStep(goal); return true; }
       }
     }
+    // In lava, the way out at once by the body's safety rule, no question
+    // asked (lava-escape.js, note 756): 25597 died at y -55 with body_way
+    // unanswered, asked 4.1 seconds after the first hurt. With fire
+    // resistance lasting the lava does not hurt, and the way is Jev's.
     if (inLava(bot)) {
-      await require('./body').answer(bot, task, 'lava', this.lavaWays(task, goal, save), { client: this.client, goal, save });
+      const escape = require('./lava-escape');
+      if (escape.mustEscape(bot)) await escape.escape(this, task, goal, save);
+      else await require('./body').answer(bot, task, 'lava', this.lavaWays(task, goal, save), { client: this.client, goal, save });
       onStep(goal); return true;
     }
     // A bed the last bedtime left behind, when it is near and nothing is.

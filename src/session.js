@@ -692,6 +692,14 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
       bot._client.on('set_passengers', () => { if (bot._seatedIn != null && !bot.vehicle) seated(); });
       await bot.waitForChunksToLoad();
       if (ended || !bot.isAlive) return;
+      // The ground about the bot read again before anything resumes: in
+      // lava, out at once; in water beside lava, onto dry ground clear of it
+      // (lava-escape.js settleAfterJoin, note 756). 25597 came back standing
+      // in its poured water a block from lava, was asked the turn's question
+      // while the flow carried it in, and died there.
+      try { await require('./lava-escape').settleAfterJoin(bot, survival); saveSurvival(); }
+      catch (err) { console.error('[join] reading the ground:', err.message); }
+      if (ended || !bot.isAlive) return;
       ready = true;
       console.log(JSON.stringify({ sessionReady: true, username: bot.username }));
       const saved = store.read();

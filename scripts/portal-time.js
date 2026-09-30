@@ -92,7 +92,8 @@ function readTrial({ port, start, end, dir = FLIGHT }) {
         pos: s.position || null, target: st?.target || st?.position || null, kind: st?.kind || null,
         lava: s.inventory ? (+s.inventory.lava_bucket || 0) : null,
         pool: sa?.action === 'landmark_found' && sa.kind === 'lava_pool' && sa.position ? sa.position : null,
-        answer: d?.id === 'portal_method' && Array.isArray(d.path) ? d.path.at(-1) : null });
+        answer: d?.id === 'portal_method' && Array.isArray(d.path) ? d.path.at(-1) : null, stall: o.kind === 'navigation_stall',
+        detour: o.kind === 'decision' && /^(stillness_detour|rung_progress)$/.test(d?.id || '') && Array.isArray(d.path) ? d.path.at(-1) : null });
     }
   }
   frames.sort((a, b) => a.t - b.t);
@@ -195,6 +196,30 @@ function lavaFetch(frames) {
     if (lastKey !== null && (key === 'deep' ? lastKey !== 'deep' : lastKey === 'deep' || !near3(lastKey, key, 8))) switches++;
     lastKey = key; lastAt = f.t;
   }
+  // Walks stalled at a spot already stalled at twice in the last fifteen
+  // minutes (within three blocks): the stalls note 753b's bad-step rule
+  // routes round (skills.js noteStallSpot).
+  const spots = [];
+  let stalls = 0, repeatStalls = 0;
+  for (const f of over) {
+    if (!f.stall || !f.pos) continue;
+    stalls++;
+    const near = spots.filter(q => f.t - q.t < 15 * 60000 && Math.hypot(q.x - f.pos.x, q.y - f.pos.y, q.z - f.pos.z) <= 3);
+    if (near.length >= 2) repeatStalls++;
+    spots.push({ ...f.pos, t: f.t });
+  }
+  // The stall's questions (stillness_detour, rung_progress) answered while a
+  // lava pool found this trial lay within 128 blocks, and how many of those
+  // answers went to it (note 753b's to_known_lava).
+  let detoursWithPool = 0, detoursToPool = 0;
+  const seenPools = [];
+  for (const f of over) {
+    if (f.pool) seenPools.push({ ...f.pool, t: f.t });
+    if (!f.detour || !f.pos) continue;
+    if (!seenPools.some(p => p.t < f.t && near3(p, f.pos, 128))) continue;
+    detoursWithPool++;
+    if (/^(to_known_lava|to_portal_frame)$/.test(f.detour)) detoursToPool++;
+  }
   let flips = 0;
   for (let i = 1; i < answers.length; i++) if (answers[i].answer !== answers[i - 1].answer && answers[i].t - answers[i - 1].t < 60000) flips++;
   // The scooping spots' route search before each pass's phase (a
@@ -235,7 +260,7 @@ function lavaFetch(frames) {
   }
   return { buckets, minutes: round(fetchMs / 60000), byPhase: Object.fromEntries(Object.entries(byPhase).map(([k, ms]) => [k, ms / 60000])), deepMinutes: round(deepMs / 60000), deepWithPoolMinutes: round(deepPoolMs / 60000),
     switches, climbed: Math.round(climbed), descended: Math.round(descended), poolsFound: pools.length, portalMethodAnswers: answers.length, portalMethodFlips: flips,
-    surveys: surveys.length, surveyMinutes: round(surveyMs / 60000), surveySkippableMinutes: round(skippableMs / 60000), caveLegs, caveLegMinutes: round(caveLegMs / 60000) };
+    stalls, repeatStalls, detoursWithPool, detoursToPool, surveys: surveys.length, surveyMinutes: round(surveyMs / 60000), surveySkippableMinutes: round(skippableMs / 60000), caveLegs, caveLegMinutes: round(caveLegMs / 60000) };
 }
 
 function main() {
@@ -273,6 +298,8 @@ function main() {
   console.log(`  Height while fetching: ${sum('climbed')} climbed, ${sum('descended')} descended (${per(sum('climbed') + sum('descended'), buckets)} a bucket).`);
   console.log(`  portal_method: ${sum('portalMethodAnswers')} answers, ${sum('portalMethodFlips')} changed within a minute of the one before.`);
   console.log(`  Route searches before a phase: ${sum('surveys')}, ${round(sum('surveyMinutes'))} min; at most ${round(sum('surveySkippableMinutes'))} min of them repeated within six blocks and a minute with no scoop (note 753's memo).`);
+  console.log(`  Navigation stalls before the Nether: ${sum('stalls')}, ${sum('repeatStalls')} of them at a spot stalled at twice already in fifteen minutes (note 753b).`);
+  console.log(`  Stall questions answered with a pool found within 128 blocks: ${sum('detoursWithPool')}, ${sum('detoursToPool')} of them going to it or to the frame (note 753b).`);
   console.log(`  Walks to a remembered pool that went 16+ blocks below both their start and the pool: ${sum('caveLegs')}, ${round(sum('caveLegMinutes'))} min from there to the walk's end.`);
 
   console.log('\nPer trial:');

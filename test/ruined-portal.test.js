@@ -1069,8 +1069,16 @@ test('a mob in the cast\'s cells is not the site\'s failure, and a part-cast fra
   assert.match(offered.cast_frame, /has failed at its site 12 times since the last block went in: "Flowing lava in the frame slot at \(\d+, \d+, \d+\): its walls are not whole" 12 times\. Not counted: 1 more where a mob stood in the cells the cast works in \(the last a cow at/);
   assert.match(offered.cast_frame, /Kept, the cast goes on at this frame, the slot it failed at tried again/);
   assert.equal(goal.portalFrame, frame, 'kept'); assert.equal(goal.portalMethod.siteFailed, undefined, 'answered');
-  // Failing again, asked again; a new site chosen, the frame is passed over.
+  // Failing again, held for the next two of the same kind, asked again at
+  // the third since the keep (note 753b: 25581 was asked four times in
+  // twelve seconds and left five of ten cast); a new site chosen, the frame
+  // is passed over.
+  for (let n = 1; n <= 2; n++) {
+    assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
+    assert.equal(goal.portalMethod.siteFailed, undefined, `held at the ${n} failure since the keep`);
+  }
   assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
+  assert.equal(goal.portalMethod.siteFailed, true, 'asked again at the third');
   pick = 'new_site';
   assert.equal(await portalMethod(bot, task, goal, () => {}), false);
   assert.equal(goal.portalFrame, undefined);

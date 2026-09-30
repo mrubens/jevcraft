@@ -9,6 +9,17 @@ const { safeFromHostiles, checkThreats } = require('./danger');
 const { checkAir, breathShort } = require('./vitals');
 const { floatAfterBoat, clearOwnedBoatAtFeet, leaveBoat } = require('./boats');
 const { move: motion } = require('./motion');
+const { targetHot, hotSays } = require('./lava-escape');
+// A shore target read for lava and fire (lava-escape.js targetHot, note
+// 756): the cell, its head, its floor and, with `from`, the straight way to
+// it. Said once in the log when one is passed over.
+function shoreHot(bot, p, opts = {}) {
+  const hit = targetHot(bot, p, opts);
+  if (hit) console.log(`[shore] (${p.x}, ${p.y}, ${p.z}) passed over: ${hotSays(hit)}`);
+  return hit;
+}
+// The cells of a surveyed route, each as a body stands in it.
+const routeHot = (bot, path) => (path || []).some(q => targetHot(bot, q, { path: false }));
 
 // Shelter construction needs dry ground before it can choose a local site.
 // A failed crossing may leave that ground farther away than the shelter scan.
@@ -87,6 +98,8 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
       const route = await surveyRoute(bot, task, movement, destination, 300);
       if (route.status !== 'success') { unrouted.push(p); continue; }
       if ((route.path || []).some(q => !movement.allowedPosition(q) || q.toBreak?.length || q.toPlace?.length) || !safe(p)) continue;
+      // Nor a landing or a way to it with lava or fire in it (note 756).
+      if (shoreHot(bot, p, { path: false }) || routeHot(bot, route.path)) continue;
       goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...p } };
       goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
       try {
@@ -108,7 +121,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // cell with a floor and air for the body is climbed onto, as out of lava.
     const { lavaExit, inWater } = require('./survival');
     const exit = lavaExit(bot);
-    if (!attempts && exit && exit.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) <= 3.5) {
+    if (!attempts && exit && exit.offset(0.5, 0, 0.5).distanceTo(bot.entity.position) <= 3.5 && !shoreHot(bot, exit, { past: true })) {
       goal.step = { action: 'reach_shore', from: { ...bot.entity.position }, destination: { ...exit }, climb: true };
       goal.survivalAction = { action: 'reach_shore', at: new Date().toISOString() }; save();
       await clearHeadroom(bot, task);
@@ -138,7 +151,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
     // across open sea; every landing went unrouted, the stance swam nowhere
     // and failed in two seconds, and the drowned's trident hit every two
     // until it died (note 501).
-    const bank = unrouted.find(p => openSwim(bot, p, waterY));
+    const bank = unrouted.find(p => openSwim(bot, p, waterY) && !shoreHot(bot, p, { path: false }));
     if (bank) {
       const flat = () => Math.hypot(bank.x + 0.5 - bot.entity.position.x, bank.z + 0.5 - bot.entity.position.z), before = flat();
       const out = () => bot.entity.onGround && !inWater(bot) && dryStanding(bot, bot.entity.position);
@@ -239,6 +252,10 @@ async function stepOut(bot, task, goal, save) {
     const faces = [[under, new Vec3(0, 1, 0)], ...dirs.map(f => [cell.plus(f), f.scaled(-1)])];
     const anchor = faces.find(([p]) => bot.blockAt(p)?.boundingBox === 'block');
     if (!anchor) continue;
+    // Where the body goes: onto the block, its head over it, and the climb
+    // to it, read for lava and fire before the block is placed; the climb
+    // holds forward, so the cell past it too (note 756).
+    if (shoreHot(bot, cell.offset(0, 1, 0), { past: true })) continue;
     goal.step = { action: 'step_out_of_water', at: { ...cell } };
     goal.survivalAction = { action: 'step_out_of_water', at: new Date().toISOString() }; save();
     try {
@@ -296,7 +313,7 @@ async function notchOut(bot, task, goal, save) {
     if (!/water/.test(bot.blockAt(from)?.name || '') || !bot.blockAt(from.offset(0, 1, 0)) || bot.blockAt(from.offset(0, 1, 0)).boundingBox === 'block') continue;
     for (const d of dirs) {
       const step = from.plus(d), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
-      if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head)) continue;
+      if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head) || targetHot(bot, body, { path: false })) continue;
       // Only a quick dig: in water and off the ground a block takes about
       // twenty-five times as long, and two of stone drowned the live bot
       // sinking while it dug. The game's own dig time says how long.
@@ -373,7 +390,7 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
       // Never down: a route that dives to dig sank the bot three blocks, the
       // air rule brought it up, and it dived again every ten seconds.
       const dives = (route.path || []).some(q => q.y < Math.floor(bot.entity.position.y) - 1);
-      if (route.status !== 'success' || lava || dives) continue;
+      if (route.status !== 'success' || lava || dives || shoreHot(bot, p, { path: false })) continue;
       // Not where the head goes under for longer than the breath there is:
       // mid-244-y swam up into a sealed lake toward a landing, stalled under
       // its lid with its air twenty blocks off, and drowned (note 477).
@@ -527,6 +544,8 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
       const c = feet.offset(dx, dy, dz);
       if (/water/.test(bot.blockAt(c)?.name || '') && bot.blockAt(c.offset(0, 1, 0))?.boundingBox === 'empty' && !/water/.test(bot.blockAt(c.offset(0, 1, 0))?.name || '')) cells.push(c);
     }
+    // Not one with lava or fire at it or on the way (note 756).
+    for (let i = cells.length - 1; i >= 0; i--) if (targetHot(bot, cells[i])) cells.splice(i, 1);
     cells.sort((a, b) => (Math.hypot(a.x - target.x, a.z - target.z) + a.distanceTo(feet)) - (Math.hypot(b.x - target.x, b.z - target.z) + b.distanceTo(feet)));
     if (!cells.length) { setAside(goal, 'cross_sea', target.key, 'no open water to swim from', 10 * 60000); save(); return false; }
     try { await move(bot, task, new goals.GoalNear(cells[0].x, cells[0].y, cells[0].z, 1), { timeoutMs: 20000, stallMs: 6000, stopWhen: () => inWater(bot) }); }
