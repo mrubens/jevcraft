@@ -428,14 +428,19 @@ function rungMeasure(bot, goal, now = Date.now()) {
 // the first change that has it to its best at a later one or now. A step's
 // own target is named by one step of the two and not the other, so the
 // first and last look alone would not see a staircase that climbs toward it.
-function rungGain(changes, now) {
+// On a round trip (flipPlace) a distance is read only where the trip comes
+// back to, at the looks of the action that begins there: the far end of
+// each leg is nearer something and is then walked back from, which is not a
+// new nearest held (note 709). Counts are read over all the looks.
+function rungGain(changes, now, { at = null, nowName = null } = {}) {
   const RM = require('./rung-measure');
   const first = {}, best = {};
-  const looks = [...changes.map(c => c.m), now].filter(m => m && m.rung === now?.rung);
-  for (const m of looks) {
+  const looks = [...changes.map(c => ({ m: c.m, back: !at || c.a === at })), { m: now, back: !at || nowName === at }].filter(l => l.m && l.m.rung === now?.rung);
+  for (const { m, back } of looks) {
     for (const [key, v] of Object.entries(m.v)) {
-      if (first[key] === undefined) { first[key] = v; continue; }
       const distance = RM.kindOf(key) === 'distance';
+      if (distance && !back) continue;
+      if (first[key] === undefined) { first[key] = v; continue; }
       best[key] = best[key] === undefined ? v : distance ? Math.min(best[key], v) : Math.max(best[key], v);
     }
   }
@@ -454,6 +459,32 @@ function pairExtra(goal, e, now) {
   const says = require('./flip-pairs').says(e, now, { again: !!e.again });
   return { flip: { pair: e.pair, trades: e.trades, times: e.times, where: e.where, until: e.until, says },
     escalated: { from: 'flip', to: 'rung_progress', says }, until: e.until };
+}
+// Where two actions hand the turn to each other (note 709): in place (every
+// change within FLIP_REACH of the first, the bot still there), or a round
+// trip, one of the two beginning each time within FLIP_REACH of where it
+// began before and the other beginning each time at least that far off. 25584 mid-242-pf
+// (2026-09-30 01:33 to 01:40Z) traded enter_nether and return_to_mine every
+// four seconds for seven minutes: at the staircase's worksite (0, 77, 128),
+// 11.6 blocks from the lava it had chosen, the frame's site was looked for
+// (none level there, so a search_heading walk of eight to twenty blocks),
+// and past twelve from the lava the walk to it was the staircase's, whose
+// first move is back to its worksite. Each leg ended 8 to 20 blocks from the
+// other's start, so the in-place rule never saw it; the stall's own look
+// raised it once, after six minutes. Returns { p, at } (at: the name that
+// comes back, null in place) or null.
+const FLIP_REACH = 5;
+function flipPlace(changes, here) {
+  const dist = (p, q) => Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z);
+  const first = changes[0];
+  if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) < FLIP_REACH && dist(here, first.p) < 3) return { p: first.p, at: null };
+  // The other's legs begin away from there: a staircase whose two steps
+  // each begin a block on is not a trip (its own target judges it).
+  for (const name of new Set(changes.map(c => c.a))) {
+    const ps = changes.filter(c => c.a === name).map(c => c.p), away = changes.filter(c => c.a !== name).map(c => c.p);
+    if (ps.length >= 2 && ps.every(p => dist(p, ps[0]) < FLIP_REACH) && away.every(p => dist(p, ps[0]) >= FLIP_REACH)) return { p: ps[0], at: name, trip: Math.round(Math.max(...away.map(p => dist(p, ps[0])))) };
+  }
+  return null;
 }
 function flipWatch(bot, goal, now = Date.now()) {
   const stalls = bot._stalls ||= { records: {}, marks: [] };
@@ -497,7 +528,8 @@ function flipWatch(bot, goal, now = Date.now()) {
     if (names.size !== 2 || now - first.t > FLIP_MS) continue;
     // Two fight moves trading places (a fight and a raised shield) are one fight.
     if ([...names].every(n => HOLDS.has(n) || EMERGENCIES.has(n))) continue;
-    if (Math.max(...changes.map(c => dist(c.p, first.p)), dist(here, first.p)) >= 5 || dist(here, first.p) >= 3) continue;
+    const place = flipPlace(changes, here);
+    if (!place) continue;
     if (worth(bot) > first.worth) continue;
     // On the game's ladder the rung's measure says whether the two got
     // anywhere (note 699): more of what the rung or the step is for, a
@@ -505,7 +537,7 @@ function flipWatch(bot, goal, now = Date.now()) {
     // the rung's. A block dug or placed is not, by itself.
     const measure = layer === 'work' ? rungMeasure(bot, goal, now) : null;
     const byRung = measure && changes.some(c => c.m?.rung === measure.rung);
-    if (byRung && rungGain(changes, measure)) continue;
+    if (byRung && rungGain(changes, measure, { at: place.at, nowName: changes.at(-1).a })) continue;
     // Off the ladder, a block dug or placed in a cell not worked lately is
     // getting somewhere, as the stall watch counts it (look): the ladder
     // names the rung's step each pass and the step under it names its own,
@@ -528,8 +560,10 @@ function flipWatch(bot, goal, now = Date.now()) {
     const record = stalls.records[action.key] ||= { key: action.key, blocks: {}, items: {}, idle: 0, strikes: [], seenAt: now };
     stalls.changes = {};
     const seconds = Math.round((now - first.t) / 1000);
-    const nothing = byRung ? rungNothing(changes, measure, dist(here, first.p)) : null;
-    const why = `turning between ${pair} ${FLIP_CHANGES - 1} times in ${seconds} seconds ${nothing ? `with ${nothing}` : 'without getting anywhere'}`;
+    const back = place.at ? dist(here, place.p) < FLIP_REACH ? 0 : dist(here, place.p) : dist(here, first.p);
+    const nothing = byRung ? rungNothing(changes, measure, back) : null;
+    const trip = place.at ? `, each ${place.at.replaceAll('_', ' ')} begun back at (${Math.floor(place.p.x)}, ${Math.floor(place.p.y)}, ${Math.floor(place.p.z)}) after a leg of up to ${place.trip} blocks` : '';
+    const why = `turning between ${pair} ${FLIP_CHANGES - 1} times in ${seconds} seconds${trip} ${nothing ? `with ${nothing}` : 'without getting anywhere'}`;
     // Both sides of a survival flip rest, not only the one in hand: the one
     // in hand may be reported where no refusal is looked at (the way back
     // to the surface is set by the work step's climb), and mid-235-b's
@@ -540,7 +574,7 @@ function flipWatch(bot, goal, now = Date.now()) {
       flipFailed(bot, goal, action, why, now);
       // The work's pair rests together from here, counted with its trades
       // here in the last ten minutes, and is said to the question above.
-      const e = require('./flip-pairs').note(goal, { names, trades: FLIP_CHANGES - 1, seconds, where: first.p, rungSays: nothing, now });
+      const e = require('./flip-pairs').note(goal, { names, trades: FLIP_CHANGES - 1, seconds, where: place.p, rungSays: nothing, now });
       return raise(bot, goal, { record, action }, now, why, pairExtra(goal, e, now));
     }
     return raise(bot, goal, { record, action }, now, why);

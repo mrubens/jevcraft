@@ -110,7 +110,7 @@ function handLine(bot, target, { cells = 128 } = {}) {
   if (!from || !target || typeof bot.blockAt !== 'function') return null;
   const dx = target.x - from.x, dy = target.y - from.y, dz = target.z - from.z, n = Math.min(cells, Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)));
   const seen = new Set([`${from.x},${from.y},${from.z}`, `${from.x},${from.y + 1},${from.z}`]);
-  let handSeconds = 0;
+  let handSeconds = 0, dug = 0;
   for (let i = 1; i <= n; i++) {
     const x = Math.round(from.x + dx * i / n), y = Math.round(from.y + dy * i / n), z = Math.round(from.z + dz * i / n);
     for (const h of [0, 1]) {
@@ -120,11 +120,32 @@ function handLine(bot, target, { cells = 128 } = {}) {
       const b = bot.blockAt(new (require('vec3').Vec3)(x, y + h, z));
       if (!b || b.boundingBox !== 'block') continue;
       const rule = require('./hand-dig').handRule(bot, b);
-      if (!rule.breaks) return { steps: n, handSeconds: Math.round(handSeconds), stopAt: i, stopName: String(b.name || 'rock').replaceAll('_', ' ') };
-      handSeconds += rule.seconds;
+      if (!rule.breaks) return { steps: n, handSeconds: Math.round(handSeconds), dug, stopAt: i, stopName: String(b.name || 'rock').replaceAll('_', ' ') };
+      handSeconds += rule.seconds; dug++;
     }
   }
-  return { steps: n, handSeconds: Math.round(handSeconds), stopAt: null, stopName: null };
+  return { steps: n, handSeconds: Math.round(handSeconds), dug, stopAt: null, stopName: null };
+}
+
+// What the step in hand digs by hand on its straight line to its own
+// target, totalled, for the choice to carry on without a pickaxe (upkeep's
+// carry_on). 25590 (2026-09-30 01:35Z) carried on over fetch_stems 0.68 to
+// 0.31 with "rock is dug by hand" priced a block at a time, then took a leg
+// of "67 of rock to dig (about 10.9 seconds a cell by hand)": twelve
+// minutes of digging that drops nothing (note 709). '' where the step has
+// no target or nothing on the line is rock.
+const handTime = s => s < 90 ? `about ${s} seconds` : `about ${Math.round(s / 60)} minutes`;
+function aheadByHandSays(bot, goal) {
+  if (!bot?.entity?.position || pickaxeCarried(bot)) return '';
+  const step = goal?.step, t = step?.target || step?.destination || step?.to;
+  if (!t || ![t.x, t.y, t.z].every(Number.isFinite)) return '';
+  const line = handLine(bot, t);
+  if (!line || (!line.dug && !line.stopName)) return '';
+  const what = String(step.action || 'step').replaceAll('_', ' ');
+  const off = Math.round(bot.entity.position.distanceTo(new (require('vec3').Vec3)(t.x, t.y, t.z)));
+  const stop = line.stopName ? `, then ${line.stopName} ${line.stopAt} blocks along, which no hand breaks` : '';
+  const part = line.steps < Math.max(...['x', 'y', 'z'].map(k => Math.abs(t[k] - Math.floor(bot.entity.position[k])))) ? ` on its first ${line.steps} blocks` : '';
+  return ` The ${what} in hand heads for (${t.x}, ${t.y}, ${t.z}), ${off} blocks off: straight there${part} digs ${line.dug} cell${line.dug === 1 ? '' : 's'} of rock by hand, ${handTime(line.handSeconds)}, nothing dropped${stop}.`;
 }
 
 // A way that digs, said with what digging by hand does to it: where no
@@ -199,4 +220,4 @@ function handGather(bot, { reach = 16, walk = 32 } = {}) {
   return { n, sources: found.sources, found, says };
 }
 
-module.exports = { kitLacks, listSays, KIT_BLOCKS, HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };
+module.exports = { aheadByHandSays, kitLacks, listSays, KIT_BLOCKS, HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };

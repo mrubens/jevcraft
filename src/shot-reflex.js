@@ -311,9 +311,11 @@ function lockBody(bot) {
   bot._shotLock = true;
   const set = bot.setControlState.bind(bot), look = bot.look.bind(bot), lookAt = bot.lookAt.bind(bot);
   bot._shotRaw = { set, look, lookAt };
-  bot.setControlState = (key, on) => { if (bot._shotHold && on && MOVE_KEYS.includes(key)) return; return set(key, on); };
-  bot.look = (...a) => bot._shotHold ? Promise.resolve() : look(...a);
-  bot.lookAt = (...a) => bot._shotHold ? Promise.resolve() : lookAt(...a);
+  // A hold carried while the stance closes (note 709) leaves the walk its keys and looks.
+  const held = () => bot._shotHold && !bot._shotHold.free;
+  bot.setControlState = (key, on) => { if (held() && on && MOVE_KEYS.includes(key)) return; return set(key, on); };
+  bot.look = (...a) => held() ? Promise.resolve() : look(...a);
+  bot.lookAt = (...a) => held() ? Promise.resolve() : lookAt(...a);
 }
 
 // One look, every tick: the warnings, the question about them, the shots
@@ -353,7 +355,11 @@ function tick(bot, survival, now = Date.now()) {
   // not: the shield held through a line lost for a moment.
   if (!eating) for (const id of new Set([...(bot._shotShooters || []), ...(bot._shotWarned || [])])) {
     const e = bot.entities?.[id], a = answerFor(bot, id, now);
-    if (e?.position && a?.choice === 'shield_up' && warnDue(bot, e, now)) guard.push({ at: e.position.offset(0, (e.height || 1.8) / 2, 0), why: `answer: shield up to the ${e.name}`, w: bot._shotInSight?.has(id) ? SEEN_W : 1 });
+    if (!e?.position || a?.choice !== 'shield_up' || !warnDue(bot, e, now)) continue;
+    // A charge's shield (note 709): raised while it closes, down for its
+    // swings once the shooter is at the sword's reach.
+    if (a.closing && require('./combat').canStrike(bot, e)) continue;
+    guard.push({ at: e.position.offset(0, (e.height || 1.8) / 2, 0), why: a.by === 'stance' ? `stance ${a.stance.replaceAll('_', ' ')}: shield up to the ${e.name}${a.closing ? ' while it closes' : ''}` : `answer: shield up to the ${e.name}`, w: bot._shotInSight?.has(id) ? SEEN_W : 1, ...(a.closing ? { closing: true } : {}) });
   }
   // A shot in the air on a line that hits.
   for (const s of bot._shots?.values?.() || []) {
@@ -364,7 +370,8 @@ function tick(bot, survival, now = Date.now()) {
     s.answer = a?.choice || null;
     // Answered otherwise: Jev chose to step out of its line, strike first
     // or take it; the step it chose is what answers it.
-    if (a && a.choice !== 'shield_up') continue;
+    const answered = a && a.choice !== 'reflex' ? a : null;
+    if (answered && answered.choice !== 'shield_up') continue;
     if (eating) {
       // Landing after the meal is eaten, or too soon for a raise to block:
       // the meal goes on.
@@ -373,8 +380,8 @@ function tick(bot, survival, now = Date.now()) {
       require('./meal').cutMeal(bot, `a ${s.name.replaceAll('_', ' ')} on its way to the bot, landing in about ${round(h.seconds)} seconds, inside the meal: the shield raised for it`, now);
       eating = false;
     }
-    s.by = a ? 'answer' : 'reflex';
-    guard.push({ at: h.at, why: a ? 'answer: shield up' : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s, w: SHOT_W });
+    s.by = answered ? 'answer' : 'reflex';
+    guard.push({ at: h.at, why: answered ? 'answer: shield up' : a ? `reflex: a ${s.name.replaceAll('_', ' ')} on its way, the stance ${String(a.stance || '').replaceAll('_', ' ')} walking on` : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s, w: SHOT_W });
   }
   // Behind the block chosen: walked to while the warning is due or on.
   const cover = coverDue(bot, now);
@@ -384,6 +391,9 @@ function tick(bot, survival, now = Date.now()) {
   const hold = bot._shotHold ||= { since: now, raised: false, why: guard[0]?.why || 'cover' };
   hold.last = now;
   lockBody(bot);
+  // Only a charge's warnings: the shield up, the walk and its looks its own.
+  hold.free = !cover && guard.every(g => g.closing);
+  if (hold.free) { hold.why = guard[0].why; if (require('./combat').raiseShield(bot)) hold.raised = true; return; }
   const { set, look } = bot._shotRaw;
   for (const k of MOVE_KEYS) set(k, false);
   if (require('./terrain').onSpan?.(bot)) set('sneak', true);
@@ -527,6 +537,43 @@ function shotState(bot, warned) {
   };
 }
 
+// A stance in force answers the shooters' warnings (note 709). 25592 at a
+// blaze spawner (2026-09-30 01:39:25 to 01:40:26Z) answered shot_answer 14
+// times and encounter_stance 8 times in one minute: behind_cover walked it
+// off the charge's line, the charge was asked again, keep_on took the next
+// volley, and no stance ran long enough to work (health 20 to 3, no rod).
+// Over the fights with blazes from 22:00Z (scripts/fight-asks.js) a spawner's
+// fight asked 12.9 questions a fight-minute, 8.4 of them shot_answer, and
+// 587 of its 1,073 shot_answers came inside a stance's fifteen seconds. So
+// the stance Jev chose carries its answer to each volley, said on the stance
+// question (decisions/survival.js encounter_stance guidance):
+//   closing: a charge or a fight raises the shield toward the shooters while
+//     it closes, lowered for its swings once one is at the sword's reach;
+//   holding: a box, a wall, cover or a guard keeps its spot and holds the
+//     shield toward the shooters, or steps to a cell out of every line where
+//     they are split round it (the rule's answer, shotRule);
+//   walking: a stance that walks off, eats or drinks goes on, the shield
+//     raised only for a shot on its way that hits (the reflex).
+// keep_working and the rest (a creeper's block, a span, a fireball struck
+// back) ask at each warning as before.
+const STANCE_SHOTS = {
+  closing: new Set(['charge_nearest', 'charge', 'charge_shooter', 'close_in', 'fight', 'fight_at_spawner', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'low_ceiling', 'shield_the_charge', 'break_spawner', 'dig_in_and_fight']),
+  holding: new Set(['shield_guard', 'take_cover', 'back_to_wall', 'corner_ambush', 'box_here', 'box_at_spawner', 'dig_in', 'dig_in_at_spawner', 'bunker', 'seal', 'nook', 'out_of_sight', 'pillar', 'stand_by_spawner']),
+  walking: new Set(['retreat', 'leave_reach', 'leave_and_heal', 'step_out_and_eat', 'out_of_the_push', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance', 'wait_far_off']),
+};
+const stanceShotsOf = choice => Object.keys(STANCE_SHOTS).find(k => STANCE_SHOTS[k].has(choice)) || null;
+// The answer the stance in force gives this warning, or null (asked).
+// 'reflex': no hold for the warning; a shot on its way that hits meets the shield.
+function stanceAnswer(bot, tree, now = Date.now()) {
+  const s = require('./danger').stanceHeld(bot, now);
+  const how = s?.choice ? stanceShotsOf(s.choice) : null;
+  if (!how) return null;
+  if (how === 'walking') return { choice: 'reflex', stance: s.choice, how };
+  if (how === 'closing') return tree.shield_up ? { choice: 'shield_up', stance: s.choice, how, closing: true } : { choice: 'reflex', stance: s.choice, how };
+  const rule = shotRule(tree);
+  return rule ? { choice: rule, stance: s.choice, how } : { choice: 'reflex', stance: s.choice, how };
+}
+
 // The question about these warnings, not waited for: the answer lands on
 // bot._shotAnswers when it comes. Until it comes the reflex answers a shot
 // in the air.
@@ -540,7 +587,15 @@ function ask(bot, survival, warned) {
   catch (err) { if (!bot._shotErrAt || Date.now() - bot._shotErrAt > 10000) { bot._shotErrAt = Date.now(); console.log(`[shot] options: ${err.message}`); } return; }
   const answers = bot._shotAnswers ||= new Map();
   const until = new Map(warned.map(e => [e.id, e._shotWarn.at + WARNS[e._shotWarn.kind].most * 1000]));
-  const record = (choice, by) => { for (const [id, key] of keys) answers.set(id, { key, choice, at: Date.now(), until: until.get(id), ...(choice === 'behind_cover' ? { cell: tree.behind_cover.cell } : {}), by }); };
+  const record = (choice, by, extra = {}) => { for (const [id, key] of keys) answers.set(id, { key, choice, at: Date.now(), until: until.get(id), ...(choice === 'behind_cover' ? { cell: tree.behind_cover.cell } : {}), by, ...extra }); };
+  // The stance Jev chose answers it (note 709).
+  const byStance = stanceAnswer(bot, tree);
+  if (byStance) {
+    record(byStance.choice, 'stance', { stance: byStance.stance, ...(byStance.closing ? { closing: true } : {}) });
+    bot._shotByStance = (bot._shotByStance || 0) + 1;
+    console.log(`[shot] ${warned.map(e => `the ${e.name}`).join(', ')} warning: answered by the stance ${byStance.stance.replaceAll('_', ' ')} (${byStance.choice.replaceAll('_', ' ')})`);
+    return;
+  }
   // With JEV_ENCOUNTERS=0 (or no client): the shot's safety rule, the
   // shield; split round the bot, a cell out of their line. Jev not
   // reachable, decide() answers by the same rule (note 707).
@@ -590,6 +645,6 @@ function install(bot, survival) {
 
 // Answered otherwise than with the shield: Jev chose to step out of this
 // shooter's line, strike it first or take its shots.
-const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up'; };
+const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up' && a.choice !== 'reflex'; };
 
-module.exports = { shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };
+module.exports = { STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS };

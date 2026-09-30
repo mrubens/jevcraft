@@ -52,11 +52,12 @@ test('25583 in the basalt delta, no pickaxe and no wood: the upkeep offers the w
   assert(offered?.fetch_stems, `offered: ${offered && Object.keys(offered)}`);
   assert.equal(offered.make_pickaxe, undefined, 'no wood: no pickaxe to be made');
   const said = offered.fetch_stems;
-  assert.match(said, /^Fetch 2 stems of the Nether's forests now: Wanted in wood: 6 planks' worth for the pickaxe to make now \(iron, from the ingots carried\) and a spare/);
+  // Where the stems are leads (note 709), the wood's sums after.
+  assert.match(said, /^Fetch 2 stems of the Nether's forests now\. The nearest stems: 19 warped stems known at \(-23, 103, -8\), 11 blocks south and 2 up\. No pickaxe is carried/);
+  assert.match(said, /Wanted in wood: 6 planks' worth for the pickaxe to make now \(iron, from the ingots carried\) and a spare/);
   // What the pickaxe is short of, which the fetch brings (note 705).
   assert.match(said, /No pickaxe is carried: it is short of 6 planks \(2 stems\) for a crafting table, the sticks, which this fetch brings; then an iron pickaxe from the iron ingots carried\. Until then rock is dug by hand and drops nothing\./);
-  assert.match(said, /The nearest stems: 19 warped stems known at \(-23, 103, -8\), 11 blocks south and 2 up, a warped forest/);
-  assert.match(said, /a warped forest: endermen spawn there .* no hoglin or piglin does; an enderman turns on a look at its head/);
+  assert.match(said, /A warped forest: endermen spawn there .* no hoglin or piglin does; an enderman turns on a look at its head/);
   assert.match(said, /A route survey from here found no way there on foot \(the bot's own walks in the Nether take a cell with lava round it at its cost, crouched, but none with the lava a block to a side while a touch of it is death, nor one in line with something that can push the bot\)/);
   assert.match(said, /A stem needs no tool to drop and breaks by hand in about 3 seconds, about 0\.8 with the stone axe carried\./);
   assert.match(said, /The pickaxe is made as soon as the wood for it is carried\./);

@@ -416,7 +416,7 @@ test('the rungs are said alike, none as the ladder\'s own; the first is still th
   assert.doesNotMatch(later.stage_obtain_ender_pearls.description, /ladder/);
 });
 
-test('a trip coming into view beside the others does not re-ask; the top-level choices changing does; the state does not repeat the options', async () => {
+test('a trip coming into view beside the others does not re-ask, nor one going that was not chosen; the state does not repeat the options', async () => {
   const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
   const { asked, decide } = treeOf();
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
@@ -430,7 +430,7 @@ test('a trip coming into view beside the others does not re-ask; the top-level c
   assert.equal(asked.length, 1, 'the village came into view among the trips: held');
   now += 60000;
   await strategyStep(bot, task, goal, () => {}, stage, { decide, sides: {}, now: () => now });
-  assert.equal(asked.length, 2, 'no side trip left: the top level changed, asked again');
+  assert.equal(asked.length, 1, 'no side trip left: an option gone that was not chosen, the answer holds over fewer (note 709)');
 });
 
 test('a base begun in an older world is offered from where it stopped, and chosen it holds as a rung, a step at a time', async () => {

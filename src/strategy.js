@@ -475,9 +475,16 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   // Held while the top-level choices stand: a trip coming into view or
   // going beside the others changes nothing chosen between at the top.
   // Biomes coming into view had re-asked the whole list on most walks.
+  // Nor an option going that was not chosen: the answer was given over it,
+  // and stands over fewer. 25584 mid-242-pf (2026-09-30 01:32 to 01:40Z)
+  // was asked this 36 times, every four seconds, as take_up_bow came and
+  // went between the two steps it traded, each answer stage_reach_nether
+  // (note 709). Only an option not on offer when it was answered asks again.
   const keys = Object.keys(tree).sort().join(',');
   const held = goal.strategy;
-  let choice = held && held.ladderNext === stage.phase && held.keys === keys && now() - held.at < HOLD_MS && options[held.choice] ? held.choice : null;
+  const offered = new Set(String(held?.keys || '').split(','));
+  const same = held && (held.keys === keys || Object.keys(tree).every(k => offered.has(k)));
+  let choice = same && held.ladderNext === stage.phase && now() - held.at < HOLD_MS && options[held.choice] ? held.choice : null;
   if (!choice) {
     const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage) });
     // Held through an outage (note 707): nothing is done this step; the
