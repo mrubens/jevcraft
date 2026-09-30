@@ -6685,7 +6685,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // The cauldron for the Nether's fire is on offer, not short: it makes the
   // question worth asking when the bot could make the set now (note 634).
   const cauldron = items.find(i => i.key === 'cauldron' && i.offer);
-  if (!short.length && !valuables && !cauldron) { delete goal.preparingNether; return true; }
+  // A chest the wood carried makes now, to keep rods in (note 760): of 122
+  // Nether entries none carried one.
+  const chest = (() => { try { return require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_chest'); } catch (_) { return false; } })() ? items.find(i => i.key === 'chest' && i.offer) : null;
+  if (!short.length && !valuables && !cauldron && !chest) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -6712,6 +6715,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
   if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
+  if (chest) tree.top_up_chest = { description: `Make a chest from the wood carried first and carry it in (8 planks${countOf(bot, 'crafting_table') ? ' at the crafting table carried' : ', and a crafting table of 4 more'}, a few seconds, one slot).${chest.says.replace(/^Chest: none carried\./, '')}` };
   for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'health' ? healWaitSays(bot, i) : ''} ${i.says}${soFar(i)}` };
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
@@ -6737,6 +6741,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   try {
     if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
+    else if (pick === 'top_up_chest') {
+      goal.step = { action: 'chest_for_nether' }; save();
+      await acquireStep(bot, task, 'chest', 1, goal, save);
+    }
     else if (pick === 'top_up_cauldron') {
       // The cauldron first, then the water for it; the next pass asks again with what is carried then.
       goal.step = { action: 'cauldron_for_nether', cauldron: countOf(bot, 'cauldron'), waterBucket: countOf(bot, 'water_bucket') }; save();

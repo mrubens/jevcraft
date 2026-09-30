@@ -152,7 +152,7 @@ test('crossing_kit offers top_up_cauldron with nothing short, and never as the f
   assert.equal(goal.crossingKit.choice.pick, 'cross_now');
   // Nothing on offer and nothing short: not asked.
   asked = null;
-  const plain = bot({ items: [['cobblestone', 128], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table']], dimension: 'overworld' });
+  const plain = bot({ items: [['cobblestone', 128], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['chest']], dimension: 'overworld' });
   plain.game.difficulty = 'peaceful';
   assert.equal(await crossingKitReady(plain, { check() {}, opportunityClient: client }, { kind: 'win' }, () => {}, client), true);
   assert.equal(asked, null);

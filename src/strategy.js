@@ -65,7 +65,9 @@ const RUNG_WHY = {
   nether_pickaxe: 'a spare pickaxe for the Nether',
   nether_blocks: 'blocks for bridging and pillaring in the Nether',
   nether_food: 'food carried for the Nether stay',
-  nether_chest: 'a chest to leave the blaze rods in at the fortress',
+  nether_chest: 'a chest to keep the blaze rods in through a death in the Nether',
+  // The rods got so far banked past the portal (rod-bank.js, note 760).
+  bank_rods: 'a chest on the Overworld side for the blaze rods got so far, kept through a death while the bot goes back for the rest',
   // The rest of the ladder, said as the others are (the decision audit,
   // 2026-09-25).
   stone_pickaxe: 'mines stone, coal and iron ore; a wooden one mines only stone and coal, and slowly',
@@ -91,7 +93,7 @@ const WITHOUT = {
   nether_pickaxe: 'a pickaxe worn out in the Nether is made again only from what is carried',
   nether_blocks: 'a bridge or a pillar stops where the blocks run out, and netherrack there is mined for more',
   nether_food: 'the Nether is entered with the food carried; going back through the portal is the other way to more',
-  nether_chest: 'rods carried are lost with a death; a chest is made there only from wood carried or the Nether\'s stems',
+  nether_chest: 'every rod carried is lost with a death (none of 122 Nether entries since 2026-09-29 carried a chest, note 760); a chest is made there only from wood carried or the Nether\'s stems',
 };
 // Where each ore lies, said with a step that mines it.
 const ORE_DEPTH = { coal: [0, 95, 95], iron: [-24, 56, 16], copper: [-16, 112, 48], gold: [-64, 32, -16], redstone: [-64, 15, -59], lapis: [-64, 64, 0], diamond: [-64, 16, -59], emerald: [-16, 256, 100] };

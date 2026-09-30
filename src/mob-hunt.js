@@ -535,6 +535,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
   if (countOf(bot, state.item) >= huntTarget(bot, goal)) { delete goal.mobHunt; save(); return false; }
+  // Not while the rods are being banked (rod-bank.js, note 760).
+  if (dimension(bot) === 'nether' && require('./rod-bank').pending(goal)) return false;
   const handler = handlers[state.entity] || {};
   stakeHunt(bot, goal);
   if (!canBegin(bot, handler)) return false;
@@ -712,6 +714,9 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       `${nearLava ? ' Lava is within two blocks of it: the walk there stands that close.' : ''}${reachable ? '' : ' No standing spot near it reads as dry and safe right now; the walk there may fail and find nothing changed.'}`,
       run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate }) };
   }
+  // The rods got so far out through the portal to a chest on the Overworld
+  // side, and back for the rest (rod-bank.js, note 760).
+  if (state.entity === 'blaze') { const bank = require('./rod-bank').bankOffer(bot, goal); if (bank) tree.bank_rods = require('./rod-bank').option(bot, task, goal, save, actions, bank); }
   if (!Object.keys(tree).length) return false;
   // The bot's fitness, on every option and in the state: what the code
   // once refused a fight for, as facts for Jev's choice (fitness, above).
@@ -901,6 +906,9 @@ async function foodLeave(bot, task, goal, save, actions) {
 async function prepareMobHunt(bot, task, step, goal, save, actions) {
   const handler = handlers[step.entity];
   if (!handler || handler.item !== step.item) throw blocked(`Unsupported mob source ${step.entity} for ${step.item}`);
+  // The rods being banked (rod-bank.js, note 760): the walk out is the work,
+  // not the hunt.
+  if (dimension(bot) === 'nether' && require('./rod-bank').pending(goal)) { if (actions.returnOverworld) await actions.returnOverworld(bot, task, goal, save); return; }
   if (bot.game.difficulty === 'peaceful') throw blocked(`${step.entity} does not spawn in Peaceful; cannot obtain ${step.item} by hunting here`);
   const previous = goal.mobHunt;
   goal.mobHunt = { ...(previous?.item === step.item ? previous : {}), item: step.item, entity: step.entity,

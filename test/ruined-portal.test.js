@@ -1098,7 +1098,7 @@ test('the food rung says where food lies against the frame begun, and offers foo
   const { Task } = require('../src/skills');
   // The ways to food are the food rung's question now, before the portal (work.js kitFoodStep, note 673).
   const { crossingKitReady, kitFoodStep } = require('../src/work');
-  const { bot, w } = castingBot({ cobblestone: 130, iron_pickaxe: 1, golden_boots: 1, oak_log: 8, crafting_table: 1 });
+  const { bot, w } = castingBot({ cobblestone: 130, iron_pickaxe: 1, golden_boots: 1, oak_log: 8, crafting_table: 1, chest: 1 });
   bot.findBlocks = () => []; bot.health = 20; bot.food = 6;
   bot.game.difficulty = 'normal';
   const frame = newFrame('x', new Vec3(8, 64, 23));

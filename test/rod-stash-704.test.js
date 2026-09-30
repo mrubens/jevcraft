@@ -202,7 +202,7 @@ test('the ladder in the Nether: the hunt counts the chest, and with the rods don
   assert.equal(nextGameStage(b2, g2).action, 'acquire');
 });
 
-test('the crossing kit takes a chest or the wood for one, deferrable, said with its cost; after a death the corpse run says the rods in the chest are kept', () => {
+test('the crossing kit takes a chest, deferrable, said with its cost; after a death the corpse run says the rods in the chest are kept', () => {
   const { kitRungs, kitRungSays, KIT_PHASES } = require('../src/crossing-kit');
   const { DEFERRABLE } = require('../src/game-progress');
   assert.ok(KIT_PHASES.has('nether_chest') && DEFERRABLE.has('nether_chest'));
@@ -210,8 +210,11 @@ test('the crossing kit takes a chest or the wood for one, deferrable, said with 
   const mk = inv => { const list = Object.entries(inv).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 })); return { registry, game: { gameMode: 'survival', dimension: 'overworld', difficulty: 'normal' }, inventory: { items: () => list, slots: [] }, entity: { position: new Vec3(0, 64, 0) } }; };
   const rung = kitRungs(mk(items), {}).find(r => r.phase === 'nether_chest');
   assert.deepEqual([rung.action, rung.item, rung.carried, rung.wants], ['acquire', 'chest', 0, 8]);
-  assert.match(kitRungSays(mk(items), {}, rung), /A chest \(8 planks, one slot\) to leave the rods in at the fortress: a death drops all carried, a chest keeps them\. Of 137 times a bot in the Nether first held 2 or more rods, 101 died with them before leaving/);
-  assert.equal(kitRungs(mk({ ...items, oak_log: 2 }), {}).some(r => r.phase === 'nether_chest'), false, 'two logs are the 8 planks');
+  assert.match(kitRungSays(mk(items), {}, rung), /What it is for: a death in the Nether drops every rod carried where the bot falls.*Its cost: 8 planks \(2 logs\) and one slot\. 0 planks' worth of wood carried of the 8 it takes\.$/);
+  // The wood for one carried keeps the rung open (note 760): made now, said so.
+  const made = kitRungs(mk({ ...items, oak_log: 2 }), {}).find(r => r.phase === 'nether_chest');
+  assert.equal(made.makesNow, true, 'two logs are the 8 planks');
+  assert.match(kitRungSays(mk({ ...items, oak_log: 2 }), {}, made), /The wood carried makes it now \(8 planks' worth, a crafting table carried\): a few seconds\./);
   assert.equal(kitRungs(mk({ ...items, chest: 1 }), {}).some(r => r.phase === 'nether_chest'), false);
   const noTable = { ...items }; delete noTable.crafting_table;
   assert.equal(kitRungs(mk({ ...noTable, oak_planks: 8 }), {}).find(r => r.phase === 'nether_chest').wants, 12, 'and 4 for a table');

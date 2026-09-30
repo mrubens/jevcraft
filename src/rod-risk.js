@@ -13,6 +13,16 @@
 const RECORD = Object.freeze({ from: '2026-09-29T23:00Z', to: '2026-09-30T17:00Z', lives: 80, died: 70, out: 0, rodsLost: 183,
   // k: [lives that carried k or more, died with them, carried out]
   reached: { 1: [80, 70, 0], 2: [55, 49, 0], 3: [36, 32, 0], 4: [19, 17, 0], 5: [13, 13, 0], 6: [7, 7, 0], 7: [2, 2, 0] } });
+// What the bots carried to keep rods in (note 760, scripts/rod-chest-kit.js
+// over the same window): of 122 Nether entries none carried a chest, 70 the
+// wood for one and a table (8 planks, 4 more for the table), 5 eight planks
+// with no table, 47 neither; of the 46 deaths that dropped 2 or more rods,
+// 34 carried neither a chest nor the wood for one at the death. Wood carried
+// in is spent there (sticks, tables, planks): of the 55 lives that carried 2
+// or more rods, 24 had the wood for a chest at their first frame, 20 at
+// their first rod and 15 at their end.
+const CHEST_RECORD = Object.freeze({ from: '2026-09-29T23:00Z', to: '2026-09-30T17:00Z', entries: 122, withChest: 0, withWood: 70, deaths2: 46, deaths2Neither: 34,
+  lives2: 55, woodAtStart: 24, woodAtFirstRod: 20, woodAtEnd: 15 });
 
 const countOf = (bot, name) => (bot?.inventory?.items?.() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = bot => /nether/.test(String(bot?.game?.dimension || ''));
@@ -53,7 +63,7 @@ function keepSays(bot, goal) {
   if (near) return `The bot's chest ${Math.round(near.d)} blocks off can keep them (stash_rods).`;
   const table = sum(/^crafting_table$/) > 0, wood = sum(/_planks$/) + 4 * sum(/_(log|stem|wood|hyphae)$/);
   if (wood >= (table ? 8 : 12)) return 'No chest is carried; the wood carried makes one to keep them in (stash_rods).';
-  return 'No chest is carried and no wood to make one (8 planks, and 4 more for a table): nothing here keeps them, and every rod carried is lost with a death.';
+  return 'No chest is carried and no wood to make one (8 planks, and 4 more for a table): nothing here keeps them, and every rod carried is lost with a death; the Overworld\'s trees, past the portal, make one.';
 }
 
-module.exports = { RECORD, risk, recordSays, keepSays };
+module.exports = { RECORD, CHEST_RECORD, risk, recordSays, keepSays };

@@ -13,7 +13,7 @@ const { Task } = require('../src/skills');
 const registry = require('minecraft-data')('26.1');
 
 // A bot at the portal: the ladder's gear all carried, by day on the surface.
-const GEAR = { iron_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1 };
+const GEAR = { iron_pickaxe: 1, diamond_sword: 1, shield: 1, water_bucket: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, iron_boots: 1, golden_boots: 1, white_bed: 1, bow: 1, arrow: 16, oak_log: 8, crafting_table: 1, chest: 1 };
 function atPortal(carried = {}) {
   const items = Object.entries({ ...GEAR, ...carried }).filter(([, n]) => n > 0).map(([name, count]) => ({ name, count, type: registry.itemsByName[name].id, durabilityUsed: 0 }));
   return {

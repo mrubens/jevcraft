@@ -127,6 +127,11 @@ function kitItems(bot) {
     says: `Wood: ${logs} logs and ${table ? 'a crafting table' : 'no crafting table'} carried; the code would take ${EXPEDITION_LOGS} logs and a table: sticks for the next tools and a table to make them at. The Nether's only trees are the crimson and warped fungi of its forests.` });
   const set = cauldronSet(bot);
   if (set) items.push({ key: 'cauldron', short: false, optional: true, offer: set.offer, carried: set.cauldrons, wants: 1, says: set.says });
+  // A chest to keep rods in (note 760): the ladder's nether_chest rung, and
+  // at the crossing an offer where the wood carried makes one now.
+  const chest = chestWood(bot);
+  items.push({ key: 'chest', rung: 'nether_chest', short: !chest.carried, offer: !chest.carried && chest.planks >= chest.wants, carried: chest.carried ? 1 : 0, wants: 1,
+    says: chest.carried ? 'Chest: one carried, to keep rods in through a death in the Nether (stash_rods).' : `Chest: none carried.${chestRungSays({ carried: chest.planks, wants: chest.wants, makesNow: chest.planks >= chest.wants })}` });
   return items;
 }
 
@@ -209,13 +214,14 @@ function kitSummary(bot, goal) {
   try { all = kitItems(bot); short = all.filter(i => i.short); valuables = valuablesAt(bot, goal); } catch (_) { return ''; }
   const parts = short.map(i => i.key === 'wood' ? `${i.carried} of ${i.wants} logs${countOf(bot, 'crafting_table') ? '' : ' and no crafting table'}`
     : i.key === 'pickaxe' ? `${i.carried} of ${i.wants} pickaxes` : i.key === 'health' ? `${i.carried} of ${i.wants} health`
+      : i.key === 'chest' ? 'a chest to keep rods in through a death (8 planks)'
       : i.key === 'gold' ? 'a piece of gold to wear (piglins go for a player with none)'
       : `${i.carried} of ${i.wants} ${i.key === 'food' ? 'food points' : 'blocks'}`);
   if (valuables) parts.push(`valuables carried (${valuables.what})${valuables.how === 'stash' ? `, the home chest ${valuables.far} blocks away` : ''}`);
   const cauldron = all.find(i => i.key === 'cauldron' && i.offer);
   if (cauldron) parts.push('a cauldron and a water bucket to put a fire out in the Nether, which the bot could make now (an option, not a gap)');
   return parts.length ? ` At the portal the kit is said and topping any of it up is a choice, not a wait: short now of ${parts.join('; ')}.`
-    : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood) is carried.';
+    : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood, a chest) is carried.';
 }
 
 // The kit as rungs of the ladder, before the one that enters the portal
@@ -247,7 +253,9 @@ function kitCounted(bot, goal = {}) {
   try { stay = netherStay(bot, goal); } catch (_) { return null; }
   // Rods left in a chest in the Nether are counted there, and the crossing
   // to take them is a crossing still (note 704).
-  if (!stay.rodsLeft && !goal?.rodStashes?.some(c => !c.lostAt && !c.unreachable && (c.contents?.blaze_rod || 0) > 0)) return null;
+  // Rods banked in a chest on this side (rod-bank.js, note 760) are taken out
+  // here, not crossed for.
+  if (!stay.rodsLeft && !goal?.rodStashes?.some(c => c.dimension === 'nether' && !c.lostAt && !c.unreachable && (c.contents?.blaze_rod || 0) > 0)) return null;
   // Not while the crossing is not next: the Overworld's endermen chosen for
   // the pearls (pearl-routes.js), or rods, powder or eyes in the home chest,
   // which are fetched first (game-progress.js nextGameStage) and may be enough.
@@ -277,8 +285,13 @@ function kitRungs(bot, goal = {}) {
     const food = foodSupply(bot);
     if (food < stay.points) out.push({ phase: 'nether_food', action: 'nether_food', kit: 'food', carried: food, wants: stay.points });
   }
+  // The chest itself, not only the wood for one (note 760): of 122 Nether
+  // entries none carried a chest, and the wood carried in went to sticks,
+  // tables and planks there (of 55 lives that carried 2 or more rods, 24 had
+  // the wood for a chest at their start, 15 at their end). Open while no
+  // chest is carried; with the wood carried it is made now, said so.
   const wood = chestWood(bot);
-  if (!wood.carried && wood.planks < wood.wants) out.push({ phase: 'nether_chest', action: 'acquire', item: 'chest', count: 1, kit: 'chest', carried: wood.planks, wants: wood.wants });
+  if (!wood.carried) out.push({ phase: 'nether_chest', action: 'acquire', item: 'chest', count: 1, kit: 'chest', carried: wood.planks, wants: wood.wants, makesNow: wood.planks >= wood.wants });
   return out;
 }
 // The pickaxe as a budget for the stay (note 751): the uses carried against
@@ -291,13 +304,25 @@ function kitBudgetSays(bot) {
   return ` The fortress search's legs spend about ${r.perLeg} pickaxe uses a leg in the record (${r.perMinute} a minute walked; ${r.legs} legs since ${r.since}), and a search runs from a few legs to fifty: ${uses} uses carried is about ${Math.round(uses / r.perLeg)} legs.` +
     ` ${iron >= 3 ? `The iron carried makes ${Math.floor(iron / 3)} iron pickaxe${Math.floor(iron / 3) === 1 ? '' : 's'} (250 uses each) with two sticks apiece` : raw >= 3 ? `The ${raw} raw iron carried makes iron pickaxes only smelted, in a furnace with fuel (both carried, it smelts in the Nether too)` : 'No iron is carried for another'}; a wooden pickaxe is 59 uses.`;
 }
+// The chest rung, said (note 760): what a chest is for (the rods kept
+// through a death, stash_rods in the Nether), the record of the rods
+// carried without one, and its cost: 8 planks and one slot, made now from
+// the wood carried or with wood still to get.
+function chestRungSays(rung) {
+  const { RECORD, CHEST_RECORD: c } = require('./rod-risk'), r = RECORD.reached[2];
+  const cost = rung.makesNow
+    ? ` The wood carried makes it now (${rung.carried} planks' worth${rung.wants > CHEST_PLANKS ? ', 4 of them for a crafting table' : ', a crafting table carried'}): a few seconds. Wood carried in unmade is spent there on sticks, tables and planks: of the ${c.lives2} lives that carried 2 or more rods in the Nether, ${c.woodAtStart} had the wood for a chest at their start and ${c.woodAtEnd} at their end.`
+    : ` ${rung.carried} planks' worth of wood carried of the ${rung.wants} it takes${rung.wants > CHEST_PLANKS ? ' (8 for the chest, 4 for a crafting table, none carried)' : ''}.`;
+  return ` What it is for: a death in the Nether drops every rod carried where the bot falls, and it comes back to life in the Overworld; rods put in a chest there (stash_rods, a second or so) are kept through a death, counted as held and taken out on the way back. From ${RECORD.from} to ${RECORD.to}, ${r[0]} lives carried 2 or more rods in the Nether: ${r[1]} died with them, none carried them out, ${RECORD.rodsLost} rods lost in all; of the ${c.deaths2} deaths that dropped 2 or more rods, ${c.deaths2Neither} carried neither a chest nor the wood for one, so nothing could keep them. Of ${c.entries} Nether entries, ${c.withChest} carried a chest. Its cost: 8 planks (2 logs) and one slot.${cost}`;
+}
+
 // What a kit rung is and costs, for the strategy question: short and plain.
 // The steps a pickaxe or the blocks take come beside it (strategy.js
 // rungTakes); the food's ways are priced here, the nearest first.
 function kitRungSays(bot, goal, rung) {
   if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? (countOf(bot, 'iron_ingot') >= 3 ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : `Iron: 3 of the ${require('./pickaxe-budget').smeltableIron(bot).says}, about 250 uses.`) : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}${kitBudgetSays(bot)}`;
   if (rung.kit === 'blocks') return ` ${rung.carried} blocks carried of the ${rung.wants} the crossing takes (cobblestone, netherrack, dirt and the like): a portal can open on a ledge or an island over lava, a bridge takes a block a step, and spans stopped where the blocks ran out (notes 650, 655). Stone mined wears the pickaxe a use a block.`;
-  if (rung.kit === 'chest') { const h = require('./rod-stash').HELD[2]; return ` A chest (8 planks, one slot) to leave the rods in at the fortress: a death drops all carried, a chest keeps them. Of ${h.n} times a bot in the Nether first held 2 or more rods, ${h.died} died with them before leaving (${require('./rod-stash').HELD.from} to ${require('./rod-stash').HELD.to}). ${rung.carried} planks' worth of wood carried${rung.wants > CHEST_PLANKS ? ' and no crafting table' : ''}.`; }
+  if (rung.kit === 'chest') return chestRungSays(rung);
   if (rung.kit !== 'food') return '';
   const stay = netherStay(bot, goal), c = require('./food-facts').RECORD.crossings;
   const left = [stay.rodsLeft ? `${stay.rodsLeft} blaze rods` : null, stay.pearlsLeft ? `${stay.pearlsLeft} ender pearls` : null].filter(Boolean).join(' and ');
@@ -314,4 +339,4 @@ function kitRungSays(bot, goal, rung) {
   return ` ${rung.carried} food points carried, ${rung.wants} wanted: the Nether stay the goal still needs, about ${stay.minutes} minutes for ${left}, at about ${NETHER_HUNGER_AN_HOUR} hunger an hour. Health comes back only at hunger 18 or more, and in the Nether a hoglin is the only meat. At the crossing ${c.none} of ${c.n} carried no food and ${c.shortOfStay} were short of the stay (note 664).${ways}`;
 }
 
-module.exports = { kitBlocksWanted, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { kitBlocksWanted, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, chestRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

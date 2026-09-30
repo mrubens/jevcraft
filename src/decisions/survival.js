@@ -288,8 +288,8 @@ define({
 // of the stay's food (note 664). What is left here is the rest of the kit.
 define({
   id: 'crossing_kit', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
-  question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (health, gold, wood, a cauldron) or leave the valuables behind?',
-  trigger: 'In the Overworld on the way through a portal, in Survival, with health, gold or wood short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap); the food, blocks and spare pickaxe are the ladder\'s rungs and are only said here, as left from them; held until what is on offer changes or for ten working minutes.',
+  question: 'Cross into the Nether with the kit carried now, or first top up one named item of it (health, gold, wood, a cauldron, a chest) or leave the valuables behind?',
+  trigger: 'In the Overworld on the way through a portal, in Survival, with health, gold or wood short of what the code would take, valuables carried that could be left, or a cauldron and water bucket for the Nether fire makeable from what is carried (an offer, not a gap), or a chest makeable from the wood carried while the goal wants blaze rods (an offer, note 760); the food, blocks and spare pickaxe are the ladder\'s rungs and are only said here, as left from them; held until what is on offer changes or for ten working minutes.',
   source: 'src/work.js (crossingKitReady), src/crossing-kit.js (kitItems, valuablesAt)',
   options: [
     { key: 'cross_now', label: 'cross with what is carried', when: 'always; said with each item of the kit and what the ladder\'s kit rungs left short', level: 'root' },
@@ -297,6 +297,7 @@ define({
     { key: 'top_up_gold', label: 'make golden boots first, a piece of gold worn so piglins leave the bot be', when: 'no piece of golden armour carried', level: 'root' },
     { key: 'top_up_wood', label: 'gather logs up to eight and make a crafting table first', when: 'fewer than eight logs or no crafting table carried', level: 'root' },
     { key: 'top_up_cauldron', label: 'make a cauldron and fill a bucket with water first, to put a fire out in the Nether', when: 'no complete set (a cauldron and a water bucket) carried, and one makeable from what is carried: a cauldron or seven iron ingots, and a water bucket or an empty bucket; it makes the question worth asking even with nothing short; said with the iron it costs, the slots, what the cauldron does (the fire out a tenth of a second after the feet are under its water, in the Nether too), the seconds it takes to put down and step into, and that the bucket is emptied into it (note 634)', level: 'root' },
+    { key: 'top_up_chest', label: 'make a chest from the wood carried first and carry it in, to keep rods in through a death', when: 'the goal still wants blaze rods, no chest carried and the wood for one carried (8 planks, 4 more for a table when none is carried); it makes the question worth asking even with nothing short; said with what a chest is for (stash_rods keeps rods through a death), the record of lives that carried rods without one, and its cost (crossing-kit.js chestRungSays, note 760)', level: 'root' },
     { key: 'stash_valuables', label: 'walk home and leave the valuables in the stash chest first', when: 'the home stash chest within 128 blocks and valuables carried', level: 'root' },
     { key: 'cache_valuables', label: 'leave the valuables in a chest put down here first', when: 'home\'s chest out of reach, valuables carried, and a chest or the wood for one', level: 'root' },
   ],

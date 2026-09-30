@@ -15,7 +15,10 @@
 // line, out_of_their_line three blocks off; encounter_stance with a blaze
 // about, where the inventory carried a chest or the wood for one, stash_rods
 // in their fire, priced from the recorded estimate's mobs for its seconds.
-//   node scripts/rod-stage-reask.js --lives <rod-stage --json file> [--dir <flight dir>] [--runs 3] [--min-rods 2] [--limit 40] [--simulate]
+// With --simulate --bank (note 760): only bank_rods is added, to empty_spawner
+// and hunt_target with 2 or more rods carried, the portal the last Nether
+// entry on that port before the question (rod-bank.js offerSays).
+//   node scripts/rod-stage-reask.js --lives <rod-stage --json file> [--dir <flight dir>] [--runs 3] [--min-rods 2] [--limit 40] [--simulate [--bank]]
 require('../src/env').loadEnv();
 const fs = require('fs');
 const path = require('path');
@@ -24,7 +27,7 @@ const args = Object.fromEntries(process.argv.slice(2).reduce((out, a, i, all) =>
 const dir = args.dir || path.join(__dirname, '..', '.bot-state', 'flight');
 const runs = Number(args.runs || 3), minRods = Number(args['min-rods'] || 2), limit = Number(args.limit || 40);
 const IDS = new Set(args.ids ? args.ids.split(',') : ['encounter_stance', 'hunt_target', 'turn_priority', 'empty_spawner', 'body_way']);
-const AWAY = /^(stash_rods|leave_and_heal|retreat|leave_reach|out_of_sight|step_out|wait_far_off|heal_first|go_back|eat|step_out_and_eat|vitals|out_of_their_line|seal|nook|dig_down|take_cover|portal_back)$/;
+const AWAY = /^(bank_rods|stash_rods|leave_and_heal|retreat|leave_reach|out_of_sight|step_out|wait_far_off|heal_first|go_back|eat|step_out_and_eat|vitals|out_of_their_line|seal|nook|dig_down|take_cover|portal_back)$/;
 const kindOf = (id, k) => k === 'none_good' ? 'none_good' : id === 'turn_priority' ? (k === 'survival' || k === 'vitals' ? 'away' : 'stay') : AWAY.test(k) ? 'away' : 'stay';
 
 // The recorded questions: the last of each id in the minute before the death.
@@ -36,16 +39,54 @@ function questionsOf(life) {
     let x; try { x = JSON.parse(line); } catch (_) { continue; }
     const d = x.snapshot?.decision, at = Date.parse(x.at);
     if (!d || !IDS.has(d.id) || at < t - 60000 || at > t || !d.options || !d.state) continue;
-    out.set(d.id, { id: d.id, at: x.at, choice: d.path?.at(-1), options: d.options, state: d.state, inventory: x.snapshot.inventory || {} });
+    out.set(d.id, { id: d.id, at: x.at, choice: d.path?.at(-1), options: d.options, state: d.state, inventory: x.snapshot.inventory || {}, position: x.snapshot.position });
   }
   return [...out.values()];
 }
 // A body to say the rods from: the recorded inventory, in the Nether.
 const bodyOf = inv => ({ game: { dimension: 'the_nether' }, inventory: { items: () => Object.entries(inv).map(([name, count]) => ({ name, count })) } });
 
-// The options note 759 adds, as they would have been said here (--simulate).
-function simulated(q) {
+// Where the bot last came into the Nether on this port before `t`: the first
+// frame in the Nether after one in the Overworld, the portal it came through
+// (the record holds no goal.portals). Up to six records back.
+function portalBefore(file, t) {
+  const port = (file.match(/-(\d{5})-Jev-/) || [])[1];
+  const stamp = f => Date.parse(f.replace(/^.*-Jev-/, '').replace(/\.jsonl$/, '').replace(/T(\d\d)-(\d\d)-(\d\d)-(\d+)Z/, 'T$1:$2:$3.$4Z'));
+  const files = fs.readdirSync(dir).filter(f => f.includes(`-${port}-Jev-`) && f.endsWith('.jsonl') && stamp(f) <= t).sort((a, b) => stamp(b) - stamp(a)).slice(0, 6);
+  for (const f of files) {
+    let prev = null, found = null;
+    for (const line of fs.readFileSync(path.join(dir, f), 'utf8').split('\n')) {
+      const m = line.match(/"at":"([^"]+)"/), dim = line.match(/"dimension":"(overworld|the_nether)"/), pos = line.match(/"position":\{"x":(-?[\d.]+),"y":(-?[\d.]+),"z":(-?[\d.]+)\}/);
+      if (!dim) continue;
+      const at = m ? Date.parse(m[1]) : NaN;
+      if (at > t) break;
+      if (dim[1] === 'the_nether' && prev === 'overworld' && pos) found = { x: Number(pos[1]), y: Number(pos[2]), z: Number(pos[3]) };
+      prev = dim[1];
+    }
+    if (found) return found;
+  }
+  return null;
+}
+
+// The options note 759 adds, as they would have been said here (--simulate);
+// with --bank, bank_rods (note 760) where the rods stage's questions would
+// have had it.
+function simulated(q, life) {
   const add = {};
+  if (args.bank) {
+    if (!/^(empty_spawner|hunt_target)$/.test(q.id) || (q.inventory.blaze_rod || 0) < 2 || !q.position || !life) return add;
+    const portal = portalBefore((life.files || [life.file]).at(-1), Date.parse(q.at));
+    if (!portal) return add;
+    const inv = q.inventory, rb = require('../src/rod-bank'), gp = require('../src/game-progress');
+    const d = Math.round(Math.hypot(portal.x - q.position.x, portal.z - q.position.z));
+    const body = { game: { dimension: 'the_nether' }, health: q.state.health ?? 20, inventory: { items: () => Object.entries(inv).map(([name, count]) => ({ name, count })) } };
+    const pace = gp.netherPaceSays(body, d);
+    const rods = inv.blaze_rod + Math.floor((inv.blaze_powder || 0) / 2);
+    const offer = { rods, wanted: 7, left: Math.max(1, 7 - rods), d, seconds: Math.round(pace.seconds), paceSays: pace.says,
+      what: ['blaze_rod', 'blaze_powder', 'ender_pearl', 'ender_eye'].filter(n => inv[n]).map(n => ({ item: n, count: inv[n] })), chest: rb.chestThere({ ...body, entity: null }, {}) };
+    add.bank_rods = { description: rb.offerSays(offer) };
+    return add;
+  }
   const text = v => String(typeof v === 'string' ? v : v?.description ?? '');
   if (q.id === 'body_way' && Object.values(q.options).some(v => /Its end is in the line of the blaze/.test(text(v)))) {
     const hp = Math.round((q.state.health ?? 20) * 10) / 10, left = Math.max(1, Math.round(q.state.fireLeftSeconds || 5)), takes = q.state.healthItTakes ?? left;
@@ -80,18 +121,18 @@ if (require.main === module) (async () => {
   for (const life of lives) {
     for (const q of questionsOf(life)) {
       if (n >= limit) break;
-      if (args.simulate && !Object.keys(simulated(q)).length) continue;
+      if (args.simulate && !Object.keys(simulated(q, life)).length) continue;
       n++;
       const tree = Object.fromEntries(Object.entries(q.options).filter(([k]) => k !== 'none_good').map(([k, v]) => [k, typeof v === 'string' ? { description: v } : v]));
       const said = risk(bodyOf(q.inventory), { kind: 'win' });
       for (const arm of ['before', 'after']) {
         const state = arm === 'after' && said ? { ...q.state, rodsAtRisk: said.says } : q.state;
-        const armTree = arm === 'after' && args.simulate ? { ...tree, ...simulated(q) } : tree;
+        const armTree = arm === 'after' && args.simulate ? { ...tree, ...simulated(q, life) } : tree;
         for (let i = 0; i < runs; i++) {
           let k;
           try { const r = await decide(q.id, { client, bot: null, goal: {}, tree: JSON.parse(JSON.stringify(armTree)), state }); k = r.noneGood ? 'none_good' : r.path[0]; } catch (err) { k = `error`; }
           const kind = kindOf(q.id, k);
-          if (arm === 'after' && args.simulate && /^(stash_rods|out_of_their_line)$/.test(k)) (tally.newChosen ||= {})[k] = (tally.newChosen[k] || 0) + 1;
+          if (arm === 'after' && args.simulate && /^(stash_rods|out_of_their_line|bank_rods)$/.test(k)) (tally.newChosen ||= {})[k] = (tally.newChosen[k] || 0) + 1;
           tally[arm][kind] = (tally[arm][kind] || 0) + 1;
           ((byId[q.id] ||= { before: {}, after: {} })[arm][kind] = (byId[q.id][arm][kind] || 0) + 1);
         }

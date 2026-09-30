@@ -69,7 +69,7 @@ const listed = contents => KEPT.filter(n => (contents?.[n] || 0) > 0).map(n => p
 function stashSays(goal) {
   const s = stashed(goal);
   if (!s.chests.length) return '';
-  return s.chests.map(c => `${listed(c.contents)} in a chest at ${at(c.position)} in the ${c.dimension === 'nether' ? 'Nether' : c.dimension}`).join('; ');
+  return s.chests.map(c => `${listed(c.contents)} in a chest at ${at(c.position)} in the ${c.dimension === 'nether' ? 'Nether' : c.dimension === 'overworld' ? 'Overworld' : c.dimension}`).join('; ');
 }
 
 // What the risk of carrying them is, from the records.
@@ -206,9 +206,11 @@ function carriedSays(offer) {
 }
 
 // Put them in. -> true when stored.
-async function stashRods(bot, task, goal, save, actions, offer) {
+// `opts` (rod-bank.js, note 760): the step's name, the rest a failure takes
+// ([kind, key]) and the chat once stored.
+async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_rods', rest = ['rod_stash', 'here'], chat = null } = {}) {
   const moves = offer.what;
-  goal.step = { action: 'stash_rods', items: moves, at: offer.existing ? offer.existing.position : P(offer.site.cell) }; save?.();
+  goal.step = { action: step, items: moves, at: offer.existing ? offer.existing.position : P(offer.site.cell) }; save?.();
   try {
     let entry = offer.existing, cell;
     if (entry) cell = V(entry.position);
@@ -241,11 +243,12 @@ async function stashRods(bot, task, goal, save, actions, offer) {
     if (!stored.length) throw new Error('Nothing went into the chest');
     entry.storedAt = new Date().toISOString(); save?.();
     try { require('./after-rod').noteRods(bot); } catch (_) { /* no record */ }
-    bot.chat?.(`Left ${listed(Object.fromEntries(stored.map(m => [m.item, m.count])))} in a chest at ${at(entry.position)}. I'll take them on the way out.`);
+    const what = listed(Object.fromEntries(stored.map(m => [m.item, m.count])));
+    bot.chat?.(chat ? chat(what, at(entry.position)) : `Left ${what} in a chest at ${at(entry.position)}. I'll take them on the way out.`);
     return true;
   } catch (err) {
     task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-    setAside(goal, 'rod_stash', 'here', err, REST_MS);
+    setAside(goal, rest[0], rest[1], err, REST_MS);
     goal.rodStashFailed = { at: new Date().toISOString(), why: err.message }; save?.();
     return false;
   }
@@ -285,7 +288,7 @@ async function collect(bot, task, goal, save, actions = {}) {
   const entry = stashes(goal).find(c => c.position.x === stage.at.x && c.position.y === stage.at.y && c.position.z === stage.at.z);
   const key = at(entry.position), cell = V(entry.position);
   goal.step = { action: 'collect_rod_stash', at: P(cell), distance: stage.distance, items: { ...entry.contents } }; save?.();
-  if (!entry.announced) { entry.announced = true; bot.chat?.(`Taking ${listed(entry.contents)} out of the chest at ${key} before the portal.`); }
+  if (!entry.announced) { entry.announced = true; bot.chat?.(`Taking ${listed(entry.contents)} out of the chest at ${key}${entry.dimension === 'nether' ? ' before the portal' : ''}.`); }
   try {
     if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) {
       if (!actions.navigate) throw new Error('No way to walk to the chest');
@@ -318,4 +321,4 @@ async function collect(bot, task, goal, save, actions = {}) {
   }
 }
 
-module.exports = { nearStash, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
+module.exports = { nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };

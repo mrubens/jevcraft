@@ -78,7 +78,7 @@ test('rodsAtRisk: carried in the Nether, what a death drops and the record\'s ro
   assert.equal(r.says, '5 rods carried, 7 wanted; 2 still needed. A death here drops the 5 blaze rods where the bot falls (lava burns them, on the ground they vanish five minutes after) and it comes back to life in the Overworld. In the trials of 2026-09-29T23:00Z to 2026-09-30T17:00Z, 13 lives carried 5 or more rods in the Nether: 13 died with them, none carried them out. No chest is carried; the wood carried makes one to keep them in (stash_rods).');
   // What could keep them: 24 of the 34 rod-dropping blaze deaths carried neither a chest nor wood.
   const bare = sceneBot({ rods: 5 }); for (const i of bare.inventory.items()) if (/_log$|crafting_table/.test(i.name)) i.count = 0;
-  assert.match(risk.risk(bare, { kind: 'win' }).says, /No chest is carried and no wood to make one \(8 planks, and 4 more for a table\): nothing here keeps them, and every rod carried is lost with a death\.$/);
+  assert.match(risk.risk(bare, { kind: 'win' }).says, /No chest is carried and no wood to make one \(8 planks, and 4 more for a table\): nothing here keeps them, and every rod carried is lost with a death; the Overworld's trees, past the portal, make one\.$/);
   const boxed = sceneBot({ rods: 5 }); boxed.inventory.items().push({ name: 'chest', count: 1 });
   assert.equal(risk.keepSays(boxed, { kind: 'win' }), 'A chest is carried to keep them in (stash_rods).');
   assert.match(risk.recordSays(2), /55 lives carried 2 or more rods in the Nether: 49 died with them, none carried them out \(6 ended with the trial\)\./);

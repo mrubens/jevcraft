@@ -754,6 +754,13 @@ function nextGameStage(bot, goal, skip = new Set()) {
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
   const errand = errandStage(bot, goal, where);
   if (errand) return errand;
+  // Rods banked (rod-bank.js, note 760): out through the portal and into a
+  // chest on the Overworld side while that is under way; taken out there once
+  // the rods carried and banked are what the goal wants.
+  const bank = require('./rod-bank').bankStage(bot, goal, where);
+  if (bank) return bank;
+  const banked = require('./rod-bank').collectHere(bot, goal);
+  if (banked) return banked;
   // Early game only: once any Nether or End supply is in hand, the run has
   // moved past preparation and the later stages own what to fetch next.
   // The first Nether entry is not that line: a death empties the pockets,
@@ -966,6 +973,7 @@ async function gameStep(bot, task, goal, save, actions) {
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
   else if (stage.action === 'collect_rod_stash') await require('./rod-stash').collect(bot, task, goal, save, actions.stashActions || actions);
+  else if (stage.action === 'bank_rods') await require('./rod-bank').bank(bot, task, goal, save, actions.stashActions || actions);
   else if (stage.action === 'home_with_rods') await readyForHomeStep(bot, task, goal, save, actions);
   else if (stage.action === 'nether_food') {
     if (!actions.nether_food) throw Object.assign(new Error('Game progression is blocked at the food for the Nether: the nether food action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });

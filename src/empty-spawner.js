@@ -162,6 +162,9 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
   const stash = require('./rod-stash').stashOffer(bot, goal, { now });
   if (stash) tree.stash_rods = { description: require('./rod-stash').offerSays(stash, { riskInState: true }), secs: stash.seconds, rodsCarried: require('./rod-stash').carriedSays(stash),
     run: () => require('./rod-stash').stashRods(bot, task, goal, save, { ...actions, place: actions?.place || require('./work').place }, stash) };
+  // The rods got so far banked past the portal (rod-bank.js, note 760).
+  const bank = require('./rod-bank').bankOffer(bot, goal, { now });
+  if (bank) tree.bank_rods = require('./rod-bank').option(bot, task, goal, save, actions, bank);
   const canFeed = f.hunger < 18 && f.points > 0;
   if ((f.health < 20 && f.healable) || canFeed) {
     tree.heal_first = { description: `${f.items && f.hunger < 20 ? `Eat what is carried (hunger to ${f.eatenTo}) and w` : 'W'}ait here${f.health < 20 && f.healable ? ` until health is full: about ${f.seconds} seconds` : ''}, at most three minutes, then asked again. ${off <= RANGE ? 'Within sixteen of the spawner, as the bot is now, blazes may come meanwhile; a mob ends the wait.' : 'Beyond sixteen of the spawner none come from it meanwhile.'}${quiet && f.health < 20 && f.healable ? require('./spawner-clock').jobSays(quiet, f.seconds) : ''} No rod meanwhile.`,
