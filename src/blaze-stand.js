@@ -1407,9 +1407,20 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const crowd = about.filter(e => e.position.distanceTo(box.cell.offset(0.5, 1, 0.5)) <= 4).length;
     const m = measuredSays(key === 'box_here' ? 'box_here' : 'box', bot);
     const where = box.steps ? `Walk ${n(box.steps, 'block')} (about ${round(walk)} seconds) to a cell${cageOff != null ? ` ${cageOff} blocks from the spawner's cage` : ''}` : `Where the bot stands${cageOff != null ? `, ${cageOff} blocks from the spawner's cage` : ''}`;
+    // Already whole (no steps, nothing left to place): said as holding it, not
+    // building it again, the way empty-spawner.js's own box already does
+    // (note 719: 25597's hunt_target kept saying "wall it in" of a box it
+    // was already standing whole inside, 23 times in 3.5 minutes).
+    const already = !box.steps && !box.blocks;
+    const buildSays = already ? 'the box whole already' : `wall it in at feet and head on all four sides and roof it (${n(box.blocks, 'block')} to place of the ${T.blocksCarried(bot)} carried${box.dig ? ', and the window dug' : ''}), leaving one block open at head height ${cageNear ? 'toward the spawner' : 'toward the blazes'}`;
+    // The one nearby blaze named, not folded into "none of N about", when it
+    // is the only one and it is out of the window's line (note 719, item 1c).
+    const noneInLine = about.length === 1
+      ? `the one blaze about, ${round(about[0].position.distanceTo(bot.entity.position))} blocks off, is not in line with the window now`
+      : `none of the ${about.length} about is in line with the window now`;
     options[key] = { kind: 'box', site: box, sees: inLine.length, about: about.length, expects: { damage: round(setup.damage + hold), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
-      description: `${where}, wall it in at feet and head on all four sides and roof it (${n(box.blocks, 'block')} to place of the ${T.blocksCarried(bot)} carried${box.dig ? ', and the window dug' : ''}), leaving one block open at head height ${cageNear ? 'toward the spawner' : 'toward the blazes'}, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front${shield ? ', where the shield faces each volley' : ' (no shield carried to meet it)'}; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window.${byCage ? ' Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come.' : cageNear ? ' The spawner puts its blazes within four of its cage, not beside this box: those that see in through the window shoot from there.' : ' No spawner puts any beside this box: the blazes about now stay where they hover.'}${cageNear ? T.windowSays(box.line || T.windowLine(bot, box, cageNear)) : ''}${crowd ? ` ${crowd === 1 ? 'A blaze is' : `${crowd} blazes are`} within four blocks of that cell now: one in a cell to be walled holds that block out until it moves or is struck.` : ''} Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back.${spawnSays}` +
-        ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); in it, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : `none of the ${about.length} about is in line with the window now`}. Food can be eaten in it. It is held up to ${Math.min(45, runs)} seconds${again ? ' at a time, and asked again then' : ''}, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight.` + (quiet ? ` Now no blaze sees the bot: the walls go up out of their fire.${require('./spawner-clock').jobSays(quiet, walk + build)}` : '') + m.says };
+      description: `${where}: ${buildSays}, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front${shield ? ', where the shield faces each volley' : ' (no shield carried to meet it)'}; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window.${byCage ? ' Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come.' : cageNear ? ' The spawner puts its blazes within four of its cage, not beside this box: those that see in through the window shoot from there.' : ' No spawner puts any beside this box: the blazes about now stay where they hover.'}${cageNear ? T.windowSays(box.line || T.windowLine(bot, box, cageNear)) : ''}${crowd ? ` ${crowd === 1 ? 'A blaze is' : `${crowd} blazes are`} within four blocks of that cell now: one in a cell to be walled holds that block out until it moves or is struck.` : ''} Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back.${spawnSays}` +
+        `${already ? ' Nothing left to build; holding it' : ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); holding it`}, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : noneInLine}. Food can be eaten in it. It is held up to ${Math.min(45, runs)} seconds${again ? ' at a time, and asked again then' : ''}, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight.` + (quiet ? ` Now no blaze sees the bot: the walls go up out of their fire.${require('./spawner-clock').jobSays(quiet, walk + build)}` : '') + m.says };
   }
 
   // Lighting the spawner.
@@ -1730,7 +1741,22 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
 // The hunt's run of a stand: taken, then held as the bunker is held (the
 // shield up facing out, the sword at what comes, until a rod is in hand,
 // the blazes are quiet or the hold runs out), then the rods picked up.
-async function huntFromStand(bot, task, goal, save, actions, option, { item = 'blaze_rod', want = 1 } = {}) {
+// Held the way a chosen stance is (danger.js stanceHeld), whatever asked
+// for it: hunt_target's box, hole or wall (mob-hunt.js) and empty_spawner's
+// box or hole (empty-spawner.js buildAndHold) neither one goes through
+// encounter_stance's stanceStep, so bot._stance was never set for them and
+// note 709's "a stance answers its own volleys" never saw the hold (note
+// 719). `option.key` is the tree's own choice name (box_here, box_at_spawner,
+// dig_in_and_fight, dig_in_at_spawner, break_spawner, back_to_wall,
+// close_in, charge_nearest, fight_at_spawner, corner_ambush, leave_and_heal,
+// wait_far_off): the same names shot-reflex.js STANCE_SHOTS already knows.
+async function huntFromStand(bot, task, goal, save, actions, option, opts = {}) {
+  const choice = option.key || null;
+  if (choice) bot._standHold = { choice, at: Date.now(), health: bot.health };
+  try { return await huntFromStandRun(bot, task, goal, save, actions, option, opts); }
+  finally { if (choice && bot._standHold?.choice === choice) delete bot._standHold; }
+}
+async function huntFromStandRun(bot, task, goal, save, actions, option, { item = 'blaze_rod', want = 1 } = {}) {
   const { countOf } = require('./skills');
   const before = countOf(bot, item);
   if (option.kind === 'break') {

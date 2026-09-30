@@ -157,6 +157,14 @@ function settle(bot, s) {
   const tally = bot._shotTally ||= { up: { landed: 0, not: 0 }, down: { landed: 0, not: 0 } };
   const up = shieldHeld(bot);
   tally[up ? 'up' : 'down'][s.landed ? 'landed' : 'not']++;
+  // The hold's own tally, said to keep_on instead of only the average rate
+  // (note 719: 25597 stood boxed 3.5 minutes with keep_on saying a landing
+  // costs 3.9 health, true on average, while none had landed on the boxed
+  // bot in that whole time).
+  try {
+    const held = require('./danger').stanceHeld(bot);
+    if (held) { held.shotsFaced = held.shotsFaced || { landed: 0, not: 0 }; held.shotsFaced[s.landed ? 'landed' : 'not']++; }
+  } catch (_) { /* no hold */ }
   bot.emit('shot', { name: s.name, landed: !!s.landed, shield: up ? 'up' : 'down', answer: s.answer || null, by: s.by || null });
 }
 
@@ -474,7 +482,14 @@ function shotOptions(bot, warned) {
     tree.strike_first = { description: `Strike the ${near.name} at arm's length with ${weapon.replaceAll('_', ' ')}: about ${swings} swing${swings === 1 ? '' : 's'}, ${seconds} seconds, against ${round(firesIn(bot, near))} seconds before it shoots; if it lives, its shots land.`, target: near.id };
   }
   const hits = warned.map(e => { const m = MOBS[e.name]; return m ? `the ${e.name.replaceAll('_', ' ')}'s ${shotWord(e.name)}, about ${round(afterArmour(m.hit, worn))} health a landing${e.name === 'blaze' ? ' (three shots, each setting the bot alight five seconds more, about one health a second)' : ''}` : null; }).filter(Boolean);
-  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.` };
+  // Whether shots have actually been landing here, not only their average
+  // cost: a box or hold's own tally, kept since it was chosen (note 719).
+  const held = (() => { try { return require('./danger').stanceHeld(bot); } catch (_) { return null; } })();
+  const faced = held?.shotsFaced;
+  const heldSays = faced && faced.landed + faced.not > 0
+    ? ` Held here (${held.choice.replaceAll('_', ' ')}) so far: ${faced.landed ? `${faced.landed} of ${faced.landed + faced.not} shots on the way have landed` : `none of ${faced.not} shot${faced.not === 1 ? '' : 's'} on the way has landed`}.`
+    : '';
+  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.${heldSays}` };
   return tree;
 }
 // The rest of the room against that facing: the blazes within sixteen, in

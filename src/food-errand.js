@@ -57,7 +57,13 @@ function noYield(e, supply, now = Date.now()) {
 }
 function yieldSays(e, supply, now = Date.now()) {
   if (!e || e.asks < 2) return '';
-  return ` This errand so far: ${plural(minutes(now - e.since), 'minute')}, asked ${plural(e.asks, 'time')}, ${e.start} points carried at its start and ${supply} now${e.best > Math.max(e.start, supply) + EPS ? ` (the most ${e.best})` : ''}.`;
+  // How many different animals it has gone after, not only the points
+  // (note 719): the 3-minute no-yield rest measures points kept, and a
+  // small gain resets its clock every time one is found, whichever animal
+  // it came from; a search that keeps switching targets without a kill
+  // between gains is not caught by that alone, so it is said here, plainly.
+  const chased = e.targetsChased > 1 ? `, ${plural(e.targetsChased, 'animal')} chased` : '';
+  return ` This errand so far: ${plural(minutes(now - e.since), 'minute')}, asked ${plural(e.asks, 'time')}${chased}, ${e.start} points carried at its start and ${supply} now${e.best > Math.max(e.start, supply) + EPS ? ` (the most ${e.best})` : ''}.`;
 }
 function restWhy(e, supply, now = Date.now()) {
   return `${plural(minutes(now - e.window.since), 'minute')} of the food errand kept nothing: ${e.window.start} points carried then, ${supply} now`;

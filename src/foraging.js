@@ -196,6 +196,17 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     valid: () => bot.entities[target.id] === target && target.isValid !== false && preyFood(bot, target) === item && target.position.distanceTo(observed) < 2,
     run: async () => {
       goal.survivalAction = { action: 'gather_food', animal: target.name, position: { ...target.position }, at: new Date().toISOString() }; save();
+      // A new animal chased this errand, said in its yield (note 719: 25588
+      // was asked survival_priority 76 times over 8 minutes chasing cows,
+      // a different one picked most re-askings, and nothing in the errand's
+      // words said so; note 702's 3-minute no-yield rest never caught it
+      // because a small gain kept coming, on average every 1 to 2 minutes,
+      // just never absent for a full 3).
+      const id = target.uuid || target.id;
+      if (state.foodErrand && state.foodErrand.lastTargetId !== id) {
+        state.foodErrand.targetsChased = (state.foodErrand.targetsChased || 0) + 1;
+        state.foodErrand.lastTargetId = id;
+      }
       const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
       try { await hunt(bot, task, target, actions, goal, save); }
       catch (err) {

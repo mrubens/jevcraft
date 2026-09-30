@@ -548,9 +548,21 @@ const STANCE_HOLD_MS = 15000, STANCE_HEALTH = 6, STANCE_NEWCOMER = 6;
 // A stance held on past its estimate with nothing new (holds.js, note 599)
 // holds to its hold's time.
 const stanceEnds = s => s.hold?.extended ? s.hold.until : s.at + STANCE_HOLD_MS;
+// A box, hole or wall Jev chose outside encounter_stance (the hunt's own
+// hunt_target, or empty_spawner's lull) holds the same way while it is
+// actively run: blaze-stand.js huntFromStand keeps bot._standHold up for as
+// long as its run() is in flight (note 719: 25597 stood boxed 3.5 minutes
+// with shot_answer asked 23 times, about every 9 seconds, because box_here
+// chosen through hunt_target never set bot._stance, so note 709's stance
+// answer never saw it holding).
+function standHeld(bot, now = Date.now()) {
+  const s = bot?._standHold;
+  return s && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
+}
 function stanceHeld(bot, now = Date.now()) {
   const s = bot?._stance;
-  return s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
+  if (s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH) return s;
+  return standHeld(bot, now);
 }
 // The mobs the stance holds against: those it was chosen against (its ids)
 // still within the twenty-four a stance counts, nearest first, for as long
@@ -748,4 +760,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
