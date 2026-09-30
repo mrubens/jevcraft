@@ -2865,13 +2865,52 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   // Room for what waits in the furnace, asked of Jev (the drop question),
   // the window shut meanwhile and opened again after: every take of an
   // output goes this way, the batch's own and another's (note 754c).
+  // Takes that came to nothing: the output left in the furnace (the server
+  // found no slot), or thrown on the ground (mineflayer's putAway throws
+  // what the cursor holds when the window has no slot for it: a furnace's
+  // output is a result slot). Every one of the 21 "timed out ... after
+  // smelting" since 2026-09-30T12Z but one had 0 free slots at the wait;
+  // the take had been counted as the output's count whatever arrived, and
+  // the ingots were in the furnace or on the floor (note 766).
+  let refused = 0, thrown = 0;
+  const refills = [];
   const roomFirst = async name => {
     try { if (bot._syncWindow) await bot._syncWindow(furnace); } catch (_) { /* best effort */ }
     furnace.close();
     try { if (bot._syncWindow) await bot._syncWindow(bot.inventory); } catch (_) { /* best effort */ }
-    await makeRoom(bot, task, name, { keep: keepForSmelt, away: block.position, room: () => (bot.inventory.emptySlotCount?.() ?? 1) > 0, purpose: `the ${name.replaceAll('_', ' ')} waiting in the furnace` });
+    // Said when the room made before was filled again: what was thrown for
+    // it lies at the feet and is picked up again beside the furnace (25590,
+    // 19:00:21Z: the dirt thrown, a stone pickaxe off the floor in its slot).
+    const again = refills.length ? ` The room made before was filled again before the take (${[...new Set(refills)].join(', ')} picked up off the floor beside the furnace), ${refused} time${refused === 1 ? '' : 's'}.` : '';
+    await makeRoom(bot, task, name, { keep: keepForSmelt, away: block.position, room: () => (bot.inventory.emptySlotCount?.() ?? 1) > 0, purpose: `the ${name.replaceAll('_', ' ')} waiting in the furnace.${again}` });
+    const afterDrop = new Set(bot.inventory.items().map(i => i.name));
     furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
+    if (!roomInWindow()) for (const k of kinds().keys()) if (!afterDrop.has(k)) refills.push(k.replaceAll('_', ' '));
   };
+  const windowSlots = () => Array.isArray(furnace.slots) && Number.isInteger(furnace.inventoryStart);
+  const kinds = () => windowSlots() ? new Map(furnace.slots.slice(furnace.inventoryStart, furnace.inventoryEnd).filter(Boolean).map(i => [i.name, 0])) : new Map();
+  // The take, and what came of it read from the window as the server has
+  // it (the window synced after the click: the click is applied to
+  // mineflayer's own copy at once, whatever the server makes of it). The
+  // count that came into the pockets, 0 where nothing did.
+  const takeFrom = async name => {
+    const was = furnace.outputItem()?.count || 0, had = carried(name), before = kinds();
+    await furnace.takeOutput();
+    if (!windowSlots()) return was;
+    try { if (bot._syncWindow) await bot._syncWindow(furnace); } catch (err) { task.check(); }
+    const got = Math.max(0, carried(name) - had);
+    if (got) return got;
+    const left = furnace.outputItem();
+    if (left?.name === name && left.count >= was) {
+      refused++;
+      // What filled the slot: a kind carried now that was not before.
+      for (const k of kinds().keys()) if (!before.has(k)) refills.push(k.replaceAll('_', ' '));
+      return 0;
+    }
+    thrown += Math.max(0, was - (left?.name === name ? left.count : 0));
+    return -1;
+  };
+  const noSlot = name => new Blocked(`The ${name.replaceAll('_', ' ')} would not come out of the furnace: no free slot at the take, ${refused} time${refused === 1 ? '' : 's'}${refills.length ? ` (the room made was filled again by ${[...new Set(refills)].join(', ')} picked up off the floor)` : ''}`);
   // Another batch's output: taken with room made for it first. 25592
   // (mid-237-be, 16:54:21Z, after 754b) cooked mutton at a furnace holding
   // another batch with the pockets full, and the cook ended "Furnace
@@ -2886,20 +2925,31 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       if (!other || other.name === step.item) return;
       if (!roomInWindow()) throw new Blocked(`The furnace holds ${other.count} ${other.name.replaceAll('_', ' ')} from another batch and the pockets are full: nothing was dropped for it`);
     }
-    await furnace.takeOutput();
+    if (!await takeFrom(other.name) && furnace.outputItem()?.name === other.name) throw noSlot(other.name);
   };
+  // The room is read again after it is made and the window opened again,
+  // and the take counts what came into the pockets. Three takes that
+  // found no slot end the step, said, not a wait for what is not coming.
   const collect = async () => {
     await clearOther();
-    const output = furnace.outputItem();
-    if (!output) return;
-    if (output.name !== step.item) throw new Error('Furnace contains a different output');
-    if (!roomInWindow()) {
+    for (;;) {
+      const output = furnace.outputItem();
+      if (!output) return;
+      if (output.name !== step.item) throw new Error('Furnace contains a different output');
+      if (!roomInWindow()) {
+        if (refused >= 3) throw noSlot(step.item);
+        refused++;
+        await roomFirst(step.item);
+        continue;
+      }
+      const got = await takeFrom(step.item);
+      // Thrown on the ground: counted for the batch (it is out of the
+      // furnace) and picked up after the window shuts.
+      if (got < 0) { taken += output.count; return; }
+      if (got > 0) { taken += got; return; }
+      if (refused >= 3) throw noSlot(step.item);
       await roomFirst(step.item);
-      if (!furnace.outputItem()) return;
     }
-    const amount = output.count;
-    await furnace.takeOutput();
-    taken += amount;
   };
   try {
     await collect();
@@ -3086,7 +3136,13 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     await acquireStep(bot, task, supplies.item, supplies.count, work, checkpoint);
     return;
   }
-  await waitFor(task, () => countOf(bot, step.item) >= before + needed, 4000, awaitedItem(bot, step.item, before + needed, 'smelting'));
+  // What a take threw on the ground lies at the feet: picked up, with room
+  // (note 766).
+  if (thrown && countOf(bot, step.item) < before + needed && (bot.inventory.emptySlotCount?.() ?? 1) > 0) {
+    try { await collectNearbyDrops(bot, task, step.item, { origin: bot.entity.position.clone(), radius: 5, timeoutMs: 5000, waitForSpawnMs: 500 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  await waitFor(task, () => countOf(bot, step.item) >= before + needed, 4000, () => `${awaitedItem(bot, step.item, before + needed, 'smelting')()}${thrown ? `, ${thrown} thrown on the ground by a take with no slot` : ''}`);
   if (goal) { delete goal.smelting; save(); }
   await collectSideFurnaces(bot, task, goal, save, step.item);
   // A furnace the bot placed goes with it when it is travelling, like a

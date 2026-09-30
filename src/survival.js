@@ -1692,6 +1692,19 @@ async function eatApple(bot, task, apple) {
   catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
   finally { bot._leavingLava = wasLeaving; }
 }
+// A cell out of lava priced by the lava it costs: the blocks swum to it (each
+// 2.5 seconds at the lava's drag, 5 to 8 health through iron), and less than
+// a block more for lava beside it (it may flow in, and the body is a step
+// from it) or a drop beside it (a push away). They were four blocks each:
+// 25590 (mid-242-zg, 2026-09-30 15:31:39Z), knocked by a ghast's fireball a
+// block into a lava fall's cell, was sent three blocks through the lava for
+// a cell with nothing beside it (7.5 seconds said, 40 health, 17 carried)
+// over the one it had stood on a block back, beside the ledge's drop, and
+// burned to death in four seconds (note 766). A cell out of a swim's reach
+// stays last.
+function lavaExitCost({ blocks, lavaBeside = false, edge = false, high = false }) {
+  return blocks + (lavaBeside ? 0.5 : 0) + (edge ? 0.4 : 0) + (high ? 8 : 0);
+}
 // `dryOnly`: the same ranking as `water`, with the water cells left out, for
 // the dry way offered beside the wet one (body_way).
 function lavaExit(bot, radius = 6, { water = false, dryOnly = false, routes: given = null } = {}) {
@@ -1726,12 +1739,12 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false, routes: giv
   const routed = c => routes.get(`${c.x},${c.y},${c.z}`);
   const far = c => routed(c) ? routed(c).blocks : c.offset(0.5, 0, 0.5).distanceTo(bot.entity.position);
   for (let i = cells.length - 1; i >= 0; i--) if (!routed(cells[i]) && cells[i].y <= feet.y + 1) cells.splice(i, 1);
-  const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || ''))) ? 4 : 0;
+  const lavaBy = c => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([x, z]) => [0, 1].some(dy => /lava/.test(bot.blockAt(c.offset(x, dy, z))?.name || '')));
   // Out of lava upright, the push can carry past the cell: one on a ledge
   // comes after one with a floor all round. mid-235-a stepped out onto the
   // Nether ledge's edge and over it, twenty blocks into the lava below
-  // (2026-09-26).
-  const edge = c => require('./terrain').besideDrop(bot, c) ? 4 : 0;
+  // (2026-09-26); the walk now stops on the cell (lavaWays' out()).
+  const edge = c => require('./terrain').besideDrop(bot, c);
   // A jump rises one block: a cell two up is out of reach from lava one
   // deep. mid-230-d was steered at a ledge two above its feet, hopped in
   // place five seconds and burned (2026-09-26). Deeper in, the swim reaches
@@ -1740,7 +1753,7 @@ function lavaExit(bot, radius = 6, { water = false, dryOnly = false, routes: giv
   const high = c => c.y > reach ? 8 : 0;
   // Each cell's cost read once, not at every comparison of the sort (the
   // edge's test reads the drop under four cells beside; note 756).
-  const costs = new Map(cells.map(c => [c, far(c) + (water ? lavaBy(c) : 0) + edge(c) + high(c)]));
+  const costs = new Map(cells.map(c => [c, lavaExitCost({ blocks: far(c), lavaBeside: water && lavaBy(c), edge: edge(c), high: high(c) > 0 })]));
   const best = cells.sort((a, b) => costs.get(a) - costs.get(b))[0] || null;
   // The way to it, for the walk and its seconds.
   if (best && routed(best)) { best.route = routeOf(routes, best); best.blocks = routed(best).blocks; }
@@ -8463,16 +8476,39 @@ class Survival {
         for (let i = 0; i < points.length; i++) {
           const wp = points[i], last = i === points.length - 1;
           const toward = wp ? wp.offset(0.5, 1, 0.5) : null;
-          // Up first, jump alone, where the cell is over the feet: pressed
-          // against the ledge, the body is lifted out of a liquid only with
-          // no water over the ledge, and 25597's lava lay beside its cast's
-          // water sheet; held at the ledge it bobbed half a block under its
-          // top and burned, where rising first it was over it in half a
-          // second (prismarine-physics, the pool of note 756).
-          // Only for the next cell of a way through, a step off.
-          if (wp && route?.length && inLava(bot) && wp.y > bot.entity.position.y + 0.05 && Math.hypot(wp.x + 0.5 - bot.entity.position.x, wp.z + 0.5 - bot.entity.position.z) <= 1.6) {
-            await move(bot, task, { label: 'out_of_lava', keys: ['jump'], sneak: false, why, maxMs: Math.min(2000, Math.round(Math.max(0, wp.y - bot.entity.position.y) / LAVA_JUMP_RISE * 1000 + 600)), tick: 50,
-              until: () => bot.entity.position.y >= wp.y - 0.05 || !inLava(bot) });
+          // Where the next cell of a way through, a step off, is over the
+          // feet: up on jump alone where the ledge has water over it (the
+          // body is lifted out of a liquid against a wall only with no water
+          // over the wall; 25597's lava lay beside its cast's water sheet,
+          // held at the ledge it bobbed half a block under its top and
+          // burned, where rising first it was over it in half a second,
+          // note 756). Pressed toward the ledge where there is air over
+          // it: the push out of a liquid against the wall lifts the body
+          // about three blocks a second, and jump alone about 0.8, to about
+          // 0.6 under the lava's top and no higher. 25593 (mid-237-am,
+          // 20:38:41-45Z), three deep in its pool beside a ledge level with
+          // the lava's top, rose its column on jump alone and then bobbed at
+          // -54.5 under the ledge's floor at -54 for the rule's two seconds,
+          // and died a block from it (note 766). Straight up its own column
+          // the press is toward the next cell off it. Jump alone, as before,
+          // where that cell has water over it, or none is ahead; and ended
+          // once the body stops rising.
+          const side = wp ? Math.hypot(wp.x + 0.5 - bot.entity.position.x, wp.z + 0.5 - bot.entity.position.z) : Infinity;
+          const waterOver = c => !!c && [c, c.offset(0, 1, 0)].some(q => /water/.test(bot.blockAt(q)?.name || ''));
+          if (wp && route?.length && inLava(bot) && wp.y > bot.entity.position.y + 0.05 && side <= 1.6) {
+            const ahead = side < 0.5 ? points.slice(i + 1).find(p => p && (p.x !== wp.x || p.z !== wp.z)) || null : wp;
+            const press = ahead && !waterOver(ahead) ? ahead.offset(0.5, 1, 0.5) : null;
+            const rising = { y: bot.entity.position.y, at: Date.now() };
+            const stalled = () => { const y = bot.entity.position.y; if (y > rising.y + 0.05) { rising.y = y; rising.at = Date.now(); } return Date.now() - rising.at > 400; };
+            if (!press) {
+              await move(bot, task, { label: 'out_of_lava', keys: ['jump'], sneak: false, why, maxMs: Math.min(2000, Math.round(Math.max(0, wp.y - bot.entity.position.y) / LAVA_JUMP_RISE * 1000 + 600)), tick: 50,
+                until: () => bot.entity.position.y >= wp.y - 0.05 || !inLava(bot) || stalled() });
+            } else if (side < 0.5) {
+              await move(bot, task, { label: 'out_of_lava', keys: ['forward', 'jump'], sneak: false, why, look: press, maxMs: Math.min(2000, Math.round(Math.max(0, wp.y - bot.entity.position.y) / LAVA_JUMP_RISE * 1000 + 600)), tick: 50,
+                until: () => bot.entity.position.y >= wp.y - 0.05 || out(to) });
+              if (out(to)) break;
+              continue;
+            }
           }
           const centre = () => wp && Math.hypot(bot.entity.position.x - (wp.x + 0.5), bot.entity.position.z - (wp.z + 0.5)) < 0.35;
           const done = await move(bot, task, { label: 'out_of_lava', keys: toward ? ['forward', 'jump'] : ['jump'], sneak: false, why, look: toward || undefined,
@@ -10372,4 +10408,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes } : {}) });
 }
 
-module.exports = { nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

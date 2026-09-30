@@ -60,6 +60,13 @@ async function readFile(file, out) {
   const p = m ? m[1] : '?';
   const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
   let prev = null, spell = null, lastHurt = null, lastFrameAt = null, connectedAt = 0;
+  // The lava escape's own frames (note 756's [lava-escape]): the ways it
+  // had and took, kept for the spell they fall in or the one they begin a
+  // moment before (the body can be read in lava before the first hurt).
+  // And the heights stood at in the five seconds before, for the fall in.
+  let lastEscape = null;
+  const heights = [];
+  const escapeOf = r => ({ at: r.at, took: r.detail?.took || null, offered: r.detail?.offered || [], health: r.detail?.health ?? null, workedOutMs: r.detail?.workedOutMs ?? null });
   const close = (how, at) => {
     if (!spell) return;
     spell.end = how; spell.seconds = round(((how === 'death' ? Date.parse(at) : spell.lastLava + 500) - spell.startMs) / 1000);
@@ -72,6 +79,8 @@ async function readFile(file, out) {
     const t = Date.parse(r.at);
     if (!(t >= since)) { prev = r; continue; }
     const s = r.snapshot || {};
+    if (s.position && s.onGround) { heights.push({ at: t, y: s.position.y }); while (heights.length && heights[0].at < t - 5000) heights.shift(); }
+    if (r.kind === 'lava_escape') { if (spell) spell.escapes.push(escapeOf(r)); else lastEscape = { t, frame: escapeOf(r) }; }
     if (spell) {
       if (lastFrameAt) spell.longestFrameGapS = Math.max(spell.longestFrameGapS, round((t - lastFrameAt) / 1000));
       if (!spell.firstWayS && (r.kind === 'lava_escape' || s.controller?.name === 'out_of_lava' || s.survivalAction?.action === 'leave_lava' || s.survivalAction?.action === 'lava_escape')) spell.firstWayS = round((t - spell.startMs) / 1000);
@@ -93,7 +102,13 @@ async function readFile(file, out) {
           const pos = s.position;
           spell = { port: p, file: name, at: r.at, startMs: t, lastLava: t, position: pos && { x: round(pos.x), y: round(pos.y), z: round(pos.z) },
             dimension: s.dimension || prev?.snapshot?.dimension || null, healthIn: round(prev?.snapshot?.health ?? s.health ?? 20),
-            atFirstHurt: running(s, r.at, connectedAt), before: running(prev?.snapshot, prev?.at, connectedAt), hurts: 0, longestFrameGapS: 0, questionsAsked: new Set() };
+            atFirstHurt: running(s, r.at, connectedAt), before: running(prev?.snapshot, prev?.at, connectedAt), hurts: 0, longestFrameGapS: 0, questionsAsked: new Set(),
+            escapes: lastEscape && t - lastEscape.t <= 1500 ? [lastEscape.frame] : [],
+            fellS: null };
+          // The fall in: the highest the feet stood on ground in the five
+          // seconds before, over where the lava first hurt.
+          const top = heights.filter(h => h.at >= t - 5000).reduce((m, h) => Math.max(m, h.y), -Infinity);
+          if (Number.isFinite(top) && pos) spell.fellBlocks = round(Math.max(0, top - pos.y));
           spell.putIn = mover(spell.before && (spell.before.controller || spell.before.pathing || spell.before.survivalAction) ? spell.before : spell.atFirstHurt);
         }
         spell.lastLava = t; spell.ranSinceLava = 0; spell.hurts++;
@@ -116,7 +131,19 @@ async function readFile(file, out) {
     .map(f => path.join(dir, f)).filter(f => fs.statSync(f).mtimeMs >= since).sort();
   const out = { spells: [], deaths: [], lastDeath: {} };
   for (const f of files) await readFile(f, out);
-  for (const s of out.spells) s.questionsAsked = [...s.questionsAsked];
+  for (const s of out.spells) {
+    s.questionsAsked = [...s.questionsAsked];
+    // Whether the escape fired, what it took, and whether it ever had a way
+    // a swim or a block reaches (into water, onto a dry cell, the block into
+    // the lava): with none, only back toward the last footing or up.
+    s.escapeFired = s.escapes.length > 0;
+    s.firstEscapeS = s.escapes.length ? round((Date.parse(s.escapes[0].at) - Date.parse(s.at)) / 1000) : null;
+    s.waysTaken = [...new Set(s.escapes.map(e => e.took).filter(Boolean))];
+    s.waysOffered = [...new Set(s.escapes.flatMap(e => e.offered))];
+    s.reachableWay = s.waysOffered.some(w => /^(to_water|to_dry_ground|pillar_out|eat_golden_apple|drink_fire_resistance)$/.test(w));
+    s.slowestWorkOutMs = Math.max(0, ...s.escapes.map(e => e.workedOutMs || 0));
+    delete s.escapes; delete s.fellS;
+  }
   const deaths = out.deaths, burn = deaths.filter(d => /^(lava|on fire|in fire)$/.test(d.cause));
   const spells = out.spells, died = spells.filter(s => s.end === 'death'), escaped = spells.filter(s => s.end === 'out');
   const tally = (list, f) => list.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m; }, {});
@@ -132,9 +159,11 @@ async function readFile(file, out) {
     bodyWayAskedS: { median: med(spells.filter(s => s.bodyWayAskedS != null).map(s => s.bodyWayAskedS)), death: died.map(s => s.bodyWayAskedS ?? null) },
     otherQuestionsAskedInLava: spells.filter(s => s.questionsAsked.length).length,
     frameGapOver2sInSpell: spells.filter(s => s.longestFrameGapS > 2).length,
+    escapeFired: { death: died.filter(s => s.escapeFired).length, out: escaped.filter(s => s.escapeFired).length },
+    deathsWithNoWayASwimOrBlockReaches: died.filter(s => !s.reachableWay).length,
   };
   if (asJson) { console.log(JSON.stringify({ summary, spells, deaths }, null, 2)); return; }
   console.log(JSON.stringify(summary, null, 2));
   console.log('\nSpells that ended in death:');
-  for (const s of died) console.log(`  ${s.port} ${s.at} ${s.dimension || ''} at ${JSON.stringify(s.position)} from ${s.healthIn} health, ${s.seconds} s in, ${s.hurts} hurts; put in by ${s.putIn}; first way ${s.firstWayS ?? 'never'} s, body_way asked ${s.bodyWayAskedS ?? 'never'} s; longest frame gap ${s.longestFrameGapS} s; other questions ${s.questionsAsked.join(',') || 'none'}; at first hurt ${JSON.stringify(s.atFirstHurt)}`);
+  for (const s of died) console.log(`  ${s.port} ${s.at} ${s.dimension || ''} at ${JSON.stringify(s.position)} from ${s.healthIn} health, ${s.seconds} s in, ${s.hurts} hurts; put in by ${s.putIn}; fell ${s.fellBlocks ?? '?'} blocks in; escape ${s.escapeFired ? `at ${s.firstEscapeS} s took ${s.waysTaken.join('/')} of ${s.waysOffered.join(',')} (worked out in ${s.slowestWorkOutMs} ms at most)` : 'never fired'}; ${s.reachableWay ? 'a way out a swim or a block reaches was on offer' : 'no way out a swim or a block reaches'}; first way ${s.firstWayS ?? 'never'} s, body_way asked ${s.bodyWayAskedS ?? 'never'} s; longest frame gap ${s.longestFrameGapS} s; other questions ${s.questionsAsked.join(',') || 'none'}; at first hurt ${JSON.stringify(s.atFirstHurt)}`);
 })().catch(err => { console.error(err); process.exitCode = 1; });

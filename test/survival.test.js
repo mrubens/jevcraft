@@ -1541,12 +1541,14 @@ test('in lava, the way out is priced and walked by the way through at the jar\'s
     // A held key takes the body to the cell looked at; out of the lava there.
     setControlState(k, v) { if (k === 'forward' && v && looks.length) { const l = looks.at(-1); this.entity.position = new Vec3(l.x, 39, l.z); this.entity.isInLava = lava.has(`${Math.floor(l.x)},39,${Math.floor(l.z)}`); this.entity.onGround = !this.entity.isInLava; } } });
   const exit = lavaExit(bot, 6, { dryOnly: true });
-  // The turn itself has the lava beside it, so the cell past it is first.
-  assert.deepEqual([exit.x, exit.y, exit.z], [0, 39, 232], `round the corner, not the pocket behind the rock: ${exit}`);
-  assert.equal(exit.blocks, 5);
+  // The turn itself, lava beside it, a block nearer than the cell past it:
+  // lava beside a cell counts for less than a block of lava swum (note 766;
+  // it was four blocks, and the cell past it came first).
+  assert.deepEqual([exit.x, exit.y, exit.z], [-1, 39, 232], `round the corner, not the pocket behind the rock: ${exit}`);
+  assert.equal(exit.blocks, 4);
   const survival = new Survival(bot, {}, { state: { shelters: [] } });
   const ways = survival.lavaWays(new Task('lava'), {}, () => {});
-  assert.match(ways.to_dry_ground.description, /5 blocks off by the way through at \(0, 39, 232\).*about 12\.5 seconds at the 0\.4 blocks a second/);
+  assert.match(ways.to_dry_ground.description, /4 blocks off by the way through at \(-1, 39, 232\).*about 10 seconds at the 0\.4 blocks a second/);
   assert.match(require('../src/body').conditionSays(bot, 'lava'), /about 3\.8 health a second through the armour worn/, 'full iron: 1.92 a hit, two hits a second');
   assert.equal(await ways.to_dry_ground.run(), true, 'out');
   assert.deepEqual(looks.map(l => [Math.floor(l.x), Math.floor(l.z)]), [[-3, 233], [-2, 233], [-1, 233], [-1, 232]], 'cell by cell along the tunnel and round its turn, ended once out');
