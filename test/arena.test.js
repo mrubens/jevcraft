@@ -140,13 +140,30 @@ test('the standing cell is the floored stand, so the arena can be checked block 
   }
 });
 
-test('the sweep covers the whole shell and spares the players in it', () => {
+// The sweep's box is the shell padded sideways (note 713): an enderman
+// teleports on its own, away from whatever just hit it, and a box exactly
+// the shell's size missed those, letting them outlive the drill that
+// summoned them and pile up, uncounted, into the next attempt's count.
+const SWEEP_PAD = 5;
+test('the sweep covers the whole shell, padded past its walls, and spares the players in it', () => {
   for (const [name, arena] of Object.entries(ARENAS)) {
     const [x1, y1, z1, x2, y2, z2] = arena.shell;
     const line = sweep(name);
     assert(line.startsWith('execute in minecraft:the_nether run kill @e[type=!minecraft:player'), name);
-    assert(line.includes(`x=${x1},y=${y1},z=${z1}`), `${name} starts at its shell corner`);
-    assert(line.includes(`dx=${x2 - x1},dy=${y2 - y1},dz=${z2 - z1}`), `${name} spans its whole shell`);
+    assert(line.includes(`x=${x1 - SWEEP_PAD},y=${y1},z=${z1 - SWEEP_PAD}`), `${name} starts padded past its shell corner`);
+    assert(line.includes(`dx=${x2 - x1 + 2 * SWEEP_PAD},dy=${y2 - y1},dz=${z2 - z1 + 2 * SWEEP_PAD}`), `${name} spans its whole shell and the pad`);
+  }
+});
+
+test('the padded sweep of one arena never reaches into another\'s, on a server shared by other sessions', () => {
+  const padded = Object.entries(ARENAS).map(([name, a]) => {
+    const [x1, y1, z1, x2, y2, z2] = a.shell;
+    return { name, x1: x1 - SWEEP_PAD, y1, z1: z1 - SWEEP_PAD, x2: x2 + SWEEP_PAD, y2, z2: z2 + SWEEP_PAD };
+  });
+  for (let i = 0; i < padded.length; i++) for (let j = i + 1; j < padded.length; j++) {
+    const a = padded[i], b = padded[j];
+    const overlap = a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2 && a.z1 <= b.z2 && b.z1 <= a.z2;
+    assert(!overlap, `${a.name}'s padded sweep reaches ${b.name}'s`);
   }
 });
 

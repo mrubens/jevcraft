@@ -34,7 +34,7 @@ const TIMED = {
   fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|wood_in_view|portal_trip)$/,
   nether_food_kit: /^(restock_food|return_for_food)$/,
-  leave_nether: /^(go_back|restock_food)$/,
+  leave_nether: /^(go_back|restock_food|heal_first)$/,
   restock_food: /^(hoglin_\w+|cook_meat|mushroom_stew|return_for_food)$/,
   empty_spawner: /^(stand_by_spawner|heal_first)$/,
   portal_way: /^(climb_here|around_\w+)$/,
@@ -169,7 +169,16 @@ function whySays(bot, goal, kind, state) {
 function kitSays(bot) {
   try { const bs = require('./block-stock'); return bs.listSays(bs.kitLacks(bot)); } catch (_) { return 'a pickaxe and blocks'; }
 }
+// leave_nether/go_back is asked for two different reasons (food, note 495;
+// or the rods carried and ready for the Overworld, note 711) and the chat
+// line must say the one that is real, not always "for food" (game-progress.js
+// readyForHomeStep passes `ready` in its state for this).
 function startSays(bot, goal, i, state) {
+  if (state?.ready && /^leave_nether\/(go_back|heal_first)$/.test(`${i.q}/${i.choice}`)) {
+    const at = i.target ? ` at (${i.target.x}, ${i.target.y}, ${i.target.z})` : '';
+    if (i.choice === 'go_back') return `Going back through the portal with the rods carried${at}: ${whySays(bot, goal, 'rods', state) || 'the goal has what it needs'}.`;
+    return `Healing before the walk home with the rods carried: ${whySays(bot, goal, 'health', state) || ''}.`;
+  }
   const row = SAYS.find(([re]) => re.test(`${i.q}/${i.choice}`));
   if (!row) return null;
   const at = i.target ? ` at (${i.target.x}, ${i.target.y}, ${i.target.z})` : '';

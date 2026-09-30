@@ -344,16 +344,20 @@ async function strikeInReach(bot, task) {
   return true;
 }
 
-// Rods on the ground outside, fetched between volleys through the sill
-// (the block under the window), which goes back after.
-async function fetchRods(bot, task, site, { navigate, item = 'blaze_rod', near = 7 } = {}) {
+// Rods on the ground near a held stance: walked to between volleys and
+// carried, one at a time, while none is close enough for the game's own
+// pickup to have taken it already. Shared by every stance that holds one
+// spot and would otherwise leave a dead blaze's rod where the fight left it
+// (note 710: holdCorner struck what came into reach and never once fetched
+// a rod that landed past that reach — the box's fetchRods, below, only ever
+// covered the box).
+async function fetchNearbyRods(bot, task, { navigate, item = 'blaze_rod', near = 7, origin, open, close } = {}) {
   const stand = require('./blaze-stand');
   const { countOf } = require('./skills');
-  const rods = () => Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(site.cell.offset(0.5, 0, 0.5)) < near);
+  const rods = () => Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(origin) < near);
   if (!navigate || !rods().length || stand.volleyComing(bot)) return false;
   if (blazesAbout(bot, 4).length) return false;
-  const sill = site.window.offset(0, -1, 0);
-  if (solid(bot.blockAt(sill))) await bunker.digCell(bot, task, sill);
+  if (open) await open();
   const deadline = Date.now() + 8000;
   try {
     while (Date.now() < deadline && rods().length) {
@@ -365,15 +369,37 @@ async function fetchRods(bot, task, site, { navigate, item = 'blaze_rod', near =
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; break; }
       await sleep(150);
     }
-  } finally {
-    const c = site.cell;
-    if (!inBox(bot, site)) { try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true }); } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; } }
-    const blockName = blockItem(bot, sill)?.name;
-    if (inBox(bot, site) && blockName && !solid(bot.blockAt(sill))) {
-      try { await require('./work').place(bot, task, sill, blockName, { stay: true }); } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
-    }
-  }
+  } finally { if (close) await close(); }
   return true;
+}
+
+// The box's own case: the sill under the window dug through to reach what
+// is outside, put back once the bot is back inside.
+async function fetchRods(bot, task, site, { navigate, item = 'blaze_rod', near = 7 } = {}) {
+  const sill = site.window.offset(0, -1, 0);
+  return fetchNearbyRods(bot, task, { navigate, item, near, origin: site.cell.offset(0.5, 0, 0.5),
+    open: async () => { if (solid(bot.blockAt(sill))) await bunker.digCell(bot, task, sill); },
+    close: async () => {
+      const c = site.cell;
+      if (!inBox(bot, site)) { try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true }); } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; } }
+      const blockName = blockItem(bot, sill)?.name;
+      if (inBox(bot, site) && blockName && !solid(bot.blockAt(sill))) {
+        try { await require('./work').place(bot, task, sill, blockName, { stay: true }); } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      }
+    } });
+}
+
+// The corner's own case: open ground, nothing to dig through and nothing to
+// put back, only the walk out to the rod and back to the cell the ambush
+// stands at.
+async function fetchRodsAtCorner(bot, task, site, { navigate, item = 'blaze_rod', near = 7 } = {}) {
+  const c = site.cell;
+  return fetchNearbyRods(bot, task, { navigate, item, near, origin: c.offset(0.5, 0, 0.5),
+    close: async () => {
+      if (feetCell(bot).equals(c)) return;
+      try { await navigate(bot, task, new goals.GoalBlock(c.x, c.y, c.z), { timeoutMs: 4000, stallMs: 1500, onFoot: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    } });
 }
 
 // Holding the box: the flames put out, what is in reach struck, the shield
@@ -698,6 +724,7 @@ async function holdCorner(bot, task, goal, save, site, { navigate, seconds = 30,
       if (await strikeInReach(bot, task)) { stats.swings++; continue; }
       if (await stand.shieldVolley(bot, task)) continue;
       if (!feetCell(bot).equals(c)) { await bunker.stepTo(bot, task, c); continue; }
+      if (await fetchRodsAtCorner(bot, task, site, { navigate, item })) { debug('corner: rods'); continue; }
       await bot.lookAt(site.edge.offset(0.5, 1.5, 0.5), true);
       raiseShield(bot);
       await sleep(150);
@@ -892,4 +919,4 @@ async function waitFarOff(bot, task, goal, save, site, { navigate, seconds = FAR
   return stats;
 }
 
-module.exports = { FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, spawnLine, windowLine, standLine, windowSays, lineWords, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE };
+module.exports = { FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, spawnLine, windowLine, standLine, windowSays, lineWords, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE, fetchNearbyRods, fetchRodsAtCorner };

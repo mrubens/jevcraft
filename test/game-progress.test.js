@@ -44,7 +44,7 @@ test('progression resolves real carried eyes, powder, rods and pearls without sp
   give({ ender_eye: 6, blaze_powder: 4, blaze_rod: 2 });
   assert.equal(nextGameStage(bot, goal).action, 'warped_pearls', 'rods in hand: the pearls from the warped forest while here');
   require('../src/progress').setAside(goal, 'rung', 'warped_search', 'none found', 600000);
-  assert.equal(nextGameStage(bot, goal).action, 'return_overworld');
+  assert.equal(nextGameStage(bot, goal).action, 'home_with_rods', 'the rods carried and the walk home not blindly begun: leaving is asked once, held (note 711)');
   bot.game.dimension = 'overworld';
   assert.equal(nextGameStage(bot, goal).item, 'ender_pearl'); assert.equal(nextGameStage(bot, goal).count, 7);
   assert.equal(nextGameStage(bot, goal).action, 'pearl_patrol', 'the warped search rested above: endermen on sight, something worth doing between');

@@ -74,18 +74,18 @@ test('the entry facts: the blazes in sight, those within sixteen, how many have 
   assert.equal(f.within16, 4);
   assert.equal(f.withALineToTheCell, 4, 'open floor, all four see the cell');
   assert.match(f.says, /^Blazes in sight now: 4; 4 within sixteen blocks, in sight or not, 4 of them with a line to the cell the bot stands in\. A live spawner is 9 blocks off; the bot has been within sixteen of it 0 seconds\./);
-  assert.match(f.says, /three or fewer, 85 fights, 22% died, 53% brought a rod, 0\.9 rods a fight and 4 rods for each death/);
-  assert.match(f.says, /four, 29 fights, 52% died/);
-  assert.match(f.says, /five or six, 85 fights, 49% died/);
-  assert.match(f.says, /seven or more, 130 fights, 30% died/);
-  assert.match(f.says, /none or one, 144 fights, 13% died/);
-  assert.match(f.says, /within 8 blocks 178 fights, 42% died.*9 to 12 blocks 47 fights, 34% died/);
-  assert.match(f.says, /of the 163 fights at a spawner that began with one to three blazes in sight, 82 reached four or more within sixteen, a median 32 seconds after the start \(nine in ten within 65\)/);
-  assert.match(f.says, /first rod came a median 16 seconds in.*a death at four or more came a median 58 seconds in/);
+  assert.match(f.says, /three or fewer, 11 fights, 36% died, 64% brought a rod, 0\.9 rods a fight and 2\.5 rods for each death/);
+  assert.match(f.says, /four, 8 fights, 25% died/);
+  assert.match(f.says, /five or six, 24 fights, 29% died/);
+  assert.match(f.says, /seven or more, 72 fights, 17% died/);
+  assert.match(f.says, /none or one, 16 fights, 13% died/);
+  assert.match(f.says, /within 8 blocks 81 fights, 21% died.*9 to 12 blocks 18 fights, 22% died/);
+  assert.match(f.says, /of the 27 fights at a spawner that began with one to three blazes in sight, 17 reached four or more within sixteen, a median 40 seconds after the start \(nine in ten within 90\)/);
+  assert.match(f.says, /first rod came a median 28 seconds in.*a death at four or more came a median 107 seconds in/);
   assert.match(f.says, /not what entering with that many would do/);
   assert.match(f.says, /Another spawner, in this fortress or another, is the same rule: its first try is up to four blazes/);
   assert.match(f.says, /Ranged, carried now: no bow, 0 arrows, 0 snowballs\. A bow is three sticks and three string; string comes from spiders \(the Nether has none\) and, in the Nether, only from a piglin's barter/);
-  assert.match(f.says, /8 of the 567 began with a bow and arrows carried \(2 died\) and 0 with snowballs/);
+  assert.match(f.says, /10 of the 156 began with a bow and arrows carried \(2 died\) and 0 with snowballs/);
   // The count's own honesty: nothing is said of a row it does not hold.
   assert.doesNotMatch(f.says, /undefined|NaN/);
 });
@@ -98,7 +98,7 @@ test('behind a wall a blaze without a line to the cell is not counted as seeing 
   assert.equal(f.spawnerBlocksAway, null);
   assert.match(f.says, /^Blazes in sight now: 2; 2 within sixteen blocks, in sight or not, 0 of them with a line/);
   assert.match(f.says, /^.*The spawner's rule \(the server jar\): while a player is within sixteen blocks of a live blaze spawner it tries up to four blazes every ten to forty seconds until six are about, and none beyond sixteen\./);
-  assert.match(f.says, /four or more about \(244 fights\), 39% died and 31% brought a rod/);
+  assert.match(f.says, /four or more about \(104 fights\), 20% died and 18% brought a rod/);
 });
 
 test('the stay within sixteen of a cage is counted from the first asking, and a gap of a minute begins another', () => {
@@ -107,7 +107,7 @@ test('the stay within sixteen of a cage is counted from the first asking, and a 
   assert.equal(record.stayWithin(bot, cage, t0 + 40000), 40);
   const f = record.entryFacts(bot, { cage, now: t0 + 41000 });
   assert.equal(f.secondsWithinSixteen, 41);
-  assert.match(f.says, /within sixteen of it 41 seconds, past the median 32 seconds at which a fight there had four or more about/);
+  assert.match(f.says, /within sixteen of it 41 seconds, past the median 40 seconds at which a fight there had four or more about/);
   assert.equal(record.stayWithin(bot, cage, t0 + 41000 + 61000), 0, 'a minute unseen and it is a new stay');
 });
 
@@ -206,7 +206,7 @@ test('the fortress_visit question carries the count facts before any spawner is 
   const { state } = visit.facts(bot, { survival: {} }, { fortress: { distance: 40, height: 0 } });
   assert.match(state.blazeCounts, /^Blazes in sight now: 0/);
   assert.match(state.blazeCounts, /The spawner's rule \(the server jar\)/);
-  assert.match(state.blazeCounts, /four or more about \(244 fights\), 39% died/);
+  assert.match(state.blazeCounts, /four or more about \(104 fights\), 20% died/);
 });
 
 // The recorded crossing (mid-243-ch, 25581, note 657): three blazes at the crossing, none a spawner's.

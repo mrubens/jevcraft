@@ -525,22 +525,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `leave_nether`
 
-**Go back through the portal to the Overworld now, or stay in the Nether: the rods step taken up again, other work here until its rest ends, or going on without food?**
+**Go back through the portal to the Overworld now, or stay in the Nether: the rods step taken up again, other work here until its rest ends, healing first, or going on without food?**
 
-- When: In the Nether on the game ladder: the blaze rods step waits (set aside, not for its sources being elsewhere) and the ladder would go back; or a hunt short of fitness, hungry under eighteen with nothing to eat. The answer kept while its reason stands.
+- When: In the Nether on the game ladder: the blaze rods step waits (set aside, not for its sources being elsewhere) and the ladder would go back; the rods (and pearls) the ladder wants are all carried and the ladder is ready for the Overworld; or a hunt short of fitness, hungry under eighteen with nothing to eat. The answer kept while its reason stands. The trip home is not offered, and is said as closed instead, where every way it begins with rests (mob-hunt.js tripHomeClosed, note 706); ready for the Overworld with the trip open and full health, going is taken without asking (one way, decisions.js), still kept as the held intention (note 689, note 711).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
-- Options built in: src/game-progress.js (leaveNetherStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)
+- Options built in: src/game-progress.js (leaveNetherStep, readyForHomeStep, nextGameStage), src/mob-hunt.js (prepareMobHunt)
 - Nothing left to try: the stall's question, as before (nothing above it)
 
 | Option | Level | What it is | Offered when |
 | --- | --- | --- | --- |
-| `go_back` | root | go back through the portal to the Overworld | always; said with what it is for, the trip to the portal, and the hour it comes out at |
+| `go_back` | root | go back through the portal to the Overworld | always; said with what it is for, the trip to the portal, the hour it comes out at, and any ghast or angry piglin on the way now (game-progress.js routeThreatsSays, note 711) |
 | `search_on` | root | take the rods step up again now, its rest lifted | the rods step waits, and what it was set aside for does not still stand from here (src/game-progress.js asideStands: within four blocks of where it was set aside, before the ways below come off rest or five minutes; said in searchOnNotOffered, note 600) |
 | `wait_here` | root | other work in the Nether until the rods step's rest ends, or with none on offer the wait itself, the minutes said | the rods step waits until a time; chosen, that work is the waiting stage's own, a piece at a time (src/work.js holdForRest), not the rods step thrown at each pass (note 605). Said with what the hold has on offer from here, or as standing idle with why nothing is; chosen as other work and that work run out, this question is asked again (note 675); a wait: it names what it waits for and when (src/waits.js), and is not offered where that cannot come or its coming changes nothing, said in waitsForNothing (note 698) |
 | `keep_on` | root | go on in the Nether without going back for food | hungry under eighteen with nothing to eat; the trip back is left out for twenty minutes (not where one hit ends the bot and health cannot come back, last-hit.js, note 706) |
 | `restock_food` | root | get food here first: the ways to it asked next, each priced | the food reason, in the Nether, with under eight food points carried or hunger under eighteen and health under twenty, and some way to food real from here (a hoglin known, mushrooms of both kinds in view, raw meat to cook, the trip back); said with why it is on offer, the stay the goal still wants against what is carried, and each way's yield (src/nether-food.js) |
+| `heal_first` | root | wait where the bot stands until health is full, then go back with the rods carried | ready for the Overworld with the rods carried, hurt (under full health) and able to heal (hunger eighteen or more); said with the seconds it takes at a point every four seconds (src/game-progress.js readyForHomeStep, note 711) |
 
 ### `nether_food_kit`
 

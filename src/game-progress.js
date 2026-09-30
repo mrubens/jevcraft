@@ -483,6 +483,25 @@ function stairWay(bot, goal, portal) {
 // fortress-4 was told only "140 blocks off, about 33 seconds at a walk" at
 // 4.5 health with nothing to eat, went back along the lava sea's shore and
 // burned to death from 3.5 after one step into its edge (note 580).
+// Ghasts and angry piglins about the bot now: said plainly on the trip
+// home, not hidden and not a gate (tripHomeClosed is the gate, on what a
+// walk can begin with; this is the honest risk on top of that a walk that
+// can begin still carries, note 711). A count and the nearest distance,
+// nothing tuned to any one trial.
+function routeThreatsSays(bot) {
+  const here = bot.entity?.position;
+  if (!here || typeof bot.entities !== 'object') return '';
+  const ents = Object.values(bot.entities || {});
+  const said = [];
+  const ghasts = ents.filter(e => e?.name === 'ghast' && e.isValid !== false && e.position && e.position.distanceTo(here) <= 40);
+  if (ghasts.length) said.push(`${ghasts.length} ghast${ghasts.length === 1 ? '' : 's'} within 40 blocks (nearest ${Math.round(Math.min(...ghasts.map(e => e.position.distanceTo(here))))}), its fireball the risk over open ground or lava`);
+  try {
+    const anger = require('./anger');
+    const angryOnes = ents.filter(e => anger.GROUP[e?.name] && e.isValid !== false && e.position && e.position.distanceTo(here) <= 24 && anger.angry(bot, e));
+    if (angryOnes.length) said.push(`${angryOnes.length} angry piglin${angryOnes.length === 1 ? '' : 's'} within 24 blocks (nearest ${Math.round(Math.min(...angryOnes.map(e => e.position.distanceTo(here))))}), hunting the bot any way round`);
+  } catch (_) { /* no anger tracking on this bot */ }
+  return said.length ? ` On the way now: ${said.join('; ')}.` : '';
+}
 function wayBackSays(bot, portal) {
   let line = null;
   try { line = require('./work').lineSays(bot, portal); } catch (_) { line = null; }
@@ -500,7 +519,8 @@ function wayBackSays(bot, portal) {
   // Whether the crossing at this height reaches it, with what is carried
   // and the tool in hand (note 629): the line above is ground seen, not a way.
   let reach = ''; try { reach = require('./nether-gather').reachSays(bot, portal); } catch (_) { reach = ''; }
-  return `${line ? ` ${line}` : ''}${reach ? ` ${reach}` : ''}${touch ? ` ${touch}` : ''}${heals}`;
+  const threats = routeThreatsSays(bot);
+  return `${line ? ` ${line}` : ''}${reach ? ` ${reach}` : ''}${touch ? ` ${touch}` : ''}${heals}${threats}`;
 }
 
 // The hour the Overworld side is at when the bot comes out there: the
@@ -669,6 +689,63 @@ async function leaveNetherStep(bot, task, goal, save, stage, actions = {}, now =
   return false;
 }
 
+// The rods (and pearls) the ladder wants are carried: ready for the
+// Overworld. Before note 711 this ran return_overworld unconditionally,
+// every pass, whatever stood between the bot and the portal: no check of
+// whether the walk could even begin (mob-hunt.js tripHomeClosed, held for
+// every other offer of the trip home since note 706, but not this one, the
+// one trip that matters most), and no held intention, so a preemption
+// (a threat, a stall) lost the trip and the next pass started the walk over
+// from wherever the bot now stood. Measured on the flight records of
+// 2026-09-29T00:00Z on: of 169 stretches with a rod carried and the step
+// aimed at the portal, 165 broke off within the recorder's own gap (most
+// under thirty seconds) for some other action with the rods still in the
+// Nether, 4 got out; mid-242-jb (25591) carried 5 rods at 1.6 to 3.8 health
+// for two hours or so, each stretch a few seconds, never arriving.
+// Now: closed from here (a leg, the crossing, the staircase, all resting)
+// waits, plainly, instead of walking into it again; open, going is Jev's
+// go_back (leave_nether, the same question and the same held intention
+// note 689 already gives it, note 705's portal target, note 706's honest
+// "cannot be reached from here"), asked once and taken without asking
+// where nothing else is on offer (decisions.js, "one way: taken and said,
+// not asked"), so this is not a new judgment for Jev where there plainly
+// is none, but it is a held intention, protected the same as any other,
+// and its risk (a ghast, an angry piglin, lava on the line) is said with
+// it (wayBackSays' routeThreatsSays), not hidden.
+async function readyForHomeStep(bot, task, goal, save, actions = {}) {
+  let tripClosed = null; try { tripClosed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { tripClosed = null; }
+  if (tripClosed) {
+    const why = `The rods (and pearls) the ladder wants are carried, but ${tripClosed.says}`;
+    if (!actions.hold_for_rest) { const { WaysResting } = require('./tunneling'); throw new WaysResting(why, tripClosed.until); }
+    await actions.hold_for_rest(bot, task, goal, save, { reason: 'step:return_with_blaze_supplies', until: tripClosed.until, why: `${why} Jev chose other work in the Nether until then.`, idle: false });
+    return false;
+  }
+  const health = bot.health ?? 20, hunger = bot.food ?? 20;
+  const tree = { go_back: { description: `Go back to the Overworld: the rods (and pearls) the ladder wants are carried. ${portalTrip(bot, goal)}` } };
+  // A real second way where healing first is real: hurt, but able to heal
+  // (hunger eighteen or more), same as fortress_visit's heal_first. With a
+  // real choice offered, Jev's answer is asked, not the fallback default,
+  // and is kept as the held intention (note 689); the one-way default
+  // (decisions.js, "taken and said, not asked") begins no intention, so a
+  // forced go_back at full health, low risk, stays unheld and re-derived
+  // each pass same as before note 711, cheaply.
+  const healable = health < 20 && hunger >= 18;
+  if (healable) { const secs = Math.max(1, Math.round((20 - health) * 4)); tree.heal_first = { description: `Do not go yet: wait where the bot stands until health is full, about ${secs} seconds at hunger ${hunger} (a point every four seconds), then go back with the rods carried.` }; }
+  const decision = await require('./decisions').decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
+    state: { ready: 'the rods (and pearls) the ladder wants are carried', dimension: dimension(bot), health, food: hunger, blazeRods: count(bot, 'blaze_rod'), rodsTheGoalWants: require('./eye-need').says(bot, goal) } });
+  if (decision.stale) return false;
+  const pick = decision.path.at(-1);
+  goal.leaveNether = { reason: 'return_with_blaze_supplies', pick, at: Date.now() }; save();
+  if (pick === 'heal_first') {
+    const secs = Math.max(1, Math.round((20 - health) * 4));
+    const until = Date.now() + Math.min(180000, Math.max(15000, secs * 1000));
+    if (actions.hold_for_rest) await actions.hold_for_rest(bot, task, goal, save, { reason: 'step:heal_before_home', until, why: `Healing before the walk home with the rods: about ${secs} seconds at hunger ${hunger}.`, idle: true });
+    return false;
+  }
+  if (actions.return_overworld) await actions.return_overworld(bot, task, goal, save);
+  return false;
+}
+
 function nextGameStage(bot, goal, skip = new Set()) {
   if (verifyGameCompletion(bot, goal)) return { phase: 'complete' };
   const where = dimension(bot), m = goal.gameProgress?.milestones || {};
@@ -757,7 +834,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
     return netherLeaveHeld(goal, 'obtain_blaze_rods') ? { phase: 'return_overworld', action: 'return_overworld' } : { phase: 'obtain_blaze_rods', action: 'rods_waiting', ...rodsRest(goal) };
   }
   if (where === 'nether' && collect) return collect;
-  if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'return_overworld' };
+  if (where === 'nether') return { phase: 'return_with_blaze_supplies', action: 'home_with_rods' };
   if (where !== 'overworld') return { phase: 'unknown_dimension', action: 'unsupported_dimension' };
   // A cleric's pearls, when a village is remembered and a pearl trade has
   // been read there (trading.js): a walk and some emeralds instead of an
@@ -886,6 +963,7 @@ async function gameStep(bot, task, goal, save, actions) {
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
   else if (stage.action === 'collect_rod_stash') await require('./rod-stash').collect(bot, task, goal, save, actions.stashActions || actions);
+  else if (stage.action === 'home_with_rods') await readyForHomeStep(bot, task, goal, save, actions);
   else if (stage.action === 'nether_food') {
     if (!actions.nether_food) throw Object.assign(new Error('Game progression is blocked at the food for the Nether: the nether food action is not implemented here. Earlier progress is saved.'), { name: 'Blocked' });
     await actions.nether_food(bot, task, goal, save, stage);
@@ -998,4 +1076,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

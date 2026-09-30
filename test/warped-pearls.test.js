@@ -43,7 +43,7 @@ test('in the Nether with the rods in hand, the pearls come from the warped fores
   const { bot, goal } = fixture('the_nether');
   assert.equal(nextGameStage(bot, goal).action, 'warped_pearls', 'none known: the sweep for one');
   setAside(goal, 'rung', 'warped_search', 'none found', 600000);
-  assert.equal(nextGameStage(bot, goal).action, 'return_overworld', 'the sweep rested and none known: home the old way');
+  assert.equal(nextGameStage(bot, goal).action, 'home_with_rods', 'the sweep rested and none known: home the old way, leaving held as an intention (note 711)');
   goal.landmarks = [{ kind: 'warped_forest', x: 300, y: 70, z: 40, dimension: 'nether' }];
   assert.equal(nextGameStage(bot, goal).action, 'warped_pearls', 'one remembered: go there');
 });
@@ -114,7 +114,7 @@ test('a warped forest whose walk came to nothing is not walked to again at once,
   assert(warped.warpedOpen(goal));
   setAside(goal, 'rung', 'warped_search', 'none found', 600000);
   assert.equal(warped.warpedOpen(goal), false, 'the forest\'s walk resting and the sweep resting: not open');
-  assert.equal(nextGameStage(bot, goal).action, 'return_overworld', 'home the old way, not the pearl step spinning');
+  assert.equal(nextGameStage(bot, goal).action, 'home_with_rods', 'home the old way, not the pearl step spinning, leaving held as an intention (note 711)');
 });
 
 test('the sweep from a ledge where every walk and every staircase comes to nothing keeps one step\'s name, and once every heading has come to nothing from about here it rests and fails with each heading\'s why, not turning for a quarter of an hour (mid-242-ae-nether-2-fortress-2, note 588)', async () => {

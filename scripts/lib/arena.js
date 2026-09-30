@@ -93,6 +93,20 @@ const ARENAS = Object.freeze({
     open: [2102.5, 77, 2102.5],
     wall: [2102.5, 77, 2102.5],
   },
+  // A warped forest as the pearl hunt actually meets it: open floor,
+  // warped nylium, several endermen within sight of each other, not one
+  // alone in a room. Note 713: the enderman_single drill is one mob in an
+  // empty box, nothing like the density the hunt is asked to work in
+  // (warped-pearls.js), and no drill had checked whether fighting one
+  // enderman provokes the others beside it, by a sword's sweep or by a
+  // stare that strays onto a bystander's eyes.
+  warped_forest: {
+    shell: [1750, 58, 1750, 1780, 80, 1780],
+    hollow: [1755, 63, 1755, 1775, 72, 1775],
+    fills: [[[1755, 62, 1755, 1775, 62, 1775], 'warped_nylium']],
+    open: [1765.5, 63, 1765.5],
+    wall: [1765.5, 63, 1765.5],
+  },
 });
 const HOLDING = [2102.5, 77, 2102.5];
 
@@ -186,6 +200,17 @@ const DRILLS = Object.freeze([
   { name: 'enderman_single', mode: 'hunt', entity: 'enderman', item: 'ender_pearl', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 77, 2010.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 12 },
     why: 'Death eighteen. Forty health and four a hit through iron, and it teleports: running is no answer, only the fight or a roof it cannot stand under.' },
+  // A warped forest as the hunt actually finds one: three endermen within
+  // six blocks of each other and of the bot, the density warped-pearls.js
+  // walks to (note 713). The bot has never carried more than 5 of the 13
+  // pearls the goal needs; this is the first drill to put more than one
+  // enderman near the hunt's own target at once.
+  { name: 'enderman_forest_trio', mode: 'hunt', entity: 'enderman', item: 'ender_pearl', count: 3, arena: 'warped_forest', stand: 'open',
+    at: [[1763.5, 64, 1765.5], [1767.5, 64, 1765.5], [1765.5, 64, 1769.5]], seconds: 90, expect: { deaths: 0, drops: 1, damage: 16 },
+    why: 'Note 713: whether one enderman is fought and taken while the other two, standing near it, stay calm, or whether a sweep or a stray look turns all three at once.' },
+  { name: 'enderman_forest_five', mode: 'hunt', entity: 'enderman', item: 'ender_pearl', count: 5, arena: 'warped_forest', stand: 'open',
+    at: [[1762.5, 64, 1763.5], [1768.5, 64, 1763.5], [1762.5, 64, 1768.5], [1768.5, 64, 1768.5], [1765.5, 64, 1770.5]], seconds: 120, expect: { deaths: 0, drops: 2, damage: 20 },
+    why: 'Note 713: the forest at its actual count, endermen on every side within eight blocks, over the length of a real hunt (several pearls, not one).' },
   { name: 'blaze_single', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 80, 2010.5]], seconds: 60, expect: { deaths: 0, drops: 1, damage: 10 },
     why: 'One blaze, fought on purpose, and the rod has to end up in the pockets.' },
@@ -318,9 +343,21 @@ const place = ([x, y, z]) => `${x} ${y} ${z}`;
 // out of the Nether does not evict the Nether: the first baseline had the
 // bot slain by a zombified piglin and an enderman that were standing in the
 // volume when the walls went up, and every number in that table was noise.
+// The shell's own box, padded well past its walls. An enderman teleports
+// on its own, away from whatever just hit it, and the box alone missed
+// those: a "three endermen" drill measured four, five, then eight as the
+// escaped ones from earlier attempts piled up uncounted (note 713). The
+// pad stays inside this arena's own stretch of the Nether (each ARENAS
+// entry is at least a couple hundred blocks from the next) so it still
+// never reaches into another session's arena on a shared server.
+// Five, not more: room and corridor sit twelve blocks apart, the
+// narrowest gap between any two named arenas, and a pad has to clear less
+// than half of that on both sides or it reaches into the next arena's
+// shell and kills another session's mobs there mid-drill.
+const SWEEP_PAD = 5;
 function sweep(name, { dimension = 'minecraft:the_nether' } = {}) {
   const [x1, y1, z1, x2, y2, z2] = ARENAS[name].shell;
-  return `execute in ${dimension} run kill @e[type=!minecraft:player,x=${x1},y=${y1},z=${z1},dx=${x2 - x1},dy=${y2 - y1},dz=${z2 - z1}]`;
+  return `execute in ${dimension} run kill @e[type=!minecraft:player,x=${x1 - SWEEP_PAD},y=${y1},z=${z1 - SWEEP_PAD},dx=${x2 - x1 + 2 * SWEEP_PAD},dy=${y2 - y1},dz=${z2 - z1 + 2 * SWEEP_PAD}]`;
 }
 
 // Between drills: the mobs and their drops go, the pockets are emptied and

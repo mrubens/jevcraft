@@ -65,6 +65,11 @@ async function commands(list) { for (const line of list) await command(line); }
 const bot = mineflayer.createBot({ host: process.env.MC_HOST || '127.0.0.1', port, username, version: '26.1', auth: 'offline' });
 bot.loadPlugin(compatibilityPlugin);
 bot.loadPlugin(pathfinder);
+// Session.js loads this for the real bot (gaze.js); the arena had not, so
+// every enderman drill ran without the eyes-off-their-heads behavior the
+// live bot actually has, and a drill of several endermen at once (note
+// 713) would have measured a bot staring blind rather than the real one.
+bot.loadPlugin(require('../src/gaze').gazePlugin);
 let currentGoal = { request: 'arena', status: 'starting' };
 
 // Everything a run is scored on, gathered by listener rather than by asking

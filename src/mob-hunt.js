@@ -640,6 +640,22 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
     } };
   }
+  // A rod already on the ground from an earlier kill is a fact, not a
+  // silent loss: its position and the risk of going for it, priced the
+  // same way a fight is (note 710: holdCorner struck what came within
+  // reach and never once fetched a rod that landed past it, and every
+  // stance's own stall or end left it there unmentioned).
+  const groundRods = state.entity === 'blaze' ? Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === state.item &&
+    e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= 24)
+    .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 4) : [];
+  for (const drop of groundRods) {
+    const distance = drop.position.distanceTo(bot.entity.position), p = drop.position.floored();
+    const nearLava = require('./blaze-stand').lavaWithin(bot, p, 2);
+    const reachable = require('./drop-collection').pickupPositions(bot, drop).length > 0;
+    tree[`fetch_rod_${drop.id}`] = { description: `Fetch the ${state.item.replaceAll('_', ' ')} lying on the ground ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), from an earlier kill.` +
+      `${nearLava ? ' Lava is within two blocks of it: the walk there stands that close.' : ''}${reachable ? '' : ' No standing spot near it reads as dry and safe right now; the walk there may fail and find nothing changed.'}`,
+      run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate }) };
+  }
   if (!Object.keys(tree).length) return false;
   // The bot's fitness, on every option and in the state: what the code
   // once refused a fight for, as facts for Jev's choice (fitness, above).
@@ -873,6 +889,16 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       await findFortressStep(bot, task, goal, save, actions); return;
     }
     goal.step = { action: 'recover_before_combat', health: bot.health, food: bot.food, neededHealth: handler.passive ? 10 : 14, neededFood: handler.passive ? 6 : 14 }; save();
+    // Something already at arm's length, still hitting: not a hazard to
+    // wait out but the fight itself, arrived early. This step only ever
+    // checked a drop underfoot and a shooter's line; a melee mob already in
+    // reach fell through both and was answered with a 500 ms sleep. The
+    // arena's enderman_single drill (note 713) died this way: brought to
+    // three blocks while the bot was down to 8.6 health and unfit to
+    // re-enter the fight, it stood in recover_before_combat and took the
+    // rest of its hits with no defense offered at all, none to Jev either.
+    const adjacent = threats(bot, 6).filter(t => t.visible && !shooter(t.entity) && t.distance <= 3.5).sort((a, b) => a.distance - b.distance)[0];
+    if (adjacent) throw new NeedsSafety(adjacent);
     // Hit while it waits, by something it cannot see, beside a drop that
     // would end it: off the edge first. mid-92-i recovered on a Nether ledge
     // eighty blocks up, burned by something out of sight, and a hit at 2.4

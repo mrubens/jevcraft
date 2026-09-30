@@ -24,19 +24,18 @@ const IRON = { four: { fights: 55, diedPct: 24 }, some: { fights: 526, diedPct: 
 // the 128 with one in their last fifteen seconds), where one landing ends it.
 const DEATHS = { deaths: 145, fireballPct: 48, firePct: 32, blowsPct: 16, otherPct: 4, lastLanding: 128, atSixAndAHalfOrLess: 83 };
 
-// The newest trials (note 661; scripts/blaze-record.js `--recent --from 2026-09-29T04:49:00Z
-// --to 2026-09-29T11:40:00Z` wrote the rows): 248 fights on the code of commit
-// 3c1af18, every one begun in an iron helmet and chestplate and nothing more
-// iron, and the part of the record above that a spawner's fights are in. On the
-// first day's rows alone a spawner's fights ended in a death one time in five
-// (21%) and a rod one in eleven; on these, at a live spawner with four or more
-// blazes within sixteen, half ended in a death and about as many in a rod, and
-// every other fight in a death one time in eight. `rods` are the rods gained
-// in those fights, `lost` the mean health lost.
-const RECENT = { from: '2026-09-29T04:49Z', to: '2026-09-29T11:37Z', fights: 248,
-  spawner: { fights: 114, died: 56, rod: 51, rods: 79, lost: 24.2 },
-  elsewhere: { fights: 134, died: 17, rod: 67, rods: 98, lost: 12.2 },
-  few: { fights: 61, died: 6, rod: 25 }, some: { fights: 62, died: 8, rod: 38 } };
+// The newest trials (note 712; scripts/blaze-record.js `--recent --from
+// 2026-09-29T21:00:00Z --to 2026-09-30T01:50:00Z` wrote the rows): 156 fights
+// after the deploys since 21:00Z (the rod stash of note 704, the spawner holds
+// of notes 691/700/702, the low-health rules of note 701, angry piglin
+// tracking of note 703), superseding note 661's rows above (that window's
+// spawner fights died 49% and took a rod 45%; these, 20% and 18%: the deaths
+// at a live spawner fell by more than half). `rods` are the rods gained in
+// those fights, `lost` the mean health lost.
+const RECENT = { from: '2026-09-29T21:00Z', to: '2026-09-30T01:50Z', fights: 156,
+  spawner: { fights: 104, died: 21, rod: 19, rods: 33, lost: 14 },
+  elsewhere: { fights: 52, died: 11, rod: 17, rods: 22, lost: 6.6 },
+  few: { fights: 17, died: 3, rod: 4 }, some: { fights: 29, died: 7, rod: 13 } };
 // The health lost per fight by iron worn, fights begun over 16 health of the two
 // days (2026-09-28 to 2026-09-29T11:40Z): the death rates moved two points (24% with
 // four pieces, 26% with two or three), the health lost a third.
@@ -93,18 +92,30 @@ function says(bot, { day = DAY } = {}) {
 // fights are in it. They are what the bot did and how it went, chosen by Jev
 // (or the fallback) for its own reasons in states these rows do not hold
 // fixed: not a trial of the answer.
+// Split at note 712 from the old single 'strike' class: charge_nearest and
+// close_in are counted apart (charge kept the lowest deaths, close_in the
+// most rods a minute, in the fights since the rod-stash and low-health
+// deploys of 2026-09-29T21:00Z); box_here, box_at_spawner, fight_at_spawner
+// and break_spawner (a stand held at the cage) are their own class, as is a
+// hole (dig_in_and_fight, dig_in_at_spawner), so a stand at the cage and a
+// hole are not folded into 'fight' or 'cover' any more.
 const CLASS_OF = {
-  close_in: 'strike', charge_nearest: 'strike',
-  fight: 'fight', fight_at_spawner: 'fight', fight_from_footing: 'fight', dig_in_and_fight: 'fight', break_spawner: 'fight', rail_and_fight: 'fight', dig_in_at_spawner: 'fight',
-  take_cover: 'cover', back_to_wall: 'cover', out_of_sight: 'cover', corner_ambush: 'cover', box_here: 'cover', seal: 'cover', shield_guard: 'cover', dig_down: 'cover', nook: 'cover', hold_on_span: 'cover', bunker: 'cover',
+  close_in: 'close_in', charge_nearest: 'charge',
+  fight: 'fight', fight_from_footing: 'fight', rail_and_fight: 'fight',
+  box_here: 'box_stand', box_at_spawner: 'box_stand', fight_at_spawner: 'box_stand', break_spawner: 'box_stand',
+  dig_in_and_fight: 'hole', dig_in_at_spawner: 'hole',
+  take_cover: 'cover', back_to_wall: 'cover', out_of_sight: 'cover', corner_ambush: 'cover', seal: 'cover', shield_guard: 'cover', dig_down: 'cover', nook: 'cover', hold_on_span: 'cover', bunker: 'cover',
   retreat: 'retreat', leave_reach: 'retreat',
   leave_and_heal: 'heal', eat: 'heal',
   keep_working: 'work',
 };
 const CLASS_SAYS = {
-  strike: { said: 'a strike (close_in or charge_nearest: walking in on the blazes with the sword)', short: 'a strike' },
-  fight: { said: 'a fight where it stands or from a stand (fight, fight_at_spawner, fight_from_footing, dig_in_and_fight, break_spawner, rail_and_fight)', short: 'a fight from a stand' },
-  cover: { said: 'cover (take_cover, back_to_wall, out_of_sight, corner_ambush, box_here, seal, shield_guard, dig_down, nook)', short: 'cover' },
+  charge: { said: 'a charge (charge_nearest: running straight at the nearest blaze)', short: 'a charge' },
+  close_in: { said: 'closing in (close_in: walking in on the blazes with the sword, picking a target)', short: 'closing in' },
+  fight: { said: 'a fight where it stands or from a stand (fight, fight_from_footing, rail_and_fight)', short: 'a fight from a stand' },
+  box_stand: { said: 'a stand at the cage (box_here, box_at_spawner, fight_at_spawner, break_spawner)', short: 'a stand at the cage' },
+  hole: { said: 'a hole (dig_in_and_fight, dig_in_at_spawner: dug into the rock beside the cage)', short: 'a hole' },
+  cover: { said: 'cover (take_cover, back_to_wall, out_of_sight, corner_ambush, seal, shield_guard, dig_down, nook)', short: 'cover' },
   retreat: { said: 'a retreat (retreat, leave_reach)', short: 'a retreat' },
   heal: { said: 'going away to heal or eating (leave_and_heal, eat)', short: 'going away to heal or eating' },
   work: { said: 'carrying on with the work (keep_working)', short: 'carrying on with the work' },
@@ -118,31 +129,39 @@ const cellKeys = ({ spawner, blazes, health }) => [`${spawner ? 'spawner' : 'non
 // health) and kind: [fights, took a rod after, died after]; only rows of
 // MIN_FIGHTS or more (`node scripts/blaze-record.js --answers`).
 const ANSWERS = {
-  'none|0-1|*': { cover: [186, 27, 45], fight: [36, 2, 8], heal: [89, 13, 19], retreat: [49, 3, 8], strike: [130, 50, 27] },
-  'none|0-1|8-16': { cover: [110, 17, 24], fight: [10, 0, 3], heal: [48, 8, 13], retreat: [23, 2, 3], strike: [60, 24, 12] },
-  'none|0-1|<8': { cover: [58, 1, 28], fight: [7, 0, 6], heal: [27, 2, 7], retreat: [9, 0, 5], strike: [14, 5, 9] },
-  'none|0-1|>16': { cover: [72, 11, 7], fight: [20, 2, 0], heal: [26, 3, 0], retreat: [21, 1, 2], strike: [77, 30, 10] },
-  'none|2-3|*': { cover: [48, 9, 12], fight: [6, 0, 1], heal: [25, 5, 9], retreat: [22, 4, 5], strike: [65, 35, 13] },
-  'none|2-3|8-16': { cover: [24, 6, 5], heal: [15, 5, 4], retreat: [7, 0, 3], strike: [27, 13, 6] },
-  'none|2-3|<8': { cover: [10, 0, 8], heal: [8, 0, 5] },
-  'none|2-3|>16': { cover: [26, 5, 4], retreat: [14, 3, 1], strike: [41, 22, 5] },
-  'none|4+|*': { cover: [15, 1, 5], heal: [10, 1, 2], retreat: [11, 2, 3], strike: [5, 1, 3] },
-  'none|4+|8-16': { cover: [8, 1, 2], heal: [6, 1, 0], retreat: [7, 2, 2] },
-  'none|4+|>16': { cover: [5, 0, 1] },
-  'spawner|0-1|*': { cover: [26, 4, 10], fight: [13, 3, 2], heal: [8, 0, 4], retreat: [19, 6, 3], strike: [51, 27, 15] },
-  'spawner|0-1|8-16': { cover: [11, 1, 4], fight: [7, 2, 1], heal: [5, 0, 2], retreat: [11, 4, 0], strike: [22, 10, 5] },
-  'spawner|0-1|<8': { cover: [6, 0, 4], retreat: [7, 1, 3] },
-  'spawner|0-1|>16': { cover: [14, 3, 3], fight: [6, 1, 1], strike: [35, 17, 11] },
-  'spawner|2-3|*': { cover: [65, 11, 31], fight: [18, 3, 7], heal: [69, 13, 26], retreat: [26, 5, 8], strike: [54, 27, 22] },
-  'spawner|2-3|8-16': { cover: [30, 4, 17], fight: [10, 1, 4], heal: [43, 6, 13], retreat: [10, 1, 3], strike: [14, 3, 6] },
-  'spawner|2-3|<8': { cover: [20, 2, 11], fight: [5, 0, 2], heal: [16, 0, 11] },
-  'spawner|2-3|>16': { cover: [27, 6, 9], heal: [20, 7, 9], retreat: [13, 4, 2], strike: [43, 23, 17] },
-  'spawner|4+|*': { cover: [167, 9, 55], fight: [24, 1, 8], heal: [116, 12, 40], retreat: [90, 3, 27], strike: [90, 26, 38] },
-  'spawner|4+|8-16': { cover: [90, 5, 29], fight: [11, 0, 4], heal: [100, 11, 34], retreat: [39, 2, 11], strike: [11, 1, 5] },
-  'spawner|4+|<8': { cover: [53, 0, 34], heal: [29, 0, 20], retreat: [28, 1, 11], strike: [10, 2, 10] },
-  'spawner|4+|>16': { cover: [77, 5, 15], fight: [13, 1, 4], heal: [23, 2, 8], retreat: [29, 1, 8], strike: [78, 25, 31] },
+  'none|0-1|*': { charge: [6, 1, 0], close_in: [18, 7, 3], cover: [20, 1, 6], heal: [9, 0, 2] },
+  'none|0-1|8-16': { close_in: [5, 1, 2] },
+  'none|0-1|>16': { close_in: [15, 6, 2], cover: [16, 1, 4] },
+  'none|2-3|*': { charge: [14, 7, 4], close_in: [5, 1, 3], cover: [9, 1, 4] },
+  'none|2-3|>16': { charge: [12, 5, 2], cover: [8, 1, 3] },
+  'none|4+|*': { heal: [6, 0, 4] },
+  'spawner|0-1|*': { close_in: [9, 4, 4] },
+  'spawner|0-1|>16': { close_in: [9, 4, 4] },
+  'spawner|2-3|*': { charge: [8, 1, 5], cover: [11, 2, 6], heal: [9, 1, 2], retreat: [8, 3, 4] },
+  'spawner|2-3|8-16': { cover: [6, 1, 2], heal: [8, 1, 2] },
+  'spawner|2-3|<8': { cover: [5, 0, 4] },
+  'spawner|2-3|>16': { charge: [8, 1, 5], retreat: [6, 3, 2] },
+  'spawner|4+|*': { box_stand: [32, 1, 6], charge: [32, 3, 7], cover: [87, 3, 16], fight: [5, 0, 1], heal: [47, 4, 11], retreat: [16, 1, 7] },
+  'spawner|4+|8-16': { box_stand: [8, 0, 3], cover: [30, 0, 9], heal: [38, 3, 10], retreat: [6, 0, 4] },
+  'spawner|4+|<8': { box_stand: [5, 1, 2], cover: [8, 0, 4], heal: [9, 0, 1] },
+  'spawner|4+|>16': { box_stand: [24, 0, 5], charge: [32, 3, 7], cover: [70, 3, 12], heal: [15, 1, 6], retreat: [8, 1, 2] },
 };
-const ANSWERS_OF = { fights: 624, from: '2026-09-28', to: '2026-09-29T11:38Z' };
+// note 712: superseding the ANSWERS above (2026-09-28 to 2026-09-29T11:38Z,
+// 624 fights, the old single 'strike' class), from the 156 fights of
+// 2026-09-29T21:00Z to 2026-09-30T01:50Z, after the deploys since 21:00Z;
+// 'strike' is now 'charge' and 'close_in' apart, and 'box_stand' (a held
+// stand at the cage: box_here, box_at_spawner, fight_at_spawner,
+// break_spawner) and 'hole' (dig_in_and_fight, dig_in_at_spawner) are their
+// own class rather than folded into 'fight' or 'cover'; 'hole' has no row
+// here because it was never chosen at MIN_FIGHTS or more (once, in the whole
+// window: note 712). At a live spawner with four or more blazes within
+// sixteen (the busiest cell, chosen 87, 32 and 32 times): box_stand was
+// chosen almost as often as charge (32 times) but brought a rod after it
+// only 3% of the time (1 of 32) against charge's 9% (3 of 32) and cover's 3%
+// (3 of 87), and it died after just as often as the others (6 of 32, 19%,
+// against charge's 7 of 32 and cover's 16 of 87): it is not safer and not
+// more productive, just chosen as if it were a real option.
+const ANSWERS_OF = { fights: 156, from: '2026-09-29T21:00Z', to: '2026-09-30T01:50Z' };
 // HOW below was counted on the day's fights only (note 645), not on the rows above.
 const HOW_OF = { fights: 511, day: '2026-09-28' };
 
@@ -191,26 +210,27 @@ function rowSays(health, food) {
 }
 
 
-// The fights at a live blaze spawner by how many blazes were about (note 665;
-// scripts/blaze-record.js `--counts`, 2026-09-28T00:00Z to 2026-09-29T11:40Z, 567
-// fights). Counted by the MOST blazes within sixteen of the bot at once in the
+// The fights at a live blaze spawner by how many blazes were about (note 712;
+// scripts/blaze-record.js `--counts`, 2026-09-29T21:00Z to 2026-09-30T01:50Z,
+// 156 fights after the deploys since 21:00Z, superseding note 665's rows
+// above). Counted by the MOST blazes within sixteen of the bot at once in the
 // fight, which the bot's own stay within sixteen of the cage raised (the spawner
 // tries up to four every ten to forty seconds while a player is within sixteen,
 // until six are about): so a row is what a fight that got that many came to, not
 // what entering with that many would do. [fights, died, brought a rod, rods, mean
-// health lost].
+// health lost]. Deaths at seven or more fell from 30% to 17%.
 const COUNTS = {
-  from: '2026-09-28', to: '2026-09-29T11:40Z', fights: 567,
-  atSpawner: { 'three or fewer': [85, 19, 45, 76, 13.7], four: [29, 15, 12, 16, 17.8], 'five or six': [85, 42, 34, 49, 23.7], 'seven or more': [130, 39, 29, 47, 18.9] },
-  noSpawner: { 'none or one': [144, 19, 32, 34, 9.1], 'two or three': [75, 10, 27, 29, 11], 'four or more': [19, 6, 5, 7, 10.5] },
+  from: '2026-09-29T21:00Z', to: '2026-09-30T01:50Z', fights: 156,
+  atSpawner: { 'three or fewer': [11, 4, 7, 10, 6.8], four: [8, 2, 3, 5, 12.6], 'five or six': [24, 7, 7, 13, 14.3], 'seven or more': [72, 12, 9, 15, 14] },
+  noSpawner: { 'none or one': [16, 2, 4, 4, 3.1], 'two or three': [19, 4, 6, 8, 6.8], 'four or more': [6, 1, 0, 0, 15.1] },
   // Four or more at a live spawner, by the nearest the bot came to the cage.
-  byNearest: { 'within 8 blocks': [178, 74, 66, 102, 23.1], '9 to 12 blocks': [47, 16, 7, 8, 12.6], '13 to 16 blocks': [19, 6, 2, 2, 15.5] },
+  byNearest: { 'within 8 blocks': [81, 17, 18, 32, 15.2], '9 to 12 blocks': [18, 4, 1, 1, 11.8], '13 to 16 blocks': [5, 0, 0, 0, 1.6] },
   // The clock of a fight at a spawner: of the fights that began with one to three
   // blazes in sight, how many reached four within sixteen and when; the first rod
   // (of the fights that reached four) and the deaths, in seconds after the start.
-  // A bow with arrows, or snowballs, carried at the start of a fight: 8 of the 567 had a bow, none a snowball.
-  ranged: { bow: [8, 2, 1, 1, 7.2], snowballs: 0 },
-  clock: { began: 163, reached: 82, toFour: { median: 32, p90: 65 }, firstRod: { median: 16, n: 76 }, death: { p25: 32, median: 58, p75: 95 } },
+  // A bow with arrows carried at the start of a fight: 10 of the 156 had one, none a snowball.
+  ranged: { bow: [10, 2, 0, 0, 8.1], snowballs: 0 },
+  clock: { began: 27, reached: 17, toFour: { median: 40, p90: 90 }, firstRod: { median: 28, n: 19 }, death: { p25: 80, median: 107, p75: 188 } },
 };
 // A box held against the open, and the lulls (note 691; the flight records of
 // 2026-09-28T00:00Z to 2026-09-29T21:20Z, 952 records, a fight as fights()
