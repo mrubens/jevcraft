@@ -45,6 +45,21 @@ const { Vec3 } = require('vec3');
 
 const LIVING_FLAGS = 8;
 const RISE_MS = 250;
+// A charge or fight lowers the shield once a shooter is at the sword's
+// reach, trusting the swing to answer instead (note 709). That trust holds
+// only while a swing is actually landing: canStrike is a geometric test (in
+// range, on ground that reaches), true whether or not the body is stuck.
+// 25592 (mid-242-wa, note 737) charged a blaze the pathfinder could not
+// step toward (see blaze-stand.js walkableToBlaze): canStrike stayed true
+// the whole time at 0.8 to 1.1 blocks, no swing ever landed, and the
+// blaze's own melee took the bot from 13.1 to 3.5 health with the shield
+// down throughout. So the skip below also asks bot._defenseAttackAt
+// (combat.js, set at every real swing): within STALL_MS of a swing, the
+// melee is happening and the shield stays down for it; past that with
+// nothing swung, the closing is stalled and the shield is the safety
+// reflex's again.
+const STALL_MS = 1500;
+const swingingNow = (bot, now = Date.now()) => now - (bot._defenseAttackAt || 0) < STALL_MS;
 const MOVE_KEYS = ['forward', 'back', 'left', 'right', 'jump', 'sprint'];
 // The shots, the shooters that fire them, and how near a line passes the
 // body and still hits (the fireball's own width and a blast's reach).
@@ -370,8 +385,10 @@ function tick(bot, survival, now = Date.now()) {
     const e = bot.entities?.[id], a = answerFor(bot, id, now);
     if (!e?.position || a?.choice !== 'shield_up' || !warnDue(bot, e, now)) continue;
     // A charge's shield (note 709): raised while it closes, down for its
-    // swings once the shooter is at the sword's reach.
-    if (a.closing && require('./combat').canStrike(bot, e)) continue;
+    // swings once the shooter is at the sword's reach, but only while a
+    // swing is actually landing (note 737): stuck at reach with nothing
+    // swung, the shield is the safety reflex's again.
+    if (a.closing && require('./combat').canStrike(bot, e) && swingingNow(bot, now)) continue;
     guard.push({ at: e.position.offset(0, (e.height || 1.8) / 2, 0), why: a.by === 'stance' ? `stance ${a.stance.replaceAll('_', ' ')}: shield up to the ${e.name}${a.closing ? ' while it closes' : ''}` : `answer: shield up to the ${e.name}`, w: bot._shotInSight?.has(id) ? SEEN_W : 1, ...(a.closing ? { closing: true } : {}) });
   }
   // A shot in the air on a line that hits.
@@ -472,14 +489,26 @@ function shotOptions(bot, warned) {
   }
   const cover = coverCell(bot, warned);
   if (cover) tree.behind_cover = { description: `Step ${cover.steps} block${cover.steps === 1 ? '' : 's'} to (${cover.cell.x}, ${cover.cell.y}, ${cover.cell.z}), out of the line of ${who}, and stay there while the shots come (until about ${round(Math.max(...warned.map(e => WARNS[e._shotWarn.kind].most - (Date.now() - e._shotWarn.at) / 1000)))} seconds from now); ${doing} goes on after.`, cell: cover.cell };
-  const near = warned.filter(e => require('./combat').canStrike(bot, e)).sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
+  // Not only a shooter with a warning on now: one that drifted to the
+  // sword's reach between its own volleys is just as real a target, and a
+  // player swings at it right then rather than waiting out its rest. 25589
+  // (mid-242-wb, note 737) stood at a live spawner with blazes 3 to 6
+  // blocks off at least five times, shot_answer flipping shield_up,
+  // behind_cover and keep_on, and never swung: none of those blazes was
+  // counted here because none of them happened to be glowing at the
+  // moment asked.
+  const shooterNames = new Set(Object.values(SHOTS).flatMap(s => s.from));
+  const nearby = Object.values(bot.entities || {}).filter(e => e?.position && e.isValid !== false && shooterNames.has(e.name));
+  const near = [...new Map([...warned, ...nearby].map(e => [e.id, e])).values()]
+    .filter(e => require('./combat').canStrike(bot, e)).sort((a, b) => a.position.distanceTo(here) - b.position.distanceTo(here))[0];
   if (near) {
     const weapon = require('./combat').defenseWeapon(bot)?.name || 'a fist';
     const hp = typeof near.health === 'number' ? near.health : MOBS[near.name]?.health ?? 20;
     const { WEAPONS } = require('./combat-estimate');
     const [dmg, speed] = WEAPONS?.[weapon] || [1, 2];
     const swings = Math.ceil(hp / dmg), seconds = round(swings / speed);
-    tree.strike_first = { description: `Strike the ${near.name} at arm's length with ${weapon.replaceAll('_', ' ')}: about ${swings} swing${swings === 1 ? '' : 's'}, ${seconds} seconds, against ${round(firesIn(bot, near))} seconds before it shoots; if it lives, its shots land.`, target: near.id };
+    const warning = near._shotWarn ? `, against ${round(firesIn(bot, near))} seconds before it shoots` : ', not glowing yet';
+    tree.strike_first = { description: `Strike the ${near.name} at arm's length with ${weapon.replaceAll('_', ' ')}: about ${swings} swing${swings === 1 ? '' : 's'}, ${seconds} seconds${warning}; if it lives, its shots land.`, target: near.id };
   }
   const hits = warned.map(e => { const m = MOBS[e.name]; return m ? `the ${e.name.replaceAll('_', ' ')}'s ${shotWord(e.name)}, about ${round(afterArmour(m.hit, worn))} health a landing${e.name === 'blaze' ? ' (three shots, each setting the bot alight five seconds more, about one health a second)' : ''}` : null; }).filter(Boolean);
   // Whether shots have actually been landing here, not only their average
@@ -633,6 +662,37 @@ function farHeld(bot, warned, now = Date.now()) {
   return h.choice;
 }
 
+// farHeld above only holds for one shooter far off. At a live spawner with
+// several blazes near, each one's own glow begins a moment after the
+// last, and every fresh glow is a whole new ask: 25589 (mid-242-wb, note
+// 737) had shot_answer asked and answered five to six times a second at a
+// spawner (08:39:13-14 and 08:39:40-43Z), the tree barely changed between
+// them, and the choice flipped with it (shield_up, behind_cover, keep_on)
+// on a close call each time; it never swung and took no rod in the whole
+// window. One answer holds through a volley (notes 709/715/719): asked
+// again only past NEAR_HOLD_MS, or with more shooters warned now than the
+// answer covered (a new one arrived, not just an old one's next glow), or
+// the nearest of them closer by NEAR_NEARER_BY. -> the held choice, or
+// null (asked fresh).
+const NEAR_HOLD_MS = 3000, NEAR_NEARER_BY = 4;
+function nearestOf(bot, warned) {
+  const here = bot.entity?.position;
+  const ds = warned.map(e => e.position?.distanceTo?.(here)).filter(Number.isFinite);
+  return ds.length ? Math.min(...ds) : Infinity;
+}
+// Only where more than one shooter is about: a lone shooter's own next
+// glow (shot-reflex.test.js "the next glow is its own question") stays
+// asked fresh every time, as it did before. It is the crowd around a
+// spawner, each on its own clock, that this dampens.
+function recentHeld(bot, warned, now = Date.now()) {
+  if ((bot._shotWarned?.size || 0) < 2) return null;
+  const h = bot._shotRecentAnswer;
+  if (!h || now - h.at > NEAR_HOLD_MS || warned.length > h.count) return null;
+  const nearest = nearestOf(bot, warned);
+  if (Number.isFinite(h.nearest) && h.nearest - nearest >= NEAR_NEARER_BY) return null;
+  return h.choice;
+}
+
 // The question about these warnings, not waited for: the answer lands on
 // bot._shotAnswers when it comes. Until it comes the reflex answers a shot
 // in the air.
@@ -652,6 +712,7 @@ function ask(bot, survival, warned) {
       const e = warned[0], d = e.position?.distanceTo?.(bot.entity?.position);
       if (Number.isFinite(d) && d >= FAR) (bot._shotFarHeld ||= new Map()).set(e.id, { choice, at: Date.now(), distance: d });
     }
+    bot._shotRecentAnswer = { choice, at: Date.now(), count: warned.length, nearest: nearestOf(bot, warned) };
   };
   // The stance Jev chose answers it (note 709).
   const byStance = stanceAnswer(bot, tree);
@@ -669,6 +730,12 @@ function ask(bot, survival, warned) {
   if (held && tree[held]) {
     record(held, 'held');
     console.log(`[shot] the ${warned[0].name} warning, ${Math.round(warned[0].position.distanceTo(bot.entity.position))} blocks off: the last answer (${held.replaceAll('_', ' ')}) holds`);
+    return;
+  }
+  const near = recentHeld(bot, warned);
+  if (near && tree[near]) {
+    record(near, 'held');
+    console.log(`[shot] ${warned.map(e => `the ${e.name}`).join(', ')} warning: the last answer (${near.replaceAll('_', ' ')}) holds (note 737)`);
     return;
   }
   const state = shotState(bot, warned);

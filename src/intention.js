@@ -36,7 +36,16 @@ const TIMED = {
   nether_food_kit: /^(restock_food|return_for_food)$/,
   leave_nether: /^(go_back|restock_food|heal_first)$/,
   restock_food: /^(hoglin_\w+|cook_meat|mushroom_stew|return_for_food)$/,
-  empty_spawner: /^(stand_by_spawner|heal_first)$/,
+  // A box, a hole or a slit is a build over several seconds, then a hold:
+  // note 731 (25588) had empty_spawner asked six times in two minutes,
+  // box_here whole and holding at one ask and abandoned for stand_by_spawner
+  // ("Nothing is built") three asks later, standing in the open where the
+  // box already answered the same blazes; a fresh box_here then had to be
+  // chosen from scratch. Committed, box_here (or whichever build) is the
+  // only way empty_spawner offers back until it is built and holding, fails,
+  // or the bot leaves, arrives, or is hurt a real change (intention.js's own
+  // rules, same as stand_by_spawner already had).
+  empty_spawner: /^(stand_by_spawner|heal_first|box_here|box_in_line|box_at_spawner|dig_in_at_spawner|open_slit)$/,
   portal_way: /^(climb_here|around_\w+)$/,
   // Building or casting a portal frame is a stand at one spot over minutes
   // (note 714): 25581 was asked portal_method twice within a second and

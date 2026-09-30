@@ -67,9 +67,32 @@ test('a charge with the blaze at the sword\'s reach: no hold, the swings are the
   blaze.position = bot.entity.position.offset(1.5, 0, 0);
   blaze.metadata[BLAZE_FLAGS] = 1;
   reflex.tick(bot, survival, t0);
+  // A swing is actually landing (combat.js sets this at every real swing):
+  // the closing trusts it and leaves the shield down for it (note 709).
+  bot._defenseAttackAt = t0 + 2000;
   bot._shotLookAt = 0; reflex.tick(bot, survival, t0 + 2500);
   assert.equal(reflex.answerFor(bot, 775, t0 + 2500)?.choice, 'shield_up');
   assert.equal(calls.raised, 0, 'not raised at arm\'s length');
+});
+
+// Note 737: 25592 (mid-242-wa) charged a blaze the pathfinder never
+// actually got a swing at (stuck 0.8 to 1.1 blocks off), canStrike true
+// throughout, no swing landing; the blaze's own melee took it from 13.1
+// to 3.5 health with the shield down the whole time. "At the sword's
+// reach" trusts an imminent swing, not a stall: past STALL_MS with
+// nothing swung, the shield is the safety reflex's again.
+test('a charge stalled at the sword\'s reach with nothing swung: the shield comes back up', async () => {
+  const { bot, calls, survival, blaze } = scene();
+  const t0 = Date.now();
+  stance(bot, 'charge_nearest', t0);
+  blaze.position = bot.entity.position.offset(1.5, 0, 0);
+  blaze.metadata[BLAZE_FLAGS] = 1;
+  reflex.tick(bot, survival, t0);
+  // No swing ever recorded (bot._defenseAttackAt stays unset): the charge
+  // is stuck at reach, not actually fighting.
+  bot._shotLookAt = 0; reflex.tick(bot, survival, t0 + 2500);
+  assert.equal(reflex.answerFor(bot, 775, t0 + 2500)?.choice, 'shield_up');
+  assert.ok(calls.raised >= 1, 'raised: nothing swung in over a second at reach');
 });
 
 test('leaving to heal: the glow is not asked and holds nothing; a fireball on its way that hits still meets the shield', async () => {

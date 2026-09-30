@@ -746,6 +746,25 @@ function strikeCells(bot, blaze) {
   return out.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
 }
 
+// strikeCells above is only the geometry at the far end (a cell near the
+// blaze a push lands on ground from); it says nothing about the ground
+// between here and there. fight (survival.js) reads that with its own
+// greedy walk, chargeStopsAt: it stalls at once (blocks: 0) where a wall,
+// a lava gate or a drop lets the walk take no first step at all. 25592
+// (mid-242-wa, note 737) was told by fight, in the same breath, "the
+// ground toward the nearest carries no step", and by close_in and
+// charge_nearest that the blaze was "over ground the bot can stand on
+// within a sword's reach": Jev took charge_nearest three times running
+// and the bot never moved, 11 navigation_stalls in two minutes under
+// fireballs. One source now answers both: a blaze whose walk stalls at
+// once is not counted reachable here either, so it is left out of
+// close_in's count and never made charge_nearest's target (or, alone,
+// close_in is not offered at all).
+function walkableToBlaze(bot, blaze) {
+  const stop = require('./survival').chargeStopsAt(bot, blaze);
+  return !stop || stop.blocks > 0;
+}
+
 // Going at the blazes is Jev's choice (close_in, break_spawner, a
 // sortie): they are the fight's, as the hunt's are (danger.js hunted), so
 // the walk may step nearer them. Unclaimed, every cell nearer a shooter in
@@ -1293,7 +1312,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   // and heal against one at four with nothing else in sight. Without the
   // shield the walk goes straight in and every fireball lands at its
   // chance, and the price says so.
-  const reachable = blazes.filter(t => strikeCells(bot, t.entity).length).sort((a, b) => a.distance - b.distance);
+  const reachable = blazes.filter(t => strikeCells(bot, t.entity).length && walkableToBlaze(bot, t.entity)).sort((a, b) => a.distance - b.distance);
   if (reachable.length) {
     const first = reachable[0], over = blazes.length - reachable.length, shield = shieldCarried(bot);
     const walk = round(Math.max(0, first.distance - 3) / WALK);
@@ -1852,4 +1871,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS };
+module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze };

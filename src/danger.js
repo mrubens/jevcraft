@@ -374,8 +374,25 @@ function noWayIds(bot, list = null) {
 const WALKERS_JUDGED = { has: name => require('./walk-reach').WALKERS.has(name) };
 const cannotGetToTheBot = (bot, t, list) =>!shooter(t.entity) && !(bot._hurtById?.[t.entity.id] > Date.now() - ATTRIBUTE_MS) && noWayIds(bot, list).has(t.entity.id);
 
+// At a live blaze spawner the bot still owes rods to, a blaze beyond arm's
+// length is the work, not a threat that ends it: the box, the slit and the
+// stay-and-fight are all built to answer exactly that blaze, said with the
+// cage's own cap on every one of their options (spawner-clock.js capSays).
+// Without this, the generic guard every dig and walk carries (task.check,
+// checkThreats below) threw on the very blaze a spawner job was for: 25598
+// (note 731) chose open_slit at 07:31:05, was cut a second later by
+// "Threat nearby: blaze at 4 blocks" with one dig done of the slit's own,
+// and the job could never finish, over and over. One that has closed to
+// arm's length is still the body's own danger: the stance answers it as
+// any melee mob (fight, back off, box), same as before.
+const SPAWNER_MELEE = 3;
 function immediateThreat(bot) {
   const fighting = inEncounter(bot), hurt = bot._recentHurtAt > Date.now() - 4000;
+  // Computed at most once a call: cageFight reads the goal's rods and the
+  // fortress map, not cheap to ask of every mob in the scan below.
+  let liveSpawner;
+  const atLiveSpawner = () => { if (liveSpawner === undefined) { try { liveSpawner = !!require('./cage-hold').cageFight(bot, bot._goal); } catch (_) { liveSpawner = false; } } return liveSpawner; };
+  const spawnerCombat = t => t.entity.name === 'blaze' && t.distance > SPAWNER_MELEE && atLiveSpawner();
   // Another of the kind being fought never ends the fight: the hunt's own
   // crowd rule decides how many blazes are too many.
   const kin = t => fighting && t.entity.name === bot._combatEncounter.target?.name;
@@ -461,7 +478,7 @@ function immediateThreat(bot) {
   // blaze in sight near a fortress held the turn (notes 509, 513).
   const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? Math.max(48, RANGE[t.entity.name] || 0) : hurt ? 32 : 16, FIRE_REACH[t.entity.name] || 0);
   const about = threats(bot, 64);
-  const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) &&
+  const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) && !spawnerCombat(t) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)) &&
     // Last, as it is the dearest: a walker that cannot get to the bot.
     !cannotGetToTheBot(bot, t, about));

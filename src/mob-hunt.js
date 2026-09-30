@@ -543,8 +543,16 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   // A blaze hunt about to go at blazes none of which sees the bot yet is a
   // visit beginning (note 638); with one in sight the fight is on, and the
-  // stances are asked.
-  if (state.entity === 'blaze' && candidates.length && !(() => { try { return threats(bot, 48).some(t => t.entity.name === 'blaze' && t.visible); } catch (_) { return true; } })()) {
+  // stances are asked. A fresh visit is not asked at a live spawner already
+  // known and still owed rods (cage-hold.js cageFight): the bot is already
+  // at the fortress there, mid-fight, not approaching one (note 731, 25588:
+  // fortress_visit asked "Healing before going into the fortress" 17
+  // minutes into a fight at that very spawner's cage). An answer already
+  // held from before (food, a hoglin, leaving) is still read and honoured
+  // either way: that is what carried it out last time doing nothing, not a
+  // fresh approach (note 708).
+  if (state.entity === 'blaze' && candidates.length && !(() => { try { return threats(bot, 48).some(t => t.entity.name === 'blaze' && t.visible); } catch (_) { return true; } })() &&
+      (require('./fortress-visit').holdsOff(bot, goal) || !(() => { try { return require('./cage-hold').cageFight(bot, goal); } catch (_) { return false; } })())) {
     const visit = await require('./fortress-visit').ask(bot, task, goal, save, { ...actions, client: actions.client || client }, {});
     if (visit === null) return false;
     // A visit answer held from before (food, a hoglin, leaving) did its
@@ -567,6 +575,16 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const rodsOf = state.entity === 'blaze' ? require('./blaze-stand').rodsOf(bot, goal) : '';
   const liveCage = !!cage && cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position) <= 16;
   const spawnerSays = cage ? ` A blaze spawner is ${Math.round(cage.offset(0.5, 0.5, 0.5).distanceTo(bot.entity.position))} blocks off: while the bot is within sixteen of it, it makes up to four more every ten to forty seconds.` : '';
+  // The cage's own cap, said plainly on defer (note 731): capped, leaving
+  // these costs nothing in fresh spawns while it stands; not capped, more
+  // are coming whether the bot fights now or not.
+  const capNow = liveCage ? (() => { try { return require('./spawner-clock').capSays(bot, cage); } catch (_) { return null; } })() : null;
+  // How many times running defer was chosen against this same live spawner
+  // with nothing come of it since: 25598 (note 731) deferred at 07:25:18
+  // and again at 07:30:49, both against the one blaze it needed for its
+  // last rod, each told nothing of the one before it.
+  const deferStreak = liveCage ? goal.huntDeferStreak || 0 : 0;
+  const deferStreakSays = deferStreak ? ` Chosen ${deferStreak} time${deferStreak === 1 ? '' : 's'} running against this cage: nothing has changed since, and the rods still needed are the same.` : '';
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
@@ -616,7 +634,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // defer, and deferred four times in two minutes (note 557).
       // The one it goes at, by its own figures; the others' share is in the price.
       const gain = one?.fightHere ? { kills: 1, seconds: one.fightHere.seconds, dies: one.fightHere.healthAfter <= 0, all: true } : { kills: 1 };
-      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage, of: rodsOf }),
+      // What a box or a slit at the cage offers instead, said beside the
+      // open fight, not left for Jev to find only by noticing the other
+      // option in the same tree (note 731): the open fight takes every shot
+      // that lands, a box or slit takes only what has a line through its
+      // one opening.
+      const coveredOffered = target.name === 'blaze' && liveCage && typeof bot.dig === 'function' ? ' A box or a slit built at the cage is offered too, alongside this: walled in but for one opening toward it, only a blaze in line with that opening sees the bot, where the open ground here gives every one of them a shot.' : '';
+      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage, of: rodsOf }) + coveredOffered,
         run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }
@@ -671,7 +695,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // What leaving them came to in the arena, where it was measured: the
   // blazes stay, and so does their fire (blaze-stand.js MEASURED).
   const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
-  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.` : '';
+  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.${capNow ? ` ${capNow}` : ''}${deferStreakSays}` : '';
   tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
@@ -711,8 +735,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // means the observed situation is unsuitable to hunt right now; a closing
   // stance chosen moments after against the mobs just left alone reverses
   // it, and is said so (danger.js huntAnswerJustNow).
-  if (decision.path[0] === 'defer') goal.lastHuntDefer = { at: Date.now(), position: { ...bot.entity.position } };
-  else delete goal.lastHuntDefer;
+  if (decision.path[0] === 'defer') { goal.lastHuntDefer = { at: Date.now(), position: { ...bot.entity.position } }; goal.huntDeferStreak = (goal.huntDeferStreak || 0) + 1; }
+  else { delete goal.lastHuntDefer; delete goal.huntDeferStreak; }
   await decision.action.run();
   return decision.path[0] !== 'defer';
 }
@@ -982,10 +1006,18 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // one at a time. A single one is still fought in the open, which now
     // costs nothing at all.
     const inView = threats(bot, 24).filter(t => t.entity.name === step.entity && t.visible).length;
+    // A box, hole or slit already under way at the spawner (chosen at
+    // empty_spawner, now an intention: note 731, intention.js TIMED) is the
+    // wall this would otherwise dig from scratch: 25588 had "Digging in
+    // beside them" fire on a box one block from whole, walking off to a
+    // fresh bunker at a different spot while the almost-finished box stood
+    // empty. While that intention holds, the wall it is building or has
+    // already built is left to finish and be used, not preempted.
+    const buildingBox = (() => { try { const i = require('./intention').holding(bot, goal); return !!i && i.q === 'empty_spawner' && /^(box_here|box_in_line|box_at_spawner|dig_in_at_spawner|open_slit)$/.test(i.choice); } catch (_) { return false; } })();
     // A wall at hand, not a wall somewhere. Sent to find one nine blocks
     // off, the bot took forty-one damage crossing the room and arrived with
     // nothing; fighting where it stood cost twenty-six.
-    const cornered = handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16));
+    const cornered = !buildingBox && handler.ranged && (inView >= 2 || (swarm(bot) && bot.health < 16));
     // A spawner keeps three or more in the air, and three of a kind in view
     // means none of them is isolated enough to fight: the live run stood
     // eight blocks from a fortress spawner watching blazes, one second at a
@@ -3820,9 +3852,14 @@ function claim(bot, goal = {}) {
   // the walls, said with the claim.
   let walled = null;
   if (!seen) { try { walled = require('./walled-in').walledInSays(bot); } catch (_) { walled = null; } }
+  // A live spawner still owed rods, known here: hunt_target offers a box or
+  // slit at it beside the open fight, said so turn_priority's own "hunt"
+  // option does not read as the open ground being the only way (note 731).
+  let cage = false;
+  if (target.name === 'blaze') { try { cage = !!require('./cage-hold').cageFight(bot, goal); } catch (_) { cage = false; } }
   return { layer: 'hunt', action: 'hunt', urgency: 'routine', facts: { entity: target.name, distance: Math.round(target.position.distanceTo(bot.entity.position) * 10) / 10,
     item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health, ...(seen ? {} : { outOfSight: true }),
-    ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}) } };
+    ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
 module.exports = { tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, pickaxeFirst, fortressInView, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

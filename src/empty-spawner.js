@@ -111,6 +111,13 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
     row = ` Of the trials' fights begun at ${b.said}, ${b.fights}: ${b.diedPct}% died, ${b.rodPct}% brought a rod.`;
   } catch (_) { row = ''; }
   const healthSays = `Health ${round(f.health)}${f.health >= 20 ? '' : f.healable ? ', coming back meanwhile' : ', not coming back'}: a blaze fires three fireballs a volley, one that lands costs ${hit} and sets the bot alight, so ${lands === 1 ? 'one that lands is the end' : `about ${lands} that land are the end`}.${row}`;
+  // A stand in the open has no wall to meet a fireball with, and none of
+  // the shots land on anything but the bot (note 731, 25588: no shield
+  // carried, 20 to 0.8 health in three seconds standing in the open). Said
+  // plainly, with the trials' own comparison against a box (blaze-record.js
+  // boxedSays, the same figures spawner-clock.js's lull gives).
+  const shield = bot.inventory?.slots?.[45]?.name === 'shield';
+  const openRisk = `${shield ? '' : ' No shield is carried: every fireball that lands is taken in full.'}${(() => { try { return require('./blaze-record').boxedSays(f.health); } catch (_) { return ''; } })()}`;
   if (!resting) {
     const site = standSite(bot, cage);
     // spawnerSite (standSite) failing says only "no cell under a ceiling or
@@ -132,8 +139,8 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
     const sees = line ? ` There it sees ${require('./blaze-tactics').lineWords(line)}.` : '';
     const goCell = site ? site.cell : reach ? reach.cell : null;
     tree.stand_by_spawner = { description: quiet
-      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built.${sees} ${healthSays.replace(row, '')}`
-      : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail.${sees} ${healthSays}`,
+      ? `Take a stand in the open at ${where}, up to a minute, and fight its next blazes as they come; each that sees the bot shoots at it. Nothing is built.${sees} ${healthSays.replace(row, '')}${openRisk}`
+      : `Take a stand at ${where} and wait for its next blazes: within 16 of it the spawner puts up to ${COUNT} within 4 blocks of the cage every ${DELAY} seconds, until ${CAP} are about; with the bot staying, 4 or more were about by a median ${MEDIAN_FOUR} seconds. Each that sees the bot shoots at it, fought or not. Up to a minute; none by then means its tries fail.${sees} ${healthSays}${openRisk}`,
       run: () => {
         const fs = goal.fortressSearch ||= { legs: 0 };
         fs.spawnerWait = { x: cage.x, y: cage.y, z: cage.z, until: now + STAND_MS, startedAt: now, chosen: 'empty_spawner', ...(goCell ? { cell: P(goCell) } : {}) };
@@ -327,6 +334,15 @@ function lineHereSays(bot, known) {
 async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) {
   const client = actions.client || task?.opportunityClient;
   if (!client || process.env.JEV_EMPTY_SPAWNER === '0' || !inNether(bot) || !bot.entity) return false;
+  // A box, hole or slit already built and holding (cage-hold.js holding,
+  // note 700) is carried on, not asked over: stand_by_spawner and heal_first
+  // already had this protection (spawnerWait, emptySpawner.pick below);
+  // a build had none. 25588 (note 731) had empty_spawner asked six times in
+  // two minutes, box_here whole and holding at one ask ("held from about
+  // here once in the last 46 seconds") and abandoned for stand_by_spawner
+  // three asks later ("Nothing is built"), standing in the open where the
+  // box already answered the same blazes.
+  try { if (require('./cage-hold').holding(bot, goal, now)) return true; } catch (_) { /* no hold */ }
   const fs = goal.fortressSearch;
   // The lull by a live spawner (note 691): blazes about out of sight, none at
   // reach. Asked then too, unless Jev chose to go after them just now.

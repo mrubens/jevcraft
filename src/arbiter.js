@@ -233,7 +233,21 @@ function observe(bot, ctx) {
   // out behind the rock re-asked the turn: 25591 (mid-242-nb) was asked
   // turn_priority 14 times in 43 seconds, each "a newcomer within six
   // blocks", none of them seeing it (note 708).
-  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER && (t.visible !== false || t.distance <= 4)).map(t => t.entity?.id), health: bot?.health ?? 20, band: foodBand(bot?.food),
+  // At a live spawner the bot still owes rods to, the ring at six blocks is
+  // never still: 17 to 21 blazes of the one capped swarm drift in and out
+  // of it on their own, each a fresh id though the swarm they come from was
+  // already read on the last ruling. Counting them one by one broke
+  // turn_priority every 9 to 15 seconds with nothing said changed but which
+  // blaze of the many was nearest: 25598 (note 731) got neither hunt nor
+  // work an eyeblink to do either for over an hour. What matters there is
+  // already said on every option (spawner-clock.js capSays, the cage's own
+  // cap), not which one of the swarm is momentarily closest, so a blaze's
+  // id is left out of the newcomer set while the bot is at such a cage; a
+  // mob at the bot's reach still breaks the ruling below, as it always did.
+  let atCage = false;
+  try { atCage = !!require('./cage-hold').cageFight(bot, ctx.goal); } catch (_) { atCage = false; }
+  return { ids: mobs.filter(t => t.distance <= STANCE_NEWCOMER && (t.visible !== false || t.distance <= 4) && !(atCage && t.entity?.name === 'blaze')).map(t => t.entity?.id),
+    health: bot?.health ?? 20, band: foodBand(bot?.food),
     ...(ctx.pressing || pressing(bot, ctx.look || probe)) };
 }
 
@@ -437,7 +451,7 @@ function claimSays(c) {
     // at 5.5 health beside the work (note 509): what it goes for, and why.
     // Out of sight and walled in, the fight begins only through the walls
     // (note 708): said, not left as "close on it".
-    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance, seen: f.outOfSight ? false : undefined }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: ${f.walledIn ? `the bot is walled in (${f.walledIn}), so it closes on it only by digging out first` : 'close on it and fight it'}; which one, and the fight's cost, is asked next. The work waits.${hp}`;
+    case 'hunt': return `Hunt ${f.entity ? mob({ name: f.entity, distance: f.distance, seen: f.outOfSight ? false : undefined }) : 'the mob in view'}${f.item ? ` for ${plural(f.item)} (${f.have ?? 0} of ${f.want} carried)` : ''}: ${f.walledIn ? `the bot is walled in (${f.walledIn}), so it closes on it only by digging out first` : f.cage ? 'which one, in the open or from a box or slit built at the cage' : 'close on it and fight it'}; which one, and the fight's cost, is asked next. The work waits.${hp}`;
     case 'night_hunt': return `Go on with ${f.forFood ? 'the hunt for food' : 'tonight\'s hunt'}${f.hunting ? ` of ${plural(f.hunting)}` : ''}, as chosen${f.forFood ? '' : ' for the night'}: close on those met and fight them.${hp}${heals}${f.hoglinFight ? ` ${f.hoglinFight}` : ''}`;
     case 'recover_items': return `Go back for the items dropped at the death${f.dropsAt ? ` at ${Math.round(f.dropsAt.x)}, ${Math.round(f.dropsAt.y)}, ${Math.round(f.dropsAt.z)}` : ''}: the way there is walked; items left lying in a loaded area vanish five minutes after they drop.${hp}`;
     case 'go_home_for_night': return `Go home for the night, as planned: the walk to the bed and sleep.${hp}`;

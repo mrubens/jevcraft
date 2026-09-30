@@ -112,6 +112,34 @@ test('close_in is offered with a blaze over ground the sword reaches from, not o
   assert(!stand.blazeStands(bot, threats(bot, 24), { dig: false }).close_in, 'over lava');
 });
 
+// 25592 (mid-242-wa, note 737) at 08:38:42Z: fight said "None of them can
+// be reached from here ... the ground toward the nearest carries no
+// step", while charge_nearest and close_in said the same blazes were
+// "over ground the bot can stand on within a sword's reach". Jev chose
+// charge_nearest three times running, the bot never moved, 11
+// navigation_stalls in two minutes under fireballs. strikeCells only
+// checks the ground right beside the blaze (standable, no push into lava
+// or a drop): it says nothing about whether the bot can actually walk
+// there from where it stands. close_in and charge_nearest must also read
+// walkableToBlaze (chargeStopsAt, the same greedy walk fight's own
+// reachability uses), so an unreachable charge is left out here too,
+// rather than contradicting fight in the same breath.
+test('close_in and charge_nearest are not offered where the ground toward the blaze carries no step, same source as fight (note 737)', () => {
+  // A floor throughout, but a two-high wall one step from the bot (x = 1)
+  // straight toward the blaze: the ground under it is unbroken (no drop,
+  // no lava beside the blaze at x = 5-6 for strikeCells to trip on), but
+  // the first step of the walk is a wall, level, up and down alike.
+  const solid = p => p.y <= 63 || (p.x === 1 && (p.y === 64 || p.y === 65) && Math.abs(p.z) <= 2);
+  const bot = brickWorld(solid);
+  const over = blazeAt(3, 5.5, 64.5, 0.5);
+  bot.entities = { 3: over };
+  assert(stand.strikeCells(bot, over).length, 'a cell beside the blaze is fine on its own');
+  assert.equal(stand.walkableToBlaze(bot, over), false, 'but the walk there has no first step');
+  const options = stand.blazeStands(bot, threats(bot, 24), { dig: false, hunted: true });
+  assert(!options.close_in, `not offered: ${options.close_in?.description}`);
+  assert(!options.charge_nearest, 'charge_nearest not offered either');
+});
+
 // mid-242-aa-fortress-5 at 15:16:45 (note 614): a stone sword, no armour,
 // no shield, 20 health, one blaze 4.3 off in sight and four more ten to
 // thirteen off behind the walls. Offered cover, holds, heal and retreat,

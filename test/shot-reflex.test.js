@@ -157,6 +157,33 @@ test('a blaze begins to glow while the work holds the turn: shot_answer is asked
   assert.equal(asked.length, 2, 'the next glow is its own question');
 });
 
+// Note 737, 25589 (mid-242-wb): at a live spawner with several blazes
+// about, each glows on its own clock a moment after the last, and every
+// fresh glow used to be a whole new ask: shot_answer was asked and
+// answered five to six times a second, flipping shield_up, behind_cover
+// and keep_on on a close call each time. Unlike the lone-shooter case
+// above (each of its own glows is still its own question), a second
+// shooter's glow beginning moments after the first, with nothing else
+// changed, reuses the answer already given rather than asking again.
+test('a second blaze glowing moments after the first, at a spawner, reuses the answer already given (note 737)', async () => {
+  const { bot } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  for (const e of Object.values(bot.entities)) if (e.name === 'small_fireball') delete bot.entities[e.id];
+  const asked = [];
+  const survival = { client: {}, decide: async (task, goal, save, q) => { asked.push(q); return { path: ['keep_on'] }; } };
+  const first = bot.entities[775], second = bot.entities[833];
+  first.metadata[BLAZE_FLAGS] = 1;
+  reflex.tick(bot, survival);
+  await new Promise(r => setImmediate(r));
+  assert.equal(asked.length, 1);
+  assert.equal(reflex.answerFor(bot, 775)?.choice, 'keep_on');
+  // A moment later the second blaze starts its own glow: not asked fresh.
+  second.metadata[BLAZE_FLAGS] = 1;
+  bot._shotLookAt = 0; reflex.tick(bot, survival);
+  await new Promise(r => setImmediate(r));
+  assert.equal(asked.length, 1, 'held: not asked again for the second blaze\'s glow');
+  assert.equal(reflex.answerFor(bot, 833)?.choice, 'keep_on', 'the same answer carries to it');
+});
+
 test('the shield_up answer raises the shield when the volley is due, 2.4 s into the glow, with no shot yet in the air', async () => {
   const { bot, calls } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
   for (const e of Object.values(bot.entities)) if (e.name === 'small_fireball') delete bot.entities[e.id];
@@ -212,6 +239,27 @@ test('a strike is offered at a glowing blaze the sword reaches, with its swings 
   await new Promise(r => setImmediate(r));
   assert.ok(asked[0]?.tree.strike_first, Object.keys(asked[0]?.tree || {}).join());
   assert.match(asked[0].tree.strike_first.description, /about 4 swings, [\d.]+ seconds, against [\d.]+ seconds before it shoots/);
+});
+
+// Note 737, 25589 (mid-242-wb): at a live spawner, blazes came within 3 to
+// 6 blocks at least five times, shot_answer flipping shield_up,
+// behind_cover and keep_on, and never once swung. The old strike_first
+// only looked among the shooters with a glow on right now, so a blaze
+// that had simply drifted to the sword's reach between its own volleys
+// (not glowing at the moment asked) was never offered as a target.
+test('a strike is offered at a blaze already at the sword\'s reach even when it is not the one glowing', async () => {
+  const { bot } = botFrom(frameAt('2026-09-29T18:48:19.334Z'));
+  const glowing = bot.entities[775], quiet = bot.entities[777];
+  glowing.metadata[BLAZE_FLAGS] = 1; // far off: the warning that triggers the ask.
+  quiet.metadata[BLAZE_FLAGS] = 0;
+  quiet.position = bot.entity.position.offset(1.8, 0.4, 0); // at arm's length, between its own volleys.
+  bot.inventory.items = () => [{ name: 'iron_sword', type: 1 }];
+  const asked = [];
+  reflex.tick(bot, { client: {}, decide: async (task, goal, save, q) => { asked.push(q); return { path: ['shield_up'] }; } });
+  await new Promise(r => setImmediate(r));
+  assert.ok(asked[0]?.tree.strike_first, Object.keys(asked[0]?.tree || {}).join());
+  assert.equal(asked[0].tree.strike_first.target, quiet.id, 'the one at arm\'s length, not the one glowing far off');
+  assert.match(asked[0].tree.strike_first.description, /not glowing yet/);
 });
 
 test('split shooters: the shield faces the side with more of them and the option says which is left behind', () => {
