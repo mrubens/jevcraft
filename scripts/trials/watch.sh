@@ -9,7 +9,8 @@
 # played with no Nether is ended too: past that it has shown what it
 # shows, and the port is worth more on a new start (Fable 08:01Z,
 # 2026-09-30: 69.6 of 94.5 fresh bot-hours went to trials that never
-# reached a blaze fight).
+# reached a blaze fight). Likewise an hour in the Nether with no fortress
+# (Fable 11:02Z: three of seven Nether bots had none at 81-110 minutes).
 #   sh scripts/trials/watch.sh 25582 25583 ...   (or auto)
 # Midgame trials by default; TRIAL=first-days for first-days trials.
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -34,7 +35,7 @@ while :; do
   for p in $(ports "$@"); do
     if [ "$TRIAL" = midgame ]; then V=$(MIDGAME_PORT=$p limit node scripts/midgame.js verdict 2>/dev/null </dev/null)
     else V=$(FIRST_DAYS_PORT=$p limit node scripts/first-days.js verdict 2>/dev/null </dev/null); fi
-    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);const noNether=!/fortress|nether/.test(v.world||'')&&(v.playedMinutes||0)>=60&&!(v.reachedAtMinute||{}).nether;process.exit(v.done||noNether||(v.reasons||[]).some(r=>/death|loop|stranded/.test(r))?0:1)}catch{process.exit(1)}})"; then
+    if echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const v=JSON.parse(s);const noNether=!/fortress|nether/.test(v.world||'')&&(v.playedMinutes||0)>=60&&!(v.reachedAtMinute||{}).nether;const r=v.reachedAtMinute||{};const noFortress=!/fortress/.test(v.world||'')&&r.nether!=null&&!r.fortress&&(v.playedMinutes||0)-r.nether>=60;process.exit(v.done||noNether||noFortress||(v.reasons||[]).some(r=>/death|loop|stranded/.test(r))?0:1)}catch{process.exit(1)}})"; then
       echo "attention on $p"; echo "$V" | head -30; exit 0
     fi
   done
