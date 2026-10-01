@@ -541,6 +541,29 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
 // are read, whoever then gets the turn.
 // The count a hunt ends at: the ladder's own number for its blaze hunt
 // (blaze-stand.js rodsTarget, from eye-need.js), else the hunt's own.
+// The hunt's claim kept through a long step of its own (the dig toward
+// them, the door, the descent): staked for five seconds a tick, it lapsed in
+// a tunnel that ran longer, and the route search, no longer the hunt's, kept
+// every cell within six of a blaze out of sight from the walk: 25583 at its
+// fortress's spawner (2026-10-01 13:02-13:06Z) walked "no route" a block
+// toward a blaze four blocks off, once a second for four minutes (note 809).
+// -> restore().
+// The walk's own closing-on is kept with it (danger.js closingOn: for the
+// walk only, not a claim the reflexes or the survival layer yield to), for
+// one of the kind within three and a half blocks, which the hunt's claim
+// gives up: 25583's nearest was 3.3 blocks off behind the box's wall.
+function keepClaim(bot, task, name) {
+  if (!task) return () => {};
+  const previous = task.interruptCheck, closing = bot._closingOn;
+  const stake = () => {
+    const until = Date.now() + 5000;
+    if (!bot._huntingEntity || bot._huntingEntity.name === name) bot._huntingEntity = { name, until };
+    bot._closingOn = { name, until };
+  };
+  task.interruptCheck = () => { stake(); previous?.(); };
+  stake();
+  return () => { task.interruptCheck = previous; bot._closingOn = closing; };
+}
 const huntTarget = (bot, goal) => goal.mobHunt?.entity === 'blaze' ? require('./blaze-stand').rodsTarget(bot, goal) : goal.mobHunt?.targetCount;
 const ladderRods = goal => goal.kind === 'win' && goal.gameProgress?.phase === 'obtain_blaze_rods';
 // What the goal wants in rods against what is carried, one sentence, on the
@@ -1239,8 +1262,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     if (stairs && stairs.until > Date.now() && actions.tunnel && target.distanceTo(bot.entity.position) > 3.5) {
       goal.step = { action: 'dig_toward_them', entity: step.entity, to: { x: stairs.x, y: stairs.y, z: stairs.z },
         away: Math.round(target.distanceTo(bot.entity.position)) }; save();
+      const unclaim = keepClaim(bot, task, step.entity);
       try { await actions.tunnel(bot, task, goal, save, target, 'approach'); return; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastStairsError = err.message; save(); }
+      finally { unclaim(); }
     } else if (stairs && (stairs.until <= Date.now() || target.distanceTo(bot.entity.position) <= 3.5)) { delete state.stairsTo; save(); }
     // Watching, not fighting. The observed hunt takes a target the moment it
     // is allowed to; a stalk that has watched the same mob for fifteen
@@ -4553,4 +4578,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
