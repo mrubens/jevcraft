@@ -469,6 +469,18 @@ const CREEPER_BLAST_REACH = 6;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
 const SPRINT = 5.6, SCOUT_MS = 300;
+// The retreat's scout with nothing close (no biter within 4, no creeper
+// within 7): searched longer before the stance is asked (note 801). At 300
+// ms each route search had 150 and two of up to 24 spots were tried; since
+// 10:10Z on 2026-10-01, 6 of 7 Overworld deaths had the retreat say "No way
+// found yet: 2 of 24 spots ... tried" in their last minute, and a way found
+// is chosen 29% of the time against 2.6% (note 793).
+const SCOUT_FAR_MS = 1200, SCOUT_CLOSE = 4, SCOUT_CREEPER_CLOSE = 7;
+function scoutBudget(danger = []) {
+  const { shooter } = require('./mob-policy');
+  const close = danger.some(t => t?.entity && (t.entity.name === 'creeper' ? t.distance <= SCOUT_CREEPER_CLOSE : !shooter(t.entity) && t.distance <= SCOUT_CLOSE));
+  return close ? SCOUT_MS : SCOUT_FAR_MS;
+}
 // A swim at the surface: about two blocks a second. mid-215-j swam 29
 // blocks of open sea in 14.3 seconds on its way to a ruined portal (the
 // flight frames of 2026-09-27, note 501).
@@ -6462,7 +6474,7 @@ class Survival {
   // three or more mobs about, 25 of the 39 chosen with none at arm's length
   // in the midgame trials of 2026-09-25 and 26 found no way and failed. What
   // was found is said on the option, and a way found is the one run.
-  async scoutRetreat(task, danger, { budgetMs = SCOUT_MS } = {}) {
+  async scoutRetreat(task, danger, { budgetMs = scoutBudget(danger) } = {}) {
     const bot = this.bot;
     // The way out past the game's despawn distance, for wait_far_off (note 665):
     // only with a live blaze spawner within sixteen and a blaze about.
@@ -11391,4 +11403,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
