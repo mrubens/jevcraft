@@ -234,3 +234,16 @@ test('in a fight, on a pillar it raised itself and a fifth of a block off its mi
   assert(await descendPillar(bot, task, goal, () => {}, null, { combat: true }));
   assert.equal(bot.entity.position.y, 76);
 });
+
+test('in a fight, 0.38 of a block off the middle of its pillar, the way down is offered and stepped to the middle (25585 mid-227-ah, note 799)', async () => {
+  const { bot, task, goal } = fixture();
+  bot.game = { difficulty: 'normal', dimension: 'the_nether' };
+  bot.entity.position = new Vec3(.88, 77, .5);
+  const keys = {};
+  Object.assign(bot, { lookAt: async () => {}, clearControlStates() { for (const k in keys) keys[k] = false; },
+    getControlState: k => !!keys[k], setControlState(k, v) { keys[k] = v; if (k === 'forward' && v) bot.entity.position.x = .5; } });
+  assert.equal(pillarDescent(bot, goal, { combat: true }), null, 'off the middle: not a quiet descent');
+  assert(pillarDescent(bot, goal, { combat: true, center: true }), 'over the block: the way down in a fight');
+  assert(await descendPillar(bot, task, goal, () => {}, null, { combat: true }));
+  assert.equal(bot.entity.position.y, 76);
+});

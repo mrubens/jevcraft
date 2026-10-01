@@ -21,7 +21,13 @@ const unsafe = b => !b || damagingTerrain.has(b.name) || ['water', 'bubble_colum
 // descent steps it to the middle first). mid-242-af stood 0.2 of a block off
 // its pillar's middle for twelve minutes and was never offered the way down
 // (note 590).
-const CENTERED = .18, OVER = .3;
+// Over the block anywhere its top holds the feet (OVER): in a fight the
+// descent steps to the middle first, sneaking (descendPillar). At .3, a bot
+// 0.38 off the middle of its own pillar's top was offered no way down: 25585
+// (mid-227-ah, 2026-10-01 11:31-11:36Z), six health, five blazes shooting,
+// asked encounter_stance 30 times in three minutes with only fight and a
+// retreat that had no way (note 799).
+const CENTERED = .18, OVER = .49;
 function pillarDescent(bot, goal, { combat = false, center = false } = {}) {
   const feet = bot.entity.position, blockPosition = supportCell(feet), block = bot.blockAt(blockPosition);
   const off = center ? OVER : CENTERED;

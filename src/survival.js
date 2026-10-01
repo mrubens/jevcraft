@@ -4128,7 +4128,7 @@ class Survival {
     // mid-208-k-nether-4-fortress-1 under a fungus's cap with no side open at
     // head height, and neither was offered the way down in eleven and twelve
     // minutes held (note 590).
-    const down = pillarDescent(bot, goal, { combat: true, center: up });
+    const down = pillarDescent(bot, goal, { combat: true, center: true });
     // Up off the ground by more than a route drops: only then is there no
     // way off it but digging down.
     let onPillar = 0;
