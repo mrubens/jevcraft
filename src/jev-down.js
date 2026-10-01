@@ -19,17 +19,46 @@
 // waiting for Jev; and '[jev down] back' with Jev's return.
 
 const TRANSIENT = new Set([408, 429, 500, 502, 503, 504, 529]);
+// The account's, not the question's (note 781): no credits (402), the key
+// refused (401, 403). TypeSafe's credits ran out at 04:57:47Z on 2026-10-01
+// and every question came back 402. Read as a question rejected, each was
+// thrown to its step: no hold, no '[jev down]' (0 such lines against 4,881
+// to 8,592 402s a bot log), the steps failed into persist, the trial
+// harness read the persists as loops and restarted worlds every 80 seconds,
+// and note 778b's floor (bot._jevDown) never came on while two bots were
+// killed by single zombies.
+const ACCOUNT = new Set([401, 402, 403]);
 // Whether an error is Jev not being reachable (an outage, a timeout, a
-// connection refused, a garbled answer, the breaker open, no client), as
-// against a question rejected (a 4xx: a bug to fix, thrown as before) or a
-// stop of the bot's own (a cancel, the air, a threat, a stall). The caller
-// looks at its own signal first: a stop of its own is a stop, not an outage.
+// connection refused, a garbled answer, the breaker open, no client, the
+// account out of credits or refused), as against a question rejected (any
+// other 4xx: a bug to fix, thrown as before) or a stop of the bot's own (a
+// cancel, the air, a threat, a stall). The caller looks at its own signal
+// first: a stop of its own is a stop, not an outage.
 const STOPS = new Set(['Cancelled', 'NeedsAir', 'NeedsSafety', 'Stalled', 'Blocked', 'CutShort', 'EndEmergency', 'BadAnswer']);
 const unreachable = err => {
   if (!err || STOPS.has(err.name)) return false;
-  if (err.name === 'TypeSafeError') return !err.status || TRANSIENT.has(err.status);
+  if (err.name === 'TypeSafeError') return !err.status || TRANSIENT.has(err.status) || ACCOUNT.has(err.status);
   return true;
 };
+// What kind of outage an error is, for the record and the harness (note
+// 781): billing (402), auth (401, 403), rate_limit (429), timeout (408, an
+// abort or a timeout of the call), server (5xx), connection (fetch failed,
+// refused, reset), no_client, bad_answer (a garbled body), other.
+function kindOf(err) {
+  const status = Number(err?.status) || 0;
+  if (status === 402) return 'billing';
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 429) return 'rate_limit';
+  if (status === 408) return 'timeout';
+  if (status >= 500) return 'server';
+  if (err?.name === 'JevDown') return 'no_client';
+  if (err?.name === 'AbortError' || err?.name === 'TimeoutError') return 'timeout';
+  if (err?.name === 'SyntaxError') return 'bad_answer';
+  const text = `${err?.message || ''} ${err?.cause?.code || ''}`;
+  if (/fetch failed|ECONN|ENOTFOUND|EAI_AGAIN|socket|network/i.test(text)) return 'connection';
+  if (/ETIMEDOUT|timed? ?out/i.test(text)) return 'timeout';
+  return 'other';
+}
 
 class JevDown extends Error {
   constructor(message) { super(message); this.name = 'JevDown'; }
@@ -57,16 +86,26 @@ function holdStill(bot) {
 }
 
 // The first failure of an outage: said once, in the log and in chat.
+// The spell's start and end are emitted on the bot ('jev_down', 'jev_back')
+// for the flight record (recorder/observer.js), which also marks every frame
+// while it lasts (snapshot.jevDown): the harness reads the spells from there
+// and keeps them off the played clock, the loops and the audits (note 781).
+const emit = (bot, name, detail) => { try { bot?.emit?.(name, detail); } catch (_) { /* a listener's failure is not the hold's */ } };
 function down(bot, goal, id, err, { aside = false, log = console.log } = {}) {
   const h = holder(bot);
   const reason = String(err?.message || err || 'no answer').slice(0, 200);
+  const kind = kindOf(err), status = Number(err?.status) || undefined;
   if (!aside) holdStill(bot);
-  if (h._jevDown) h._jevDown.lastAt = Date.now();
+  // A mark lapsed (isDown false: no failure for a minute and no answer) is a
+  // spell that ended unrecorded; this failure begins a new one.
+  if (h._jevDown && !isDown(bot)) { const was = h._jevDown; delete h._jevDown; emit(bot, 'jev_back', { since: new Date(was.since).toISOString(), seconds: Math.round(((was.lastAt || was.since) - was.since) / 1000), kind: was.kind, questions: was.questions, lapsed: true }); }
+  if (h._jevDown) { h._jevDown.lastAt = Date.now(); h._jevDown.fails = (h._jevDown.fails || 0) + 1; if (h._jevDown.lastKind !== kind) h._jevDown.lastKind = kind; }
   if (!h._jevDown) {
-    h._jevDown = { since: Date.now(), lastAt: Date.now(), reason, questions: [id], asks: 0 };
+    h._jevDown = { since: Date.now(), lastAt: Date.now(), reason, kind, ...(status ? { status } : {}), lastKind: kind, fails: 1, questions: [id], asks: 0 };
     log(`[jev down] ${id}: ${reason}; no decision is made until Jev answers: holding, asking again`);
     try { bot?.chat?.("Jev isn't answering, so I'm waiting here until it does."); } catch (_) { /* no chat */ }
-    if (goal) goal.jevOutage = { since: new Date(h._jevDown.since).toISOString(), reason };
+    if (goal) goal.jevOutage = { since: new Date(h._jevDown.since).toISOString(), reason, kind };
+    emit(bot, 'jev_down', { since: new Date(h._jevDown.since).toISOString(), kind, ...(status ? { status } : {}), reason, question: id });
   } else if (!h._jevDown.questions.includes(id)) {
     h._jevDown.questions.push(id);
     log(`[jev down] ${id} held too`);
@@ -84,7 +123,15 @@ function back(bot, goal, id, { log = console.log } = {}) {
   const seconds = Math.round((Date.now() - was.since) / 1000);
   log(`[jev down] back: ${id} answered after ${seconds}s down (${was.questions.join(', ')} held); what was held is asked fresh`);
   try { bot?.chat?.('Jev is back.'); } catch (_) { /* no chat */ }
+  emit(bot, 'jev_back', { since: new Date(was.since).toISOString(), seconds, kind: was.kind, ...(was.status ? { status: was.status } : {}), fails: was.fails, questions: was.questions, answered: id });
   return { ...was, seconds };
+}
+
+// The spell now, for the flight record's every frame: null when Jev is up.
+function spellNow(bot, now = Date.now()) {
+  if (!isDown(bot, now)) return null;
+  const d = holder(bot)._jevDown;
+  return { since: new Date(d.since).toISOString(), kind: d.kind, ...(d.status ? { status: d.status } : {}), seconds: Math.round((now - d.since) / 1000) };
 }
 
 // Whether the bot is waiting for Jev now: a question failed within the last
@@ -118,4 +165,4 @@ async function pauseChecked(attempt, check, every = 100) {
 const TEST_ASKS = 200;
 const testHeld = [];
 
-module.exports = { unreachable, JevDown, down, back, isDown, holdStill, pause, pauseChecked, backoffFor, setBackoff, TEST_ASKS, testHeld, TRANSIENT };
+module.exports = { unreachable, kindOf, JevDown, down, back, isDown, spellNow, holdStill, pause, pauseChecked, backoffFor, setBackoff, TEST_ASKS, testHeld, TRANSIENT, ACCOUNT };

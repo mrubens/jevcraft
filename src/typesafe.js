@@ -12,6 +12,8 @@ const { leanRequest } = require('./decisions/lean');
 
 const RETRY_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
 const BREAKER_MS = 15000;
+// The account's refusals: no credits, the key refused (jev-down.js ACCOUNT).
+const ACCOUNT_STATUSES = new Set([401, 402, 403]);
 
 class TypeSafeError extends Error {
   constructor(message, { status, requestId, body } = {}) {
@@ -100,17 +102,24 @@ class TypeSafe {
   // (stage() below): a question that never came back (mid-243-q-nether-3,
   // note 540) could not say where it stood.
   async systemOne({ state, questions, model = this.model, signal, run, kind, trace }) {
-    if (this.openUntil > Date.now()) { stage(trace, 'breaker'); throw new TypeSafeError(`The decision service is not answering; asking again in ${Math.ceil((this.openUntil - Date.now()) / 1000)}s`, { status: 503 }); }
+    // The breaker's error carries what opened it (note 781): a 402 is the
+    // account out of credits for the fifteen seconds as for the first call.
+    if (this.openUntil > Date.now()) { stage(trace, 'breaker'); throw Object.assign(new TypeSafeError(`The decision service is not answering${this.openWhy ? ` (${this.openWhy})` : ''}; asking again in ${Math.ceil((this.openUntil - Date.now()) / 1000)}s`, { status: this.openStatus || 503 }), { breaker: true }); }
     const started = performance.now();
     try {
       const response = await this.exchange({ state, questions, model, signal, trace });
       this.charge({ run, kind, usage: response?.usage, latencyMs: performance.now() - started, ok: true });
-      delete this.openUntil;
+      delete this.openUntil; delete this.openStatus; delete this.openWhy;
       return response;
     } catch (err) {
       // A call abandoned by its own caller cost nothing worth counting.
       if (!signal?.aborted) this.charge({ run, kind, latencyMs: performance.now() - started, ok: false });
-      if (!signal?.aborted && !(err instanceof TypeSafeError && err.status && !RETRY_STATUSES.has(err.status))) this.openUntil = Date.now() + BREAKER_MS;
+      // Open for an outage and for the account's refusals (no credits, the
+      // key refused: ACCOUNT_STATUSES), not for a question rejected.
+      if (!signal?.aborted && !(err instanceof TypeSafeError && err.status && !RETRY_STATUSES.has(err.status) && !ACCOUNT_STATUSES.has(err.status))) {
+        this.openUntil = Date.now() + BREAKER_MS;
+        if (err instanceof TypeSafeError && ACCOUNT_STATUSES.has(err.status)) { this.openStatus = err.status; this.openWhy = String(err.message).slice(0, 160); } else { delete this.openStatus; delete this.openWhy; }
+      }
       throw err;
     }
   }

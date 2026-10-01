@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const JD = require('../lib/jev-down');
 
 const ROOT = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..', '..');
 const FLIGHT = path.join(ROOT, '.bot-state', 'flight');
@@ -308,10 +309,19 @@ function measure({ frames, history, from, to, trial = {}, botLog = null, minutes
     for (const [k, t] of Object.entries(reached(frames).at)) if (!(`midgame ${k}` in milestones) && t - frames[0].t > 60000) milestones[`midgame ${k}`] = t;
   } catch (_) {}
   const latest = Object.entries(milestones).sort((a, b) => b[1] - a[1])[0] || null;
-  const sinceMilestone = latest ? (to - latest[1]) / 60000 : Number.isFinite(started) ? (to - started) / 60000 : null;
+  // Jev down (note 781, scripts/lib/jev-down.js): the spells this window's
+  // frames show and those the trial's verdict saved, kept off the clock and
+  // the minutes since a milestone, and said in their own bucket. From
+  // 04:57Z on 2026-10-01 the 402s flagged 13 of 14 standing bots for
+  // stallShare and milestone.
+  const savedSpells = Number.isFinite(started) ? (trial.verdict?.jevDown?.spells || []).map(s => ({ from: started + s.atMinute * 60000, to: started + (s.atMinute + s.minutes) * 60000, ms: s.minutes * 60000, kind: s.kind })) : [];
+  const windowSpells = JD.spellsOf(frames), spells = JD.merge([...savedSpells, ...windowSpells]);
+  const sinceFrom = latest ? latest[1] : started;
+  const sinceMilestone = Number.isFinite(sinceFrom) ? (to - sinceFrom - JD.overlapMs(spells, sinceFrom, to)) / 60000 : null;
 
-  // Time by step or rung: the run clock's entries, cut to the window.
-  const entries = timeline({ frames, from, to, clock });
+  // Time by step or rung: the run clock's entries, cut to the window, the
+  // Jev-down time taken out.
+  const off = JD.offClock(timeline({ frames, from, to, clock }), spells), entries = off.entries;
   const doing = doingOf(entries);
   const clocked = Object.values(doing).reduce((a, b) => a + b, 0) / 60000;
   const byDoing = Object.entries(doing).sort((a, b) => b[1] - a[1]).map(([k, ms]) => [k, round(ms / 60000, 1)]);
@@ -388,6 +398,7 @@ function measure({ frames, history, from, to, trial = {}, botLog = null, minutes
     blazesInSight: blazes.size,
     questions: { asked: seen.size, byJev: answered, noneGood, noneGoodShare: answered ? round(noneGood / answered, 2) : null, top: repeats.slice(0, 5) },
     botLog, deaths: deaths.length,
+    jevDown: spells.length ? { clockedMinutes: round(off.ms / 60000, 1), windowMinutes: round(JD.overlapMs(spells, from, to) / 60000, 1), now: !!windowSpells.at(-1)?.open, says: JD.says(spells.filter(sp => sp.to >= from && sp.from <= to)) } : null,
   };
   m.review = review({ minutes, frames, positioned, history, from, to, trial, known, firstRodAt, doing, clocked, progress, botLog, last, entries });
   m.flags = flag(m, T, minutes);
@@ -706,10 +717,17 @@ function reviewLines(m) {
   return out;
 }
 
+// A window Jev was down for half of or more is not judged (note 781): no
+// decision could be made in it, so its ground, its answers and its clock
+// say nothing of the bot; it is said as Jev down instead. The silent flag
+// (no frame for three minutes) still stands: that is the bot, not Jev.
+const JEV_DOWN_SHARE = 0.5;
 function flag(m, T, minutes) {
   const flags = [], g = m.ground, pct = x => `${Math.round(x * 100)}%`;
   const say = (id, text) => flags.push({ id, text, threshold: T[id].says });
+  const notJudged = m.jevDown && m.jevDown.windowMinutes >= JEV_DOWN_SHARE * minutes;
   if (m.lastFrameMinutesAgo !== null && m.lastFrameMinutesAgo >= T.silent.minutes) say('silent', `no frame for ${Math.round(m.lastFrameMinutesAgo)} min${m.supervised === false ? ' and no supervisor is watching this port, so nothing will start the bot again (note 640: mid-242-bd and mid-243-be sat down for 2.5 hours); sh scripts/trials/supervisor.sh <port> starts one' : ''}`);
+  if (notJudged) return flags;
   if (m.fortress && m.fortress.minutesThere >= T.fortress.minutes) {
     const lp = m.fortress.lastPass, poorPass = lp?.stretches && lp.reached * 2 < lp.stretches;
     if ((g.newShare !== null && g.newShare < T.fortress.share) || poorPass)
@@ -727,6 +745,8 @@ function flag(m, T, minutes) {
 }
 
 function verdictOf(m, minutes) {
+  const down = m.jevDown && m.jevDown.windowMinutes >= JEV_DOWN_SHARE * minutes ? `not judged: ${m.jevDown.says} (${m.jevDown.windowMinutes} of the last ${minutes} min)` : null;
+  if (down) return [down, ...m.flags.map(f => f.text)].join('; ');
   if (!m.flags.length) return `moving: ${m.top ? `${human(m.top[0])} ${Math.round(m.top[1])} min, ` : ''}${m.ground.newShare === null ? 'no positions' : `${Math.round(m.ground.newShare * 100)}% new ground`}${m.lastMilestone ? `, last milestone ${m.lastMilestone.minutesAgo} min ago` : ''}`;
   return m.flags.map(f => f.text).join('; ');
 }
@@ -785,7 +805,7 @@ function table(rows, minutes, historyMinutes) {
     ['top step (min)', r => r.top ? `${human(r.top[0]).slice(0, 34)} ${Math.round(r.top[1])}/${Math.round(r.clockedMinutes)}` : '-'],
     ['new cols', r => r.ground.cells ? `${r.ground.newCells}/${r.ground.cells}` : '-'], ['walk/net', r => `${r.ground.walked}/${r.ground.net ?? '-'}`], ['dug/laid', r => `${r.ground.dug}/${r.ground.laid}`],
     ['most asked', r => r.questions.top[0] ? `${r.questions.top[0].id} ${r.questions.top[0].same}/${r.questions.top[0].count}` : '-'],
-    ['NG', r => r.questions.byJev ? `${r.questions.noneGood}/${r.questions.byJev}` : '-'], ['flags', r => [...new Set(r.flags.map(f => f.id))].join(',') || 'ok']];
+    ['NG', r => r.questions.byJev ? `${r.questions.noneGood}/${r.questions.byJev}` : '-'], ['flags', r => [...new Set(r.flags.map(f => f.id))].join(',') || 'ok'], ['Jev down', r => r.jevDown?.windowMinutes ? `${r.jevDown.windowMinutes}m${r.jevDown.now ? ' now' : ''}` : '-']];
   const cells = rows.map(r => cols.map(([, f]) => String(f(r))));
   const width = cols.map(([h], i) => Math.max(h.length, ...cells.map(c => c[i].length)));
   const line = c => c.map((x, i) => x.padEnd(width[i])).join('  ').trimEnd();
@@ -933,8 +953,8 @@ function trialRecords({ since = null, now = Date.now(), dir = path.join(ROOT, 'a
 function slimFrame(clock) {
   return f => {
     clockOf([f], clock);
-    const s = f.snapshot || {}, d = s.decision;
-    return { kind: f.kind, t: f.t, snapshot: { position: s.position, dimension: s.dimension, health: s.health, inventory: s.inventory, survivalAction: s.survivalAction, step: s.step && { action: s.step.action },
+    const s = f.snapshot || {}, d = s.decision, jd = JD.evidenceOf(f);
+    return { kind: f.kind, t: f.t, ...(jd ? jd.back ? { jb: 1 } : { jd: jd.kind, ...(jd.marked ? { jm: 1 } : {}) } : {}), snapshot: { position: s.position, dimension: s.dimension, health: s.health, inventory: s.inventory, survivalAction: s.survivalAction, step: s.step && { action: s.step.action },
       ...(Array.isArray(s.mobs) ? { mobs: s.mobs.map(m => ({ d: m.d, at: m.at })) } : {}),
       ...(d ? { decision: { id: d.id, at: d.at, askedAt: d.askedAt, path: d.path, stale: d.stale, only: d.only, noneGood: d.noneGood, judgments: d.judgments?.length ? [1] : [] } } : {}) } };
   };
@@ -944,6 +964,7 @@ function slimFrame(clock) {
 function trialSides(tr, at, { dir = FLIGHT, logs = path.join(ROOT, 'artifacts') } = {}) {
   const clock = new Map();
   const { frames } = tr.port ? readFlight({ identity: `127_0_0_1-${tr.port}-Jev`, from: tr.start, to: tr.end, historyFrom: tr.start, dir, slim: slimFrame(clock) }) : { frames: [] };
+  const spells = JD.spellsOf(frames);
   const entries = [...clock.values()];
   const split = tr.start >= at ? -Infinity : tr.end <= at ? Infinity : at;
   const log = scanBotLog(path.join(logs, `midgame-${tr.world}.log`), { from: tr.start, split });
@@ -951,14 +972,14 @@ function trialSides(tr, at, { dir = FLIGHT, logs = path.join(ROOT, 'artifacts') 
   for (const [side, a, b] of [['before', tr.start, Math.min(tr.end, at)], ['after', Math.max(tr.start, at), tr.end]]) {
     if (b <= a) continue;
     const fr = frames.filter(f => f.t >= a && f.t < b);
-    const en = timeline({ frames: fr, from: a, to: b === tr.end ? b : b - 1, clock: entries });
+    const { entries: en, ms: jevDownMs } = JD.offClock(timeline({ frames: fr, from: a, to: b === tr.end ? b : b - 1, clock: entries }), spells);
     const decsAll = decisionsOf(fr), decs = decsAll.filter(d => !d.only);
     const positioned = fr.filter(f => f.snapshot?.position), carried = fr.filter(f => f.snapshot?.inventory && typeof f.snapshot.inventory === 'object');
     const quickBy = {};
     for (const q of quickOf({ decs, positioned, carried })) if (q.quick) quickBy[q.id] = q.quick;
     const waits = waitsOf({ entries: en, decs: decsAll }), stall = stallOf(doingOf(en)), stance = stanceOf({ frames: fr, decs: decsAll });
     const bl = log[side];
-    sides[side] = { hours: (b - a) / 3600000, frames: fr.length, clockedMs: waits.clockedMs, waitMs: waits.ms,
+    sides[side] = { hours: (b - a) / 3600000, frames: fr.length, clockedMs: waits.clockedMs, waitMs: waits.ms, jevDownMs,
       waitBy: Object.fromEntries(Object.entries(waits.by).map(([k, v]) => [k, v * 60000])), stallMs: stall.ms, quickBy,
       byJev: decsAll.filter(d => d.byJev).length, noneGood: decsAll.filter(d => d.noneGood).length, streak: noneGoodStreakOf(decsAll),
       stanceAsks: stance.asks, stillAsks: stance.stillAsks, stillMs: stance.stillMs,
@@ -992,7 +1013,7 @@ function firstsOf(trials) {
 function cohort({ at, since = null, now = Date.now(), progress = null, root = ROOT, dir = FLIGHT }) {
   const trials = trialRecords({ since, now, dir: path.join(root, 'artifacts', 'midgame'), flight: dir });
   const deaths = resolveDeaths(serverDeaths(root), trials);
-  const blank = () => ({ trials: 0, hours: 0, clockedMs: 0, waitMs: 0, waitBy: {}, stallMs: 0, quickBy: {}, byJev: 0, noneGood: 0, streak: null, stanceAsks: 0, stillAsks: 0, stillMs: 0, logTrials: 0, holds: 0, reasked: 0, reaskedBy: {}, askedAfter: 0, flightTrials: 0 });
+  const blank = () => ({ trials: 0, hours: 0, clockedMs: 0, jevDownMs: 0, waitMs: 0, waitBy: {}, stallMs: 0, quickBy: {}, byJev: 0, noneGood: 0, streak: null, stanceAsks: 0, stillAsks: 0, stillMs: 0, logTrials: 0, holds: 0, reasked: 0, reaskedBy: {}, askedAfter: 0, flightTrials: 0 });
   const acc = { before: blank(), after: blank() };
   const add = (o, k, v) => { o[k] = (o[k] || 0) + v; };
   trials.forEach((tr, i) => {
@@ -1002,7 +1023,7 @@ function cohort({ at, since = null, now = Date.now(), progress = null, root = RO
       const a = acc[side];
       a.trials++; a.hours += s.hours;
       if (s.frames) a.flightTrials++;
-      for (const k of ['clockedMs', 'waitMs', 'stallMs', 'byJev', 'noneGood', 'stanceAsks', 'stillAsks', 'stillMs']) a[k] += s[k];
+      for (const k of ['clockedMs', 'jevDownMs', 'waitMs', 'stallMs', 'byJev', 'noneGood', 'stanceAsks', 'stillAsks', 'stillMs']) a[k] += s[k];
       for (const [k, v] of Object.entries(s.waitBy)) add(a.waitBy, k, v);
       for (const [k, v] of Object.entries(s.quickBy)) add(a.quickBy, k, v);
       if (s.streak && (!a.streak || s.streak.run > a.streak.run)) a.streak = { ...s.streak, world: tr.world };
@@ -1020,7 +1041,7 @@ function cohort({ at, since = null, now = Date.now(), progress = null, root = RO
     const worstQuick = Object.entries(a.quickBy).sort((x, y) => y[1] - x[1])[0];
     const perHour = n => a.hours ? round(n / a.hours, 3) : null;
     return {
-      trials: a.trials, withFlight: a.flightTrials, withBotLog: a.logTrials, hours: round(a.hours, 1), clockedHours: round(clockedMin / 60, 1),
+      trials: a.trials, withFlight: a.flightTrials, withBotLog: a.logTrials, hours: round(a.hours, 1), clockedHours: round(clockedMin / 60, 1), jevDownHours: round(a.jevDownMs / 3600000, 1),
       reaskAfterHold: { total: a.reasked, holds: a.holds, perHour: perHour(a.reasked), by: a.reaskedBy, askedAfterHold: a.askedAfter, met: a.logTrials ? a.reasked <= T.reaskAfterHold.max : null },
       quickNothing: { total: quickTotal, per15: clockedMin ? round(quickTotal * 15 / clockedMin, 1) : null,
         worst: worstQuick ? { id: worstQuick[0], count: worstQuick[1], per15: clockedMin ? round(worstQuick[1] * 15 / clockedMin, 2) : null } : null,
@@ -1046,6 +1067,7 @@ function cohortTable(c) {
   const row = (name, f, target = '', met = null) => rows.push([name, cell(c.before, f), met ? mark(met(c.before)) : '', cell(c.after, f), met ? mark(met(c.after)) : '', target]);
   row('trials (flight, bot log)', s => `${s.trials} (${s.withFlight}, ${s.withBotLog})`);
   row('trial hours (clocked)', s => `${s.hours} (${s.clockedHours})`);
+  row('Jev down (off the clock)', s => `${s.jevDownHours ?? 0} h`);
   row('reaskAfterHold', s => `${s.reaskAfterHold.total} (${s.reaskAfterHold.perHour ?? '-'}/h), ${s.reaskAfterHold.holds} holds, ${s.reaskAfterHold.askedAfterHold} asked in all`, '0', s => s.reaskAfterHold.met);
   row('quickNothing', s => `${s.quickNothing.total}, ${s.quickNothing.per15 ?? '-'}/15min${s.quickNothing.worst ? `; most ${s.quickNothing.worst.id} ${s.quickNothing.worst.per15}/15min` : ''}`, 'under 5 a 15 min per question', s => s.quickNothing.met);
   row('stallShare', s => `${pct(s.stallShare.share)} (${s.stallShare.minutes} min)`, 'under 10%', s => s.stallShare.met);

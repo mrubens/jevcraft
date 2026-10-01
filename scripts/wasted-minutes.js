@@ -45,6 +45,10 @@
 //               flipped, a wait or a fight held 30 s, or 20+ blocks were
 //               walked (pacing if the net is under 6, else old ground). The
 //               ranked buckets hold the crawls with the waste.
+// JEV DOWN when Jev could not be reached for 30 s or more of the minute and
+// nothing above came in it (scripts/lib/jev-down.js, note 781): its own
+// bucket, off the bot-hours and the shares, since no decision could be made.
+// A death in such a minute is still 'died'.
 // UPKEEP when none of those came but the minute kept the body going: food
 // points carried up, eating with hunger under 20, health up by 2 or more,
 // wood or coal gathered, blocks stocked by a restock step, fighting a mob
@@ -75,6 +79,7 @@ const path = require('path');
 const ROOT = process.env.JEV_ROOT ? path.resolve(process.env.JEV_ROOT) : path.join(__dirname, '..');
 const FLIGHT = path.join(ROOT, '.bot-state', 'flight');
 const RM = require('../src/rung-measure');
+const JD = require('./lib/jev-down');
 
 const MINUTE = 60000;
 const GAP_MS = 60000;
@@ -134,6 +139,9 @@ const isBlazeHurt = d => d && (d.type === 'fireball' || d.type === 'mob_attack')
 // What a minute's verdict needs of a frame, small (a trial is tens of thousands of frames).
 function slim(f, t) {
   const s = f.snapshot || {}, o = { t, kind: f.kind };
+  // Jev down's evidence (scripts/lib/jev-down.js, note 781).
+  const jd = JD.evidenceOf(f);
+  if (jd) { if (jd.back) o.jb = 1; else { o.jd = jd.kind; if (jd.marked) o.jm = 1; } }
   if (s.position && Number.isFinite(s.position.x)) o.p = { x: s.position.x, y: s.position.y, z: s.position.z };
   if (s.dimension) o.dim = dimOf(s.dimension);
   if (typeof s.health === 'number') o.hp = s.health;
@@ -235,6 +243,8 @@ function minutesOf(frames, { start }) {
     if (n && n.t - f.t <= GAP_MS && n.t >= f.t) b.botMs += n.t - f.t;
   }
   const out = [...bins.values()].sort((a, b) => a.k - b.k);
+  // Jev down (note 781): how much of each minute was in a spell.
+  const spells = JD.spellsOf(frames);
 
   const life = { cols: new Set(), most: null, lastInv: null };
   const seen = { ms: new Set(), msBase: false, landmarks: {}, found: [], fortress: false, nether: false };
@@ -245,7 +255,7 @@ function minutesOf(frames, { start }) {
   const firstPhase = frames.find(f => f.phase)?.phase || null;
 
   for (const b of out) {
-    const m = b.m = { walked: 0, net: 0, extent: 0, newCols: 0, dug: 0, laid: 0, items: [], materials: [], foodGain: 0, hpRise: 0, eating: false,
+    const m = b.m = { jevDownMs: Math.min(MINUTE, JD.overlapMs(spells, b.from, b.from + MINUTE)), jevDownKind: spells.find(sp => sp.to >= b.from && sp.from <= b.from + MINUTE)?.kind || null, walked: 0, net: 0, extent: 0, newCols: 0, dug: 0, laid: 0, items: [], materials: [], foodGain: 0, hpRise: 0, eating: false,
       milestones: [], sighted: [], nearer: [], deaths: 0, dy: 0, stillMs: 0, movedMs: 0, ctl: {}, doing: {}, steps: {}, decs: [], fails: [], stalls: 0, labels: {}, hurtBy: {}, said: [], positions: 0 };
     let first = null, prevP = null, prevT = null, hpLow = hp, lastFood = food, startInv = life.lastInv;
     const stepSeq = [], looks = {};
@@ -461,7 +471,11 @@ function classify(m) {
   if (m.sighted.length) P.push(`sighted: ${m.sighted.join(', ')}`);
   if (m.newCols >= NEW_COLUMNS) P.push(`ground: ${m.newCols} new columns`);
   const wait = waitOf(m);
-  if (m.deaths) return { cls: 'waste', pattern: 'died', why: `died (${Object.keys(m.hurtBy).join(', ') || 'no hurt frame'})${P.length ? ` (${P.join('; ')})` : ''}` };
+  if (m.deaths) return { cls: 'waste', pattern: 'died', why: `died (${Object.keys(m.hurtBy).join(', ') || 'no hurt frame'})${m.jevDownMs >= HELD_MS ? ', Jev down' : ''}${P.length ? ` (${P.join('; ')})` : ''}` };
+  // Jev down for half the minute or more, nothing gained: its own bucket,
+  // not waste (note 781). No decision could be made; from 04:57Z on
+  // 2026-10-01 the 402s' persists were filed under "stuck/unstuck".
+  if (m.jevDownMs >= HELD_MS && !P.length) return { cls: 'jev_down', pattern: 'Jev down', why: `${Math.round(m.jevDownMs / 1000)} s of the minute with Jev not answering (${m.jevDownKind || 'unknown'})` };
   if (P.length) {
     // A crawl: nothing but a distance a little nearer or a few new columns,
     // under SLOW_BLOCKS in the minute (a walk is about 250 blocks a minute).
@@ -544,14 +558,15 @@ function analyse({ since, to = Infinity, ports = null, dir = FLIGHT, progress = 
     const { frames, fightAt } = readTrial({ port: tr.port, start: tr.start, end, files: filesByPort.get(tr.port) });
     const bins = minutesOf(frames, { start: tr.start });
     const kind = /\/stages\/fortress\//.test(tr.source || '') ? 'fortress checkpoint' : /\/stages\/nether\//.test(tr.source || '') ? 'nether checkpoint' : 'fresh';
-    let botMs = 0, wasteMs = 0;
+    let botMs = 0, wasteMs = 0, downMs = 0;
     for (const b of bins) {
       if (!b.botMs) continue;
       const v = classify(b.m), a = attribution(b.m);
       rows.push({ port: tr.port, world: tr.world, kind, from: b.from, ms: b.botMs, ...v, ...a, m: b.m });
+      if (v.cls === 'jev_down') { downMs += b.botMs; continue; }
       botMs += b.botMs; if (v.cls === 'waste') wasteMs += b.botMs;
     }
-    trialsOut.push({ world: tr.world, port: tr.port, kind, start: tr.start, end, fightAt, minutesToFight: fightAt ? round((fightAt - tr.start) / MINUTE, 1) : null, botHours: botMs / 3600000, wasteHours: wasteMs / 3600000 });
+    trialsOut.push({ world: tr.world, port: tr.port, kind, start: tr.start, end, fightAt, minutesToFight: fightAt ? round((fightAt - tr.start) / MINUTE, 1) : null, botHours: botMs / 3600000, wasteHours: wasteMs / 3600000, jevDownHours: downMs / 3600000 });
     if (progress) progress(i + 1, trials.length, tr.world);
   });
   return { rows, trials: trialsOut };
@@ -587,8 +602,10 @@ function describe(w) {
     why: w.rows[0].why, decisions: ranked(decs) || 'none', noneGood, labels: ranked(labels) || 'none', said };
 }
 
-function report({ rows, trials }, { topN = 25, examples = 3 } = {}) {
+function report({ rows: all, trials }, { topN = 25, examples = 3 } = {}) {
   const H = ms => ms / 3600000;
+  // Jev-down minutes are their own bucket, off the bot-hours and the shares (note 781).
+  const rows = all.filter(r => r.cls !== 'jev_down'), jevDownMs = all.reduce((n, r) => n + (r.cls === 'jev_down' ? r.ms : 0), 0);
   const total = rows.reduce((n, r) => n + r.ms, 0);
   const by = (keyOf, filter = () => true) => { const o = {}; for (const r of rows) if (filter(r)) { const k = keyOf(r); o[k] = (o[k] || 0) + r.ms; } return Object.entries(o).sort((a, b) => b[1] - a[1]); };
   const cls = Object.fromEntries(by(r => r.cls));
@@ -614,7 +631,7 @@ function report({ rows, trials }, { topN = 25, examples = 3 } = {}) {
   const med = xs => { const s = [...xs].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : null; };
   return {
     trials: trials.length, trialsWithFight: fought.length, medianMinutesToFight: med(fought.map(t => t.minutesToFight)),
-    botHours: round(H(total), 1), progressHours: round(H(cls.progress || 0), 1), upkeepHours: round(H(cls.upkeep || 0), 1), slowHours: round(H(cls.slow || 0), 1), wasteHours: round(H(cls.waste || 0), 1),
+    botHours: round(H(total), 1), jevDownHours: round(H(jevDownMs), 2), progressHours: round(H(cls.progress || 0), 1), upkeepHours: round(H(cls.upkeep || 0), 1), slowHours: round(H(cls.slow || 0), 1), wasteHours: round(H(cls.waste || 0), 1),
     wasteShare: round((cls.waste || 0) / total, 3), slowShare: round((cls.slow || 0) / total, 3),
     byStart: Object.fromEntries(Object.entries(byKind).map(([k, v]) => [k, { botHours: round(H(v.botMs), 1), wasteShare: round(v.wasteMs / v.botMs, 3), slowShare: round(v.slowMs / v.botMs, 3) }])),
     patterns: by(r => `${r.cls}: ${r.pattern}`).map(([k, ms]) => ({ pattern: k, botHours: round(H(ms), 2), share: round(ms / total, 3) })),
@@ -627,6 +644,7 @@ function table(r) {
   const out = [];
   const pct = x => `${round(x * 100, 1)}%`;
   out.push(`Trials: ${r.trials} (${r.trialsWithFight} reached a blaze fight; median ${r.medianMinutesToFight ?? '-'} min to it). Bot-hours before the first blaze fight: ${r.botHours}.`);
+  if (r.jevDownHours) out.push(`Jev down (not counted above or below): ${r.jevDownHours} h.`);
   out.push(`Progress ${r.progressHours} h, crawling ${r.slowHours} h (${pct(r.slowShare)}), upkeep ${r.upkeepHours} h, waste ${r.wasteHours} h (${pct(r.wasteShare)} wasted; ${pct(r.wasteShare + r.slowShare)} with the crawls).`);
   out.push(`By start: ${Object.entries(r.byStart).map(([k, v]) => `${k} ${v.botHours} h, ${pct(v.wasteShare)} wasted, ${pct(v.slowShare)} crawling`).join('; ')}.`);
   out.push('', 'By pattern:');

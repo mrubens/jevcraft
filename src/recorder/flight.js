@@ -39,7 +39,7 @@ function slim(frame) {
   return { ...frame, snapshot: { position: s.position, dimension: s.dimension, health: s.health, food: s.food, oxygen: s.oxygen,
     held: s.held, controller: s.controller, pathing: s.pathing, velocity: s.velocity, onGround: s.onGround, keys: s.keys,
     ...(s.shotHold ? { shotHold: s.shotHold } : {}), ...(s.shotRefused ? { shotRefused: s.shotRefused } : {}), step: s.goal?.step, survivalAction: s.goal?.survivalAction,
-    ...(s.cursor ? { cursor: s.cursor } : {}), ...(s.grid ? { grid: s.grid } : {}) } };
+    ...(s.cursor ? { cursor: s.cursor } : {}), ...(s.grid ? { grid: s.grid } : {}), ...(s.jevDown ? { jevDown: s.jevDown } : {}) } };
 }
 
 function flightRecorder(directory, label = 'jev', { now = () => new Date(), partBytes = PART_BYTES, keep = KEEP, keepMs = KEEP_MS, keepBytes = KEEP_BYTES } = {}) {

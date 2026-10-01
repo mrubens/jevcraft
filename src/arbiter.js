@@ -817,6 +817,17 @@ function shadow(bot, makeClaims, { log = console.log, now = Date.now } = {}) {
 //                 `unclaimed`.
 // -> { winner, layer, by, ask, why, acted, backstop, unclaimed }
 const SAID_MS = 10000;
+// Whether a fight stands (note 781): a mob at its reach of the bot, a
+// survival claim pressing about a threat, or a stance Jev chose that is not
+// a run or leaving the mobs be still held. -> what it is, said, or null.
+const NOT_FIGHTS = new Set(['keep_working', 'retreat', 'leave_reach', 'flee']);
+function fightStands(bot, live = [], seen = null) {
+  if (seen?.reach) return 'a mob is at its reach of the bot';
+  const sv = live.find(c => c.layer === 'survival');
+  if (sv && sv.urgency !== 'routine' && /^escape_threat$|^creeper_back_off$/.test(sv.action)) return `survival claims ${String(sv.action).replaceAll('_', ' ')}`;
+  try { const s = require('./danger').stanceHeld(bot); if (s?.choice && !NOT_FIGHTS.has(s.choice)) return `the stance ${s.choice} is held`; } catch (_) { /* no world */ }
+  return null;
+}
 async function take(bot, claims, ctx = {}) {
   const state = stateOf(bot, ctx);
   const live = (claims || []).filter(Boolean);
@@ -839,6 +850,24 @@ async function take(bot, claims, ctx = {}) {
     require('./turn').takeTurn(bot, layer, action);
   };
   const w = r.winner;
+  // Jev down (note 781): the work is not given the turn while a fight
+  // stands. A ruling held from before the outage, or the work's claim alone
+  // when survival's could not be read, gave 25595 (mid-237-bj, 05:15 to
+  // 05:16:53Z on 2026-10-01) the work's turn between its swings at a single
+  // zombie, and the stance question that would have answered it could not
+  // be asked. The survival step goes on instead: a stance Jev chose holds,
+  // or its question is held with note 778b's floor under it.
+  const fight = w.layer === 'work' && require('./jev-down').isDown(bot) ? fightStands(bot, live, seenNow) : null;
+  if (fight) {
+    const sv = live.find(c => c.layer === 'survival');
+    const run = sv?.run || ctx.backstop;
+    holding('survival', sv?.action || 'step', { urgency: sv?.urgency || 'pressing' });
+    if (bot?._jevDown && bot._jevDown.fightSaid !== fight) { bot._jevDown.fightSaid = fight; console.log(`[jev down] ${fight}: the work is not given the turn while Jev is down; the survival step goes on`); }
+    let acted = false;
+    try { acted = !!(run ? await run(ctx.task) : false); }
+    catch (err) { if (err?.name === 'NeedsSafety') stopped(state, 'survival', err.message, ctx.now ?? Date.now()); throw err; }
+    return { ...r, winner: sv || null, layer: 'survival', by: 'jev_down_fight', fight, acted, unclaimed };
+  }
   holding(w.layer, w.action, { urgency: w.urgency, ...(w.reflex ? { reflex: w.reflex } : {}) });
   said(bot, `[arbiter] gave ${w.layer} ${w.action} (${r.by}${r.why && (r.by === 'jev' || r.by === 'scene') ? `: ${r.why}` : ''})`, now);
   if (ctx.backstop && w.urgency !== 'body' && (ctx.backstopFor || ['vitals', 'work']).includes(w.layer) && unclaimed) {
@@ -1026,4 +1055,4 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };
+module.exports = { fightStands, ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };

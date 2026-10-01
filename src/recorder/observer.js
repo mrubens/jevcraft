@@ -97,6 +97,10 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       turn: turnHeld(bot, now),
       // The question out, and how far it has got (decisions/index.js): the
       // stages a question that never came back had reached (note 540).
+      // Jev down (jev-down.js, note 781): on every frame while it lasts, with
+      // when it began and why, so the harness keeps the spell off the played
+      // clock, the loops and the audits.
+      ...(() => { try { const d = require('../jev-down').spellNow(bot, now); return d ? { jevDown: d } : {}; } catch (_) { return {}; } })(),
       question: bot._asking ? { id: bot._asking.id, at: bot._asking.at, stages: bot._asking.stages.map(s => ({ ...s })), ...(bot._asking.lookedMs !== undefined ? { lookedMs: bot._asking.lookedMs } : {}) } : undefined,
       // What the arbiter, in shadow, would have given the last pass to,
       // beside the layer that took it (src/arbiter.js shadow).
@@ -135,6 +139,8 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
     const label = kind === 'recovery_advice' ? detail?.source === 'jev' ? 'Jev chose a recovery action' : 'Fable recovery advice'
       : kind === 'recovery_result' ? detail?.outcome || 'Recovery outcome'
       : kind === 'damage' ? `hurt: ${String(detail?.type ?? 'unknown').replaceAll('_', ' ')}${detail?.cause ? ` by ${detail.cause}` : ''}`
+      : kind === 'jev_down' ? `Jev down (${detail?.kind || 'unknown'}): no decision is made until Jev answers`
+      : kind === 'jev_back' ? `Jev back after ${detail?.seconds ?? '?'}s down${detail?.lapsed ? ' (the mark lapsed)' : ''}`
       : kind === 'request' ? `Understood: ${String(detail?.kind || 'request').replaceAll('_', ' ')}`
       : kind === 'clarify' ? `Asked back: ${detail?.message || 'a clarifying question'}`
       : kind === 'dream' ? `Dream ${({ clear: 'taken away', query: 'asked about', pause: 'set aside', resume: 'picked back up' })[detail?.operation] || `given: ${String(detail?.key || '').replaceAll('_', ' ')}`}`
@@ -155,7 +161,7 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
   on('flight_route', p => { route = (p.path || []).slice(0, 128).map(position).filter(Boolean); });
   on('goal_reached', () => { route = []; });
   on('path_reset', () => { route = []; });
-  for (const kind of ['shot', 'health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'view_resync', 'dig_unconfirmed', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result', 'lava_escape', 'join_survey']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
+  for (const kind of ['shot', 'health', 'death', 'no_route', 'navigation_stall', 'navigation_recovery', 'view_resync', 'dig_unconfirmed', 'handover', 'mob_hunt', 'stronghold_search', 'end_combat', 'fall_recovery', 'recovery_advice', 'recovery_result', 'lava_escape', 'join_survey', 'jev_down', 'jev_back']) on(kind, detail => sample(kind === 'death' ? 'danger' : kind === 'health' ? 'vitals' : kind, clean(detail)));
   on('chat', (from, message) => sample('chat', { from, message }));
   // Every answer from Jev, at the moment it came (decisions/index.js decide).
   on('jev_decision', goal => sample('decision', undefined, goal));

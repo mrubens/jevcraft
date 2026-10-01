@@ -62,7 +62,7 @@ function decisionSource(decision, kind) {
   // A chat request is understood by Jev before anything else happens, and a
   // clarifying question is Jev saying it was not sure enough to act.
   if (['request', 'clarify', 'dream'].includes(kind)) return 'jev';
-  if (['connection', 'result', 'start', 'chat', 'observation', 'vitals', 'damage'].includes(kind)) return 'observed';
+  if (['connection', 'result', 'start', 'chat', 'observation', 'vitals', 'damage', 'jev_down', 'jev_back'].includes(kind)) return 'observed';
   if (decision?.stale) return 'stale';
   // The body's safety rule, Jev not answering in time (note 707).
   if (decision?.safetyRule) return 'safety rule';

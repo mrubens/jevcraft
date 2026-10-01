@@ -22,6 +22,7 @@ const path = require('path');
 const { execSync, spawn } = require('child_process');
 const { analyse } = require('./lib/audit');
 const { strandedFromFrames } = require('./lib/stranded');
+const { spellsOf, overlapMs, within, INFRA, says: jevDownSays } = require('./lib/jev-down');
 const { spectatorNightVision } = require('./first-days');
 const { ensureSupervisor, absences } = require('./lib/supervise');
 const { launch, armOf } = require('./lib/arms');
@@ -92,10 +93,27 @@ function cutReasons(world, playedMinutes, reachedAtMinute = {}) {
   return out;
 }
 
-function verdict(trial, { now = Date.now() } = {}) {
-  const from = Date.parse(trial.startedAt), to = Math.min(now, from + LIMIT_MS);
-  const a = analyse({ identity: IDENTITY, from, to });
+// Jev down (note 781, scripts/lib/jev-down.js): no decision can be made, so
+// the spell is not play. It is kept off the played clock (the three hours
+// run on by it, and the watcher's hour cuts read played minutes), out of
+// the loops (a 402 persist is the outage, not a loop) and the stranded
+// check, and said apart: "Jev down N min". On 2026-10-01 from 04:57:47Z
+// every verdict on 25581, 25583 and 25584 failed on "loop: N× TypeSafe 402"
+// a minute or two in, and the overnight loop started a new world each time.
+const STRANDED_DOWN_SHARE = 0.1;
+function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY } = {}) {
+  const from = Date.parse(trial.startedAt);
+  const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
+  // The window: the three hours played, run on by the Jev-down time in it.
+  let to = Math.min(now, from + LIMIT_MS), a = read(to), spells = a ? spellsOf(a.frames) : [];
+  for (let i = 0; a && spells.length && i < 4; i++) {
+    const next = Math.min(now, from + LIMIT_MS + overlapMs(spells, from, to));
+    if (next <= to) break;
+    to = next; a = read(to) || a; spells = spellsOf(a.frames);
+  }
   if (!a) return { pass: false, reasons: ['no flight frames in the trial window'] };
+  const downMs = overlapMs(spells, from, to);
+  const downNow = !!spells.at(-1)?.open && now - spells.at(-1).to < 3 * 60000;
   const { at, best } = reached(a.frames);
   const all = MILESTONES.every(k => k in at);
   const doneAt = all ? Math.max(...MILESTONES.map(k => at[k])) : null;
@@ -103,28 +121,43 @@ function verdict(trial, { now = Date.now() } = {}) {
   const until = doneAt ?? to;
   const deaths = [];
   for (const t of a.deaths.map(d => d.t).filter(t => t <= until).sort((x, y) => x - y)) if (!deaths.some(d => Math.abs(d - t) < 10000)) deaths.push(t);
-  const loops = [...Object.entries(a.problems).filter(([, v]) => v.count >= 3 && (v.first ?? 0) <= until).map(([p, v]) => `${v.count}× ${p.slice(0, 120)}`),
-    ...a.flips.filter(f => (f.from ?? 0) <= until).map(f => `flipping ${f.between}`)];
+  // Not loops: a problem that is the outage's own words, or that came and
+  // went inside a spell; a flip that began inside one.
+  const SLACK = 30000;
+  const outage = (p, v) => INFRA.test(p) || (within(spells, v.first ?? 0, SLACK) && within(spells, v.last ?? v.first ?? 0, SLACK));
+  const loops = [...Object.entries(a.problems).filter(([p, v]) => v.count >= 3 && (v.first ?? 0) <= until && !outage(p, v)).map(([p, v]) => `${v.count}× ${p.slice(0, 120)}`),
+    ...a.flips.filter(f => (f.from ?? 0) <= until && !within(spells, f.from ?? 0, SLACK)).map(f => `flipping ${f.between}`)];
   const minute = t => Math.round((t - from) / 60000);
-  const timedOut = !all && to - from >= LIMIT_MS;
+  const windowMs = to - from;
   // Time with no bot running (quit for a restart and not started again, a
   // crash, a server down) is not play: the verdict says how much of the
   // window was played, and a run that timed out with a tenth or more of it
   // unplayed says so instead of claiming the whole window.
+  const timedOut = !all && windowMs - downMs >= LIMIT_MS;
   const gone = absences(a.frames, from, to, { closed: timedOut || all });
-  const absentMs = gone.reduce((n, g) => n + (g.to - g.from), 0), windowMs = to - from;
-  const unplayed = timedOut && absentMs >= 0.1 * windowMs;
-  const said = unplayed ? `after ${Math.round((windowMs - absentMs) / 60000)} minutes played of ${LIMIT_MS / 3600000} hours (the bot was not running for ${Math.round(absentMs / 60000)}; not a verdict on play)` : `after ${LIMIT_MS / 3600000} hours`;
+  const absentMs = gone.reduce((n, g) => n + (g.to - g.from), 0);
+  // A spell's time the bot was not running is counted once, as absent.
+  const downPlayedMs = Math.max(0, downMs - gone.reduce((n, g) => n + overlapMs(spells, g.from, g.to), 0));
+  const playedMs = windowMs - absentMs - downPlayedMs;
+  const playedBy = t => (t - from) - gone.reduce((n, g) => n + Math.max(0, Math.min(t, g.to) - g.from), 0) - overlapMs(spells, from, t);
+  const unplayed = timedOut && absentMs >= 0.1 * (windowMs - downPlayedMs);
+  const said = unplayed ? `after ${Math.round(playedMs / 60000)} minutes played of ${LIMIT_MS / 3600000} hours (the bot was not running for ${Math.round(absentMs / 60000)}; not a verdict on play)` : `after ${LIMIT_MS / 3600000} hours`;
   // Stranded (note 650): not a death and not a loop, and no more play in it:
   // half an hour inside a dozen blocks with the way off answered none good.
-  const stranded = all ? null : strandedFromFrames(a.frames, { now: to });
-  const reasons = [...(deaths.length ? [`${deaths.length} death(s)`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
+  // Not while Jev was down for a tenth of that half hour: it could answer nothing.
+  const strandedSeen = all ? null : strandedFromFrames(a.frames, { now: to });
+  const stranded = strandedSeen && overlapMs(spells, to - strandedSeen.minutes * 60000, to) < STRANDED_DOWN_SHARE * strandedSeen.minutes * 60000 ? strandedSeen : null;
+  const reasons = [...(deaths.length ? [`${deaths.length} death(s)${deaths.some(t => within(spells, t, SLACK)) ? `, ${deaths.filter(t => within(spells, t, SLACK)).length} while Jev was down` : ''}`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
-    ...(all ? [] : cutReasons(trial.world, Math.round((windowMs - absentMs) / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, minute(t)]))))];
+    ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)]))))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
-    playedMinutes: Math.round((windowMs - absentMs) / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
+    playedMinutes: Math.round(playedMs / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
     absences: gone.map(g => ({ atMinute: minute(g.from), minutes: Math.round((g.to - g.from) / 60000) })),
+    // Said apart, never a reason: the spells, and whether Jev is down now
+    // (watch.sh stops for nothing then; a restart would only stand too).
+    jevDownMinutes: Math.round(downMs / 6000) / 10, jevDownNow: downNow,
+    ...(spells.length ? { jevDown: { says: jevDownSays(spells.filter(s => s.to >= from && s.from <= to)), spells: spells.map(s => ({ atMinute: minute(s.from), minutes: Math.round(s.ms / 6000) / 10, kind: s.kind, ...(s.open ? { open: true } : {}) })) } } : {}),
     reachedAtMinute: Object.fromEntries(Object.entries(at).map(([k, t]) => [k, minute(t)])), most: { blazeRods: best.rods, enderPearls: best.pearls } };
 }
 
