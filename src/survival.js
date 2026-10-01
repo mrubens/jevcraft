@@ -10204,7 +10204,14 @@ class Survival {
     // health does not come back until something is eaten. mid-87-f waited
     // six minutes at three health and sixteen hunger with no food carried,
     // "recovering before combat", and a zombie ended it (2026-09-26).
-    const cannotHeal = !offWorld && (bot.health ?? 20) < 14 && bot.food < 18 && !chooseFood(bot);
+    // In the Nether too (note 771c): 25583 (mid-230-ad, 2026-10-01
+    // 03:45 to 03:56Z) walked fortress legs, pillared and crafted a spare
+    // pickaxe at 1.3 health, hunger 15 to 16, nothing to eat, health never
+    // coming back, with no food asked once its four food answers had each
+    // ended at once (03:44:03 to 03:44:26Z); blaze fire ended it. Not while
+    // Jev's own "go on without food" holds (keep_on's twenty minutes), unless
+    // one hit ends the bot (last-hit.js).
+    const cannotHeal = (bot.health ?? 20) < 14 && bot.food < 18 && !chooseFood(bot) && !(offWorld && netherKeepOn(bot, goal));
     const hungry = bot.food <= hungerTrigger || cannotHeal;
     const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
     const now = Date.now();
@@ -10793,6 +10800,12 @@ function foodCost(bot, goal, state, supply, hungry, now = Date.now()) {
   return out;
 }
 
+// Jev's own "go on without food" in the Nether (keep_on, twenty minutes),
+// standing, unless one hit ends the bot (last-hit.js, note 706).
+function netherKeepOn(bot, goal) {
+  try { return require('./progress').isSetAside(goal || {}, 'nether_return', 'food') && !require('./last-hit').lastHit(bot); } catch (_) { return false; }
+}
+
 function claim(bot, goal = {}, survival = null) {
   if (!bot?.entity?.position || bot.game?.gameMode === 'creative') return null;
   const state = survival?.state || goal.survival || {};
@@ -10960,7 +10973,9 @@ function claim(bot, goal = {}, survival = null) {
   const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
   const offWorld = !/overworld/.test(String(bot.game?.dimension || 'overworld'));
   const hungerTrigger = offWorld ? 8 : !underground ? 18 : 12;
-  const hungry = bot.food <= hungerTrigger || (!offWorld && hp < 14 && bot.food < 18 && !chooseFood(bot));
+  // Hurt where health cannot come back, in the Nether too (note 771c).
+  const noHeal = hp < 14 && bot.food < 18 && !chooseFood(bot) && !(offWorld && netherKeepOn(bot, goal));
+  const hungry = bot.food <= hungerTrigger || noHeal;
   const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game?.difficulty !== 'peaceful'));
   const supply = foodSupply(bot);
   // As the layer reads it: resting, low hunger that what is carried fills is met by eating (note 702).
@@ -11014,8 +11029,12 @@ function claim(bot, goal = {}, survival = null) {
   // asked again: then the promise is the claim's again.
   const way = plan === 'shelter' && nightPlan.method && !rests('shelter_method', nightPlan.method) && !resting[nightPlan.method]
     ? { wayChosen: { method: nightPlan.method, secondsAgo: Math.max(0, Math.round((now - (nightPlan.methodAt || now)) / 1000)) } } : {};
-  return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', (needsShelter && !quietNight) || bot.food <= 6 ? 'pressing' : 'routine',
-    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...way, ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}), ...foodCost(bot, goal, state, supply, hungry, now) } : {}),
+  // The way out of the Nether priced on the claim, where food is a trip back
+  // through the portal (note 771c), and pressing where health that cannot
+  // come back is at six or under.
+  const offWorldTrip = needsFood && offWorld ? (() => { try { return require('./game-progress').portalTrip(bot, goal); } catch (_) { return null; } })() : null;
+  return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', (needsShelter && !quietNight) || bot.food <= 6 || (needsFood && noHeal && hp <= 6) ? 'pressing' : 'routine',
+    { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...way, ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}), ...foodCost(bot, goal, state, supply, hungry, now), ...(offWorldTrip ? { portalTrip: offWorldTrip } : {}) } : {}),
       ...(wait ? { waitSealedMinutes: wait.minutes, ...(wait.day ? { waitSealedDayNow: true } : {}) } : {}) });
 }
 

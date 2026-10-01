@@ -438,6 +438,8 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
         }
         const approach = await combatRoute(bot, task, target, movement);
         if (!approach) throw new Error(`No dry combat route to ${target.name}`);
+        // Struck from where it stands (note 774c): no walk to its own cell.
+        if (approach.reach && approach.reach.steps === 0) { await bot.lookAt(target.position.offset(0, 0.9, 0), true); await sleep(150); continue; }
         const destination = approach.destination;
         const volley = target.name === 'blaze' ? () => require('./blaze-stand').volleyComing(bot) : () => false;
         await actions.navigate(bot, task, destination, { timeoutMs: Math.min(4000, deadline - Date.now()), stallMs: 1500,

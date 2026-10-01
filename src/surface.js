@@ -233,6 +233,10 @@ function stairwayCost(bot, feet, target, rises, level, usesLeft, { stopAtSky = f
   return { digs, seconds, kinds: named, wears: usesLeft > 0 && digs > 0, stairs, rose: pos.y - feet.y, out: out ? { x: out.x, y: out.y, z: out.z } : null, fallen };
 }
 
+// Not a pointed dripstone's tip for a floor (note 768c): 25593 (mid-243-bi,
+// 03:43:24Z on 2026-10-01) walked to a column at (347, -15, 280) standing on
+// one at y -15.31, the server corrected its place a dozen times and it fell
+// onto the next stalagmite below for damage, two minutes there.
 // Walked cells a column's climb may start from: the open mine round the bot,
 // level, a block up where the head has room, or down to three, nothing dug
 // or laid, and no cell in, over or beside lava or water. Each column once,
@@ -244,7 +248,7 @@ function walkedColumns(bot, feet, { reach = WALK_REACH, nodes = WALK_NODES } = {
   const stands = new Map();
   const stand = c => {
     const key = `${c.x},${c.y},${c.z}`;
-    if (!stands.has(key)) stands.set(key, open(c) && open(c.offset(0, 1, 0)) && (() => { const f = bot.blockAt(c.offset(0, -1, 0)); return f?.boundingBox === 'block' && !liquid(f) && !/magma|campfire/.test(f.name); })() && !wet(c));
+    if (!stands.has(key)) stands.set(key, open(c) && open(c.offset(0, 1, 0)) && (() => { const f = bot.blockAt(c.offset(0, -1, 0)); return f?.boundingBox === 'block' && !liquid(f) && !/magma|campfire|pointed_dripstone/.test(f.name); })() && !wet(c));
     return stands.get(key);
   };
   const seen = new Map([[`${feet}`, 0]]), queue = [feet], best = new Map();
@@ -293,6 +297,31 @@ function walkedColumn(bot, feet, usesLeft, hereSeconds, { exclude = [] } = {}) {
     if (!found || seconds < found.seconds) found = { cell, walk, column, seconds };
   }
   return found && hereSeconds - found.seconds >= 60 ? found : null;
+}
+
+// The pickaxes by tier, their uses, and the seconds a block of stone each
+// takes (stone 1.5 hardness; the game's tool speeds).
+const TIER = { wooden_pickaxe: 0, golden_pickaxe: 0, stone_pickaxe: 1, iron_pickaxe: 2, diamond_pickaxe: 3, netherite_pickaxe: 4 };
+const PICK_USES = { wooden_pickaxe: 59, stone_pickaxe: 131, iron_pickaxe: 250 };
+const PICK_SECONDS = { wooden_pickaxe: 1.15, stone_pickaxe: PICKAXE_STONE_SECONDS, iron_pickaxe: 0.4 };
+const words = n => String(n).replaceAll('_', ' ').replace(/^(?=[a-z])/, m => (/^[aeiou]/.test(n) ? 'an ' : 'a '));
+function carriedFor(bot) {
+  const count = re => bot.inventory?.items?.().filter(i => re.test(i.name)).reduce((s, i) => s + i.count, 0) || 0;
+  const logs = count(/_(log|stem|wood|hyphae)$/);
+  return { sticks: count(/^stick$/), planks: count(/_planks$/) + 4 * logs, table: count(/^crafting_table$/) > 0, cobble: count(/^(cobblestone|cobbled_deepslate|blackstone)$/) };
+}
+// The best pickaxe the pockets make now, with the stone for a stone head dug
+// here by the pickaxe carried where the cobblestone carried is short:
+// { item, stoneDigs, says } or null.
+function pocketsPickaxe(bot, picks) {
+  const c = carriedFor(bot);
+  const forSticks = c.sticks >= 2 ? 0 : 2, forTable = c.table ? 0 : 4;
+  if (c.planks < forSticks + forTable) return null;
+  const stoneDigs = c.cobble >= 3 ? 0 : picks.length ? 3 - c.cobble : null;
+  const parts = [c.sticks >= 2 ? `${c.sticks} sticks carried` : 'sticks from two planks', c.table ? 'the crafting table carried' : 'a crafting table from four planks'];
+  if (stoneDigs !== null) return { item: 'stone_pickaxe', stoneDigs, says: [...parts, stoneDigs ? `${stoneDigs} stone dug here with the pickaxe carried for the head` : 'the cobblestone carried for the head'].join(', ') };
+  if (c.planks >= forSticks + forTable + 3) return { item: 'wooden_pickaxe', stoneDigs: 0, says: [...parts, 'three planks for the head (no stone carried and no pickaxe to dig it)'].join(', ') };
+  return null;
 }
 
 // The two ways out by digging, each with what it costs and leaves, for Jev.
@@ -380,7 +409,32 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
   // a mineshaft, was offered only ways by hand, took the staircase ("about 8
   // minutes with bare hands") and dug y 40 to 60 in nine minutes, the
   // mineshaft's planks a few blocks off.
-  if (!picks.length) {
+  // A pickaxe made before the climb by hand or on a pickaxe that will not
+  // last it (note 768c): from the pockets now (pickaxe_first), the stone for
+  // its head dug here with the pickaxe carried where the cobblestone is
+  // short; else from the wood in reach (wood_first). 25593 (mid-243-bi,
+  // 03:37:31Z on 2026-10-01) climbed from y -39 with an iron pickaxe at 47
+  // uses against a staircase of 217 digs, a crafting table, 128 cobblestone
+  // and one stick carried, the trial chambers' oak planks 52 blocks off;
+  // wood_first was offered only with no pickaxe at all and within 32
+  // blocks, and the climb went on by hand from y -21, about 22 minutes.
+  const ways = ['staircase', 'straight_up', 'walk_then_up'].filter(k => options[k]);
+  const digsOf = { staircase: stairs.digs, ...(options.straight_up ? { straight_up: column.cells.length } : {}), ...(options.walk_then_up && walked ? { walk_then_up: walked.column.cells.length } : {}) };
+  const quickDigs = ways.length ? Math.min(...ways.map(k => digsOf[k] ?? Infinity)) : stairs.digs;
+  const short = picks.length > 0 && usesLeft < quickDigs;
+  const pockets = pocketsPickaxe(bot, picks);
+  const bestTier = Math.max(-1, ...picks.map(p => TIER[p.name] ?? 0));
+  // The climb with the pickaxe made, times what that way has taken against
+  // its figure with a pickaxe (quote-record.js), as the ways beside it are.
+  const pickRatio = way => { try { return require('./quote-record').ratioOf(goal, `${way}/pickaxe`)?.seconds ?? 1; } catch (_) { return 1; } };
+  const withPick = pickSeconds => Math.min((stairs.digs * pickSeconds + stairs.stairs * STAIR_STEP_SECONDS) * pickRatio('staircase'),
+    column?.cells && !column.blocked ? (column.cells.length * pickSeconds + column.up * PILLAR_RISE_SECONDS) * pickRatio('straight_up') : Infinity);
+  if (pockets && ((TIER[pockets.item] ?? 0) > bestTier || short)) {
+    const make = pockets.stoneDigs * (picks.length ? 1.5 : 0) + 5;
+    estimate.pickaxe_first = make + withPick(PICK_SECONDS[pockets.item]);
+    options.pickaxe_first = { item: pockets.item, description: `Make ${words(pockets.item)} first from the pockets: ${pockets.says}; about ${Math.max(5, Math.round(make / 5) * 5)} seconds; then the climb with it, ${duration(withPick(PICK_SECONDS[pockets.item]))} (${PICK_USES[pockets.item]} uses${picks.length ? `, beside the ${usesLeft} the pickaxes carried have left against about ${quickDigs} digs on the shortest way up` : ''}): ${duration(estimate.pickaxe_first)} in all.` };
+  }
+  if ((!picks.length || short) && !pockets) {
     let wood = null;
     try { wood = require('./pickaxe-budget').nearestWood(bot, goal || {}); } catch (_) { wood = null; }
     // Not wood at the surface the climb itself reaches, nor again soon after
@@ -388,20 +442,20 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
     // 2026-09-30 ~20:00Z) under seven blocks of sand chose wood_first four
     // times for "oak log 8 blocks off, 7 up", the log up top, each fetch
     // back at once with nothing ("wood_first changed nothing 0.2s ago").
+    // Any wood the look round finds (64 blocks) is priced, the walk at the
+    // bot's measured pace, rather than cut at 32 (note 768c).
     const pastTheClimb = wood && Number.isFinite(wood.up) && wood.up >= rises - 1;
-    if (wood && wood.distance <= 32 && !pastTheClimb && !woodFirstFailed) {
-      const count = n => bot.inventory?.items?.().filter(i => i.name === n).reduce((s, i) => s + i.count, 0) || 0;
-      const cobble = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((s, n) => s + count(n), 0) >= 3;
-      const table = count('crafting_table') > 0;
-      const planks = (cobble ? 2 : 5) + (table ? 0 : 4);
+    if (wood && !pastTheClimb && !woodFirstFailed) {
+      const c = carriedFor(bot);
+      const stone = c.cobble >= 3 || picks.length > 0;
+      const need = Math.max(0, (c.sticks >= 2 ? 0 : 2) + (c.table ? 0 : 4) + (stone ? 0 : 3) - c.planks);
       const plank = /_planks$/.test(wood.name);
-      const blocks = plank ? planks : Math.ceil(planks / 4);
-      const pickSeconds = cobble ? PICKAXE_STONE_SECONDS : 1.15;
-      const withPick = Math.min(stairs.digs * pickSeconds + (rises + level) * STAIR_STEP_SECONDS,
-        column?.cells && !column.blocked ? column.cells.length * pickSeconds + column.up * PILLAR_RISE_SECONDS : Infinity);
-      const fetch = wood.distance * 2 / 4.3 + blocks * 3 + 5;
-      estimate.wood_first = fetch + withPick;
-      options.wood_first = { description: `Make a pickaxe first: ${wood.says}; break ${blocks} ${plank ? `plank block${blocks === 1 ? '' : 's'}` : `log${blocks === 1 ? '' : 's'}`} (about 3 seconds each by hand, and they drop), craft ${cobble ? 'a stone pickaxe from the cobblestone carried' : 'a wooden pickaxe'}${table ? ' at the crafting table carried' : ' and a crafting table'}: ${duration(fetch)} there and back with the crafting; then the climb with it, ${duration(withPick)}: ${duration(estimate.wood_first)} in all, against the climbs by hand beside it. The way there is walked as the pathfinder finds it, not surveyed here.` };
+      const blocks = Math.max(1, plank ? need : Math.ceil(need / 4));
+      const item = stone ? 'stone_pickaxe' : 'wooden_pickaxe';
+      const walkSecs = require('./levels').walkSeconds(wood.distance * 2);
+      const fetch = walkSecs + blocks * 3 + (stone && c.cobble < 3 ? 3 * 1.5 : 0) + 5;
+      estimate.wood_first = fetch + withPick(PICK_SECONDS[item]);
+      options.wood_first = { item, description: `Make ${words(item)} first: ${wood.says}; break ${blocks} ${plank ? `plank block${blocks === 1 ? '' : 's'}` : `log${blocks === 1 ? '' : 's'}`} (about 3 seconds each by hand, and they drop) for ${[c.sticks >= 2 ? null : 'the sticks', c.table ? null : 'a crafting table', stone ? null : 'the head'].filter(Boolean).join(' and ') || 'the pickaxe'}${c.sticks ? ` (${c.sticks} stick${c.sticks === 1 ? '' : 's'} carried)` : ''}, craft it${c.table ? ' at the crafting table carried' : ''}${stone ? (c.cobble >= 3 ? ' with the cobblestone carried' : ', the stone for its head dug here first') : ''}: ${duration(fetch)} there and back with the crafting (the walk at the bot's measured pace, ${require('./levels').walkPaceSays()}); then the climb with it, ${duration(withPick(PICK_SECONDS[item]))}: ${duration(estimate.wood_first)} in all, against the climbs ${picks.length ? `on the ${usesLeft} uses carried, then by hand,` : 'by hand'} beside it. The way there is walked as the pathfinder finds it, not surveyed here.` };
     }
   }
   for (const [way, m] of Object.entries(measured)) if (options[way]) options[way].quote = m.quote;
@@ -707,13 +761,14 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       // Which way to dig out is Jev's: a staircase, or straight up the
       // column overhead, each said with what it costs and leaves.
       const climb = await chooseClimb(bot, task, goal, save, state, target, { landing: !!open[0] });
-      if (climb.method === 'wood_first') {
+      if (climb.method === 'wood_first' || climb.method === 'pickaxe_first') {
         // The pickaxe made, the climb is asked again with it (note 754e).
+        const before = pickaxesCarried(bot).length;
         delete state.climb; save();
-        if (actions.woodFirst) await actions.woodFirst();
-        // Back with no pickaxe: kept, so the next ask does not offer it
+        if (actions.woodFirst) await actions.woodFirst(climb.item);
+        // Back with no new pickaxe: kept, so the next ask does not offer it
         // again at once (note 763).
-        if (!pickaxesCarried(bot).length) { state.woodFirstFailed = { at: Date.now() }; save(); }
+        if (pickaxesCarried(bot).length <= before) { state.woodFirstFailed = { at: Date.now() }; save(); }
         return;
       }
       if (climb.method === 'straight_up') { await climbStraightUp(bot, task, goal, save, state, climb.column, start, { navigate, ...actions }); return; }
@@ -843,7 +898,7 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   const walkTo = method === 'walk_then_up' ? options.walk_then_up?.walkTo : undefined;
   state.climb = { method, tools, offered: Object.keys(options), ...(state.climb?.failedColumn ? { failedColumn: state.climb.failedColumn } : {}), estimate: Math.round(estimate[method] ?? 0), fromY: feet.y, best: { y: feet.y, at: Date.now() }, ...(walkTo ? { walkTo } : {}), at: new Date().toISOString() };
   save();
-  return { method, column, walkTo };
+  return { method, column, walkTo, item: options[method]?.item };
 }
 
 // The walk to the column chosen, nothing dug on the way; there the climb

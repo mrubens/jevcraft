@@ -110,7 +110,7 @@ const SURVIVAL_ELSEWHERE = {
 const SURVIVAL_BY_NIGHT = {
   // Not "back to daylight" at night (note 755b: 25590 said it climbing out
   // at 18:43Z).
-  return_to_surface: ["I'm heading back up to the surface. It's night up there.", 'Climbing back up top, into the dark.', 'Up to the surface. Night out there, so eyes open.'],
+  return_to_surface: ["I'm heading back up to the surface. It's night up there.", 'Climbing back up top, into the dark.', 'On my way up to the surface. Night out there, so eyes open.'],
   leave_shelter: [(goal, action) => action.reason || 'Out I go. Back to it.', (goal, action) => action.reason || "Right, let's go!", (goal, action) => action.reason || 'Opening up. Where was I?'],
 };
 const OVERWORLD_ONLY = new Set(['gather_shelter_materials', 'sleep', 'go_home_for_night', 'wait_for_bedtime', 'evening_chore', 'grow_plot', 'sleep_failed', 'stay_up']);

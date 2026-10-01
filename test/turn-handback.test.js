@@ -117,6 +117,10 @@ test('mid-242-af-nether-3: a ghast forty blocks off in sight by a deadly drop is
   const { bot } = spanScene(new Vec3(40.5, 90, 0.5));
   bot.entities = { 77: { id: 77, name: 'ghast', type: 'hostile', position: new Vec3(0.5, 70, 41.5), height: 4, width: 4, isValid: true } };
   bot._wavedOff = { ids: [77], until: now + 10000 };
+  // Hunger where health comes back: at 15 with nothing to eat and 10.6
+  // health, food is the survival layer's claim in the Nether too (note 771c),
+  // and this case is the push's.
+  bot.food = 18;
   bot._arbiter = { holder: { layer: 'work', action: 'find_fortress', since: now - 1000, ids: [], knew: { reach: false, push: false } } };
   assert.equal(arbiter.watchOnce(bot, { live: true, log: () => {} }), null, 'left be as Jev chose (keep_working)');
   assert.equal(require('../src/survival').claim(bot, { kind: 'win', survival: {} }, { state: {}, currentShelter: () => null }), null);

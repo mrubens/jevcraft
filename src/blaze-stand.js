@@ -779,11 +779,59 @@ function strikeCells(bot, blaze, { footingOnly = false } = {}) {
 // hunt_<id> and the hunt's own walk to it (combatRoute) all read it, and
 // the walk goes to the cell it names. -> { cell, steps } or null
 const REACH_STEPS = 40, REACH_MEMO_MS = 400;
+// The walk read is the walk taken (note 774c): the bot's own movements'
+// neighbours (movement.js SurvivalMovements: the Nether's edge and lava
+// rules, and while rods are carried note 762's, no drop over two, no cell at
+// the lava's edge, none off the way in beside a deadly drop), with no block
+// dug or laid, as combatMovement walks it. 25584 (mid-229-ac, 2026-10-01
+// 03:51-03:59Z, 1 rod carried) was offered close_in at "the nearest blaze
+// ground reaches (10.1 blocks ...)" and hunt_13686, and the walk refused both
+// ("with 1 blaze rod carried the walk takes no drop of more than two"),
+// four times in 30 seconds. Where there are no such movements (a world read
+// without a pathfinder), blaze-tactics.js walkCells.
+const REACH_NODES = 6000;
+function moveWalk(bot, mv) {
+  let Move;
+  try { Move = require('mineflayer-pathfinder/lib/move'); } catch (_) { return null; }
+  const saved = { canDig: mv.canDig, allow1by1towers: mv.allow1by1towers, allowParkour: mv.allowParkour, scafoldingBlocks: mv.scafoldingBlocks };
+  Object.assign(mv, { canDig: false, allow1by1towers: false, allowParkour: false, scafoldingBlocks: [] });
+  // Walked as the attack walks it: the blazes claimed (claimBlazes), so a
+  // cell nearer them is not refused for that (danger.js safeFromHostiles).
+  const claims = { h: bot._huntingEntity, c: bot._closingOn };
+  claimBlazes(bot);
+  const map = new Map();
+  try {
+    const feet = feetCell(bot);
+    map.set(`${feet}`, { cell: feet, steps: 0 });
+    let ring = [new Move(feet.x, feet.y, feet.z, 0, 0)], looked = 0;
+    for (let n = 1; n <= REACH_STEPS && ring.length && looked < REACH_NODES; n++) {
+      const next = [];
+      for (const node of ring) {
+        let around = [];
+        try { around = mv.getNeighbors(node) || []; } catch (_) { around = []; }
+        for (const to of around) {
+          looked++;
+          if (to.toBreak?.length || to.toPlace?.length) continue;
+          const cell = new Vec3(to.x, to.y, to.z), k = `${cell}`;
+          if (map.has(k)) continue;
+          map.set(k, { cell, steps: n });
+          next.push(to);
+        }
+      }
+      ring = next;
+    }
+  } finally { Object.assign(mv, saved); bot._huntingEntity = claims.h; bot._closingOn = claims.c; }
+  return map;
+}
 function reachWalk(bot) {
   const feet = feetCell(bot), k = `${feet}`, m = bot._reachWalk, now = Date.now();
   if (m && m.k === k && now - m.at < REACH_MEMO_MS) return m.map;
-  const map = new Map();
-  for (const c of require('./blaze-tactics').walkCells(bot, { steps: REACH_STEPS })) map.set(`${c.cell}`, c);
+  const mv = bot.pathfinder?.movements;
+  let map = typeof mv?.getNeighbors === 'function' ? moveWalk(bot, mv) : null;
+  if (!map) {
+    map = new Map();
+    for (const c of require('./blaze-tactics').walkCells(bot, { steps: REACH_STEPS })) map.set(`${c.cell}`, c);
+  }
   bot._reachWalk = { k, at: now, map };
   return map;
 }
@@ -1101,8 +1149,18 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
       if (!cells.length || !navigate) { debug('no ground under', target.id, target.position.floored()); stats.noGround++; skip.set(target.id, Date.now() + 6000); target = null; await sleep(150); continue; }
       // The cell the one reachability names first (blazeReach, note 774):
       // the option promised the walk to it.
-      const named = blazeReach(bot, target)?.cell;
-      const to = (named && !named.equals(feetCell(bot)) && !failed.has(`${named}`) ? named : null) || cells.find(c => !failed.has(`${c}`)) || cells[0], from = target.position.distanceTo(bot.entity.position);
+      const reach = blazeReach(bot, target), named = reach?.cell;
+      // Struck from where it stands (note 774c): the reach names the bot's
+      // own cell, so the swing needs no walk; faced and waited on until the
+      // sword's reach holds. 25592 (mid-220-ad, the spawner at (-324, 64,
+      // 318)) chose charge_nearest at a blaze 1.9 off and its walk came back
+      // "no route" at once.
+      if (named && named.equals(feetCell(bot))) { await bot.lookAt(target.position.offset(0, 0.9, 0), true); await sleep(150); continue; }
+      // Only cells the walk itself takes (reachWalk): one it refuses is no way.
+      const walkable = reachWalk(bot);
+      const to = (named && !failed.has(`${named}`) ? named : null) || cells.find(c => walkable.has(`${c}`) && !failed.has(`${c}`));
+      if (!to) { debug('no walk to', target.id); stats.noGround++; skip.set(target.id, Date.now() + 6000); target = null; await sleep(150); continue; }
+      const from = target.position.distanceTo(bot.entity.position);
       try {
         // Stopped too by any blaze in sight come within the sword's reach on
         // the way: each in reach is struck (above), not walked past with its

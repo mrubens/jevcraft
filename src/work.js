@@ -2135,18 +2135,28 @@ async function surfaceStep(bot, task, goal, save) {
     // Wood down here (a mineshaft's planks, a log in a cave) is fetched only
     // as climb_out's wood_first, priced beside the climbs by hand (note 754e).
     if (!step || (step.action === 'mine' && (isSurfaceResource(step.block) || /_log$|_planks$|_stem$/.test(step.block || '')))) {
-      if (!goal.surfaceReturn?.byHand) { goal.surfaceReturn ||= {}; goal.surfaceReturn.byHand = true; save(); bot.chat?.("No pickaxe worth the name and no wood for one, so I'm digging out by hand."); }
+      // Said as it is (note 768c): 25593 said "no wood for one" at 03:40:31Z
+      // with the trial chambers' oak planks 52 blocks off, known.
+      if (!goal.surfaceReturn?.byHand) {
+        goal.surfaceReturn ||= {}; goal.surfaceReturn.byHand = true; save();
+        let wood = null;
+        try { wood = require('./pickaxe-budget').nearestWood(bot, goal); } catch (_) { wood = null; }
+        bot.chat?.(wood ? `No pickaxe worth the name. The nearest wood is ${wood.distance} blocks off; making one from it is weighed against digging out by hand.` : "No pickaxe worth the name and no wood seen for one, so I'm digging out by hand.");
+      }
       return true;
     }
     await executeAcquisition(bot, task, step, goal, save);
     return false;
-  }, woodFirst: async () => {
-    // The pickaxe from the wood in reach, a step at a time, until one is
-    // carried or ten steps have gone.
-    const item = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((n, k) => n + countOf(bot, k), 0) >= 3 ? 'stone_pickaxe' : 'wooden_pickaxe';
+  }, woodFirst: async (chosen = null) => {
+    // The pickaxe the climb's answer named (wood_first or pickaxe_first,
+    // note 768c), a step at a time, until one more is carried or ten steps
+    // have gone: with a pickaxe carried, the stone for a stone head is dug.
+    const stone = ['cobblestone', 'cobbled_deepslate', 'blackstone'].reduce((n, k) => n + countOf(bot, k), 0) >= 3 || pickaxeTier(bot) >= 1;
+    const item = chosen || (stone ? 'stone_pickaxe' : 'wooden_pickaxe');
+    const had = countOf(bot, item);
     goal.step = { action: 'pickaxe_before_climb', item }; save();
-    for (let i = 0; i < 10 && pickaxeTier(bot) < 1; i++) { task.check(); if (await acquireStep(bot, task, item, countOf(bot, item) + 1, goal, save)) break; }
-    if (pickaxeTier(bot) < 1) throw new Error(`No ${item.replaceAll('_', ' ')} made from the wood in reach`);
+    for (let i = 0; i < 10 && countOf(bot, item) <= had; i++) { task.check(); if (await acquireStep(bot, task, item, had + 1, goal, save)) break; }
+    if (countOf(bot, item) <= had) throw new Error(`No ${item.replaceAll('_', ' ')} made before the climb`);
   } });
 }
 

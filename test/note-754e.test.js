@@ -45,9 +45,9 @@ test('with no pickaxe and planks in reach, climb_out offers a pickaxe made first
   const feet = bot.entity.position.floored();
   const { options, estimate } = climbOptions(bot, feet.offset(0, 25, 0), straightUpColumn(bot, feet), { goal: {} });
   assert(options.wood_first, `offered: ${Object.keys(options)}`);
-  assert.match(options.wood_first.description, /^Make a pickaxe first: the nearest wood known is oak planks 5 blocks off.*break 2 plank blocks .*craft a stone pickaxe from the cobblestone carried at the crafting table carried/);
+  assert.match(options.wood_first.description, /^Make a stone pickaxe first: the nearest wood known is oak planks 5 blocks off.*break 2 plank blocks .* for the sticks, craft it at the crafting table carried with the cobblestone carried/);
   assert(estimate.wood_first < estimate.staircase, `made first is quicker here: ${estimate.wood_first} against ${estimate.staircase}`);
-  // With a pickaxe carried it is not offered.
+  // With a pickaxe carried that lasts the climb it is not offered (note 768c).
   const armed = mineshaftBot([['cobblestone', 64], ['stone_pickaxe', 1]]);
   assert.equal(climbOptions(armed, feet.offset(0, 25, 0), straightUpColumn(armed, feet), { goal: {} }).options.wood_first, undefined);
 });
