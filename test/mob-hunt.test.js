@@ -1869,7 +1869,8 @@ test('a blaze over the lava beside a fortress bridge is not walked under: the fi
   const movement = combatMovement(bot);
   try { assert.equal(await combatRoute(bot, task, target, movement, 400, { pushed }), null, 'no fight at the edge'); }
   finally { movement.restore(); }
-  assert.deepEqual(pushed.map(e => e.id), [7, 7]);
+  // Once (note 774: a blaze's reach is blazeReach's, one answer, not one per approach).
+  assert.deepEqual(pushed.map(e => e.id), [7]);
   // One over the bridge's middle, the route ending three from the edge: fought, the push said.
   target.position = new Vec3(-3.5, 66, 0.5);
   bot.pathfinder.getPathTo = () => ({ status: 'success', path: [] });

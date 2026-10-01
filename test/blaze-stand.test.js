@@ -129,15 +129,34 @@ test('close_in and charge_nearest are not offered where the ground toward the bl
   // straight toward the blaze: the ground under it is unbroken (no drop,
   // no lava beside the blaze at x = 5-6 for strikeCells to trip on), but
   // the first step of the walk is a wall, level, up and down alike.
-  const solid = p => p.y <= 63 || (p.x === 1 && (p.y === 64 || p.y === 65) && Math.abs(p.z) <= 2);
+  // (Note 774: one reachability, blazeReach, a walk over standable ground
+  // to a strike cell; the wall runs the floor's width so no walk goes
+  // round it within REACH_STEPS.)
+  const solid = p => p.y <= 63 || (p.x === 1 && (p.y === 64 || p.y === 65) && Math.abs(p.z) <= 40);
   const bot = brickWorld(solid);
   const over = blazeAt(3, 5.5, 64.5, 0.5);
   bot.entities = { 3: over };
   assert(stand.strikeCells(bot, over).length, 'a cell beside the blaze is fine on its own');
   assert.equal(stand.walkableToBlaze(bot, over), false, 'but the walk there has no first step');
+  assert.deepEqual(require('../src/survival').chargeStopsAt(bot, over)?.blocks, 0, 'fight reads the same: no step');
   const options = stand.blazeStands(bot, threats(bot, 24), { dig: false, hunted: true });
   assert(!options.close_in, `not offered: ${options.close_in?.description}`);
   assert(!options.charge_nearest, 'charge_nearest not offered either');
+});
+
+// Note 774: a short wall the walk goes round is no bar, for close_in and
+// fight alike (the greedy walk straight at it had called it no step while
+// the strike's own walk went round).
+test('a wall the walk goes round leaves the blaze reachable for close_in and fight alike (note 774)', () => {
+  const solid = p => p.y <= 63 || (p.x === 1 && (p.y === 64 || p.y === 65) && Math.abs(p.z) <= 2);
+  const bot = brickWorld(solid);
+  const over = blazeAt(3, 5.5, 64.5, 0.5);
+  bot.entities = { 3: over };
+  const reach = stand.blazeReach(bot, over);
+  assert(reach && reach.steps > 3, `reached round the wall: ${JSON.stringify(reach)}`);
+  assert.equal(require('../src/survival').chargeStopsAt(bot, over), null, 'fight reads the same: reached');
+  const options = stand.blazeStands(bot, threats(bot, 24), { dig: false, hunted: true });
+  assert(options.close_in, 'close_in offered');
 });
 
 // mid-242-aa-fortress-5 at 15:16:45 (note 614): a stone sword, no armour,

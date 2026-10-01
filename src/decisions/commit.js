@@ -28,6 +28,8 @@
 //               seconds  N: that long since the answer
 //               newOption true: an option (by `as`) is offered that was not
 //                        then
+//               kills    true: a blaze killed near the bot since (the cage's
+//                        plan, note 774: held until it kills or fails)
 //               throughFailures true: its try failing in the ledger does
 //                        not end it (an answer to a failure, held through
 //                        more of the same; the caller ends it on another
@@ -67,7 +69,7 @@ function factsOf(bot, goal, now = Date.now()) {
   try { for (const i of bot?.inventory?.items?.() || []) inv[i.name] = (inv[i.name] || 0) + i.count; } catch (_) { /* no inventory */ }
   let mobs = [];
   try { mobs = bot?.entity?.position ? require('../danger').threats(bot, THREAT_GONE_R).map(t => ({ name: t.entity?.name, d: t.distance })) : []; } catch (_) { mobs = []; }
-  return { t: now, pos: P(bot?.entity?.position), dimension: norm(bot?.game?.dimension), health: bot?.health ?? null, food: bot?.food ?? null, inv, threats: threatCounts(mobs), deaths: (goal?.survival?.deaths || []).length };
+  return { t: now, pos: P(bot?.entity?.position), dimension: norm(bot?.game?.dimension), health: bot?.health ?? null, food: bot?.food ?? null, inv, threats: threatCounts(mobs), deaths: (goal?.survival?.deaths || []).length, kills: Object.values(bot?._kills || {}).reduce((n, k) => n + (k || 0), 0) };
 }
 // The same facts from a flight record's snapshot (scripts/ask-loops.js).
 function factsFromSnapshot(s, t, deaths = 0) {
@@ -107,6 +109,7 @@ function untilParts(until = {}) {
   if (until.threats) out.push('the mobs about change (a new kind, more of one, or they are gone)');
   if (until.newOption) out.push(typeof until.newOption === 'string' && /ore/.test(until.newOption) ? 'a kind of ore not offered now is' : 'something new is offered');
   if (until.moved) out.push(`the bot is ${until.moved} blocks from here`);
+  if (until.kills) out.push('a blaze is killed');
   // What its caller ends it on (end()), said with the rest (note 767).
   if (Array.isArray(until.also)) out.push(...until.also);
   // An answer to a failure holds through more of the same (its caller ends
@@ -140,6 +143,7 @@ function endedBy(c, now, { offered = null, ledger = null } = {}) {
     if (a != null && b != null && (b < a || (b === 5 && a !== 5))) return `health went from ${Math.round(c.facts.health)} to ${Math.round(now.health)}`;
   }
   if (u.hunger && foodBand(c.facts.food) !== foodBand(now.food)) return `hunger went from ${c.facts.food} to ${now.food}`;
+  if (u.kills && (now.kills || 0) > (c.facts.kills || 0)) return `${now.kills - (c.facts.kills || 0) === 1 ? 'a blaze was' : `${now.kills - (c.facts.kills || 0)} were`} killed`;
   if (u.threats) { const w = threatsChanged(c.facts.threats, now.threats); if (w) return w; }
   if (u.newOption && offered) { const only = typeof u.newOption === 'string' ? new RegExp(u.newOption) : null; const fresh = [...offered].find(a => !c.offered?.includes(a) && (!only || only.test(a))); if (fresh) return `${words(fresh.replace(/^[a-z]+:/, ''))} is offered, which was not`; }
   return null;

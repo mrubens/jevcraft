@@ -88,7 +88,8 @@ test('the stall at the cage offers a slit toward it through the bot\'s own roof 
   bot.entity.position = new Vec3(-202.4, 53, -157.4);
   assert.equal(stillness.stepWait(bot, goal), null);
   bot.entity.position = new Vec3(-202.42, 53, -151.39);
-  assert.equal(stillness.stepWait(bot, goal, Date.now() + ch.HOLD_MS + 1000), null);
+  // A slit is the cage's plan (note 774): held PLAN_MS unless it kills or fails.
+  assert.equal(stillness.stepWait(bot, goal, Date.now() + ch.PLAN_MS + 1000), null);
   // Without the stay, the same trading is raised as it was.
   delete goal.cageHold;
   bot._stalls = { records: {}, marks: [] };

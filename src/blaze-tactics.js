@@ -137,10 +137,58 @@ function biterWatch(bot) {
 // and one that comes within two and sees in flies at the window into the
 // sword; the rest hover where they are (the jar's attack goal above).
 const BOX_NEAR = [2, 4.5];
-function boxPlan(bot, cell, toward) {
+// The cells a line passes through, in order, the first cell left out
+// (a voxel walk, as lineThrough's).
+function lineCells(from, to, max = 64) {
+  const d = to.minus(from), length = d.norm(), out = [];
+  if (length < 1e-6) return out;
+  const u = d.scaled(1 / length);
+  const c = [Math.floor(from.x), Math.floor(from.y), Math.floor(from.z)];
+  const step = ['x', 'y', 'z'].map(k => Math.sign(u[k]));
+  const next = ['x', 'y', 'z'].map((k, i) => step[i] ? ((step[i] > 0 ? c[i] + 1 : c[i]) - from[k]) / u[k] : Infinity);
+  const delta = ['x', 'y', 'z'].map((k, i) => step[i] ? Math.abs(1 / u[k]) : Infinity);
+  for (let n = 0; n < max; n++) {
+    const i = next[0] < next[1] ? (next[0] < next[2] ? 0 : 2) : (next[1] < next[2] ? 1 : 2);
+    if (next[i] > length) break;
+    c[i] += step[i]; next[i] += delta[i];
+    out.push(new Vec3(c[0], c[1], c[2]));
+  }
+  return out;
+}
+// A box at a live cage is one plan with its slit (note 774): its window is
+// the head-row wall the line from the eyes to the cage leaves the box by,
+// and the blocks past it on that line (up to SLIT_MAX cells in all, the
+// window counted) are dug with the build. 25584 (mid-229-aa, 2026-10-01
+// 00:57 to 01:06Z) held a box five blocks from the cage at (209, 62, -270)
+// whose window, on the side the cage lay most toward, looked into two
+// nether bricks: open_slit dug the netherrack the bot had laid in it, cover
+// and the box laid it back, four times in ten minutes, 0 blazes killed and
+// 30.9 health lost. -> { window, slit } or null where the line leaves by the
+// roof, the floor or the feet row, or a block on it does not come away.
+const SLIT_MAX = 3, EYE_UP = 1.62;
+function slitWindow(bot, cell, cage) {
+  const head = SIDES.map(s => cell.plus(s).offset(0, 1, 0));
+  const body = [cell, cell.offset(0, 1, 0)];
+  const cells = lineCells(cell.offset(0.5, EYE_UP, 0.5), new Vec3(cage.x + 0.5, cage.y + 0.5, cage.z + 0.5)).filter(c => !c.equals(cage));
+  const first = cells.find(c => !body.some(b => b.equals(c)));
+  const window = first && head.find(h => h.equals(first));
+  if (!window) return null;
+  const slit = [];
+  for (const c of cells.slice(cells.indexOf(first) + 1, cells.indexOf(first) + SLIT_MAX)) {
+    const b = bot.blockAt(c);
+    if (!b) return null;
+    if (!solid(b)) continue;
+    if (b.diggable === false || /bedrock|obsidian|spawner|lava|chest/.test(b.name) || !(b.hardness >= 0) || b.hardness >= 50) return null;
+    if ([...SIDES, new Vec3(0, 1, 0), new Vec3(0, -1, 0)].some(s => /lava/.test(bot.blockAt(c.plus(s))?.name || ''))) return null;
+    slit.push(c);
+  }
+  return { window, slit };
+}
+function boxPlan(bot, cell, toward, { cage = null } = {}) {
   const centre = cell.offset(0.5, 0, 0.5);
   const d = toward ? toward.minus(centre) : new Vec3(1, 0, 0);
-  const side = SIDES.slice().sort((a, b) => (b.x * d.x + b.z * d.z) - (a.x * d.x + a.z * d.z))[0];
+  const cut = cage ? slitWindow(bot, cell, cage) : null;
+  const side = cut ? cut.window.minus(cell).offset(0, -1, 0) : SIDES.slice().sort((a, b) => (b.x * d.x + b.z * d.z) - (a.x * d.x + a.z * d.z))[0];
   const window = cell.plus(side).offset(0, 1, 0);
   // The side toward the blazes first, then the rest, feet before head, and
   // the roof last (it hangs on the head row).
@@ -156,7 +204,7 @@ function boxPlan(bot, cell, toward) {
   const holder = solid(bot.blockAt(roof)) ? null : cell.minus(side).offset(0, 2, 0);
   if (holder) cells.push(holder);
   cells.push(roof);
-  return { cell, side, window, walls: cells, holder };
+  return { cell, side, window, walls: cells, holder, slit: cut ? cut.slit : null };
 }
 function boxFits(bot, plan) {
   if (!bunker.standable(bot, plan.cell)) return null;
@@ -179,7 +227,9 @@ function boxFits(bot, plan) {
   const win = bot.blockAt(plan.window);
   const dig = solid(win) ? plan.window : null;
   if (dig && (win.diggable === false || /bedrock|obsidian|spawner/.test(win.name))) return null;
-  return { ...plan, place, dig, blocks: place.length };
+  // The window and the slit past it, dug with the build (note 774).
+  const digs = [...(dig ? [dig] : []), ...(plan.slit || []).filter(c => solid(bot.blockAt(c)))];
+  return { ...plan, place, dig: digs[0] || null, digs, blocks: place.length };
 }
 // A cell inside the spawner's own spawn range (BOX_NEAR: 2 to 4.5 blocks
 // across from the cage) is scored worse when the box is not deliberately
@@ -201,7 +251,7 @@ function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [], sightO
       const off = Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z);
       if (off < BOX_NEAR[0] || off > BOX_NEAR[1] || Math.abs(cell.y - cage.y) > 1) continue;
     } else if (n > BOX_WALK) continue;
-    const fit = boxFits(bot, boxPlan(bot, cell, centre || from));
+    const fit = boxFits(bot, boxPlan(bot, cell, centre || from, { cage: cage || sightOf || null }));
     if (!fit || fit.blocks > carried) continue;
     // Over air (the roof), only a block that does not fall.
     if (fit.place.filter(c => !solid(bot.blockAt(c.offset(0, -1, 0))) && !fit.place.some(q => q.equals(c.offset(0, -1, 0)))).length > blocksCarried(bot, { standing: true })) continue;
@@ -211,7 +261,7 @@ function boxSite(bot, { cage = null, from = null, steps = 16, avoid = [], sightO
     // sat 1.4 blocks from its cage, inside SPAWN_RANGE but under BOX_NEAR's
     // own floor, and was struck at one block inside it (note 740).
     const inSpawnRange = spawnCentre ? Math.hypot(cell.x + 0.5 - spawnCentre.x, cell.z + 0.5 - spawnCentre.z) <= SPAWN_RANGE : false;
-    const score = n + fit.blocks * 0.5 + (fit.dig ? 2 : 0) + (inSpawnRange ? IN_RANGE_PENALTY : 0);
+    const score = n + fit.blocks * 0.5 + (fit.digs?.length || (fit.dig ? 1 : 0)) * 2 + (inSpawnRange ? IN_RANGE_PENALTY : 0);
     fits.push({ ...fit, steps: n, score, cage, inSpawnRange, off: centre ? round(Math.hypot(cell.x + 0.5 - centre.x, cell.z + 0.5 - centre.z)) : null });
   }
   fits.sort((a, b) => a.score - b.score);
@@ -251,7 +301,10 @@ function spawnLine(bot, cell, cage, { walls = [], open = [] } = {}) {
   }
   return { cells, of, per100: all ? Math.round(100 * seen / all) : 0 };
 }
-const windowLine = (bot, site, cage) => spawnLine(bot, site.cell, cage, { walls: site.walls.filter(w => !w.equals(site.window)), open: site.dig ? [site.window] : [] });
+const windowLine = (bot, site, cage) => spawnLine(bot, site.cell, cage, { walls: site.walls.filter(w => !w.equals(site.window)), open: site.digs || (site.dig ? [site.window] : []) });
+// The cells a held box keeps open (its window and the slit past it): no
+// block goes in them while it holds (cage-hold.js openings, note 774).
+const openingsOf = site => [site.window, ...(site.slit || [])].filter(Boolean);
 const standLine = (bot, cell, cage) => spawnLine(bot, cell, cage);
 // In words: what a cell sees of where they come.
 const lineWords = l => !l.cells ? 'none of where the spawner\'s blazes come'
@@ -333,7 +386,7 @@ async function buildBox(bot, task, goal, save, site, { navigate } = {}) {
     }
     if (!placed) { await stand.shieldVolley(bot, task); if (!await strikeInReach(bot, task)) await sleep(150); }
   }
-  if (site.dig && solid(bot.blockAt(site.window))) await bunker.digCell(bot, task, site.window);
+  for (const c of site.digs || (site.dig ? [site.window] : [])) if (solid(bot.blockAt(c))) await bunker.digCell(bot, task, c);
   const open = site.walls.filter(w => !solid(bot.blockAt(w)));
   if (open.length) throw Object.assign(new Error(`the box has ${plural(open.length, 'cell')} it could not wall (${open.map(p => `(${p.x}, ${p.y}, ${p.z})`).join(', ')})`), { name: 'StanceFailed' });
   return true;
@@ -962,4 +1015,4 @@ async function waitFarOff(bot, task, goal, save, site, { navigate, seconds = FAR
   return stats;
 }
 
-module.exports = { FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, spawnLine, windowLine, standLine, windowSays, lineWords, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE, fetchNearbyRods, fetchRodsAtCorner };
+module.exports = { lineCells, slitWindow, openingsOf, SLIT_MAX, FAR, farGone, scoutFar, farSite, waitFarOff, biterWatch, bitersAtArm, ARM, lineThrough, seeing, walkCells, boxPlan, boxFits, boxSite, spawnLine, windowLine, standLine, windowSays, lineWords, buildBox, holdBox, inBox, boxWhole, fetchRods, strikeInReach, tryWeight, spawnCells, lightField, torchSpots, lightPlan, makeTorches, placeTorch, lightSpawner, torchesCarried, makeable, cornerSite, holdCorner, healSite, leaveAndHeal, blocksCarried, LIT, BOX_NEAR, QUIET_SECONDS, SPAWN_RANGE, fetchNearbyRods, fetchRodsAtCorner };

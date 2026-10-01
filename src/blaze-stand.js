@@ -730,7 +730,7 @@ function advanceOk(bot, facing, toward) {
 // looked at, the charge at it went off after blazes 35 blocks away, and
 // it shot the bot for a minute and a half from 4.9 blocks (note 618). The
 // walk finds which of them it reaches.
-function strikeCells(bot, blaze) {
+function strikeCells(bot, blaze, { footingOnly = false } = {}) {
   const p = blaze.position, by = Math.floor(p.y), out = [];
   // Feet from four under the blaze's to two over: an eye 1.62 up within
   // 3.2 of its middle 0.9 up.
@@ -740,7 +740,7 @@ function strikeCells(bot, blaze) {
     // fight takes a fireball's push and a biter's knock together, and the
     // wither drill's close-in went over a fortress edge three off into the
     // lava sea (2026-09-28).
-    if (!bunker.standable(bot, c) || !knockLands(bot, c) || terrain.dropWithin(bot, c, KNOCK + 1) || lavaWithin(bot, c, KNOCK + 1)) continue;
+    if (!bunker.standable(bot, c) || (!footingOnly && (!knockLands(bot, c) || terrain.dropWithin(bot, c, KNOCK + 1) || lavaWithin(bot, c, KNOCK + 1)))) continue;
     // Within the sword's three of where the blaze hovers.
     if (c.offset(0.5, 1.62, 0.5).distanceTo(p.offset(0, 0.9, 0)) > 3.2) continue;
     out.push(c);
@@ -762,9 +762,46 @@ function strikeCells(bot, blaze) {
 // once is not counted reachable here either, so it is left out of
 // close_in's count and never made charge_nearest's target (or, alone,
 // close_in is not offered at all).
+// And the hunt's own fight (mob-hunt.js combatRoute, hunt_<id>) read a
+// third: the pathfinder's survey toward the blaze. 25584 (mid-229-aa,
+// 2026-10-01 01:05:27Z), walled in by its own blocks five from the cage at
+// (209, 62, -270), was offered "Fight the blaze 4 blocks off ... in the
+// open", took it, and the fight's own route came back "No dry combat route
+// to blaze" three seconds later; charge_nearest beside it named a strike
+// cell at (208, 62, -270) outside the walls. Of 48 attacks on a blaze
+// (hunt_<id>, close_in, charge_nearest) chosen walled in since 06:00Z on
+// 2026-09-30, 42 had the bot not a block from where it chose 20 s later.
+// One reachability for every attack on a blaze (note 774): a cell within
+// the sword's reach of it that a push lands on ground from (strikeCells),
+// reached from the bot's feet over standable ground, a step up or down at
+// a time, no block dug (blaze-tactics.js walkCells, REACH_STEPS), or the
+// blaze in reach now. close_in, charge_nearest, fight's no-step, the hunt's
+// hunt_<id> and the hunt's own walk to it (combatRoute) all read it, and
+// the walk goes to the cell it names. -> { cell, steps } or null
+const REACH_STEPS = 40, REACH_MEMO_MS = 400;
+function reachWalk(bot) {
+  const feet = feetCell(bot), k = `${feet}`, m = bot._reachWalk, now = Date.now();
+  if (m && m.k === k && now - m.at < REACH_MEMO_MS) return m.map;
+  const map = new Map();
+  for (const c of require('./blaze-tactics').walkCells(bot, { steps: REACH_STEPS })) map.set(`${c.cell}`, c);
+  bot._reachWalk = { k, at: now, map };
+  return map;
+}
+function blazeReach(bot, blaze) {
+  if (!blaze?.position || !bot?.entity?.position) return null;
+  let now = false;
+  try { now = require('./combat').canStrike(bot, blaze); } catch (_) { now = false; }
+  if (now) return { cell: feetCell(bot), steps: 0, now: true };
+  const walk = reachWalk(bot);
+  const best = strikeCells(bot, blaze).map(c => walk.get(`${c}`)).filter(Boolean).sort((a, b) => a.steps - b.steps)[0];
+  return best ? { cell: best.cell, steps: best.steps } : null;
+}
+// No reach, and the ground beside it standable but every such cell within
+// a push of lava or a drop: not fought in the open for that (mob-hunt.js
+// notFoughtInTheOpen).
+const pushedOnly = (bot, blaze) => !strikeCells(bot, blaze).length && strikeCells(bot, blaze, { footingOnly: true }).length > 0;
 function walkableToBlaze(bot, blaze) {
-  const stop = require('./survival').chargeStopsAt(bot, blaze);
-  return !stop || stop.blocks > 0;
+  return !!blazeReach(bot, blaze);
 }
 
 // Going at the blazes is Jev's choice (close_in, break_spawner, a
@@ -1037,7 +1074,10 @@ async function closeIn(bot, task, goal, save, { navigate, seconds = 45, item = '
       // is not.
       const failed = walkFailedAt.get(target.id) || new Set();
       if (!cells.length || !navigate) { debug('no ground under', target.id, target.position.floored()); stats.noGround++; skip.set(target.id, Date.now() + 6000); target = null; await sleep(150); continue; }
-      const to = cells.find(c => !failed.has(`${c}`)) || cells[0], from = target.position.distanceTo(bot.entity.position);
+      // The cell the one reachability names first (blazeReach, note 774):
+      // the option promised the walk to it.
+      const named = blazeReach(bot, target)?.cell;
+      const to = (named && !named.equals(feetCell(bot)) && !failed.has(`${named}`) ? named : null) || cells.find(c => !failed.has(`${c}`)) || cells[0], from = target.position.distanceTo(bot.entity.position);
       try {
         // Stopped too by any blaze in sight come within the sword's reach on
         // the way: each in reach is struck (above), not walked past with its
@@ -1335,7 +1375,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   // and heal against one at four with nothing else in sight. Without the
   // shield the walk goes straight in and every fireball lands at its
   // chance, and the price says so.
-  const reachable = blazes.filter(t => strikeCells(bot, t.entity).length && walkableToBlaze(bot, t.entity)).sort((a, b) => a.distance - b.distance);
+  const reachable = blazes.filter(t => blazeReach(bot, t.entity)).sort((a, b) => a.distance - b.distance);
   if (reachable.length) {
     const first = reachable[0], over = blazes.length - reachable.length, shield = shieldCarried(bot);
     const walk = round(Math.max(0, first.distance - 3) / WALK);
@@ -1363,7 +1403,9 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
           closeInSays(one, hp) + ` It ends at the kill, after ${runs} seconds, or once six health is gone.` };
     }
   }
-  Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs }));
+  let planned = false;
+  try { planned = !!(goal && require('./cage-hold').cageFight(bot, goal)); } catch (_) { planned = false; }
+  Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs, hunted, planned }));
   // Each fight is said against leaving to heal, not only its own number:
   // 25589 (mid-242-va, note 732) was never told what leave_and_heal's own
   // damage estimate came to while it picked a fight that took it from 20 to
@@ -1404,7 +1446,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
 // the bot there) and what the arena measured of it, fight by fight.
 const TACTICS = new Set(['box', 'light', 'corner', 'heal', 'far']);
 const PLACE_SECONDS = 0.45, TORCH_SECONDS = 0.45;
-function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs = CLOSE_SECONDS }) {
+function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs = CLOSE_SECONDS, hunted = false, planned = false }) {
   const again = runs < CLOSE_SECONDS ? `, ${runs} seconds at a time and asked again between` : '';
   const T = require('./blaze-tactics');
   const options = {};
@@ -1461,7 +1503,8 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
   // One box, not two, where the nearest box is the one by the cage.
   if (boxHere && !boxes.some(([, b]) => b.cell.equals(boxHere.cell))) boxes.push(['box_here', boxHere]);
   for (const [key, box] of boxes) {
-    const walk = box.steps / WALK, build = box.blocks * PLACE_SECONDS + (box.dig ? 1 : 0);
+    const digs = box.digs?.length || (box.dig ? 1 : 0);
+    const walk = box.steps / WALK, build = box.blocks * PLACE_SECONDS + digs;
     const setup = underFire(walk + build);
     const walls = new Set(box.walls.map(c => `${c}`));
     const inLine = T.seeing(bot, about, box.cell, walls);
@@ -1488,16 +1531,41 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     // building it again, the way empty-spawner.js's own box already does
     // (note 719: 25597's hunt_target kept saying "wall it in" of a box it
     // was already standing whole inside, 23 times in 3.5 minutes).
-    const already = !box.steps && !box.blocks;
-    const buildSays = already ? 'the box whole already' : `wall it in at feet and head on all four sides and roof it (${n(box.blocks, 'block')} to place of the ${T.blocksCarried(bot)} carried${box.dig ? ', and the window dug' : ''}), leaving one block open at head height ${cageNear ? 'toward the spawner' : 'toward the blazes'}`;
+    const already = !box.steps && !box.blocks && !digs;
+    // At a cage the window is the slit (note 774): the head-row block the
+    // line from the eyes to the cage leaves by, and what stands past it on
+    // that line, dug with the build, not dug later through the box's own wall.
+    const slitSays = box.slit?.length ? `, the window cut where the line from the eyes to the cage leaves the box, with ${n(box.slit.filter(c => bot.blockAt(c)?.boundingBox === 'block').length, 'block')} past it on that line dug too (the slit, part of the box)` : '';
+    const buildSays = already ? 'the box whole already, its window open' : !box.blocks && !box.steps ? `the box whole already but for its window: ${n(digs, 'block')} to dig (the window${box.slit?.length ? ' and the slit past it toward the cage' : ''})` : `wall it in at feet and head on all four sides and roof it (${n(box.blocks, 'block')} to place of the ${T.blocksCarried(bot)} carried${digs ? `, ${n(digs, 'block')} dug for the window` : ''}), leaving one block open at head height ${cageNear ? 'toward the spawner' : 'toward the blazes'}${slitSays}`;
     // The one nearby blaze named, not folded into "none of N about", when it
     // is the only one and it is out of the window's line (note 719, item 1c).
     const noneInLine = about.length === 1
       ? `the one blaze about, ${round(about[0].position.distanceTo(bot.entity.position))} blocks off, is not in line with the window now`
       : `none of the ${about.length} about is in line with the window now`;
+    // A window that sees none of where the spawner's blazes come is no rod
+    // farm (note 774): 25585 (mid-227-aa, 2026-10-01 01:23 to 01:28Z) was
+    // offered box_here as "the rod farm players build by hand" beside "it
+    // gains no rod this way", chose it again and again walled in its own
+    // basalt, 0 blazes killed. Said as cover alone, and not offered where
+    // the question is the rods (hunt_target).
+    const line = cageNear ? (box.line || T.windowLine(bot, box, cageNear)) : null;
+    const blind = !!line && !line.cells;
+    if (blind && hunted) continue;
+    if (blind) {
+      options[key] = { kind: 'box', site: box, sees: inLine.length, about: about.length, cover: true, expects: { damage: round(setup.damage + hold), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
+        description: `${where}: ${buildSays}, and stay in it as cover, not as a rod farm: its window sees none of where the spawner's blazes come, so no rod comes this way and nothing is gained toward the rods while it stays. It keeps their fire off: no fireball's fire lands in it, and a push meets a wall.${inRange}${spawnSays}` +
+          `${already ? ' Nothing left to build' : ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included)`}. It is held up to ${Math.min(45, runs)} seconds${again ? ' at a time, and asked again then' : ''}.` + m.says };
+      continue;
+    }
+    // At a live cage still owed rods the box is the cage's plan (cage-hold.js,
+    // note 774): held until it kills or fails, judged by what it killed.
+    const heldSays = planned && cageNear
+      ? `At the cage it is held as the cage's plan: until a blaze is killed or a rod carried, six health is gone, a blaze comes inside it or a hit lands through it, or ${Math.round(require('./cage-hold').PLAN_MS / 60000)} minutes pass with none (then it is recorded as come to nothing); meanwhile only a blaze inside it or a hit through it is asked about.`
+      : `It is held up to ${Math.min(45, runs)} seconds${again ? ' at a time, and asked again then' : ''}, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight.`;
     options[key] = { kind: 'box', site: box, sees: inLine.length, about: about.length, expects: { damage: round(setup.damage + hold), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
-      description: `${where}: ${buildSays}, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front${shield ? ', where the shield faces each volley' : ' (no shield carried to meet it)'}; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window.${byCage ? ' Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come.' : cageNear ? ' The spawner puts its blazes within four of its cage, not beside this box: those that see in through the window shoot from there.' : ' No spawner puts any beside this box: the blazes about now stay where they hover.'}${inRange}${cageNear ? T.windowSays(box.line || T.windowLine(bot, box, cageNear)) : ''}${crowd ? ` ${crowd === 1 ? 'A blaze is' : `${crowd} blazes are`} within four blocks of that cell now: one in a cell to be walled holds that block out until it moves or is struck.` : ''} Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back.${spawnSays}` +
-        `${already ? ' Nothing left to build; holding it' : ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); holding it`}, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : noneInLine}. Food can be eaten in it. It is held up to ${Math.min(45, runs)} seconds${again ? ' at a time, and asked again then' : ''}, until a rod is carried, six health is gone, or twenty seconds with no blaze in line or within eight.` + (quiet ? ` Now no blaze sees the bot: the walls go up out of their fire.${require('./spawner-clock').jobSays(quiet, walk + build)}` : '') + m.says };
+      ...(planned && cageNear ? { judgeBy: 'kills' } : {}),
+      description: `${where}: ${buildSays}, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front${shield ? ', where the shield faces each volley' : ' (no shield carried to meet it)'}; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window.${byCage ? ' Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come.' : cageNear ? ' The spawner puts its blazes within four of its cage, not beside this box: those that see in through the window shoot from there.' : ' No spawner puts any beside this box: the blazes about now stay where they hover.'}${inRange}${cageNear ? T.windowSays(line) : ''}${crowd ? ` ${crowd === 1 ? 'A blaze is' : `${crowd} blazes are`} within four blocks of that cell now: one in a cell to be walled holds that block out until it moves or is struck.` : ''} Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back.${spawnSays}` +
+        `${already ? ' Nothing left to build; holding it' : ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); holding it`}, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : noneInLine}. Food can be eaten in it. ${heldSays}` + (quiet ? ` Now no blaze sees the bot: the walls go up out of their fire.${require('./spawner-clock').jobSays(quiet, walk + build)}` : '') + m.says };
   }
 
   // Lighting the spawner.
@@ -1893,7 +1961,12 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   const T = require('./blaze-tactics');
   const { site, kind } = option;
   if (kind === 'box') {
-    if (!T.inBox(bot, site) || !T.boxWhole(bot, site)) await T.buildBox(bot, task, goal, save, site, { navigate });
+    const toDig = (site.digs || []).some(c => bot.blockAt(c)?.boundingBox === 'block');
+    if (!T.inBox(bot, site) || !T.boxWhole(bot, site) || toDig) await T.buildBox(bot, task, goal, save, site, { navigate });
+    // Built at a live cage still owed rods, from whichever question chose
+    // it, and seeing where its blazes come: the cage's plan (cage-hold.js,
+    // note 774), begun once for its cell.
+    if (!option.cover) { try { require('./cage-hold').boxPlanned(bot, goal, save, option.key, site); } catch (_) { /* no cage */ } }
     return T.holdBox(bot, task, goal, save, site, { navigate, seconds: seconds ?? 45, item, want, stats });
   }
   if (kind === 'light') { Object.assign(stats, await T.lightSpawner(bot, task, goal, save, site.spawner, { navigate, seconds: seconds ?? 60 })); return stats; }
@@ -1903,4 +1976,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze };
+module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS };

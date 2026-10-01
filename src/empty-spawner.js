@@ -157,6 +157,9 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
   // The lull by a live spawner (note 691): the time before its next try is
   // the time to prepare. Each way says its seconds against that clock.
   if (quiet) Object.assign(tree, lullOptions(bot, task, goal, save, actions, known, quiet, { now }));
+  // Twenty or more stacked within sixteen: pulling back out of their sight,
+  // priced with the spawner's cap (cage-hold.js pullBackOption, note 774).
+  try { const ch = require('./cage-hold'), fight = ch.cageFight(bot, goal); const pb = fight && ch.pullBackOption(bot, task, goal, save, fight, { navigate: actions?.navigate, now }); if (pb) tree.pull_back = pb; } catch (_) { /* none */ }
   // The rods carried into a chest first (rod-stash.js, note 704): a death
   // drops them, a chest keeps them.
   const stash = require('./rod-stash').stashOffer(bot, goal, { now });
@@ -217,7 +220,8 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
   const toward = centre(cage), carried = T.blocksCarried(bot);
   const WALK = 4.3, PLACE = 0.45;
   const boxWords = (b, at) => {
-    const secs = b.steps / WALK + b.blocks * PLACE + (b.dig ? 1 : 0);
+    const digs = b.digs?.length || (b.dig ? 1 : 0);
+    const secs = b.steps / WALK + b.blocks * PLACE + digs;
     const where = b.steps ? `Walk ${b.steps} block${b.steps === 1 ? '' : 's'} to a cell ${at}` : `Where the bot stands, ${at}`;
     // Held for the blazes its window sees (note 708): a window with no line
     // to where they come holds for none of them, and is said so.
@@ -229,16 +233,30 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // box_here 1.4 blocks from a live cage, struck at one block inside the
     // box just walled).
     const inRange = b.inSpawnRange ? ' It is inside the spawner\'s own spawn range (up to four blocks across): a blaze can spawn already at the box\'s own wall or window there, not only fly in through it, so "only a blaze in line with the window sees in" does not hold this close.' : '';
-    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : 'the box whole already'}, one open at head height toward the spawner, and hold it${sees ? ' for its next blazes: only a blaze in line with the window sees in, from the front' : ''}.${inRange}${T.windowSays(b.line)}${clock.jobSays(quiet, secs)}` };
+    // The window is the slit (note 774): cut where the line from the eyes to
+    // the cage leaves the box, what stands past it on that line dug with it.
+    const past = (b.digs || []).filter(c => !c.equals(b.window)).length;
+    const slit = b.slit ? ` where the line from the eyes to the cage leaves the box${past ? `, the ${past === 1 ? 'block' : `${past} blocks`} past it on that line dug with it` : ''} (the slit is part of the box, not dug later through its wall)` : '';
+    return { secs, says: `${where}: wall it in, ${b.blocks ? `${b.blocks} block${b.blocks === 1 ? '' : 's'} of the ${carried} carried` : digs ? `the box whole already but for ${digs === 1 ? 'a block' : `${digs} blocks`} to dig for its window` : 'the box whole already, its window open'}, one open at head height toward the spawner${slit}, and hold it${sees ? ' for its next blazes: only a blaze in line with the window sees in, from the front' : ''}.${inRange}${T.windowSays(b.line)}${clock.jobSays(quiet, secs)}` };
   };
-  const box = (key, site) => ({ description: site.words, secs: site.secs,
+  // At the cage a box is the cage's plan (cage-hold.js, note 774): judged by
+  // what it kills over its own time and held as a commitment till then.
+  const box = (key, site) => ({ description: site.words, secs: site.secs, ...require('./cage-hold').planNode(),
     run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'box', site: site.b, key }, site.secs) });
+  // A box whose window sees none of where its blazes come is no way to the
+  // rods, and this question is the rods (note 774: 25585 chose such a
+  // box_here three times walled in its own basalt, 0 blazes killed): not
+  // offered here, said in the state (noBoxSees).
+  const blind = b => !!b?.line && !b.line.cells;
+  const blindSaid = [];
   const offOf = c => round(Math.hypot(c.x + 0.5 - toward.x, c.z + 0.5 - toward.z));
   if (actions?.navigate) {
     const atCage = T.boxSite(bot, { cage, from: toward });
-    if (atCage) { const w = boxWords(atCage, `${atCage.off} blocks from the cage, where it puts its blazes beside the box`); tree.box_at_spawner = box('box_at_spawner', { b: atCage, words: w.says + ' Arena: built among four blazes it lost 3 runs of 5, never whole in those.', secs: w.secs }); }
+    if (atCage && blind(atCage)) blindSaid.push(`the box by the cage, ${atCage.off} blocks from it`);
+    if (atCage && !blind(atCage)) { const w = boxWords(atCage, `${atCage.off} blocks from the cage, where it puts its blazes beside the box`); tree.box_at_spawner = box('box_at_spawner', { b: atCage, words: w.says + ' Arena: built among four blazes it lost 3 runs of 5, never whole in those.', secs: w.secs }); }
     const here = T.boxSite(bot, { from: toward, sightOf: cage });
-    if (here && !(atCage && atCage.cell.equals(here.cell))) { const w = boxWords(here, `${offOf(here.cell)} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    if (here && blind(here) && !here.inLine) blindSaid.push(`the box where the bot stands, ${offOf(here.cell)} blocks from the cage`);
+    if (here && !blind(here) && !(atCage && atCage.cell.equals(here.cell))) { const w = boxWords(here, `${offOf(here.cell)} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
     // The nearest box whose window sees more of where they come, where the
     // nearest sees less (note 708).
     const inLine = here?.inLine;
@@ -247,7 +265,7 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // not left unsaid beside box_here's (note 740: box_in_line had no
     // "Arena:" line at all, so its near-zero kill rate stood with no cost
     // beside it, unlike box_here and box_at_spawner which both had one).
-    if (inLine && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says + ' Arena: as box_here\'s is, once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    if (inLine && !blind(inLine) && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says + ' Arena: as box_here\'s is, once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
     // A hole in the rock beside the cage, its mouth toward it: rock behind,
     // beside and over, only the front open. Not gated on a pickaxe carried:
     // netherrack, basalt, blackstone and nether bricks all break by hand
@@ -259,7 +277,7 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     if (hole) {
       const digSecs = round((hole.digMs ?? 1500) / 1000);
       const secs = (hole.steps || 0) / WALK + digSecs;
-      tree.dig_in_at_spawner = { description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage (${words(hole.rock)}, dug ${hole.with}, about ${digSecs} s), the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
+      tree.dig_in_at_spawner = { ...require('./cage-hold').planNode(), description: `Walk ${hole.steps || 0} block${hole.steps === 1 ? '' : 's'} and dig a hole one wide and two high into the rock beside the cage (${words(hole.rock)}, dug ${hole.with}, about ${digSecs} s), the mouth toward it, and hold it for its next blazes: rock behind, beside and over, only the front open.${clock.jobSays(quiet, secs)}`, secs,
         run: () => buildAndHold(bot, task, goal, save, actions, { kind: 'hole', site: hole, key: 'dig_in_at_spawner' }, secs) };
     }
     // Out past sixteen: the spawner makes none and its delay stops counting.
@@ -273,6 +291,7 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
   // Where the bot stands sees none of where they come (a box whose window
   // faces rock, 25591 at (-104, 78, 150), note 708): a slit toward the cage
   // is a way of its own (cage-hold.js, note 700).
+  if (blindSaid.length) tree._noBoxSees = `${blindSaid.join('; ')}: its window would see none of where the spawner's blazes come, so it is not offered as a way to the rods`;
   if (known.lineHere && !known.lineHere.per100 && actions?.dig) {
     const fight = require('./cage-hold').cageFight(bot, goal);
     const slit = fight ? require('./cage-hold').slitOption(bot, task, goal, save, fight, { dig: actions.dig, about: '' }) : null;
@@ -347,6 +366,17 @@ function lineHereSays(bot, known) {
   return `From here, ${known.off} blocks from the cage, it sees ${require('./blaze-tactics').lineWords(l)}${about}.`;
 }
 
+// The cage's plan held as a box with the bot in it: its hold run again
+// (blaze-stand.js huntFromStand, the box already built: holdBox). -> true
+// when it ran.
+async function holdPlan(bot, task, goal, save, actions, held) {
+  const ch = require('./cage-hold');
+  const site = ch.siteOf(held);
+  if (!site || !actions?.navigate || !require('./blaze-tactics').inBox(bot, site)) return false;
+  goal.step = { action: 'hold_cage_plan', choice: held.choice, since: held.at, health: bot.health }; save?.();
+  await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, { kind: 'box', key: held.choice, site }, { item: 'blaze_rod', want: require('./skills').countOf(bot, 'blaze_rod') + 1 });
+  return true;
+}
 // One pass of the hunt at a known spawner with no blaze near. -> true when
 // this pass was spent here (asked, carried out, or a chosen wait going on);
 // false when it is not this question's (a blaze near, no spawner known, the
@@ -364,7 +394,11 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // here once in the last 46 seconds") and abandoned for stand_by_spawner
   // three asks later ("Nothing is built"), standing in the open where the
   // box already answered the same blazes.
-  try { if (require('./cage-hold').holding(bot, goal, now)) return true; } catch (_) { /* no hold */ }
+  // The cage's plan held in its box (note 774): its hold runs again, not
+  // the bot standing in it while the turn goes round.
+  let held = null;
+  try { held = require('./cage-hold').holding(bot, goal, now); } catch (_) { held = null; }
+  if (held) { await holdPlan(bot, task, goal, save, actions, held); return true; }
   const fs = goal.fortressSearch;
   // The lull by a live spawner (note 691): blazes about out of sight, none at
   // reach. Asked then too, unless Jev chose to go after them just now.
@@ -396,8 +430,10 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   // blazes in (note 708): a hold here is worth only what that line brings.
   if (known.off <= RANGE) { try { known.lineHere = require('./blaze-tactics').standLine(bot, bot.entity.position.floored(), known.cage); } catch (_) { known.lineHere = null; } }
   const tree = options(bot, task, goal, save, actions, known, { now });
+  const noBoxSees = tree._noBoxSees; delete tree._noBoxSees;
   if (!Object.keys(tree).length) return false;
   const { state } = facts(bot, goal, known);
+  if (noBoxSees) state.noBoxSees = noBoxSees;
   if (known.lineHere) state.lineHere = lineHereSays(bot, known);
   // In the lull the facts are said once, short (the plain cap, note 672):
   // health and food are the question's own facts here.
@@ -422,4 +458,4 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   return true;
 }
 
-module.exports = { atSpawner, options, lullOptions, outOfRange, buildAndHold, facts, knownSpawner, blazeNear, rest, KNOWN_NEAR, STAND_MS, REST_MS, HUNT_ON_MS };
+module.exports = { holdPlan, atSpawner, options, lullOptions, outOfRange, buildAndHold, facts, knownSpawner, blazeNear, rest, KNOWN_NEAR, STAND_MS, REST_MS, HUNT_ON_MS };

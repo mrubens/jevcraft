@@ -1459,6 +1459,14 @@ function firmStep(bot, p) {
 // mid-110-h was offered a charge at two skeletons the ground between would
 // not carry it to, and fought on for fifty-four seconds (2026-09-26).
 function chargeStopsAt(bot, target) {
+  // A blaze: the one reachability every attack on it reads (blaze-stand.js
+  // blazeReach, note 774), so fight's "carries no step" and close_in's
+  // "over ground the bot can stand on" are the same fact.
+  if (target?.name === 'blaze') {
+    let reach = null;
+    try { reach = require('./blaze-stand').blazeReach(bot, target); } catch (_) { reach = undefined; }
+    if (reach !== undefined) return reach ? null : { blocks: 0, left: Math.round(target.position.distanceTo(bot.entity.position)) };
+  }
   let at = feetCell(bot);
   const goal = target.position.floored();
   for (let i = 0; i < 24; i++) {
@@ -4084,10 +4092,10 @@ class Survival {
       // bot a second later (note 559).
       const stands = require('./blaze-stand').blazeStands(bot, [...danger, ...hiddenNear], { dig: typeof this.actions.dig === 'function', need: rodsNeed, of: require('./blaze-stand').rodsOf(bot, goal), holds: goal?.mobHunt?.standResults || [], goal });
       for (const key of Object.keys(stands)) standKeys.add(key);
-      for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
+      for (const [key, o] of Object.entries(stands)) options[key] = { expects: o.expects, ...(o.judgeBy ? { judgeBy: o.judgeBy } : {}), description: o.description + (o.kind === 'hole' && !o.site.inside ? buildCost : '') + hitsLeft,
         run: async () => {
           this.report(goal, save, { action: key, threats: danger.map(t => t.entity.name).slice(0, 6), health: bot.health, stance: true });
-          try { return await require('./blaze-stand').takeStand(bot, task, goal, save, o, { navigate: this.actions.navigate }); }
+          try { return await require('./blaze-stand').takeStand(bot, task, goal, save, { ...o, key }, { navigate: this.actions.navigate }); }
           catch (err) { task.check(); if (['NeedsAir', 'Cancelled', 'StanceFailed'].includes(err.name)) throw err; this.state.stanceWhy = err.message; return false; }
         } };
       // The rods carried into a chest (rod-stash.js, note 704): a death drops

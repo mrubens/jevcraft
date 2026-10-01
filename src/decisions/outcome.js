@@ -87,7 +87,7 @@ function markOf(bot, target = null) {
   const t = P(target);
   let picks = null;
   try { picks = require('../quote-record').picksOf(bot); } catch (_) { picks = null; }
-  return { p, inv, picks, blocks: bot?._stalls?.marked || 0, health: Number.isFinite(bot?.health) ? bot.health : null, food: Number.isFinite(bot?.food) ? bot.food : null,
+  return { p, inv, picks, blocks: bot?._stalls?.marked || 0, kills: Object.values(bot?._kills || {}).reduce((n, k) => n + (k || 0), 0), health: Number.isFinite(bot?.health) ? bot.health : null, food: Number.isFinite(bot?.food) ? bot.food : null,
     dimension: norm(bot?.game?.dimension), ...(t ? { target: t, targetD: dist(p, t) } : {}) };
 }
 // The same from a flight record's snapshot (scripts/zero-delta.js): no
@@ -120,8 +120,25 @@ function effect(a, b) {
   if (Number.isFinite(a.food) && Number.isFinite(b.food) && b.food - a.food >= 1) return `hunger came up from ${a.food} to ${b.food}`;
   return null;
 }
+// An answer judged by what it killed (a node's `judgeBy: 'kills'`, the
+// cage's plan, note 774): a blaze killed or a rod carried is what it
+// changed; its walls laid, its slit dug and the steps into it are not.
+// 25584's box and slit at (209, 62, -270) dug and laid a block each time and
+// counted as having changed something, ten minutes and no blaze killed.
+function killEffect(a, b) {
+  if (!a || !b) return null;
+  if (Number.isFinite(a.kills) && Number.isFinite(b.kills) && b.kills > a.kills) return `${b.kills - a.kills === 1 ? 'a blaze' : `${b.kills - a.kills} blazes`} killed`;
+  const rods = m => (m?.inv?.blaze_rod || 0);
+  if (a.inv && b.inv && rods(b) > rods(a)) return `${rods(b) - rods(a) === 1 ? 'a rod' : `${rods(b) - rods(a)} rods`} carried`;
+  if (a.dimension && b.dimension && a.dimension !== b.dimension) return `went to the ${words(b.dimension).replace(/^the /, '')}`;
+  return null;
+}
 // What stayed the same, in words: said as the failure.
-function nothingSays(a, b) {
+function nothingSays(a, b, by = null) {
+  if (by === 'kills') {
+    const hurt = Number.isFinite(a?.health) && Number.isFinite(b?.health) && a.health - b.health >= 1 ? `, health fell from ${Math.round(a.health)} to ${Math.round(b.health)}` : '';
+    return `no blaze killed and no rod carried${hurt} (judged by what it killed, not by blocks laid or dug)`;
+  }
   const hurt = Number.isFinite(a?.health) && Number.isFinite(b?.health) && a.health - b.health >= 1 ? `, health fell from ${Math.round(a.health)} to ${Math.round(b.health)}` : '';
   const target = a?.target && Number.isFinite(a.targetD) ? `, still ${Math.round(a.targetD)} blocks from its target` : '';
   return `the bot on the same block, carrying the same, no block dug or placed${target}${hurt}`;
@@ -151,7 +168,10 @@ function begin(bot, goal, spec, path, node, { target = null, held = false, now =
   if (held && was && was.key === key) return was;
   const mark = markOf(bot, node?.target || target);
   if (!mark) { delete memo[spec.id]; return null; }
-  memo[spec.id] = { q: spec.id, key, at: now, mark, ms: statedMs(node), wait: waitWhy(spec, key, node), sameStall: Number.isFinite(spec.sameStall) ? spec.sameStall : NOOP_NEAR,
+  // Judged by what it killed (the cage's plan, note 774): not a wait, whatever
+  // its name, since what it is for is a kill.
+  const by = node?.judgeBy === 'kills' ? 'kills' : null;
+  memo[spec.id] = { q: spec.id, key, at: now, mark, ms: statedMs(node), wait: by ? null : waitWhy(spec, key, node), ...(by ? { by } : {}), sameStall: Number.isFinite(spec.sameStall) ? spec.sameStall : NOOP_NEAR,
     // What it was quoted at, read against what it cost when judged (note 768).
     ...(node?.quote?.kind ? { quote: { ...node.quote } } : {}) };
   return memo[spec.id];
@@ -191,16 +211,17 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
   const tookMs = now - o.at;
   const noRise = o.quote?.rise > 0 && o.mark?.p && here?.p && (!o.mark.dimension || o.mark.dimension === here.dimension) && here.p.y - o.mark.p.y < 1 && tookMs >= CLIMB_JUDGE_MS
     ? `it rose nothing: ${Math.round(Math.hypot(here.p.x - o.mark.p.x, here.p.z - o.mark.p.z))} blocks across at y ${Math.floor(here.p.y)}, ${o.quote.rise} blocks short of open sky as it was said` : null;
-  const changed = effect(o.mark, here);
+  const changed = o.by === 'kills' ? killEffect(o.mark, here) : effect(o.mark, here);
   if (changed && !noRise) return { changed };
   if (o.wait) return { waited: o.wait };
   // Cut short by the survival layer (tried.cut), or a wait the ledger
-  // judges by its world (note 599): not this rule's.
+  // judges by its world (note 599): not this rule's. An answer judged by
+  // what it killed is judged so, wait or not.
   const e = entryOf(goal, o);
-  if (e && (e.cut || e.waiting)) return { cut: e.cut || 'a wait, judged by its world' };
+  if (e && (e.cut || (e.waiting && o.by !== 'kills'))) return { cut: e.cut || 'a wait, judged by its world' };
   const took = now - o.at;
   const within = took <= o.ms ? `within ${secs(took)} (its own time ${secs(o.ms)})` : `in its own time, ${secs(o.ms)}`;
-  const nothing = noRise || nothingSays(o.mark, here);
+  const nothing = noRise || nothingSays(o.mark, here, o.by);
   let why = null;
   try { why = require('./repeats').whyItEnded(bot, goal, o.at); } catch (_) { why = null; }
   const says = `${words(o.key)} was chosen ${secs(took)} ago and changed nothing ${within}: ${nothing}${why ? `; it ended: ${String(why).replace(/\.$/, '')}` : ''}`;
@@ -210,6 +231,9 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
     // question under the rung judged by the rung's measure may have seen
     // what this does not (a new best), and then it is not a no-op.
     const tried = require('../tried');
+    // Judged by what it killed: the ledger's own judgment (a wait judged by
+    // its world, the blocks of a box) does not stand for it (note 774).
+    if (o.by === 'kills' && e.outcome === 'pending') { e.outcome = 'blocked'; e.why = `no blaze killed and no rod carried in its time`; }
     if (e.outcome === 'pending') tried.settle(bot, goal, { q: id, now });
     if (e.outcome !== 'blocked') return { settled: e.outcome, gained: e.gained || null };
     const own = `its run changed nothing ${within}: ${nothing}`;
@@ -267,4 +291,4 @@ function replay(answers) {
   return { said, kept };
 }
 
-module.exports = { FLOOR_MS, CAP_MS, NOOP_NEAR, NOOP_MS, statedMs, markOf, markOfSnapshot, effect, nothingSays, waitWhy, begin, judge, sweep, says, noopHolds, entryOf, replay };
+module.exports = { FLOOR_MS, CAP_MS, NOOP_NEAR, NOOP_MS, statedMs, markOf, markOfSnapshot, effect, killEffect, nothingSays, waitWhy, begin, judge, sweep, says, noopHolds, entryOf, replay };

@@ -937,8 +937,11 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     // still restarted encounter_stance about five times a second, each
     // "a blaze came within 4 blocks" (note 729).
     const { shooter } = require('./mob-policy');
+    // Nor a blaze at the cage's held box or slit, but one inside it or a
+    // hit through it (cage-hold.js shelterKeepsOff, note 774).
+    const sheltered = t => { try { return require('./cage-hold').shelterKeepsOff(bot, t, now); } catch (_) { return false; } };
     const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || (t.distance <= 4 && !shooter(t.entity))) && !holder.ids.includes(t.entity.id) &&
-      !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3));
+      !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3) && !sheltered(t));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };
   }

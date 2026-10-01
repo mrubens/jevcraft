@@ -499,6 +499,12 @@ function threatScan(bot, keepStoodOff = false) {
   let liveSpawner;
   const atLiveSpawner = () => { if (liveSpawner === undefined) { try { liveSpawner = !!require('./cage-hold').cageFight(bot, bot._goal); } catch (_) { liveSpawner = false; } } return liveSpawner; };
   const spawnerCombat = t => t.entity.name === 'blaze' && t.distance > SPAWNER_MELEE && atLiveSpawner();
+  // The cage's plan held, the bot in its box or at its slit (cage-hold.js,
+  // note 774): a blaze or its fireball ends the step only from inside the
+  // box or by a hit through it. 25584's box and slit were cut by "Threat
+  // nearby: blaze at 4 to 6 blocks" and "small_fireball at 5 to 16 blocks"
+  // within seconds, every time: 100 of 160 such holds since 06:00Z.
+  const sheltered = t => { try { return require('./cage-hold').shelterKeepsOff(bot, t); } catch (_) { return false; } };
   // Another of the kind being fought never ends the fight: the hunt's own
   // crowd rule decides how many blazes are too many.
   const kin = t => fighting && t.entity.name === bot._combatEncounter.target?.name;
@@ -584,7 +590,7 @@ function threatScan(bot, keepStoodOff = false) {
   // blaze in sight near a fortress held the turn (notes 509, 513).
   const shooterReach = t => fighting ? 8 : Math.max(hitBy(t) ? Math.max(48, RANGE[t.entity.name] || 0) : hurt ? 32 : 16, FIRE_REACH[t.entity.name] || 0);
   const about = threats(bot, 64);
-  const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) && !spawnerCombat(t) &&
+  const mob = about.find(t => !combatTarget(bot, t.entity) && seen(t) && !kin(t) && (!hunted(bot, t.entity) || (shooter(t.entity) && hitBy(t))) && !leftBe(t) && !nightHunted(bot, t.entity) && !spawnerCombat(t) && !sheltered(t) &&
     t.distance <= (shooter(t.entity) ? shooterReach(t) : t.entity.name === 'warden' ? 24 : (fighting ? 5 : 8)) &&
     // Nor one that has stood off (note 752): about a minute and more, never
     // at its reach, no nearer, no hit from its kind, a shooter out of sight.
@@ -599,20 +605,20 @@ function threatScan(bot, keepStoodOff = false) {
   // was a threat any more, the claim became shelter, survival_priority was
   // asked in the pillar's place, and the shelter's route searches stood the
   // bot on the pillar's edge five seconds under a skeleton's arrows (note 535).
-  const kept = stanceMobs(bot, Date.now(), { keepStoodOff })[0];
+  const kept = stanceMobs(bot, Date.now(), { keepStoodOff }).filter(t => !sheltered(t))[0];
   if (kept) return kept;
   // And once it is over, those of them still coming at the bot (followers):
   // mid-244-a's run ended with four zombies ten blocks behind and walking
   // up, past the eight counted for a biter, and the night's pocket was
   // asked and dug in the stance's place until they bit (note 544).
-  const follower = followers(bot, { list: about })[0];
+  const follower = followers(bot, { list: about }).filter(t => !sheltered(t))[0];
   if (follower) return follower;
   // A shot on its way is a threat of its own, its shooter seen or not:
   // mid-230-g, waiting to heal by a fortress, was hit by four fireballs in
   // six seconds from a ghast out of view, the fourth throwing it into the
   // lava (2026-09-27). Not while fighting: the fight answers shots.
   if (fighting) return undefined;
-  const shot = require('./projectile-guard').incoming(bot, { reach: 16 })[0];
+  const shot = require('./projectile-guard').incoming(bot, { reach: 16 }).find(e => !sheltered({ entity: e, distance: e.position.distanceTo(bot.entity.position) }));
   if (shot) return { entity: shot, distance: shot.position.distanceTo(bot.entity.position), visible: true, projectile: true };
   return undefined;
 }
@@ -853,9 +859,17 @@ function deadlyDropBeside(bot, radius = 3) {
 // and the work's rest hold that followed kept the turn past the fifteen
 // seconds and on until the ghast's fireball put it in the lava at 05:37:30.
 function pushOverDrop(bot) {
+  // Walled at the feet and the head on every side, a push meets a wall
+  // (note 774): 25585 (mid-227-aa, 2026-10-01 01:24:10 and 01:27:33Z) boxed
+  // in its own basalt was preempted "something that can push the bot is
+  // about, a deadly drop beside it" at every move it began from the box.
+  if (walledRound(bot)) return null;
   const now = Date.now(), waved = !(bot?._recentHurtAt > now - 4000) && bot?._wavedOff?.until > now ? bot._wavedOff.ids : [];
   const beyond = bot?._wavedOff?.beyond || 0;
-  const pushers = pushersAbout(bot).filter(t => !(waved.includes(t.entity?.id) && t.distance > beyond));
+  // Nor a blaze's push at the cage's held box or slit (note 774): only one
+  // inside or a hit through it ends the hold (cage-hold.js shelterKeepsOff).
+  const sheltered = t => { try { return require('./cage-hold').shelterKeepsOff(bot, t, now); } catch (_) { return false; } };
+  const pushers = pushersAbout(bot).filter(t => !(waved.includes(t.entity?.id) && t.distance > beyond) && !sheltered(t));
   if (!pushers.length) return null;
   // As far as the throw of the kinds about (knock-record.js): a ghast's
   // fireball carried the bot 4.1 to 4.5 blocks before it went over, past the
@@ -865,6 +879,14 @@ function pushOverDrop(bot) {
   return drop ? { pushers, drop } : null;
 }
 
+function walledRound(bot) {
+  const p = bot?.entity?.position;
+  if (!p || typeof bot.blockAt !== 'function') return false;
+  const f = p.floored();
+  // Near the middle of its cell: a body against one side reaches past it.
+  if (Math.abs(p.x - f.x - 0.5) > 0.35 || Math.abs(p.z - f.z - 0.5) > 0.35) return false;
+  return [[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dz]) => [0, 1].every(dy => bot.blockAt(f.offset(dx, dy, dz))?.boundingBox === 'block'));
+}
 // A fight on (note 696): a threat by immediateThreat's counts, a stance
 // Jev chose still holding, a mob that hurt the bot in the last ten seconds
 // with one of its kind still about, or a blaze within six blocks seen or
@@ -914,4 +936,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { markCreeper, creeperMarked, CREEPER_MARK_MS, noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { walledRound, markCreeper, creeperMarked, CREEPER_MARK_MS, noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };

@@ -326,6 +326,19 @@ function pushedOff(bot, target, route) {
   return (!!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2)) || require('./blaze-stand').lavaWithin(bot, end);
 }
 async function combatRoute(bot, task, target, movement, timeoutMs = 400, { pushed = null } = {}) {
+  // A blaze: the one reachability every attack on it reads (blaze-stand.js
+  // blazeReach, note 774), and the walk goes to the cell it names. The
+  // pathfinder's survey here and the strike cells close_in and
+  // charge_nearest read disagreed: 25584 was offered hunt_10566 "in the
+  // open" walled in by its own blocks, and this survey answered "No dry
+  // combat route" to the fight three seconds later.
+  if (target.name === 'blaze') {
+    const stand = require('./blaze-stand');
+    const reach = stand.blazeReach(bot, target);
+    if (reach) return { route: null, destination: new goals.GoalBlock(reach.cell.x, reach.cell.y, reach.cell.z), reach };
+    if (pushed && stand.pushedOnly(bot, target)) pushed.push(target);
+    return null;
+  }
   for (const destination of approaches(bot, target)) {
     const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, timeoutMs);
     if (route.status !== 'success' || !route.path.every(movement.allowed)) continue;
@@ -564,6 +577,15 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // from here (tripHomeClosed): the hunt goes on, as prepareMobHunt's
     // own gate lets it once keepOn holds.
   }
+  // The cage's plan held in its box (cage-hold.js, note 774): the hunt runs
+  // its hold, not hunt_target asked over it. 25584's hunt asked hunt_target
+  // at its box six times in ten minutes, box_here, defer and a fight "in the
+  // open" from inside the walls among them.
+  if (state.entity === 'blaze') {
+    let held = null;
+    try { held = require('./cage-hold').holding(bot, goal); } catch (_) { held = null; }
+    if (held && await require('./empty-spawner').holdPlan(bot, task, goal, save, actions, held)) return true;
+  }
   const candidates = Object.values(bot.entities).filter(e => e.name === state.entity && valid(bot, e) &&
     e.position.distanceTo(bot.entity.position) < 24 && isolated(bot, e, handler) &&
     !isSetAside(goal, 'hunt_target', e.uuid || e.id)).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
@@ -616,11 +638,15 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // blaze come to the bot at its fortress (25590, mid-242-yc, 11:14:20Z:
   // box_here, leave_and_heal and defer, 3 rods owed; note 750).
   const unreached = [];
+  // Walled in by its own blocks, every walk begins by digging them: said
+  // with each blaze left unoffered for it (note 774).
+  let walled;
+  const walledSays = () => { if (walled === undefined) { try { walled = require('./walled-in').walledInSays(bot) ? ' (the bot is walled in by its own blocks; the walk counted is over open ground, no block dug)' : ''; } catch (_) { walled = ''; } } return walled; };
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
       if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement, 400, { pushed })) {
-        if (!pushed.includes(target)) { const d = target.position.distanceTo(bot.entity.position), dy = Math.round(target.position.y - bot.entity.position.y); unreached.push(`the ${target.name.replaceAll('_', ' ')} ${Math.round(d)} blocks off${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}: no way on foot to within a sword's reach of it from here, so no fight with it is offered; the ways that wait for it to come (a stand, a box) are`); }
+        if (!pushed.includes(target)) { const d = target.position.distanceTo(bot.entity.position), dy = Math.round(target.position.y - bot.entity.position.y); unreached.push(`the ${target.name.replaceAll('_', ' ')} ${Math.round(d)} blocks off${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}: no way on foot to within a sword's reach of it from here${walledSays()}, so no fight with it is offered; the ways that wait for it to come (a stand, a box) are`); }
         continue;
       }
       positions.set(target.id, target.position.clone());
@@ -693,10 +719,15 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   const blazesInSight = state.entity === 'blaze' ? threats(bot, 24).filter(t => t.entity.name === 'blaze') : [];
   if (blazesInSight.length && !isSetAside(goal, 'hunt_stand', 'blaze')) {
     const stands = require('./blaze-stand').blazeStands(bot, threats(bot, 24), { hunted: true, dig: typeof bot.dig === 'function', holds: state.standResults || [], need: rodsNeed, of: rodsOf, goal });
-    for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, ...(o.expects ? { expects: o.expects } : {}), run: async () => {
+    for (const [key, o] of Object.entries(stands)) tree[key] = { description: o.description + footing, ...(o.expects ? { expects: o.expects } : {}), ...(o.judgeBy ? { judgeBy: o.judgeBy, seconds: require('./cage-hold').PLAN_MS / 1000, commit: require('./cage-hold').planCommit() } : {}), run: async () => {
       try { await require('./blaze-stand').huntFromStand(bot, task, goal, save, actions, { ...o, key }, { item: state.item, want: countOf(bot, state.item) + 1 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'hunt_stand', 'blaze', err.message, 120000); state.lastStandError = err.message; save(); }
     } };
+  }
+  // Twenty or more stacked within sixteen of a live cage: pulling back out
+  // of their sight, priced with the spawner's cap (note 774).
+  if (state.entity === 'blaze' && liveCage) {
+    try { const ch = require('./cage-hold'), fight = ch.cageFight(bot, goal); const pb = fight && ch.pullBackOption(bot, task, goal, save, fight, { navigate: actions.navigate }); if (pb) tree.pull_back = pb; } catch (_) { /* none */ }
   }
   // A rod already on the ground from an earlier kill is a fact, not a
   // silent loss: its position and the risk of going for it, priced the

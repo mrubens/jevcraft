@@ -67,8 +67,10 @@ test('empty_spawner at 25591\'s box: where the bot stands is said against where 
   assert.equal(done, true);
   const { state, options } = client.asked[0];
   assert.equal(state.lineHere, 'From here, 6 blocks from the cage, it sees where fewer than 1 in 100 of the spawner\'s blazes come; the blaze within 16 out of sight.');
-  assert.match(options.box_here, /^Where the bot stands, 6\.4 blocks from the cage: wall it in, \d+ blocks? of the 64 carried, one open at head height toward the spawner, and hold it\. Its window sees none of where the spawner's blazes come: it gains no rod this way, none of the spawner's blazes ever crossing it\./);
-  assert.doesNotMatch(options.box_here, /for its next blazes/);
+  // Note 774: a box whose window sees none of where the blazes come is no
+  // way to the rods, and empty_spawner (the rods' question) leaves it out;
+  // the box by the cage, which sees most, is offered.
+  assert.equal(options.box_here, undefined, 'the box here sees none: not offered');
   assert.match(options.box_at_spawner, /hold it for its next blazes: only a blaze in line with the window sees in, from the front\. Its window sees where about \d+ in 100 of the spawner's blazes come\./);
   assert.match(options.open_slit, /^Open a slit toward the cage: dig the 2 blocks on the line from the eyes to it \(the nether brick fence at \(-105, 78, 152\); the nether brick fence at \(-106, 78, 152\)\), then stay a minute and fight what comes into that line\. Then it sees where fewer than 1 in 100 of the spawner's blazes come\./);
 });
@@ -78,8 +80,11 @@ test('the nearest box is said with its line, and the nearby box that sees most i
   // few steps off sees into the room.
   const bot = boxBot({ at: new Vec3(-104.5, 78, 149.5) });
   const here = T.boxSite(bot, { from: CAGE.offset(0.5, 0.5, 0.5), sightOf: CAGE });
-  assert.equal(`${here.cell}`, '(-105, 78, 149)');
-  assert.equal(here.line.per100, 0, 'the nearest box carries its line: next to none');
+  // (Note 774: the window is cut where the line from the eyes to the cage
+  // leaves the box, so the nearest fitting box is the bot's own cell's
+  // neighbour here; its line is still next to none.)
+  assert.equal(`${here.cell}`, '(-104, 78, 149)');
+  assert.ok(here.line.per100 <= 1, 'the nearest box carries its line: next to none');
   assert.equal(`${here.inLine.cell}`, '(-108, 78, 151)');
   assert.ok(here.inLine.line.per100 >= 80, JSON.stringify(here.inLine.line));
 });

@@ -206,7 +206,10 @@ test('a blaze fight option states leave_and_heal\'s own damage estimate against 
   // leave_and_heal to find out of the blaze's line.
   const blockAt = p => { const f = p.floored();
     if (f.y === 63) return { name: 'netherrack', boundingBox: 'block', position: f, diggable: true };
-    if (f.x === 2 && (f.y === 64 || f.y === 65)) return { name: 'netherrack', boundingBox: 'block', position: f, diggable: true };
+    // (Note 774: a wall the walk can go round, so the fight is reachable by
+    // the one reachability every attack reads; a wall across the whole
+    // floor left the blaze reachable only by the old greedy walk's one step.)
+    if (f.x === 2 && (f.y === 64 || f.y === 65) && Math.abs(f.z) <= 3) return { name: 'netherrack', boundingBox: 'block', position: f, diggable: true };
     return { name: 'air', boundingBox: 'empty', position: f, diggable: true };
   };
   const bot = { registry, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {}, health: 12, food: 12, blockAt,

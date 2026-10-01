@@ -92,11 +92,17 @@ function blockPlan(bot, creeper, { reach = REACH } = {}) {
   if (line.stoppedBy) return { stoppedBy: line.stoppedBy, cells: [], why: `the ${line.stoppedBy.name.replaceAll('_', ' ')} at ${line.stoppedBy.cell} is in its line already` };
   const eye = bot.entity.position.offset(0, EYE.player, 0), feet = bot.entity.position.floored();
   const others = Object.values(bot.entities || {}).filter(e => e !== bot.entity && e.position && e.isValid !== false && !/^(item|experience_orb|arrow|spectral_arrow|trident)$/.test(e.name || ''));
-  const free = p => open(bot.blockAt(p)) && !others.some(e => bodyIn(e, p)) && !bodyIn({ position: bot.entity.position }, p);
+  // Not into the cage's held box's window or slit (cage-hold.js openings,
+  // note 774): 25584's cover laid netherrack in its box's window at 01:03Z
+  // and open_slit dug it out again 50 seconds later.
+  let held = new Set();
+  try { held = require('./cage-hold').openings(bot); } catch (_) { held = new Set(); }
+  const free = p => open(bot.blockAt(p)) && !held.has(`${p}`) && !others.some(e => bodyIn(e, p)) && !bodyIn({ position: bot.entity.position }, p);
   const inReach = p => eye.distanceTo(p.offset(0.5, 0.5, 0.5)) <= reach;
   const anchored = (p, planned = []) => FACES.some(([dx, dy, dz]) => { const q = p.offset(dx, dy, dz); return stops(bot.blockAt(q)) || planned.some(c => c.equals(q)); });
   const tries = line.cells.filter(c => free(c.cell) && inReach(c.cell));
-  if (!tries.length) return { cells: [], why: line.cells.length ? 'no cell in its line within reach is open to a block' : 'no cell lies between the bot and it' };
+  const window = line.cells.find(c => held.has(`${c.cell}`));
+  if (!tries.length || (window && !tries.some(c => line.cells.indexOf(c) < line.cells.indexOf(window)))) return { cells: [], why: window ? `its line comes through the held box's window at ${window.cell}, kept open toward the cage while the box holds` : line.cells.length ? 'no cell in its line within reach is open to a block' : 'no cell lies between the bot and it' };
   const pick = tries.find(c => c.inside >= 0.25) || tries[0];
   const cut = pick.cell;
   const beside = Math.abs(cut.x - feet.x) <= 1 && Math.abs(cut.z - feet.z) <= 1 && (cut.x !== feet.x || cut.z !== feet.z) && (cut.y === feet.y || cut.y === feet.y + 1);
