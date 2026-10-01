@@ -478,8 +478,23 @@ const GUARD_CREEPER_REACH = 5;
 // found yet: 2 of 24 spots ... tried" in their last minute, and a way found
 // is chosen 29% of the time against 2.6% (note 793).
 const SCOUT_FAR_MS = 1200, SCOUT_CLOSE = 4, SCOUT_CREEPER_CLOSE = 7;
+<<<<<<< HEAD
 // From a shield answer to the shield raised, the median measured (note 829).
 const SHIELD_ANSWER_RAISE_S = 0.5;
+=======
+// The threat a pocket sealed against waits on, by the rule the work's own
+// claim uses (note 830): a mob in sight within 24, or one within the clear
+// distance that has not stood off (danger.js standsOff: a minute and more
+// out of sight, no nearer, no hit from its kind). 25595 (mid-237-bt, 15:20
+// to 15:38Z) sat sealed at y -52 at full health 18 minutes, the stay held
+// "until the threat gone" while three skeletons stood off 10 to 13 blocks
+// out of sight; the work's option said they were no threat, and pocket_next
+// was not asked once in that time.
+function sealThreatNear(bot, within = 16) {
+  const { standsOff } = require('./danger');
+  return threats(bot, within).some(t => t.visible || !standsOff(bot, t)) || threats(bot, 24).some(t => t.visible);
+}
+>>>>>>> note-830
 function scoutBudget(danger = []) {
   const { shooter } = require('./mob-policy');
   // A creeper out of sight lights only once it sees the bot: close within
@@ -10255,7 +10270,7 @@ class Survival {
       let sealHold = this.state.sealHold || null;
       if (sealHold && !sealHold.origin && Date.now() - sealHold.at <= 180000) sealHold.origin = { ...refuge.origin };
       if (sealHold && (!sealHold.origin || pos(sealHold.origin).distanceTo(pos(refuge.origin)) > 2 || offWorld)) { delete this.state.sealHold; sealHold = null; }
-      const holdRead = sealHold ? NR.holdNow(sealHold, { night: require('./day').night(bot) && !below, threatNear: threats(bot, NR.CLEAR_WITHIN).length > 0 || threats(bot, 24).some(t => t.visible), health: bot.health ?? 20 }) : null;
+      const holdRead = sealHold ? NR.holdNow(sealHold, { night: require('./day').night(bot) && !below, threatNear: sealThreatNear(bot, NR.CLEAR_WITHIN), health: bot.health ?? 20 }) : null;
       const holdBreak = !sealHold ? null : threats(bot, 5).length ? 'a mob within 5 blocks'
         : (bot.health ?? 20) < (sealHold.stayHealth ?? sealHold.health ?? 20) - 0.5 ? 'hurt since the stay'
           : (bot.food ?? 20) < 18 && !foodSupply(bot) ? 'hunger under 18 with no food carried'
@@ -11478,4 +11493,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
