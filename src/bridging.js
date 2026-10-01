@@ -34,6 +34,34 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const { NETHER_WOOD } = require('./shelter');
 const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', ...NETHER_WOOD];
 const material = bot => LAID.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
+// A biter or a hopper that can push the bot off the span within its charge
+// (narrow-footing.js, note 769): the span is walled on both sides as it is
+// laid while one is about. Shooters stop the span outright (underFire).
+// 25593 (19:14Z) laid its own cobblestone span three over the lava sea
+// with magma cubes about, no wall, and a cube's blow put it in; 25585
+// (15:31Z) and 25594 (15:43Z) stood on their own one-wide spans as a
+// hoglin came along them.
+function spanPusher(bot) {
+  let about = [];
+  try { about = require('./danger').threats(bot, 16); } catch (_) { return null; }
+  return require('./narrow-footing').pushersAt(about, { bot }).find(p => p.how === 'blow') || null;
+}
+// The sides of `cell` a push along the span goes toward, open over a drop
+// that kills: the two across the step (the way on and the way back are
+// the span). [{ floor, wall }] still to lay.
+function spanWallsAt(bot, cell, step, health = bot.health ?? 20) {
+  const terrain = require('./terrain');
+  const out = [];
+  for (const side of [new Vec3(step.z, 0, step.x), new Vec3(-step.z, 0, -step.x)]) {
+    const wall = cell.plus(side);
+    if (solid(bot.blockAt(wall))) continue;
+    const d = terrain.dropAt(bot, wall) ? terrain.dropNear(bot, wall, 0) : null;
+    if (!d || !(d.into === 'lava' || d.into === 'unknown' || d.damage >= health / 2)) continue;
+    out.push({ floor: solid(bot.blockAt(wall.offset(0, -1, 0))) ? null : wall.offset(0, -1, 0), wall, side });
+  }
+  return out;
+}
+const wallBlocksOf = walls => walls.reduce((n, w) => n + (w.floor ? 2 : 1), 0);
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
 // one-block span. The sneak itself is held by bridgeTo for the whole span.
@@ -119,7 +147,8 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = n
   // or `from`, the feet's cell it will stand in (a pillar's top, note 694).
   const start = from || require('./terrain').restingCell(bot) || bot.entity.position.floored();
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
-  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
+  const pusher = spanPusher(bot);
+  const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, wallBlocks: 0, walledFor: pusher ? { name: pusher.name, distance: Math.round(pusher.distance) } : null, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
   let here = start, digMs = 0;
   for (let n = 0; n < cells; n++) {
     const step = stepToward(here, target);
@@ -153,6 +182,12 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = n
     const drops = !why && lay && floorDropsAt(bot, next.offset(0, -1, 0), here.offset(0, -1, 0));
     if (drops) why = floorSays(drops, here);
     if (why) { out.stoppedBy = why; digMs = before; break; }
+    // With a biter in reach, each cell's open sides walled as it is laid
+    // (span, note 769): priced here, the blocks counted against those
+    // carried.
+    const w = pusher ? wallBlocksOf(spanWallsAt(bot, next, step)) : 0;
+    if (w && out.bridge + (lay ? 1 : 0) + out.wallBlocks + w > carried) { out.stoppedBy = `out of blocks to wall the span's sides with the ${pusher.name.replaceAll('_', ' ')} ${Math.round(pusher.distance)} blocks off (${carried} carried)`; digMs = before; break; }
+    out.wallBlocks += w;
     out.cells++; out.dig += dig; if (walls) out.wall = (out.wall || 0) + walls;
     if (lay) { out.bridge++; if (lavaBelow(bot, next.offset(0, -1, 0))) out.overLava++; }
     here = next;
@@ -258,6 +293,28 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {
       await bot.placeBlock(support, step);
       if (!solid(bot.blockAt(next.offset(0, -1, 0)))) throw new Error('The span block did not land');
       placed++;
+    }
+    // With a biter in reach, the new cell's open sides walled before it is
+    // stepped onto: a floor beside the span's own, the wall on it.
+    const pusher = spanPusher(bot);
+    if (pusher) {
+      const walls = spanWallsAt(bot, next, step);
+      const need = wallBlocksOf(walls), have = blocksCarried(bot);
+      if (need && have < need) throw new Error(`Not bridging with a ${pusher.name.replaceAll('_', ' ')} ${Math.round(pusher.distance)} blocks off: its blow knocks the bot off a span one wide, and ${have} block${have === 1 ? '' : 's'} carried do not wall this cell's ${walls.length} open side${walls.length === 1 ? '' : 's'} (${need})`);
+      for (const w of walls) {
+        for (const [p, ref, face] of [...(w.floor ? [[w.floor, next.offset(0, -1, 0), w.side]] : []), [w.wall, w.floor || w.wall.offset(0, -1, 0), new Vec3(0, 1, 0)]]) {
+          if (solid(bot.blockAt(p))) continue;
+          const item = material(bot);
+          if (!item) throw new Error('No blocks left to wall the span');
+          const refBlock = bot.blockAt(ref);
+          if (!solid(refBlock)) throw new Error(`Nothing to lay the span's wall against at ${p}`);
+          task.check();
+          await bot.equip(item, 'hand'); task.check();
+          await bot.lookAt(ref.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+          await bot.placeBlock(refBlock, face);
+          if (!solid(bot.blockAt(p))) throw new Error(`The span's wall block at ${p} did not land`);
+        }
+      }
     }
     if (!await creepTo(bot, task, next)) throw new Error('Could not step onto the span');
     if (bot.entity.position.y < here.y - 0.5) throw new Error('Fell off the span');
@@ -484,4 +541,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

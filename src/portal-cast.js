@@ -184,19 +184,60 @@ function waterAim(eye, p, w, exclude = []) {
 // half-width either way of the middle), not only from its middle: the
 // aims are taken again from where the bot is.
 const WIDTH = 0.6;
-function standsFor(frame, p, w, { floorless = false } = {}) {
+// `pass`: stands passed over for this slot (the repair Jev chose at a
+// failure there, note 767); `missed`: cells a pour of water aimed at here
+// went elsewhere from, not aimed at again.
+function standsFor(frame, p, w, { floorless = false, pass = [], missed = [] } = {}) {
   const axis = frame.axis || 'x', X = across(axis), A = AXES[axis];
   const give = (1 - WIDTH) / 2;
+  const passed = new Set(pass.map(key));
   const out = [];
   for (const side of [-1, 1]) for (const dist of [1, 2]) for (const du of [0, -1, 1]) for (const dy of [1, 0, 2]) {
     const feet = p.plus(X.scaled(side * dist)).plus(A.scaled(du)).offset(0, dy, 0), head = feet.plus(UP);
+    if (passed.has(key(feet))) continue;
     // floorless: the cells that would do with a block put under them.
     if ((floorless ? w.solidAt(feet.plus(DOWN)) || !w.openAt(feet.plus(DOWN)) : !w.solidAt(feet.plus(DOWN))) || !w.openAt(feet) || !w.openAt(head)) continue;
     const eyes = [[0, 0], [-give, -give], [-give, give], [give, -give], [give, give]].map(([dx, dz]) => feet.offset(0.5 + dx, EYE, 0.5 + dz));
-    const aims = eyes.map(eye => { const lava = pourAim(eye, p, w); return { lava, water: lava && waterAim(eye, p, w, [feet, head]) }; });
+    const aims = eyes.map(eye => { const lava = pourAim(eye, p, w); return { lava, water: lava && waterAim(eye, p, w, [feet, head, ...missed]) }; });
     if (aims.every(a => a.lava && a.water)) out.push({ feet, ...aims[0] });
   }
   return out;
+}
+// What the cast keeps of a slot's failures: the stands passed over (Jev's
+// repair) and the cells a water pour went elsewhere from (note 767).
+const slotPass = (frame, p) => (frame.passStands?.[key(p)] || []).map(at);
+const slotMissed = (frame, p) => (frame.missedAims?.[key(p)] || []).map(at);
+// What the walks to a slot's stands came to, in a few words.
+function triesSays(tries) {
+  if (!tries.length) return 'none tried';
+  const n = {}, last = new Map();
+  for (const t of tries) last.set(key(t.s.feet), t);
+  for (const t of last.values()) {
+    const k = t.status === 'noPath' ? 'the route search found no path to' : t.status === 'timeout' ? 'the route search ran out of its half second to'
+      : t.status ? `the route search came back ${t.status} to` : t.whole ? `the whole walk ended (${t.walk}) to` : `the walk ended (${t.walk}) to`;
+    n[k] = (n[k] || 0) + 1;
+  }
+  return `none reached: ${Object.entries(n).map(([k, c]) => `${k} ${c}`).join(', ')}`;
+}
+
+// The blocks that stand between the open cells beside a slot and its open
+// top: the first block in each line of sight from where a body could stand,
+// that can be dug (not the frame, the slot's walls or bedrock). What
+// "clear the blocker" digs (note 767).
+function blockersFor(bot, frame, p, w = view(bot)) {
+  const axis = frame.axis || 'x', X = across(axis), A = AXES[axis];
+  const keep = new Set([...frame.blocks.map(at), ...containment(p), ...(wallsFor(p, w.solidAt) || []), p, p.plus(UP)].map(key));
+  const out = new Map();
+  for (const side of [-1, 1]) for (const dist of [1, 2]) for (const du of [0, -1, 1]) for (const dy of [0, 1, 2]) {
+    const feet = p.plus(X.scaled(side * dist)).plus(A.scaled(du)).offset(0, dy, 0), head = feet.plus(UP);
+    if (!w.solidAt(feet.plus(DOWN)) || !w.openAt(feet) || !w.openAt(head) || keep.has(key(feet))) continue;
+    const hit = firstHit(w.blocksRay, feet.offset(0.5, EYE, 0.5), p.offset(0.5, 0.98, 0.5));
+    if (!hit || hit.cell.equals(p) || keep.has(key(hit.cell))) continue;
+    const b = bot.blockAt(hit.cell);
+    if (!b || b.diggable === false || /obsidian|bedrock|lava|water/.test(b.name)) continue;
+    out.set(key(hit.cell), { at: hit.cell, name: b.name, from: feet });
+  }
+  return [...out.values()];
 }
 
 // The cells the cast works in at a slot: the slot and the cell over it,
@@ -318,23 +359,37 @@ async function waitUntil(task, done, ms) {
   return done();
 }
 
+// The sources of a fluid within four blocks of a cell, by key.
+function sourcesAbout(bot, c, fluid) {
+  const out = new Set();
+  for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) {
+    const q = c.offset(dx, dy, dz), b = bot.blockAt(q);
+    if (b?.name === fluid && Number(b.getProperties?.().level ?? b.metadata ?? 0) === 0) out.add(key(q));
+  }
+  return out;
+}
 // Empty a filled bucket along an aim; done when the fluid is where it was
-// aimed. A bucket emptied with the fluid somewhere else is said as such.
-async function pourAlong(bot, task, item, aim, done) {
+// aimed. A bucket emptied with the fluid somewhere else is said as such,
+// with where it went: a new source of it near the aim (err.went). The block
+// update can trail the inventory's by seconds on a loaded server (2-4 s
+// stalls with twenty trials running), so the wait for it is five seconds.
+async function pourAlong(bot, task, item, aim, done, pourMs = POUR_MS) {
   const held = bot.inventory.items().find(i => i.name === item);
   if (!held) throw new Error(`No ${item.replaceAll('_', ' ')} to pour`);
   await bot.equip(held, 'hand'); task.check();
   await bot.lookAt(aim.point, true); task.check();
+  const fluid = item.replace('_bucket', '');
+  const seen = sourcesAbout(bot, aim.into, fluid);
   const before = countOf(bot, item);
   bot.activateItem();
   try {
-    if (await waitUntil(task, () => done() || countOf(bot, item) < before, POUR_MS) && done()) return;
-    // The block update can trail the inventory's.
+    if (await waitUntil(task, () => done() || countOf(bot, item) < before, pourMs) && done()) return;
     if (countOf(bot, item) < before) {
-      if (await waitUntil(task, done, POUR_MS)) return;
-      throw new Error(`The ${item.replace('_bucket', '')} went somewhere other than ${aim.into}`);
+      if (await waitUntil(task, done, 2 * pourMs)) return;
+      const went = [...sourcesAbout(bot, aim.into, fluid)].filter(k => !seen.has(k)).map(k => { const [x, y, z] = k.split(',').map(Number); return new Vec3(x, y, z); });
+      throw Object.assign(new Error(`The ${fluid} went somewhere other than ${aim.into}${went.length ? `: it stands at ${went.join(', ')}` : ': no new source of it seen within four blocks'}`), { went, missed: aim.into });
     }
-    throw new Error(`No ${item.replace('_bucket', '')} was poured`);
+    throw new Error(`No ${fluid} was poured`);
   } finally { bot.deactivateItem(); }
 }
 
@@ -418,13 +473,13 @@ function feedingSources(bot, p) {
 // two), cells to dig out beside it, and open cells with a floor whose line
 // into the slot is blocked. For the failure's words, and the check made
 // before a lava fetch (note 753b).
-function standWays(bot, frame, p, w) {
-  const stands = standsFor(frame, p, w).length;
+function standWays(bot, frame, p, w, opts = {}) {
+  const stands = standsFor(frame, p, w, opts).length;
   const top = p.plus(UP);
   const make = portalSupports(bot).material ? standsFor(frame, p, w, { floorless: true })
     .filter(s => { const chain = anchorPath(s.feet.plus(DOWN), w.solidAt, [p, top, s.feet, s.feet.plus(UP), ...frame.blocks.map(at)]); return chain && chain.length <= 2; }).length : 0;
   const axis = frame.axis || 'x', X = across(axis);
-  const keep = new Set([...frame.blocks.map(at), ...(wallsFor(p, w.solidAt) || []), ...(frame.castTemp || []).map(at)].map(key));
+  const keep = new Set([...frame.blocks.map(at), ...containment(p), ...(wallsFor(p, w.solidAt) || []), ...(frame.castTemp || []).map(at)].map(key));
   let cut = 0, blocked = 0;
   for (const side of [-1, 1]) for (const dist of [2, 1]) for (const dy of [0, 1]) {
     const feet = p.plus(X.scaled(side * dist)).offset(0, dy, 0), head = feet.plus(UP);
@@ -438,7 +493,17 @@ function standWays(bot, frame, p, w) {
 }
 
 async function castFrame(bot, task, goal, save, actions) {
-  const { navigate, place, dig, acquireStep } = actions;
+  const { navigate, place, dig } = actions;
+  // A fetch the cast makes (the water bucket, lava, blocks for its walls)
+  // that fails is the trip's failure, not the site's (work.js
+  // buildPortalFrame, note 767): "Water source is outside visible
+  // interaction reach" was the second reason the cast failed at its site
+  // (33 of 167 failures since 15:24Z on 2026-09-30), each counted toward
+  // leaving a frame the water could have been fetched to from anywhere.
+  const acquireStep = async (...a) => {
+    try { return await actions.acquireStep(...a); }
+    catch (err) { if (err && typeof err === 'object' && !fatal(err)) err.castTrip = true; throw err; }
+  };
   const route = actions.surveyRoute || surveyRoute;
   const frame = goal.portalFrame, w = view(bot);
   frame.castTemp ||= [];
@@ -447,6 +512,21 @@ async function castFrame(bot, task, goal, save, actions) {
   const track = (p, material) => { untrack(p); frame.castTemp.push({ x: p.x, y: p.y, z: p.z, material }); };
   const stepIs = (p, phase, extra = {}) => { delete frame.fetchingLava; goal.step = { action: 'cast_portal', item: 'obsidian', slot: { x: p.x, y: p.y, z: p.z }, phase, ...extra }; save(); };
   const order = castOrder(frame);
+  // At a stand: in its cell across, and its height within half a block. A
+  // walk that ends on a block a little under full height (a path, farmland,
+  // soul sand, a slab) floors a cell below the stand and was taken for a
+  // walk that did not get there: 25589 (2026-09-30 20:20:40Z) and 25595
+  // (21:24:50Z) each failed "could not be walked to from" the cell right
+  // under the stand made for the slot, and left the frame at 6 and 7 of
+  // ten (note 767). The pours are aimed from the eyes where they are.
+  const atStand = feet => { const q = bot.entity.position; return Math.floor(q.x) === feet.x && Math.floor(q.z) === feet.z && Math.abs(q.y - feet.y) < 0.6; };
+  // The stands a slot's failures came at, for portal_method's other_stand
+  // (note 767).
+  const triedAt = (p, cells) => {
+    const list = ((frame.standsTried ||= {})[key(p)] ||= []);
+    for (const c of cells) if (c && !list.some(q => at(q).equals(c))) list.push({ x: c.x, y: c.y, z: c.z });
+    frame.standsTried[key(p)] = list.slice(-8); save();
+  };
   for (const p of order) {
     if (w.name(p) === 'obsidian') continue;
     if (!bot.blockAt(p)) return false;
@@ -527,7 +607,7 @@ async function castFrame(bot, task, goal, save, actions) {
         // A trip begins here and ends at the next pour, timed by the way's
         // working clock: the pace so far, said beside the estimate (note 470).
         const m = goal.portalMethod;
-        if (m && !Number.isFinite(m.tripFrom)) m.tripFrom = m.activeMs || 0;
+        if (m && !Number.isFinite(m.tripFrom)) { m.tripFrom = m.activeMs || 0; m.tripHealth = bot.health; }
         // Named once a fetch, not once a pass: the fetch's own steps (the
         // fill's staircase, a stair a pass) took the name back every pass,
         // two changes a stair, and mid-242-aa's stairs toward its pool,
@@ -565,9 +645,26 @@ async function castFrame(bot, task, goal, save, actions) {
       await dig(bot, task, top, { requireDrops: false }); untrack(top); save();
       return false;
     }
-    // Where to stand: beside the frame, where both pours can be made.
-    const stands = standsFor(frame, p, w).sort((a, b) => a.feet.distanceTo(bot.entity.position) - b.feet.distanceTo(bot.entity.position));
-    let stand = stands.find(s => s.feet.equals(bot.entity.position.floored()));
+    // The blockers Jev chose to clear at this slot (portal_method's
+    // clear_blocker, note 767): dug before a stand is looked for.
+    const repair = frame.repair?.slot && key(frame.repair.slot) === key(p) && frame.repair.kind === 'clear' ? frame.repair : null;
+    if (repair) {
+      const left = (repair.cells || []).map(at).filter(c => { const b = bot.blockAt(c); return !!b && !AIR.test(b.name) && b.diggable !== false && !/obsidian|bedrock|lava|water/.test(b.name); });
+      if (!left.length) { delete frame.repair; save(); }
+      else {
+        const c = left[0];
+        stepIs(p, 'clear_blocker', { at: { x: c.x, y: c.y, z: c.z } });
+        await dig(bot, task, c, { requireDrops: false });
+        return false;
+      }
+    }
+    // Where to stand: beside the frame, where both pours can be made; not a
+    // stand passed over for this slot, nor an aim a pour went wrong from.
+    const pass = slotPass(frame, p), missed = slotMissed(frame, p);
+    const stands = standsFor(frame, p, w, { pass, missed }).sort((a, b) => a.feet.distanceTo(bot.entity.position) - b.feet.distanceTo(bot.entity.position));
+    let stand = stands.find(s => atStand(s.feet));
+    // What each stand's walk came to, said if none is reached (note 767).
+    const tries = [];
     // Walked to if a walk reaches one; else built up to, a block at a time
     // with the blocks carried, as a player pillars beside a frame for its
     // top row. mid-244-r made a stand four blocks up for the top slot, no
@@ -585,11 +682,13 @@ async function castFrame(bot, task, goal, save, actions) {
         for (const s of stands.slice(0, 6)) {
           task.check();
           const destination = new goals.GoalBlock(s.feet.x, s.feet.y, s.feet.z);
-          if ((await route(bot, task, movements, destination, 500)).status !== 'success') continue;
+          const status = (await route(bot, task, movements, destination, 500)).status;
+          if (status !== 'success') { tries.push({ s, tower, status }); continue; }
           stepIs(p, 'to_stand', { stand: { x: s.feet.x, y: s.feet.y, z: s.feet.z }, ...(tower ? { built: true } : {}) });
           try { await navigate(bot, task, destination, { timeoutMs: 30000, stallMs: 5000 }); }
-          catch (err) { task.check(); if (fatal(err)) throw err; continue; }
-          if (bot.entity.position.floored().equals(s.feet)) { stand = s; break; }
+          catch (err) { task.check(); if (fatal(err)) throw err; tries.push({ s, tower, walk: String(err.message || err).slice(0, 80) }); continue; }
+          if (atStand(s.feet)) { stand = s; break; }
+          tries.push({ s, tower, walk: 'ended short of it' });
         }
       } finally { if (tower) Object.assign(movements, saved); }
     }
@@ -603,6 +702,32 @@ async function castFrame(bot, task, goal, save, actions) {
     // Water still running off the last slot fills the cells to stand in
     // for a moment.
     if (!stand && wetAbout(bot, p)) { stepIs(p, 'drain'); await sleep(500); return false; }
+    const slotKey = key(p);
+    const made = ((frame.standsMade ||= {})[slotKey] ||= []).map(at);
+    // A stand whose route search ran out of its half second is not a stand
+    // with no way to it: the whole walk is made to the nearest such, with
+    // the blocks carried to build up by, as to a stand made (below). With
+    // stands beside the slot and none reached in the half second, the
+    // stand search threw "Nowhere to stand" with the stands counted in the
+    // same breath: 14 of the site failures asked since 06:00Z on 2026-09-30
+    // said "3 stands beside it a pour reaches it from" (or 2, or 4), and
+    // 25595 (mid-243-ap, 21:14:47-21:15:10Z) left its frame at 6 of ten
+    // on seven such failures in 23 seconds (note 767).
+    if (!stand && stands.length && !made.length) {
+      const slow = stands.find(s => tries.some(t => t.s === s && t.status && t.status !== 'noPath'));
+      if (slow) {
+        const saved = { allow1by1towers: movements.allow1by1towers, scafoldingBlocks: movements.scafoldingBlocks };
+        if (scaffoldId !== undefined) Object.assign(movements, { allow1by1towers: true, scafoldingBlocks: [...new Set([...(movements.scafoldingBlocks || []), scaffoldId])] });
+        let why = 'ended short of it';
+        try {
+          stepIs(p, 'to_stand', { stand: { x: slow.feet.x, y: slow.feet.y, z: slow.feet.z }, whole: true });
+          await navigate(bot, task, new goals.GoalBlock(slow.feet.x, slow.feet.y, slow.feet.z), { timeoutMs: 30000, stallMs: 5000 });
+        } catch (err) { task.check(); if (fatal(err)) throw err; why = String(err.message || err).slice(0, 80); }
+        finally { Object.assign(movements, saved); }
+        if (atStand(slow.feet)) stand = slow;
+        else tries.push({ s: slow, whole: true, walk: why });
+      }
+    }
     // A stand made for this slot is gone to, the whole walk with the
     // blocks carried to build up by, not a half-second survey; and one
     // that is not reached is the cast's failure here, said, not a reason
@@ -610,8 +735,6 @@ async function castFrame(bot, task, goal, save, actions) {
     // stand for the last slot every pass and never stood on one: fourteen
     // stands in a minute and a half about (82, 27, 147), the pass handing
     // the turn back each time (note 603).
-    const slotKey = key(p);
-    const made = ((frame.standsMade ||= {})[slotKey] ||= []).map(at);
     if (!stand && made.length) {
       const standing = made.find(f => stands.some(s => s.feet.equals(f)));
       if (!standing) { delete frame.standsMade[slotKey]; save(); throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${made.at(-1)} is no longer one`); }
@@ -634,13 +757,14 @@ async function castFrame(bot, task, goal, save, actions) {
           walks++; why = null;
           try { await navigate(bot, task, new goals.GoalBlock(standing.x, standing.y, standing.z), { timeoutMs: 30000, stallMs: 5000 }); }
           catch (err) { task.check(); if (fatal(err)) throw err; why = String(err.message || err).slice(0, 100); }
-          if (bot.entity.position.floored().equals(standing)) break;
+          if (atStand(standing)) break;
           const now = away();
           if (now > best - 0.5) break;
           best = now;
         }
       } finally { Object.assign(movements, saved); }
-      if (!bot.entity.position.floored().equals(standing)) {
+      if (!atStand(standing)) {
+        triedAt(p, [standing]);
         throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: the stand made for it at ${standing} could not be walked to from ${from} (${why || 'the walk ended short of it'}${walks > 1 ? `, ${walks} walks, ${Math.round(away())} blocks from it at the last` : ''})`);
       }
       stand = stands.find(s => s.feet.equals(standing));
@@ -668,7 +792,11 @@ async function castFrame(bot, task, goal, save, actions) {
       // cell, the slot's own walls or a temporary block (mid-242-i, a
       // hundred and seven times, 2026-09-27).
       const axis = frame.axis || 'x', X = across(axis), A = AXES[axis];
-      const keep = new Set([...frame.blocks.map(at), ...wallsFor(p, w.solidAt), ...(frame.castTemp || []).map(at)].map(key));
+      // The slot's walls are kept whatever stands in them: a natural block
+      // that walls the slot (the frame in a hillside) is not tracked as a
+      // temporary one, was dug out as a stand, and walled again the next
+      // pass (note 767).
+      const keep = new Set([...frame.blocks.map(at), ...containment(p), ...wallsFor(p, w.solidAt), ...(frame.castTemp || []).map(at)].map(key));
       const diggable = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'block' && b.diggable !== false && !/obsidian|bedrock/.test(b.name) && !keep.has(key(c)); };
       const cut = [];
       for (const side of [-1, 1]) for (const dist of [2, 1]) for (const dy of [0, 1]) {
@@ -700,7 +828,11 @@ async function castFrame(bot, task, goal, save, actions) {
           return false;
         }
       }
-      throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: ${standWays(bot, frame, p, w).says}`);
+      // Stands there were, and none reached: said as that, with what each
+      // walk came to, not as nowhere to stand (note 767).
+      if (stands.length) triedAt(p, tries.map(t => t.s.feet));
+      if (stands.length) throw new Error(`No stand reached for the frame slot at ${p}: ${stands.length} beside it a pour reaches it from, ${triesSays(tries)}${pass.length ? `; ${pass.length} passed over as chosen` : ''}`);
+      throw new Error(`Nowhere to stand to pour into the frame slot at ${p}: ${standWays(bot, frame, p, w, { pass, missed }).says}`);
     }
     const eye = () => bot.entity.position.offset(0, EYE, 0);
     const exclude = () => { const f = bot.entity.position.floored(); return [f, f.plus(UP)]; };
@@ -715,17 +847,52 @@ async function castFrame(bot, task, goal, save, actions) {
       if (m && Number.isFinite(m.tripFrom)) {
         const t = m.lavaTrips ||= { n: 0, ms: 0 };
         t.n++; t.ms += Math.max(0, (m.activeMs || 0) - m.tripFrom); delete m.tripFrom;
+        if (Number.isFinite(m.tripHealth) && Number.isFinite(bot.health)) t.hurt = Math.round(((t.hurt || 0) + Math.max(0, m.tripHealth - bot.health)) * 10) / 10;
+        delete m.tripHealth;
+        // Trips as they have been, long or hurtful: the way is asked again
+        // with them (portalDue), once and then at each doubling. 25585
+        // (mid-241-bi, 2026-09-30 23:4x-00:0xZ), its frame at (-118, -11,
+        // -483) 54 blocks from its lava, made three one-bucket trips, each
+        // through low air and pointed dripstone (20 health to 12), and left
+        // the frame; a frame begun was never weighed again against one cast
+        // beside the lava (note 767).
+        const each = t.ms / t.n;
+        if ((each >= 90000 || (t.hurt || 0) >= 4) && (!m.tripsAsked || each >= 2 * m.tripsAsked.each || (t.hurt || 0) >= m.tripsAsked.hurt + 4)) {
+          m.tripsFar = { n: t.n, each: Math.round(each / 1000), hurt: t.hurt || 0, left: order.filter(q => w.name(q) !== 'obsidian').length };
+          m.tripsAsked = { each, hurt: t.hurt || 0 };
+        }
       }
       stepIs(p, 'lava');
-      await pourAlong(bot, task, 'lava_bucket', aim, () => sourceLava(bot.blockAt(p)));
+      await pourAlong(bot, task, 'lava_bucket', aim, () => sourceLava(bot.blockAt(p)), actions.pourMs);
     }
     check();
     // Lava walled in keeps while the water bucket is fetched.
     if (!countOf(bot, 'water_bucket')) { stepIs(p, 'water_bucket'); await acquireStep(bot, task, 'water_bucket', 1, goal, save); return false; }
-    const water = waterAim(eye(), p, w, exclude());
-    if (!water) throw new Error(`No place to pour water onto the lava in the frame slot at ${p}`);
+    const water = waterAim(eye(), p, w, [...exclude(), ...slotMissed(frame, p)]);
+    if (!water) throw new Error(`No place to pour water onto the lava in the frame slot at ${p}${missed.length ? ` but the ${missed.length} the water went elsewhere from` : ''}`);
     stepIs(p, 'water', { water: { x: water.into.x, y: water.into.y, z: water.into.z } });
-    await pourAlong(bot, task, 'water_bucket', water, () => /water/.test(w.name(water.into) || '') || w.name(p) === 'obsidian');
+    // A pour that went elsewhere is taken back where it went and made
+    // again at another aim, twice a slot, before it is the cast's failure:
+    // 25591 (2026-09-30 16:07:45-16:15:04Z) poured at (9, 73,
+    // 25) eleven times, "The water went somewhere other than" each time,
+    // the same aim each time, and left the frame at 3 of ten (note 767).
+    try { await pourAlong(bot, task, 'water_bucket', water, () => /water/.test(w.name(water.into) || '') || w.name(p) === 'obsidian', actions.pourMs); }
+    catch (err) {
+      task.check(); if (fatal(err) || !err.missed) throw err;
+      triedAt(p, [bot.entity.position.floored()]);
+      const list = ((frame.missedAims ||= {})[slotKey] ||= []);
+      if (!list.some(c => at(c).equals(err.missed))) list.push({ x: err.missed.x, y: err.missed.y, z: err.missed.z });
+      const went = (err.went || []).filter(c => sourceWater(bot.blockAt(c)));
+      if (went.length) {
+        const prior = frame.castWater;
+        if (prior && sourceWater(bot.blockAt(at(prior)))) (frame.castWaterLeft ||= []).push(prior);
+        frame.castWater = { x: went[0].x, y: went[0].y, z: went[0].z };
+        for (const c of went.slice(1)) (frame.castWaterLeft ||= []).push({ x: c.x, y: c.y, z: c.z });
+      }
+      save();
+      if (list.length <= 2) return false;
+      throw new Error(`${err.message} (${list.length} pours of water here have gone elsewhere, from aims at ${list.map(c => `(${c.x}, ${c.y}, ${c.z})`).join(', ')})`);
+    }
     // A source from an earlier pour that was not taken back is kept in
     // mind, not forgotten under this one.
     const before = frame.castWater;
@@ -789,4 +956,4 @@ function wetAbout(bot, p) {
   return false;
 }
 
-module.exports = { dryReach, toDryReach, scoopSource, standWays, castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };
+module.exports = { dryReach, toDryReach, scoopSource, standWays, blockersFor, triesSays, slotPass, slotMissed, sourcesAbout, pourAlong, castFrame, castLacksWater, leaveNoWater, castOrder, workCells, containment, wallsFor, anchorPath, plannedWalls, firstHit, pourAim, waterAim, standsFor, castSays, lavaTrip, tripSays, tripsSoFar, fetchTrip, fetchSays, tripsCost, castTrips, duration, view };

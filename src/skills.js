@@ -404,8 +404,42 @@ function badSteps(bot, goal, now = Date.now()) {
     !(there && Math.hypot(s.x - there.x, s.y - there.y, s.z - there.z) <= 4));
 }
 
+// Where the ground itself hurt the bot or its air ran low: a pointed
+// dripstone, a block it was pressed into, water too deep for its air. The
+// walks after cost the cells within a block of it more to step into, as a
+// bad step's do, for half an hour. 25585 (mid-241-bi, 2026-09-30
+// 23:5x-00:0xZ) went the same way to its lava three times, each through low
+// air and pointed dripstone at about (-106, -10, -499), 20 health to 12, and
+// the way was walked again each time (note 767).
+const HAZARD_MS = 30 * 60000, HAZARD_COST = 200, HAZARD_NEAR = 1;
+const HAZARD_TYPES = /^(stalagmite|falling_stalactite|in_wall|drown|hot_floor|cactus|sweet_berry_bush|freeze)$/;
+function noteHazard(bot, position, why, now = Date.now()) {
+  if (!position) return null;
+  const dim = String(bot.game?.dimension || 'overworld'), cell = { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) };
+  const spots = (bot._hazardSpots ||= []).filter(s => now - s.at < HAZARD_MS);
+  let spot = spots.find(s => s.dim === dim && Math.max(Math.abs(s.x - cell.x), Math.abs(s.y - cell.y), Math.abs(s.z - cell.z)) <= HAZARD_NEAR);
+  if (spot) { spot.n++; spot.at = now; spot.why = why; }
+  else { spot = { dim, ...cell, n: 1, at: now, why }; spots.push(spot); console.log(`[hazard] ${why} at (${cell.x}, ${cell.y}, ${cell.z}); the walks go round it where they can`); }
+  bot._hazardSpots = spots.slice(-32);
+  return spot;
+}
+function hazardSpots(bot, goal, now = Date.now()) {
+  const dim = String(bot.game?.dimension || 'overworld'), there = goalPoint(goal);
+  return (bot._hazardSpots || []).filter(s => s.dim === dim && now - s.at < HAZARD_MS && !(there && Math.hypot(s.x - there.x, s.y - there.y, s.z - there.z) <= 2));
+}
+function watchHazards(bot) {
+  if (bot._hazardWatch || typeof bot._client?.on !== 'function') return;
+  bot._hazardWatch = true;
+  bot._client.on('damage_event', packet => {
+    if (!bot.entity || packet.entityId !== bot.entity.id) return;
+    const type = String((bot._damageTypeNames || [])[packet.sourceTypeId] ?? '');
+    if (HAZARD_TYPES.test(type)) noteHazard(bot, bot.entity.position, `hurt by ${type.replaceAll('_', ' ')}`);
+  });
+}
+
 async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, stopWhen, sprint = false, shore = false, besideLava, edgeTaken, onFoot = false, passing = false } = {}) {
   task.check();
+  watchHazards(bot);
   const look = passing && bot._goal && bot.pathfinder?.movements ? passingLook(bot, task) : null;
   if (look) return look.walk(timeoutMs, timeout => navigate(bot, task, goal, { timeoutMs: timeout, stallMs, stopWhen: () => stopWhen?.() || look.due(), sprint, shore, besideLava, edgeTaken, onFoot }), stopWhen);
   // Where the bot is going, kept for the shore rule (shore.js): out of the
@@ -451,10 +485,12 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // at (162, 18, 96): 20 health to 9.4 (note 753c).
   const scooped = (bot._scoopedLava || []).filter(e => Date.now() - e.at < 20000);
   if (movements && scooped.length) bad.push(...scooped.map(e => ({ x: e.x, y: e.y, z: e.z, lava: true })));
+  // And where the ground hurt the bot or its air ran low (noteHazard).
+  if (movements) bad.push(...hazardSpots(bot, goal).map(e => ({ x: e.x, y: e.y, z: e.z, hazard: true })));
   const hadAreas = bad.length && Object.hasOwn(movements, 'exclusionAreasStep'), areasWere = bad.length ? movements.exclusionAreasStep : undefined;
   if (bad.length) movements.exclusionAreasStep = [...(areasWere || []), block => {
     const near = bad.filter(s => Math.abs(block.position.x - s.x) <= 1 && Math.abs(block.position.y - s.y) <= 1 && Math.abs(block.position.z - s.z) <= 1);
-    return near.some(s => s.lava && block.position.y === s.y) ? SCOOPED_COST : near.some(s => !s.lava) ? STALL_SPOT_COST : 0;
+    return near.some(s => s.lava && block.position.y === s.y) ? SCOOPED_COST : near.some(s => s.hazard) ? HAZARD_COST : near.some(s => !s.lava) ? STALL_SPOT_COST : 0;
   }];
   // The goal's height, for the climb rule (movement.js climbOverFall).
   const hadGoalY = !!movements && Object.hasOwn(movements, 'walkGoalY'), walkGoalY = hadGoalY ? movements.walkGoalY : undefined;
@@ -469,6 +505,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
       if (remaining <= 0) throw new Error('navigation timed out');
       try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen }); }
       catch (err) {
+        if (err?.name === 'NeedsAir') noteHazard(bot, bot.entity?.position, 'its air ran low');
         // The server keeps putting the body back: this client's view of the
         // blocks round it is wrong somewhere (a block it dug that the server
         // did not break, note 632). Ask the server what is there and walk
@@ -876,7 +913,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { SCOOPED_COST, noteStallSpot, badSteps, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { SCOOPED_COST, noteStallSpot, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

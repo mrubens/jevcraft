@@ -152,9 +152,10 @@ test('the ways to a stand for a slot are counted and said, for the failure and f
 
 test('a frame kept at its failure is held for the next few of the same kind, a failure from under the frame is the trip\'s, and the site is checked before the lava fetch (note 753b)', () => {
   const work = require('fs').readFileSync(require.resolve('../src/work'), 'utf8');
-  assert.match(work, /const heldOn = kept && kept\.cast === castIn && frame\.siteFailed\.n - kept\.n < 3/);
+  // The hold is now the answer's commitment (note 767, commit.js).
+  assert.match(work, /const answered = goal\.portalMethod\?\.siteAnswer;/);
   assert.match(work, /\/\^No route from here\/\.test\(String\(err\.message\)\) && \(bot\.entity\.position\.y < frame\.origin\.y - 2/);
-  assert.match(work, /keptAtFailure: method\.keptAtFailure/);
+  assert.match(work, /siteAnswer: method\.siteAnswer/);
   const cast = require('fs').readFileSync(require.resolve('../src/portal-cast'), 'utf8');
   assert.match(cast, /found before fetching lava: \$\{ways\.says\}/);
   assert.match(cast, /stepIs\(p, 'clear_line'/);

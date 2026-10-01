@@ -583,15 +583,21 @@ test('a fortress in view is Jev\'s to approach: each way with what it meets, the
   assert.equal(client.asked.length, 1); assert.equal(client.asked[0].kind, 'fortress');
   const { options, state } = client.asked[0];
   assert.deepEqual(Object.keys(options).sort(), ['cross_level', 'keep_searching', 'tunnel', 'walk_route']);
-  assert.match(options.cross_level, /29 blocks, laying 26 blocks over open air and lava \(26 of them over lava\)/);
-  assert.match(options.cross_level, /64 blocks carried, 38 left after/);
-  assert.match(options.cross_level, /It ends 29 blocks nearer/);
+  // The hoglin 4 blocks off can get onto the span: each cell over the lava
+  // is walled on both sides as it is laid (note 769), so the 64 blocks
+  // carried take the crossing 15 cells, not 29.
+  assert.match(options.cross_level, /15 blocks, laying 12 blocks over open air and lava \(12 of them over lava\) and walling the open sides of each cell over the drop as it goes, the hoglin 4 blocks off being able to knock the bot off a span one wide \(48 blocks more\)/);
+  assert.match(options.cross_level, /64 blocks carried, 4 left after/);
+  assert.match(options.cross_level, /It ends 15 blocks nearer/);
   assert.match(options.cross_level, /a hoglin 4 blocks off; a hit on a one-wide span over lava is the fall/);
   assert.doesNotMatch(options.cross_level, /It stays level/, 'a fortress at the height of the span has nothing left to climb');
   assert.match(options.walk_route, /walks upright/);
   assert.deepEqual(state.threatsInView, ['hoglin 4 blocks off']);
-  assert.equal(laid.size, 26, 'the span Jev chose, a block for each cell over the lava');
-  assert.equal(bot.entity.position.x, 29.5);
+  // Laid as surveyed: the 12 cells the blocks carried were priced for, the
+  // first two walled on both sides (8 blocks) while the hoglin, which
+  // stands where it is here, was within its charge of the bot.
+  assert.equal(laid.size, 20, 'the span Jev chose: 12 cells over the lava, the first two walled');
+  assert.equal(bot.entity.position.x, 15.5);
   assert.equal(goal.fortressSearch.approach.choice, 'cross_level');
   assert.equal(goal.decisions.at(-1).id, 'fortress_approach');
 });

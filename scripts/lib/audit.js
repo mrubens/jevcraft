@@ -126,14 +126,33 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
   const HOLDS_OWN = { blaze_sortie: /^hold_(bunker|box)$/ };
   // The ladder's label for the crossing (game-progress.js gameStep writes
   // {action: 'enter_nether', phase: 'reach_nether'} before every pass, note
-  // 748) is not a step of its own: a loop of the cast or the lava fetch was
-  // failed as "flipping enter_nether <-> fill_bucket" (note 763b), naming
-  // the label as half of it. The step it dispatched to is judged alone.
+  // 748) is not a step of its own. Dropped outright (note 763b), it hid a
+  // real loop: 25595 (mid-243-ap, 2026-09-30 21:14-21:15Z) cast, failed at
+  // its site and asked portal_method under the label three times in 23
+  // seconds, and the frames read as the cast alone. A run of the label is
+  // counted as what it held (note 767, the reviewer's rule of the check-in
+  // of 23:39Z): the crossing asking its questions ("enter_nether
+  // (asking)": portal_method, surface_trip, the stall's; the body's own
+  // asks aside), or, ten seconds or more with none, the crossing
+  // standing with no step named; a brief one with no question is the
+  // dispatch between two passes and is skipped.
   const label = s => { const st = s?.step || s?.goal?.step; return st?.action === 'enter_nether' && st.phase === 'reach_nether' && Object.keys(st).every(k => ['action', 'phase'].includes(k)); };
+  const asks = frames.filter(f => f.kind === 'decision' && f.snapshot?.decision?.id).map(f => ({ t: f.t, id: f.snapshot.decision.id }));
+  const labelName = new Map();
+  for (let i = 0; i < obs.length; i++) {
+    if (!label(obs[i].snapshot)) continue;
+    let j = i;
+    while (j + 1 < obs.length && label(obs[j + 1].snapshot)) j++;
+    const from = obs[i].t - 1500, to = (obs[j + 1]?.t ?? obs[j].t + 1500);
+    const ids = [...new Set(asks.filter(a => a.t >= from && a.t <= to).map(a => a.id))].filter(id => !/^(turn_priority|encounter_stance|shot_answer|body_way)$/.test(id));
+    const name = ids.length ? 'enter_nether (asking)' : obs[j].t - obs[i].t >= 10000 ? 'enter_nether' : null;
+    for (let k = i; k <= j; k++) labelName.set(obs[k], name);
+    i = j;
+  }
   for (const o of obs) {
-    const a = stepOf(o.snapshot), held = changes.at(-1)?.a;
+    const a = labelName.has(o) ? labelName.get(o) : stepOf(o.snapshot), held = changes.at(-1)?.a;
     if (a && HOLDS_OWN[a]?.test(held || '')) continue;
-    if (label(o.snapshot)) continue;
+    if (labelName.has(o) && !a) continue;
     if (a && held !== a) changes.push({ a, t: o.t, s: o.snapshot });
   }
   for (let i = 0; i + 6 < changes.length; i++) {

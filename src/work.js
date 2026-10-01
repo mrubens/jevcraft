@@ -4722,7 +4722,7 @@ const PORTAL_BUDGET_MS = 20 * 60000;
 // it failed (portalStep, note 470), and so is a way back to the frame
 // that fails (buildPortalFrame, note 481).
 // And so is a part-cast frame failing at its site (note 527).
-const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || !!method.siteFailed || !!method.nearFar || !!method.flipped || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
+const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || !!method.siteFailed || !!method.nearFar || !!method.flipped || !!method.tripsFar || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
 // The lava a cast beside was chosen for, become far (note 763): 25581
 // (mid-243-mg, 2026-09-30 19:14-19:28Z) held cast_at_lava for the lava at
 // (21, 67, -4) from about 250 blocks off, its staircase set aside round
@@ -4750,6 +4750,11 @@ function frameFailedSays(f) {
   const minutes = Math.max(1, Math.ceil((f.until - Date.now()) / 60000));
   return ` The frame at (${f.at.x}, ${f.at.y}, ${f.at.z}) is ${f.distance} blocks off and cannot be got back to: the walk there failed (${f.walk})${f.legs ? `, ${f.legs}` : ''}, and the staircase toward it is set aside (${f.stairs}), taken up again in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
 }
+// A site failure's kind: its words before the first colon, the places and
+// counts taken out ("Nowhere to stand to pour into the frame slot", "The
+// water went somewhere other than"), what a hold at a failure is read
+// against (note 767).
+const failureKind = why => String(why || '').split(':')[0].replace(/\s*\(-?\d+, -?\d+, -?\d+\)/g, '').replace(/\s+at$/, '').replace(/\d+/g, 'N').trim();
 // The frame failing where it stands, as the fact every way is weighed with:
 // what is cast, the failures since the last block went in and why, and the
 // ones a mob in the way caused, which are not the site's (note 527).
@@ -4854,6 +4859,10 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const diamondPickaxe = diamondPickaxeCarried(bot);
   const method = goal.portalMethod;
   const due = portalDue(method);
+  // Asked for another reason than a site failure, an answer held at one is
+  // not what is asked about (note 767).
+  // Nor is one given to another way or frame than this (no siteAnswer).
+  if (due && (!method.siteFailed || !method.siteAnswer)) { require('./decisions/commit').end(bot, 'portal_method', 'asked again for another reason'); delete method.siteAnswer; }
   if (!due && (method?.kind === 'build' || method?.kind === 'cast')) return true;
   if (!due && method?.kind === 'ruin') {
     if (goal.portalFrame) return true;
@@ -4903,7 +4912,11 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // here, the flip and the state named, in place of a rest and detours.
   const flipped = due && method?.flipped ? method.flipped : null;
   const flipSays = flipped ? ` Asked again because the portal's own steps were ${flipped.why}${flipped.times > 1 ? ` (a flip asked about ${flipped.times} times on this way)` : ''}: no rest, the way is chosen again from what stands. ${flipped.fact}` : '';
-  const facts = portalFacts(bot, goal, ruins, lava) + madeSays + flipSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
+  // The trips for lava as they have gone (castFrame, note 767): asked again
+  // with them, the frame's distance from the lava said by every way.
+  const tripsFar = due && method?.tripsFar && goal.portalFrame && !goal.portalFrame.ruin ? method.tripsFar : null;
+  const tripsFarSays = tripsFar ? ` Asked again because the trips for lava from the frame begun have taken about ${duration(tripsFar.each)} of working time each (${tripsFar.n} made)${tripsFar.hurt ? `, ${tripsFar.hurt} health lost on them` : ''}, with ${tripsFar.left} of ten still to cast.` : '';
+  const facts = portalFacts(bot, goal, ruins, lava) + madeSays + flipSays + tripsFarSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
   const current = due ? methodKey(method, ruins, goal) : null;
   // Trips for lava are measured from the frame, where each one starts and
   // ends, not from the bot: mid-244-v, standing at its lava with the frame
@@ -5010,8 +5023,35 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const transient = /navigation|nowhere to stand|stand to pour/i.test(topWhy || '');
     const nearHere = current === 'cast_at_lava' ? castBy : lava;
     const costSays = ` Against retrying: ${placed} of ten already cast here${nearHere?.at ? `, its lava already found ${nearHere.distance} blocks off (a new site starts with no lava found, a fresh search or walk before the first bucket)` : ', no lava yet found here either'}.${topWhy ? ` What failed here ${fails.n <= 1 ? 'once' : `${fails.n} times`} was "${topWhy}"${topN > 1 && topN < fails.n ? `, ${topN} of them` : ''}${transient ? ': not the site itself, and a new site meets the same kind of failure no less often' : ''}.` : ''}`;
-    tree.new_site = { description: `Leave the frame at (${siteFailed.origin.x}, ${siteFailed.origin.y}, ${siteFailed.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and ${byHand ? 'build' : 'cast'} a new frame at another site near here, that one passed over. Kept, ${leftHere.cast} of ten are still to ${byHand ? 'place' : 'cast'} there; a new frame starts from none.${costSays} ` + afresh + facts };
+    // What leaving throws away, in lava and time (note 767): the blocks
+    // cast here are each a lava bucket again at a new site, at the trip
+    // this frame's lava takes.
+    const carriersNow = castCount.buckets + castCount.lavaBuckets;
+    const recast = placed && !byHand ? ` Leaving throws away the ${placed} cast here: at a new site they are ${placed} more lava bucket${placed === 1 ? '' : 's'} to fetch and pour, ${trip ? `about ${tripsCost(trip, Math.ceil(placed / Math.max(1, carriersNow)))} of trips at this frame's trip (${fetchSays(trip)})` : 'each a trip for lava, none known nearby'}; the ${castCount.lavaBuckets} lava bucket${castCount.lavaBuckets === 1 ? '' : 's'} carried go with the bot.` : '';
+    tree.new_site = { description: `Leave the frame at (${siteFailed.origin.x}, ${siteFailed.origin.y}, ${siteFailed.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and ${byHand ? 'build' : 'cast'} a new frame at another site near here, that one passed over. Kept, ${leftHere.cast} of ten are still to ${byHand ? 'place' : 'cast'} there; a new frame starts from none.${costSays}${recast} ` + afresh + facts };
     if (tree[current]) tree[current].description += ` Kept, the ${byHand ? 'frame' : 'cast'} goes on at this frame, the slot it failed at tried again.`;
+    // Ways to repair this site at the slot it failed at (note 767): clear
+    // the blocks in the line into it, or pour from another stand than the
+    // ones tried there. The site failures since 06:00Z on 2026-09-30 were
+    // answered by keeping the frame as it was or leaving it (50 times, at a
+    // median of 4 of ten cast); nothing between was on offer.
+    const slotAt = fails.slot && !byHand ? new Vec3(fails.slot.x, fails.slot.y, fails.slot.z) : null;
+    if (slotAt && bot.blockAt(slotAt) && bot.blockAt(slotAt).name !== 'obsidian') {
+      const pc = require('./portal-cast'), w = pc.view(bot);
+      const where = `(${slotAt.x}, ${slotAt.y}, ${slotAt.z})`;
+      const blockers = pc.blockersFor(bot, siteFailed, slotAt, w).slice(0, 4);
+      if (blockers.length) tree.clear_blocker = { description: `Repair this site: dig out what blocks the line into the frame slot at ${where} from the open cells beside it, ${blockers.map(b => `the ${String(b.name).replaceAll('_', ' ')} at (${b.at.x}, ${b.at.y}, ${b.at.z})`).join(', ')}, then look for a stand again and go on casting here, the ${placed} of ten cast kept. About ${blockers.length * 2} seconds of digging.` + facts };
+      const tried = (siteFailed.standsTried?.[`${slotAt.x},${slotAt.y},${slotAt.z}`] || []).map(pos);
+      if (tried.length) {
+        const pass = [...pc.slotPass(siteFailed, slotAt), ...tried];
+        const ways = pc.standWays(bot, siteFailed, slotAt, w, { pass, missed: pc.slotMissed(siteFailed, slotAt) });
+        if (ways.stands || ways.make || ways.cut) tree.other_stand = { description: `Repair this site: pour into the frame slot at ${where} from another stand than the ${tried.length} tried there (${tried.map(c => `(${c.x}, ${c.y}, ${c.z})`).join(', ')}), those passed over for this slot: with them passed, ${ways.says}. The ${placed} of ten cast kept.` + facts };
+      }
+    }
+    // Kept or repaired, the answer holds through the next failures of the
+    // same kind at this frame (commit.js, note 764): not asked again at each.
+    const holdSite = { until: { seconds: 180, throughFailures: true, also: ['a block goes in', 'a failure of another kind comes'] } };
+    for (const k of [current, 'cast_frame', 'build_new', 'clear_blocker', 'other_stand']) if (k && tree[k]) tree[k].commit = holdSite;
   }
   // The lava held, its staircase resting: the ways a player has from there,
   // as their costs allow, said with it. Only "set aside" was said, and
@@ -5085,14 +5125,33 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (made) { delete goal.portalBucketsMade; save(); }
   const nearWalked = method?.nearFailed;
   // The failed walk is answered, whatever the answer.
-  // A frame kept at its site's failure is held against the next few of the
-  // same kind (buildPortalFrame, note 753b).
-  if (method?.siteFailed && goal.portalFrame?.siteFailed && (pick === current || pick === 'cast_frame' || pick === 'build_new')) {
-    const f = goal.portalFrame.siteFailed, top = Object.entries(f.whys || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-    method.keptAtFailure = { n: f.n, cast: f.cast, why: top.split(':')[0] };
+  // A frame kept or repaired at its site's failure: what its hold is read
+  // against (buildPortalFrame, commit.js; note 767).
+  const siteKept = ['cast_frame', 'build_new', 'clear_blocker', 'other_stand'].includes(pick) || pick === current;
+  if (method?.siteFailed && goal.portalFrame?.siteFailed && siteKept) {
+    const f = goal.portalFrame.siteFailed;
+    method.siteAnswer = { cast: f.cast, kind: f.kind || failureKind(Object.keys(f.whys || {})[0] || ''), at: Date.now(), pick };
+  }
+  // A repair: the way held goes on at this frame, the slot it failed at
+  // cleared into or stood at from elsewhere.
+  if ((pick === 'clear_blocker' || pick === 'other_stand') && goal.portalFrame?.siteFailed?.slot) {
+    const f = goal.portalFrame, slot = f.siteFailed.slot, k = `${slot.x},${slot.y},${slot.z}`;
+    if (pick === 'clear_blocker') {
+      const cells = require('./portal-cast').blockersFor(bot, f, pos(slot)).slice(0, 4).map(b => ({ x: b.at.x, y: b.at.y, z: b.at.z }));
+      f.repair = { kind: 'clear', slot: { ...slot }, cells };
+      bot.chat?.(`Clearing the way into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) and going on here.`);
+    } else {
+      const pass = ((f.passStands ||= {})[k] ||= []);
+      for (const c of f.standsTried?.[k] || []) if (!pass.some(q => q.x === c.x && q.y === c.y && q.z === c.z)) pass.push({ ...c });
+      delete f.standsMade?.[k];
+      bot.chat?.(`Pouring into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) from another side and going on here.`);
+    }
+    delete method.siteFailed; method.reasked = (method.reasked || 0) + 1; save();
+    return true;
   }
   if (method?.nearFar) { if (pick === current) method.nearFarKept = method.nearFar.held; delete method.nearFar; save(); }
   if (method?.flipped) { delete method.flipped; save(); }
+  if (method?.tripsFar) { delete method.tripsFar; save(); }
   if (method?.nearFailed || method?.frameFailed || method?.siteFailed) { delete method.nearFailed; delete method.frameFailed; delete method.siteFailed; save(); }
   // A new site: the frame begun passed over and left as it stands, the way
   // held going on from none there.
@@ -5148,7 +5207,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   else if (frame && next.kind === 'build') delete frame.cast;
   delete next.here;
   goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: goal.portalFrame ? placed : 0, ...(ruin ? { distance: ruin.distance } : {}) },
-    ...(goal.portalFrame && method?.keptAtFailure ? { keptAtFailure: method.keptAtFailure } : {}) };
+    ...(goal.portalFrame && method?.siteAnswer ? { siteAnswer: method.siteAnswer } : {}) };
   save();
   return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
 }
@@ -5631,6 +5690,12 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     frame.siteFailures = 0;
   } catch (err) {
     task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || err instanceof Blocked) throw err;
+    // A fetch the cast makes (the water bucket, lava, blocks for its walls)
+    // is the trip's, wherever it fails (portal-cast.js, note 767): 33 of
+    // the 167 failures counted at the site since 15:24Z on 2026-09-30 were
+    // "Water source is outside visible interaction reach", and 11 "No
+    // existing route to the saved mining worksite" (blocks for the walls).
+    if (err?.castTrip) throw err;
     // Only a failure at the site is the site's: one on the way to the lava
     // is the trip's. mid-207-e left twelve sites in three hours, seven of
     // them for "refusing to open a drop" in the tunnel down to the lava,
@@ -5663,6 +5728,10 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     if (!frame.siteFailed || frame.siteFailed.cast !== castIn) frame.siteFailed = { cast: castIn, n: 0, whys: {} };
     const why = String(err.message).slice(0, 160);
     frame.siteFailed.n++; frame.siteFailed.whys[why] = (frame.siteFailed.whys[why] || 0) + 1;
+    // The slot it failed at and the kind of failure, for the ways to repair
+    // it that portal_method offers and for the answer's hold (note 767).
+    if (goal.step?.action === 'cast_portal' && goal.step.slot) frame.siteFailed.slot = { ...goal.step.slot };
+    frame.siteFailed.kind = failureKind(why);
     save();
     if (!frame.ruin && goal.portalFrame === frame && frame.siteFailures >= 3 && !castIn) {
       (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: err.message, at: Date.now() });
@@ -5675,16 +5744,29 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     // new frame would cost (portalMethod, new_site). A counter left it after
     // ten; mid-243-h's part-cast frame failed ninety-five times at one slot,
     // and mid-230-u's four cast were left for all ten again (note 527).
-    // Kept once with the failures said, the frame is held: asked again after
-    // three more failures since the keep or a new reason, not at each one.
-    // 25581 (mid-243-jh, 13:43:52-13:44:04Z) was asked four times in twelve
-    // seconds, "Nowhere to stand" each time, and left five of ten cast at
-    // the fourth (note 753b).
-    const kept = goal.portalMethod?.keptAtFailure;
-    const heldOn = kept && kept.cast === castIn && frame.siteFailed.n - kept.n < 3 && kept.why === why.split(':')[0];
-    if (!frame.ruin && goal.portalFrame === frame && castIn && goal.portalMethod && heldOn) {
-      console.log(`[portal] failure ${frame.siteFailed.n} at the frame held (kept ${frame.siteFailed.n - kept.n} failure${frame.siteFailed.n - kept.n === 1 ? '' : 's'} ago): ${why}`);
-      return false;
+    // Kept or repaired at a failure, the answer is a commitment (note 764's
+    // commit.js, note 767): the question asked again at the next failure
+    // returns it unasked until a block goes in, a failure of another kind
+    // comes, or its three minutes pass. 25595 (mid-243-ap, 2026-09-30
+    // 21:14:51-21:15:10Z) was asked three times in 23 seconds on one slot's
+    // failures and left six of ten cast at the third; the old hold counted
+    // three failures, and they came three in nine seconds.
+    // While it holds the question is not put again at all: asked, each
+    // failure settled the kept answer in the ledger as come to nothing, and
+    // at the second the ledger rested it from here, so 25595's third asking
+    // offered only build_new and new_site, and new_site was taken.
+    const answered = goal.portalMethod?.siteAnswer;
+    const C = require('./decisions/commit'), held = answered && C.holding(bot, 'portal_method');
+    if (held && !frame.ruin && goal.portalFrame === frame && castIn) {
+      const ends = answered.cast !== castIn ? `a block went in since (${castIn} of ten cast, from ${answered.cast})`
+        : answered.kind !== frame.siteFailed.kind ? `a failure of another kind came ("${why.slice(0, 80)}")`
+        : C.endedBy(held, C.factsOf(bot, goal), {});
+      if (!ends) {
+        answered.held = (answered.held || 0) + 1;
+        console.log(`[commit] portal_method: ${String(answered.pick).replaceAll('_', ' ')} held at the frame's failure ${frame.siteFailed.n} (${answered.held} since it was chosen): ${why}`);
+        return false;
+      }
+      C.end(bot, 'portal_method', ends);
     }
     if (!frame.ruin && goal.portalFrame === frame && castIn && goal.portalMethod) {
       goal.portalMethod.siteFailed = true; save();
@@ -6339,7 +6421,7 @@ const UPKEEP_WORK = ['make_pickaxe', 'fetch_stems', 'spare_pickaxe', 'wood_reser
 // known lava pool (not spent, its way not resting, within 128 blocks), to
 // cast beside or fetch the cast's buckets from. Each said with its distance,
 // the height and the time, and what it is for.
-function portalJobs(bot, goal) {
+function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
   try {
     if (dimension(bot) !== 'overworld' || !bot.entity?.position) return [];
     if ((goal.rungTime?.phase || goal.gameProgress?.phase) !== 'reach_nether') return [];
@@ -6362,19 +6444,53 @@ function portalJobs(bot, goal) {
         jobs.push({ key: 'to_portal_frame', description: `The portal's own work: go back to the portal frame begun at (${o.x}, ${o.y}, ${o.z}), ${walkSays(o)}${frame.placedSeen !== undefined || placed ? `, ${placed || frame.placedSeen || 0} of ten standing` : ''}; the cast goes on there.`,
           run: (t, save) => navigate(bot, t, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 120000, stallMs: 8000, sprint: true }) });
       }
-      return jobs;
+      if (!routeKinds) return jobs;
     }
     const { lavaResting } = require('./tunneling');
-    const pool = require('./exploration').knownLandmarks(bot, goal, 'lava_pool', 128)
-      .find(k => !k.landmark.spent && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z)));
-    if (pool && pool.distance > 12) {
-      const l = pool.landmark, at = new Vec3(l.x, l.y ?? here.y, l.z);
-      const owed = castTrips({ obsidian: countOf(bot, 'obsidian'), buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') });
-      jobs.push({ key: 'to_known_lava', description: `The portal's own work: go to the lava pool found at (${l.x}, ${l.y ?? '?'}, ${l.z}), ${walkSays(at)}. A frame cast beside it makes each of the ${owed.toFetch} lava buckets still owed a trip of seconds (${owed.carriers} bucket${owed.carriers === 1 ? '' : 's'} carried); the portal's way is asked there with it in sight.`,
+    const { lavaRecord } = require('./obsidian');
+    const open = k => !k.landmark.spent && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z));
+    const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool', routeKinds ? 256 : 128);
+    const pools = known.filter(open).filter(k => k.distance > 12);
+    const owed = castTrips({ obsidian: countOf(bot, 'obsidian'), buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') });
+    const toPool = (key, k, lead) => {
+      const l = k.landmark, at = new Vec3(l.x, l.y ?? here.y, l.z);
+      jobs.push({ key, description: `${lead}: go to the lava pool found at (${l.x}, ${l.y ?? '?'}, ${l.z}), ${walkSays(at)}. A frame cast beside it makes each of the ${owed.toFetch} lava buckets still owed a trip of seconds (${owed.carriers} bucket${owed.carriers === 1 ? '' : 's'} carried); the portal's way is asked there with it in sight.${lavaRecord(goal, l, here)}`,
         run: async (t, save) => { await require('./exploration').goToLandmark(bot, t, goal, save, ['lava_pool'], { navigate, filter: x => x === l }); } });
+    };
+    if (!frame && pools[0]) toPool('to_known_lava', pools[0], "The portal's own work");
+    // None good on top at the last stall question here: a different kind of
+    // route, each with its target's record (the reviewer's rule of the
+    // check-in of 23:39Z on 2026-09-30, problem 1: seven of nine loop
+    // verdicts since 20:00Z were the lava fetch and the portal, and Jev
+    // answered none_good at 0.58-0.70 at these stalls; note 767): another
+    // pool, the frame cast down beside a pool, or a search for lava on the
+    // surface.
+    if (routeKinds) {
+      const other = pools[frame ? 0 : 1];
+      if (other) toPool('to_other_lava', other, `Another route for the portal's lava${frame ? ', the frame begun kept' : ''}`);
+      const beside = pools[0];
+      if (beside) {
+        const l = beside.landmark, at = new Vec3(l.x, l.y ?? here.y, l.z);
+        const placed = frame ? frame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
+        jobs.push({ key: 'cast_at_pool', description: `Another route for the portal: cast a frame of its own down beside the lava pool at (${l.x}, ${l.y ?? '?'}, ${l.z}), ${walkSays(at)}, each of the ${owed.toFetch} lava buckets still owed a trip of seconds there${frame ? `; the frame begun at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten standing, is left as it stands` : ''}.${lavaRecord(goal, l, here)}`,
+          run: async () => {
+            if (frame) { (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: 'a cast beside a lava pool chosen at a stall', at: Date.now() }); delete goal.portalFrame; }
+            goal.portalMethod = { kind: 'cast', near: { x: l.x, y: l.y ?? Math.round(here.y), z: l.z }, activeMs: 0, reasked: 0, from: { obsidian: countOf(bot, 'obsidian'), placed: 0 } };
+            bot.chat?.(`I'll cast the portal down by the lava at (${l.x}, ${l.y ?? '?'}, ${l.z}).`);
+          } });
+      }
+      const spent = known.filter(k => k.landmark.spent).length, resting = known.filter(k => !k.landmark.spent && !open(k)).length;
+      jobs.push({ key: 'search_lava', description: `Another route for the portal's lava: search the surface for another lava pool, walking to ground not yet explored. ${known.length ? `${known.length} pool${known.length === 1 ? '' : 's'} known within 256 blocks: ${spent} found spent, ${resting} whose way rests, ${pools.length} open` : 'No lava pool known within 256 blocks'}; pools lie on the surface in most places, and any found is then asked about.`,
+        run: async (t, save) => { await explore(bot, t, goal, save, 'lava pool', { surfaceOnly: true }); } });
     }
     return jobs;
   } catch (_) { return []; }
+}
+// None good on top at the last stall question asked in the last ten
+// minutes (the stall's and the rung's): the stall's answers lack a real
+// route (note 767).
+function noneGoodTopped(bot, now = Date.now()) {
+  return ['stillness_detour', 'rung_progress'].some(id => { const s = bot?._spells?.[id]; return !!s && s.tops?.at(-1) === true && now - s.last < 600000; });
 }
 
 async function detourWork(bot, task, goal, save, { survival = null, bounded = task, scratch = null, holding = false, preview = false, resting = () => false } = {}) {
@@ -6520,7 +6636,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // portal's own work (portalJobs) named first, ahead of the stalled work's
   // own answers (note 753b).
   const work = await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) });
-  const PORTAL_JOB = /^(to_known_lava|to_portal_frame)$/;
+  const PORTAL_JOB = /^(to_known_lava|to_portal_frame|to_other_lava|cast_at_pool|search_lava)$/;
   for (const w of work.filter(w => PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
   for (const w of work.filter(w => !PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);

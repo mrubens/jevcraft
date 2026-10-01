@@ -28,6 +28,10 @@
 //               seconds  N: that long since the answer
 //               newOption true: an option (by `as`) is offered that was not
 //                        then
+//               throughFailures true: its try failing in the ledger does
+//                        not end it (an answer to a failure, held through
+//                        more of the same; the caller ends it on another
+//                        kind, note 767)
 //             and always: the dimension changing, a death, the answer no
 //             longer on offer (rested, gone, withheld), its try coming to
 //             nothing in the ledger (tried.js), its caller ending it (end()),
@@ -103,7 +107,11 @@ function untilParts(until = {}) {
   if (until.threats) out.push('the mobs about change (a new kind, more of one, or they are gone)');
   if (until.newOption) out.push(typeof until.newOption === 'string' && /ore/.test(until.newOption) ? 'a kind of ore not offered now is' : 'something new is offered');
   if (until.moved) out.push(`the bot is ${until.moved} blocks from here`);
-  out.push('it fails or is no longer on offer');
+  // What its caller ends it on (end()), said with the rest (note 767).
+  if (Array.isArray(until.also)) out.push(...until.also);
+  // An answer to a failure holds through more of the same (its caller ends
+  // it on another kind): the portal cast kept at its site (note 767).
+  out.push(until.throughFailures ? 'it is no longer on offer' : 'it fails or is no longer on offer');
   out.push(`${secs(Math.min(until.seconds ? until.seconds * 1000 : MAX_MS, MAX_MS))} pass`);
   return out;
 }
@@ -187,7 +195,7 @@ function before(bot, goal, def, tree, { now = Date.now(), ledgerEntry = undefine
   if (c.ended) { if (now - c.ended.at > KEPT_ENDED_MS) delete memo[def.id]; return c.ended.said ? null : (c.ended.said = true, { ended: c.ended.says }); }
   const offered = offeredAs(def, tree);
   const entry = ledgerEntry !== undefined ? ledgerEntry : lastEntry(goal, def.id, c.key, c.at);
-  const ledger = entry?.outcome === 'blocked' ? `it came to nothing${entry.why ? ` (${entry.why})` : ''}` : null;
+  const ledger = entry?.outcome === 'blocked' && !c.until?.throughFailures ? `it came to nothing${entry.why ? ` (${entry.why})` : ''}` : null;
   const why = endedBy(c, factsOf(bot, goal, now), { offered: new Set(offered.keys()), ledger });
   if (why) {
     const says = `${words(c.key)} (${words(def.id)}), chosen ${secs(now - c.at)} ago to hold until ${c.untilSays}, ended: ${why}; asked afresh`;

@@ -1071,18 +1071,25 @@ test('a mob in the cast\'s cells is not the site\'s failure, and a part-cast fra
   assert.match(offered.cast_frame, /has failed at its site 12 times since the last block went in: "Flowing lava in the frame slot at \(\d+, \d+, \d+\): its walls are not whole" 12 times\. Not counted: 1 more where a mob stood in the cells the cast works in \(the last a cow at/);
   assert.match(offered.cast_frame, /Kept, the cast goes on at this frame, the slot it failed at tried again/);
   assert.equal(goal.portalFrame, frame, 'kept'); assert.equal(goal.portalMethod.siteFailed, undefined, 'answered');
-  // Failing again, held for the next two of the same kind, asked again at
-  // the third since the keep (note 753b: 25581 was asked four times in
-  // twelve seconds and left five of ten cast); a new site chosen, the frame
+  // Failing again, the answer holds (commit.js, note 767): the question is
+  // asked again at each failure of the same kind and answered unasked, until
+  // a block goes in, another kind of failure or three minutes (note 753b:
+  // 25581 was asked four times in twelve seconds; 25595 three times in 23
+  // seconds, each left the frame at the last); a new site chosen, the frame
   // is passed over.
-  for (let n = 1; n <= 2; n++) {
+  let asked = 0;
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked++; offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.7 } } }; } };
+  for (let n = 1; n <= 4; n++) {
     assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
     assert.equal(goal.portalMethod.siteFailed, undefined, `held at the ${n} failure since the keep`);
   }
+  assert.equal(goal.portalMethod.siteAnswer.held, 4);
+  bot._commits.portal_method.at -= 181000;
   assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
-  assert.equal(goal.portalMethod.siteFailed, true, 'asked again at the third');
+  assert.equal(goal.portalMethod.siteFailed, true, 'asked again once its three minutes passed');
   pick = 'new_site';
   assert.equal(await portalMethod(bot, task, goal, () => {}), false);
+  assert.equal(asked, 1, 'asked once its three minutes passed');
   assert.equal(goal.portalFrame, undefined);
   assert.deepEqual(goal.portalSitesLeft.map(s => [s.x, s.y, s.z]), [[8, 64, 23]]);
   assert.equal(goal.portalMethod.kind, 'cast'); assert.equal(goal.portalMethod.activeMs, 0);

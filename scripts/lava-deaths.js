@@ -4,7 +4,15 @@
 // running when it went in, how long it stayed, how long until the way out
 // was first taken, and the longest gap between frames (a client that did not
 // run). And every death by its cause (the last hurt within ten seconds of it).
-//   node scripts/lava-deaths.js [--since 2026-09-29T23:00Z] [--port 25597] [--json]
+//   node scripts/lava-deaths.js [--since 2026-09-29T23:00Z] [--port 25597] [--json] [--pushes]
+// --pushes (note 769): every Nether death by lava, fire after lava or a
+// fall, with where the bot stood before it went over (the footing: its
+// floor's width across, the sides with a drop, the floor's block and
+// whether the bot laid it, the height over the lava, read from the trial's
+// saved world), what pushed it (the hurt before it left the ground, or a
+// blow the shield took: a hop with no key held and no health lost, a mob
+// at arm's length), the stance or action held, how long the pusher had
+// been near, and what the options of the last question said of the push.
 // Read-only. A spell is the hurts no more than SPELL_GAP_MS apart; lava hurts
 // come each half second while the body is in it.
 const fs = require('node:fs');
@@ -17,9 +25,29 @@ const arg = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 const since = Date.parse(arg('--since', '2026-09-29T23:00:00Z'));
 const port = arg('--port', null);
 const asJson = argv.includes('--json');
+const pushes = argv.includes('--pushes');
 const dir = path.join(ROOT, '.bot-state', 'flight');
 const SPELL_GAP_MS = 3000, DEATH_CAUSE_MS = 10000, BURN = /^hurt: (lava|on fire|in fire)$/;
 const round = n => Math.round(n * 10) / 10;
+const RING_MS = 90000;
+let BUILDING = new Set();
+try { BUILDING = require('../src/shelter').buildingMaterials; } catch (_) { /* counted as none */ }
+// A frame kept for --pushes: where the body was, what ran, the mobs the
+// full frames list, a hurt's kind, a question's answer and its options.
+function compact(r, t) {
+  const s = r.snapshot || {};
+  const f = { t, at: r.at, kind: r.kind, label: r.label, pos: s.position || null, onGround: s.onGround, health: s.health, dim: s.dimension || null,
+    keys: s.keys || [], sa: s.survivalAction?.action || s.goal?.survivalAction?.action || null, saAt: s.survivalAction?.at || s.goal?.survivalAction?.at || null,
+    step: s.step?.action || s.goal?.step?.action || null, pathing: !!s.pathing, controller: s.controller?.name || null, turn: s.turn?.phase || null };
+  if (Array.isArray(s.mobs)) f.mobs = s.mobs.map(m => ({ name: m.name, id: m.id, d: m.d, at: m.at, seen: m.seen }));
+  if (r.kind === 'shot') f.shot = r.detail || {};
+  if (s.inventory && typeof s.inventory === 'object') f.blocks = Object.entries(s.inventory).reduce((n, [k, v]) => n + (BUILDING.has(k) ? v : 0), 0);
+  if (r.kind === 'damage') f.hurt = { label: r.label, ...(r.detail || {}) };
+  if (r.kind === 'decision' && s.decision?.id) {
+    f.decision = { id: s.decision.id, path: s.decision.path || [], options: Object.fromEntries(Object.entries(s.decision.options || {}).map(([k, v]) => [k, v?.description || ''])) };
+  }
+  return f;
+}
 
 // What was running at a frame: the held-key move, the survival action (with
 // its age: a label set long before is not what moved the body), the goal's
@@ -66,6 +94,8 @@ async function readFile(file, out) {
   // And the heights stood at in the five seconds before, for the fall in.
   let lastEscape = null;
   const heights = [];
+  // The last forty seconds of frames, compact, for --pushes.
+  const ring = [];
   const escapeOf = r => ({ at: r.at, took: r.detail?.took || null, offered: r.detail?.offered || [], health: r.detail?.health ?? null, workedOutMs: r.detail?.workedOutMs ?? null });
   const close = (how, at) => {
     if (!spell) return;
@@ -79,6 +109,7 @@ async function readFile(file, out) {
     const t = Date.parse(r.at);
     if (!(t >= since)) { prev = r; continue; }
     const s = r.snapshot || {};
+    if (pushes) { ring.push(compact(r, t)); while (ring.length && ring[0].t < t - RING_MS) ring.shift(); }
     if (s.position && s.onGround) { heights.push({ at: t, y: s.position.y }); while (heights.length && heights[0].at < t - 5000) heights.shift(); }
     if (r.kind === 'lava_escape') { if (spell) spell.escapes.push(escapeOf(r)); else lastEscape = { t, frame: escapeOf(r) }; }
     if (spell) {
@@ -119,6 +150,8 @@ async function readFile(file, out) {
       out.lastDeath[p] = t;
       const cause = lastHurt && t - lastHurt.at <= DEATH_CAUSE_MS ? lastHurt.label.replace(/^hurt: /, '') : 'unknown';
       out.deaths.push({ port: p, at: r.at, cause, inLavaSpell: !!spell });
+      const dim = s.dimension || prev?.snapshot?.dimension || '';
+      if (pushes && /nether/.test(dim) && (/^(lava|fall)$/.test(cause) || spell)) out.scenes.push({ port: p, file: name, at: r.at, t, cause, frames: ring.slice() });
       if (spell) close('death', r.at);
     }
     prev = r;
@@ -129,8 +162,9 @@ async function readFile(file, out) {
 (async () => {
   const files = fs.readdirSync(dir).filter(f => f.endsWith('.jsonl') && (!port || f.includes(`-${port}-Jev-`)))
     .map(f => path.join(dir, f)).filter(f => fs.statSync(f).mtimeMs >= since).sort();
-  const out = { spells: [], deaths: [], lastDeath: {} };
+  const out = { spells: [], deaths: [], lastDeath: {}, scenes: [] };
   for (const f of files) await readFile(f, out);
+  if (pushes) { require('./lib/push-scene').report(out.scenes, { root: ROOT, asJson }); return; }
   for (const s of out.spells) {
     s.questionsAsked = [...s.questionsAsked];
     // Whether the escape fired, what it took, and whether it ever had a way

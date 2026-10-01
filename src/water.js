@@ -76,8 +76,16 @@ async function collectWater(bot, task, goal, save, { navigate, explore }) {
         const destination = new goals.GoalBlock(q.x, q.y, q.z);
         const route = await surveyRoute(bot, task, bot.pathfinder.movements, destination, 250);
         if (route.status !== 'success') continue;
-        await navigate(bot, task, destination, { timeoutMs: 10000, stallMs: 3000 });
-        await fillWaterBucket(bot, task, p, { guard: () => checkThreats(bot) });
+        // A walk that stops short, or a source out of reach or sight from
+        // where it stopped, is this place's failure, not the fetch's: the
+        // next place or source is tried. Thrown out of the fetch, "Water
+        // source is outside visible interaction reach" was the second cause
+        // of the portal cast failing at its site (33 of 167 failures since
+        // 15:24Z on 2026-09-30, note 767), with other sources in view.
+        try {
+          await navigate(bot, task, destination, { timeoutMs: 10000, stallMs: 3000 });
+          await fillWaterBucket(bot, task, p, { guard: () => checkThreats(bot) });
+        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
         if (goal.search?.water) goal.search.water.attempts = 0;
         goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', confirmed: true }; save(); return;
       }

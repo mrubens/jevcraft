@@ -4896,6 +4896,26 @@ class Survival {
       if (k === 'fight' || k === 'seal' || k === 'bunker' || k === 'fight_from_footing') continue;
       o.description += k === 'rail_and_fight' ? speared.walled : k === 'shield_the_charge' ? speared.says + speared.shielded : speared.says + (k === 'keep_working' ? ' The work does not stop in time: the hit that would stop it is the one that knocks the bot over.' : '');
     }
+    // Footing one block wide over a drop that kills, with something in
+    // reach that can push the bot off it (narrow-footing.js, note 769): a
+    // stance that stands still says the footing, what can push, what the
+    // rule does first (steps back to footing two wide or walls the open
+    // sides) and its seconds, the game's rules on knocks, and the bot's own
+    // record; the span's hold and the rail say the footing and the record.
+    // 25585 (15:31:15Z) chose shield_guard on its own cobblestone span, one
+    // wide, 17 over the lava sea, with a hoglin coming along it, told
+    // nothing of the drop on that option; three blows the shield took knocked
+    // it off the north edge with no health lost.
+    let narrowPlan = null;
+    try { narrowPlan = require('./narrow-footing').planAt(bot, require('./terrain').restingCell(bot) || feet, danger, { health: bot.health, carried: shelter.materialStock(bot) }); } catch (_) { narrowPlan = null; }
+    this.lastNarrow = narrowPlan;
+    if (narrowPlan) {
+      const NF = require('./narrow-footing');
+      for (const [k, o] of Object.entries(options)) {
+        if (NF.STATIONARY.has(k)) o.description += NF.planSays(narrowPlan, k);
+        else if (k === 'hold_on_span' || k === 'rail_and_fight') o.description += ` ${NF.footingSays(narrowPlan.footing)} What can push the bot off it: ${narrowPlan.pushers.slice(0, 3).map(NF.pusherSays).join(', ')}.${require('./push-record').says(k === 'rail_and_fight' ? 'rail_span' : k)}`;
+      }
+    }
     // What each of the rest gains toward the rods the goal needs, as the
     // blaze stands say theirs (note 614): the fight its kills by its own
     // figures, a stance that strikes only what comes that, and the rest
@@ -5755,6 +5775,14 @@ class Survival {
     let why = null;
     delete this.state.failWhy;
     delete this.state.stanceWhy;
+    // A stance that stands still is not held on footing one wide over a
+    // drop that kills while something in reach can push the bot off it:
+    // first the step back to footing two wide, or the open sides walled,
+    // whichever is quicker (narrow-footing.js, note 769). Its words said so.
+    if (require('./narrow-footing').STATIONARY.has(choice)) {
+      try { await this.secureFooting(task, goal, save, danger, choice); }
+      catch (err) { if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+    }
     try { done = await options[choice].run(); }
     catch (err) { if (err.name === 'NoRoute') why = noRouteSays(err, `the ${choice.replaceAll('_', ' ')} walk`); else if (err.name === 'StanceFailed') why = err.message; else if (err.name !== 'SetAside') throw err; done = false; }
     finally { stance.running = false; stance.ranAt = Date.now(); }
@@ -6283,6 +6311,39 @@ class Survival {
   // Against a ghast (`blast`), from a block its blast does not break where
   // one is carried: a netherrack wall is blown out by the fireball it stops
   // (ghast.js, note 551).
+  // The rule's step before a stance that stands still (note 769): on
+  // footing one wide over a drop that kills with a pusher in reach, the
+  // step back to footing two wide or the open sides walled (railSpan),
+  // whichever narrow-footing.js planned as quicker. True when it is done.
+  // A try that failed is set aside fifteen seconds; the stance runs either
+  // way.
+  async secureFooting(task, goal, save, danger, choice) {
+    const bot = this.bot, NF = require('./narrow-footing');
+    if (isSetAside(this, 'narrow_footing', 'here')) return false;
+    const feet = require('./terrain').restingCell(bot) || feetCell(bot);
+    let plan = null;
+    try { plan = NF.planAt(bot, feet, danger, { health: bot.health, carried: shelter.materialStock(bot) }); } catch (_) { plan = null; }
+    if (!plan || plan.choice === 'none') return false;
+    const pushers = plan.pushers.slice(0, 3).map(p => `${p.name} ${Math.round(p.distance)}`);
+    if (plan.choice === 'back') {
+      const cell = plan.back.cell;
+      this.report(goal, save, { action: 'narrow_footing_back', to: { ...cell }, steps: plan.back.steps, width: plan.footing.width, pushers, before: choice, health: bot.health });
+      const movements = bot.pathfinder?.movements, kept = movements && { allow1by1towers: movements.allow1by1towers, canDig: movements.canDig };
+      if (movements) Object.assign(movements, { allow1by1towers: false, canDig: false });
+      let why = null;
+      try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: Math.max(3000, plan.back.seconds * 2500), stallMs: 1200 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; why = err; }
+      finally { if (movements) Object.assign(movements, kept); }
+      if (feetCell(bot).equals(cell)) return true;
+      setAside(this, 'narrow_footing', 'here', why || new Error(`the step back to (${cell.x}, ${cell.y}, ${cell.z}) ended short of it`), 15000);
+      return false;
+    }
+    this.report(goal, save, { action: 'narrow_footing_walls', sides: plan.footing.deadly.map(d => d.side), blocks: plan.walls.need, pushers, before: choice, health: bot.health });
+    const ok = await this.railSpan(task, goal, save, { blast: plan.pushers.some(p => p.how === 'blast') });
+    if (!ok) setAside(this, 'narrow_footing', 'here', new Error('no wall went up'), 15000);
+    return ok;
+  }
+
   async railSpan(task, goal, save, { ahead = null, blast = false } = {}) {
     const bot = this.bot;
     if (typeof this.actions.place !== 'function') return false;
@@ -7275,7 +7336,7 @@ class Survival {
     const coverSays = shotBy.length ? ` As the shield faces the ${name}: ${shotBy.join('; ')}.` : '';
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
-      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${behindSays}${coverSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block. It knocks the bot back too: the game gives every blow its knockback whether or not the shield takes the damage, about half a block away from the mob with a hop, crouched or not (a hoglin's throw comes only with a blow that lands).${wither}${kill}${flank}${behindSays}${coverSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
       run: async () => {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }

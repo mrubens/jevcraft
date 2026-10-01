@@ -38,15 +38,18 @@ function nearer(record, distance, from) {
 
 // About how long a surveyed crossing takes: the walk crouched, each block
 // laid, each dug with the tool that digs it.
-const crossingSeconds = s => Math.round(s.cells / SNEAK_SPEED + s.bridge * BLOCK_SECONDS + (s.digSeconds || 0));
+const crossingSeconds = s => Math.round(s.cells / SNEAK_SPEED + (s.bridge + (s.wallBlocks || 0)) * BLOCK_SECONDS + (s.digSeconds || 0));
 
 function crossingSays(s, what) {
   const work = [];
   if (s.dig) work.push(`digging ${s.dig} block${s.dig === 1 ? '' : 's'} of rock`);
   if (s.bridge) work.push(`laying ${s.bridge} block${s.bridge === 1 ? '' : 's'} over open ${s.overLava ? `air and lava (${s.overLava} of them over lava)` : 'air'}`);
+  // Walled on both sides as it is laid while a biter is in reach (bridging.js
+  // span, note 769): a knock off a span one wide is the fall.
+  if (s.wallBlocks) work.push(`walling the open sides of each cell over the drop as it goes, the ${s.walledFor.name.replaceAll('_', ' ')} ${s.walledFor.distance} blocks off being able to knock the bot off a span one wide (${s.wallBlocks} block${s.wallBlocks === 1 ? '' : 's'} more)`);
   if (!work.length) work.push('over ground already open');
   return `Go straight at ${what} at the height the bot stands, ${s.cells} blocks, ${work.join(' and ')}, crouched all the way so a step does not go over an edge: about ${crossingSeconds(s)} seconds. ` +
-    `${s.carried} blocks carried${s.bridge ? `, ${s.carried - s.bridge} left after` : ''}.${s.bridge ? blockStock.afterSays({ noPickaxe: s.noPickaxe, left: s.carried - s.bridge }) : ''} It ends ${Math.round(s.gain)} blocks nearer, ${Math.round(s.from - s.gain)} from it` +
+    `${s.carried} blocks carried${s.bridge ? `, ${s.carried - s.bridge - (s.wallBlocks || 0)} left after` : ''}.${s.bridge ? blockStock.afterSays({ noPickaxe: s.noPickaxe, left: s.carried - s.bridge - (s.wallBlocks || 0) }) : ''} It ends ${Math.round(s.gain)} blocks nearer, ${Math.round(s.from - s.gain)} from it` +
     `${s.stoppedBy ? `; there, ${s.stoppedBy}` : ''}. Rock is dug only where no lava or water is behind it.`;
 }
 
