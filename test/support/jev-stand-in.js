@@ -8,6 +8,11 @@
 // Loaded for every test file by the test script (package.json: node --test
 // --require ./test/support/jev-stand-in.js); a test may require it itself.
 // It is never loaded in play.
+// A plan question waits out a fight in play for up to fifteen seconds (note
+// 696, danger.js waitOutFight), in real time: every test whose scene has a
+// mob about sat out the whole of it, 15 to 45 seconds a test, a third of the
+// suite's time (note 797). The wait's own test sets its own length.
+process.env.JEV_FIGHT_WAIT_MS ||= '50';
 const decisions = require('../../src/decisions');
 const { walk, firstOption } = decisions;
 const jevDown = require('../../src/jev-down');

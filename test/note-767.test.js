@@ -199,9 +199,11 @@ test('other_stand passes over the stands tried at the slot; the answer at a fail
   // Failures of the same kind: held, not asked (buildPortalFrame's site catch). One of another kind: asked.
   const C = require('../src/decisions/commit');
   assert(C.holding(bot, 'portal_plan'), 'held');
-  const work = fs.readFileSync(require.resolve('../src/work'), 'utf8');
-  assert.match(work, /answered\.cast !== castIn \? `a block went in since/);
-  assert.match(work, /answered\.kind !== frame\.siteFailed\.kind \? `a failure of another kind came/);
+  const { siteHoldEnds } = require('../src/work');
+  const answered = goal.portalMethod.siteAnswer, why = Object.keys(frame.siteFailed.whys)[0];
+  assert.equal(siteHoldEnds(bot, frame, { ...answered }, answered.cast, why), null);
+  assert.match(siteHoldEnds(bot, frame, { ...answered }, answered.cast + 1, why), /^a block went in since/);
+  assert.match(siteHoldEnds(bot, frame, { ...answered, kind: 'another' }, answered.cast, why), /^a failure of another kind came/);
   assert.equal(typeof buildPortalFrame, 'function');
 });
 

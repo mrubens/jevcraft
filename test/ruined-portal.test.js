@@ -1068,14 +1068,16 @@ test('a mob in the cast\'s cells is not the site\'s failure, and a part-cast fra
   // is passed over.
   let asked = 0;
   task.opportunityClient = { systemOne: async ({ questions }) => { asked++; offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: pick, confidence: 0.7 } } }; } };
-  for (let n = 1; n <= 4; n++) {
+  // The same failure a third time with the bot where it was: the answer
+  // kept changed nothing, and the plan is asked again with that said (797).
+  for (let n = 1; n <= 2; n++) {
     assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
     assert.equal(goal.portalMethod.siteFailed, undefined, `held at the ${n} failure since the keep`);
   }
-  assert.equal(goal.portalMethod.siteAnswer.held, 4);
-  bot._commits.portal_plan.at -= 181000;
+  assert.equal(goal.portalMethod.siteAnswer.held, 2);
   assert.equal(await buildPortalFrame(bot, new Task('cast'), goal, () => {}, frame), false);
-  assert.equal(goal.portalMethod.siteFailed, true, 'asked again once its three minutes passed');
+  assert.equal(goal.portalMethod.siteFailed, true, 'asked again at the third failure the same way');
+  assert.match(frame.siteFailed.keptEnded.why, /^the answer kept failed the same way 3 times/);
   pick = 'new_site_deep';
   assert.equal(await portalMethod(bot, task, goal, () => {}), true);
   assert.equal(asked, 1, 'asked once its three minutes passed');

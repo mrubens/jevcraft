@@ -5258,7 +5258,8 @@ function siteFailedSays(frame, placed) {
   const times = n => n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`;
   const whys = Object.entries(f.whys || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([why, n]) => `"${why}" ${times(n)}`).join(', ');
   const body = frame.bodyFailures?.n ? ` Not counted: ${frame.bodyFailures.n} more where a mob stood in the cells the cast works in (the last a ${String(frame.bodyFailures.name).replaceAll('_', ' ')} at (${frame.bodyFailures.at.x}, ${frame.bodyFailures.at.y}, ${frame.bodyFailures.at.z})); a mob moves on or is fought, and the cell is free again.` : '';
-  return ` The frame at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten cast, has failed at its site ${times(f.n)} since the last block went in: ${whys || 'reasons not kept'}.${body}`;
+  const kept = f.keptEnded ? ` The answer kept at these failures (${String(f.keptEnded.pick).replaceAll('_', ' ')}) is over: ${f.keptEnded.why}.` : '';
+  return ` The frame at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten cast, has failed at its site ${times(f.n)} since the last block went in: ${whys || 'reasons not kept'}.${kept}${body}`;
 }
 const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
 // A ruin's key is the number it was given when first offered (keys.js, note
@@ -6055,9 +6056,32 @@ function portalInteriorBlockers(bot, cells) {
 }
 
 const SITE_REACH = 12;
+// An answer kept at the frame's failure (note 767) holds three minutes, or
+// until it fails the same way three times over with nothing changed (797).
+const SITE_HOLD_MS = 3 * 60000, SAME_SITE_FAILURES = 3;
 // The body a failure at the frame's site is owed to: one the placement
 // named, or, for a failure to stand, place or pour, a mob in the cells the
 // cast works in at its slot (portal-cast.js workCells). Null otherwise.
+// What ends an answer kept at the frame's failure (note 767), short of the
+// commitment's own ends: a block in, a failure of another kind, the same
+// failure again and again at the same slot with the bot where it was (the
+// answer kept was tried and changed nothing, note 765's rule), or its three
+// minutes. A held plan (here_*, note 782) is held for its whole route, ten
+// minutes at most, and without the last two the cast retried one slot three
+// times a second: 25585 (mid-227-ag, 2026-10-01 10:41-10:47Z) held "here
+// deep" through 546 failures of "Nowhere to stand to pour into the frame
+// slot" (note 797).
+function siteHoldEnds(bot, frame, answered, castIn, why, now = Date.now()) {
+  const at = bot.entity.position, s = frame.siteFailed?.slot, slotKey = s ? `${s.x},${s.y},${s.z}` : null;
+  const same = answered.same && answered.same.why === why && answered.same.slot === slotKey && at.distanceTo(new Vec3(answered.same.x, answered.same.y, answered.same.z)) < 1.5;
+  answered.same = { why, slot: slotKey, x: at.x, y: at.y, z: at.z, n: same ? answered.same.n + 1 : 1 };
+  if (answered.cast !== castIn) return `a block went in since (${castIn} of ten cast, from ${answered.cast})`;
+  if (answered.kind !== frame.siteFailed.kind) return `a failure of another kind came ("${why.slice(0, 80)}")`;
+  if (answered.same.n >= SAME_SITE_FAILURES) return `the answer kept failed the same way ${answered.same.n} times${s ? ` at the frame slot (${s.x}, ${s.y}, ${s.z})` : ''} with the bot where it was, nothing changed ("${why.slice(0, 80)}")`;
+  if (now - (answered.at || 0) > SITE_HOLD_MS) return `its ${Math.round(SITE_HOLD_MS / 60000)} minutes at the frame's failures passed`;
+  return null;
+}
+
 function siteBody(bot, frame, goal, err) {
   if (err?.body) return err.body;
   if (!/Nowhere to stand|Cannot place|Placement obstructed|No line into|No place to pour water|would move me off/.test(String(err?.message || ''))) return null;
@@ -6271,15 +6295,14 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     const answered = goal.portalMethod?.siteAnswer;
     const C = require('./decisions/commit'), held = answered && C.holding(bot, 'portal_plan');
     if (held && !frame.ruin && goal.portalFrame === frame && castIn) {
-      const ends = answered.cast !== castIn ? `a block went in since (${castIn} of ten cast, from ${answered.cast})`
-        : answered.kind !== frame.siteFailed.kind ? `a failure of another kind came ("${why.slice(0, 80)}")`
-        : C.endedBy(held, C.factsOf(bot, goal), {});
+      const ends = siteHoldEnds(bot, frame, answered, castIn, why) || C.endedBy(held, C.factsOf(bot, goal), {});
       if (!ends) {
         answered.held = (answered.held || 0) + 1;
         console.log(`[commit] portal_plan: ${String(answered.pick).replaceAll('_', ' ')} held at the frame's failure ${frame.siteFailed.n} (${answered.held} since it was chosen): ${why}`);
         return false;
       }
       C.end(bot, 'portal_plan', ends);
+      frame.siteFailed.keptEnded = { pick: answered.pick, why: ends };
     }
     if (!frame.ruin && goal.portalFrame === frame && castIn && goal.portalMethod) {
       goal.portalMethod.siteFailed = true; save();
@@ -8482,4 +8505,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
