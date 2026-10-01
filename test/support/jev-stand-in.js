@@ -145,7 +145,7 @@ const OLD_ORDER = {
   surface_trip: children => children.dig_site ? 'dig_site' : children.climb ? 'climb' : Object.keys(children)[0],
   survival_priority: safetyOrder,
   trade_choice: firstOption,
-  turn_priority: children => require('../../src/arbiter').rulesPick(Object.entries(children).map(([layer, o]) => ({ layer, urgency: o.description?.urgency })))?.layer || Object.keys(children)[0],
+  turn_priority: children => require('../../src/arbiter').rulesPick(Object.entries(children).map(([layer, o]) => ({ layer, urgency: o.urgency ?? o.description?.urgency })))?.layer || Object.keys(children)[0],
   unstuck_move: children => Object.keys(children)[0],
   upkeep: children => ['make_pickaxe', 'spare_pickaxe', 'wood_reserve', 'fetch_stems', 'block_reserve'].find(k => children[k]) || 'carry_on',
   way_down: (children, path, context = {}) => children[context.oldOrder] ? context.oldOrder : Object.keys(children)[0],

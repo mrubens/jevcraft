@@ -89,7 +89,7 @@ test('the work option says the mob that stood off beside it, so the work is offe
   const out = await arbiter.take(bot, [{ ...survival, run: async () => true }, work], { decide, now: Date.now() });
   assert.equal(out.layer, 'work');
   assert.match(tree.work.description.does, /a hoglin 3\.9 blocks off.*it has stood off 70 seconds, 3\.9 to 3\.9 blocks off, no nearer and no hit from its kind in that time/);
-  assert.equal(tree.survival.description.urgency, 'routine');
+  assert.equal(tree.survival.urgency, 'routine'); assert.equal(tree.survival.description.urgency, undefined, 'not a word Jev reads (note 838)');
 });
 
 test('with a stance held, a threat claim says that stance goes on, not "the stance is asked next": the step carries it out and asks none (25595, note 752)', t => {

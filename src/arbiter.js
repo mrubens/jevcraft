@@ -378,7 +378,13 @@ const optionOf = (c, held = null, now = Date.now()) => {
   const mine = held?.layer === c.layer;
   const facts = { ...(c.facts || {}), ...(mine ? { hasHadTheTurnSeconds: Math.round((now - held.since) / 1000) } : {}),
     ...(mine && held.idleSince ? { didNothingWithItSeconds: Math.round((now - held.idleSince) / 1000) } : {}) };
-  return { description: { does: claimSays(c), action: c.action, urgency: c.urgency, facts, ...(c.cost ? { cost: c.cost } : {}) }, run: c.run };
+  // The urgency stays the arbiter's (its order of claims), not a word Jev
+  // reads (note 838): "pressing" was the survival claim's at any threat,
+  // whatever its price, beside riskNow's "low": 666 of 852 turn_priority
+  // askings from 18:53Z were at health 18 or more, 61% given to survival,
+  // 77% with one mob not a creeper (25584 at 20:11:43Z: full iron, one
+  // zombie 7.9 blocks off, the fight priced 3.5; survival 0.51 to 0.45).
+  return { description: { does: claimSays(c), action: c.action, facts, ...(c.cost ? { cost: c.cost } : {}) }, urgency: c.urgency, run: c.run };
 };
 // Said beside a claim's own words, at the asking (note 585):
 // - a layer whose last turns were each stopped at once by the threat check
