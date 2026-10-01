@@ -66,6 +66,22 @@ async function collectWater(bot, task, goal, save, { navigate, explore }) {
     }
   }
   const sources = bot.findBlocks({ matching: bot.registry.blocksByName.water.id, maxDistance: 48, count: 24, useExtraInfo: sourceWater });
+  // In the water already: filled from a source in reach where the body is,
+  // as a player fills a bucket swimming. 25593 (2026-10-01 01:22:58-
+  // 01:24:21Z), casting in water, swam up for air, and climbed sixteen
+  // blocks to look for water three times, down and up again each time; no
+  // dry place was beside the water and it was too deep to wade (note 767c).
+  const wetHere = ['feet', 'head'].some(k => /water/.test(bot.blockAt(bot.entity.position.floored().offset(0, k === 'head' ? 1 : 0, 0))?.name || ''));
+  if (wetHere) {
+    const eye = bot.entity.position.offset(0, 1.62, 0);
+    for (const p of sources.filter(q => eye.distanceTo(q.offset(0.5, 0.5, 0.5)) <= 4.2).sort((a, b) => eye.distanceTo(a) - eye.distanceTo(b)).slice(0, 4)) {
+      task.check();
+      try {
+        await fillWaterBucket(bot, task, p, { guard: () => checkThreats(bot) });
+        goal.step = { action: 'fill_bucket', position: { ...p }, item: 'water_bucket', confirmed: true, swimming: true }; save(); return;
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+  }
   const movement = miningMovement(bot);
   try {
     for (const p of sources) {

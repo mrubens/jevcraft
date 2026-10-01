@@ -419,11 +419,12 @@ async function askLavaWay(bot, task, goal, save, { pools, deep, poolDig, here, b
   ways.deep = { dest: deep };
   const deepBefore = (goal.lavaWayFailed || []).filter(f => f.way === 'deep' && Date.now() - f.at < 30 * 60000).at(-1);
   tree.deep = { description: `${said(dc, `Dig a staircase down to the lava layer at y ${deep.y} (the deep lava lakes lie from about y -54 down, anywhere)`)}${failing ? ` ${failing} of the ${headings.length} headings down from about here are set aside already${deepFailing ? ': the dig down is failing where the bot stands' : ''}.` : ''}${deepBefore ? ` Chosen before, ${Math.round((Date.now() - deepBefore.at) / 60000)} minutes ago, its route failed: ${deepBefore.why}.` : ''}${picks}` };
-  const iron = countOf(bot, 'iron_ingot'), more = Math.min(Math.floor(iron / 3), Math.max(0, t.toFetch - Math.max(1, t.carriers)));
+  // Raw iron counts, smelted first (note 767c).
+  const ingots = countOf(bot, 'iron_ingot'), raw = countOf(bot, 'raw_iron'), iron = ingots + raw, more = Math.min(Math.floor(iron / 3), Math.max(0, t.toFetch - Math.max(1, t.carriers)));
   if (more > 0) {
     const best = Math.min(...Object.keys(ways).map(k => k === 'deep' ? dc : wayCosts(here, landmarkAt(ways[k].pool), back)).map(c => c.trip));
     const fewer = Math.ceil(t.toFetch / (t.carriers + more));
-    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the ${iron} iron ingots carried (three each): ${fewer} trip${fewer === 1 ? '' : 's'} instead of ${trips} for the ${t.toFetch} lava, about ${secsSays(best * (trips - fewer))} of trips saved at the shortest trip above; then this is asked again with them.` };
+    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the iron carried (three ingots each; ${ingots} ingot${ingots === 1 ? '' : 's'} and ${raw} raw iron, ${Math.max(0, 3 * more - ingots)} of them smelted first): ${fewer} trip${fewer === 1 ? '' : 's'} instead of ${trips} for the ${t.toFetch} lava, about ${secsSays(best * (trips - fewer))} of trips saved at the shortest trip above; then this is asked again with them.` };
   }
   if (!frame) {
     const l = pools[0], c = wayCosts(here, landmarkAt(l), null);

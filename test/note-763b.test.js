@@ -34,7 +34,7 @@ test('the lava\'s way is Jev\'s when a known pool and the lava layer are both on
   const o = asked[0];
   assert.match(o.pool_0, /^Dig toward the lava pool known at \(201, 21, 39\): 165 blocks across, about 8 minutes to dig there .*10 lava still to fetch with 1 bucket is 10 trips: about \d+ minutes in all\.( Its record: [^.]*\.)? Pickaxes carried for the depth: stone pickaxe/);
   assert.match(o.deep, /^Dig a staircase down to the lava layer at y -56 .*: 24 blocks across, 78 down, about 4 minutes to dig there/);
-  assert.match(o.craft_buckets, /^Make 3 more buckets first from the 9 iron ingots carried \(three each\): 3 trips instead of 10/);
+  assert.match(o.craft_buckets, /^Make 3 more buckets first from the iron carried \(three ingots each; 9 ingots and 0 raw iron, 0 of them smelted first\): 3 trips instead of 10/);
   assert.match(o.cast_at_pool, /^Cast the frame down beside the pool at \(201, 21, 39\)/);
   assert.equal(dug[0].y, LAVA_DEPTH, 'the lava layer, as chosen');
   await collectLava(bot, task, { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);

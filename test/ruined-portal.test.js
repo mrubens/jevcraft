@@ -369,7 +369,7 @@ test('the way into the Nether is asked again every twenty working minutes, with 
   assert.match(offered.cast_at_lava, /at y -54, 118 blocks below here/);
   assert.match(offered.cast_frame, /each trip carries one lava per bucket held, so with 1 bucket that is about 10 trips/);
   assert.match(offered.cast_frame, /The 8 iron ingots carried make 2 more buckets, about 4 trips with them/);
-  assert.match(offered.craft_buckets, /Make 2 more buckets first from the iron ingots carried \(three each, 6 of the 8\)/);
+  assert.match(offered.craft_buckets, /Make 2 more buckets first from the iron carried \(three ingots each, 6 of the 8 ingots and 0 raw iron carried\)/);
   // mid-244-j: each trip's time said, either way; from the frame, the climb in it (note 470).
   // The same trip, in the same words, as the cast's (note 553).
   assert.match(offered.craft_buckets, /about 4 trips \(about 63 minutes of trips\), against 10 \(about 159 minutes of trips\).*A trip to the nearest known lava, 120 blocks from the frame, is about 16 minutes there and back a trip: the walk 6 minutes, and the lava 118 blocks below, a staircase of about 10 minutes each trip\./);

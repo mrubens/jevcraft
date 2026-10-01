@@ -2097,6 +2097,7 @@ async function surfaceStep(bot, task, goal, save) {
 // twenty seconds at the top and was back down within twenty minutes; the
 // climbs were 100 of its 180 minutes, none of them asked (note 511).
 const SITE_BY_LAVA = 12;
+const SITE_NEAR_LAVA = 32;
 const siteByLava = (siteDig, lava) => !lava || !siteDig?.origin || Math.hypot(siteDig.origin.x - lava.x, siteDig.origin.y - lava.y, siteDig.origin.z - lava.z) <= SITE_BY_LAVA;
 async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava = null, cast = null } = {}) {
   const held = goal.surfaceTrip;
@@ -5074,6 +5075,17 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const dy = Math.round(otherLava.at.y - bot.entity.position.y);
     tree.other_lava = { description: `Cast a frame of its own beside another lava instead, ${farHeld && !heldResting ? 'nearer than the lava chosen before' : 'its way not resting'}: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The lava chosen before is left.` + facts };
   }
+  // A frame begun far from the lava its trips go to, the way held being to
+  // go on with it: restarting beside that lava is a way of its own, priced
+  // against the trips still owed here (note 767c). With cast_at_lava held
+  // and a frame begun, that option means going on at the frame, and no way
+  // to start again beside the lava was on offer: 25585 (2026-09-30 23:5xZ)
+  // and 25589 (2026-10-01 01:19:39Z, 74 blocks, two-minute trips, kept).
+  const restartAt = frameBegun && method?.kind === 'cast' && frameLava?.at && lavaTrip(frameAt, frameLava)?.distance > 16 && !tree.cast_here ? frameLava : null;
+  if (restartAt && (current === 'cast_at_lava' || !tree.cast_at_lava)) {
+    const owed = castTrips(castCount), here = trip ? owed.trips * trip.seconds : null;
+    tree.restart_at_lava = { description: `Leave the frame at (${goal.portalFrame.origin.x}, ${goal.portalFrame.origin.y}, ${goal.portalFrame.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and cast a new frame beside the lava its trips go to, at (${restartAt.at.x}, ${restartAt.at.y}, ${restartAt.at.z}), ${lavaTrip(frameAt, restartAt).distance} blocks from the frame: there each of the ten buckets is a few seconds, the walk there once${trip ? `, against ${owed.trips} trip${owed.trips === 1 ? '' : 's'} still owed here at ${fetchSays(trip)}, about ${duration(here)} in all` : ''}.` + facts };
+  }
   // The held lava become far, said on keeping it (note 763).
   if (farHeld && tree.cast_at_lava) tree.cast_at_lava.description = `Asked again because the lava chosen before is now ${farHeld.held} blocks off (the walks, detours and trips since took the bot there), and other lava is known ${farHeld.other} blocks off. ` + tree.cast_at_lava.description;
   if (heldResting && !tree.cast_here) {
@@ -5086,15 +5098,21 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // mid-244-j was offered twelve buckets for all its iron, "1 trip against
   // 10", chose the cast with its one bucket, and spent thirty-eight minutes
   // carrying lava a bucket at a time from sixty blocks down (2026-09-27).
-  const iron = countOf(bot, 'iron_ingot');
+  // Raw iron counts, smelted first (note 767c): 25589 (2026-10-01
+  // 01:19:39-01:25:08Z) carried 33 raw iron and three buckets, and its
+  // trips of two minutes each carried two lava a round trip, with no more
+  // buckets on offer since it had no ingots.
+  const ingots = countOf(bot, 'iron_ingot'), raw = countOf(bot, 'raw_iron'), iron = ingots + raw;
   const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - placed - obsidian - countOf(bot, 'lava_bucket'));
   const more = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - Math.max(1, carriers)));
+  const smeltNeed = Math.max(0, 3 * more - ingots);
+  const smeltSays = smeltNeed ? ` ${smeltNeed} of the ${raw} raw iron carried are smelted first, about ${Math.round(smeltNeed * 10 / 60) || 1} minute${Math.round(smeltNeed * 10 / 60) > 1 ? 's' : ''} in a furnace (${countOf(bot, 'furnace') ? 'one carried' : 'none carried: eight cobblestone make one'}).` : '';
   if (more > 0) {
     const trips = n => Math.ceil(toFetch / Math.max(1, n));
     // From the frame, climb and all (note 470), at the one trip every way
     // says: its own ten seconds more had made it a fourth price (note 553).
     const minutes = n => trip ? ` (about ${Math.max(1, Math.round(trips(n) * trip.seconds / 60))} minutes of trips)` : '';
-    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the iron ingots carried (three each, ${3 * more} of the ${iron}). A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trip${trips(carriers + more) === 1 ? '' : 's'}${minutes(carriers + more)}, against ${trips(carriers)}${minutes(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}.${trip ? ` A trip to the nearest known lava, ${trip.distance} blocks from ${frameBegun ? 'the frame' : 'here'}, is ${fetchSays(trip)}.` : ''} The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
+    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the iron carried (three ingots each, ${3 * more} of the ${ingots} ingot${ingots === 1 ? '' : 's'} and ${raw} raw iron carried).${smeltSays} A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trip${trips(carriers + more) === 1 ? '' : 's'}${minutes(carriers + more)}, against ${trips(carriers)}${minutes(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}.${trip ? ` A trip to the nearest known lava, ${trip.distance} blocks from ${frameBegun ? 'the frame' : 'here'}, is ${fetchSays(trip)}.` : ''} The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
   }
   // Where the walk to a ruin gives out, the staircase toward it: said
   // while it rests (tunneling.js restingSays, note 500).
@@ -5108,7 +5126,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   if (current) {
     for (const [key, node] of Object.entries(tree)) {
       if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruinOf(key, ruins, goal) : null);
-      else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
+      else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site', 'restart_at_lava', 'clear_blocker', 'other_stand'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
   }
   // context: the old order, read by the tests' stand-in only (note 707).
@@ -5199,11 +5217,13 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   const ruin = pick.startsWith('ruin_') ? ruinOf(pick, ruins, goal) : null;
   const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_here' ? { kind: 'cast', here: true } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
     : pick === 'other_lava' ? { kind: 'cast', near: { ...otherLava.at } }
+    : pick === 'restart_at_lava' ? { kind: 'cast', near: { ...restartAt.at } }
     : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };
   // A frame begun goes on the new way: its obsidian stays in its slots and
   // the rest is cast or placed. A ruin's frame, or a move to a ruin, leaves
   // the frame where it stands.
   const frame = goal.portalFrame;
+  if (frame && pick === 'restart_at_lava') (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: 'restarted beside the lava its trips went to', at: Date.now() });
   if (frame && (frame.ruin || next.kind === 'ruin' || next.near || next.here)) delete goal.portalFrame;
   else if (frame && next.kind === 'cast') { frame.cast = true; frame.axis ||= 'x'; frame.castTemp ||= []; }
   else if (frame && next.kind === 'build') delete frame.cast;
@@ -5521,7 +5541,23 @@ async function portalStep(bot, task, goal, save, client) {
     // A cast's site is weighed with the bucket trips it makes: the lava it
     // casts from, and the trips still owed (note 753b).
     const cast = castSiteCost(bot, goal, casting ? near : null, casting);
-    const site = dug || selectPortalSite(bot, { avoid, cast });
+    // For a cast beside the lava Jev chose, a site more than 32 blocks from
+    // that lava is not its site (note 767c): 25589 (2026-10-01 01:14:09-
+    // 01:14:41Z) climbed from beside its lava at (363, 66, 230) for a
+    // site, a search heading took it on, and the frame went down at (413,
+    // 76, 283), 60 blocks off; every bucket after was a two-minute trip.
+    // Out of its reach, the climb's hold is let go and the next pass walks
+    // back to the lava (the walk above), where a site is dug or asked for.
+    let site = dug || selectPortalSite(bot, { avoid, cast });
+    const lavaOff = p => near ? Math.hypot(p.x - near.x, p.y - near.y, p.z - near.z) : 0;
+    if (site && !dug && lavaOff(site) > SITE_NEAR_LAVA) site = null;
+    if (!site && near && lavaOff(bot.entity.position) > SITE_NEAR_LAVA) {
+      if (/^a portal site/.test(goal.surfaceTrip?.need || '')) { delete goal.surfaceTrip; save(); }
+      goal.step = { action: 'to_lava_for_portal', at: { ...near }, distance: Math.round(lavaOff(bot.entity.position)), siteFar: true }; save();
+      try { await navigate(bot, task, new goals.GoalNear(near.x, near.y, near.z, 8), { timeoutMs: 90000, stallMs: 8000, sprint: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      return false;
+    }
     if (!site) {
       if (surfaceObserver(bot)(bot.entity.position)) await explore(bot, task, goal, save, 'portal site', { surfaceOnly: true });
       else await surfaceTrip(bot, task, goal, save, 'a portal site (none level and dry down here)', { siteDig: portalSiteDig(bot, { avoid, radius: 6, cast }), lava: casting ? near : null, cast });
@@ -7026,7 +7062,16 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // nothing, and 25589 (about 21:20Z) crossed into the Nether with no
   // pickaxe. Said on cross_now and offered as its own top-up.
   const noPickaxe = !bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
-  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe) { delete goal.preparingNether; return true; }
+  // A kit item left to the ladder's step that is now empty is counted here,
+  // and its step offered back (note 767c): 25589 (2026-10-01 01:19-01:25Z)
+  // answered cross_now seven times while "food 6 of 80" became "0 of 80",
+  // the food step set aside and never offered at the crossing.
+  // Empty since the crossing last looked (some carried then, none now):
+  // the step's own question was answered with some in hand.
+  const seen = goal.kitSeen || {};
+  const empty = left.filter(i => i.carried === 0 && /^(food|blocks)$/.test(i.key) && (seen[i.key] || 0) > 0);
+  goal.kitSeen = Object.fromEntries(items.map(i => [i.key, i.carried]));
+  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !empty.length) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -7052,6 +7097,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
+  if (empty.some(i => i.key === 'food')) {
+    const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));
+    tree.cross_now.description += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;
+  }
+  for (const i of empty) tree[`take_up_${i.key}`] = { description: `Take up the ${i.key} for the Nether again first: it is empty now, 0 of ${i.wants} carried (${seen[i.key]} when the crossing last looked), and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.` };
   const pickMade = noPickaxe ? (countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : ['cobblestone', 'cobbled_deepslate', 'blackstone'].some(n => countOf(bot, n) >= 3) ? 'stone_pickaxe' : 'wooden_pickaxe') : null;
   if (noPickaxe) {
     let budget = null; try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal); } catch (_) { budget = null; }
@@ -7079,6 +7129,14 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   }
   delete goal.preparingNether;
   if (pick === 'cross_now') return true;
+  if (pick.startsWith('take_up_')) {
+    const key = pick.slice(8), phase = `nether_${key}`;
+    require('./progress').attemptsFor(goal).clear('rung', phase);
+    if (key === 'food' && goal.kitFood?.choice?.pick === 'go_without') delete goal.kitFood.choice;
+    delete kit.choice; save();
+    bot.chat?.(`The ${key} for the Nether is empty: taking it up again first.`);
+    return false;
+  }
   const item = short.find(i => `top_up_${i.key}` === pick);
   const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
   const started = Date.now();

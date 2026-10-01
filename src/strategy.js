@@ -1,5 +1,6 @@
 'use strict';
 // Strategy on the way to the dragon: of the things open now, which next.
+const { Vec3 } = require('vec3');
 // The ladder's order is the code's answer when Jev cannot be reached, and
 // nothing in the wording favours it. What Jev weighs is what the order
 // cannot see: that the ruined portal's chest two hundred blocks off holds
@@ -653,7 +654,13 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
         node.description = `${node.description} This would reverse ${label(last.choice)}, chosen ${agoWords(now() - last.at)} ago: ${label(last.rungPhase)} is still open, nothing decided about it since.`;
       }
     }
-    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, last ? { lastStrategy: last.says } : {}) });
+    // The errand still under way when the hold's ten minutes are out is
+    // said with the question (note 767c): 25593 (2026-10-01 01:24:21Z),
+    // mid-cast, was asked the ladder afresh with nothing of the cast in
+    // it, and took the pickaxe rung and a furnace job, the cast left.
+    const underWay = errand || errandUnderWay(bot, goal, now());
+    const errandSays = underWay ? { errandUnderWay: `${underWay} is under way${held ? `, begun under ${label(held.choice)} ${agoWords(now() - held.at)} ago` : ''}; another answer leaves it where it stands until it is taken up again${(() => { const f = goal.portalFrame; if (!f?.blocks || !f.cast) return ''; const n = f.blocks.filter(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z))?.name === 'obsidian').length; return ` (${n || f.placedSeen || 0} of ten cast)`; })()}` } : {};
+    const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, { ...(last ? { lastStrategy: last.says } : {}), ...errandSays }) });
     // Held through an outage (note 707): nothing is done this step; the
     // next asks it fresh.
     if (decision.stale) return { stale: true };
