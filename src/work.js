@@ -5400,20 +5400,29 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
   const routes = {};
   const add = (key, site, v, price, extra = {}) => { routes[key] = { key, site, lava: v, price, ...extra }; };
   for (const v of lavas) {
+    // A pool whose way rests is first waited out: its route is priced with
+    // the rest's minutes left and says them (note 800). The plan's own pool
+    // stays on offer while its way rests, and priced without the wait it
+    // was kept as the cheapest, the rung then resting under it: 25597
+    // (mid-230-ax and -ay, 2026-10-01 10:32-11:18Z) asked for other work
+    // "until the rest ends" again and again, none good at 0.41 and 0.51.
+    const rest = v.kind === 'pool' ? T.restingWay(goal, T.lavaWay(v.at)) : null;
+    const wait = rest ? Math.max(0, (rest.until - Date.now()) / 1000) : 0;
+    const waitExtra = rest ? { waitSays: ` First its way's rest is waited out: ${rest.what} is set aside (${rest.why}) for ${rest.minutes} more minute${rest.minutes === 1 ? '' : 's'}, counted in the price.` } : {};
     // Here: the frame begun, or a frame near where the bot stands.
     const s = fromSite(v, frameAt, !!frame);
     const toFrame = frame && here.distanceTo(frameAt) > 16 ? walkTo(here, frameAt) : 0;
-    add(`here_${v.key}`, 'here', v, PP.priceCast({ reach: toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured });
+    add(`here_${v.key}`, 'here', v, PP.priceCast({ reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra });
     // Beside the lava: a frame cast within a few blocks of it.
     if (d3(frameAt, v.at) > 16 || (v.kind === 'deep' && frameAt.y - LAVA_DEPTH > 16) || method?.key === `beside_${v.key}`) {
       const r = reachLava(v);
-      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ reach: r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs });
+      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra });
     }
     // A new site near here, the frame begun left: where it fails at its
     // site or cannot be got back to.
     if (frame && (method?.siteFailed || method?.frameFailed)) {
       const n = fromSite(v, here.floored());
-      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ reach: n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs });
+      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra });
     }
   }
   // Two pools a site, the shortest routes, beside the plan's own lava, the
@@ -5549,7 +5558,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // failed after the ones that go on (note 767f).
   const failing = r => r.lava.kind === 'pool' ? !!require('./obsidian').lavaRecord(goal, r.lava.l, here) || PP.failuresFor(goal, { lava: r.lava.at }).length > 0 : PP.failuresFor(goal, { lava: r.lava.kind === 'deep' ? { deep: true } : r.lava.at }).length > 0;
   const ordered = Object.values(routes).sort((a, b) => (failing(a) - failing(b)) || ((a.price.seconds ?? Infinity) - (b.price.seconds ?? Infinity)));
-  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
+  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says) + (r.waitSays || ''), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
   // A frame of its own from obsidian: the diamond route, as the steps it is
   // (note 470), with the trip to the nearest lava where the obsidian is made.
   const trip = fetchTrip(frameAt, frame ? nearestLava(bot, goal, sources, frameAt) || lava : lava, null);
