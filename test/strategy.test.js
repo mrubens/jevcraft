@@ -485,7 +485,7 @@ test('the bed rung says the way to the wool: none seen, the climb from 71 blocks
   bot.time = { timeOfDay: 14000 };
   const d = rungOption({ phase: 'bed', action: 'gather_wool', count: 3 }, true, bot, {}).description;
   assert.match(d, /The way to the wool: No sheep are in view or remembered: the hunt is a search over ground not yet seen\./);
-  assert.match(d, /The bot is about 71 blocks under open sky: the climb out is about 4 minutes before any walk to sheep, through what the caves hold\./);
+  assert.match(d, /The bot is about 71 blocks under open sky: the climb out is about 6 minutes before any walk to sheep, through what the caves hold\./);
   assert.match(d, /It is night on the surface, about 8 real minutes to dawn: sheep stand on open ground, where zombies, skeletons, spiders and creepers spawn until then\./);
   assert.match(d, /Wool hunts begun below y 40, as this one is: 29 in 2026-09-28's 62 fresh worlds, 5 ended in a death, 8\.4 minutes each on average; begun at or above it: 20, 1 ended in a death, 3\.6 minutes\./);
 });

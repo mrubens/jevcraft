@@ -39,8 +39,11 @@ test('a dig down or to the side says the drop past it and what the fall costs (t
 test('digging under sand says it will fall onto the head, and a pillar is offered only with blocks and headroom', () => {
   const cells = { '0,71,0': 'air', '0,72,0': 'air', '0,73,0': 'sand', '0,74,0': 'sand', '0,75,0': 'sand' };
   const feet = new Vec3(0, 71, 0);
-  const up = localMoves(view(cells), feet).moves.find(m => m.key === 'dig_up');
-  assert.match(up.effects.join(), /2 blocks of sand above would fall into it, onto the bot's head/);
+  // Brought down through the body onto its floor it buries the body: not
+  // offered, said (terrain.js digExposes, note 768).
+  const asked = localMoves(view(cells), feet);
+  assert(!asked.moves.some(m => m.key === 'dig_up'), 'no dig up into sand with nothing to break it');
+  assert.match(asked.here.notOffered.join(' | '), /dig up: 2 blocks of sand over \(0, 73, 0\) would come down through the body onto its floor, into the feet and head cells: buried, it suffocates/);
   assert(!localMoves(view(cells, { carried: { dirt: 4 } }), feet).moves.some(m => m.key === 'pillar'), 'no headroom for a pillar under sand');
   cells['0,73,0'] = 'air';
   assert(localMoves(view(cells, { carried: { dirt: 4 } }), feet).moves.some(m => m.key === 'pillar'));

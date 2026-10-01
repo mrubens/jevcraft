@@ -98,7 +98,7 @@ test('underground with every rung after wanting the same climb, the ore in view 
   await explore(bot, task, goal, () => {}, 'spruce_log');
   assert.equal(asked.length, 1);
   assert.deepEqual(Object.keys(asked[0]).filter(k => k !== 'none_good').sort(), ['climb', 'mine_first'], 'no rung to stay below for: each wants a log first');
-  assert.match(asked[0].mine_first, /^Dig the iron ore 3 blocks off first, then climb: the pickaxes have 180 uses and the climb's quicker way digs about 21, so 159 are spare for ore down here/);
+  assert.match(asked[0].mine_first, /^Dig the iron ore 3 blocks off first, then climb: the pickaxes have 180 uses and the climb's way \(straight up\) digs about 21, so 159 are spare for ore down here/);
   assert.deepEqual(dug, ['(3, 40, 0)'], 'the ore dug, no stair');
   assert.equal(goal.step.action, 'mine_first');
   assert.equal(goal.surfaceTrip.pick, 'mine_first');

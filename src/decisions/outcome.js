@@ -84,7 +84,9 @@ function markOf(bot, target = null) {
   const inv = {};
   try { for (const i of bot.inventory.items() || []) inv[i.name] = (inv[i.name] || 0) + i.count; } catch (_) { return null; }
   const t = P(target);
-  return { p, inv, blocks: bot?._stalls?.marked || 0, health: Number.isFinite(bot?.health) ? bot.health : null, food: Number.isFinite(bot?.food) ? bot.food : null,
+  let picks = null;
+  try { picks = require('../quote-record').picksOf(bot); } catch (_) { picks = null; }
+  return { p, inv, picks, blocks: bot?._stalls?.marked || 0, health: Number.isFinite(bot?.health) ? bot.health : null, food: Number.isFinite(bot?.food) ? bot.food : null,
     dimension: norm(bot?.game?.dimension), ...(t ? { target: t, targetD: dist(p, t) } : {}) };
 }
 // The same from a flight record's snapshot (scripts/zero-delta.js): no
@@ -148,7 +150,9 @@ function begin(bot, goal, spec, path, node, { target = null, held = false, now =
   if (held && was && was.key === key) return was;
   const mark = markOf(bot, node?.target || target);
   if (!mark) { delete memo[spec.id]; return null; }
-  memo[spec.id] = { q: spec.id, key, at: now, mark, ms: statedMs(node), wait: waitWhy(spec, key, node), sameStall: Number.isFinite(spec.sameStall) ? spec.sameStall : NOOP_NEAR };
+  memo[spec.id] = { q: spec.id, key, at: now, mark, ms: statedMs(node), wait: waitWhy(spec, key, node), sameStall: Number.isFinite(spec.sameStall) ? spec.sameStall : NOOP_NEAR,
+    // What it was quoted at, read against what it cost when judged (note 768).
+    ...(node?.quote?.kind ? { quote: { ...node.quote } } : {}) };
   return memo[spec.id];
 }
 
@@ -175,6 +179,7 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
   if (!asked && now - o.at < o.ms) return null;
   delete memo[id];
   const here = markOf(bot);
+  if (o.quote) { try { require('../quote-record').record(goal, o, here, { now }); } catch (_) { /* the judgment stands */ } }
   const changed = effect(o.mark, here);
   if (changed) return { changed };
   if (o.wait) return { waited: o.wait };

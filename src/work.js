@@ -2112,7 +2112,9 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   // (its shelter's blocks, a table to cook at) is not the rung's to leave.
   const ruling = bot._arbiter?.ruling?.winner;
   const phase = !ruling || ruling === 'work' ? goal.rungTime?.phase || goal.gameProgress?.phase || null : null;
-  const tree = { climb: { description: `Climb to open sky for ${need}${phase ? ` (for the ${words(phase)})` : ''}: ${cost?.says || 'the column overhead is not all loaded, so the height is not known yet.'}` } };
+  // Its own figure carried as `quote`, read against what the climb takes
+  // (quote-record.js, note 768).
+  const tree = { climb: { description: `Climb to open sky for ${need}${phase ? ` (for the ${words(phase)})` : ''}: ${cost?.says || 'the column overhead is not all loaded, so the height is not known yet.'}`, ...(cost?.quote ? { quote: cost.quote } : {}) } };
   const client = task.opportunityClient;
   let next = null;
   const also = [];
@@ -2160,7 +2162,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
         }) || null;
     } catch (_) { oreFirst = null; }
     const spare = cost.state.pickaxeUsesLeft - cost.digs;
-    if (oreFirst && spare > 0) tree.mine_first = { description: `Dig the ${words(oreFirst.name)} ${Math.round(oreFirst.p.distanceTo(bot.entity.position))} blocks off first, then climb: the pickaxes have ${cost.state.pickaxeUsesLeft} uses and the climb's quicker way digs about ${cost.digs}, so ${spare} are spare for ore down here; asked again after it.${budgetOf() ? ` ${budget.says}` : ''}` };
+    if (oreFirst && spare > 0) tree.mine_first = { description: `Dig the ${words(oreFirst.name)} ${Math.round(oreFirst.p.distanceTo(bot.entity.position))} blocks off first, then climb: the pickaxes have ${cost.state.pickaxeUsesLeft} uses and the climb's way (${words(cost.way)}) digs about ${cost.digs}, so ${spare} are spare for ore down here; asked again after it.${budgetOf() ? ` ${budget.says}` : ''}` };
     else oreFirst = null;
   }
   // A portal site is a room dug out of the rock as well as ground up top:

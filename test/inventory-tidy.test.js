@@ -239,7 +239,7 @@ test('short of wood in a mine, the reserve is offered with what running out cost
     blockAt: p => ({ position: p, name: p.y === 63 ? 'grass_block' : p.y > 63 ? 'air' : 'stone', boundingBox: p.y > 63 ? 'empty' : 'block' }) };
   await upkeepStep(bot, { check() {} }, { kind: 'win', step: { action: 'mine', block: 'iron_ore' } }, () => {}, client);
   assert.match(offered.wood_reserve, /2 logs' worth .* 6 make the sticks for three pickaxes/);
-  assert.match(offered.wood_reserve, /about 44 blocks under the surface: choosing this now means that climb now \(roughly 2 minutes with a pickaxe\)/);
+  assert.match(offered.wood_reserve, /about 44 blocks under the surface: choosing this now means that climb now \(roughly 4 minutes with a pickaxe\)/);
   // On the surface the trees are looked for, not assumed (the decision audit).
   bot.entity.position = new Vec3(0.5, 64, 0.5);
   bot.findBlocks = () => [new Vec3(12, 64, 0)];

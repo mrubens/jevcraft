@@ -220,6 +220,7 @@ const atOf = bot => p => bot.blockAt(new Vec3(p.x, p.y, p.z));
 // past a step was seven blocks and on 25600 thirty-eight, both into the
 // lava sea (note 600).
 const LAVA_NAME = /^(flowing_)?lava$/;
+const FALLING_NAME = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$|_concrete_powder$/;
 function fallFrom(at, cell, { deepest = 64 } = {}) {
   for (let n = 0; n <= deepest; n++) {
     const c = { x: cell.x, y: cell.y - n, z: cell.z }, b = at(c);
@@ -269,6 +270,33 @@ function digExposes(at, pos, cell, { health = 20, height = 1.8 } = {}) {
     if (!held) {
       const fall = fallFrom(at, { x: cell.x, y: cell.y - 1, z: cell.z });
       if (fall.into === 'lava') return `the floor under the body at ${where} dug out, it falls ${fall.n + 1} block${fall.n ? 's' : ''} into lava`;
+    }
+  }
+  // Blocks that fall, let down into the body's own cells (note 768): a dig
+  // in the body's column at the feet or over them with sand, gravel or
+  // concrete powder over the cell brings them down through the body onto
+  // its floor, the feet cell then the head, and the body suffocates. 25590
+  // (mid-239-ai, 20:24:00Z on 2026-09-30) dug the sandstone over its head
+  // with five sand over it, told "5 blocks of sand above would fall into
+  // it, onto the bot's head", and took 8 health "in wall" in five seconds.
+  // A torch (or any torch) in the cell they land in breaks each one into an
+  // item: then the dig is how a column of them is climbed (fall-column.js).
+  const inColumn = cols.some(([x, z]) => x === cell.x && z === cell.z) && cell.y >= feetY;
+  if (inColumn) {
+    let n = 0;
+    while (n < 64 && FALLING_NAME.test(at({ x: cell.x, y: cell.y + n + 1, z: cell.z })?.name || '')) n++;
+    if (n) {
+      let landing = null, broken = false;
+      for (let y = cell.y - 1; y >= feetY - 64; y--) {
+        const b = at({ x: cell.x, y, z: cell.z });
+        if (!b) break;
+        if (/(^|_)torch$/.test(b.name || '')) { broken = true; break; }
+        if (b.boundingBox === 'block') { landing = y + 1; break; }
+      }
+      if (!broken && landing !== null && landing <= head && landing + n - 1 >= feetY) {
+        const what = String(at({ x: cell.x, y: cell.y + 1, z: cell.z }).name).replaceAll('_', ' ');
+        return `${n} block${n === 1 ? '' : 's'} of ${what} over ${where} would come down through the body onto its floor, into the ${landing + n - 1 >= feetY + 1 ? 'feet and head cells: buried, it suffocates' : 'feet cell'}, with no torch at the feet to break them`;
+      }
     }
   }
   // A floor of gravel or sand resting on lava, dropped by the dig beside it.

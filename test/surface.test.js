@@ -434,7 +434,8 @@ test('the climb to open sky is counted from the column, canopies ignored (the de
   blocks.set('(0, 70, 0)', 'oak_leaves');
   assert.equal(climbToSurface(bot, new Vec3(0.5, 64, 0.5)), 0, 'under a tree is on the surface');
   assert.equal(climbToSurface(bot, new Vec3(0.5, 30, 0.5)), 34);
-  assert.equal(climbMinutes(34), 2);
+  // At the bot's own measured pace, 4.9 seconds a block (notes 763, 768).
+  assert.equal(climbMinutes(34), 3);
   const { climbStraightMinutes } = require('../src/surface');
   assert.equal(climbStraightMinutes(34), 5, 'by hand straight up: a block dug and a step a block of height');
   assert.equal(climbStraightMinutes(34, { pickaxe: true }), 1);
@@ -481,7 +482,9 @@ test('the ways out say what they cost: by hand the stairs take three digs a bloc
   const target = new Vec3(0, 64, 24);
   const byHand = climbOptions(bot, target, straightUpColumn(bot));
   assert.deepEqual(Object.keys(byHand.options).sort(), ['staircase', 'straight_up']);
-  assert.match(byHand.options.staircase.description, /67 blocks dug \(stone\).*bare hands/, "the stairs reach the grass at y 64 before their last digs");
+  // Read on to where they come out (note 768): at y 62 the stair's own two
+  // cells are dug and the sky is over them.
+  assert.match(byHand.options.staircase.description, /come out under open sky at 0, 62, 22, 22 up .*66 blocks dug \(stone\).*22 stairs walked.*bare hands/, "the stairs come out under the grass at y 64 before their last digs");
   assert.match(byHand.options.straight_up.description, /24 blocks up, 22 blocks to dig.*64 building blocks carried.*no way back down/);
   assert(byHand.estimate.straight_up < byHand.estimate.staircase / 2, JSON.stringify(byHand.estimate));
   // A pickaxe with twenty uses left: the stairs would wear it out halfway.
