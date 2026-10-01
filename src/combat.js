@@ -258,7 +258,7 @@ async function defendNearby(bot, task, goal, save) {
   bot.pathfinder.setGoal(null); bot.clearControlStates(); lowerShield(bot);
   if (span) bot.setControlState('sneak', true);
   if (weapon) await bot.equip(weapon, 'hand');
-  else if (bot.heldItem) await bot.unequip('hand');
+  else if (bot.heldItem) await require('./skills').emptyHand(bot);
   task.check(); checkAir(bot);
   threat = strikeTarget(bot);
   if (!threat) return false;

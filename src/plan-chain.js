@@ -43,7 +43,7 @@ const plan = q => { try { return require('./intention').GATED.has(q); } catch (_
 
 // The sides an answer takes: going to a thing or leaving it.
 const SIDES = [
-  { topic: 'fortress', toward: /^(fortress_leg\/(back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|stay_in_fortress|wait_at_spawner)|fortress_visit\/go_in|fortress_approach\/(walk_route|cross_level|tunnel|blocks_then_\w+|pillar_up|dig_through|descend|cover_lava|scoop_lava|span_round))$/,
+  { topic: 'fortress', toward: /^(fortress_leg\/(blazes_\w+|back_to_fortress|go_to_blazes(_about)?|go_to_spawner(_\d+)?|unwalked_\d+|stay_in_fortress|wait_at_spawner)|fortress_visit\/go_in|fortress_approach\/(walk_route|cross_level|tunnel|blocks_then_\w+|pillar_up|dig_through|descend|cover_lava|scoop_lava|span_round))$/,
     away: /^(fortress_approach|fortress_leg|fortress_visit)\/(keep_searching|leave_fortress)$/, towardSays: 'go to this fortress', awaySays: 'leave this fortress' },
   { topic: 'pickaxe', toward: /^(fortress_leg|fortress_approach|nether_gather)\/(fetch_stems|make_pickaxe|portal_trip|wood_in_view)$/,
     away: /^nether_gather\/without$/, towardSays: 'get a pickaxe', awaySays: 'go on without a pickaxe' },

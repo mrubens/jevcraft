@@ -24,6 +24,8 @@ function observeAliveInventory(bot, now = Date.now()) {
 // three in ten minutes until a person said "resume", and on a run that packs
 // light and plans to die that only stood it still (the user, 2026-09-23:
 // "remove that check for all runs").
+// The stance and its book, kept on the survival state while it holds.
+const STANCE_KEYS = ['stance', 'stanceFailed', 'stanceIdle', 'stanceWhy', 'stanceScene', 'stanceScenesRecent', 'stanceTakeCoverNoRoute', 'standing', 'creeperStandoff', 'retreatScout', 'lethalLine', 'mealCutAt'];
 function recordDeath(bot, state, now = Date.now()) {
   // 26.1 can clear inventory before Mineflayer emits the health-based death
   // event. Preserve the last observed alive inventory, with its evidence time.
@@ -46,6 +48,12 @@ function recordDeath(bot, state, now = Date.now()) {
   if (state.home?.bed?.carriedAt) { delete state.home.bed.carriedAt; delete state.home.bed.claimedAt; }
   state.deaths = [...(state.deaths || []), { at: new Date(now).toISOString(), position: { ...bot.entity.position }, dimension: bot.game.dimension, about, worn,
     food: bot.food, ...(cause ? { cause } : {}), ...(lastChoice ? { lastChoice } : {}), ...(lava ? { lava } : {}) }].slice(-10);
+  // No stance or answer outlives the body it was chosen for (note 778b):
+  // 25598 (mid-241-bs, 04:58:25Z) respawned with the fight held from
+  // 04:57:38 still its stance and its scene's answers on the book, while
+  // Jev was down and nothing new could be asked.
+  for (const k of STANCE_KEYS) delete state[k];
+  if (bot) delete bot._stance;
   state.recovery = { status: 'pending', at: new Date(now).toISOString(), position: { ...bot.entity.position },
     dimension: bot.game.dimension, inventoryBeforeDeath: recent ? { ...observed.items } : stock(bot),
     inventoryObservedAt: new Date(recent ? observed.at : now).toISOString(), recovered: {}, attempts: 0 };
@@ -150,4 +158,4 @@ async function recoverItems(bot, task, recovery, save, navigate) {
   }
 }
 
-module.exports = { recordDeath, recoverItems, observeAliveInventory };
+module.exports = { recordDeath, recoverItems, observeAliveInventory, STANCE_KEYS };

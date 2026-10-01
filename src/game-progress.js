@@ -364,7 +364,10 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
   // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
   const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
-  const carried = [...bot.inventory.items(), ...equipped].map(i => i.name);
+  // The cursor and the crafting grid are carried too: a pickaxe there for a
+  // click is not a pickaxe gone (note 779).
+  const inHand = require('./pickaxe-roles').carriedItems(bot);
+  const carried = [...inHand, ...equipped].map(i => i.name);
   // A tool about to break does not count as a tool: the rung fires again
   // while the old one still works, so the spare is made above ground and
   // not after the shaft goes dark. Twenty percent of durability is enough
@@ -373,7 +376,7 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // three hundred uses, and at two hundred and two the dream run counted
   // both of its diamond pickaxes spent and made stone ones for an hour.
   const usable = item => { const max = bot.registry?.itemsByName?.[item.name]?.maxDurability; return !max || max - (item.durabilityUsed || 0) >= Math.min(max * 0.2, 64); };
-  const sound = [...bot.inventory.items(), ...equipped].filter(usable).map(i => i.name);
+  const sound = [...inHand, ...equipped].filter(usable).map(i => i.name);
   const best = kind => Math.max(0, ...sound.filter(n => n.endsWith(`_${kind}`)).map(tierOf));
   // A worn tool is still in the inventory, so the replacement is one more
   // than what is carried; asking for one would be satisfied by the worn one.

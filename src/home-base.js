@@ -1132,7 +1132,7 @@ async function lureCows(bot, task, goal, save, home, actions) {
     await equip(bot, 'wheat');
     await actions.navigate(bot, task, new goals.GoalBlock(pen.centre.x, pen.centre.y, pen.centre.z), { timeoutMs: 90000, stallMs: 10000 });
     await waitFor(task, () => penStatus(bot, home).cows >= Math.min(2, following() + penStatus(bot, home).cows), 30000);
-    if (bot.heldItem?.name === 'wheat') await bot.unequip('hand');
+    if (bot.heldItem?.name === 'wheat') await require('./skills').emptyHand(bot);
     await actions.navigate(bot, task, new goals.GoalBlock(pen.gateStand.x, pen.gateStand.y, pen.gateStand.z), { timeoutMs: 30000, stallMs: 8000 });
   } finally { await closeGate(bot, task, home); }
   const penned = penStatus(bot, home).cows;

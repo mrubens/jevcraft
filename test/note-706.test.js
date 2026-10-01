@@ -101,14 +101,16 @@ test('a creeper out of its line is asked again as it comes into its blast\'s rea
     // 9.4 to 7.0: nearer, but outside its blast's reach: held.
     let h = held(9.4); creeper.position = new Vec3(7.5, 64, 0.5);
     assert.equal(ask(h), null);
-    // Into the reach of six: asked.
+    // Into the reach of six and a block nearer: the stance keeps the
+    // distance by backing (note 778b), no new question.
     creeper.position = new Vec3(6.2, 64, 0.5);
-    assert.match(ask(h), /^the creeper is coming nearer: [\d.]+ blocks since its line was cut, from 9\.4 to 5\.7 blocks off the bot, into its blast's reach of 6$/);
-    // Cut again at 5.7: at 5.1 it is still in the same block's band: held; at 4.8 asked.
-    h = held(5.7); creeper.position = new Vec3(5.6, 64, 0.5);
     assert.equal(ask(h), null);
-    creeper.position = new Vec3(5.3, 64, 0.5);
-    assert.match(ask(h), /coming nearer: .* from 5\.7 to 4\.8 blocks off/);
+    // With no backing (a drop or lava behind), its closing is asked.
+    h.blockCreeper.cannotBack = true;
+    assert.match(ask(h), /^the creeper is coming nearer, from 9\.4 to 5\.7 blocks off, and there is no backing from it here \(a drop or lava behind\)$/);
+    // Within a step of where it lights: asked, backing or not.
+    h = held(5.7); creeper.position = new Vec3(3.6, 64, 0.5);
+    assert.match(ask(h), /^the creeper is 3\.1 blocks off, within a step of the 3 where it lights, backing did not keep it off; 5\.7 when its line was cut$/);
     // Milling within three, no nearer: held (was asked five times so).
     h = held(2.5); creeper.position = new Vec3(3.0, 64, 1.2);
     h.blockCreeper.creeperAt = new Vec3(2.9, 64, -0.3);

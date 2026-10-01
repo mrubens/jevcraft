@@ -29,7 +29,7 @@
 
 // The answers that start an action that takes time, by question.
 const TIMED = {
-  fortress_leg: /^(back_to_fortress|leg_\w+|floor_\w+|round_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
+  fortress_leg: /^(blazes_\w+|back_to_fortress|leg_\w+|floor_\w+|round_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
   fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|climb_to_\d+|wood_in_view|dig_in_reach|portal_trip)$/,
@@ -223,7 +223,7 @@ function whySays(bot, goal, kind, state) {
     if (kind === 'rods' && goal?.kind === 'win') { const n = require('./eye-need').need(bot, goal); return n.rodsLeft ? `${n.rodsLeft} more rod${n.rodsLeft === 1 ? '' : 's'} needed` : null; }
     if (kind === 'food' && Number.isFinite(bot?.food)) return `hunger ${bot.food}, health ${Math.round(bot.health ?? 0)}`;
     if (kind === 'health' && Number.isFinite(bot?.health)) return `health ${Math.round(bot.health)}`;
-    if (kind === 'pickaxe') return (bot?.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name)) ? null : 'no pickaxe carried';
+    if (kind === 'pickaxe') return require('./pickaxe-roles').carriedItems(bot).some(i => /_pickaxe$/.test(i.name)) ? null : 'no pickaxe carried';
     if (kind === 'blocks') { const n = require('./bridging').blocksCarried(bot); return Number.isFinite(n) ? `${n} blocks carried` : null; }
     if (kind === 'kit') { const bs = require('./block-stock'), n = require('./bridging').blocksCarried(bot); return `${bs.pickaxeCarried(bot) ? 'a pickaxe' : 'no pickaxe'}, ${n} blocks carried`; }
   } catch (_) { /* said without why */ }

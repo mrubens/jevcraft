@@ -81,7 +81,7 @@ async function hunt(bot, task, target, actions, goal, save) {
       .sort((a, b) => ['wooden', 'stone', 'iron', 'diamond', 'netherite'].findIndex(t => b.name.startsWith(t)) -
         ['wooden', 'stone', 'iron', 'diamond', 'netherite'].findIndex(t => a.name.startsWith(t)))[0];
     if (weapon) await bot.equip(weapon, 'hand');
-    else if (bot.heldItem) await bot.unequip('hand');
+    else if (bot.heldItem) await require('./skills').emptyHand(bot);
     const valid = () => bot.entities[target.id] === target && target.isValid !== false;
     let attacks = 0, missed = 0, nearest = Infinity;
     while (valid() && Date.now() < deadline) {

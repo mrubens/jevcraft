@@ -2269,6 +2269,43 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     options.go_to_blazes = { description: `Go to where blazes were seen ${blazeSpotSays(best, here)}: blazes come from a spawner, which keeps its room full, and the hunt takes each one as it comes into view.${reach} The walk there is on foot first, digging and laying nothing; where it finds no way, the way there is asked (fortress_approach: a span, a pillar, a drop or a staircase, each with what it meets).${routeSays}${ended ? ` The last try at it ended: ${ended.why}.` : ''}`,
       target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', key: spotKey, since: Date.now() }; save(); return 'goto'; } };
   }
+  // At a fortress in view with rods owed and blazes seen at it, the work is
+  // reaching those blazes, by every way the fortress approach prices (its
+  // walk, a level crossing, a dig down, a staircase, a pillar, the blocks for
+  // them dug first), each offered here as a way to them (note 750e). 25583
+  // (mid-230-ae, 04:32-04:42Z on 2026-10-01) stood at its fortress's bricks,
+  // blazes seen there 70 times, 0 of 7 rods, and this question offered legs
+  // to search for another and go_to_blazes on foot only ("no way across along
+  // the ground found"); it took leg_north, round_north and leg_east by turns.
+  let toBlazes = null;
+  const rodsOwed = (() => { try { return require('./blaze-stand').rodsNeeded(bot, goal); } catch (_) { return 0; } })();
+  if (fortress && rodsOwed > 0 && (fortress.bricks || []).length && actions.navigate) {
+    const bricks = fortress.bricks;
+    const atIt = sp => bricks.some(b => Math.hypot(b.x - sp.x, b.z - sp.z) <= BLAZES_AT && Math.abs(b.y - sp.y) <= BLAZES_AT);
+    const spot = blazeSpots(bot, goal).filter(s => !wayLeft(state, s.spot) && atIt(s.spot) && s.off > 4)[0];
+    if (spot) {
+      const s = spot.spot, target = new Vec3(s.x, s.y, s.z), key = `${s.x},${s.y},${s.z}`;
+      const record = state.blazeWay?.key === key ? state.blazeWay : (state.blazeWay = { key, failed: [] });
+      const ways = await fortressApproaches(bot, task, goal, save, actions, state, target, [], record);
+      const lead = `To the blazes seen ${blazeSpotSays(spot, here)}, at this fortress, with ${rodsOwed} blaze rod${rodsOwed === 1 ? '' : 's'} still needed: `;
+      toBlazes = { spot: key, facts: ways.facts, keys: [] };
+      for (const [k, o] of Object.entries(ways.options)) {
+        if (!/^(walk_route|cross_level|descend|tunnel|pillar_up|blocks_then_pillar|blocks_then_cross|head_toward)$/.test(k)) continue;
+        const name = `blazes_${k}`;
+        toBlazes.keys.push(name);
+        options[name] = { description: `${lead}${o.description.replace(/the fortress(?=[, ])/, 'the place')}`, target: { x: s.x, y: s.y, z: s.z },
+          run: async () => {
+            const from = target.distanceTo(bot.entity.position), startedAt = bot.entity.position.clone();
+            let why = null;
+            try { why = await o.run(); } catch (err) { task.check(); if (!retryable(err)) throw err; why = err.message; }
+            if (target.distanceTo(bot.entity.position) < from - STEP_GAIN) { record.failed = []; save(); return 'way'; }
+            record.failed = [...record.failed, { choice: k, why: why || 'came no nearer', at: Date.now(), from: { x: startedAt.x, y: startedAt.y, z: startedAt.z }, kit: { carried: blocksCarried(bot), tier: bot.inventory?.items ? pickaxeTier(bot) : 0 } }].slice(-8);
+            s.tries = (s.tries || 0) + 1; s.why = why || 'came no nearer'; save();
+            return 'way';
+          } };
+      }
+    }
+  }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
   { const most = surveys.filter(s => Number.isInteger(s?.runsOut)).sort((a, b) => (b.lay || 0) - (a.lay || 0))[0]; if (most) require('./block-stock').noteBlocksShort(goal, most.lay, most.carried, 'the longest leg short of blocks'); }
   // With no pickaxe carried and none to be made from what is carried, rock
@@ -2372,6 +2409,14 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   }
   // Every way from here rests or is gone: nothing to ask. The step says so
   // and the stall's own question takes it from there.
+  // With a way to the blazes on offer, a search for another fortress is not
+  // (note 750e): said, the legs left out. With none, they stay, as before.
+  let searchNotOffered = null;
+  if (toBlazes?.keys.length) {
+    const searches = Object.keys(options).filter(k => /^(leg_|round_|floor_)|^(widen_search|seek_fortress_height)$/.test(k));
+    for (const k of searches) delete options[k];
+    if (searches.length) searchNotOffered = `the search for another fortress (${searches.map(k => k.replaceAll('_', ' ')).join(', ')}) is not offered: this fortress, in view, is where blazes were seen and ${rodsOwed} rod${rodsOwed === 1 ? ' is' : 's are'} still needed, and ${toBlazes.keys.length === 1 ? 'a way' : `${toBlazes.keys.length} ways`} to those blazes ${toBlazes.keys.length === 1 ? 'is' : 'are'} offered`;
+  }
   const left = waysLeftSays(state, here);
   if (!Object.keys(options).length) throw new Error(`No leg from here can be walked, dug or bridged: ${[...blocked, ...resting].join('; ')}${left ? `; and the ways Jev left: ${left.join('; ')}` : ''}`);
   try { require('./healing').withNoHealSays(bot, goal, options); } catch (_) { /* no body */ }
@@ -2408,7 +2453,8 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
     // the played record's row (blaze-record.js rowSays) is added, since the
     // search is toward the fights that need it.
     ...((bot.health < 20 || (bot.food ?? 20) < 20) ? { fitness: `${fitnessSays(bot)}${bot.health < HUNT_FLOOR ? ` ${require('./blaze-record').rowSays(bot.health, bot.food ?? 20)}.` : ''}` } : {}),
-    ...(fortress ? { fortressInView: fortress.facts } : {}), ...(knownFortress ? { fortressKnown: knownFortress.says } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
+    ...(fortress ? { fortressInView: fortress.facts } : {}), ...(knownFortress ? { fortressKnown: knownFortress.says } : {}),
+    ...(toBlazes ? { toTheBlazes: Object.fromEntries(Object.entries(toBlazes.facts).filter(([k]) => /^(walkRoute|staircase|pillar|crossLevel|descend|byHand|triedFromHere|failed|whatAHitCosts)$/.test(k))) } : {}), ...(searchNotOffered ? { searchNotOffered } : {}), ...(climbFact ? { climb: climbFact } : {}), ...rodsFact(bot, goal) };
   // The old order's facts (the most ground unseen, the open air each
   // heading's blocks reach): context, read by the tests' stand-in only (note 707).
   const open = Object.fromEntries(HEADINGS.map((h, i) => [`leg_${HEADING_NAMES[i]}`, surveys[i] ? surveys[i].reach : null]));
@@ -2707,6 +2753,10 @@ const STEP_GAIN = 0.75;
 // From here, as a failed way's own spot: the cell the bot stands in and the
 // ones beside it (note 750).
 const TRIED_HERE = 2;
+// Where blazes were seen counts as at a fortress within this of its bricks
+// (across and up or down): a blaze keeps to its fortress's bounds and its
+// spawner's room, and is heard through walls from about this far (note 750e).
+const BLAZES_AT = 32;
 const retryable = err => !['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
 const flatTo = (a, b) => Math.hypot(a.x + 0.5 - b.x, a.z + 0.5 - b.z);
 

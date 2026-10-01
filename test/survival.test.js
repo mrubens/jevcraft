@@ -5655,12 +5655,14 @@ test('a held block in a creeper\'s line is asked again the moment the creeper co
   assert(require('../src/creeper-sight').sightLine(bot, creeper).stoppedBy, 'still out of its sight');
   await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
   assert.equal(asked.length, 1, 'held while it walks round no nearer');
-  // It comes nearer, the line still stopped: asked again at once.
+  // It comes within a step of where it lights, the line still stopped:
+  // asked again at once (note 778b: nearer than that, the stance keeps its
+  // distance by backing and is not asked).
   creeper.position = new Vec3(3.95, 64, 0.9);
   assert(require('../src/creeper-sight').sightLine(bot, creeper).stoppedBy, 'still out of its sight');
   await survival.stanceStep(new Task('t'), {}, () => {}, danger(), false);
-  assert.equal(asked.length, 2, 'asked again as it comes nearer');
-  assert.match(asked[1].state.previousStance.askedAgainFor, /the creeper is coming nearer: [\d.]+ blocks since its line was cut, from 4\.5 to 3\.5 blocks off the bot/);
+  assert.equal(asked.length, 2, 'asked again as it comes within a step of where it lights');
+  assert.match(asked[1].state.previousStance.askedAgainFor, /^the creeper is 3\.5 blocks off, within a step of the 3 where it lights, backing did not keep it off; 4\.5 when its line was cut$/);
   // Round the block to a line: asked, and nothing placed without the answer.
   survival.state.stance = { ...survival.state.stance, askAgain: undefined, blockCreeper: { id: 9, creeperAt: creeper.position.clone(), distance: 4.7, at: Date.now() }, choice: 'block_creeper', at: Date.now(), ids: [9], health: 20 };
   creeper.position = new Vec3(0.5, 64, 3.6);

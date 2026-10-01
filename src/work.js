@@ -795,6 +795,12 @@ async function makePickaxe(bot, task, goal, save, item) {
 // this, the option only ever said what was carried right then, never how
 // often that had already happened).
 const PICKAXE_CRAFT_MEMORY_MS = 40 * 60000;
+// What became of the last spare, and the one kept whole (note 779).
+function spareHistory(bot, goal) {
+  let says = '';
+  try { says = require('./pickaxe-roles').spareSays(bot, goal); } catch (_) { says = ''; }
+  return says ? ` ${says}` : '';
+}
 function pickaxeCraftHistorySays(goal) {
   const list = (goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS);
   if (!list.length) return '';
@@ -1075,10 +1081,10 @@ async function upkeepOffers(bot, task, goal, save) {
   const wear = require('./pickaxe-budget');
   if (worn.length && goal.kind === 'win') wear.wearOf(bot, goal);
   const netherSpare = inNetherNow(bot) && goal.kind === 'win' && bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0) === 1 && reserveWeather(bot) && !spareDue(bot, budget) ? require('./mob-hunt').bestMakeable(bot) : null;
-  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), ${netherSpare.smelted ? 'about half a minute with the smelting' : 'a few seconds'} at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}`; },
+  if (netherSpare && !netherSpare.none) options.spare_pickaxe = { get description() { return `Make ${netherSpare.name} now as a spare, from what is carried (${netherSpare.from}), ${netherSpare.smelted ? 'about half a minute with the smelting' : 'a few seconds'} at a crafting table: ${wear.wearSays(bot, goal)}. In the Nether rock is dug and blocks come back only with a pickaxe: when the last one breaks, every leg, staircase and crossing through rock is dug by hand, dropping nothing, and no block comes back to span or pillar with.${pickaxeCraftHistorySays(goal)}${spareHistory(bot, goal)}`; },
     run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`);
       goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: netherSpare.item || 'pickaxe' }].slice(-10); save(); } };
-  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand: ${require('./hand-dig').handPaceSays(bot)}.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}${craftRoomSays(bot)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
+  else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand: ${require('./hand-dig').handPaceSays(bot)}.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}${spareHistory(bot, goal)}${craftRoomSays(bot)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
@@ -2639,6 +2645,9 @@ async function craft(bot, task, step, goal) {
     }
   }
   noteCraftMade(bot, step.item);
+  // A pickaxe made beside another sound one is the spare, kept whole
+  // (note 779).
+  if (/_pickaxe$/.test(step.item)) { try { require('./pickaxe-roles').noteMade(bot, goal, step.item, goal?.gameProgress?.phase || null); } catch (_) { /* the craft is made either way */ } }
   // Its own table comes back into the pack when it is the only one: trials
   // 47 and 51 left theirs where they were used, wore out the last pickaxe
   // underground, and with forty-four iron ingots could make nothing, with
@@ -2700,6 +2709,10 @@ async function settleCraftInventory(bot, task) {
     const item = bot.inventory.slots?.[slot];
     if (!item) continue;
     if (!roomFor(bot, item.name)) { try { await makeRoom(bot, task, item.name); } catch (err) { task.check(); } }
+    // Put away with no room, the library throws it on the ground
+    // (putSelectedItemRange's tossLeftover): left in the grid it is still
+    // carried, and read so (pickaxe-roles.js carriedItems, note 779).
+    if (!roomFor(bot, item.name)) { console.log(`[craft] ${item.count} ${item.name} left in the crafting grid: no room in the pockets`); continue; }
     await bot.putAway(slot);
   }
   if (bot._syncWindow) await bot._syncWindow(bot.inventory);

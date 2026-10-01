@@ -8,9 +8,11 @@ const { checkAir, needsAir, NeedsAir, digWithAirGuard } = require('./vitals');
 /** Best pickaxe tier carried: 0 bare hands, 1 wooden, 2 stone, 3 iron, ... */
 // Durability left on the best pickaxe carried, for the question a careful
 // player asks before going down: will this tool get me back out?
+// The pockets read whole (note 779): the cursor and the crafting grid too.
+const carried = bot => require('./pickaxe-roles').carriedItems(bot);
 function pickaxeDurability(bot) {
   let best = 0;
-  for (const item of bot.inventory.items()) {
+  for (const item of carried(bot)) {
     if (!/_pickaxe$/.test(item.name)) continue;
     const maximum = bot.registry?.itemsByName?.[item.name]?.maxDurability;
     best = Math.max(best, maximum ? maximum - (item.durabilityUsed || 0) : Infinity);
@@ -20,7 +22,7 @@ function pickaxeDurability(bot) {
 
 function pickaxeTier(bot) {
   let best = 0;
-  for (const item of bot.inventory.items()) {
+  for (const item of carried(bot)) {
     const m = /^(\w+)_pickaxe$/.exec(item.name);
     const maximum = bot.registry?.itemsByName?.[item.name]?.maxDurability;
     if (m && (!maximum || maximum - (item.durabilityUsed || 0) >= 8)) best = Math.max(best, TOOL_TIERS.indexOf(m[1]) + 1);
@@ -881,6 +883,14 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen, 
 // decides, with the lower tier winning ties.
 const TOOL_TIER = item => { const m = /^(\w+?)_(pickaxe|axe|shovel|hoe|sword)$/.exec(item?.name || ''); return m ? TOOL_TIERS.indexOf(m[1]) + 1 : 0; };
 function cheapestTool(bot, block) {
+  // The spare pickaxe is kept whole (note 779): the others dig first, and
+  // the spare only a block none of them digs better than a hand, or once it
+  // is the only sound one (pickaxe-roles.js spareOf, which then ends it).
+  let spare = null;
+  try { spare = require('./pickaxe-roles').spareOf(bot, bot._goal); } catch (_) { spare = null; }
+  return pickTool(bot, block, spare) || (spare ? pickTool(bot, block, null) : null);
+}
+function pickTool(bot, block, without) {
   let best = null;
   const handTime = block.digTime(null, false, false, false, [], {});
   let bestTime = handTime;
@@ -888,6 +898,7 @@ function cheapestTool(bot, block) {
   const needsTool = !!block.harvestTools;
   const harvests = item => !needsTool || (typeof block.canHarvest === 'function' ? block.canHarvest(item.type) : !!block.harvestTools[item.type]);
   for (const item of bot.inventory.items()) {
+    if (without && item === without) continue;
     const time = block.digTime(item.type, false, false, false, [], {});
     if (time >= handTime || !harvests(item)) continue;
     // Of two of a tier, the more worn is used up first, and the spare stays
@@ -901,6 +912,31 @@ function cheapestTool(bot, block) {
   }
   return best;
 }
+// The hand emptied without throwing anything (note 779). Mineflayer's
+// unequip('hand') with no empty slot anywhere throws the held stack on the
+// ground (simple_inventory.js equipEmpty: tossStack(heldItem)); with the
+// pockets full, every soft block dug and every fist fight threw the pickaxe
+// in hand. Of 2,348 pickaxes gone from the pockets in the flight records
+// from 2026-09-30 12:00Z, 873 came back within two minutes (a median 20 s,
+// picked up again) and 1,079 left full pockets; 429 of the 572 brief ones
+// with frames to tell had a new loose item land beside the bot, and 286
+// pickaxe rungs and spares were asked in those gaps. An empty hotbar slot
+// is selected, else the held item goes to an empty slot, else a hotbar
+// slot holding something that wears nothing is selected, else the item
+// stays in hand.
+async function emptyHand(bot) {
+  const held = bot.heldItem;
+  if (!held) return 'empty';
+  const inv = bot.inventory, start = bot.QUICK_BAR_START ?? inv?.hotbarStart ?? 36;
+  const slots = inv?.slots || [];
+  const select = i => { if (typeof bot.setQuickBarSlot === 'function') { bot.setQuickBarSlot(i); return true; } return false; };
+  for (let i = 0; i < 9; i++) if (!slots[start + i] && select(i)) return 'empty slot';
+  const free = typeof inv?.firstEmptyInventorySlot === 'function' ? inv.firstEmptyInventorySlot() : (inv?.emptySlotCount?.() > 0 ? true : null);
+  if (free !== null && free !== undefined && typeof bot.unequip === 'function') { await bot.unequip('hand'); return 'put away'; }
+  const wearsNothing = item => item && !bot.registry?.itemsByName?.[item.name]?.maxDurability;
+  for (let i = 0; i < 9; i++) if (wearsNothing(slots[start + i]) && select(i)) return 'other slot';
+  return 'kept';
+}
 async function equipBestTool(bot, block) {
   const best = cheapestTool(bot, block);
   if (best && (!bot.heldItem || bot.heldItem.type !== best.type || bot.heldItem.slot !== best.slot)) {
@@ -910,8 +946,8 @@ async function equipBestTool(bot, block) {
   // Nothing digs this faster than a fist: a sword or tool still in hand from
   // the last fight is put away rather than worn down for nothing.
   const held = bot.heldItem;
-  if (!best && held && bot.registry?.itemsByName?.[held.name]?.maxDurability && typeof bot.unequip === 'function') {
-    try { await bot.unequip('hand'); } catch (_) { /* dug with it, then */ }
+  if (!best && held && bot.registry?.itemsByName?.[held.name]?.maxDurability) {
+    try { await emptyHand(bot); } catch (_) { /* dug with it, then */ }
   }
 }
 
@@ -980,7 +1016,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, RepeatStall, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, RepeatStall, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

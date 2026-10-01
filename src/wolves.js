@@ -116,7 +116,7 @@ async function tameWolf(bot, task, goal, save, { navigate }) {
 async function commandWolves(bot, task, goal, save, sit) {
   const wolves = myWolves(bot, 16).filter(w => sitting(bot, w) !== sit);
   if (!wolves.length) return false;
-  if (bot.heldItem) { try { await bot.unequip('hand'); } catch (_) { /* toggling with an item works too */ } }
+  if (bot.heldItem) { try { await require('./skills').emptyHand(bot); } catch (_) { /* toggling with an item works too */ } }
   for (const wolf of wolves) {
     task.check();
     await bot.lookAt(wolf.position.offset(0, 0.5, 0), true);

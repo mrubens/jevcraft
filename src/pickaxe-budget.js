@@ -10,6 +10,8 @@
 // broke at y 20 on the way up (note 538). mid-220-h's iron pickaxe, at 12
 // uses 66 blocks down, was counted worn and climbed on unasked (note 531).
 const { Vec3 } = require('vec3');
+// The pockets read whole, the cursor and the crafting grid too (note 779).
+const carriedItems = bot => require('./pickaxe-roles').carriedItems(bot);
 
 const words = s => String(s || '').replaceAll('_', ' ');
 const LOG = /_log$|_stem$/;
@@ -110,7 +112,7 @@ function nearestWood(bot, goal) {
 
 function pickaxeBudget(bot, goal = {}, { look = true } = {}) {
   if (!bot?.inventory?.items || !bot.entity?.position) return null;
-  const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => ({ name: i.name, uses: usesOf(bot, i) }));
+  const picks = carriedItems(bot).filter(i => /_pickaxe$/.test(i.name)).map(i => ({ name: i.name, uses: usesOf(bot, i) }));
   const usesLeft = picks.reduce((n, p) => n + (Number.isFinite(p.uses) ? p.uses : 0), 0);
   const feet = bot.entity.position.floored();
   const overworld = /overworld/.test(String(bot.game?.dimension || 'overworld'));
@@ -151,7 +153,7 @@ function pickaxeBudget(bot, goal = {}, { look = true } = {}) {
 // spent at, and how long the rest lasts at it.
 const WEAR_SAMPLE_MS = 30000, WEAR_KEEP_MS = 15 * 60000, WEAR_MIN_MS = 2 * 60000;
 function wearOf(bot, goal, now = Date.now()) {
-  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  const picks = carriedItems(bot).filter(i => /_pickaxe$/.test(i.name));
   if (!picks.length) return null;
   const uses = picks.reduce((n, i) => { const u = usesOf(bot, i); return n + (Number.isFinite(u) ? u : 0); }, 0);
   const w = goal ? (goal.pickaxeWear ||= { samples: [] }) : { samples: [] };
@@ -175,7 +177,7 @@ function wearSays(bot, goal, now = Date.now()) {
   const mins = n => `${n} minute${n === 1 ? '' : 's'}`;
   const rate = w.rate ? `; ${w.spent} used in the last ${mins(Math.max(1, Math.round(w.minutes)))}, at which rate ${w.count === 1 ? 'it lasts' : 'they last'} about ${mins(Math.max(1, Math.round(w.lastsMinutes)))} more` : '';
   const more = spare && !spare.none ? `the pockets make another (${spare.name.replace(/^an? /, '')} from ${spare.from})` : 'no other can be made from the pockets';
-  const picks = (bot.inventory.items() || []).filter(i => /_pickaxe$/.test(i.name)).map(i => { const u = usesOf(bot, i); return `${words(i.name)}${Number.isFinite(u) ? `, ${u} uses left` : ''}`; });
+  const picks = carriedItems(bot).filter(i => /_pickaxe$/.test(i.name)).map(i => { const u = usesOf(bot, i); return `${words(i.name)}${Number.isFinite(u) ? `, ${u} uses left` : ''}`; });
   // What the fortress search's legs cost, its own record where it has one,
   // else the fleet's (note 751).
   const legs = (goal?.fortressSearch?.legWear || []).filter(Number.isFinite);
@@ -186,7 +188,7 @@ function wearSays(bot, goal, now = Date.now()) {
 // blocks it digs against the uses left. '' otherwise.
 function lastPickaxeSays(bot, digs) {
   if (!(digs > 0)) return '';
-  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  const picks = carriedItems(bot).filter(i => /_pickaxe$/.test(i.name));
   if (picks.reduce((n, i) => n + i.count, 0) !== 1) return '';
   let spare = null;
   try { spare = require('./mob-hunt').bestMakeable(bot); } catch (_) { spare = null; }
@@ -206,7 +208,7 @@ function lastPickaxeSays(bot, digs) {
 // them with raw iron, a furnace and fuel carried.
 const LEG_WEAR_RECORD = { perLeg: 26, perMinute: 13, legs: 1263, since: '2026-09-29 23Z' };
 const USES = { wooden_pickaxe: 59, golden_pickaxe: 32, stone_pickaxe: 131, copper_pickaxe: 190, iron_pickaxe: 250, diamond_pickaxe: 1561, netherite_pickaxe: 2031 };
-const usesCarried = bot => (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => { const u = usesOf(bot, i); return n + (Number.isFinite(u) ? u : 0); }, 0);
+const usesCarried = bot => carriedItems(bot).filter(i => /_pickaxe$/.test(i.name)).reduce((n, i) => { const u = usesOf(bot, i); return n + (Number.isFinite(u) ? u : 0); }, 0);
 // Kept on the search's state at each leg asked: what the last one spent (the
 // uses carried when it began against now; a pickaxe made meanwhile makes it
 // unknown and it is not kept), the last eight.
@@ -220,7 +222,7 @@ function noteLegWear(bot, state) {
   return now;
 }
 function legBudgetSays(bot, state = {}) {
-  const picks = (bot?.inventory?.items?.() || []).filter(i => /_pickaxe$/.test(i.name));
+  const picks = carriedItems(bot).filter(i => /_pickaxe$/.test(i.name));
   const uses = usesCarried(bot);
   const own = (state.legWear || []).filter(Number.isFinite);
   const mean = own.length ? Math.round(own.reduce((a, b) => a + b, 0) / own.length) : null;

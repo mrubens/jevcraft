@@ -79,6 +79,10 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,
         remaining: bot.registry.itemsByName[i.name].maxDurability - (i.durabilityUsed || 0) })),
+      // Outside items() for a moment: the cursor and the crafting grid, so a
+      // pickaxe there is not read as gone (note 779).
+      ...(() => { const inv = bot.inventory, cursor = inv?.selectedItem?.name, grid = [1, 2, 3, 4].map(i => inv?.slots?.[i]?.name).filter(Boolean);
+        return { ...(cursor ? { cursor } : {}), ...(grid.length ? { grid } : {}), ...(bot.currentWindow && bot.currentWindow !== inv ? { window: String(bot.currentWindow.type || 'window').replace(/^minecraft:/, '') } : {}) }; })(),
       // Worn, which items() leaves out: the armour and the off-hand.
       equipment: Object.fromEntries([[5, 'head'], [6, 'torso'], [7, 'legs'], [8, 'feet'], [45, 'offhand']]
         .map(([slot, name]) => [name, bot.inventory?.slots?.[slot]?.name || null])),

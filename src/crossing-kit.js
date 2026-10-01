@@ -59,7 +59,8 @@ const netherBlocks = bot => ['cobblestone', 'cobbled_deepslate', 'netherrack', '
 // 654, 655).
 const SPARE_PICKAXE_DURABILITY = 24, PICKAXES_TAKEN = 2;
 const PICK_TIER = { stone: 2, iron: 3, diamond: 4, netherite: 5 };
-const soundPickaxes = bot => bot.inventory.items().filter(i => {
+// The pockets read whole, the cursor and the grid too (note 779).
+const soundPickaxes = bot => require('./pickaxe-roles').carriedItems(bot).filter(i => {
   const m = /^(\w+)_pickaxe$/.exec(i.name), max = bot.registry?.itemsByName?.[i.name]?.maxDurability;
   return m && PICK_TIER[m[1]] && (!max || max - (i.durabilityUsed || 0) >= SPARE_PICKAXE_DURABILITY);
 });
@@ -108,7 +109,7 @@ function kitItems(bot) {
   const blocks = netherBlocks(bot);
   items.push({ key: 'blocks', rung: 'nether_blocks', short: blocks < NETHER_BLOCKS, carried: blocks, wants: NETHER_BLOCKS,
     says: `Blocks: ${blocks} carried for bridging and pillaring (cobblestone, netherrack, dirt and the like); the code would take ${NETHER_BLOCKS}, two stacks. A portal can open on a ledge or an island over the lava sea, a bridge takes a block a step, and netherrack there is mined for more with any pickaxe.` });
-  const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
+  const picks = require('./pickaxe-roles').carriedItems(bot).filter(i => /_pickaxe$/.test(i.name));
   const uses = pickaxeDurability(bot);
   const best = Number.isFinite(uses) ? uses : null;
   const sound = soundPickaxes(bot).length;
@@ -297,6 +298,12 @@ function kitRungs(bot, goal = {}) {
 // The pickaxe as a budget for the stay (note 751): the uses carried against
 // what the fortress search's legs cost in the record, and the iron carried
 // for more (raw iron smelts in a furnace carried in the Nether as well).
+// The spare kept whole, and what became of the last one (note 779).
+function spareSaid(bot, goal) {
+  let says = '';
+  try { says = require('./pickaxe-roles').spareSays(bot, goal); } catch (_) { says = ''; }
+  return says ? ` ${says}` : '';
+}
 function kitBudgetSays(bot) {
   const b = require('./pickaxe-budget'), r = b.LEG_WEAR_RECORD, uses = b.usesCarried(bot);
   const iron = countOf(bot, 'iron_ingot') + b.smeltableIron(bot).ingots;
@@ -320,7 +327,7 @@ function chestRungSays(rung) {
 // The steps a pickaxe or the blocks take come beside it (strategy.js
 // rungTakes); the food's ways are priced here, the nearest first.
 function kitRungSays(bot, goal, rung) {
-  if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? (countOf(bot, 'iron_ingot') >= 3 ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : `Iron: 3 of the ${require('./pickaxe-budget').smeltableIron(bot).says}, about 250 uses.`) : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}${kitBudgetSays(bot)}`;
+  if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? (countOf(bot, 'iron_ingot') >= 3 ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : `Iron: 3 of the ${require('./pickaxe-budget').smeltableIron(bot).says}, about 250 uses.`) : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}${kitBudgetSays(bot)}${spareSaid(bot, goal)}`;
   if (rung.kit === 'blocks') return ` ${rung.carried} blocks carried of the ${rung.wants} the crossing takes (cobblestone, netherrack, dirt and the like): a portal can open on a ledge or an island over lava, a bridge takes a block a step, and spans stopped where the blocks ran out (notes 650, 655). Stone mined wears the pickaxe a use a block.`;
   if (rung.kit === 'chest') return chestRungSays(rung);
   if (rung.kit !== 'food') return '';
