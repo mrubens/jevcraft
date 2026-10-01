@@ -976,8 +976,16 @@ function watchOnce(bot, { live = mode() === 'live', now = Date.now(), look = pro
     // Nor a blaze at the cage's held box or slit, but one inside it or a
     // hit through it (cage-hold.js shelterKeepsOff, note 774).
     const sheltered = t => { try { return require('./cage-hold').shelterKeepsOff(bot, t, now); } catch (_) { return false; } };
+    // Nor a calm enderman (not provoked: it attacks only once looked at or
+    // hit), nor beyond three blocks one of the kind the hunt is out for:
+    // in a warped forest the next enderman wandering within six ended every
+    // enderman fight the hunt began (25597, 2026-10-01 12:17:24Z "a enderman
+    // came within 5 blocks"; note 802).
+    const D = require('./danger');
+    const calm = t => t.entity.name === 'enderman' && !D.provokedEnderman(bot, t.entity);
+    const huntKin = t => t.distance > 3 && D.claimed(bot, t.entity);
     const fresh = mobs.find(t => t.entity && t.distance <= STANCE_NEWCOMER && (t.visible || (t.distance <= 4 && !shooter(t.entity))) && !holder.ids.includes(t.entity.id) &&
-      !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3) && !sheltered(t));
+      !(commit && commit.kinds.includes(t.entity.name) && t.distance > 3) && !sheltered(t) && !calm(t) && !huntKin(t));
     if (fresh) p = { by: 'newcomer', layer: null, action: null, id: fresh.entity.id, facts: { mob: fresh.entity.name, distance: Math.round(fresh.distance * 10) / 10, seen: !!fresh.visible },
       why: `a ${fresh.entity.name} came within ${Math.round(fresh.distance)} blocks` };
   }

@@ -641,11 +641,11 @@ test('while Jev is down the question is not cut: its own hold is the wait, and n
 test('a newcomer picked up is known to the holder: the same mob coming closer does not preempt again', () => {
   const { bot } = stoppable();
   bot._arbiter = { holder: { layer: 'work', action: 'find_fortress', since: 0, ids: [] } };
-  const p = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 4, 4414)] }), log: () => {} });
+  const p = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 4, 4414)] }), log: () => {} });
   assert.equal(p.by, 'newcomer');
   arbiter.rule(bot, [claim('work'), claim('survival', 'pressing')], { state: bot._arbiter, mobs: [] });
   assert.equal(bot._preempt, undefined);
-  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 2, 4414)] }), log: () => {} }), null);
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 2, 4414)] }), log: () => {} }), null);
 });
 
 // Note 540: mid-243-q-nether-3 was knocked into lava with a newcomer's
@@ -654,17 +654,17 @@ test('while a preemption waits, the body\'s physics is still watched and takes i
   const { bot, stopped } = stoppable();
   bot._arbiter = { holder: { layer: 'work', action: 'find_fortress', since: 0, ids: [] } };
   const lines = [];
-  const waiting = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 4, 4414)] }), log: line => lines.push(line) });
+  const waiting = arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 4, 4414)] }), log: line => lines.push(line) });
   assert.equal(waiting.by, 'newcomer');
   stopped.length = 0;
   // Another newcomer, and a creeper within its fuse's reach: the one waiting
   // stands, nothing is stopped again (note 539's loop stays shut).
-  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('enderman', 2, 4414), mob('zombie', 3, 9)] }), log: line => lines.push(line) }), waiting);
+  assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ mobs: [mob('zombie', 2, 4414), mob('zombie', 3, 9)] }), log: line => lines.push(line) }), waiting);
   assert.equal(arbiter.watchOnce(bot, { live: true, look: creeperNear(), log: line => lines.push(line) }), waiting);
   assert.deepEqual(stopped, []);
   // Knocked into lava: the lava takes the newcomer's place and the holder
   // is stopped again; the newcomer's id is kept for the ruling.
-  const lava = arbiter.watchOnce(bot, { live: true, look: look({ lava: true, mobs: [mob('enderman', 2, 4414)] }), log: line => lines.push(line) });
+  const lava = arbiter.watchOnce(bot, { live: true, look: look({ lava: true, mobs: [mob('zombie', 2, 4414)] }), log: line => lines.push(line) });
   assert.equal(lava.by, 'lava'); assert.equal(lava.waited, 'newcomer'); assert.equal(lava.id, 4414); assert.equal(lava.over, 'work find_fortress');
   assert.equal(bot._preempt, lava);
   assert.deepEqual(stopped.sort(), ['dig', 'keys', 'walk']);
@@ -672,7 +672,7 @@ test('while a preemption waits, the body\'s physics is still watched and takes i
   assert.throws(() => checkStall(bot), err => err.name === 'NeedsSafety' && err.preempted.by === 'lava');
   // Fire ranks below the lava: the lava stands.
   assert.equal(arbiter.watchOnce(bot, { live: true, look: look({ lava: true, fire: true }), log: () => {} }), lava);
-  // The arbiter picks up the lava, gives it the turn, and knows the enderman.
+  // The arbiter picks up the lava, gives it the turn, and knows the zombie.
   const out = arbiter.rule(bot, [reflex('lava'), claim('work'), claim('survival', 'pressing')], { state: bot._arbiter, mobs: [] });
   assert.equal(out.winner.reflex, 'lava'); assert.equal(bot._preempt, undefined);
   assert(bot._arbiter.holder.ids.includes(4414));

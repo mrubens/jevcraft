@@ -1203,13 +1203,19 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // A mob seen far off is closed on, not watched: a blaze at twenty-nine
     // blocks was stood in front of for sixteen persistence rounds while the
     // observed-hunt check, which looks within twenty-four, never saw it.
-    if (distance > 10 && actions.navigate) {
+    // A calm enderman never comes to the bot as a blaze does: watched from
+    // within ten it was watched until set aside, "Watching endermans and
+    // getting nowhere", 25595 and 25597 for fifteen minutes each in their
+    // warped forests (2026-10-01 12:03-12:19Z, note 802). It is walked up to,
+    // within a sword's reach, and the hunt strikes it there.
+    const comesNot = near.name === 'enderman' && !require('./danger').provokedEnderman(bot, near);
+    if ((distance > 10 || (comesNot && distance > 3)) && actions.navigate) {
       const from = bot.entity.position.clone();
       // The mob being closed on is the encounter for the walk: without
       // that, the threat check saw the blaze at sixteen blocks and the bot
       // fled the thing it was hunting.
       const restore = encounter(bot, task, near, Date.now() + 20000);
-      try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, 8), { timeoutMs: 20000, stallMs: 5000 }); }
+      try { await actions.navigate(bot, task, new goals.GoalNear(near.position.x, near.position.y, near.position.z, comesNot ? 2 : 8), { timeoutMs: 20000, stallMs: 5000 }); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       finally { restore(); }
       // No way to it (a blaze on a wall across the lava): set it aside and
