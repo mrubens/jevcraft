@@ -5394,9 +5394,19 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
     const at = v.kind === 'deep' && atFrame ? v.fromFrame : v.at;
     if (v.how === 'dig') { const c = wayCosts(site, at, site); return { first: c.there, trip: c.trip, digs: c.digs }; }
     const t = fetchTrip(site, { at, distance: d3(site, at) }, isHeld(v) && method?.kind === 'cast' && !method.near ? method : null);
-    return { first: 0, trip: t.seconds, digs: 0, measured: t.made ? t : null };
+    return { first: surfaceSecs(v), trip: t.seconds, digs: 0, measured: t.made ? t : null };
   };
-  const reachLava = v => v.how === 'dig' ? { seconds: wayCosts(here, v.at, null).there, digs: wayCosts(here, v.at, null).digs } : { seconds: walkTo(here, v.at), digs: 0 };
+  // A known pool far off from under the rock is walked to by the surface
+  // (note 815): the climb to open sky, the walk across, and down to it. It
+  // was priced as a level walk; 25588 (mid-220-ak, 2026-10-01 14:46Z) held
+  // beside_pool_2, "116 blocks off, walked to", from 83 blocks under, and
+  // its walk was the climb: about 13 minutes and 234 of the 361 pickaxe
+  // uses carried.
+  const depth = L.depthHere(bot);
+  const bySurface = v => v.kind === 'pool' && v.how === 'walk' && depth >= L.UNDER && Math.hypot(v.at.x - here.x, v.at.z - here.z) > SURFACE_WALK_FAR
+    ? { up: depth, down: Math.max(0, Math.round(here.y + depth - v.at.y)) } : null;
+  const surfaceSecs = v => { const b = bySurface(v); return b ? L.upSeconds(b.up) + L.downSeconds(b.down) : 0; };
+  const reachLava = v => v.how === 'dig' ? { seconds: wayCosts(here, v.at, null).there, digs: wayCosts(here, v.at, null).digs } : { seconds: walkTo(here, v.at) + surfaceSecs(v), digs: 0 };
   const routes = {};
   const add = (key, site, v, price, extra = {}) => { routes[key] = { key, site, lava: v, price, ...extra }; };
   for (const v of lavas) {
@@ -5408,21 +5418,23 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
     // "until the rest ends" again and again, none good at 0.41 and 0.51.
     const rest = v.kind === 'pool' ? T.restingWay(goal, T.lavaWay(v.at)) : null;
     const wait = rest ? Math.max(0, (rest.until - Date.now()) / 1000) : 0;
+    const sf = bySurface(v);
+    const surfaceExtra = sf ? { surfaceSays: ` From ${depth} blocks under rock the walk to it goes by the surface: ${sf.up} blocks up to open sky, across, and ${sf.down} down to it, counted in the price.` } : {};
     const waitExtra = rest ? { waitSays: ` First its way's rest is waited out: ${rest.what} is set aside (${rest.why}) for ${rest.minutes} more minute${rest.minutes === 1 ? '' : 's'}, counted in the price.` } : {};
     // Here: the frame begun, or a frame near where the bot stands.
     const s = fromSite(v, frameAt, !!frame);
     const toFrame = frame && here.distanceTo(frameAt) > 16 ? walkTo(here, frameAt) : 0;
-    add(`here_${v.key}`, 'here', v, PP.priceCast({ reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra });
+    add(`here_${v.key}`, 'here', v, PP.priceCast({ reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra, ...surfaceExtra });
     // Beside the lava: a frame cast within a few blocks of it.
     if (d3(frameAt, v.at) > 16 || (v.kind === 'deep' && frameAt.y - LAVA_DEPTH > 16) || method?.key === `beside_${v.key}`) {
       const r = reachLava(v);
-      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra });
+      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra, ...surfaceExtra });
     }
     // A new site near here, the frame begun left: where it fails at its
     // site or cannot be got back to.
     if (frame && (method?.siteFailed || method?.frameFailed)) {
       const n = fromSite(v, here.floored());
-      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra });
+      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra, ...surfaceExtra });
     }
   }
   // Two pools a site, the shortest routes, beside the plan's own lava, the
@@ -5558,7 +5570,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // failed after the ones that go on (note 767f).
   const failing = r => r.lava.kind === 'pool' ? !!require('./obsidian').lavaRecord(goal, r.lava.l, here) || PP.failuresFor(goal, { lava: r.lava.at }).length > 0 : PP.failuresFor(goal, { lava: r.lava.kind === 'deep' ? { deep: true } : r.lava.at }).length > 0;
   const ordered = Object.values(routes).sort((a, b) => (failing(a) - failing(b)) || ((a.price.seconds ?? Infinity) - (b.price.seconds ?? Infinity)));
-  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says) + (r.waitSays || ''), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
+  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says) + (r.waitSays || '') + (r.surfaceSays || ''), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
   // A frame of its own from obsidian: the diamond route, as the steps it is
   // (note 470), with the trip to the nearest lava where the obsidian is made.
   const trip = fetchTrip(frameAt, frame ? nearestLava(bot, goal, sources, frameAt) || lava : lava, null);
@@ -6065,6 +6077,9 @@ function portalInteriorBlockers(bot, cells) {
 }
 
 const SITE_REACH = 12;
+// A pool this far off across, from under the rock, is walked to by the
+// surface (note 815).
+const SURFACE_WALK_FAR = 32;
 // An answer kept at the frame's failure (note 767) holds three minutes, or
 // until it fails the same way three times over with nothing changed (797).
 const SITE_HOLD_MS = 3 * 60000, SAME_SITE_FAILURES = 3;
