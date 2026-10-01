@@ -422,6 +422,22 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     }
   }
   else return null;
+  // The Overworld's endermen, the pearls' route Jev chose (pearl-routes.js),
+  // while the ladder's steps before the Nether are open: on offer beside
+  // them, said with when it was chosen (note 831). 25593 (2026-10-01
+  // 16:34:26Z) came out of the Nether for them and was asked the bow, the
+  // diamond sword and the Nether first, nothing of the hunt it came for, and
+  // went straight back in; five crossings in twelve minutes.
+  const route = require('./game-progress').pearlRouteHeld(goal);
+  const pearls = bot.inventory.items().filter(i => i.name === 'ender_pearl').reduce((n, i) => n + i.count, 0);
+  if (route?.pick === 'overworld' && dimension(bot) === 'overworld' && rungs.length && rungs[0].phase === stage.phase && pearls < 12 && !options.pearls_first) {
+    const open = rungs.map(r => r.phase), ago = Math.max(1, Math.round((Date.now() - route.at) / 60000)), left = Math.max(1, Math.round((route.until - Date.now()) / 60000));
+    options.pearls_first = {
+      description: `Hunt the Overworld's endermen for the ender pearls first, the route chosen for the pearls ${ago} minute${ago === 1 ? '' : 's'} ago (held ${left} more): ${pearls} pearls carried. ${open.map(label).join(', ')} wait${open.length === 1 ? 's' : ''} for it, set aside half an hour; the Nether's rods come after.`,
+      says: `I'll hunt endermen for pearls first`, chat: `I'll hunt endermen for the pearls first, as I came out for.`, side: true, aside: true,
+      run: async () => { for (const p of open) setAside(goal, 'rung', p, "Jev chose the Overworld's endermen for the pearls first", 1800000); delete goal.rungOptIn; },
+    };
+  }
   // The rungs optional before the Nether (note 776, game-progress.js
   // optionalRungs): no benefit in the record, so the ladder does not hand
   // them; each is on offer here with its minutes, its record and its level,

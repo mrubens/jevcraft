@@ -217,7 +217,8 @@ function optionalRungs(bot, goal = {}, now = Date.now()) {
   return out;
 }
 const kitResting = resting => Object.keys(resting).filter(k => require('./crossing-kit').KIT_PHASES.has(k));
-const GOING_WITHOUT = /Nether first|fight with what is carried/;
+// The Overworld's endermen chosen first (note 831) is going without them too.
+const GOING_WITHOUT = /Nether first|fight with what is carried|for the pearls first/;
 const goingWithout = resting => new Set(Object.keys(resting).filter(k => GOING_WITHOUT.test(resting[k].why || '')));
 // The rungs Jev set aside to go without, in ladder order, each with when it
 // comes back on its own: what the ladder would hand back were they lifted.
@@ -945,6 +946,11 @@ function nextGameStage(bot, goal, skip = new Set()) {
     if (order) return order;
   }
   if (rodsShort && where !== 'nether' && !overworldPearls) return { phase: 'reach_nether', action: 'enter_nether' };
+  // Out for the Overworld's endermen (the route held): the hunt here, not the
+  // rods' stage, whose acquire walked straight back to the portal (note 831:
+  // 25593, 2026-10-01 16:30 to 16:47Z, crossed five times in twelve minutes,
+  // out for the pearls and in again for the rods).
+  if (overworldPearls && where === 'overworld') return { phase: 'obtain_ender_pearls', action: 'pearl_patrol', item: 'ender_pearl', count: target - eyes, via: 'overworld_hunt' };
   if (rodsShort) {
     const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: keptRods - (kept?.blaze_rod || 0) }, skip);
     // The pearls beside the rods (pearl-order.js, note 788): with a way to
