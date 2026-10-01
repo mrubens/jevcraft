@@ -43,6 +43,9 @@ const FAR_SIGHT = { ghast: { blocks: 40, landed: 9, of: 149, nearLanded: 9, near
 // Its lighting distance and a second's walk (combat-estimate LIGHTS_AT 3,
 // APPROACH 3 blocks a second).
 const CREEPER_NEAR = 6;
+// Where a creeper lights (combat-estimate.js LIGHTS_AT): an unseen one kept
+// past it stands off (note 833).
+const CREEPER_LIGHTS = 3;
 
 const name = n => String(n || '').replaceAll('_', ' ');
 const minutes = ms => Math.max(1, Math.round(ms / 60000));
@@ -104,9 +107,16 @@ function stoodOff(bot, t, { now = Date.now(), ms = STANDOFF_MS, shoots = false }
   // (mid-241-bd, 13:17:46 to 13:21:27Z) had one parked 7.3 blocks off for
   // three and a half minutes, asked about eleven times (note 752b).
   const creeper = kind === 'creeper';
-  if (creeper && (t.approach >= 1 || t.distance <= CREEPER_NEAR)) return null;
-  if ((bot?._hurtBy?.[kind] || 0) > now - ms || (bot?._hurtById?.[id] || 0) > now - ms) return null;
   const m = bot?._heldOff?.[id];
+  // Nearer, one out of sight at every look of the window and never within
+  // its lighting reach stands off too (note 833): its fuse burns only while
+  // it sees the bot (creeper-sight.js), and the moment it does, or comes
+  // within reach, it is the threat again. 25584 (mid-229-aw, 18:10:47 to
+  // 18:15:32Z) stood still at full health 4.7 minutes with one 3 to 5
+  // blocks off out of sight, encounter_stance asked 41 times.
+  const unseen = creeper && !t.visible && !!m && now - m.since >= ms && m.samples.filter(x => now - x.t <= ms + SAMPLE_MS).every(x => !x.v);
+  if (creeper && (t.approach >= 1 || (t.distance <= CREEPER_NEAR && !(unseen && t.distance > CREEPER_LIGHTS)))) return null;
+  if ((bot?._hurtBy?.[kind] || 0) > now - ms || (bot?._hurtById?.[id] || 0) > now - ms) return null;
   if (!m || now - m.since < ms) return null;
   const win = m.samples.filter(s => now - s.t <= ms + SAMPLE_MS);
   if (win.length < 2 || now - win[0].t < ms - SAMPLE_MS) return null;
@@ -115,7 +125,7 @@ function stoodOff(bot, t, { now = Date.now(), ms = STANDOFF_MS, shoots = false }
   const nearest = Math.min(t.distance, ...win.map(s => s.d)), farthest = Math.max(t.distance, ...win.map(s => s.d));
   // A shooter's reach is its line, not arm's length (a skeleton does not
   // strike): judged by its shots below.
-  if (nearest <= (creeper ? CREEPER_NEAR : shoots ? 0 : ARM) || nearest < win[0].d - NEARER) return null;
+  if (nearest <= (creeper ? (unseen ? CREEPER_LIGHTS : CREEPER_NEAR) : shoots ? 0 : ARM) || nearest < win[0].d - NEARER) return null;
   // A shooter in sight stands off only where its shots land so seldom that
   // a line is not a hit: kept past FAR_SIGHT for its kind the whole while,
   // no hit from its kind. A ghast 44 to 60 blocks off in sight re-asked
