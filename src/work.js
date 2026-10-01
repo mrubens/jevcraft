@@ -7663,7 +7663,14 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // that health does not come back below hunger eighteen.
   const foodItem = items.find(i => i.key === 'food');
   const hungerNow = bot.food ?? 20;
-  const hungerWeigh = foodItem ? ` Hunger ${hungerNow} now${hungerNow < 18 ? ', already below eighteen: health does not come back' : ''}; ${foodItem.carried} of ${foodItem.wants} food points carried for the stay, spent there at about ${NETHER_HUNGER_AN_HOUR} an hour.` : '';
+  // Under the Nether's own reserve the first question there is food (note
+  // 808): 25597 (mid-236-aj, 2026-10-01 12:56Z) crossed with 0 of 80, the
+  // food rung set aside by its nether_first, and turned back for food at
+  // once, hunger 14 and health 20, its way to the portal then refused
+  // beside lava.
+  const FR = require('./food-reserve');
+  const underNether = foodItem && foodItem.carried < FR.FLOOR.nether ? ` Under the Nether's reserve of ${FR.FLOOR.nether} food points, the first question there is food: back through this portal for it, or food found there (a hoglin, a bastion's chests). ${FR.says(foodItem.carried, 'nether')}` : '';
+  const hungerWeigh = foodItem ? ` Hunger ${hungerNow} now${hungerNow < 18 ? ', already below eighteen: health does not come back' : ''}; ${foodItem.carried} of ${foodItem.wants} food points carried for the stay, spent there at about ${NETHER_HUNGER_AN_HOUR} an hour.${underNether}` : '';
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };

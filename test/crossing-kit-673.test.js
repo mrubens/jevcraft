@@ -138,6 +138,10 @@ test('cross_now weighs the hunger crossed at against the food carried, not just 
   const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
   assert.equal(await crossingKitReady(bot, new Task('win'), { kind: 'win' }, () => {}, client), true);
   assert.match(asked.cross_now, /Hunger 9 now, already below eighteen: health does not come back; \d+ of 80 food points carried for the stay, spent there at about 40 an hour\./);
+  // Under the Nether's reserve: the food question there said (note 808).
+  const carried = Number(asked.cross_now.match(/(\d+) of 80 food points carried/)[1]);
+  if (carried < 36) assert.match(asked.cross_now, /Under the Nether's reserve of 36 food points, the first question there is food: back through this portal for it, or food found there \(a hoglin, a bastion's chests\)\. In the record/);
+  else assert.doesNotMatch(asked.cross_now, /Under the Nether's reserve/);
 });
 
 test('the food rung taken: going without sets it aside as a choice, which the crossing offers back', async () => {
