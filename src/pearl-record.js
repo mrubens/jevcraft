@@ -39,6 +39,24 @@ const ARENA = {
   forestBefore: { runs: 5, deaths: 4, pearls: 1 },
 };
 
+// The hunt's own fight with one enderman and nothing else about, by kit
+// (scripts/arena.js enderman_single, the hunt's answer given and the
+// encounter's stance fixed to fight, Jev's credits being out; note 713's
+// eight runs and note 790's): the runs, the kills, the damage of a kill
+// the hunt's fight carried to the end, and the fights that went under the
+// hunt's floor of twelve health, where the fight is the encounter's stance's
+// and no longer the hunt's guarded one. Before note 790 a kit short of a
+// piece never struck at all (the fight's readiness asked the full kit):
+// 7 runs, 7 hunts chosen, no blow.
+const ENDERMAN_FIGHTS = [
+  { kit: 'the iron set with golden boots, a diamond sword and a shield', runs: 28, kills: 29, damage: 4.1, pastFloor: 2, deaths: 0 },
+  { kit: 'an iron helmet and chestplate, an iron sword and a shield (the trials\' kit)', runs: 13, kills: 11, damage: 5.7, pastFloor: 6, deaths: 3 },
+];
+function endermanSays() {
+  const rows = ENDERMAN_FIGHTS.map(r => `with ${r.kit}, ${plural(r.runs, 'run')}, ${plural(r.kills, 'kill')}, a median ${r.damage} damage for a kill the hunt's own fight carried through, ${r.pastFloor} of the fights going under twelve health and on as the encounter's stance${r.pastFloor ? ` (${r.deaths ? `${plural(r.deaths, 'death')} among them` : 'no death'})` : ''}`);
+  return `The arena's record of the hunt's fight with one enderman, nothing else about: ${rows.join('; ')}. Under twelve health the hunt's own fight ends and what to do with the enderman then at the bot is the encounter's question. The hunt keeps its eyes off the enderman's head (looked in the eye, it turns and comes, and one stared at within four blocks teleports off) and strikes it first, the shield raised between swings; once turned, a two-high gap or a block over the head keeps its blows off while the sword reaches its legs (the encounter's cap_fight). In the trials ${TRIALS.endermenNether} endermen came within sixteen blocks in the Nether and ${TRIALS.endermenOverworld} in the Overworld and none was ever struck.`;
+}
+
 // The barter, measured on this server (note 87): 160 ingots thrown to eight
 // penned piglins bought 18 pearls; the barter drill, 40 ingots, 2 to 4.
 const BARTER = { ingots: 160, pearls: 18, perPearl: 9, drillIngots: 40, drillPearls: '2 to 4', admireSeconds: 8, perRound: 3 };
@@ -85,4 +103,4 @@ function routeSays(route, goal) {
   return runSays(goal, route);
 }
 
-module.exports = { TRIALS, ARENA, BARTER, routeSays, runSays, settle, ledger, LIVE };
+module.exports = { TRIALS, ARENA, BARTER, ENDERMAN_FIGHTS, endermanSays, routeSays, runSays, settle, ledger, LIVE };

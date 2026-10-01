@@ -938,6 +938,12 @@ function nextGameStage(bot, goal, skip = new Set()) {
   const overworldPearls = pearlsShort && pearlRouteHeld(goal)?.pick === 'overworld';
   if (overworldPearls && where === 'nether' && !rodsShort && collect) return collect;
   if (overworldPearls && where === 'nether') return { phase: 'obtain_ender_pearls', action: 'return_overworld', item: 'ender_pearl', count: target - eyes, via: 'overworld_hunt' };
+  // On the way to the Nether, an enderman in reach is a way to the pearls
+  // the rods' trip passes (pearl-order.js, note 790): asked as in the Nether.
+  if (rodsShort && where === 'overworld' && !overworldPearls && pearlsShort) {
+    const order = require('./pearl-order').orderStage(bot, goal, { count: target - eyes, phase: 'reach_nether' });
+    if (order) return order;
+  }
   if (rodsShort && where !== 'nether' && !overworldPearls) return { phase: 'reach_nether', action: 'enter_nether' };
   if (rodsShort) {
     const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: keptRods - (kept?.blaze_rod || 0) }, skip);

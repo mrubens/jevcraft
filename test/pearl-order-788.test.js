@@ -46,11 +46,11 @@ test('the rods the step and short, the pearls short: with no way to the pearls r
   assert.equal(stage.because, 'not asked before');
 });
 
-test('not in the Overworld, and not while the rods rest (the ladder\'s pearl routes take it then, as before)', () => {
+test('not in the End, and not while the rods rest (the ladder\'s pearl routes take it then, as before); the Overworld\'s enderman is note 790\'s', () => {
   const { bot, goal } = nether({ entities: { 9: enderman(9, 12) } });
   setAside(goal, 'rung', 'obtain_blaze_rods', 'the fortress search rests', 1800000);
   assert.notEqual(nextGameStage(bot, goal).action, 'pearl_order');
-  assert.equal(order.orderStage({ ...bot, game: { dimension: 'overworld' } }, goal), null);
+  assert.equal(order.orderStage({ ...bot, game: { dimension: 'the_end' } }, goal), null);
 });
 
 test('every way is said with its record and what it shares with the rods\' trip; the enderman chosen is the step while one is in view, then the rods, and the answer stands until a new kind of way is real', async () => {

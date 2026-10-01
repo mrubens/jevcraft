@@ -26,6 +26,11 @@
 // ready); when it is no longer real the ladder goes on with the rods. It is
 // asked again only when a named fact changes: a kind of way real now that
 // was not offered at the answer, a death since, or the half hour run out.
+//
+// In the Overworld, on the way to the Nether for the rods, the same
+// question with the one way real there, an enderman within 24 (note 790).
+// The enderman's fight is priced as the hunt fights it: struck first while
+// it is calm, the shield raised between swings (combat-estimate.js).
 const { isSetAside } = require('./progress');
 const record = require('./pearl-record');
 
@@ -36,6 +41,8 @@ const PICKS = new Set(['rods_first', ...Object.keys(KIND)]);
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const count = (bot, name) => (bot.inventory?.items?.() || []).filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = bot => /nether/.test(String(bot?.game?.dimension || ''));
+const inOverworld = bot => /overworld/.test(String(bot?.game?.dimension || ''));
+const dimensionOf = bot => inNether(bot) ? 'nether' : inOverworld(bot) ? 'overworld' : 'other';
 const tripKey = l => `${l.kind}:${l.x},${l.z}`;
 
 function endermen(bot, reach) {
@@ -46,11 +53,16 @@ function endermen(bot, reach) {
 }
 
 // The ways to the pearls real from here, by kind.
+// In the Overworld, on the way to the Nether for the rods, the enderman in
+// reach is the one way (note 790): 136 endermen came within sixteen blocks
+// there in the trials, 87 minutes of them on reach_nether, and none was
+// put to Jev.
 function routes(bot, goal, now = Date.now()) {
   const out = {};
-  if (!bot?.entity?.position || !inNether(bot)) return out;
+  if (!bot?.entity?.position || !(inNether(bot) || inOverworld(bot))) return out;
   const ender = endermen(bot, ENDERMAN_REACH);
   if (ender.length) out.enderman = { nearest: ender[0], count: ender.length };
+  if (!inNether(bot)) return out;
   if (!isSetAside(goal, 'rung', 'warped_pearls', now)) {
     let known = [];
     try { known = require('./exploration').knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).filter(k => !isSetAside(goal, 'landmark_trip', tripKey(k.landmark), now)); } catch (_) { known = []; }
@@ -83,8 +95,8 @@ function askAgainBecause(bot, goal, kinds, now = Date.now()) {
 // The stage the ladder gives, the rods being the step and short and the
 // pearls short in the Nether: the pearl way held while it is real, the
 // question when it is due, or null (the rods).
-function orderStage(bot, goal, { count: want = 1, now = Date.now() } = {}) {
-  if (!inNether(bot) || goal?.kind !== 'win') return null;
+function orderStage(bot, goal, { count: want = 1, now = Date.now(), phase = 'obtain_blaze_rods' } = {}) {
+  if (!(inNether(bot) || inOverworld(bot)) || goal?.kind !== 'win') return null;
   const r = routes(bot, goal, now), kinds = Object.keys(r);
   const h = held(goal, now);
   if (h && KIND[h.pick] && !h.ended) {
@@ -96,7 +108,7 @@ function orderStage(bot, goal, { count: want = 1, now = Date.now() } = {}) {
   }
   if (!kinds.length) return null;
   const because = askAgainBecause(bot, goal, kinds, now);
-  return because ? { phase: 'obtain_blaze_rods', action: 'pearl_order', item: 'blaze_rod', because } : null;
+  return because ? { phase, action: 'pearl_order', item: 'blaze_rod', because } : null;
 }
 const endedWhy = pick => ({ hunt_enderman: 'no enderman left within 48 blocks', warped_forest: 'the forest\'s walk or its hunt rests', barter_gold: 'no gold to throw or no piglin within 32' })[pick];
 
@@ -133,15 +145,20 @@ function fightSays(bot, n) {
     const { defenseWeapon } = require('./combat');
     const armour = [5, 6, 7, 8].map(s => bot.inventory?.slots?.[s]?.name).filter(Boolean);
     const weapon = defenseWeapon(bot)?.name || null, health = bot.health ?? 20;
-    const e = fightEstimate({ threats: [{ name: 'enderman', distance: 4, visible: true }], armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+    // As the hunt fights it: calm until its first blow, the shield raised
+    // between swings (combat-estimate.js `calm`, `guarded`; note 790).
+    const shield = bot.inventory?.slots?.[45]?.name === 'shield';
+    const e = fightEstimate({ threats: [{ name: 'enderman', distance: 4, visible: true, calm: true }], armour, weapon, health, shield, guarded: true });
     const h = e.fightHere, r = x => Math.round(x * 10) / 10;
-    return `One enderman fought with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}, by the game's numbers: about ${r(h.seconds)} seconds and ${r(h.damageTaken)} damage, ${h.damageTaken >= h.healthNow ? 'more than the health there is' : `leaving about ${r(h.healthAfter)} of ${r(h.healthNow)} health`}${n > 1 ? `; ${n} are within ${ENDERMAN_REACH} blocks (the arena's forest drills are the record of fighting among several)` : ''}.`;
+    return `One enderman fought with ${weapon ? `the ${weapon.replaceAll('_', ' ')}` : 'bare hands'}${shield ? ' and the shield raised between swings' : ', no shield'}, struck first while it is calm, by the game's numbers and the arena's rate: about ${r(h.seconds)} seconds and ${r(h.damageTaken)} damage, ${h.damageTaken >= h.healthNow ? 'more than the health there is' : `leaving about ${r(h.healthAfter)} of ${r(h.healthNow)} health`}; about half drop a pearl${n > 1 ? `; ${n} are within ${ENDERMAN_REACH} blocks (the arena's forest drills are the record of fighting among several)` : ''}.`;
   } catch (_) { return 'no fight figure (the estimate could not be worked out).'; }
 }
 
 function tree(bot, goal, r, now = Date.now()) {
   const o = overlap(bot, goal, r), out = {};
-  out.rods_first = { ladderNext: true, description: `Go on with the rods, the ladder's order: ${o.fortress}; rods ${o.rods}. The pearls come after the rods (or while they rest): a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}` };
+  out.rods_first = { ladderNext: true, description: inNether(bot)
+    ? `Go on with the rods, the ladder's order: ${o.fortress}; rods ${o.rods}. The pearls come after the rods (or while they rest): a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}`
+    : `Go on to the Nether for the rods, the ladder's order: rods ${o.rods}. The pearls come after the rods (or while they rest): a warped forest's endermen, a barter, or the Overworld's night hunt. ${record.routeSays('rods_first', goal)}` };
   if (r.enderman) {
     const e = r.enderman.nearest.e, p = e.position;
     out.hunt_enderman = { target: { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) },
@@ -168,7 +185,7 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   const { tree: options, overlap: shared } = tree(bot, goal, r, now);
   const prev = goal.pearlOrder;
   if (prev) record.settle(goal, prev, { pearls: count(bot, 'ender_pearl'), deaths: deathsSince(goal, prev.at, now), now });
-  const state = { dimension: 'nether', askedBecause: because || 'not asked before', ...shared, health: Math.round((bot.health ?? 20) * 10) / 10, hunger: bot.food ?? 20,
+  const state = { dimension: dimensionOf(bot), askedBecause: because || 'not asked before', ...shared, health: Math.round((bot.health ?? 20) * 10) / 10, hunger: bot.food ?? 20,
     holds: 'the answer holds half an hour; a pearl way is the step while it stays real from here, the rods again after; asked again when a way not on offer now becomes real, after a death, or when the half hour is out' };
   const decision = await require('./decisions').decide('pearl_order', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree: options, state,
     target: options.warped_forest?.target || options.hunt_enderman?.target || null });

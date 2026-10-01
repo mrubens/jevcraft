@@ -21,7 +21,11 @@ const fuelCarried = bot => bot.inventory.items().reduce((n, i) => n + (i.name ==
 // Gold in the Nether is pearls: nine ingots a pearl bartered with piglins
 // (see bartering.js), so nether gold ore within reach is taken while the
 // pearls are short, like coal while the fuel is.
-const PEARLS_WANTED = 16;
+// The pearls wanted are eye-need.js's (thirteen, the frames and the spare
+// the stronghold search throws with, less the eyes made and the pearls
+// left in a chest), the one number every other question says: this said
+// sixteen (note 790).
+const pearlsWanted = (bot, goal) => { try { return require('./eye-need').need(bot, goal).pearlsWanted; } catch (_) { return require('./eye-need').EYES_WANTED; } };
 const GOLD_BLOCKS = /^(nether_gold_ore|gilded_blackstone|gold_block|gold_ore|deepslate_gold_ore)$/;
 const piglinsWithin = (bot, p, r) => Object.values(bot.entities || {}).some(e => /^piglin/.test(e.name || '') && e.isValid !== false && e.position && e.position.distanceTo(p) <= r);
 // And diamonds, always, and iron while short: the bot walked a shaft past a
@@ -34,15 +38,15 @@ const ironShort = bot => countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot') <
 // 2026-09-24).
 const LAPIS_WANTED = 16;
 const lapisShort = bot => countOf(bot, 'lapis_lazuli') < LAPIS_WANTED;
-const shortage = (bot, candidate) => {
+const shortage = (bot, candidate, goal = null) => {
   if (candidate.resource === 'coal' && fuelCarried(bot) < FUEL_UNITS_WANTED) return `short of fuel: ${fuelCarried(bot)} smelts carried, ${FUEL_UNITS_WANTED} wanted, and without it the next smelt burns the planks a pickaxe needs`;
-  if (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED) return `short of pearls: ${countOf(bot, 'ender_pearl')} of ${PEARLS_WANTED}; a block of nether gold ore gives 2 to 6 nuggets (about 4, about 0.44 of an ingot), and nine gold ingots barter a pearl from piglins, so about 1/20 of a pearl a block`;
+  if (candidate.resource === 'gold_nugget' && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < pearlsWanted(bot, goal)) return `short of pearls: ${countOf(bot, 'ender_pearl')} of ${pearlsWanted(bot, goal)}; a block of nether gold ore gives 2 to 6 nuggets (about 4, about 0.44 of an ingot), and nine gold ingots barter a pearl from piglins, so about 1/20 of a pearl a block`;
   if (candidate.resource === 'diamond' && countOf(bot, 'diamond') < 64) return 'diamonds: the best tools and armour, and rare';
   if (candidate.resource === 'raw_iron' && ironShort(bot)) return `short of iron: ${countOf(bot, 'raw_iron') + countOf(bot, 'iron_ingot')} of ${IRON_WANTED}; every tool, armour piece, shield and bucket`;
   if (candidate.resource === 'lapis_lazuli' && lapisShort(bot)) return `short of lapis: ${countOf(bot, 'lapis_lazuli')} of ${LAPIS_WANTED}; enchanting costs it`;
   return null;
 };
-const neededByRule = (bot, candidate) => !!shortage(bot, candidate);
+const neededByRule = (bot, candidate, goal = null) => !!shortage(bot, candidate, goal);
 // The health and food at which a detour is taken without asking.
 const VITALS = Object.freeze({ health: 16, food: 14 });
 const vitalsFit = bot => !(bot.health < VITALS.health) && !(bot.food < VITALS.food);
@@ -125,7 +129,7 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
   if (goal.kind === 'find') return false;
   const state = goal.opportunistic ||= { primarySteps: 0, history: [], skipped: {} };
   const all = opportunityCandidates(bot, goal, primary, { radius }).filter(c => !only || only(c));
-  const needed = all.filter(c => neededByRule(bot, c));
+  const needed = all.filter(c => neededByRule(bot, c, goal));
   // Asked every third step, and at once when a short ore is in reach.
   const asking = !!client && (++state.primarySteps % LIMITS.primarySteps === 0 || needed.length > 0);
   const candidates = asking ? all : needed;
@@ -138,10 +142,10 @@ async function opportunisticMining(bot, task, goal, save, primary, { navigate, d
   try {
     const choices = await routed(bot, task, movement, candidates, allowed, LIMITS.routeSteps);
     if (!choices.length) return false;
-    const firstShort = choices.findIndex(c => neededByRule(bot, c));
+    const firstShort = choices.findIndex(c => neededByRule(bot, c, goal));
     const response = !asking ? { answers: { opportunity: { choice: `ore_${Math.max(0, firstShort)}`, rule: 'no Jev: a short ore is taken' } } } : await require('./decisions').ask(client, { state: { request: goal.request, primary, health: bot.health, food: bot.food, inventory: Object.fromEntries(bot.inventory.items().map(i => [i.name, i.count])),
       limits: LIMITS, candidates: choices.map(({ standing, ...c }) => ({ ...c, distance: c.position.distanceTo(start) })) },
-    questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.${shortage(bot, c) ? ` ${shortage(bot, c)[0].toUpperCase()}${shortage(bot, c).slice(1)}.` : ''}`])) }] },
+    questions: { opportunity: ['opportunistic_ore', { options: Object.fromEntries(choices.map((c, i) => [`ore_${i}`, `${c.block}: yields ${c.resource}; already carrying ${c.carried}; ${c.routeSteps} walking steps away.${shortage(bot, c, goal) ? ` ${shortage(bot, c, goal)[0].toUpperCase()}${shortage(bot, c, goal).slice(1)}.` : ''}`])) }] },
     timeoutMs: 5000, hold: { bot, goal, task } });
     task.check();
     // Held through an outage (note 707): asked fresh at its next turn.
@@ -188,13 +192,13 @@ const GOLD_WORTH = Object.freeze({
 });
 const RULE_GOLD = ['nether_gold_ore', 'gold_block'];
 const NUGGETS_A_PEARL = 81;
-const shortOfPearls = bot => !!bot.inventory?.items && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < PEARLS_WANTED;
+const shortOfPearls = (bot, goal = null) => !!bot.inventory?.items && /nether/.test(String(bot.game?.dimension || '')) && countOf(bot, 'ender_pearl') < pearlsWanted(bot, goal);
 // Diamonds, iron and lapis the same way, on any walk in any dimension,
 // within four blocks and by the rule only.
 const DIAMOND_ORES = ['diamond_ore', 'deepslate_diamond_ore'];
-const passingKinds = bot => [...(shortOfPearls(bot) ? Object.keys(GOLD_WORTH) : []), ...(countOf(bot, 'diamond') < 64 ? DIAMOND_ORES : []),
+const passingKinds = (bot, goal = null) => [...(shortOfPearls(bot, goal) ? Object.keys(GOLD_WORTH) : []), ...(countOf(bot, 'diamond') < 64 ? DIAMOND_ORES : []),
   ...(ironShort(bot) ? ['iron_ore', 'deepslate_iron_ore'] : []), ...(lapisShort(bot) ? ['lapis_ore', 'deepslate_lapis_ore'] : [])];
-const passingWanted = (bot, c) => GOLD_WORTH[c.block] ? shortOfPearls(bot) : ['diamond', 'raw_iron', 'lapis_lazuli'].includes(c.resource) && neededByRule(bot, c);
+const passingWanted = (bot, c, goal = null) => GOLD_WORTH[c.block] ? shortOfPearls(bot, goal) : ['diamond', 'raw_iron', 'lapis_lazuli'].includes(c.resource) && neededByRule(bot, c, goal);
 const FACES = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 const lavaBeside = (bot, p) => FACES.some(([x, y, z]) => /lava/.test(bot.blockAt(p.offset(x, y, z))?.name || ''));
 const goldCarried = bot => countOf(bot, 'gold_ingot') + countOf(bot, 'gold_nugget') / 9 + countOf(bot, 'gold_block') * 9;
@@ -208,11 +212,11 @@ const canAsk = (bot, now = Date.now()) => now - (bot._passingAskedAt || 0) >= PA
 // hostile check, a tool, room, no piglin within 16 of gold; and now no lava
 // against the block and no standing on the block being broken.
 function passingCandidates(bot, goal) {
-  const kinds = passingKinds(bot);
+  const kinds = passingKinds(bot, goal);
   if (!kinds.length) return [];
   const here = bot.entity.position;
   return opportunityCandidates(bot, goal || {}, { drops: null }, { radius: PASSING_REACH, names: kinds, vitals: false }).flatMap(c => {
-    if (!passingWanted(bot, c) || lavaBeside(bot, c.position)) return [];
+    if (!passingWanted(bot, c, goal) || lavaBeside(bot, c.position)) return [];
     const standing = c.standing.filter(s => !s.offset(0, -1, 0).equals(c.position));
     if (!standing.length) return [];
     const distance = here.distanceTo(c.position.offset(0.5, 0.5, 0.5)), gold = !!GOLD_WORTH[c.block];
@@ -226,7 +230,7 @@ function passingCandidates(bot, goal) {
 // when there is a Jev to ask and it was not asked in the last 15 s.
 function goldInPassing(bot, goal, now = Date.now(), { client = false } = {}) {
   if (!bot.inventory?.items || goal?.kind === 'find' || now - (bot._goldLookAt || 0) < 500) return false;
-  const kinds = passingKinds(bot);
+  const kinds = passingKinds(bot, goal);
   if (!kinds.length) return false;
   bot._goldLookAt = now;
   const ids = kinds.map(n => bot.registry?.blocksByName?.[n]?.id).filter(id => id !== undefined);
@@ -281,7 +285,7 @@ async function mineInPassing(bot, task, goal, save, { navigate, dig }, client = 
       bot._passingAskedAt = Date.now();
       const pearls = countOf(bot, 'ender_pearl');
       const response = await require('./decisions').ask(client, {
-        state: { request: goal.request, walk: goal.step?.action, pearls, pearlsWanted: PEARLS_WANTED, goldCarriedIngots: round(goldCarried(bot), 10), health: bot.health, food: bot.food,
+        state: { request: goal.request, walk: goal.step?.action, pearls, pearlsWanted: pearlsWanted(bot, goal), goldCarriedIngots: round(goldCarried(bot), 10), health: bot.health, food: bot.food,
           takenWithoutAsking: `nether gold ore and gold blocks within ${PASSING_RADIUS} blocks while pearls are short and health is at least ${VITALS.health} and food at least ${VITALS.food}`,
           candidates: choices.map(c => ({ block: c.block, distance: round(c.distance), routeSteps: c.routeSteps, seconds: detourSeconds(bot, c) })) },
         questions: { passing: ['passing_gold', { pearls, options: Object.fromEntries(choices.map((c, i) => [`gold_${i}`, passingSays(bot, c)])) }] },
@@ -309,5 +313,5 @@ async function mineGoldInPassing(bot, task, goal, save, { navigate, dig }) {
   return mineInPassing(bot, task, goal, save, { navigate, dig }, null);
 }
 
-module.exports = { goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
+module.exports = { shortOfPearls, goldInPassing, mineGoldInPassing, mineInPassing, passingCandidates, passingSays, valuableInPassing: goldInPassing, mineValuableInPassing: mineGoldInPassing,
   PASSING_RADIUS, PASSING_REACH, GOLD_WORTH, VITALS, piglinsWithin, LIMITS, opportunityCandidates, opportunisticMining, fuelCarried, FUEL_UNITS_WANTED };

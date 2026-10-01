@@ -106,7 +106,7 @@ function carriedFightSays(bot, mob) {
   let fight = '';
   if (mob) {
     try {
-      const one = fightEstimate({ threats: [{ name: mob, distance: 8, shoots: SHOOTERS.has(mob), visible: true }], armour: worn, weapon, health: bot.health ?? 20, shield });
+      const one = fightEstimate({ threats: [{ name: mob, distance: 8, shoots: SHOOTERS.has(mob), visible: true }], armour: worn, weapon, health: bot.health ?? 20, shield, guarded: true });
       if (one.mobs[0]) fight = ` One ${words(mob)} fought so: about ${Math.round(one.fightHere.seconds)} seconds, ${Math.round(one.fightHere.damageTaken * 10) / 10} health lost, ${Math.round(one.fightHere.healthAfter * 10) / 10} of ${Math.round(bot.health ?? 20)} left${one.mobs[0].note ? ` (${one.mobs[0].note})` : ''}.`;
     } catch (_) { fight = ''; }
   }
@@ -363,7 +363,14 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   const before = countOf(bot, state.item), start = bot.entity.position.clone(), deadline = Date.now() + timeoutMs;
   const shieldWear = () => equipped(bot, 'off-hand')?.durabilityUsed || 0;
   const initialShieldWear = shieldWear(), guarded = !handler.passive && equipped(bot, 'off-hand')?.name === 'shield';
-  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12 && kitReady(bot);
+  // Health and hunger end a fight begun (the body's floor); the kit does
+  // not. A kit short of a piece is Jev's to weigh, asked at combat_kit and
+  // said with the hunt's own question (fitness), and required here as well
+  // it ended every fight before its first swing: the trials' hunts chosen
+  // with a piece missing struck nothing, 11 of 11 in the records, and the
+  // arena's enderman with the trials' kit (no leggings, no boots) was
+  // chosen seven times in seven runs and never struck (note 790).
+  const ready = () => handler.passive ? bot.health >= 8 && bot.food >= 4 : bot.health >= 12 && bot.food >= 12;
   const sword = () => carriedEquipment(bot).find(item => combatGear.hand.includes(item.name));
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;
@@ -546,6 +553,29 @@ function stakeHunt(bot, goal) {
   return true;
 }
 
+// A target the hunt surveyed and found no way to on foot from where the bot
+// stands, kept with where each stood: the claim (below) does not take the
+// turn for it again until the bot or the mob has moved. 25595's forest
+// hunt claimed an enderman fifteen blocks up a fungus that huntObserved
+// found no way to, held the turn 105 seconds with nothing done ("8 answers
+// in a row to this question changed nothing") while a calm one stood at
+// arm's length, and Jev gave the turn back to the stalk (note 790).
+const NO_WAY_MOVED = 2, NO_WAY_KEPT_MS = 120000;
+function noWayAt(state, bot, target) {
+  if (!state || !target?.position || !bot?.entity?.position) return;
+  const now = Date.now(), kept = state.noWay || {};
+  for (const [id, n] of Object.entries(kept)) if (now - n.t > NO_WAY_KEPT_MS) delete kept[id];
+  const p = target.position, b = bot.entity.position;
+  kept[target.id] = { t: now, at: { x: p.x, y: p.y, z: p.z }, from: { x: b.x, y: b.y, z: b.z } };
+  state.noWay = kept;
+}
+function noWayFromHere(state, bot, target) {
+  const n = state?.noWay?.[target.id];
+  if (!n || Date.now() - n.t > NO_WAY_KEPT_MS) return false;
+  const d = (a, p) => Math.hypot(a.x - p.x, a.y - p.y, a.z - p.z);
+  return d(n.at, target.position) <= NO_WAY_MOVED && d(n.from, bot.entity.position) <= NO_WAY_MOVED;
+}
+
 async function huntObserved(bot, task, goal, save, actions, client) {
   const state = goal.mobHunt;
   if (!state) return false;
@@ -654,17 +684,27 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       const bowOnly = !reached && handler.ranged && bowReady(bot) && range >= 4 && range <= 20 && !pushed.includes(target) &&
         !!(() => { try { return threats(bot, 24).find(t => t.entity === target)?.visible; } catch (_) { return false; } })();
       if (!reached && !bowOnly) {
+        noWayAt(state, bot, target);
         if (!pushed.includes(target)) { const d = target.position.distanceTo(bot.entity.position), dy = Math.round(target.position.y - bot.entity.position.y); unreached.push(`the ${target.name.replaceAll('_', ' ')} ${Math.round(d)} blocks off${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}: no way on foot to within a sword's reach of it from here${walledSays()}, so no fight with it is offered; the ways that wait for it to come (a stand, a box) are`); }
         continue;
       }
       positions.set(target.id, target.position.clone());
+      if (state.noWay) delete state.noWay[target.id];
       // What this one fight costs, and what is beside the mob (the decision
       // audit, 2026-09-25): a hoglin's toss or a blaze's knockback beside
       // lava or a drop is the fall, not the fight.
       const distance = target.position.distanceTo(bot.entity.position);
-      const asThreat = (e, d) => ({ name: e.name, distance: d, shoots: shooter(e), ...(e.heldItem?.name ? { held: e.heldItem.name } : {}), visible: true });
+      // The one gone at, calm (a neutral not yet turned: an enderman left
+      // be, a zombified piglin), lands nothing while it is closed on; and the
+      // hunt's fight raises the shield between swings (fightForDrop): priced
+      // so (combat-estimate.js `calm`, `guarded`). 25595's enderman, calm at
+      // eight blocks, was told 27.8 damage from 19 health, "-8.8 after", for
+      // a fight the arena measured at about 8 with that kit, and Jev left it
+      // (note 790).
+      const calmOne = e => { try { return !require('./danger').hostileEntities(bot, e.position.distanceTo(bot.entity.position) + 1).includes(e); } catch (_) { return false; } };
+      const asThreat = (e, d) => ({ name: e.name, distance: d, shoots: shooter(e), ...(e.heldItem?.name ? { held: e.heldItem.name } : {}), visible: true, ...(e === target && calmOne(e) ? { calm: true } : {}) });
       const kit = { armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean),
-        weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield' };
+        weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: bot.inventory?.slots?.[45]?.name === 'shield', guarded: !handler.passive };
       const one = fightEstimate({ threats: [asThreat(target, distance)], ...kit });
       const mob = one.mobs[0];
       // The fight as it will be: the others that reach the bot where it
@@ -772,7 +812,11 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // What leaving them came to in the arena, where it was measured: the
   // blazes stay, and so does their fire (blaze-stand.js MEASURED).
   const deferSays = state.entity === 'blaze' ? require('./blaze-stand').measuredSays('defer', bot).says.replace('this way', 'leaving them, the encounter answered as it came') : '';
-  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.${capNow ? ` ${capNow}` : ''}${deferStreakSays}` : '';
+  // What leaving them gains toward any other hunt's count, said as the
+  // rods' is: the pearls still needed (note 790).
+  const itemLeft = Math.max(0, (huntTarget(bot, goal) || 0) - countOf(bot, state.item));
+  const deferGain = rodsNeed ? `${towardRods(rodsNeed, 'none', { spawner: liveCage, of: rodsOf })} Left, these are not offered again for two minutes.${capNow ? ` ${capNow}` : ''}${deferStreakSays}`
+    : itemLeft ? ` Leaving them gains nothing toward the ${itemLeft} ${state.item.replaceAll('_', ' ')}${itemLeft === 1 ? '' : 's'} still needed; left, these are not offered again for two minutes.` : '';
   // Where the work goes next: at a known spawner still owed rods, it stays
   // there (the spawner is the work), not a silent switch to searching for
   // another fortress (note 740). 25590 chose defer at its own cage with a
@@ -851,7 +895,10 @@ function huntSays(bot, target, { handler, distance, mob, one, all, others, spawn
   const how = handler.passive ? 'Chase it and strike it with what is carried'
     : handler.ranged && bowReady(bot) ? 'Shoot it from range while it is in view, then close with the sword'
     : `Close on it and strike it${weapon ? ` with the ${weapon}` : ' bare-handed'}${shield ? ', the shield raised toward its shots' : ''}${worn ? `, ${worn} piece${worn === 1 ? '' : 's'} of armour worn` : ', no armour worn'}`;
-  const drop = target.name === 'blaze' ? ` A blaze drops a rod about half the time; ${item.replaceAll('_', ' ')}s are what the request needs now, and the drop is picked up after.${require('./blaze-stand').measuredSays('open', bot).says}` : ` Its drop is picked up after.`;
+  // An enderman's fight said with the arena's record of it and the ways a
+  // player takes them (pearl-record.js endermanSays, note 790).
+  const drop = target.name === 'blaze' ? ` A blaze drops a rod about half the time; ${item.replaceAll('_', ' ')}s are what the request needs now, and the drop is picked up after.${require('./blaze-stand').measuredSays('open', bot).says}`
+    : target.name === 'enderman' ? ` Its drop is picked up after. ${require('./pearl-record').endermanSays(bot)}` : ` Its drop is picked up after.`;
   const price = !mob || handler.passive ? '' : all
     ? ` With ${mobsSaid(others)} reaching the bot here too and fighting with it: about ${all.fightHere.seconds} seconds and ${all.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health${all.fightHere.healthAfter <= 0 ? ' (more than the bot has)' : `, ${all.fightHere.healthAfter} after`}; this one alone would be about ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken}.${spawnerSays}`
     : ` About ${one.fightHere.seconds} seconds and ${one.fightHere.damageTaken} damage from ${Math.round(bot.health * 10) / 10} health, ${one.fightHere.healthAfter} after; it lands about ${mob.hitsBot} a hit through what is worn.${spawnerSays || ''}`;
@@ -4454,8 +4501,9 @@ function noWaySays(state, then) {
 
 // What huntObserved would take the turn for (src/arbiter.js): a hunt on,
 // footing to fight from, and one of its kind in reach and alone. The route
-// to it (combatRoute) is a search and is not asked, so a mob the hunt then
-// finds no way to is claimed here and passed over there. Nor is the claim
+// to it (combatRoute) is a search and is not asked here; a mob the hunt
+// last found no way to from where both still stand is not claimed again
+// (noWayFromHere, note 790). Nor is the claim
 // on its kind staked: that is huntObserved's, as it runs.
 function claim(bot, goal = {}) {
   const state = goal.mobHunt;
@@ -4464,7 +4512,7 @@ function claim(bot, goal = {}) {
   if (!canBegin(bot, handler)) return null;
   const near = Object.values(bot.entities || {}).filter(e => e.name === state.entity && valid(bot, e) && e.position.distanceTo(bot.entity.position) < 24)
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)).slice(0, 4);
-  const target = near.find(e => isolated(bot, e, handler) && !isSetAside(goal, 'hunt_target', e.uuid || e.id));
+  const target = near.find(e => isolated(bot, e, handler) && !isSetAside(goal, 'hunt_target', e.uuid || e.id) && !noWayFromHere(state, bot, e));
   if (!target) return null;
   // A blaze hunt with none in sight asks the visit first (huntObserved), and
   // a visit answer held from before that is not to go in does nothing: the
@@ -4487,4 +4535,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

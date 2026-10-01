@@ -8,6 +8,11 @@
 // the minutes per pearl by source. Jev-down time is off the clock (note
 // 781): a frame with Jev-down evidence adds nothing to any minute count.
 //
+// Note 790 adds the Overworld's pearl_order replay (an enderman within 24
+// on the way to the Nether for the rods) and the hunts chosen at
+// hunt_target: struck or shot within thirty seconds, by kit whole or short,
+// and the turns the hunt held while it did nothing.
+//
 //   node scripts/pearl-record.js [--since ISO] [--to ISO] [--json]
 // JEV_ROOT reads another checkout's records (from a worktree).
 const fs = require('fs');
@@ -37,7 +42,8 @@ async function readFile(file) {
     endermanMs: {}, endermanNearRung: {}, endermanIds: {}, endermanClose: 0, endermanFightFrames: 0, endermanStance: {}, endermanHurt: 0,
     piglinMs: 0, piglinGoldMs: 0, netherGoldMax: 0, netherThrowableMax: 0, netherGoldMs: 0, netherMsBothShort: 0,
     warpedFound: 0, deaths: [], firstPearlStep: null, rodsAtFirstPearlStep: null, firstSevenRods: null, firstNether: null, startT: null, endT: null,
-    barterFrames: 0, pearlDecisions: {}, replay: { minutes: 0, routeMin: { enderman: 0, forest: 0, barter: 0 }, anyMin: 0, asks: 0, asksBy: {} }, endermanHuntFrames: 0, endermanHuntMs: 0, milestonesAtPearl: null };
+    barterFrames: 0, pearlDecisions: {}, replay: { minutes: 0, routeMin: { enderman: 0, forest: 0, barter: 0 }, anyMin: 0, asks: 0, asksBy: {} },
+    owReplay: { minutes: 0, enderMin: 0, asks: 0 }, hunts: [], huntIdle: { asks: 0, maxHeld: 0 }, endermanHuntFrames: 0, endermanHuntMs: 0, milestonesAtPearl: null };
   let prev = null, lastHealth = null, lastEnderNear = -Infinity, lastStep = null, lastPearls = 0, rung = null;
   // The order question replayed (src/pearl-order.js): in the Nether, short
   // of both, on a rung other than the pearls, the routes real from here (an
@@ -46,6 +52,8 @@ async function readFile(file) {
   // answer held, the hold's half hour run out, a kind of route real now that
   // was not offered at the answer, or a death since.
   const forests = []; let hold = null, deathsSeen = 0;
+  // The hunts chosen at hunt_target, waiting on a blow or a shot (note 790).
+  const huntsOpen = [];
   const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
   const settle = (f, t) => {
     if (!prev) return;
@@ -56,6 +64,7 @@ async function readFile(file) {
     if (prev.phase) add(r.phaseMs, prev.phase, dt);
     if (prev.pearlAction) add(r.pearlActionMs, prev.pearlAction, dt);
     if (prev.enderHunt) r.endermanHuntMs += dt;
+    if (prev.owRoutes) { r.owReplay.minutes += dt; if (prev.owRoutes.enderman) r.owReplay.enderMin += dt; }
     if (prev.routes) { r.replay.minutes += dt; let any = false; for (const k of Object.keys(prev.routes)) if (prev.routes[k]) { r.replay.routeMin[k] += dt; any = true; } if (any) r.replay.anyMin += dt; }
     for (const [k, v] of Object.entries(prev.ender || {})) if (v && k !== 'near24') { add(r.endermanMs, k, dt); if (k.endsWith('16')) add(r.endermanNearRung, `${prev.dim}:${prev.phase || 'none'}`, dt); }
     if (prev.dim === 'nether') {
@@ -107,6 +116,16 @@ async function readFile(file) {
     const sa = s.goal?.survivalAction;
     if (sa?.target === 'enderman' && sa.at && Math.abs(Date.parse(sa.at) - t) < 2000) r.endermanFightFrames++;
     if (o.kind === 'damage' && /by enderman/.test(o.label || '')) r.endermanHurt++;
+    if (o.kind === 'decision' && s.decision?.id === 'hunt_target' && /^hunt_\d+/.test(s.decision.path?.[0] || '')) {
+      const d = s.decision, opt = d.options?.[d.path[0]], desc = typeof opt?.description === 'string' ? opt.description : JSON.stringify(opt || '');
+      const h = { t, entity: (desc.match(/^Fight the ([a-z ]+?) \d/) || [])[1] || 'other', kitShort: (d.state?.fitness?.kitMissing || []).length > 0, struck: false };
+      huntsOpen.push(h); r.hunts.push(h);
+    }
+    const hs = s.goal?.step || s.step;
+    if (hs?.action === 'hunt_mob' && (hs.attacks > 0 || hs.shots > 0)) for (const h of huntsOpen) if (t >= h.t && t - h.t <= 30000) h.struck = true;
+    if (o.kind === 'decision' && s.decision?.id === 'turn_priority' && s.decision.state?.hasTheTurn?.layer === 'hunt' && /did nothing/.test(s.decision.state?.why || '')) {
+      r.huntIdle.asks++; r.huntIdle.maxHeld = Math.max(r.huntIdle.maxHeld || 0, s.decision.state.hasTheTurn.seconds || 0);
+    }
     if (o.kind === 'decision' && s.decision) {
       const d = s.decision, choice = d.path?.at?.(-1) || o.label;
       if (d.id === 'encounter_stance' && /enderman/.test(JSON.stringify(d.state?.threats || d.state?.estimate || ''))) add(r.endermanStance, choice, 1);
@@ -129,8 +148,18 @@ async function readFile(file) {
         if (fresh) { r.replay.asks++; for (const k of kinds) add(r.replay.asksBy, k, 1); hold = { at: t, offered: new Set(kinds) }; deathsSeen = r.deaths.length; }
       }
     }
+    // The Overworld's (note 790): on the way to the Nether for the rods, an
+    // enderman within 24 is the one way, asked by the same hold.
+    let owRoutes = null;
+    if (!down && dim === 'overworld' && rods < 7 && pearls < 13 && rung === 'reach_nether' && pos) {
+      owRoutes = { enderman: !!ender?.near24 };
+      if (owRoutes.enderman) {
+        const fresh = !hold || t - hold.at > 30 * 60000 || !hold.offered.has('enderman') || r.deaths.length > deathsSeen;
+        if (fresh) { r.owReplay.asks++; hold = { at: t, offered: new Set(['enderman']) }; deathsSeen = r.deaths.length; }
+      }
+    }
     settle(o, t);
-    prev = { routes, t, down, dim, phase, pearlAction, enderHunt: step?.entity === 'enderman', ender, piglin, throwable: gold.throwable, gold, rods, pearls };
+    prev = { owRoutes, routes, t, down, dim, phase, pearlAction, enderHunt: step?.entity === 'enderman', ender, piglin, throwable: gold.throwable, gold, rods, pearls };
   }
   return r;
 }
@@ -164,7 +193,8 @@ function summarize(results) {
     endermanFightFrames: 0, endermanHurt: 0, endermanStance: {}, piglinMin: 0, piglinGoldMin: 0, netherGoldMin: 0, netherMinBothShort: 0,
     filesNether: 0, filesNetherGold: 0, filesNetherThrowable: 0, netherGoldMaxDist: {}, warpedFound: 0, filesWarped: 0,
     deaths: 0, deathsByDim: {}, deathsEnderman: 0, deathsInPearlPhase: 0, pearlGains: [], maxPearls: 0, filesWithPearls: 0,
-    replay: { minutes: 0, anyMin: 0, routeMin: {}, asks: 0, asksBy: {}, files: 0 }, filesSevenRods: 0, maxRodsDist: {}, endermanHuntMin: 0, endermanHuntFrames: 0, filesPearlStep: 0, pearlStepRods: [], pearlStepBeforeSeven: 0, pearlDecisions: {}, barterFrames: 0, pearlFiles: [] };
+    replay: { minutes: 0, anyMin: 0, routeMin: {}, asks: 0, asksBy: {}, files: 0 }, owReplay: { minutes: 0, enderMin: 0, asks: 0, files: 0 },
+    hunts: {}, huntIdle: { asks: 0, files: 0, maxHeld: 0 }, filesSevenRods: 0, maxRodsDist: {}, endermanHuntMin: 0, endermanHuntFrames: 0, filesPearlStep: 0, pearlStepRods: [], pearlStepBeforeSeven: 0, pearlDecisions: {}, barterFrames: 0, pearlFiles: [] };
   const m = ms => ms / 60000;
   for (const r of results) {
     T.botHours += r.ms / 3600000; T.downHours += r.downMs / 3600000;
@@ -200,6 +230,9 @@ function summarize(results) {
         deaths: r.deaths.length, milestones: r.milestonesAtPearl, endermanHuntMin: +m(r.endermanHuntMs).toFixed(1), endermanFightFrames: r.endermanFightFrames, warpedFound: r.warpedFound, netherGoldMax: r.netherGoldMax });
     }
     T.barterFrames += r.barterFrames;
+    if (r.owReplay) { T.owReplay.minutes += m(r.owReplay.minutes); T.owReplay.enderMin += m(r.owReplay.enderMin); T.owReplay.asks += r.owReplay.asks; if (r.owReplay.asks) T.owReplay.files++; }
+    for (const h of r.hunts || []) { const k = `${h.entity}:${h.kitShort ? 'kit short' : 'kit whole'}`; const row = T.hunts[k] ||= { chosen: 0, struck: 0 }; row.chosen++; if (h.struck) row.struck++; }
+    if (r.huntIdle?.asks) { T.huntIdle.asks += r.huntIdle.asks; T.huntIdle.files++; T.huntIdle.maxHeld = Math.max(T.huntIdle.maxHeld, r.huntIdle.maxHeld || 0); }
     if (r.replay) { T.replay.minutes += m(r.replay.minutes); T.replay.anyMin += m(r.replay.anyMin); T.replay.asks += r.replay.asks; if (r.replay.asks) T.replay.files++;
       for (const [k, v] of Object.entries(r.replay.routeMin)) add(T.replay.routeMin, k, m(v)); for (const [k, v] of Object.entries(r.replay.asksBy)) add(T.replay.asksBy, k, v); }
   }
@@ -207,6 +240,7 @@ function summarize(results) {
   for (const k of ['botHours', 'downHours']) T[k] = +T[k].toFixed(1);
   T.endermanHuntMin = +T.endermanHuntMin.toFixed(1);
   T.replay.minutes = Math.round(T.replay.minutes); T.replay.anyMin = Math.round(T.replay.anyMin);
+  T.owReplay.minutes = Math.round(T.owReplay.minutes); T.owReplay.enderMin = Math.round(T.owReplay.enderMin);
   for (const k of Object.keys(T.replay.routeMin)) T.replay.routeMin[k] = Math.round(T.replay.routeMin[k]);
   for (const k of ['piglinMin', 'piglinGoldMin', 'netherGoldMin', 'netherMinBothShort']) T[k] = Math.round(T[k]);
   return T;
@@ -228,6 +262,9 @@ function print(T) {
   console.log(`Nether minutes short of both rods and pearls ${T.netherMinBothShort}. Warped forests found ${T.warpedFound} in ${T.filesWarped} records. Barter step frames ${T.barterFrames}.`);
   const R = T.replay;
   console.log(`Replayed (pearl_order): ${R.minutes} Nether minutes short of both on another rung; a pearl route real from there ${R.anyMin} of them (${JSON.stringify(R.routeMin)}); the question asked ${R.asks} times in ${R.files} records (${JSON.stringify(R.asksBy)} offered), ${(R.asks / Math.max(1, R.minutes / 60)).toFixed(1)} an hour of those minutes.`);
+  const O = T.owReplay;
+  console.log(`Replayed (pearl_order in the Overworld, note 790): ${O.minutes} Overworld minutes on reach_nether short of both; an enderman within 24 for ${O.enderMin} of them; the question asked ${O.asks} times in ${O.files} records.`);
+  console.log(`Hunts chosen at hunt_target, struck or shot within 30 s: ${JSON.stringify(T.hunts)}; turn_priority asked because the hunt holding the turn did nothing: ${T.huntIdle.asks} times in ${T.huntIdle.files} records (longest held ${T.huntIdle.maxHeld} s).`);
   console.log(`Pearl decisions: ${JSON.stringify(T.pearlDecisions)}`);
   console.log(`Top phases (minutes): ${JSON.stringify(Object.fromEntries(Object.entries(T.phaseMin).sort((a, b) => b[1] - a[1]).slice(0, 14)))}`);
 }

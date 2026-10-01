@@ -1,7 +1,7 @@
 'use strict';
 const { Vec3 } = require('vec3');
 const { DAY } = require('./day');
-const { handlers, kitReady, observedDead, shooter, fitToFight } = require('./mob-policy');
+const { handlers, observedDead, shooter, fitToFight } = require('./mob-policy');
 
 // The Nether's own mobs were missing: a magma cube killed the dream run in
 // two seconds while the bot searched for blazes, and nothing fled or swung.
@@ -12,12 +12,16 @@ const hostileNames = new Set(['zombie', 'zombie_villager', 'husk', 'drowned', 's
   'cave_spider', 'witch', 'pillager', 'vindicator', 'evoker', 'ravager', 'phantom', 'blaze', 'wither_skeleton', 'hoglin', 'zoglin',
   'magma_cube', 'slime', 'ghast', 'piglin', 'piglin_brute', 'silverfish', 'endermite', 'warden', 'breeze']);
 
+// The kit is not asked here: going on with what is carried is Jev's answer
+// at combat_kit, said on the hunt's own question (fitness), and the full
+// kit asked again here made the hunt's own target a threat the moment it
+// turned, so a bot short of leggings never swung (note 790).
 function combatTarget(bot, entity) {
   const encounter = bot._combatEncounter;
   return !!encounter && encounter.target === entity && Object.hasOwn(handlers, entity.name) &&
     bot.entities[entity.id] === entity && entity.isValid !== false && !encounter.task.cancelled &&
     encounter.dimension === bot.game?.dimension && encounter.expiresAt > Date.now() &&
-    bot.health >= 12 && bot.food >= 12 && kitReady(bot);
+    bot.health >= 12 && bot.food >= 12;
 }
 
 // A neutral mob that has turned. An enderman that was looked at, anything

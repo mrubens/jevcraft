@@ -304,6 +304,10 @@ bot.once('spawn', async () => {
         },
       };
       if (prefer.length) log({ prefer });
+      // The questions the hunt asks through the task (combat_kit, upkeep)
+      // go through the same answers: without it a kit short of a piece
+      // asked combat_kit of no client and held the drill (note 790).
+      task.opportunityClient = client;
       if (process.env.JEV_ENCOUNTERS === '1') log({ jev: 'System One also picks the stance for each encounter (encounter_stance)' });
     }
     // Count the swings and the shield from the inside: the arena scores what
