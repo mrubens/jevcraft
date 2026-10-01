@@ -15,6 +15,9 @@ const { countOf } = require('./skills');
 // Trading is out of scope for now. TODO: a cleric villager sells ender
 // pearls for emeralds, which would turn the enderman hunt into a walk.
 const VILLAGE_RADIUS = 48;
+// How far the passing look reaches for a bell, hay or villagers (note 818):
+// chunks load to 160 blocks round the bot at the trials' view distance.
+const NOTICE_RADIUS = 128;
 const SAME_VILLAGE = 64;
 const BED_REACH = 200;
 const FOOD_REACH = 120;
@@ -48,11 +51,16 @@ function observeVillage(bot, { radius = VILLAGE_RADIUS, point = bot.entity?.posi
   const bell = findAll(bot, ['bell'], { radius, count: 1, point })[0];
   const hay = findAll(bot, ['hay_block'], { radius, count: 64, point });
   const villagers = Object.values(bot.entities || {}).filter(e => e.name === 'villager' && e.isValid !== false && e.position?.distanceTo(point) <= radius);
-  if (!bell && hay.length < 3 && villagers.length < 2) return null;
-  const centre = bell ? plain(bell) : centroid([...hay, ...villagers.map(v => v.position.floored())]);
-  const halves = findAll(bot, bedNames(bot), { radius, count: 128, point: pos(centre) });
+  // Hay counted as a village's in one cluster (within its own radius of the
+  // nearest bale), not scattered across a wide look.
+  const near = hay.length ? hay.slice().sort((a, b) => a.distanceTo(point) - b.distanceTo(point))[0] : null;
+  const hayHere = near ? hay.filter(h => h.distanceTo(near) <= VILLAGE_RADIUS) : [];
+  if (!bell && hayHere.length < 3 && villagers.length < 2) return null;
+  const centre = bell ? plain(bell) : centroid([...hayHere, ...villagers.map(v => v.position.floored())]);
+  // The village's own beds round its centre, at its own radius.
+  const halves = findAll(bot, bedNames(bot), { radius: VILLAGE_RADIUS, count: 128, point: pos(centre) });
   const heads = halves.filter(p => bot.blockAt(p)?.getProperties?.()?.part === 'head');
-  return { ...centre, bell: bell ? plain(bell) : undefined, beds: heads.length || Math.ceil(halves.length / 2), hay: hay.length, villagers: villagers.length };
+  return { ...centre, bell: bell ? plain(bell) : undefined, beds: heads.length || Math.ceil(halves.length / 2), hay: hayHere.length, villagers: villagers.length };
 }
 
 // One entry per village: a second look from the far side of the same
@@ -88,7 +96,10 @@ function noticeVillage(bot, goal, save, { now = Date.now(), every = SCAN_EVERY, 
   // A look that fails (a chunk on its way out, a world not yet loaded) is
   // no village, never a failed step of whatever the bot was doing.
   let seen = null;
-  try { seen = observeVillage(bot); } catch (_) { return null; }
+  // Looked for as far as the world is loaded round the bot, near enough
+  // (NOTICE_RADIUS): a village is seen from far off, and the look reached
+  // 48 blocks (note 818).
+  try { seen = observeVillage(bot, { radius: NOTICE_RADIUS }); } catch (_) { return null; }
   if (!seen) return null;
   const { village, isNew } = rememberVillage(goal, save, seen, dimension(bot), now);
   if (isNew) {

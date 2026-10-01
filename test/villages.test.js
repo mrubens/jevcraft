@@ -197,3 +197,12 @@ test('the bed on the home\'s own bed cells is never taken as a village bed', asy
   await assert.rejects(villages.takeVillageBed(bot, task, goal, save, goal.villages[0], actions), /No bed left in the village/);
   assert.equal(dug, 0, 'the home\'s bed stays where it is');
 });
+
+test('the passing look notices a village a hundred blocks off, the world loaded that far; its beds are counted round its bell (note 818)', () => {
+  const w = world({}), { bot } = w, goal = goalWith(bot);
+  village(w, { x: 100, beds: 2, hay: 3 });
+  assert.equal(villages.observeVillage(bot), null, 'beyond the village radius the plain look still sees none');
+  const found = villages.noticeVillage(bot, goal, () => {}, { now: 1000, force: true });
+  assert(found, 'noticed');
+  assert.equal(found.x, 100); assert.equal(found.beds, 2);
+});
