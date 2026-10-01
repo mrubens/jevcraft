@@ -480,7 +480,13 @@ const GUARD_CREEPER_REACH = 5;
 const SCOUT_FAR_MS = 1200, SCOUT_CLOSE = 4, SCOUT_CREEPER_CLOSE = 7;
 function scoutBudget(danger = []) {
   const { shooter } = require('./mob-policy');
-  const close = danger.some(t => t?.entity && (t.entity.name === 'creeper' ? t.distance <= SCOUT_CREEPER_CLOSE : !shooter(t.entity) && t.distance <= SCOUT_CLOSE));
+  // A creeper out of sight lights only once it sees the bot: close within
+  // its lighting reach, or in sight within seven (note 828: 25595, 16:37Z,
+  // a creeper four below and out of sight at 4.2 for five seconds; the
+  // retreat had its 300 ms, "2 of 24 spots ... tried", and Jev answered
+  // none good six times in eight seconds).
+  const { LIGHTS_AT } = require('./combat-estimate');
+  const close = danger.some(t => t?.entity && (t.entity.name === 'creeper' ? t.distance <= LIGHTS_AT || (t.visible !== false && t.distance <= SCOUT_CREEPER_CLOSE) : !shooter(t.entity) && t.distance <= SCOUT_CLOSE));
   return close ? SCOUT_MS : SCOUT_FAR_MS;
 }
 // A swim at the surface: about two blocks a second. mid-215-j swam 29
