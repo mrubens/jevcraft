@@ -7928,7 +7928,12 @@ async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { known
     if (src.kind === 'home_chest') await restockFromStash(bot, task, goal, save, home, homeActions(), []);
     else if (src.kind === 'home_plot') await require('./home-base').homeChores(bot, goal).harvest_and_bake?.run(bot, task, goal, save, homeActions());
     else if (src.kind === 'village') await require('./villages').eatFromVillage(bot, task, goal, save, src.village, homeActions());
-    else if (src.kind === 'herd') await require('./sightings').walkToSighting(bot, task, goal, save, src.animal, src.sighting, navigate);
+    // Walked to, and hunted there (note 814): the walk alone returned with
+    // the herd in view and nothing struck, and the next pass walked to it
+    // again from where it stood; 25588 (mid-231-an, 2026-10-01 14:01-14:08Z)
+    // held food_known at one herd 180 frames, the kit's top-up ending "no
+    // yield" with no food gained.
+    else if (src.kind === 'herd') { if (await require('./sightings').walkToSighting(bot, task, goal, save, src.animal, src.sighting, navigate)) await huntInView(bot, task, goal, save, [src.animal]); }
     else if (src.kind === 'in_view') await huntInView(bot, task, goal, save, [src.animal]);
     return;
   }

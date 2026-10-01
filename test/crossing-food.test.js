@@ -129,3 +129,19 @@ test('the raw meat carried, cooked, is counted against the want on every food op
   await kitFoodStep(bot, new Task('win'), {}, () => {}, { wants: 80 }, answering('go_without', log));
   for (const k of ['top_up_food', 'top_up_cook']) assert.match(log.offered[k], /Cooking the raw food carried here \(top_up_cook\) adds 45: \d+ of 80/, k);
 });
+
+test('the known herd walked to is hunted there, not walked to again from where it stands (25588 mid-231-an, note 814)', async t => {
+  const { kitFoodStep } = require('../src/work');
+  const hunted = stubHunt(t);
+  const sightings = require('../src/sightings');
+  const real = sightings.walkToSighting;
+  const bot = crossingBot();
+  bot.entities = {};
+  sightings.walkToSighting = async (b, task, g, save, kind, s) => { b.entities = { 77: { id: 77, uuid: 'sheep-77', name: 'sheep', type: 'animal', metadata: [], position: b.entity.position.offset(3, 0, 0), isValid: true } }; return true; };
+  t.after(() => { sightings.walkToSighting = real; });
+  const goal = { sightings: sheepSouth() };
+  await kitFoodStep(bot, new Task('win'), goal, () => {}, { wants: 80 }, answering('top_up_food_near', {}));
+  assert.equal(goal.step.action, 'food_known');
+  assert.equal(goal.step.source, 'herd');
+  assert.deepEqual(hunted, ['sheep']);
+});
