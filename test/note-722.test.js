@@ -104,3 +104,18 @@ test('a portal frame already begun says what leaving it costs, in the climb and 
   assert.match(climbSays, /frame already begun at \(110, 67, 155\), 6 of ten standing/);
   assert.match(climbSays, /is left as it stands if a new site is picked up top/);
 });
+
+test('a climb for water with water in view: digging to it is offered beside the climb, priced (25588 mid-220-ak 14:46:32Z, note 816)', async () => {
+  const bot = overworldBot({ at: new Vec3(107, 52, 155), items: [['iron_pickaxe', 1]] });
+  bot.blockAt = p => { const open = p.y > 67; return { position: p, name: open ? 'air' : 'stone', boundingBox: open ? 'empty' : 'block' }; };
+  bot.registry = require('minecraft-data')('26.1');
+  bot.findBlocks = ({ matching }) => matching === bot.registry.blocksByName.water.id ? [new Vec3(125, 50, 160)] : [];
+  const goal = { kind: 'win', gameProgress: { phase: 'reach_nether' } };
+  const { surfaceTrip } = require('../src/work');
+  let tree;
+  const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => { tree = questions; return { answers: { branch_0: { choice: 'climb', confidence: 0.6 } } }; } } };
+  await surfaceTrip(bot, task, goal, () => {}, 'water').catch(() => {});
+  assert(tree, 'asked');
+  const c = tree.branch_0.criteria;
+  assert.match(c.dig_to_water, /^Dig a way through the rock to the water in view at \(125, 50, 160\), \d+ blocks off \(\d+ across, 2 down\), a step at a time with rock round the bot, about \d+ (seconds|minutes) and about \d+ blocks dug, and fill the bucket there; no climb\./);
+});

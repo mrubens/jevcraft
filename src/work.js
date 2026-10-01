@@ -2400,6 +2400,15 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   if (/^water$/.test(need)) {
     try {
       const known = require('./water').waterKnown(bot);
+      // The water in view dug to, beside the climb (note 816): 25588 at 84
+      // under rock (2026-10-01 14:46:32Z) had water in view 24 blocks off
+      // and was offered only the climb, 13 minutes and 232 of its 361
+      // pickaxe uses, or ore first.
+      if (known.kind === 'source' && known.at && pickaxeTier(bot) >= 1 && client) {
+        const at = new Vec3(known.at.x, known.at.y, known.at.z), c = require('./obsidian').wayCosts(bot.entity.position.floored(), at, null);
+        const secs = c.there, says = secs < 90 ? `about ${Math.max(5, Math.round(secs / 5) * 5)} seconds` : `about ${Math.round(secs / 60)} minutes`;
+        tree.dig_to_water = { description: `Dig a way through the rock to the water in view at (${at.x}, ${at.y}, ${at.z}), ${known.distance} blocks off (${c.across} across${c.dy ? `, ${Math.abs(c.dy)} ${c.dy > 0 ? 'up' : 'down'}` : ''}), a step at a time with rock round the bot, ${says} and about ${c.digs} blocks dug, and fill the bucket there; no climb.`, at: known.at };
+      }
       tree.climb.description += ` Water known from here: ${known.says}${known.kind === 'source' ? '; no dry place beside it to fill from was reached by a route searched from here, nor was the bucket filled wading into it where it is shallow' : ''}.`;
     } catch (_) { /* said without it */ }
   }
@@ -2415,7 +2424,7 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   const levelFacts = require('./levels').levelsSays(bot, goal, { going: 'up' });
   if (levelFacts) for (const k of ['climb', 'stay_below']) if (tree[k]) tree[k].description += levelFacts;
   let pick = 'climb', asked = false;
-  if (tree.stay_below || tree.dig_site || tree.mine_first) {
+  if (tree.stay_below || tree.dig_site || tree.mine_first || tree.dig_to_water) {
     const decision = await require('./decisions').decide('surface_trip', { client, bot, task, goal, save, tree,
       state: { need, step: phase ? words(phase) : null, ...(cost ? { blocksToOpenSky: cost.up, quickerWayOut: cost.way, minutesUp: Math.round(cost.seconds / 60), pickaxes: cost.state.pickaxes, pickaxeUsesLeft: cost.state.pickaxeUsesLeft } : {}),
         ...(budgetOf() ? { pickaxeBudget: budget.says } : {}),
@@ -2428,6 +2437,13 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     goal.surfaceTrip = { need, pick, asked, ...(phase ? { phase } : {}), at: new Date().toISOString() };
     goal.step = { action: 'mine_first', block: oreFirst.name, target: { x: oreFirst.p.x, y: oreFirst.p.y, z: oreFirst.p.z }, need }; save();
     await dig(bot, task, oreFirst.p, {});
+    return;
+  }
+  if (pick === 'dig_to_water') {
+    const w = tree.dig_to_water.at;
+    goal.surfaceTrip = { need, pick, ...(phase ? { phase } : {}), at: new Date().toISOString() };
+    goal.step = { action: 'dig_to_water', target: { ...w }, need }; save();
+    await tunnelToward(bot, task, goal, save, new Vec3(w.x, w.y, w.z), 'water');
     return;
   }
   if (pick === 'dig_site') {

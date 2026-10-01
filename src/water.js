@@ -151,7 +151,7 @@ function waterKnown(bot) {
   try {
     source = bot.findBlocks({ matching: bot.registry.blocksByName.water.id, maxDistance: 48, count: 1, useExtraInfo: sourceWater })[0] || null;
   } catch (_) { source = null; }
-  if (source) return { kind: 'source', distance: Math.round(source.distanceTo(bot.entity.position)), says: `water in view ${Math.round(source.distanceTo(bot.entity.position))} blocks off` };
+  if (source) return { kind: 'source', at: { x: source.x, y: source.y, z: source.z }, distance: Math.round(source.distanceTo(bot.entity.position)), says: `water in view ${Math.round(source.distanceTo(bot.entity.position))} blocks off` };
   let biome = null;
   try { biome = (require('./exploration').biomeView(bot)?.biomesNearby || []).find(holdsWater) || null; } catch (_) { biome = null; }
   if (biome) return { kind: 'biome', distance: biome.distance, says: `no water in view within 48 blocks; the nearest seen is the ${biome.biome.replaceAll('_', ' ')} ${biome.distance} blocks ${biome.direction} (${biome.has})` };
