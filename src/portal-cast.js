@@ -419,13 +419,19 @@ function dryReach(bot, target, avoid = []) {
   const keys = new Set(avoid.map(key)), aim = target.offset(0.5, 0.5, 0.5);
   const air = c => { const b = bot.blockAt(c); return !!b && AIR.test(b.name); };
   const dry = c => air(c) && air(c.plus(UP)) && bot.blockAt(c.plus(DOWN))?.boundingBox === 'block' && !/water/.test(bot.blockAt(c.plus(DOWN))?.name || '') && !keys.has(key(c)) && !keys.has(key(c.plus(UP)));
-  const reach = c => c.offset(0.5, EYE, 0.5).distanceTo(aim) <= REACH - 0.3;
+  // In reach and in sight: the bucket's use is checked along the line from
+  // the eyes, and a dry place behind the cast's own walls was walked to and
+  // the scoop refused, "Water source is outside visible interaction reach":
+  // 25597 (mid-236-af, 2026-10-01 04:16:53-04:17:34Z) lost the cast's water
+  // so and walked 55 blocks for more, three times (note 767f).
+  const w = view(bot);
+  const reach = c => { const eye = c.offset(0.5, EYE, 0.5); return eye.distanceTo(aim) <= REACH - 0.3 && !firstHit(p => !(p.equals(c) || p.equals(c.plus(UP))) && w.blocksRay(p), eye, aim); };
   const feet = bot.entity.position.floored();
   if (dry(feet) && reach(feet)) return 'here';
   const out = [];
   for (let dx = -4; dx <= 4; dx++) for (let dz = -4; dz <= 4; dz++) for (let dy = -3; dy <= 2; dy++) {
     const c = target.offset(dx, dy, dz);
-    if (reach(c) && dry(c)) out.push(c);
+    if (dry(c) && reach(c)) out.push(c);
   }
   return out.sort((a, b) => a.distanceTo(feet) - b.distanceTo(feet))[0] || null;
 }

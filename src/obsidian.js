@@ -291,6 +291,14 @@ function heldLava(bot, goal) {
   }
   return h;
 }
+// The lava's way Jev chose (lava_way), held with the fetch or apart from
+// it for half an hour in this dimension (note 767f).
+function lavaPickNow(bot, goal, now = Date.now()) {
+  if (goal.lavaFetch?.pick) return goal.lavaFetch.pick;
+  const p = goal.lavaPick;
+  if (!p || p.dimension !== String(bot.game?.dimension || 'overworld') || now - (p.chosenAt || 0) > 30 * 60000) { delete goal.lavaPick; return null; }
+  return p;
+}
 const sameLava = (a, b) => !!a && !!b && Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) <= SAME_LAVA;
 // The seconds a way to lava takes from here: a walk at four blocks a
 // second and a staircase of three seconds a block of height where it rises
@@ -460,6 +468,11 @@ async function askLavaWay(bot, task, goal, save, { pools, deep, poolDig, here, b
   }
   const way = ways[pick] || ways.deep;
   goal.lavaFetch = { ...(goal.lavaFetch || {}), pick: { ...(way.pool ? { way: 'pool', at: { x: way.pool.x, y: way.pool.y, z: way.pool.z } } : { way: 'deep' }), chosenAt: Date.now() } };
+  // Kept apart from the fetch's hold too, which a pass with no lava held
+  // drops at once (note 767f): 25588 (2026-10-01 04:15:52Z) chose the lava
+  // layer, "24 blocks across, about 6 minutes", and the same second set
+  // off "Walking to the lava pool at (-49, 23, 206), 364 blocks off".
+  goal.lavaPick = { ...goal.lavaFetch.pick, dimension: String(bot.game?.dimension || 'overworld') };
   delete goal.lavaFetch.way; // taken up afresh by holdLava below, the pick kept
   save();
   return way;
@@ -573,19 +586,23 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // since 767 went live (00:41Z) 26 such switches came unasked, 25598 six in
   // three minutes.
   const lastChosen = goal.lavaChosen && goal.lavaChosen.dimension === String(bot.game?.dimension || 'overworld') && Date.now() - goal.lavaChosen.since < 30 * 60000 ? goal.lavaChosen.at : null;
-  const chosenAt = goal.lavaFetch?.pick?.way === 'pool' ? goal.lavaFetch.pick.at
+  const pick = lavaPickNow(bot, goal);
+  const chosenAt = pick?.way === 'pool' ? pick.at
     : goal.portalMethod?.kind === 'cast' && goal.portalMethod.near && !goal.portalFrame ? goal.portalMethod.near
     : held && /^(pool|dig)$/.test(held.way) ? held.lava : lastChosen;
   // Since when it is chosen: a walk set aside before is why it was chosen
   // to dig to, not its failure.
-  const chosenSince = goal.lavaFetch?.pick?.way === 'pool' ? goal.lavaFetch.pick.chosenAt || 0 : chosenAt === lastChosen && lastChosen ? goal.lavaChosen.since : held?.since || 0;
+  const chosenSince = pick?.way === 'pool' ? pick.chosenAt || 0 : chosenAt === lastChosen && lastChosen ? goal.lavaChosen.since : held?.since || 0;
   const chosenPool = chosenAt ? (goal.landmarks || []).find(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && sameLava(landmarkAt(l), chosenAt)) : null;
   const tripKey = l => `lava_pool:${l.x},${l.z}`;
   const chosenFails = !chosenPool ? null : poolSpent(chosenPool) ? `it was found with no lava to take${chosenPool.spentWhy ? ` (${chosenPool.spentWhy})` : ''}`
     : lavaResting(goal, landmarkAt(chosenPool)) ? `the way into it rests (${require('./tunneling').staircaseWhy(goal, lavaWay(landmarkAt(chosenPool)))})`
     : (e => e && e.until > Date.now() && e.at > chosenSince && !String(e.why || '').startsWith(require('./exploration').ROUTE_TIMED_OUT))(require('./progress').attemptsFor(goal).entries[require('./progress').keyOf('landmark_trip', tripKey(chosenPool))]) ? `the walk there was set aside (${require('./progress').attemptsFor(goal).why('landmark_trip', tripKey(chosenPool)) || 'no nearer'})` : null;
   const keepTo = chosenPool && !chosenFails ? chosenPool : null;
-  const pool = l => poolOpen(l) && (!keepTo || l === keepTo);
+  // The lava layer chosen: no pool is walked or dug to meanwhile, its
+  // headings failing from here being its failure, asked again then.
+  const deepPicked = pick?.way === 'deep' && !pickFailed(goal, pick, { deepFailing, deep });
+  const pool = l => poolOpen(l) && (!keepTo || l === keepTo) && !deepPicked;
   if (chosenPool && chosenFails && task.opportunityClient && !(Date.now() - (goal.lavaSwitchAsked?.[tripKey(chosenPool)] || 0) < 10 * 60000)) {
     const others = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && l !== chosenPool && l.y !== undefined && poolOpen(l) && !isSetAside(goal, 'landmark_trip', tripKey(l)))
       .sort((a, b) => digCarry(landmarkAt(a)) - digCarry(landmarkAt(b))).slice(0, 2);
@@ -593,7 +610,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
       goal.lavaWayFailed = [...(goal.lavaWayFailed || []).filter(e => Date.now() - e.at < 30 * 60000), { way: 'pool', x: chosenPool.x, y: chosenPool.y, z: chosenPool.z, why: chosenFails, at: Date.now() }].slice(-4);
       (goal.lavaSwitchAsked ||= {})[tripKey(chosenPool)] = Date.now();
       if (goal.lavaFetch) delete goal.lavaFetch.pick;
-      delete goal.lavaChosen;
+      delete goal.lavaChosen; delete goal.lavaPick;
       save();
       console.log(`[lava_way] the pool chosen at (${chosenPool.x}, ${chosenPool.y}, ${chosenPool.z}) failed (${chosenFails}); another is asked for, not taken unasked`);
       const way = await askLavaWay(bot, task, goal, save, { pools: others, deep, poolDig: others[0], here, back, landmarkAt, deepFailing, headings, headingResting });
@@ -698,7 +715,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   const open = p => !staircaseResting(goal, p);
   // With a pool held, lava in sight elsewhere is not dug toward unasked
   // (note 767d): within 24 blocks of the pool held it is that pool's.
-  const diggable = surface.filter(p => !lavaResting(goal, p) && (!keepTo || p.distanceTo(landmarkAt(keepTo)) <= 24));
+  const diggable = deepPicked ? [] : surface.filter(p => !lavaResting(goal, p) && (!keepTo || p.distanceTo(landmarkAt(keepTo)) <= 24));
   if (!diggable.length) {
     // For a cast, not a pool farther to carry from than the deep lava, the
     // same margin as above once the dig has real steps in it.
@@ -756,18 +773,20 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   let chosen = null;
   // The way chosen, its route failed since: the hold ends and the question
   // is asked again, the failure said on that option (note 767).
-  const failedWhy = held?.pick && !spot && !nearest ? pickFailed(goal, held.pick, { deepFailing, deep }) : null;
+  const failedWhy = pick && !spot && !nearest ? pickFailed(goal, pick, { deepFailing, deep }) : null;
   if (failedWhy) {
-    const f = held.pick.way === 'deep' ? { way: 'deep' } : { way: 'pool', x: held.pick.at.x, y: held.pick.at.y, z: held.pick.at.z };
+    const f = pick.way === 'deep' ? { way: 'deep' } : { way: 'pool', x: pick.at.x, y: pick.at.y, z: pick.at.z };
     goal.lavaWayFailed = [...(goal.lavaWayFailed || []).filter(e => Date.now() - e.at < 30 * 60000), { ...f, why: failedWhy, at: Date.now() }].slice(-4);
-    delete held.pick; if (goal.lavaFetch) delete goal.lavaFetch.pick; save();
+    if (held) delete held.pick; if (goal.lavaFetch) delete goal.lavaFetch.pick; delete goal.lavaPick; save();
     console.log(`[lava_way] the way chosen failed (${failedWhy}); asked again`);
   }
   // The pool chosen before the bucket, still good: dug to again, not asked.
-  if (!spot && !nearest && keepTo && !held?.pick && lastChosen && sameLava(landmarkAt(keepTo), lastChosen)) chosen = { dest: lavaWay(landmarkAt(keepTo)), pool: keepTo };
-  if (!chosen && !spot && !nearest && deep && (held?.pick || task.opportunityClient)) {
+  if (!spot && !nearest && keepTo && !pick && lastChosen && sameLava(landmarkAt(keepTo), lastChosen)) chosen = { dest: lavaWay(landmarkAt(keepTo)), pool: keepTo };
+  const pickNow = failedWhy ? null : pick;
+  if (!chosen && !spot && !nearest && deep && pickNow?.way === 'deep') chosen = { dest: deep };
+  if (!chosen && !spot && !nearest && deep && (pickNow || task.opportunityClient)) {
     const pools = candidates.filter(l => open(lavaWay(landmarkAt(l)))).sort((a, b) => digCarry(landmarkAt(a)) - digCarry(landmarkAt(b))).slice(0, 2);
-    if (pools.length) chosen = held?.pick ? pickedWay(held.pick, pools, deep) : await askLavaWay(bot, task, goal, save, { pools, deep, poolDig, here, back, landmarkAt, deepFailing, headings, headingResting });
+    if (pools.length) chosen = pickNow ? pickedWay(pickNow, candidates, deep) : await askLavaWay(bot, task, goal, save, { pools, deep, poolDig, here, back, landmarkAt, deepFailing, headings, headingResting });
     if (chosen === false) return;
   }
   // Lava a few blocks off at or below the feet is dug to the shore beside

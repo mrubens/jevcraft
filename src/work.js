@@ -5400,11 +5400,14 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     const level = cave.standY - method.near.y;
     tree.into_cave = { description: `Go down into the cave the staircase met: the stair at (${cave.at.x}, ${cave.at.y}, ${cave.at.z}) is dug open and the bot drops ${cave.fall} blocks to ${cave.into === 'water' ? 'water' : `its floor at y ${cave.floorY}`}, ${damage ? `about ${damage} of the ${health} health lost in the fall` : 'a fall that does no harm'}. Standing there it is ${level > 0 ? `${level} blocks above the lava's level` : level < 0 ? `${-level} blocks below the lava's level` : "level with the lava"}, ${Math.round(Math.hypot(cave.at.x - method.near.x, cave.at.z - method.near.z))} blocks from it across; the staircase toward the lava goes on from the cave floor, its rest lifted.` + facts };
   }
+  // The lava held whose walks failed or whose way rests: other lava is
+  // offered whenever any is known, not only at a rest (note 767f).
+  const heldFailing = current === 'cast_at_lava' && (heldRest || method.nearFailed);
   const farHeld = current === 'cast_at_lava' && method.nearFar ? method.nearFar : null;
-  const otherLava = (heldResting || farHeld) && lava && !(lava.at.x === method.near.x && lava.at.y === method.near.y && lava.at.z === method.near.z) ? lava : null;
+  const otherLava = (heldResting || farHeld || heldFailing) && lava && !(lava.at.x === method.near.x && lava.at.y === method.near.y && lava.at.z === method.near.z) ? lava : null;
   if (otherLava) {
     const dy = Math.round(otherLava.at.y - bot.entity.position.y);
-    tree.other_lava = { description: `Cast a frame of its own beside another lava instead, ${farHeld && !heldResting ? 'nearer than the lava chosen before' : 'its way not resting'}: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}. The lava chosen before is left.` + facts };
+    tree.other_lava = { description: `Cast a frame of its own beside another lava instead, ${farHeld && !heldResting ? 'nearer than the lava chosen before' : 'its way not resting'}: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}, about ${duration(require('./levels').walkSeconds(otherLava.distance))} at the bot's measured pace. The lava chosen before is left.` + facts };
   }
   // A frame begun far from the lava its trips go to, the way held being to
   // go on with it: restarting beside that lava is a way of its own, priced
@@ -5459,6 +5462,17 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruinOf(key, ruins, goal) : null);
       else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site', 'restart_at_lava', 'clear_blocker', 'other_stand'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
     }
+  }
+  // The lava held, its walks failed or its way resting, is said with its
+  // distance and time and comes after the ways that can be gone on with
+  // (note 767f): 25595 (mid-237-bi, 2026-10-01 04:18:01-04:18:19Z) kept
+  // cast_at_lava toward (140, -55, 65), "29 walks toward it came no nearer
+  // than 117 blocks ... staircase set aside", listed first, over other
+  // lava 55 blocks off, about 70 seconds.
+  if (heldFailing && tree.cast_at_lava) {
+    const held = tree.cast_at_lava; delete tree.cast_at_lava;
+    held.description += ` The lava chosen before is ${castBy.distance} blocks off, about ${duration(require('./levels').walkSeconds(castBy.distance))} at the bot's measured pace had its walks got there.`;
+    tree.cast_at_lava = held;
   }
   // context: the old order, read by the tests' stand-in only (note 707).
   const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current, leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
@@ -5864,6 +5878,12 @@ async function portalStep(bot, task, goal, save, client) {
         goal.portalMethod.nearByStairs = true; save();
         await stairs();
       }
+      // A walk that got there is not a walk that failed: the count starts
+      // afresh (note 767f). 25597 (mid-236-af, 04:10-04:11Z) walked to its
+      // pool, left it for a site and a climb, walked back, and was told "8
+      // walks toward it came no nearer than 12 blocks" of walks that each
+      // arrived.
+      if (bot.entity.position.distanceTo(at) <= 12) { delete goal.portalMethod.nearTries; delete goal.portalMethod.nearByStairs; save(); }
       return false;
     }
     const avoid = (goal.portalSitesLeft || []).map(pos);
