@@ -469,6 +469,8 @@ const CREEPER_BLAST_REACH = 6;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
 const SPRINT = 5.6, SCOUT_MS = 300;
+// A creeper this near ends the shield guard faced elsewhere (note 813).
+const GUARD_CREEPER_REACH = 5;
 // The retreat's scout with nothing close (no biter within 4, no creeper
 // within 7): searched longer before the stance is asked (note 801). At 300
 // ms each route search had 150 and two of up to 24 spots were tried; since
@@ -7800,7 +7802,23 @@ class Survival {
         // guard's fifteen seconds ran on while four zombies closed round
         // 25593 (note 778).
         const crowdStop = this.crowdStop();
-        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - holdLoss(start) || crowdStop() });
+        // A creeper come within its blast's reach while the shield faces a
+        // biter: the guard ends and the stance is asked again (block_creeper,
+        // shield_the_blast). A raised shield blocks a blast only from the way
+        // it faces: 25590 (mid-218-ai, 2026-10-01 13:55:13-13:55:31Z) held
+        // the guard at 3.2 health facing a zombie 5 off while a creeper came
+        // from 16.9 to 2.8 and went off (note 813).
+        // Only one that comes in after the guard began: one already that near
+        // was in the scene the guard was chosen against.
+        let creeperIn = null;
+        const near0 = new Set(Object.values(bot.entities || {}).filter(x => x?.name === 'creeper' && x.position && x.position.distanceTo(bot.entity.position) <= GUARD_CREEPER_REACH).map(x => x.id));
+        const creeperStop = () => {
+          const c = Object.values(bot.entities || {}).find(x => x?.name === 'creeper' && x.id !== e.id && !near0.has(x.id) && x.isValid !== false && x.position && x.position.distanceTo(bot.entity.position) <= GUARD_CREEPER_REACH);
+          if (c) creeperIn = Math.round(c.position.distanceTo(bot.entity.position) * 10) / 10;
+          return !!c;
+        };
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - holdLoss(start) || crowdStop() || creeperStop() });
+        if (creeperIn != null) { this.state.stanceWhy = `the guard ended as a creeper came within ${creeperIn} blocks: the shield faced the ${name}, and blocks a blast only from the way it faces`; return true; }
         this.state.stanceWhy = `the guard ${r.ended === 'none left' ? 'ended with no biter left about' : crowdStop.grown ? `ended as the crowd grew (${crowdStop.grown}) after ${r.swings} swing${r.swings === 1 ? '' : 's'}` : `ran ${r.swings} swing${r.swings === 1 ? '' : 's'}`}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
         return true;
       } };

@@ -153,3 +153,18 @@ test('a block held against a creeper that has not closed ends at twenty seconds 
   t.mock.timers.setTime(T0 + 42000);
   assert.match(survival.blockCreeperHeld(survival.state.stance), /^a standoff: the creeper has not closed in 21 seconds behind the block \(42 seconds with this creeper/);
 });
+
+test('the shield guard ends when a creeper comes within five while it faces a biter, and says why (25590 mid-218-ai, note 813)', async () => {
+  const z = crowdBot([[5.5, 0.5]], { health: 3.2 });
+  z.entities[90] = { id: 90, name: 'creeper', type: 'hostile', position: new Vec3(0.5, 64, 17), height: 1.7, width: 0.6, isValid: true };
+  const s = new Survival(z.bot, { navigate: async () => {} }, { state: { shelters: [] } });
+  const opts = s.stanceOptions(new Task('x'), {}, () => {}, z.danger(), false);
+  assert(opts.shield_guard, Object.keys(opts).join(','));
+  const wg = require('../src/wither-guard');
+  const real = wg.guard;
+  let polls = 0;
+  wg.guard = async (bot, task, { stop }) => { for (; polls < 40; polls++) { z.entities[90].position = new Vec3(0.5, 64, 17 - polls * 0.5); if (stop()) return { ended: 'stopped', swings: 0 }; } return { ended: 'time', swings: 0 }; };
+  try { assert.equal(await opts.shield_guard.run(), true); } finally { wg.guard = real; }
+  assert.ok(polls < 40, 'stopped before the creeper reached the bot');
+  assert.match(s.state.stanceWhy, /^the guard ended as a creeper came within [\d.]+ blocks: the shield faced the zombie, and blocks a blast only from the way it faces/);
+});
