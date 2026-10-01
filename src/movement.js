@@ -69,7 +69,37 @@ function gapSurvivable(movements, node, dir, k = 1) {
   return false;
 }
 
+const CELL_CACHE_MS = 300;
 class SurvivalMovements extends Movements {
+  // Each cell read once a short while, not once a look: the route search and
+  // its own rules (the damaging floor, the lava beside, the fall) read the
+  // same cells many times over, and each read built a whole Block, its biome
+  // and block entity with it; 25593's lava fetch spent most of 17 busy
+  // seconds in 20 there (2026-10-01 12:50Z, note 807). Kept 300 ms, and a
+  // cell the server changes is dropped at once.
+  getBlock(pos, dx, dy, dz) {
+    const bot = this.bot;
+    // Only over mineflayer's own read of the world (a test's world or a view
+    // is read as it stands, block-search.js worldCells, note 795).
+    if (!pos || !bot?._worldBlockAt || bot.blockAt !== bot._worldBlockAt) return super.getBlock(pos, dx, dy, dz);
+    const now = Date.now();
+    if (!this._cellCache || now - this._cellCache.at > CELL_CACHE_MS) {
+      this._cellCache = { at: now, map: new Map() };
+      if (!this._cellWatch && typeof bot.on === 'function') {
+        this._cellWatch = true;
+        bot.on('blockUpdate', (_old, block) => { const q = block?.position; if (q && this._cellCache) this._cellCache.map.delete(`${q.x},${q.y},${q.z}`); });
+      }
+    }
+    const x = pos.x + dx, y = pos.y + dy, z = pos.z + dz, key = `${x},${y},${z}`;
+    let raw = this._cellCache.map.get(key);
+    if (raw === undefined) { raw = bot.blockAt(new Vec3(x, y, z), false) || null; this._cellCache.map.set(key, raw); }
+    // The read kept, its movement facts worked out afresh by the upstream
+    // getBlock (what is safe, physical, replaceable turns on the rules in
+    // force, which steps change between searches).
+    const real = bot.blockAt;
+    bot.blockAt = () => raw;
+    try { return super.getBlock(pos, dx, dy, dz); } finally { bot.blockAt = real; }
+  }
   // No parkour in the Nether at all, whatever a step sets and the loop
   // restores: a jump that falls short there is the lava sea (the gap-jump
   // rule below; note 516).
