@@ -213,6 +213,16 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
 // the box by the cage or where the bot stands (built out of their fire, then
 // held for the next blazes), a hole in the rock beside the cage, the rods on
 // the ground, out past sixteen, or after the blazes out of sight.
+// What a box at the cage has killed (note 812), said beside its safety: the
+// rods are the kills, and "once whole, 45-second holds took no damage" was
+// all a box said of its record. In the trials since 2026-09-30T06:00Z the
+// cage plan's box holds that ended (5 in the logs kept) killed no blaze:
+// the shield worn to its last volley 3, six health gone 2; 25583 (13:02Z,
+// 2026-10-01) held one 3 minutes for none. In the arena of 2026-10-01
+// (four blazes by a spawner, Jev answering), the runs held in a box or
+// behind cover struck once in 4.7 minutes and killed none; the runs that
+// closed in or charged killed 1.4 to 2 a minute, one from 20 health to 3.2.
+const BOX_KILLS = ' Its record at a cage: in the trials since 2026-09-30, the box holds that ended (5) killed no blaze (the shield worn to its last volley 3, six health gone 2); in the arena, held in a box or behind cover, one strike in 4.7 minutes and no kill, where closing in or charging killed 1.4 to 2 a minute at the cost of most of the health.';
 function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.now() } = {}) {
   const { cage } = known;
   const T = require('./blaze-tactics'), stand = require('./blaze-stand'), clock = require('./spawner-clock');
@@ -253,10 +263,10 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
   if (actions?.navigate) {
     const atCage = T.boxSite(bot, { cage, from: toward });
     if (atCage && blind(atCage)) blindSaid.push(`the box by the cage, ${atCage.off} blocks from it`);
-    if (atCage && !blind(atCage)) { const w = boxWords(atCage, `${atCage.off} blocks from the cage, where it puts its blazes beside the box`); tree.box_at_spawner = box('box_at_spawner', { b: atCage, words: w.says + ' Arena: built among four blazes it lost 3 runs of 5, never whole in those.', secs: w.secs }); }
+    if (atCage && !blind(atCage)) { const w = boxWords(atCage, `${atCage.off} blocks from the cage, where it puts its blazes beside the box`); tree.box_at_spawner = box('box_at_spawner', { b: atCage, words: w.says + ' Arena: built among four blazes it lost 3 runs of 5, never whole in those.' + BOX_KILLS, secs: w.secs }); }
     const here = T.boxSite(bot, { from: toward, sightOf: cage });
     if (here && blind(here) && !here.inLine) blindSaid.push(`the box where the bot stands, ${offOf(here.cell)} blocks from the cage`);
-    if (here && !blind(here) && !(atCage && atCage.cell.equals(here.cell))) { const w = boxWords(here, `${offOf(here.cell)} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    if (here && !blind(here) && !(atCage && atCage.cell.equals(here.cell))) { const w = boxWords(here, `${offOf(here.cell)} blocks from the cage`); tree.box_here = box('box_here', { b: here, words: w.says + ' Arena: once whole, 45-second holds took no damage with six to ten blazes about.' + BOX_KILLS, secs: w.secs }); }
     // The nearest box whose window sees more of where they come, where the
     // nearest sees less (note 708).
     const inLine = here?.inLine;
@@ -265,7 +275,7 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
     // not left unsaid beside box_here's (note 740: box_in_line had no
     // "Arena:" line at all, so its near-zero kill rate stood with no cost
     // beside it, unlike box_here and box_at_spawner which both had one).
-    if (inLine && !blind(inLine) && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says + ' Arena: as box_here\'s is, once whole, 45-second holds took no damage with six to ten blazes about.', secs: w.secs }); }
+    if (inLine && !blind(inLine) && !(atCage && atCage.cell.equals(inLine.cell))) { const w = boxWords(inLine, `${offOf(inLine.cell)} blocks from the cage`); tree.box_in_line = box('box_in_line', { b: inLine, words: w.says + ' Arena: as box_here\'s is, once whole, 45-second holds took no damage with six to ten blazes about.' + BOX_KILLS, secs: w.secs }); }
     // A hole in the rock beside the cage, its mouth toward it: rock behind,
     // beside and over, only the front open. Not gated on a pickaxe carried:
     // netherrack, basalt, blackstone and nether bricks all break by hand
