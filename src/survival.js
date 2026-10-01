@@ -6,7 +6,7 @@ const { HOLDS, EMERGENCIES, excused, refused, flipped } = require('./stillness')
 const { Vec3 } = require('vec3');
 const { feetCell } = require('./terrain');
 const { goals } = require('mineflayer-pathfinder');
-const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted, stanceHeld, coming: comingAt, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER } = require('./danger');
+const { threats, immediateThreat, checkThreats, hunted, claimed, hostileEntities, nightHunted, stanceHeld, coming: comingAt, STANCE_HOLD_MS, STANCE_NEWCOMER, holdLoss, pacedLoss } = require('./danger');
 const shelter = require('./shelter');
 const { decide } = require('./decisions');
 const { maintainVitals, chooseFood, lastResortFood, sideEffectSays, checkAir } = require('./vitals');
@@ -3209,8 +3209,8 @@ class Survival {
     // Whether it did anything: a charge broken off before a step or a swing
     // is no answer, and the turn goes on to the next.
     let acted = false;
-    const onPace = () => { const t = (Date.now() - startedAt) / 1000; return t <= expects.seconds && startHealth - bot.health <= expects.damage * Math.min(1, t / Math.max(0.1, expects.seconds)) + (expects.oneHit || 0); };
-    const going = () => chosen ? (expects ? onPace() : bot.health > startHealth - 6) : bot.health >= 4;
+    const onPace = () => { const t = (Date.now() - startedAt) / 1000; return t <= expects.seconds && startHealth - bot.health <= pacedLoss(startHealth, expects, t); };
+    const going = () => chosen ? (expects ? onPace() : bot.health > startHealth - holdLoss(startHealth)) : bot.health >= 4;
     try {
       while (Date.now() < end && going()) {
         const gap = bot.entity.position.distanceTo(e.position);
@@ -4701,9 +4701,9 @@ class Survival {
       // blast where it goes off counted in the price (creeper-run.js, note
       // 604); the run told "passing none of them" came back past one, or
       // dropped into its sight beside it.
-      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.${runShot(secs)}${c.says}${footingSight(scout.destination, secs)}`; }
-      else if (!scout.spots) footing = ` Nowhere to run to: no footing within ${scout.radius} blocks is four blocks further than here from every mob about, so a run from here fails at once.`;
-      else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.`;
+      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = `${scout.back ? require('./way-back').says(scout.back, { sprint: SPRINT }) : ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.`}${runShot(secs)}${c.says}${footingSight(scout.destination, secs)}`; }
+      else if (!scout.spots) footing = ` Nowhere to run to: no footing within ${scout.radius} blocks is four blocks further than here from every mob about, so a run from here fails at once.${scout.backWhy ? ` Nor back the way it came: ${scout.backWhy}.` : ''}`;
+      else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.${scout.backWhy ? ` Nor back the way it came: ${scout.backWhy}.` : ''}`;
       // The rest are searched before a step is taken, up to 150 ms each
       // (wayAway), not as it runs; with a creeper coming on, only until it
       // would be within three (searchBudget).
@@ -4712,7 +4712,7 @@ class Survival {
         const stands = Number.isFinite(budget) ? Math.max(0.3, Math.min(rest, budget / 1000)) : rest;
         const c = creeperRunSays(standingAgainstCreepers(bot, runCreepers, stands), { worn: runWorn, health: bot.health, standing: true });
         if (c.damage) runExpects = { damage: c.damage, seconds: stands, oneHit };
-        footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, ${Number.isFinite(budget) && budget / 1000 < rest ? `for at most about ${Math.round(stands * 10) / 10} seconds standing still, until the creeper would be within three blocks, and the run then fails and this is asked again unless one is found` : `up to about ${rest} seconds standing still`}.${c.says}`;
+        footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, ${Number.isFinite(budget) && budget / 1000 < rest ? `for at most about ${Math.round(stands * 10) / 10} seconds standing still, until the creeper would be within three blocks, and the run then fails and this is asked again unless one is found` : `up to about ${rest} seconds standing still`}.${scout.backWhy ? ` Back the way it came is no way: ${scout.backWhy}.` : ''}${c.says}`;
       }
     }
     if (!scouted && !onPillar && runCreepers.length) {
@@ -5558,7 +5558,10 @@ class Survival {
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
-    const damageOver = !!held && (held.expects ? held.health - bot.health > held.expects.damage * (extendedHold ? elapsed : Math.min(elapsed, held.expects.seconds)) / Math.max(0.1, held.expects.seconds) + (held.expects.oneHit || 0) : bot.health <= held.health - STANCE_HEALTH);
+    // Never more than half the health it was chosen at (danger.js pacedLoss,
+    // note 793): a stance priced at or past the health held on its price had
+    // no damage end short of the death (22 of 66 Overworld deaths).
+    const damageOver = !!held && (held.expects ? held.health - bot.health > pacedLoss(held.health, held.expects, elapsed, { extended: extendedHold }) : bot.health <= held.health - holdLoss(held.health));
     const inTime = !!held && (extendedHold ? Date.now() < held.hold.until : Date.now() - held.at < STANCE_HOLD_MS && !(held.expects && elapsed > held.expects.seconds));
     let holding = physical && !damageOver && inTime;
     // At the end of its time, a hold with nothing new is not a question
@@ -5889,6 +5892,9 @@ class Survival {
         // One shot that lands ends the bot here: the rule, its numbers, and
         // what it did (lethal-line.js, note 701).
         ...(lethalNow || this.state.lethalLine ? { oneShotEnds: [lethalNow?.says || this.state.lethalLine?.says, this.state.lethalLine?.did ? `Just now: ${this.state.lethalLine.did}.` : null].filter(Boolean).join(' ') } : {}),
+        // When the way chosen is asked again on its damage (danger.js
+        // pacedLoss, note 793): said, not kept as a threshold of the code's.
+        holdEnds: `A way chosen here is asked again once it has cost more than its own estimate at the estimate's pace (six health where it gives none), and in any case once half the health it is chosen at is gone: from ${Math.round(bot.health * 10) / 10} health, at ${Math.round(bot.health * 5) / 10}.`,
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       // At a live cage, what the stay there has come to, on each hold, and
       // what cover gives up at full health (cage-yield.js, note 702).
@@ -6340,6 +6346,18 @@ class Survival {
       // Every candidate already tried a moment ago from here, none a way.
       const noWay = n => n ? `none of the ${plural(n, 'spot')} further from every mob has a route that passes none of them` : 'no footing near is further from every mob';
       if (fresh && !scout.destination && scout.tried >= scout.candidates) { delete this.state.retreatScout; this.state.failWhy = noWay(scout.candidates); return false; }
+      // Back the way it came, as the question said (way-back.js, note 793):
+      // along the cells it stood on, a few at a time, not a fresh route to
+      // their end that may pass the mobs.
+      if (fresh && scout.back) {
+        delete this.state.retreatScout;
+        const p = pos(scout.back.end), from = bot.entity.position.clone();
+        this.report(goal, save, { action: 'run_back', destination: { ...scout.back.end }, blocks: scout.back.blocks, threats: danger.map(t => t.entity.name).slice(0, 4) });
+        const r = await require('./way-back').runBack(bot, task, scout.back, this.actions.navigate);
+        if (r.ok) { delete this.state.trappedSince; return true; }
+        setAside(this, 'escape', p, r.why, 60000); save();
+        return ranFrom(this, from, p, { message: `back the way it came, ${r.walked} of ${scout.back.cells.length} cells walked: ${r.why}` });
+      }
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
       // Standing still while it searches, the bot is not away from a
       // creeper coming on: the search stops where the creeper would be
@@ -6438,6 +6456,24 @@ class Survival {
     try {
       const { about, far, near, heavy, radius } = this.escapeFootings(danger);
       const candidates = [...far.slice(0, 12), ...near.slice(0, 12)];
+      // Back the way it came first (way-back.js, note 793): footing it stood
+      // on in the last three minutes, passing every mob as a route must,
+      // to a cell four or more further from every mob. No route search: the
+      // scout's 300 ms tried 2 of 12 spots at 95 of the 174 questions in the
+      // fatal minutes whose retreat said no way, and the cells just walked
+      // were never one of them. Not with a creeper going off on it.
+      const back = (() => { try { return require('./way-back').findFor(bot, about, { explain: true }); } catch (_) { return null; } })();
+      // Why there is none, where that is the place's (a shaft dug down, a
+      // drop come down, a pillar, a mob on it): said with the no way.
+      const backWhy = back?.none && /shaft|drop|pillar|passes|further/.test(back.why) ? back.why : null;
+      if (back?.end && !(heavy && back.cells.some(c => besideDrop(bot, new Vec3(c.x, c.y, c.z))))) {
+        const creeper = require('./creeper-run').wayAgainstCreepers(bot, back.cells, creepers);
+        if (!creeper?.worst.goesOff) {
+          return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: 0, candidates: candidates.length,
+            destination: { ...back.end }, blocks: back.blocks, gain: back.gain, ...(creeper ? { creeper } : {}),
+            back: { cells: back.cells.map(c => ({ x: c.x, y: c.y, z: c.z })), end: { ...back.end }, blocks: back.blocks, gain: back.gain, secondsAgo: back.secondsAgo, nearest: back.nearest } };
+        }
+      }
       const way = candidates.length ? await this.wayAway(task, movements, { about, heavy, creepers }, candidates, { budgetMs }) : { p: null, tried: 0 };
       const from = bot.entity.position;
       // With no way that passes every mob, a way past the reach of what
@@ -6450,7 +6486,7 @@ class Survival {
           from: found.biters.map(t => ({ id: t.entity.id, name: t.entity.name, blocks: Math.round(t.entity.position.distanceTo(reach.p)), follows: followRange(t.entity.name) })),
           ...(reach.creeper ? { creeper: reach.creeper } : {}) };
       }
-      return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: way.tried, candidates: candidates.length, ...(pastReach ? { pastReach } : {}),
+      return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: way.tried, candidates: candidates.length, ...(pastReach ? { pastReach } : {}), ...(backWhy && !way.p ? { backWhy } : {}),
         ...(way.p ? { destination: { x: way.p.x, y: way.p.y, z: way.p.z }, blocks: Math.round(way.route.path.length || way.p.distanceTo(from)),
           gain: Math.round(Math.min(...about.map(e => e.position.distanceTo(way.p))) - Math.min(...about.map(e => e.position.distanceTo(from)))), ...(way.creeper ? { creeper: way.creeper } : {}) } : {}) };
     } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return null; }
@@ -7698,12 +7734,13 @@ class Survival {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
         const start = bot.health;
-        // Asked again once health has fallen by six, as every stance is.
+        // Asked again once health has fallen by six, or by half what it was
+        // chosen at (danger.js holdLoss, note 793), as every stance is.
         // And once the crowd has grown past what it was chosen against: the
         // guard's fifteen seconds ran on while four zombies closed round
         // 25593 (note 778).
         const crowdStop = this.crowdStop();
-        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - 6 || crowdStop() });
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - holdLoss(start) || crowdStop() });
         this.state.stanceWhy = `the guard ${r.ended === 'none left' ? 'ended with no biter left about' : crowdStop.grown ? `ended as the crowd grew (${crowdStop.grown}) after ${r.swings} swing${r.swings === 1 ? '' : 's'}` : `ran ${r.swings} swing${r.swings === 1 ? '' : 's'}`}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
         return true;
       } };

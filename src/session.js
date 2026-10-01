@@ -118,6 +118,8 @@ function createSession(config, client, { stateDirectory = path.join(__dirname, '
   // The way in, kept while in the Nether: the walk out with rods goes back
   // along it (walk-out.js, note 762).
   bot.loadPlugin(require('./walk-out').wayInPlugin);
+  // The footing of the last three minutes, the retreat's way back (note 793).
+  bot.loadPlugin(require('./way-back').plugin);
   bot.loadPlugin(require('./gaze').gazePlugin);
   bot.loadPlugin(require('./riders').ridersPlugin);
   // A window click the window refuses ("invalid operation") is logged with

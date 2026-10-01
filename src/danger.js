@@ -670,13 +670,33 @@ function checkThreats(bot) {
 }
 
 // The encounter stance Jev chose (survival.js stanceStep), while it holds:
-// fifteen seconds from the choice, and until six health is gone since.
+// fifteen seconds from the choice, and until six health, or half the health
+// it was chosen at, is gone since (holdLoss, note 793).
 // The reflexes that would stop it give way to it meanwhile: the hurt
 // watchdog, the shield raised at each arrow, the meal. Asked again sooner
 // when it fails or a mob it was not chosen against comes within six blocks.
 // Only while it is being carried out (run within the last two seconds): the
 // work that comes back once the mobs are gone has its watchdog back.
 const STANCE_HOLD_MS = 15000, STANCE_HEALTH = 6, STANCE_NEWCOMER = 6;
+// The health a held answer loses before it gives way (note 793): six, or
+// half the health it was chosen at, whichever is less. Six alone is no end
+// for an answer chosen under six: of the 66 Overworld deaths on fresh trials
+// from 2026-09-30T08:40Z to the Jev-down at 04:57:47Z, 22 died under a
+// stance whose damage end was never reached, each priced at or past the
+// health it was chosen at (scripts/fatal-spans.js); 25583 (mid-242-yd,
+// 09:15:16Z) chose shield_guard at 4.9 health priced 38.7 and held it to
+// none 16.8 seconds later with food carried, the meal and the hurt
+// watchdog giving way to it throughout.
+const holdLoss = health => Math.min(STANCE_HEALTH, Math.max(0, health ?? 20) / 2);
+// Chosen on its own estimate, at the estimate's pace (its damage spread
+// over its seconds, past them at its rate while held on, and one blow of
+// the hardest hitter's give): and never more than half the health it was
+// chosen at, so a price at or past the health is not a hold to the death.
+function pacedLoss(health, expects, elapsed, { extended = false } = {}) {
+  if (!expects) return holdLoss(health);
+  const paced = expects.damage * (extended ? elapsed : Math.min(elapsed, expects.seconds)) / Math.max(0.1, expects.seconds) + (expects.oneHit || 0);
+  return Math.min(paced, Math.max(0, health ?? 20) / 2);
+}
 // A stance held on past its estimate with nothing new (holds.js, note 599)
 // holds to its hold's time.
 const stanceEnds = s => s.hold?.extended ? s.hold.until : s.at + STANCE_HOLD_MS;
@@ -689,7 +709,7 @@ const stanceEnds = s => s.hold?.extended ? s.hold.until : s.at + STANCE_HOLD_MS;
 // answer never saw it holding).
 function standHeld(bot, now = Date.now()) {
   const s = bot?._standHold;
-  return s && (bot.health ?? 0) > s.health - STANCE_HEALTH ? s : null;
+  return s && (bot.health ?? 0) > s.health - holdLoss(s.health) ? s : null;
 }
 // defer, chosen a moment ago and near here: hunt_target's own answer that
 // the observed situation is unsuitable to hunt right now (note 723). A
@@ -709,7 +729,7 @@ function huntAnswerJustNow(goal, bot, now = Date.now()) {
 }
 function stanceHeld(bot, now = Date.now()) {
   const s = bot?._stance;
-  if (s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - STANCE_HEALTH) return s;
+  if (s && now < stanceEnds(s) && (s.running || now - (s.ranAt ?? s.at) < 2000) && (bot.health ?? 0) > s.health - holdLoss(s.health)) return s;
   return standHeld(bot, now);
 }
 // The mobs the stance holds against: those it was chosen against (its ids)
@@ -724,7 +744,7 @@ function stanceMobs(bot, now = Date.now(), { keepStoodOff = false } = {}) {
   const s = bot?._stance;
   if (!s || s.choice === 'keep_working' || !s.ids?.length || !(s.running || s.ranAt)) return [];
   if (s.hold?.extended ? now >= s.hold.until : now - s.at >= Math.min(STANCE_HOLD_MS, s.expects?.seconds ? s.expects.seconds * 1000 : Infinity)) return [];
-  if ((bot.health ?? 0) <= s.health - STANCE_HEALTH) return [];
+  if ((bot.health ?? 0) <= s.health - holdLoss(s.health)) return [];
   // Every side closed at the feet or the head (unstuck.js walledOf): a box
   // shut all round, not a mob stepping out of sight for a tick mid-fight
   // in the open (this comment's own case above, kept unchanged for that).
@@ -936,4 +956,4 @@ async function waitOutFight(bot, task, { ms = Number(process.env.JEV_FIGHT_WAIT_
   return { first, waitedMs: now() - start, still };
 }
 
-module.exports = { walledRound, markCreeper, creeperMarked, CREEPER_MARK_MS, noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
+module.exports = { walledRound, markCreeper, creeperMarked, CREEPER_MARK_MS, noteNoRun, noRunTo, standsOff, reachSays, fightOn, waitOutFight, FIGHT_WAIT_MS, FIGHT_HURT_MS, FIGHT_FLIER_NEAR, blocksRay, closingOn, atItsReach, atReach, holdsSpear, deadlyDropBeside, pushOverDrop, SPEAR_MOB_REACH, noWayIds, cannotGetToTheBot, unseenClose, UNSEEN_CLOSE, pushersAbout, PUSH_REACH, lineClear, UNPROVOKED, stanceHeld, standHeld, huntAnswerJustNow, stanceMobs, stanceReach, soloRangedThreat, STANCE_HOLD_MS, STANCE_HEALTH, STANCE_NEWCOMER, holdLoss, pacedLoss, unseenNote, nightHunted, hostileEntities, threats, immediateThreat, checkThreats, safeFromHostiles, NeedsSafety, combatTarget, provoked, provokedEnderman, hunted, claimed, followers, coming, COMING };
