@@ -625,7 +625,7 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     const pick = netherLeaveHeld(goal, 'food') && !tripHomeClosed(bot, goal) ? 'go_back' : await foodLeave(bot, task, goal, save, foodActionsHere);
     if (pick === null) return false;
     if (pick === 'go_back') {
-      goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+      goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save();
       await actions.returnOverworld(bot, task, goal, save); return true;
     }
     // keep_on or restock_food already ran, or a trip home held is closed
@@ -1085,7 +1085,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       const pick = netherLeaveHeld(goal, 'food') && !tripHomeClosed(bot, goal) ? 'go_back' : await foodLeave(bot, task, goal, save, actions);
       if (pick === null) return;
       if (pick === 'go_back') {
-        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save();
         await actions.returnOverworld(bot, task, goal, save); return;
       }
       keepOn = true;

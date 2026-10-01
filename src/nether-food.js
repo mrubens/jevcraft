@@ -323,7 +323,7 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
     routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}${record ? ` ${record[0].toUpperCase()}${record.slice(1)}.` : ''}`,
       run: async () => {
         nv.chooseReturnForFood(goal); delete goal.netherFoodKit;
-        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save?.();
+        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save?.();
         await actions.returnOverworld(bot, task, goal, save);
       } };
   }

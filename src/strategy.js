@@ -335,6 +335,22 @@ function homeOption(bot, goal, planFor = null) {
   };
 }
 
+// The trip out of the Nether for food Jev chose there (return_for_food,
+// game-progress.js foodTrip), said on the Nether first that would undo it
+// (note 832): 25597 (2026-10-01 12:56Z) came out for food with none
+// carried, was asked win_strategy at once, took nether_first (told only
+// "the Nether is entered with the food carried") and was asked the food
+// again on arrival: out, in and out again inside a minute and a half. Since
+// 10:00Z, 12 trips out for food came back in, 9 of them with no more food
+// than they went out with, 7 inside two minutes.
+function cameOutSays(bot, goal, now = Date.now()) {
+  const trip = goal?.foodTrip;
+  if (!trip?.at || now - trip.at > 30 * 60000) return '';
+  const points = Math.round(require('./foraging').foodSupply(bot));
+  const secs = Math.max(1, Math.round((now - trip.at) / 1000));
+  const ago = secs < 90 ? `${secs} seconds` : `${Math.round(secs / 60)} minutes`;
+  return ` The bot came out of the Nether ${ago} ago for food (going back through the portal for it was chosen there) and carries ${points} food point${points === 1 ? '' : 's'} now: going in now leaves that trip, and in the Nether the food question comes first again with what is carried.`;
+}
 // The options now, keyed for the decision tree. Only in the Overworld on
 // the preparation ladder with more than one thing to do. A side trip is
 // marked `trip`: strategyTree puts them all under one branch.
@@ -379,7 +395,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       // Entered with the kit carried now, each rung left priced (note 763):
       // what it would take from here (its level, the climb) and what the
       // trials that chose it spent and the stays that had it came to.
-      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now, with the kit carried now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.${priced(p)}`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}`,
+      description: `Leave ${left.map(label).join(', ')} for later and go for the Nether now, with the kit carried now: the portal, and through it for a fortress, blaze rods and ender pearls.${netherAside ? ` ${netherAside}` : ''} ${[...new Set(left.map(p => /^iron_(helmet|chestplate|leggings|boots)$/.test(p) ? 'iron_armour' : p))].map(p => `Without ${label(p)} for now: ${without(p)}.${priced(p)}`).join(' ')}${clock ? ` The ${label(stage.phase)} has been worked on for ${Math.round(clock.activeMs / 60000)} minutes.` : ''} The steps left are set aside for half an hour, then offered again.${require('./crossing-kit').kitSummary(bot, goal)}${cameOutSays(bot, goal)}`,
       says: `I'll leave the ${left.map(label).join(' and the ')} for later`,
       // Said whole: "Before the diamond sword, I'll leave the diamond sword
       // for later" named the rung skipped as the one done first (25592
@@ -782,4 +798,4 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   return { ran: true };
 }
 
-module.exports = { errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };
+module.exports = { cameOutSays, errandUnderWay, woolTrip, WOOL_HUNTS, oreFacts, carryBedOption, homeOption, strategyTree, pickaxeLeft, planSpends, HAND_BLOCKS_PER_MINUTE, rungTakes, WITHOUT, RUNG_WHY, rungOption, strategyOptions, strategyStep, HOLD_MS, SIDE_REST_MS, SIDE_FAIL_MS, rungStatus, lastStrategyFact };

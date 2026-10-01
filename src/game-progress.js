@@ -1066,6 +1066,9 @@ function runClock(goal, now = Date.now()) {
   };
 }
 
+function noteFoodTrip(bot, goal, save = () => {}, now = Date.now()) {
+  if (dimension(bot) === 'overworld' && (goal.step?.action === 'return_for_food' || now - (goal.foodTripChosen || 0) < FOOD_TRIP_MS) && !goal.foodTrip) { goal.foodTrip = { at: now }; delete goal.foodTripChosen; save(); }
+}
 async function gameStep(bot, task, goal, save, actions) {
   task.check();
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
@@ -1073,7 +1076,11 @@ async function gameStep(bot, task, goal, save, actions) {
   await require('./mob-policy').wearBestArmour(bot);
   // Out of the Nether on a food trip (note 763): kept until the food rung
   // is met or set aside by choice, or thirty minutes pass.
-  if (dimension(bot) === 'overworld' && goal.step?.action === 'return_for_food' && !goal.foodTrip) { goal.foodTrip = { at: Date.now() }; save(); }
+  // The trip back for food chosen in the Nether is kept to arrival
+  // (foodTripChosen): the ladder's own return_overworld step took its place
+  // on the way, and the trip was never counted (note 832: 25597, 12:56Z,
+  // out for food with none and straight back in).
+  noteFoodTrip(bot, goal, save);
   if (goal.foodTrip && (Date.now() - goal.foodTrip.at >= FOOD_TRIP_MS || !require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_food'))) { delete goal.foodTrip; save(); }
   settleOptIns(bot, goal);
   let stage = nextGameStage(bot, goal);
@@ -1233,4 +1240,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { settleOptIns, skipsOptional, optionalRung, optedIn, optIn, optionalRungs, levelOrder, OPT_IN_MS, rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, rungsOpenAhead, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { noteFoodTrip, settleOptIns, skipsOptional, optionalRung, optedIn, optIn, optionalRungs, levelOrder, OPT_IN_MS, rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, rungsOpenAhead, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

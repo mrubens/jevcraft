@@ -140,7 +140,7 @@ function options(bot, task, goal, save, actions, ctx = {}) {
     tree.go_back = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${trip}${there ? ` ${there}` : ''} The measured pace is part of the price: the walk back is minutes, not seconds, and of the walks back that began over 60 blocks in the Nether that day most were given up or ended in a death (note 626). ${rowThen(20, 20, { health: f.health, hunger: f.hunger })} It gains no rod while it lasts. ${require('./food-facts').overworldWays(bot)} ${f.healable ? '' : `${require('./food-facts').regenSays(bot)} `}${require('./food-facts').recordSays(bot)}`,
       run: async () => {
         goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: Date.now() };
-        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save();
+        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save();
         await actions.returnOverworld(bot, task, goal, save);
       } };
   }

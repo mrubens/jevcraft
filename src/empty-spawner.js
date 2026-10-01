@@ -182,7 +182,7 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
     tree.go_back = { description: `Go back to the Overworld for food and come back fed: ${d != null ? `the way out is ${d} blocks off, about ${Math.max(1, Math.round(d / t.fast))} to ${Math.max(1, Math.round(d / t.slow))} minutes at the walks' measured pace` : 'no portal here is known; it is looked for first'}. Of ${t.trips} walks back over ${t.over} blocks, ${t.arrived} came out, ${t.died} died, the rest given up or stalled${low}. The hunt waits till the bot is fed and back; no rod meanwhile.`,
       run: async () => {
         goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: Date.now() };
-        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save?.();
+        goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save?.();
         await actions.returnOverworld(bot, task, goal, save);
       } };
   }
