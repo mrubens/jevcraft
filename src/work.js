@@ -8135,7 +8135,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
       // anything checks the task again); the idle work below is the work's
       // turn, and the survival step runs there only when it claimed nothing.
       const turn = arbiterLive ? await liveTurn(bot, task, goal, goal, survival, save, { client: decisionClient, onStep, save, backstopFor: ['vitals'] }) : null;
-      if (turn && turn.layer !== 'work') { if (!turn.acted) await sleep(250); }
+      if (turn && turn.layer !== 'work') { noticeVillage(bot, goal, save); noticeLandmarks(bot, goal, save); if (!turn.acted) await sleep(250); }
       else {
         if (goal.recoveryAdvice?.active) {
           await maintainVitals(bot, task, () => {}, { client: task.opportunityClient, goal, save });
@@ -8316,7 +8316,12 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
     // A signal the watchdogs hold for the survival layer: its turn now. A
     // preemption is the arbiter's to pick up, below.
     const held = loopCheck(task);
-    if (held && !held.preempted) { await inCatch(task, goal, () => survival.step(task, goal, save, () => onStep(goal))); save(); onStep(goal); continue; }
+    // Villages and landmarks are noticed whoever has the turn (note 817):
+    // with survival holding it (a food hunt, a stance) the loop went on
+    // before the look below, and 25589 (mid-226-am, 2026-10-01 15:4xZ)
+    // hunted animals past a village and recorded none ("0 villages"). The
+    // looks keep their own pace (every thirtieth step or 32 blocks moved).
+    if (held && !held.preempted) { noticeVillage(bot, goal, save); noticeLandmarks(bot, goal, save); await inCatch(task, goal, () => survival.step(task, goal, save, () => onStep(goal))); save(); onStep(goal); continue; }
     updateDigCapabilities(bot);
     // Every tick starts with the configured movement policy: leaked
     // restrictions from a step that threw are not carried into the next.
