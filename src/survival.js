@@ -8098,7 +8098,9 @@ class Survival {
         // The line stopped: the bot stays behind it, a moment at a time.
         // Behind the block, its distance kept: a step back as it closes
         // (note 778b).
-        if (now.stoppedBy) { cut(); await this.keepCreeperOff(task, e, stance); await sleep(150); return true; }
+        // Kept the threat behind the block while this holds (note 827).
+        const keep = () => require('./danger').markCreeper(bot, { entity: e }, Date.now(), { blocked: true });
+        if (now.stoppedBy) { cut(); keep(); await this.keepCreeperOff(task, e, stance); await sleep(150); return true; }
         // A line open again once this stance had cut one is not closed
         // again here: another block is another choice, asked with where the
         // creeper has come to. Held, mid-243-aa's stance put four two-high
@@ -8111,7 +8113,7 @@ class Survival {
         if (stance?.blockCreeper) {
           const { LIGHTS_AT } = require('./combat-estimate');
           const d = e.position.distanceTo(bot.entity.position);
-          if (!creeperSwelling(bot, e) && d > LIGHTS_AT + 0.5 && !stance.blockCreeper.cannotBack) { await this.keepCreeperOff(task, e, stance); await sleep(150); return true; }
+          if (!creeperSwelling(bot, e) && d > LIGHTS_AT + 0.5 && !stance.blockCreeper.cannotBack) { keep(); await this.keepCreeperOff(task, e, stance); await sleep(150); return true; }
           stance.askAgain = `the creeper has come round the block to a line to the bot, ${Math.round(d * 10) / 10} blocks off${creeperSwelling(bot, e) ? ', lit' : ''}`; return true;
         }
         if (!now.cells.length) throw Object.assign(new Error(now.why || 'no cell in its line takes a block'), { name: 'StanceFailed' });
@@ -8125,11 +8127,11 @@ class Survival {
           catch (err) {
             task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
             // The line cut is the cover; the rest is the second of two high.
-            if (blockPlan(bot, e).stoppedBy) { cut(); return true; }
+            if (blockPlan(bot, e).stoppedBy) { cut(); keep(); return true; }
             throw Object.assign(new Error(String(err.message || err).slice(0, 160)), { name: 'StanceFailed' });
           }
         }
-        if (blockPlan(bot, e).stoppedBy) cut();
+        if (blockPlan(bot, e).stoppedBy) { cut(); keep(); }
         return true;
       } };
   }

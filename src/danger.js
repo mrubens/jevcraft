@@ -386,11 +386,25 @@ const WALKERS_JUDGED = { has: name => require('./walk-reach').WALKERS.has(name) 
 // last within the alert's line: the work does not resume beside it (note
 // 752i, 25597's death at 19:49:12Z: out of sight at 4.6, round the corner at
 // 1.7). Past five out of sight it is note 696's creeper behind the rock.
-const CREEPER_MARK_MS = 30000, CREEPER_MARK_REACH = 5;
-function markCreeper(bot, t, now = Date.now()) { if (bot && t?.entity?.id != null) (bot._creeperMarks ||= {})[t.entity.id] = now; }
+// A creeper whose line the bot cut itself (block_creeper, survival.js) is
+// kept to the reach one in sight has (BLOCKED_MARK_REACH), while the stance
+// renews it (note 827): out of sight behind the block at six, it was no
+// threat, the stance ended, and the work walked out round the block into
+// it: 25591 (15:08:02 to 07Z), 25593 (13:22:25 to 28Z) and 25597 (15:10:31
+// to 37Z) chose block_creeper at 6, 4.4 and 6 blocks, went back to the
+// portal, the climb and the lava bucket, and were asked again at 1.7, 3.2
+// and 2.6, each blast from full health.
+const CREEPER_MARK_MS = 30000, CREEPER_MARK_REACH = 5, BLOCKED_MARK_REACH = 8;
+function markCreeper(bot, t, now = Date.now(), { blocked = false } = {}) {
+  if (!bot || t?.entity?.id == null) return;
+  (bot._creeperMarks ||= {})[t.entity.id] = now;
+  if (blocked) (bot._creeperBlocked ||= {})[t.entity.id] = now;
+}
 function creeperMarked(bot, t, now = Date.now()) {
   const e = t?.entity;
-  return !!e && e.name === 'creeper' && e.isValid !== false && t.distance < CREEPER_MARK_REACH && (bot?._creeperMarks?.[e.id] || 0) > now - CREEPER_MARK_MS;
+  if (!e || e.name !== 'creeper' || e.isValid === false) return false;
+  const blocked = (bot?._creeperBlocked?.[e.id] || 0) > now - CREEPER_MARK_MS;
+  return t.distance < (blocked ? BLOCKED_MARK_REACH : CREEPER_MARK_REACH) && (bot?._creeperMarks?.[e.id] || 0) > now - CREEPER_MARK_MS;
 }
 // A mob that has stood off for held-off.js's STANDOFF_MS (note 752): never
 // at its reach, no nearer, no hit from its kind in that time, a shooter
