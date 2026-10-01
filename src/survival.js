@@ -3518,20 +3518,43 @@ class Survival {
     // A creeper is priced by where it goes off, and that is as far as the
     // bot can back from it (backRoom). The poison on the bot runs on in
     // every figure (combat-estimate effectLeft).
-    const estimateArgs = ({ threats: counted.slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(quietIds.has(t.entity.id) ? { quiet: quietIds.get(t.entity.id).q.minutes } : {}), ...(t.unseen ? { unseen: true } : {}), ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(inCellIds.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) })),
+    const threatOf = t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...sizeOf(t.entity), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: t.visible, id: t.entity.id, ...(quietIds.has(t.entity.id) ? { quiet: quietIds.get(t.entity.id).q.minutes } : {}), ...(t.unseen ? { unseen: true } : {}), ...(apart.ids.has(t.entity.id) ? { apart: true } : {}), ...(inCellIds.has(t.entity.id) ? { inCell: true } : {}), ...(t.entity.name === 'creeper' && t.entity.position ? creeperFacts(bot, t.entity) : {}) });
+    const estimateArgs = ({ threats: counted.slice(0, 8).map(threatOf),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded, atOnce: opening ? Infinity : open + inCell.length,
       poisonedFor: require('./combat-estimate').effectLeft(bot, 'poison')?.seconds || 0, burningFor: require('./combat-estimate').burnLeft(bot),
       // The fire resistance on the body: a blaze's fire counted from when it
       // ends (note 656).
       fireproofFor: require('./fire-resistance').left(bot) });
-    const estimate = fightEstimate(estimateArgs);
-    const cost = estimate.fightHere;
+    let estimate = fightEstimate(estimateArgs);
+    let cost = estimate.fightHere;
     // And the biters out of sight further off, within their own follow range
     // and with a way to the bot (farBiters): each counted in a stance's
     // building or digging where it can be at the bot before that is done, at
     // its own speed and with its own blow, and in the fight after it once
     // there; not in the fight here (combat-estimate stanceCost `far`).
     const far = this.lastFar = farBiters(bot, counted);
+    // The far ones that are at the bot inside the fight's own time, at their
+    // own speed, are in the fight here too (note 805): 25598 (mid-241-bw,
+    // 2026-10-01 12:26:48Z) was priced 6.7 damage for "the 2 in these
+    // figures, not those out of sight below" with zombies at 9, 11 and 15
+    // blocks round the cave; all four were at it within seconds, and 20
+    // health went in 22. Each pass adds those that arrive within the
+    // figures' seconds (fifteen at most), and prices again.
+    // Priced for the fight here only: the building stances count them in
+    // their own way (stanceCost's far).
+    const fightJoin = [];
+    {
+      const { arrives } = require('./combat-estimate');
+      let left = far, fightEst = estimate;
+      for (let pass = 0; pass < 3 && left.length; pass++) {
+        const secs = Math.min(15, fightEst.fightHere?.seconds || 0);
+        const come = left.filter(t => arrives({ name: t.entity.name, distance: t.distance }) <= secs);
+        if (!come.length) break;
+        fightJoin.push(...come); left = left.filter(t => !come.includes(t));
+        fightEst = fightEstimate({ ...estimateArgs, threats: [...counted, ...fightJoin].slice(0, 8).map(threatOf) });
+      }
+      cost = fightEst.fightHere;
+    }
     const farMobs = far.length ? fightEstimate({ threats: far.map(t => ({ name: t.entity.name, distance: t.distance, shoots: false, ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: false, id: t.entity.id, unseen: true })),
       armour: [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean), weapon: defenseWeapon(bot)?.name || null, health: bot.health, shield: shielded }).mobs.map(m => Object.assign(m, { far: true })) : [];
     const mobs = [...(estimate.mobs || []), ...farMobs];
@@ -3580,7 +3603,8 @@ class Survival {
     // out of them, it says which (note 614: one blaze priced as "them all"
     // with four more behind the walls).
     const countedHere = (estimate.mobs || []).filter(m => !m.apart).length;
-    const killWhom = unseenLeft ? `the ${countedHere === 1 ? 'one' : countedHere} in these figures, not those out of sight below` : 'them all';
+    const joinSays = fightJoin.length ? `, counted with ${fightJoin.length === 1 ? 'the one' : `the ${fightJoin.length}`} out of sight that reach${fightJoin.length === 1 ? 'es' : ''} the bot inside the fight at ${fightJoin.length === 1 ? 'its' : 'their'} own speed (${fightJoin.map(t => `a ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ')})` : '';
+    const killWhom = fightJoin.length ? `them all${joinSays}` : unseenLeft ? `the ${countedHere === 1 ? 'one' : countedHere} in these figures, not those out of sight below` : 'them all';
     // A creeper the fight closes on is met as the dance meets it (strike,
     // then back out of the blast, or hold where the swings kill it first):
     // said once, with the figures (creeperFoughtText).

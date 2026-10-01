@@ -6027,3 +6027,20 @@ test('a lava way out keeps its route as copies, so the cell and its route save a
   assert.doesNotThrow(() => JSON.stringify({ start: best }));
   assert.deepEqual(best.route.map(p => p.x), [1, 2]);
 });
+
+test('the biters out of sight that are at the bot inside the fight\'s own time are in the fight\'s figures (25598 mid-241-bw, note 805)', () => {
+  const zombieAt = (id, x, y, z) => ({ id, name: 'zombie', type: 'hostile', position: new Vec3(x, y, z), height: 1.95, isValid: true });
+  const make = withHidden => {
+    const bot = brickWorld(p => p.y <= 63, { items: ['iron_sword', 'cobblestone'] });
+    const seen = [zombieAt(3, 3.5, 64, 0.5), zombieAt(6, -2.5, 64, 2.5)];
+    const hidden = withHidden ? [zombieAt(4, 9.5, 64, 4.5), zombieAt(5, -10.5, 64, -5.5)] : [];
+    bot.entities = Object.fromEntries([...seen, ...hidden].map(e => [e.id, e]));
+    bot.world = { raycast: (from, dir, len) => { const to = from.plus(dir.scaled(len)); return hidden.some(h => h.position.distanceTo(to) < 2.5) ? { position: from.plus(dir).floored(), intersect: from.plus(dir) } : null; } };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, seen.map(z => threat(bot, z)), false);
+  };
+  const two = make(false), four = make(true);
+  assert(two.fight && four.fight, Object.keys(four).join(','));
+  assert(four.fight.expects.damage > two.fight.expects.damage + 1, `${four.fight.expects.damage} vs ${two.fight.expects.damage}`);
+  assert.doesNotMatch(four.fight.description, /not those out of sight below/);
+});
