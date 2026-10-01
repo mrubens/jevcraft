@@ -601,6 +601,12 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     for (const p of inReach) {
       if (countOf(bot, 'lava_bucket') >= target || !countOf(bot, 'bucket')) break;
       if (!room()) {
+        // With lava in hand already, the trip goes to the frame with what it
+        // carries, not on asking what else to drop at each fill: 25589
+        // (mid-226-am, 2026-10-01 15:49-15:52Z) was asked nine times and
+        // dropped its cobblestone and flint and steel (note 820). Room is
+        // asked for only when not one lava bucket is carried.
+        if (countOf(bot, 'lava_bucket') > 0) { console.log(`[lava] no slot free for another lava bucket: the cast takes the ${countOf(bot, 'lava_bucket')} carried`); break; }
         const wanted = Math.min(target - countOf(bot, 'lava_bucket'), countOf(bot, 'bucket'));
         await makeRoom(bot, task, 'lava_bucket', { goal, away: p, keep: new Set(['bucket', 'lava_bucket', 'water_bucket']),
           purpose: `lava for the portal frame (${wanted} more bucket${wanted === 1 ? '' : 's'} to fill here, each a slot of its own)` });
@@ -609,7 +615,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
       try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); filled++; }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
-    if (filled) return;
+    if (filled || (!noRoom && countOf(bot, 'lava_bucket') > 0 && !room())) return;
     if (noRoom) { goal.step = { ...step, phase: 'no_room' }; save(); throw new Error('No room in my pockets for a lava bucket: each takes a slot of its own, and nothing was dropped for one'); }
   }
   // A spot whose route search ran out of its half second is not a spot with
