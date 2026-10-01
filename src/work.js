@@ -5431,6 +5431,8 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
   // its walk was the climb: about 13 minutes and 234 of the 361 pickaxe
   // uses carried.
   const depth = L.depthHere(bot);
+  const { DAY: D } = require('./day'), tod = bot.time?.timeOfDay ?? 6000, nightNow = /overworld/.test(String(bot.game?.dimension || 'overworld')) && tod >= D.DARK && tod < D.DAWN;
+  const toDawn = Math.round(((D.DAWN - tod + 24000) % 24000) / 1200);
   const bySurface = v => v.kind === 'pool' && v.how === 'walk' && depth >= L.UNDER && Math.hypot(v.at.x - here.x, v.at.z - here.z) > SURFACE_WALK_FAR
     ? { up: depth, down: Math.max(0, Math.round(here.y + depth - v.at.y)) } : null;
   const surfaceSecs = v => { const b = bySurface(v); return b ? L.upSeconds(b.up) + L.downSeconds(b.down) : 0; };
@@ -5447,22 +5449,28 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
     const rest = v.kind === 'pool' ? T.restingWay(goal, T.lavaWay(v.at)) : null;
     const wait = rest ? Math.max(0, (rest.until - Date.now()) / 1000) : 0;
     const sf = bySurface(v);
+    // At night, a route that puts the bot on the surface says the night's
+    // record there (night-record.js, note 789; note 822): 25589 (mid-226-an,
+    // 2026-10-01 16:08Z) took beside_pool_3, climbed to a surface pool in the
+    // dark, and a creeper took it from 20 to 6 health on arrival.
+    const onTop = v.kind === 'pool' && (sf || !(depth >= L.UNDER)) && Number.isFinite(v.at?.y) && v.at.y >= 50;
+    const nightUp = onTop && nightNow ? { nightSays: ` It is night up there, about ${toDawn} real minutes to dawn.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn })}` } : {};
     const surfaceExtra = sf ? { surfaceSays: ` From ${depth} blocks under rock the walk to it goes by the surface: ${sf.up} blocks up to open sky, across, and ${sf.down} down to it, counted in the price.` } : {};
     const waitExtra = rest ? { waitSays: ` First its way's rest is waited out: ${rest.what} is set aside (${rest.why}) for ${rest.minutes} more minute${rest.minutes === 1 ? '' : 's'}, counted in the price.` } : {};
     // Here: the frame begun, or a frame near where the bot stands.
     const s = fromSite(v, frameAt, !!frame);
     const toFrame = frame && here.distanceTo(frameAt) > 16 ? walkTo(here, frameAt) : 0;
-    add(`here_${v.key}`, 'here', v, PP.priceCast({ room, reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra, ...surfaceExtra });
+    add(`here_${v.key}`, 'here', v, PP.priceCast({ room, reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra, ...surfaceExtra, ...nightUp });
     // Beside the lava: a frame cast within a few blocks of it.
     if (d3(frameAt, v.at) > 16 || (v.kind === 'deep' && frameAt.y - LAVA_DEPTH > 16) || method?.key === `beside_${v.key}`) {
       const r = reachLava(v);
-      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ room, reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra, ...surfaceExtra });
+      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ room, reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra, ...surfaceExtra, ...nightUp });
     }
     // A new site near here, the frame begun left: where it fails at its
     // site or cannot be got back to.
     if (frame && (method?.siteFailed || method?.frameFailed)) {
       const n = fromSite(v, here.floored());
-      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ room, reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra, ...surfaceExtra });
+      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ room, reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra, ...surfaceExtra, ...nightUp });
     }
   }
   // Two pools a site, the shortest routes, beside the plan's own lava, the
@@ -5598,7 +5606,7 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // failed after the ones that go on (note 767f).
   const failing = r => r.lava.kind === 'pool' ? !!require('./obsidian').lavaRecord(goal, r.lava.l, here) || PP.failuresFor(goal, { lava: r.lava.at }).length > 0 : PP.failuresFor(goal, { lava: r.lava.kind === 'deep' ? { deep: true } : r.lava.at }).length > 0;
   const ordered = Object.values(routes).sort((a, b) => (failing(a) - failing(b)) || ((a.price.seconds ?? Infinity) - (b.price.seconds ?? Infinity)));
-  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says) + (r.waitSays || '') + (r.surfaceSays || ''), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
+  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says) + (r.waitSays || '') + (r.surfaceSays || '') + (r.nightSays || ''), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
   // A frame of its own from obsidian: the diamond route, as the steps it is
   // (note 470), with the trip to the nearest lava where the obsidian is made.
   const trip = fetchTrip(frameAt, frame ? nearestLava(bot, goal, sources, frameAt) || lava : lava, null);
