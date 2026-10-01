@@ -1863,8 +1863,15 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       distance(b) - (search.visited[key(b)] || 0) * 24);
     let destination;
     const checked = new Set();
+    // A destination the walk found no way to three times from about here is
+    // set aside (route-aside.js, note 775) and not chosen again from here
+    // (note 825): 25598 (mid-241-cj, 2026-10-01 16:00-16:25Z), searching
+    // for planks in a mineshaft at y -42, walked at (-74, -41, -438) 72
+    // times, the half-second survey finding a way the walk did not.
+    const routeAside = require('./route-aside');
+    const setAsideHere = c => !!routeAside.asideFor(goal, { x: Math.floor(c.x), y: Math.floor(c.y), z: Math.floor(c.z) }, bot.entity.position);
     for (const candidate of land) {
-      if (checked.has(key(candidate))) continue;
+      if (checked.has(key(candidate)) || setAsideHere(candidate)) continue;
       checked.add(key(candidate));
       if (checked.size > 16) break;
       const targetGoal = new goals.GoalBlock(candidate.x, candidate.y, candidate.z);
@@ -1888,7 +1895,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       }).map(p => p.offset(0, 1, 0)).sort((a, b) =>
         (search.visited[key(a)] || 0) * 24 + a.distanceTo(bot.entity.position) -
         (search.visited[key(b)] || 0) * 24 - b.distanceTo(bot.entity.position));
-      for (const candidate of nearby.slice(0, 8)) {
+      for (const candidate of nearby.filter(c => !setAsideHere(c)).slice(0, 8)) {
         const route = bot.pathfinder.getPathTo ? await surveyRoute(bot, task, bot.pathfinder.movements,
           new goals.GoalBlock(candidate.x, candidate.y, candidate.z), 500) : { status: 'success' };
         if (route.status === 'success' && (!surface || (route.path || []).every(p => surface.allowed(p)))) {
