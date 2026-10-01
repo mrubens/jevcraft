@@ -9,7 +9,7 @@ const by={};for(const n of fs.readdirSync(dir).filter(n=>n.endsWith('.jsonl')&&s
 let named=0,sw=0,asked=0;const cases=[];
 for(const [port,files] of Object.entries(by)){let last=null,askedSince=false;
  for(const n of files)for(const l of fs.readFileSync(path.join(dir,n),'utf8').split('\n')){if(!/"kind":"(chat|decision)"/.test(l.slice(0,30)))continue;let o;try{o=JSON.parse(l)}catch{continue};const t=Date.parse(o.at);if(t<since||t>to)continue;
-  if(o.kind==='decision'){const id=o.snapshot?.decision?.id;if(id==='lava_way'||id==='portal_method')askedSince=true;continue}
+  if(o.kind==='decision'){const id=o.snapshot?.decision?.id;if(id==='lava_way'||id==='portal_method'||id==='portal_plan')askedSince=true;continue}
   const m=String(o.detail?.message||'').match(/^(Walking to the lava pool at|Digging toward the lava at) \((-?\d+), (-?\d+), (-?\d+)\)(.*)$/);if(!m)continue;
   const at={x:+m[2],y:+m[3],z:+m[4]};named++;
   if(last&&Math.hypot(at.x-last.x,at.y-last.y,at.z-last.z)>16){ if(askedSince)asked++; else {sw++;cases.push(`${port} ${o.at.slice(11,19)} (${last.x}, ${last.y}, ${last.z}) -> (${at.x}, ${at.y}, ${at.z})${m[5].slice(0,60)}`)} }

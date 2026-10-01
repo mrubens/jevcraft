@@ -168,26 +168,28 @@ test('the lava picker weighs a pool 28 down against the deep lava 102 down with 
   assert.deepEqual([dug.at(-1).x, dug.at(-1).z], [437, 64], 'the deep dig failing from here: the pool known');
 });
 
-test('a cast beside lava held from far off is asked again with the nearer lava offered (25581 mid-243-mg, 250 blocks)', () => {
-  const { flagFarLava, portalDue } = require('../src/work');
+test('lava found nearer than the plan\'s, not known when it was chosen, asks the plan again; known since, it does not (25581 mid-243-mg, 250 blocks; note 782)', () => {
+  const { planDueNow } = require('../src/work');
+  const PP = require('../src/portal-plan');
   const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(215.5, 64, 166.5) }, inventory: { items: () => [] },
     findBlocks: () => [], blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }) };
-  const goal = { portalMethod: { kind: 'cast', near: { x: 21, y: 67, z: -4 }, activeMs: 0, reasked: 0 },
-    landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 240, y: 60, z: 180 }, { kind: 'lava_pool', dimension: 'overworld', x: 21, y: 67, z: -4 }] };
-  assert.equal(portalDue(goal.portalMethod), false);
-  assert.equal(flagFarLava(bot, goal), true);
-  assert.equal(goal.portalMethod.nearFar.held, 259);
-  assert.equal(goal.portalMethod.nearFar.other, 28);
-  assert.equal(portalDue(goal.portalMethod), true);
-  // Kept at that distance: not flagged again until a third farther.
-  delete goal.portalMethod.nearFar; goal.portalMethod.nearFarKept = 259;
-  assert.equal(flagFarLava(bot, goal), false);
-  bot.entity.position = new Vec3(400.5, 64, 250.5);
-  goal.landmarks[0] = { ...goal.landmarks[0], x: 420, z: 260 };
-  assert.equal(flagFarLava(bot, goal), true);
-  // A frame begun is the cast's own: not asked for this.
-  delete goal.portalMethod.nearFar; goal.portalFrame = { origin: { x: 0, y: 64, z: 0 }, cast: true, blocks: [] };
-  assert.equal(flagFarLava(bot, goal), false);
+  const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 21, y: 67, z: -4 }],
+    portalMethod: { kind: 'cast', key: 'beside_pool_0', near: { x: 21, y: 67, z: -4 }, lava: { way: 'pool', at: { x: 21, y: 67, z: -4 } }, minutes: 60, activeMs: 0, reasked: 0 } };
+  goal.portalMethod.facts = PP.planFacts(bot, goal, { lavaKnown: [{ x: 21, y: 67, z: -4 }] });
+  assert.equal(planDueNow(bot, goal), null);
+  // A pool found 28 blocks off, the plan's 259 off.
+  goal.landmarks.push({ kind: 'lava_pool', dimension: 'overworld', x: 240, y: 60, z: 180 });
+  const due = planDueNow(bot, goal);
+  assert.equal(due.kind, 'lava');
+  assert.match(due.why, /^lava found at \(240, 60, 180\) \(pool\), 28 blocks off, nearer than the plan's lava \(259\)$/);
+  // Said once: known now, it is not a new fact again.
+  assert.equal(planDueNow(bot, goal), null);
+  // Farther than the plan's lava, a pool found is not asked about.
+  const near = { ...goal, landmarks: [goal.landmarks[0]], portalMethod: { ...goal.portalMethod } };
+  near.portalMethod.facts = PP.planFacts(bot, near, { lavaKnown: [{ x: 21, y: 67, z: -4 }] });
+  bot.entity.position = new Vec3(30.5, 67, 0.5);
+  near.landmarks.push({ kind: 'lava_pool', dimension: 'overworld', x: 240, y: 60, z: 180 });
+  assert.equal(planDueNow(bot, near), null);
 });
 
 test('the watcher\'s hour is a reason in the verdict, not an empty list', () => {
@@ -252,7 +254,6 @@ test('the ladder\'s label claims no turn without a portal lit: a cast traded wit
 });
 
 test('two portal steps each holding its claim that trade the turn are Jev\'s question about the portal, the flip named, not a rest', () => {
-  const { portalDue } = require('../src/work');
   const pairs = require('../src/flip-pairs');
   const carried = [{ name: 'bucket', count: 2 }];
   const { bot, stop } = watched(new Vec3(1.5, 70, 123.5), carried);
@@ -265,7 +266,7 @@ test('two portal steps each holding its claim that trade the turn are Jev\'s que
     assert.deepEqual([...goal.portalMethod.flipped?.pair || []].sort(), ['cast_portal', 'fill_bucket']);
     assert.match(goal.portalMethod.flipped.why, /^turning between (fill bucket and cast portal|cast portal and fill bucket) 4 times in \d+ seconds/);
     assert.match(goal.portalMethod.flipped.fact, /No portal is lit here\. The frame begun at \(-1, 70, 122\), \d+ blocks off: some of 10 standing, cast in place\. In hand: 0 lava, 0 water and 2 empty buckets, 0 obsidian; 10 lava still to fetch\./);
-    assert.equal(portalDue(goal.portalMethod), true, 'portal_method is asked');
+    assert.match(require('../src/portal-plan').planDue(bot, goal).why, /^the route failed: the portal's own steps were turning between/, 'the portal plan is asked');
     assert.equal(pairs.resting(goal, ['cast_portal', 'fill_bucket'], bot.entity.position, r.t), null);
   } finally { stop(); }
   // The walk back to a frame whose cast rests there (an older rest) is not offered.

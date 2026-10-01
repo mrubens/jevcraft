@@ -75,22 +75,28 @@ test('a spot walks stall at again and again is routed round on the next walks, n
   assert.equal(movements.exclusionAreasStep, undefined, 'put back after');
 });
 
-test('with a lava pool known and the rung on the portal, the detours name it first (25597 mid-241-ba 13:04:32Z, note 753b)', async () => {
+test('with a portal plan held and the rung on the portal, the detours name asking it again first; no detour goes to other lava (25597 mid-241-ba 13:04:32Z, note 753b, note 782)', async () => {
   const { portalJobs, detourWork } = require('../src/work');
   const bot = flatBot({ at: new Vec3(-118.5, 65, -609.5) });
   bot.time = { timeOfDay: 13000 }; // dusk: the day work stays off, to keep this small
   const goal = { kind: 'win', gameProgress: { phase: 'reach_nether' }, landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: -149, y: 62, z: -611 }] };
+  // No plan held: the plan is the portal step's to ask, and no detour goes to the pool on its own.
+  assert.deepEqual(portalJobs(bot, goal).map(j => j.key), []);
+  goal.portalMethod = { kind: 'cast', key: 'beside_pool_0', near: { x: -149, y: 62, z: -611 }, lava: { way: 'pool', at: { x: -149, y: 62, z: -611 } }, minutes: 12, activeMs: 4 * 60000, facts: { carriers: 1, deaths: 0, dimension: 'overworld', lavaKnown: [] } };
+  goal.step = { action: 'to_lava_for_portal' };
   const jobs = portalJobs(bot, goal);
-  assert.equal(jobs.length, 1);
-  assert.equal(jobs[0].key, 'to_known_lava');
-  assert.match(jobs[0].description, /^The portal's own work: go to the lava pool found at \(-149, 62, -611\), 31 blocks off, about \d+ seconds\. A frame cast beside it makes each of the 10 lava buckets still owed a trip of seconds \(1 bucket carried\)/);
+  assert.deepEqual(jobs.map(j => j.key), ['replan_portal']);
+  assert.match(jobs[0].description, /^The portal's own plan: ask it again, this stall on to lava for portal said as its route's failure\. The route held: a frame cast beside its lava, its lava at \(-149, 62, -611\), 4 of its stated 12 minutes worked\./);
   const work = await detourWork(bot, new Task('detour'), goal, () => {}, {});
-  assert.equal(work[0].key, 'to_known_lava', `first: ${work.map(w => w.key)}`);
-  // Not on another rung, and not with the pool spent.
+  assert.equal(work[0].key, 'replan_portal', `first: ${work.map(w => w.key)}`);
+  await jobs[0].run(new Task('detour'), () => {});
+  assert.match(goal.portalMethod.routeFailed.why, /^a stall on to lava for portal/);
+  assert.equal(goal.portalPlanFailures.at(-1).key, 'beside_pool_0');
+  assert.deepEqual(portalJobs(bot, goal).map(j => j.key), [], 'its route already failed: the plan is asked at the next pass');
+  // Not on another rung.
   assert.equal(portalJobs(bot, { ...goal, gameProgress: { phase: 'iron_pickaxe' } }).length, 0);
-  assert.equal(portalJobs(bot, { ...goal, landmarks: [{ ...goal.landmarks[0], spent: 'x' }] }).length, 0);
-  // A frame begun far off: back to it, before any lava.
-  const framed = { ...goal, portalFrame: { origin: { x: -80, y: 64, z: -600 }, blocks: [{ x: -80, y: 64, z: -600 }], cast: true } };
+  // A frame begun far off: back to it.
+  const framed = { ...goal, portalMethod: undefined, portalFrame: { origin: { x: -80, y: 64, z: -600 }, blocks: [{ x: -80, y: 64, z: -600 }], cast: true } };
   assert.equal(portalJobs(bot, framed)[0].key, 'to_portal_frame');
 });
 

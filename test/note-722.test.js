@@ -45,28 +45,28 @@ const opt = d => ({ description: d });
 test('a stand taken as the least bad still holds: surface_trip is asked without the climb that would undo it (25590, note 722)', async t => {
   withNoneGood(t);
   const bot = overworldBot(), goal = { kind: 'win' };
-  // None good on top (0.48), cast_at_lava the highest of the real options
+  // None good on top (0.48), beside_pool_1 the highest of the real options
   // (0.22): exactly 25590's judgment at 04:34:57.
   const client = { systemOne: async ({ questions }) => {
     const keys = Object.keys(questions.branch_0.criteria);
-    if (keys.includes('cast_at_lava')) return { answers: { branch_0: { choice: 'none_good', confidence: 0.48,
-      probabilities: { new_site: 0.16, build_new: 0.14, cast_at_lava: 0.22, none_good: 0.48 } } } };
+    if (keys.includes('beside_pool_1')) return { answers: { branch_0: { choice: 'none_good', confidence: 0.48,
+      probabilities: { new_site_pool_1: 0.16, build_new: 0.14, beside_pool_1: 0.22, none_good: 0.48 } } } };
     return { answers: { branch_0: { choice: 'dig_site', confidence: 0.75, probabilities: { climb: 0.1, dig_site: 0.75 } } } };
   } };
-  const d1 = await decide('portal_method', { client, bot, goal, tree: {
-    build_new: opt('Build from obsidian.'), cast_at_lava: opt('Cast beside the known lava.'), new_site: opt('Leave the frame and start again.'),
+  const d1 = await decide('portal_plan', { client, bot, goal, tree: {
+    build_new: opt('Build from obsidian.'), beside_pool_1: opt('Cast beside the known lava.'), new_site_pool_1: opt('Leave the frame and start again.'),
   }, state: {} });
   assert.equal(d1.noneGood, true, 'recorded as the least bad, not a confident pick');
-  assert.deepEqual(d1.path, ['cast_at_lava']);
+  assert.deepEqual(d1.path, ['beside_pool_1']);
   // Even though it was none good, a stand still holds: it is not a walk,
   // and abandoning it loses real, already-placed progress.
-  assert.equal(goal.intention?.q, 'portal_method');
-  assert.equal(goal.intention?.choice, 'cast_at_lava');
+  assert.equal(goal.intention?.q, 'portal_plan');
+  assert.equal(goal.intention?.choice, 'beside_pool_1');
   const s = await decide('surface_trip', { client, bot, goal, tree: {
     climb: opt('Climb to open sky.'), mine_first: opt('Mine ore first, then climb.'), dig_site: opt('Dig a site for the frame here.'),
   }, state: {} });
   assert.deepEqual(s.path, ['dig_site'], 'climb and mine_first were withheld: dig_site was the only way left');
-  assert.equal(goal.intention.choice, 'cast_at_lava', 'the stand still holds');
+  assert.equal(goal.intention.choice, 'beside_pool_1', 'the stand still holds');
 });
 
 test('a walk taken as the least bad still begins no intention (note 693 unchanged)', async t => {

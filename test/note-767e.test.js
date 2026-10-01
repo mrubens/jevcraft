@@ -36,7 +36,7 @@ test('25593: a walk whose route search ran out of time is tried again with four 
   assert.equal(g2.landmarks[0].lastWalk.timedOut, true);
 });
 
-test('the pool chosen stays chosen through a route search out of time, and is dug to; a dig to it is offered at the stall', async () => {
+test('the pool chosen stays chosen through a route search out of time, and is dug to; a staircase to it is a route of the portal plan (note 782)', async () => {
   const { pickFailed } = require('../src/obsidian');
   const { ROUTE_TIMED_OUT } = require('../src/exploration');
   const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 319, y: 47, z: 276 }] };
@@ -45,22 +45,19 @@ test('the pool chosen stays chosen through a route search out of time, and is du
   assert.equal(pickFailed(goal, pick), null, 'not the pool\'s failure');
   setAside(goal, 'landmark_trip', 'lava_pool:319,276', 'the walk there came no nearer than before (19 blocks off to 19)', 1800000);
   assert.match(pickFailed(goal, pick), /the walk there came no nearer/);
-  // The stall's portal work: a staircase dug to it, priced, with its record.
-  const { portalJobs } = require('../src/work');
+  // As a route of the portal plan (note 782; the stall's dig_to_lava before): a staircase dug to it, priced, with its record.
+  const { portalMethod } = require('../src/work');
   const b = bot();
+  b.health = 20; b.food = 20; b.chat = () => {};
+  b.inventory.items = () => [{ name: 'bucket', count: 2 }, { name: 'water_bucket', count: 1 }, { name: 'stone_pickaxe', count: 1 }];
   const g = { gameProgress: { phase: 'reach_nether' }, landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 319, y: 47, z: 276, lastWalk: { at: Date.now(), began: 19, ended: 19, why: 'Took to long to decide path to goal!', timedOut: true } }] };
   setAside(g, 'landmark_trip', 'lava_pool:319,276', `${ROUTE_TIMED_OUT} (19 blocks off)`, 300000);
-  const jobs = portalJobs(b, g);
-  const dig = jobs.find(j => j.key === 'dig_to_lava');
-  assert(dig, jobs.map(j => j.key).join(','));
-  assert.match(dig.description, /^The portal's own work: dig a staircase to the lava pool at \(319, 47, 276\), \d+ blocks across, 12 down: about \d+ seconds to dig there .*Its record: .*route search for the walk ran out of time/);
-  await dig.run();
-  assert.deepEqual(g.lavaFetch.pick.at, { x: 319, y: 47, z: 276 });
-  assert.deepEqual(g.lavaChosen.at, { x: 319, y: 47, z: 276 });
-  // The walk offered is tried again whatever rest it had.
-  const walk = jobs.find(j => j.key === 'to_known_lava');
-  assert(walk);
-  const src = require('fs').readFileSync(require.resolve('../src/work'), 'utf8');
-  assert.match(src, /attemptsFor\(goal\)\.clear\('landmark_trip', `lava_pool:\$\{l\.x\},\$\{l\.z\}`\); await require\('\.\/exploration'\)\.goToLandmark/);
-  assert.equal(isSetAside(g, 'landmark_trip', 'lava_pool:319,276'), true);
+  let offered = null;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: Object.keys(offered).find(k => /^here_pool_/.test(k)), confidence: 0.7 } } }; } };
+  await portalMethod(b, task, g, () => {});
+  const key = Object.keys(offered).find(k => /^here_pool_/.test(k));
+  assert.match(offered[key], /cast from the lava pool known at \(319, 47, 276\), \d+ blocks off, 12 blocks below here, by a staircase dug to it \(its walk did not get there\)\..*Pickaxe: about \d+ blocks dug with the pickaxe\..*Its record: .*route search for the walk ran out of time/);
+  assert.deepEqual(g.portalMethod.lava.at, { x: 319, y: 47, z: 276 });
+  assert.equal(g.portalMethod.near, undefined, 'a frame here, 16 blocks from it');
 });

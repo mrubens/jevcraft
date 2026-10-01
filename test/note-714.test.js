@@ -43,12 +43,12 @@ const opt = (d, target) => ({ description: d, ...(target ? { target } : {}) });
 
 test('a stand taken to cast a portal by the lava holds: surface_trip is asked without the climb that would undo it (25581, note 714)', async () => {
   const bot = overworldBot(), goal = { kind: 'win' };
-  const { client, offered } = jev(['cast_at_lava', 'dig_site']);
-  await decide('portal_method', { client, bot, goal, tree: {
-    cast_frame: opt('Cast a frame in place.'), cast_at_lava: opt('Cast beside the known lava.'), build_new: opt('Build from obsidian.'),
+  const { client, offered } = jev(['beside_pool_1', 'dig_site']);
+  await decide('portal_plan', { client, bot, goal, tree: {
+    here_pool_1: opt('Cast a frame in place.'), beside_pool_1: opt('Cast beside the known lava.'), build_new: opt('Build from obsidian.'),
   }, state: {} });
-  assert.equal(goal.intention.q, 'portal_method');
-  assert.equal(goal.intention.choice, 'cast_at_lava');
+  assert.equal(goal.intention.q, 'portal_plan');
+  assert.equal(goal.intention.choice, 'beside_pool_1');
   const s = await decide('surface_trip', { client, bot, goal, tree: {
     climb: opt('Climb to open sky.'), mine_first: opt('Mine ore first, then climb.'), dig_site: opt('Dig a site for the frame here.'),
   }, state: {} });
@@ -59,14 +59,14 @@ test('a stand taken to cast a portal by the lava holds: surface_trip is asked wi
   assert.deepEqual(s.path, ['dig_site']);
   assert.equal(s.only, true);
   // The intention still holds: dig_site is a way of it, not a new plan.
-  assert.equal(goal.intention.choice, 'cast_at_lava');
+  assert.equal(goal.intention.choice, 'beside_pool_1');
 });
 
 test('with more than one compatible way still open, surface_trip is asked, but climb and mine_first stay withheld while the lava stand holds (note 714)', async () => {
   const bot = overworldBot(), goal = { kind: 'win' };
-  const { client, offered } = jev(['cast_at_lava', 'stay_below']);
-  await decide('portal_method', { client, bot, goal, tree: {
-    cast_frame: opt('Cast a frame in place.'), cast_at_lava: opt('Cast beside the known lava.'),
+  const { client, offered } = jev(['beside_pool_1', 'stay_below']);
+  await decide('portal_plan', { client, bot, goal, tree: {
+    here_pool_1: opt('Cast a frame in place.'), beside_pool_1: opt('Cast beside the known lava.'),
   }, state: {} });
   const s = await decide('surface_trip', { client, bot, goal, tree: {
     climb: opt('Climb to open sky.'), mine_first: opt('Mine ore first, then climb.'), stay_below: opt('Leave the step and go on with the ladder.'), dig_site: opt('Dig a site for the frame here.'),

@@ -116,7 +116,8 @@ const OLD_ORDER = {
       || (children.without ? 'without' : Object.keys(children)[0]),
   night_mine_target: children => Object.keys(children).find(k => k !== 'branch') || 'branch',
   pocket_next: (children, path, context = {}) => children[context.rule] ? context.rule : children.stay ? 'stay' : Object.keys(children)[0],
-  portal_method: (children, path, context = {}) => context.leaveSite && children.new_site ? 'new_site' : children[context.current] ? context.current : 'build_new',
+  // The portal plan (note 782): the route held, a new site where the frame has failed ten times there, else the cheapest route priced.
+  portal_plan: (children, path, context = {}) => (context.leaveSite && Object.keys(children).find(k => k.startsWith('new_site_'))) || (children[context.current] ? context.current : children[context.oldOrder] ? context.oldOrder : 'build_new'),
   portal_way: children => ['portal_here', 'wait_rest'].find(k => children[k]) || Object.keys(children)[0],
   ranged_response: (children, path, context = {}) => (context.health ?? 20) >= 12 ? Object.keys(children)[0] : (children.retreat ? 'retreat' : Object.keys(children)[0]),
   resource_source: firstOption,

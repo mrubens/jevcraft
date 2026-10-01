@@ -85,22 +85,24 @@ test('where water is known is said to every way into the Nether when none is car
   assert.match(waterKnown(bot).says, /^no water is known/);
 });
 
-test('the way into the Nether says where water is and how far when no bucket of it is carried, and says nothing of it when one is (note 630)', async t => {
+test('the portal plan says where water is and how far on every cast route when no bucket of it is carried, and that one is when one is (note 630, note 782)', async t => {
   const { portalMethod } = require('../src/work');
   withBiomes(t, [RIVER]);
   const ask = async carried => {
     const bot = fakeBot(carried);
-    let offered;
+    let offered, state;
     const task = new Task('nether');
-    task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.7 } } }; } };
+    task.opportunityClient = { systemOne: async ({ questions, state: s }) => { offered = questions.branch_0.criteria; state = s; return { answers: { branch_0: { choice: 'build_new', confidence: 0.7 } } }; } };
     await portalMethod(bot, task, {}, () => {}).catch(() => {});
-    return offered;
+    return { offered, state, cast: Object.keys(offered).filter(k => /^(here|beside)_/.test(k)) };
   };
   const without = await ask({ bucket: 1, lava_bucket: 9, cobblestone: 64 });
-  assert.match(without.cast_frame, /Water, for a bucket of it: no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/);
-  assert.match(without.build_new, /Water, for a bucket of it: no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/);
+  assert(without.cast.length, 'cast routes offered');
+  for (const k of without.cast) assert.match(without.offered[k], /Water: none carried; no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/, k);
+  assert.match(without.state.knownForEveryRoute, /Water, for a bucket of it: no water in view within 48 blocks; the nearest seen is the river 72 blocks south-west/);
   const carrying = await ask({ bucket: 1, water_bucket: 1, lava_bucket: 9, cobblestone: 64 });
-  assert.doesNotMatch(carrying.cast_frame, /Water, for a bucket of it/);
+  for (const k of carrying.cast) assert.match(carrying.offered[k], /Water: one water bucket carried\./, k);
+  assert.doesNotMatch(carrying.state.knownForEveryRoute, /Water, for a bucket of it/);
 });
 
 test('the stall\'s question says what the cast is waiting for, and the walk to a river says it has the water (note 630)', async t => {

@@ -535,7 +535,7 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   landmark.lastWalk = { at: Date.now(), from: { x: Math.round(from.x), y: Math.round(from.y), z: Math.round(from.z) }, began: Math.round(before), ended: Math.round(after), ...(walkWhy ? { why: walkWhy } : {}), ...(timedOut ? { timedOut: true } : {}) };
   // Out of time twice, the walk is set aside a short while and said as
   // that, not as the place's failure: a staircase dug to it is the way
-  // meanwhile (obsidian.js, work.js portalJobs dig_to_lava).
+  // meanwhile (obsidian.js; the portal plan prices a staircase route to it, note 782).
   if (before - after < 8 || after >= best - 1) setAside(goal, 'landmark_trip', key, timedOut
     ? `${ROUTE_TIMED_OUT} (${Math.round(before)} blocks off, ${Math.round(Math.abs((landmark.y ?? from.y) - from.y))} up or down; twice, the second with ${Math.round(Math.max(20000, 4 * 5000) / 1000)} seconds to think)`
     : `the walk there came no nearer than before (${Math.round(before)} blocks off to ${Math.round(after)})${walkWhy ? `: ${walkWhy}` : ''}`, timedOut ? 300000 : 1800000);

@@ -68,7 +68,7 @@ function castingBot(carried, { waterGoes = null } = {}) {
   return { bot, w, log, calls, actions, add };
 }
 
-test('25589: a frame begun far from the lava its trips go to offers restarting beside that lava, priced against the trips owed; raw iron makes buckets', async () => {
+test('25589: a frame begun far from the lava its trips go to: the route beside that lava is offered against the route keeping the frame, each priced, the trips measured; raw iron makes buckets (note 767c, note 782)', async () => {
   const { portalMethod } = require('../src/work');
   const { bot, w } = castingBot({ water_bucket: 1, bucket: 3, cobblestone: 64, raw_iron: 33, furnace: 1, coal: 20 });
   const frame = newFrame('x', new Vec3(413, 64, 283));
@@ -76,13 +76,15 @@ test('25589: a frame begun far from the lava its trips go to offers restarting b
   bot.entity.position = new Vec3(415.5, 64, 280.5);
   const lava = { x: 273, y: 64, z: 178 };
   const goal = { portalFrame: frame, landmarks: [{ kind: 'lava_pool', dimension: 'overworld', ...lava }],
-    portalMethod: { kind: 'cast', near: { ...lava }, activeMs: 300000, reasked: 0, from: {}, lavaTrips: { n: 1, ms: 120000 }, tripsFar: { n: 1, each: 120, hurt: 0, left: 8 } } };
+    portalMethod: { kind: 'cast', key: 'here_pool_0', lava: { way: 'pool', at: { ...lava } }, minutes: 4, activeMs: 300000, reasked: 0, from: {}, lavaTrips: { n: 1, ms: 120000 } } };
   let offered = null;
   const task = new Task('nether');
-  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'restart_at_lava', confidence: 0.7 } } }; } };
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'beside_pool_0', confidence: 0.7 } } }; } };
   await portalMethod(bot, task, goal, () => {});
-  assert.match(offered.restart_at_lava, /^Leave the frame at \(413, 64, 283\) as it stands, 2 of ten in it, .*cast a new frame beside the lava its trips go to, at \(273, 64, 178\), \d+ blocks from the frame: there each of the ten buckets is a few seconds, the walk there once, against \d+ trips? still owed here at about 2 minutes a trip/);
-  assert.match(offered.craft_buckets, /from the iron carried \(three ingots each, \d+ of the 0 ingots and 33 raw iron carried\)\. \d+ of the 33 raw iron carried are smelted first/);
+  assert.match(offered.beside_pool_0, /^A frame cast beside the lava, within a few blocks of it; the frame begun at \(413, 64, 283\), 2 of ten cast, left as it stands/);
+  assert.match(offered.beside_pool_0, /4 trips with 3 buckets, a scoop and a few blocks' walk about \d+ seconds each/);
+  assert.match(offered.here_pool_0, /trips? with \d+ buckets?, there and back about 2 minutes each/);
+  assert.match(offered.here_pool_0, /more made first from the iron carried \(three ingots each, \d+ of the 33 raw iron carried smelted first in a furnace, one carried\)/);
   assert.equal(goal.portalFrame, undefined, 'the frame left');
   assert.deepEqual(goal.portalMethod.near, lava);
   assert.deepEqual(goal.portalSitesLeft.map(s => [s.x, s.y, s.z]), [[413, 64, 283]]);

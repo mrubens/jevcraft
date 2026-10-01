@@ -161,7 +161,7 @@ function siteCase({ blocker = true } = {}) {
   if (blocker) for (const c of [slot.offset(0, 1, 1), slot.offset(0, 1, -1), slot.offset(0, 2, 1), slot.offset(0, 2, -1)]) if (w.openAt(c)) w.set(c, 'dirt');
   frame.standsTried = { [`${slot.x},${slot.y},${slot.z}`]: [{ x: slot.x, y: slot.y + 1, z: slot.z + 2 }] };
   frame.siteFailed = { cast: 2, n: 1, whys: { [`No stand reached for the frame slot at ${slot}: 1 beside it`]: 1 }, slot: { x: slot.x, y: slot.y, z: slot.z }, kind: 'No stand reached for the frame slot' };
-  const goal = { portalFrame: frame, landmarks: [{ kind: 'lava_pool', x: 40, y: 63, z: 20, dimension: 'overworld' }], portalMethod: { kind: 'cast', activeMs: 0, reasked: 0, from: {}, siteFailed: true } };
+  const goal = { portalFrame: frame, landmarks: [{ kind: 'lava_pool', x: 40, y: 63, z: 20, dimension: 'overworld' }], portalMethod: { kind: 'cast', key: 'here_pool_0', lava: { way: 'pool', at: { x: 40, y: 63, z: 20 } }, activeMs: 0, reasked: 0, from: {}, siteFailed: true } };
   return { bot, w, actions, goal, frame, slot };
 }
 
@@ -172,9 +172,9 @@ test('a site failure is asked with the cost of leaving and the ways to repair th
   const task = new Task('nether');
   task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'clear_blocker', confidence: 0.7 } } }; } };
   assert.equal(await portalMethod(bot, task, goal, () => {}), true);
-  assert.match(offered.new_site, /Leaving throws away the 2 cast here: at a new site they are 2 more lava buckets to fetch and pour, about \d+ (seconds|minutes) of trips at this frame's trip/);
-  assert.match(offered.clear_blocker, /^Repair this site: dig out what blocks the line into the frame slot at \(\d+, \d+, \d+\) from the open cells beside it, the dirt at/);
-  assert.match(offered.other_stand, /^Repair this site: pour into the frame slot at \(\d+, \d+, \d+\) from another stand than the 1 tried there/);
+  assert.match(offered.new_site_pool_0, /left as it stands, its obsidian out only with a diamond pickaxe \(none carried\), and the 2 cast there are 2 lava buckets again here; cast from the lava pool known at \(40, 63, 20\)/);
+  assert.match(offered.clear_blocker, /^Repair this site and keep the route: dig out what blocks the line into the frame slot at \(\d+, \d+, \d+\) from the open cells beside it, the dirt at/);
+  assert.match(offered.other_stand, /^Repair this site and keep the route: pour into the frame slot at \(\d+, \d+, \d+\) from another stand than the 1 tried there/);
   assert.equal(frame.repair.kind, 'clear');
   assert(frame.repair.cells.length >= 1);
   // The cast digs them first, then looks for a stand.
@@ -198,14 +198,14 @@ test('other_stand passes over the stands tried at the slot; the answer at a fail
   assert.equal(goal.portalMethod.siteAnswer.pick, 'other_stand');
   // Failures of the same kind: held, not asked (buildPortalFrame's site catch). One of another kind: asked.
   const C = require('../src/decisions/commit');
-  assert(C.holding(bot, 'portal_method'), 'held');
+  assert(C.holding(bot, 'portal_plan'), 'held');
   const work = fs.readFileSync(require.resolve('../src/work'), 'utf8');
   assert.match(work, /answered\.cast !== castIn \? `a block went in since/);
   assert.match(work, /answered\.kind !== frame\.siteFailed\.kind \? `a failure of another kind came/);
   assert.equal(typeof buildPortalFrame, 'function');
 });
 
-test('the lava\'s way is asked again when the way chosen fails, its failure said on the option (the reviewer\'s rule)', async () => {
+test('the plan\'s lava whose way fails since it was chosen is the route failing: the plan asked again, the failure on its record (the reviewer\'s rule, note 782)', async () => {
   const { collectLava } = require('../src/obsidian');
   const { lavaWay } = require('../src/tunneling');
   const items = [{ name: 'bucket', count: 1 }, { name: 'stone_pickaxe', count: 1 }];
@@ -216,40 +216,44 @@ test('the lava\'s way is asked again when the way chosen fails, its failure said
     findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }) }, chat: () => {} };
   const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 70, y: 21, z: 39 }, { kind: 'lava_pool', dimension: 'overworld', x: 36, y: 21, z: 120 }] };
   for (const k of ['lava_pool:70,39', 'lava_pool:36,120']) setAside(goal, 'landmark_trip', k, 'no nearer', 1800000);
+  const chosen = { x: 70, y: 21, z: 39 };
+  goal.portalMethod = { kind: 'cast', key: 'here_pool_0', lava: { way: 'pool', at: { ...chosen } }, chosenAt: Date.now() + 1, facts: { dimension: 'overworld' } };
   const asked = [];
   const task = new Task('lava');
-  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: Object.keys(questions.branch_0.criteria).find(k => /^pool_/.test(k)), confidence: 0.7 } } }; } };
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: Object.keys(questions.branch_0.criteria)[0], confidence: 0.7 } } }; } };
   const dug = [], actions = { navigate: async () => {}, dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
   const step = { action: 'fill_bucket', item: 'lava_bucket', count: 1 };
   await collectLava(bot, task, step, goal, () => {}, actions);
-  assert.equal(asked.length, 1);
-  const chosen = goal.lavaFetch.pick.at;
   await collectLava(bot, task, step, goal, () => {}, actions);
-  assert.equal(asked.length, 1, 'held while its route holds');
-  // Its staircase set aside: asked again, with why.
+  assert.equal(asked.length, 0, 'the fetch asks nothing');
+  assert.equal(dug.length, 2, 'dug toward the plan\'s pool while its way holds');
+  assert(dug.every(d => Math.hypot(d.x - 70, d.z - 39) <= 2));
+  // Its staircase set aside: the route failed, said, and nothing dug toward any other lava.
   const area = t => ({ x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 });
   setAside(goal, 'staircase', area(lavaWay(new Vec3(chosen.x, chosen.y, chosen.z))), '3 rounds without getting closer', 600000);
   await collectLava(bot, task, step, goal, () => {}, actions);
-  assert.equal(asked.length, 2, 'asked again');
-  assert.match(goal.lavaWayFailed.at(-1).why, /the staircase toward it is set aside \(3 rounds without getting closer\)/);
+  assert.equal(asked.length, 0);
+  assert.equal(dug.length, 2, 'no other lava taken here');
+  assert.match(goal.portalMethod.routeFailed.why, /^the pool at \(70, 21, 39\): the way into it rests \(3 rounds without getting closer\)/);
+  assert.match(require('../src/portal-plan').planDue(bot, goal).why, /^the route failed: the pool at \(70, 21, 39\)/);
   const { lavaRecord } = require('../src/obsidian');
-  assert.match(lavaRecord(goal, { x: chosen.x, y: chosen.y, z: chosen.z }), /Its record: the staircase toward it is set aside \(3 rounds without getting closer\).*chosen before, 0 minutes ago, its route failed/);
+  assert.match(lavaRecord(goal, { x: chosen.x, y: chosen.y, z: chosen.z }), /Its record: the staircase toward it is set aside \(3 rounds without getting closer\).*a plan's route to it chosen \d+ minutes? ago failed: the pool at \(70, 21, 39\)/);
 });
 
-test('none good on top at the stall: another pool, a cast beside the pool and a surface search are offered, each with its record', () => {
+test('none good on top at the stall: a surface search is offered with the pools\' records; another pool or a cast beside one is the plan\'s, asked again (note 767, note 782)', () => {
   const { portalJobs } = require('../src/work');
   const registry = require('minecraft-data')('26.1');
   const bot = { registry, game: { dimension: 'overworld' }, entity: { position: new Vec3(0.5, 64, 0.5) }, inventory: { items: () => [{ name: 'bucket', count: 2 }] },
     blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }), findBlocks: () => [] };
   const goal = { gameProgress: { phase: 'reach_nether' }, landmarks: [
     { kind: 'lava_pool', dimension: 'overworld', x: 40, y: 64, z: 0, lastWalk: { at: Date.now(), began: 40, ended: 30, why: 'Took to long to decide path to goal!' } },
-    { kind: 'lava_pool', dimension: 'overworld', x: -60, y: 64, z: 10 }] };
-  assert.deepEqual(portalJobs(bot, goal).map(j => j.key), ['to_known_lava'], 'as before without none good on top');
+    { kind: 'lava_pool', dimension: 'overworld', x: -60, y: 64, z: 10 }],
+    portalMethod: { kind: 'cast', key: 'beside_pool_0', near: { x: 40, y: 64, z: 0 }, lava: { way: 'pool', at: { x: 40, y: 64, z: 0 } }, minutes: 5, activeMs: 0, facts: { dimension: 'overworld', carriers: 2, deaths: 0, lavaKnown: [] } } };
+  assert.deepEqual(portalJobs(bot, goal).map(j => j.key), ['replan_portal'], 'as before without none good on top: the plan asked again');
   bot._spells = { stillness_detour: { last: Date.now(), tops: [false, true] } };
   const jobs = portalJobs(bot, goal);
-  assert.deepEqual(jobs.map(j => j.key), ['to_known_lava', 'to_other_lava', 'cast_at_pool', 'search_lava']);
-  assert.match(jobs[0].description, /Its record: the last walk there ended 30 blocks off \(from 40\): Took to long to decide path to goal!/);
-  assert.match(jobs[3].description, /2 pools known within 256 blocks: 0 found spent, 0 whose way rests, 2 open/);
+  assert.deepEqual(jobs.map(j => j.key), ['replan_portal', 'search_lava']);
+  assert.match(jobs[1].description, /2 pools known within 256 blocks: 0 found spent, 0 whose way rests, 2 open: \(40, 64, 0\), 40 blocks off: the last walk there ended 30 blocks off \(from 40\): Took to long to decide path to goal!/);
 });
 
 test('the audit names a run of the crossing\'s label for the question asked under it, and a brief one is skipped', () => {
@@ -271,16 +275,18 @@ test('the audit names a run of the crossing\'s label for the question asked unde
   assert.deepEqual(r.flips.map(f => f.between), ['cast_portal <-> enter_nether (asking)']);
 });
 
-test('25585: trips for lava from a frame begun that run long or hurt bring the way back to be weighed, with the trips said', async () => {
-  const { portalDue } = require('../src/work');
+test('25585: trips for lava from a frame begun are measured, long or hurtful, and price the plan\'s routes next asked; a slow trip does not ask it by itself (note 782)', async () => {
+  const { planDueNow } = require('../src/work');
   const { bot, log, actions } = castingBot({ water_bucket: 1, lava_bucket: 1, cobblestone: 64 });
   bot.entity.position = new Vec3(13.5, 64, 21.5);
-  const goal = { portalFrame: newFrame('x'), portalMethod: { kind: 'cast', activeMs: 200000, reasked: 0, from: {}, tripFrom: 50000, tripHealth: 20 } };
+  const goal = { portalFrame: newFrame('x'), portalMethod: { kind: 'cast', key: 'here_deep', lava: { way: 'deep' }, minutes: 40, activeMs: 200000, reasked: 0, from: {}, tripFrom: 50000, tripHealth: 20 } };
+  goal.portalMethod.facts = require('../src/portal-plan').planFacts(bot, goal, {});
   bot.health = 12;
   for (let pass = 0; pass < 3 && !log.lava.length; pass++) await cast.castFrame(bot, new Task('cast'), goal, () => {}, actions);
   assert.equal(log.lava.length, 1);
-  assert.deepEqual({ ...goal.portalMethod.tripsFar }, { n: 1, each: 150, hurt: 8, left: 10 });
-  assert.equal(portalDue(goal.portalMethod), true);
+  assert.deepEqual({ ...goal.portalMethod.lavaTrips }, { n: 1, ms: 150000, hurt: 8 });
+  assert.equal(goal.portalMethod.tripsFar, undefined);
+  assert.equal(planDueNow(bot, goal), null, 'not asked again for the trip alone: its stated minutes are what ask it');
 });
 
 test('25585: where the ground hurt the bot or its air ran low is remembered, and the walks after go round it', () => {

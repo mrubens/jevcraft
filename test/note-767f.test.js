@@ -71,7 +71,7 @@ function castingBot(carried, { waterGoes = null } = {}) {
   return { bot, w, log, calls, actions, add };
 }
 
-test('25588: the lava layer chosen at lava_way is dug for, not a pool walked to, past the fetch\'s own hold', async () => {
+test('25588: the lava layer the plan holds is dug for, not a pool walked to, past the fetch\'s own hold (note 767f, note 782)', async () => {
   const { collectLava, LAVA_DEPTH } = require('../src/obsidian');
   const items = [{ name: 'bucket', count: 1 }, { name: 'iron_pickaxe', count: 1 }];
   const bot = { registry, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {},
@@ -80,6 +80,7 @@ test('25588: the lava layer chosen at lava_way is dug for, not a pool walked to,
     findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }) }, chat: () => {} };
   const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: -49, y: 23, z: 206 }, { kind: 'lava_pool', dimension: 'overworld', x: 99, y: 15, z: 234 }] };
   for (const k of ['lava_pool:-49,206', 'lava_pool:99,234']) setAside(goal, 'landmark_trip', k, 'no nearer', 1800000);
+  goal.portalMethod = { kind: 'cast', key: 'here_deep', lava: { way: 'deep' }, chosenAt: Date.now(), facts: { dimension: 'overworld' } };
   const task = new Task('lava');
   let asked = 0;
   task.opportunityClient = { systemOne: async () => { asked++; return { answers: { branch_0: { choice: 'deep', confidence: 0.8 } } }; } };
@@ -91,26 +92,30 @@ test('25588: the lava layer chosen at lava_way is dug for, not a pool walked to,
   delete goal.lavaFetch;
   require('../src/progress').attemptsFor(goal).clear('landmark_trip', 'lava_pool:-49,206');
   await collectLava(bot, task, step, goal, () => {}, actions);
-  assert.equal(asked, 1);
+  assert.equal(asked, 0, 'the fetch asks nothing: the plan chose');
   assert.equal(walks.length, 0, 'no pool walked to');
   assert(dug.length >= 1 && dug.every(d => d.y === LAVA_DEPTH), JSON.stringify(dug));
 });
 
-test('25595: the lava held whose walks failed is said with its distance and time and comes after other lava, which is offered with its time', async () => {
+test('25595: the lava held whose walks failed is said with its record and comes after other lava, which is offered with its time (note 767f, note 782)', async () => {
   const { portalMethod } = require('../src/work');
   const { bot } = castingBot({ water_bucket: 1, bucket: 3, cobblestone: 64 });
   bot.findBlocks = () => [];
   bot.entity.position = new Vec3(100.5, 64, 60.5);
-  const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 140, y: 63, z: 100 }],
-    portalMethod: { kind: 'cast', near: { x: 140, y: -55, z: 65 }, activeMs: 0, reasked: 0, from: {}, nearFailed: { walks: 29, best: 117, now: 121, stopped: 'the walk ended short 29' } } };
-  let offered = null, order = null;
+  const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 140, y: 63, z: 100 }, { kind: 'lava_pool', dimension: 'overworld', x: 140, y: -55, z: 65 }],
+    portalMethod: { kind: 'cast', key: 'beside_pool_1', near: { x: 140, y: -55, z: 65 }, lava: { way: 'pool', at: { x: 140, y: -55, z: 65 } }, activeMs: 0, reasked: 0, from: {}, nearFailed: { walks: 29, best: 117, now: 121, stopped: 'the walk ended short 29' } } };
+  require('../src/portal-plan').planFailed(goal, '29 walks toward its lava came no nearer than 117 blocks');
+  let offered = null, order = null, state = null;
   const task = new Task('nether');
-  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; order = Object.keys(offered); return { answers: { branch_0: { choice: 'other_lava', confidence: 0.7 } } }; } };
+  task.opportunityClient = { systemOne: async ({ questions, state: s }) => { offered = questions.branch_0.criteria; state = s; order = Object.keys(offered); return { answers: { branch_0: { choice: order[0], confidence: 0.7 } } }; } };
   await portalMethod(bot, task, goal, () => {});
-  assert(offered.other_lava, order.join(','));
-  assert.match(offered.other_lava, /\d+ blocks away \(a lava pool remembered\), at y 63, [^,]*, about \d+ (seconds|minutes) at the bot's measured pace/);
-  assert.match(offered.cast_at_lava, /29 walks toward it came no nearer than 117 blocks.* The lava chosen before is \d+ blocks off, about \d+ (seconds|minutes) at the bot's measured pace had its walks got there\.$/);
-  assert(order.indexOf('cast_at_lava') > order.indexOf('other_lava'));
+  const other = order.find(k => /^beside_pool_/.test(k) && /\(140, 63, 100\)/.test(offered[k]));
+  const heldKey = order.find(k => /^beside_pool_/.test(k) && /\(140, -55, 65\)/.test(offered[k]));
+  assert(other && heldKey, order.join(','));
+  assert.match(offered[other], /Priced end to end, about \d+ (seconds|minutes)/);
+  assert.match(offered[heldKey], /Chosen before and failed: \d+ minutes? ago, 29 walks toward its lava came no nearer than 117 blocks/);
+  assert.match(state.askedAgainBecause, /^the route failed: 29 walks toward its lava came no nearer than 117 blocks/);
+  assert(order.indexOf(heldKey) > order.indexOf(other), 'the failing route after the one that goes on');
 });
 
 test('25597: walks to the lava chosen that arrive are not counted as failed', () => {

@@ -217,8 +217,8 @@ test('the portal way question, a work question, is told the run clock too', asyn
   const { decide } = require('../src/decisions');
   const goal = { gameProgress: { version: 1, startedAt: Date.now() - 60000, milestones: {}, clock: { startedAt: Date.now() - 60000, lastAt: Date.now(), playedMs: 60000, byDoing: { 'enter_nether: fill_bucket': 60000 } } } };
   let seen = null, said = null;
-  const client = { systemOne: async ({ state, rootInstructions }) => { seen = state; said = rootInstructions; return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.9 } } }; } };
-  await decide('portal_method', { client, bot: null, goal, tree: { cast_frame: { description: 'a' }, build_new: { description: 'b' } }, state: {} });
+  const client = { systemOne: async ({ state, rootInstructions }) => { seen = state; said = rootInstructions; return { answers: { branch_0: { choice: 'here_pool_1', confidence: 0.9 } } }; } };
+  await decide('portal_plan', { client, bot: null, goal, tree: { here_pool_1: { description: 'a' }, build_new: { description: 'b' } }, state: {} });
   assert.equal(seen.runClock?.minutesPlayed, 1);
 });
 
@@ -352,29 +352,29 @@ test('a question with one option is not asked: the one way is taken and said, no
   const bot = { entity: { position: { x: 0, y: 64, z: 0 } }, game: { dimension: 'the_nether' } };
   const goal = {};
   const client = { systemOne: () => assert.fail('one way needs no question') };
-  const r = await decide('portal_method', { client, bot, goal, tree: { cast_frame: { description: 'the only way' } }, state: {} });
-  assert.deepEqual(r.path, ['cast_frame']);
+  const r = await decide('portal_plan', { client, bot, goal, tree: { here_pool_1: { description: 'the only way' } }, state: {} });
+  assert.deepEqual(r.path, ['here_pool_1']);
   assert.equal(r.only, true);
   assert.equal((goal.decisions || []).length, 0);
   assert.equal(bot._turn, undefined, 'no turn taken for a question not asked');
 });
 
 test('the same answer to the same facts, come back at once with nothing measurable, is said, then rests from here, and with nothing left the question above is asked (notes 560, 571)', async () => {
-  // mid-242-ab: portal_method answered cast_frame 532 times in fifteen minutes, each pass ending at once
+  // mid-242-ab: portal_method answered here_pool_1 532 times in fifteen minutes, each pass ending at once
   // ("Nowhere to stand to pour into the frame slot at (18, 75, 58)").
   const { decide } = require('../src/decisions');
   const { Vec3 } = require('vec3');
   const bot = { entity: { position: new Vec3(16.5, 71, 60.5) }, game: { dimension: 'overworld' }, inventory: { items: () => [] } };
   const goal = { kind: 'win', step: { action: 'enter_nether', phase: 'reach_nether' } };
   const seen = [], asked = [];
-  const client = { systemOne: async ({ state, questions }) => { seen.push(state); asked.push(questions); return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.9 } } }; } };
-  const tree = n => ({ cast_frame: { description: `Cast in place. The frame has failed at its site ${n} times: "Nowhere to stand".` }, build_new: { description: 'Build from ten obsidian.' } });
-  const ask = n => decide('portal_method', { client, bot, goal, tree: tree(n), state: { obsidian: 0, minutesOnWay: 30 + n } });
+  const client = { systemOne: async ({ state, questions }) => { seen.push(state); asked.push(questions); return { answers: { branch_0: { choice: 'here_pool_1', confidence: 0.9 } } }; } };
+  const tree = n => ({ here_pool_1: { description: `Cast in place. The frame has failed at its site ${n} times: "Nowhere to stand".` }, build_new: { description: 'Build from ten obsidian.' } });
+  const ask = n => decide('portal_plan', { client, bot, goal, tree: tree(n), state: { obsidian: 0, minutesOnRoute: 30 + n } });
   await ask(1);
   assert.equal(seen[0].sameAnswerAgain, undefined, 'the first asking says nothing of repeats');
   goal.lastFailure = { why: 'Nowhere to stand to pour into the frame slot at (18, 75, 58)', at: Date.now() };
   await ask(2);
-  assert.match(seen[1].sameAnswerAgain, /^cast frame was chosen 1 time in the last \d+ seconds? with these same facts, and nothing measurable came of it .*: Nowhere to stand to pour/);
+  assert.match(seen[1].sameAnswerAgain, /^here pool 1 was chosen 1 time in the last \d+ seconds? with these same facts, and nothing measurable came of it .*: Nowhere to stand to pour/);
   assert.match(JSON.stringify(asked[1]), /Cast in place.*Tried once from here in the last \d+ seconds?, and it came to nothing: Nowhere to stand to pour/, 'the try said on its option');
   // Blocked twice from here, it rests (tried.js): not asked a third time, the one way left taken unasked.
   const third = await ask(3);
@@ -382,7 +382,7 @@ test('the same answer to the same facts, come back at once with nothing measurab
   assert.equal(seen.length, 2, 'not asked a third time');
   await ask(4);
   // Every way from here resting: the question above is asked (the rung's), with this one's failure said.
-  await assert.rejects(ask(5), err => err.name === 'Stalled' && /^Stalled: portal method: every way it had from here rests: cast frame: Tried 2 times from here .* Nowhere to stand .*; build new: Tried 2 times from here/.test(err.message));
+  await assert.rejects(ask(5), err => err.name === 'Stalled' && /^Stalled: portal plan: every way it had from here rests: here pool 1: Tried 2 times from here .* Nowhere to stand .*; build new: Tried 2 times from here/.test(err.message));
   assert.equal(seen.length, 2, 'Jev asked twice in all');
   assert.equal(bot._stalls.stall.key, 'step:enter_nether', 'the step\'s stall path takes it');
   assert.equal(bot._stalls.stall.escalated.to, 'rung_progress');

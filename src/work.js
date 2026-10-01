@@ -5052,42 +5052,51 @@ async function tunnelToward(bot, task, goal, save, target, key) {
   await resourceTunnelStep(bot, task, goal, save, target, key, { dig, navigate });
 }
 
-// How the portal comes to be, Jev's to choose when there is more than one
-// way: a frame of its own (ten obsidian, made from lava with a diamond
-// pickaxe), one cast in place from lava and water, or a remembered ruined
-// portal finished and lit (no diamonds). Held once chosen, as a rung is
-// (game-progress.js timeRung): every twenty working minutes on it the
-// question is asked again, with the minutes and what they have made said,
-// and the way can be kept or changed. Held for good, one trial cast for
-// three hours (834 bucket passes) and another spent its whole run on the
-// diamond route with no chance to change (the decision review, 2026-09-26).
-// A ruin whose frame will not do is marked and the question asked again.
-const PORTAL_BUDGET_MS = 20 * 60000;
-// A walk to the lava chosen that fails is asked about at once, with how
-// it failed (portalStep, note 470), and so is a way back to the frame
-// that fails (buildPortalFrame, note 481).
-// And so is a part-cast frame failing at its site (note 527).
-const portalDue = method => !!method && (!!method.nearFailed || !!method.frameFailed || !!method.siteFailed || !!method.nearFar || !!method.flipped || !!method.tripsFar || (method.activeMs || 0) >= PORTAL_BUDGET_MS * ((method.reasked || 0) + 1));
-// The lava a cast beside was chosen for, become far (note 763): 25581
-// (mid-243-mg, 2026-09-30 19:14-19:28Z) held cast_at_lava for the lava at
-// (21, 67, -4) from about 250 blocks off, its staircase set aside round
-// after round ("attempt 20"), the stall's detours asked thirty times with
-// none good on top, and no way to other lava on offer. Once another known
-// lava is nearer than the held one by a third (the hold's own margin, note
-// 753), and no frame is begun, the way is asked again with that lava
-// offered, both distances said; kept, it is not asked again for this until
-// the held lava is a third farther again.
-const FAR_MARGIN = 1.5;
-function flagFarLava(bot, goal) {
-  const method = goal.portalMethod;
-  if (!method?.near || method.nearFar || (goal.portalFrame && !goal.portalFrame.ruin) || !bot.entity?.position) return false;
-  const here = bot.entity.position, near = new Vec3(method.near.x, method.near.y, method.near.z);
-  const held = Math.round(here.distanceTo(near));
-  const other = nearestLava(bot, goal);
-  if (!other?.at || new Vec3(other.at.x, other.at.y, other.at.z).distanceTo(near) <= 16) return false;
-  if (!(other.distance * FAR_MARGIN < held) || (method.nearFarKept && held < method.nearFarKept * FAR_MARGIN)) return false;
-  method.nearFar = { held, other: other.distance, at: Date.now() };
-  return true;
+// How the portal comes to be: one plan, Jev's to choose (portal_plan,
+// src/portal-plan.js, note 782). Each option is a whole route: where the
+// frame stands (the frame begun, a frame here, one beside the lava, or a new
+// site), the lava it is cast from (a pool known, the lava in sight, the lava
+// layer) and how it is got there (walked, or a staircase dug), the buckets
+// (carried, or more made first where that shortens the route), and the
+// water; priced end to end at the record's paces, with the pickaxe's digging
+// and each route's failures said. A frame of obsidian and the ruined
+// portals remembered are routes too. Held once chosen, and asked again only
+// when a named fact changes (portal-plan.js planDue): the route failed, lava
+// found nearer, the frame lost obsidian, buckets lost, a death, or its own
+// stated minutes worked through. Before it the way was portal_method,
+// re-asked every twenty working minutes and at seven kinds of trouble, with
+// lava_way, the stall's portal detours and the fetch's own pick of lava
+// beside it (note 782: 895 portal asks and 432 plan changes on 172 portal
+// rungs, 199 of them the fetch's own).
+// The lava known from a place, for the plan's facts: pools remembered and
+// not spent, and lava in sight about here.
+function lavaKnownFrom(bot, goal, from, sources = lavaSources(bot)) {
+  const here = new Vec3(from.x, from.y, from.z), dim = String(bot.game?.dimension || 'overworld');
+  const { poolSpent } = require('./obsidian');
+  const pools = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === dim && !poolSpent(l))
+    .map(l => ({ at: { x: l.x, y: l.y ?? here.y, z: l.z }, how: 'pool' }));
+  const seen = (sources.scoopable.length ? sources.scoopable : sources.surface).map(p => ({ at: { x: p.x, y: p.y, z: p.z }, how: 'in sight' }));
+  // Lava in sight within sixteen blocks of a pool known is that pool's.
+  const own = seen.filter(s => !pools.some(p => Math.hypot(p.at.x - s.at.x, p.at.z - s.at.z) <= 16));
+  return [...pools, ...own].map(l => ({ ...l, distance: Math.round(Math.hypot(l.at.x - here.x, l.at.y - here.y, l.at.z - here.z)) }));
+}
+// The plan's lava, its distance from a place now: a pool's or the lava in
+// sight's own block; the lava layer's depth below it.
+function planLavaDistance(m, from) {
+  if (!m?.lava) return null;
+  if (m.lava.way === 'deep') return Math.max(0, Math.round(from.y - require('./obsidian').LAVA_DEPTH));
+  return m.lava.at ? Math.round(Math.hypot(m.lava.at.x - from.x, m.lava.at.y - from.y, m.lava.at.z - from.z)) : null;
+}
+// The named facts read now (portal-plan.js planDue), from the frame begun
+// or, none begun, where the bot stands.
+function planDueNow(bot, goal, sources = lavaSources(bot)) {
+  const PP = require('./portal-plan');
+  const frame = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame : null;
+  const from = frame ? frame.origin : bot.entity.position;
+  const facts = goal.portalMethod?.facts;
+  // Lava more than sixteen blocks from every lava the plan knew of.
+  const lavaNow = facts ? lavaKnownFrom(bot, goal, from, sources).filter(l => !(facts.lavaKnown || []).some(k => Math.hypot(k.x - l.at.x, k.z - l.at.z) <= 16 && Math.abs(k.y - l.at.y) <= 16)) : [];
+  return PP.planDue(bot, goal, { lavaNow, standing: frame ? PP.standingOf(bot, frame) : null, planDistance: planLavaDistance(goal.portalMethod, from) });
 }
 // The frame that cannot be got back to, as the fact every way is weighed
 // with: where, how far, and what each way ended in.
@@ -5111,8 +5120,6 @@ function siteFailedSays(frame, placed) {
   return ` The frame at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten cast, has failed at its site ${times(f.n)} since the last block went in: ${whys || 'reasons not kept'}.${body}`;
 }
 const diamondPickaxeCarried = bot => bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
-const methodKey = (method, ruins, goal = null) => method?.kind === 'build' ? 'build_new' : method?.kind === 'cast' ? (method.near ? 'cast_at_lava' : 'cast_frame')
-  : method?.kind === 'ruin' ? (k => k ? ruinKey(goal, k) : null)(ruins.find(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) : null;
 // A ruin's key is the number it was given when first offered (keys.js, note
 // 749), not its place in the list of ruins remembered.
 const ruinKey = (goal, k) => `ruin_${require('./decisions/keys').id(goal, 'ruin', k.landmark, { near: 8 })}`;
@@ -5195,19 +5202,134 @@ function methodSoFar(bot, goal, method, ruin) {
   const pace = minutes < 10 || ruin || !left ? '' : (went ? ` Its minutes went to: ${went}.` : '') + (gained
     ? ` At the pace so far, ${gained} obsidian in ${minutes} minutes (about ${Math.round(minutes / gained)} a block), the ${left} still to come would take about ${Math.round(minutes / gained * left)} minutes more.`
     : ` No obsidian has come of it in ${minutes} minutes.`);
-  return ` This is the way chosen, worked on for ${minutes} minutes so far. Since it was chosen: obsidian carried ${from.obsidian ?? 0} to ${countOf(bot, 'obsidian')}, ${goal.portalFrame ? `${placed} of the frame's ten standing` : 'no frame begun'}, diamonds carried ${from.diamonds ?? 0} to ${countOf(bot, 'diamond')}${madePick ? ', a diamond pickaxe made' : ''}${walk}.${pace} Kept, it is asked again after another ${PORTAL_BUDGET_MS / 60000} working minutes.`;
+  return ` This is the way chosen, worked on for ${minutes} minutes so far. Since it was chosen: obsidian carried ${from.obsidian ?? 0} to ${countOf(bot, 'obsidian')}, ${goal.portalFrame ? `${placed} of the frame's ten standing` : 'no frame begun'}, diamonds carried ${from.diamonds ?? 0} to ${countOf(bot, 'diamond')}${madePick ? ', a diamond pickaxe made' : ''}${walk}.${pace} Kept, it is asked again when a named fact changes or its stated ${method.minutes ? `${method.minutes} ` : ''}minutes are worked through.`;
+}
+
+// The plan's routes, built and priced (portal_plan, note 782). Each cast
+// route is a frame site and a lava: the site the frame begun (or, none
+// begun, near where the bot stands: `here`), beside the lava, or a new site
+// near here with the frame begun left (`new_site`, offered when the frame
+// fails at its site or cannot be got back to); the lava a pool known (the
+// two whose route here is shortest, and the plan's own), the lava in sight
+// about the frame, or the lava layer below.
+function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, raw }) {
+  const PP = require('./portal-plan'), L = require('./levels');
+  const { LAVA_DEPTH, wayCosts, poolSpent, lavaRecord } = require('./obsidian');
+  const T = require('./tunneling');
+  const dim = String(bot.game?.dimension || 'overworld');
+  const frameAt = frame ? pos(frame.origin) : here.floored();
+  const d3 = (a, b) => Math.round(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z));
+  const walkTo = (a, b) => { const dy = b.y - a.y; return L.walkSeconds(Math.hypot(b.x - a.x, b.z - a.z)) + (Math.abs(dy) > 8 ? (dy > 0 ? L.upSeconds(Math.abs(dy)) : L.downSeconds(Math.abs(dy))) : 0); };
+  const buckets = countOf(bot, 'bucket'), lavaBuckets = countOf(bot, 'lava_bucket'), obsidian = countOf(bot, 'obsidian');
+  const owedHere = castTrips({ obsidian, standing: placed, buckets, lavaBuckets }), owedNew = castTrips({ obsidian, standing: 0, buckets, lavaBuckets });
+  // The lava: pools remembered, not spent and their way into them not
+  // resting (those are said in the state with their records); the lava in
+  // sight that is not a pool's; the lava layer by the first heading down
+  // open from here.
+  const allPools = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === dim && l.y !== undefined);
+  const ids = require('./decisions/keys').ids(goal, 'lava_pool', allPools.map(l => ({ x: l.x, y: l.y, z: l.z })), { near: 8 });
+  const keyOf = l => `pool_${ids[allPools.indexOf(l)]}`;
+  const open = l => !poolSpent(l) && !T.lavaResting(goal, new Vec3(l.x, l.y, l.z));
+  const walkFailed = l => isSetAside(goal, 'landmark_trip', `lava_pool:${l.x},${l.z}`) || !!l.lastWalk?.timedOut;
+  // The plan's own pool stays on offer while its way rests, its rest said
+  // in its record, so that it can be kept (note 488).
+  const heldPool = l => method?.lava?.way === 'pool' && method.lava.at && PP.sameLava(method.lava.at, l);
+  const lavas = allPools.filter(l => open(l) || (heldPool(l) && !poolSpent(l))).filter(l => d3(frameAt, l) <= 512 || heldPool(l)).map(l => ({ key: keyOf(l), kind: 'pool', at: new Vec3(l.x, l.y, l.z), l, how: walkFailed(l) ? 'dig' : 'walk' }));
+  const served = sources.scoopable.length ? sources.scoopable : sources.surface;
+  const seen = served.filter(p => !allPools.some(l => Math.hypot(l.x - p.x, l.z - p.z) <= 16)).sort((a, b) => a.distanceTo(frameAt) - b.distanceTo(frameAt))[0];
+  if (seen) lavas.push({ key: 'sight', kind: 'sight', at: seen.clone(), how: 'walk' });
+  const headings = T.descentTargets(here.floored(), LAVA_DEPTH);
+  const headingResting = p => T.staircaseResting(goal, p) || isSetAside(goal, 'staircase_from', T.landingKey(here.floored(), p));
+  const deep = headings.find(p => !headingResting(p)), deepResting = headings.filter(headingResting).length;
+  // The lava layer from the frame begun: the same heading, under the frame.
+  const h0 = here.floored();
+  if (deep) lavas.push({ key: 'deep', kind: 'deep', at: deep.clone(), how: 'dig', fromFrame: new Vec3(frameAt.x + deep.x - h0.x, deep.y, frameAt.z + deep.z - h0.z) });
+  const heldAt = method?.lava?.at ? method.lava.at : null;
+  const isHeld = v => method?.lava && (method.lava.way === 'deep' ? v.kind === 'deep' : v.kind !== 'deep' && heldAt && PP.sameLava(heldAt, v.at));
+  // A route's lava, priced from a frame site: getting the first lava there
+  // and each trip after.
+  const fromSite = (v, site, atFrame = false) => {
+    const at = v.kind === 'deep' && atFrame ? v.fromFrame : v.at;
+    if (v.how === 'dig') { const c = wayCosts(site, at, site); return { first: c.there, trip: c.trip, digs: c.digs }; }
+    const t = fetchTrip(site, { at, distance: d3(site, at) }, isHeld(v) && method?.kind === 'cast' && !method.near ? method : null);
+    return { first: 0, trip: t.seconds, digs: 0, measured: t.made ? t : null };
+  };
+  const reachLava = v => v.how === 'dig' ? { seconds: wayCosts(here, v.at, null).there, digs: wayCosts(here, v.at, null).digs } : { seconds: walkTo(here, v.at), digs: 0 };
+  const routes = {};
+  const add = (key, site, v, price, extra = {}) => { routes[key] = { key, site, lava: v, price, ...extra }; };
+  for (const v of lavas) {
+    // Here: the frame begun, or a frame near where the bot stands.
+    const s = fromSite(v, frameAt, !!frame);
+    const toFrame = frame && here.distanceTo(frameAt) > 16 ? walkTo(here, frameAt) : 0;
+    add(`here_${v.key}`, 'here', v, PP.priceCast({ reach: toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured });
+    // Beside the lava: a frame cast within a few blocks of it.
+    if (d3(frameAt, v.at) > 16 || (v.kind === 'deep' && frameAt.y - LAVA_DEPTH > 16) || method?.key === `beside_${v.key}`) {
+      const r = reachLava(v);
+      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ reach: r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs });
+    }
+    // A new site near here, the frame begun left: where it fails at its
+    // site or cannot be got back to.
+    if (frame && (method?.siteFailed || method?.frameFailed)) {
+      const n = fromSite(v, here.floored());
+      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ reach: n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs });
+    }
+  }
+  // Two pools a site, the shortest routes, beside the plan's own lava, the
+  // lava in sight and the lava layer: a frame cast beside each pool known
+  // within 512 blocks is not a route worth the asking.
+  const bySite = {};
+  for (const r of Object.values(routes)) (bySite[r.site] ||= []).push(r);
+  const keep = new Set();
+  for (const list of Object.values(bySite)) {
+    list.filter(r => r.lava.kind !== 'pool' || isHeld(r.lava)).forEach(r => keep.add(r.key));
+    list.filter(r => r.lava.kind === 'pool' && !isHeld(r.lava)).sort((a, b) => (a.price.seconds ?? Infinity) - (b.price.seconds ?? Infinity)).slice(0, 2).forEach(r => keep.add(r.key));
+  }
+  for (const k of Object.keys(routes)) if (!keep.has(k)) delete routes[k];
+  // What is known of each lava that a route cannot go to: spent, or the way
+  // into it resting, with their records (note 767b: a pool is a fact).
+  const notOffered = allPools.filter(l => !lavas.some(v => v.l === l) && !open(l)).map(l => ({ l, d: d3(frameAt, l) })).filter(x => x.d <= 256).sort((a, b) => a.d - b.d).slice(0, 4)
+    .map(({ l, d }) => `(${l.x}, ${l.y}, ${l.z}), ${d} blocks ${frame ? 'from the frame' : 'off'}:${lavaRecord(goal, l, here).replace(/^ Its record:/, '')}`);
+  return { routes, notOffered, deepResting, headings: headings.length, frameAt, owedHere, owedNew };
+}
+// A cast route in words: the site, the lava and how it is got there, the
+// buckets, the water, the price end to end, the digging and the risk, and
+// its record.
+function routeSays(bot, goal, r, { frame, placed, frameAt, here, diamondPickaxe, water, deepResting, headings, newSiteSays = '' }) {
+  const PP = require('./portal-plan');
+  const { lavaRecord, LAVA_DEPTH } = require('./obsidian');
+  const v = r.lava, at = v.at, o = frame?.origin;
+  const dy = Math.round(at.y - here.y), height = dy <= -4 ? `, ${-dy} blocks below here` : dy >= 4 ? `, ${dy} blocks above here` : '';
+  const fromFrame = Math.round(Math.hypot(at.x - frameAt.x, at.y - frameAt.y, at.z - frameAt.z));
+  const outOnly = `its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})`;
+  const site = r.site === 'here' ? (frame ? `The frame begun at (${o.x}, ${o.y}, ${o.z}), ${placed} of ten cast, finished where it stands` : 'A frame cast near where the bot stands')
+    : r.site === 'beside' ? `A frame cast beside the lava, within a few blocks of it${frame ? `; the frame begun at (${o.x}, ${o.y}, ${o.z}), ${placed} of ten cast, left as it stands${placed ? `, ${outOnly}` : ''}` : ''}. The portal is then down there, and the way back from the Nether comes out beside it`
+    : `A new frame at another site near here; the frame begun at (${o.x}, ${o.y}, ${o.z}), ${placed} of ten cast, left as it stands${placed ? `, ${outOnly}, and the ${placed} cast there are ${placed} lava buckets again here` : ''}`;
+  const lava = v.kind === 'deep' ? `the lava layer below (the deep lava lakes lie from about y ${LAVA_DEPTH + 2} down, anywhere), by a staircase dug down to y ${at.y}${r.site === 'beside' ? '' : ' and each trip back up it'}`
+    : `${v.kind === 'pool' ? 'the lava pool known' : 'the lava in sight'} at (${at.x}, ${at.y}, ${at.z}), ${Math.round(here.distanceTo(at))} blocks off${height}${frame && r.site === 'here' ? `, ${fromFrame} blocks from the frame` : ''}, ${v.how === 'dig' ? 'by a staircase dug to it (its walk did not get there)' : 'walked to'}`;
+  const p = r.price;
+  const smelt = p.make ? Math.max(0, 3 * p.make - countOf(bot, 'iron_ingot')) : 0;
+  const bucketsSay = p.noBucket ? 'none carried and no iron for one' : `${p.buckets - p.make} carried${p.make ? `, ${p.make} more made first from the iron carried (three ingots each${smelt ? `, ${smelt} of the ${countOf(bot, 'raw_iron')} raw iron carried smelted first in a furnace, ${countOf(bot, 'furnace') ? 'one carried' : 'none carried: eight cobblestone make one'}` : ''})` : ''}`;
+  const digs = r.digs ? `about ${r.digs} blocks dug with the pickaxe` : 'nothing dug on the way, as far as the walk goes';
+  const risk = v.kind === 'deep' ? `the staircase ends at the lava layer, where lava lakes lie open${deepResting ? `; ${deepResting} of the ${headings} headings down from about here are set aside already` : ''}`
+    : dy <= -20 ? `the lava ${-dy} blocks down, in the rock` : 'lava at about this height';
+  const measured = r.measured ? ` The trips for lava made so far took about ${duration(r.measured.seconds)} each in working time.` : '';
+  const record = v.kind === 'pool' ? lavaRecord(goal, v.l, here) : '';
+  const failed = PP.failuresSays(goal, { lava: v.kind === 'deep' ? { deep: true } : { x: at.x, y: at.y, z: at.z } });
+  const leaving = r.site === 'new_site' ? newSiteSays : '';
+  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}. ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${leaving}`;
 }
 
 async function portalMethod(bot, task, goal, save, client = task.opportunityClient) {
   const { fitRuin, adopt } = require('./ruined-portal');
   const { knownLandmarks } = require('./exploration');
+  const PP = require('./portal-plan');
   const diamondPickaxe = diamondPickaxeCarried(bot);
   const method = goal.portalMethod;
-  const due = portalDue(method);
+  const sources = lavaSources(bot);
+  const due = planDueNow(bot, goal, sources);
   // Asked for another reason than a site failure, an answer held at one is
-  // not what is asked about (note 767).
-  // Nor is one given to another way or frame than this (no siteAnswer).
-  if (due && (!method.siteFailed || !method.siteAnswer)) { require('./decisions/commit').end(bot, 'portal_method', 'asked again for another reason'); delete method.siteAnswer; }
+  // not what is asked about (note 767). Nor is one given to another frame.
+  if (due && method && (!method.siteFailed || !method.siteAnswer)) { require('./decisions/commit').end(bot, 'portal_plan', 'asked again for another reason'); delete method.siteAnswer; }
   if (!due && (method?.kind === 'build' || method?.kind === 'cast')) return true;
   if (!due && method?.kind === 'ruin') {
     if (goal.portalFrame) return true;
@@ -5223,294 +5345,142 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
     }
     const fit = fitRuin(bot, r, { diamondPickaxe });
     const mark = (goal.landmarks || []).find(l => l.kind === 'ruined_portal' && l.x === method.at.x && l.z === method.at.z);
-    if (!fit) { if (mark) mark.noFrame = true; delete goal.portalMethod; save(); return false; }
+    if (!fit) { if (mark) mark.noFrame = true; PP.planFailed(goal, `the ruined portal at (${method.at.x}, ${method.at.z}) will not take a frame`); delete goal.portalMethod; save(); return false; }
     goal.portalFrame = adopt(fit); save();
     return true;
   }
   const ruins = knownLandmarks(bot, goal, 'ruined_portal', 512).filter(k => !k.landmark.noFrame).slice(0, 3);
   // The ruin held stays on offer to be kept, however many lie nearer.
-  if (method?.kind === 'ruin' && methodKey(method, ruins, goal) === null) {
+  if (method?.kind === 'ruin' && !ruins.some(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) {
     const held = knownLandmarks(bot, goal, 'ruined_portal', 4096).find(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z);
     if (held) ruins.push(held);
   }
   const diamonds = countOf(bot, 'diamond'), obsidian = countOf(bot, 'obsidian');
-  const lighter = countOf(bot, 'flint_and_steel') + countOf(bot, 'fire_charge') > 0;
-  const sources = lavaSources(bot);
+  const here = bot.entity.position;
+  const frame = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame : null;
+  const placed = frame ? frame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
+  // The frame that cannot be got back to, and the frame failing at its
+  // site: facts every route is weighed with (notes 481, 527).
+  const frameFailed = method?.frameFailed && frame ? method.frameFailed : null;
+  const siteFailed = method?.siteFailed && frame ? frame : null;
   const lava = nearestLava(bot, goal, sources);
-  // The frame that cannot be got back to is said with every way, as it
-  // bears on all of them (note 481).
-  const frameFailed = due && goal.portalFrame && method.frameFailed;
-  const placed = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
-  // The part-cast frame failing at its site: said with every way, and a
-  // new site offered beside keeping it (note 527).
-  const siteFailed = due && method.siteFailed && goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame : null;
-  // Buckets Jev chose to make first, made since: the change the question is
-  // asked again for, said. 25592 (mid-237-ad, 2026-09-30 11:55:40-51Z) chose
-  // craft_buckets and eleven seconds later cast_at_lava, the ask saying
-  // nothing of why it came again; a watcher read it as the answer flipping
-  // (note 753).
-  const made = goal.portalBucketsMade && Date.now() - goal.portalBucketsMade.at < 120000 ? goal.portalBucketsMade : null;
-  const madeAgo = made ? Math.max(1, Math.round((Date.now() - made.chosenAt) / 1000)) : 0;
-  const madeSays = made ? ` Asked again because the buckets chosen ${madeAgo} second${madeAgo === 1 ? '' : 's'} ago are made: ${made.carried} carried now, against ${made.before} when they were chosen.` : '';
-  // Two of the portal's own steps traded the turn, each holding its claim
-  // against the portal's state (stillness.js portalPair, note 763): asked
-  // here, the flip and the state named, in place of a rest and detours.
-  const flipped = due && method?.flipped ? method.flipped : null;
-  const flipSays = flipped ? ` Asked again because the portal's own steps were ${flipped.why}${flipped.times > 1 ? ` (a flip asked about ${flipped.times} times on this way)` : ''}: no rest, the way is chosen again from what stands. ${flipped.fact}` : '';
-  // The trips for lava as they have gone (castFrame, note 767): asked again
-  // with them, the frame's distance from the lava said by every way.
-  const tripsFar = due && method?.tripsFar && goal.portalFrame && !goal.portalFrame.ruin ? method.tripsFar : null;
-  const tripsFarSays = tripsFar ? ` Asked again because the trips for lava from the frame begun have taken about ${duration(tripsFar.each)} of working time each (${tripsFar.n} made)${tripsFar.hurt ? `, ${tripsFar.hurt} health lost on them` : ''}, with ${tripsFar.left} of ten still to cast.` : '';
-  const facts = portalFacts(bot, goal, ruins, lava) + madeSays + flipSays + tripsFarSays + (frameFailed ? frameFailedSays(frameFailed) : '') + (siteFailed ? siteFailedSays(siteFailed, placed) : '');
-  const current = due ? methodKey(method, ruins, goal) : null;
-  // Trips for lava are measured from the frame, where each one starts and
-  // ends, not from the bot: mid-244-v, standing at its lava with the frame
-  // 122 blocks up, was told five seconds a trip, and was never offered the
-  // cast beside that lava, it being "near" the bot (note 470).
-  const frameBegun = !!(goal.portalFrame && !goal.portalFrame.ruin);
-  const frameAt = frameBegun ? goal.portalFrame.origin : bot.entity.position;
-  // One trip for every way, said in the same words (note 553): to the lava
-  // that serves the next bucket, and the trips this frame's cast has made,
-  // whichever way is held (beside a lava chosen, the frame is its frame).
-  // The trip from the frame is to the lava nearest the frame (note 767b).
-  const frameLava = frameBegun ? nearestLava(bot, goal, sources, frameAt) || lava : lava;
-  const trip = fetchTrip(frameAt, frameLava, frameBegun && method?.kind === 'cast' ? method : null);
-  const castCount = { obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') };
-  const tree = {
-    build_new: { description: buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun, castTrips: castTrips(castCount).trips }) + facts },
-    cast_frame: { description: castSays({ ...castCount, waterBucket: countOf(bot, 'water_bucket') > 0,
-      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: frameAt, frameBegun, trip }) + facts },
-  };
-  // Where a cast frame stands is part of the way: mid-237-d cast on the
-  // surface at y 68 with its lava at y -54 and one bucket, a round trip of
-  // a hundred and twenty blocks for every block, and after three hours had
-  // none cast (fill_bucket 1003 s against 186 s casting, 2026-09-26).
-  // The lava held, when that is the way held, stays on offer to be kept.
-  // Offered whenever the frame is far from the lava, wherever the bot
-  // stands: at the lava, mid-244-v was not offered it (note 470).
-  const castBy = current === 'cast_at_lava'
-    ? { at: method.near, how: 'the lava chosen before', distance: Math.round(bot.entity.position.distanceTo(new Vec3(method.near.x, method.near.y, method.near.z))), gone: lavaGone(bot, method.near, sources) } : lava;
-  const far = castBy?.at && lavaTrip(frameAt, castBy);
-  // The staircase to the held lava resting, said as the nearest lava's
-  // and the frame's are: mid-214-f was told "Kept, the walk goes on by
-  // staircase" while that staircase rested ten minutes, kept it, and met
-  // the rest every half second, asked again every few (note 488).
-  const heldRest = current === 'cast_at_lava' ? nearRest(goal, method.near, bot.entity.position) : null;
-  if (far && (far.distance > 16 || current === 'cast_at_lava')) {
-    const dy = Math.round(castBy.at.y - bot.entity.position.y);
-    const where = frameBegun ? 'the frame begun' : 'a frame here';
-    // What becomes of the blocks standing: left, and all ten cast there.
-    const standing = placed && current !== 'cast_at_lava' ? ` The frame begun, ${placed} of ten standing, is left as it stands and all ten are cast down there; its obsidian comes out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'}).` : '';
-    // The walk there that failed, said, and the question asked again with
-    // it: three walks that came no nearer had dropped the lava without a
-    // word and cast the frame 122 blocks up (mid-244-v, note 470).
-    const nf = current === 'cast_at_lava' && method.nearFailed;
-    // What cannot be reached now leads, and the trip is said as it then
-    // is: mid-214-g's option began "a trip for lava is a few seconds"
-    // and said the failed walks and the ten-minute rest only after, and
-    // Jev kept it at 0.40 to 0.60 nine times in three minutes (note 505).
-    const restSays = heldRest && `${heldRest.what} is set aside (${heldRest.why}), taken up again in ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'}`;
-    const walksSays = nf?.walks ? `${nf.walks} walks toward it came no nearer than ${nf.best} blocks (what ended them: ${nf.stopped || 'not known'})` : '';
-    const failed = walksSays ? ` The walk there has failed: ${walksSays}.` : '';
-    const lead = heldRest ? `Not reachable now: ${restSays}.${failed} Kept, that is said as every way to it resting, not tried again before then, and the minutes go to other work. `
-      : failed ? `Not reached so far.${failed} Kept, the walk goes on by staircase until the staircase gains on it or is set aside, not asked again for the walks before then. ` : '';
-    // Its trips as they are, beside the one trip every way says: a few
-    // seconds while that lava has a source to scoop, and once it has none
-    // the fetch's trip to the lava that does serve (note 553).
-    const fetch = trip ? `${fetchSays(trip)} from ${where}` : 'no other lava known';
-    const trips = castBy.gone ? `but that lava has no source left to scoop (a bucket taken leaves flowing lava, and a cast's water turns what it reaches): each bucket is fetched from the nearest lava that serves, ${trip ? `${trip.distance} blocks from ${where}, ${fetchSays(trip)}` : 'none known, a pool to be found first'}`
-      : heldRest ? `once there a trip for lava is a few seconds, but getting there waits the ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'} of the rest; against ${fetch}, begun now`
-      : `so a trip for lava is a few seconds, against ${fetch}`;
-    // Held with a frame already begun, it is not "a frame down beside the
-    // lava": the frame stays where it stands (only a way newly chosen leaves
-    // it, pick below) and the lava comes to it, the whole trip each bucket.
-    // mid-244-ce's held cast_at_lava, nine of ten cast at a hilltop frame 66
-    // blocks above the lava, promised "a trip for lava is a few seconds" and
-    // "the portal is then down there", and was kept at 0.52 to 0.67 on it
-    // three times in a minute (note 651).
-    const keepsFrame = current === 'cast_at_lava' && frameBegun;
-    const stays = keepsFrame ? `Go on with the cast at the frame begun at (${goal.portalFrame.origin.x}, ${goal.portalFrame.origin.y}, ${goal.portalFrame.origin.z}), ${placed} of ten cast: the frame stays where it stands, ${far.distance} blocks from the lava chosen before (at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}), and is cast as it is cast in place: ${castBy.gone ? `that lava has no source left to scoop (a bucket taken leaves flowing lava, and a cast's water turns what it reaches): each bucket is fetched from the nearest lava that serves, ${trip ? `${trip.distance} blocks from ${where}, ${fetchSays(trip)}` : 'none known, a pool to be found first'}` : `each bucket still to fetch is ${fetch}`}. This is the same as casting in place at this frame; it does not put a frame down beside that lava (that is what this way does when it is chosen with no frame begun, or with this one left behind). The portal is at this frame, and the way back from the Nether comes out here.` : null;
-    tree.cast_at_lava = { description: stays ? `${lead}${stays}${standing}` + facts : `${lead}Cast a frame of its own as above, but beside ${current === 'cast_at_lava' ? 'the lava chosen before' : 'the nearest known lava'} rather than ${frameBegun ? 'at the frame begun' : 'here'}: it is ${castBy.distance} blocks away (${castBy.how}), at y ${Math.round(castBy.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}${frameBegun ? `, and ${far.distance} blocks from the frame begun` : ''}. The bot ${castBy.distance > 12 ? 'walks there first and ' : ''}puts the frame down within a few blocks of it, ${trips}.${standing} The portal is then down there, and the way back from the Nether comes out beside that lava.` + facts };
-  }
-  // With the frame out of reach, a frame cast where the bot stands, the
-  // one begun left behind: mid-215-h, 137 blocks from its frame, was
-  // offered only the frame it could not get back to (note 481).
-  if (frameFailed) {
-    const left = ` The frame at (${frameFailed.at.x}, ${frameFailed.at.y}, ${frameFailed.at.z}) is left behind as it stands${placed ? `, ${placed} of ten standing, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}; what is carried is cast here.`;
-    tree.cast_here = { description: `Cast a new frame of its own here, where the bot stands, rather than at the frame begun. ` + castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0,
-      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: bot.entity.position, frameBegun: false }) + left + facts };
-    // Kept: the frame made for again, and what that will meet.
-    const minutes = Math.max(1, Math.ceil((frameFailed.until - Date.now()) / 60000));
-    if (tree[current]) tree[current].description += ` Kept, the frame is made for again: the walk is tried again${frameFailed.legs ? ' and the legs when their rest ends' : ''}, and the staircase in ${minutes} minute${minutes === 1 ? '' : 's'}; until then, if the walk fails again, that is said as every way to the frame resting.`;
-  }
-  // Leaving the part-cast frame for another site is Jev's, with what it
-  // leaves and what starting afresh costs: a counter left mid-230-u's four
-  // of ten for a new frame fifty blocks off, all ten to cast (note 527).
+  const ingots = countOf(bot, 'iron_ingot'), raw = countOf(bot, 'raw_iron');
+  const water = countOf(bot, 'water_bucket') ? 'one water bucket carried' : `none carried; ${waterKnown(bot).says}`;
+  const built = planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, raw });
+  const { routes, frameAt } = built;
+  // The route held: its key, or a way held from before the plan.
+  const current = method?.key && (routes[method.key] || /^(build_new|ruin_\d+)$/.test(method.key)) ? method.key
+    : method?.kind === 'build' ? 'build_new' : method?.kind === 'ruin' ? (k => k ? ruinKey(goal, k) : null)(ruins.find(k => k.landmark.x === method.at.x && k.landmark.z === method.at.z)) : null;
+  // What leaving the frame costs against retrying it, said on each new
+  // site (note 742): the blocks cast, the lava found by the frame, and
+  // whether what failed there reads as the site itself.
+  let newSiteSays = '';
   if (siteFailed) {
-    const byHand = method.kind === 'build';
-    const here = bot.entity.position, hereTrip = lava && lavaTrip(here, lava);
-    const afresh = byHand
-      ? buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - obsidian), trip: hereTrip, atLava: !!lava && lava.distance <= 16, frameBegun: false })
-      : castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0, iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: here, frameBegun: false });
-    const leftHere = castTrips(castCount);
-    // What leaving costs against retrying, said plainly (note 742): 25589
-    // left a frame four of ten cast, its lava already found seven blocks
-    // off, for one navigation failure since the last block went in ("the
-    // work was turning between fill bucket and cast portal... with nothing
-    // gained"), and the new site it moved to found no lava at all in the
-    // next eight minutes. new_site is offered on the first failure once
-    // obsidian is in (note 527, so a bad site is not retried ninety-five
-    // times), but said only the raw counts before; here the trade is put
-    // in words: the blocks already cast, the lava already found (or not),
-    // and whether the failure or failures said in `facts` below read as
-    // the site itself or a passing one (a navigation stall, a mob in the
-    // way) that retrying meets no differently at a new site.
     const fails = siteFailed.siteFailed || { n: 0, whys: {} };
     const [topWhy, topN] = Object.entries(fails.whys || {}).sort((a, b) => b[1] - a[1])[0] || [];
     const transient = /navigation|nowhere to stand|stand to pour/i.test(topWhy || '');
-    const nearHere = current === 'cast_at_lava' ? castBy : lava;
-    const costSays = ` Against retrying: ${placed} of ten already cast here${nearHere?.at ? `, its lava already found ${nearHere.distance} blocks off (a new site starts with no lava found, a fresh search or walk before the first bucket)` : ', no lava yet found here either'}.${topWhy ? ` What failed here ${fails.n <= 1 ? 'once' : `${fails.n} times`} was "${topWhy}"${topN > 1 && topN < fails.n ? `, ${topN} of them` : ''}${transient ? ': not the site itself, and a new site meets the same kind of failure no less often' : ''}.` : ''}`;
-    // What leaving throws away, in lava and time (note 767): the blocks
-    // cast here are each a lava bucket again at a new site, at the trip
-    // this frame's lava takes.
-    const carriersNow = castCount.buckets + castCount.lavaBuckets;
-    const recast = placed && !byHand ? ` Leaving throws away the ${placed} cast here: at a new site they are ${placed} more lava bucket${placed === 1 ? '' : 's'} to fetch and pour, ${trip ? `about ${tripsCost(trip, Math.ceil(placed / Math.max(1, carriersNow)))} of trips at this frame's trip (${fetchSays(trip)})` : 'each a trip for lava, none known nearby'}; the ${castCount.lavaBuckets} lava bucket${castCount.lavaBuckets === 1 ? '' : 's'} carried go with the bot.` : '';
-    tree.new_site = { description: `Leave the frame at (${siteFailed.origin.x}, ${siteFailed.origin.y}, ${siteFailed.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and ${byHand ? 'build' : 'cast'} a new frame at another site near here, that one passed over. Kept, ${leftHere.cast} of ten are still to ${byHand ? 'place' : 'cast'} there; a new frame starts from none.${costSays}${recast} ` + afresh + facts };
-    if (tree[current]) tree[current].description += ` Kept, the ${byHand ? 'frame' : 'cast'} goes on at this frame, the slot it failed at tried again.`;
-    // Ways to repair this site at the slot it failed at (note 767): clear
-    // the blocks in the line into it, or pour from another stand than the
-    // ones tried there. The site failures since 06:00Z on 2026-09-30 were
-    // answered by keeping the frame as it was or leaving it (50 times, at a
-    // median of 4 of ten cast); nothing between was on offer.
-    const slotAt = fails.slot && !byHand ? new Vec3(fails.slot.x, fails.slot.y, fails.slot.z) : null;
+    const byFrame = nearestLava(bot, goal, sources, frameAt);
+    newSiteSays = ` Against retrying: ${placed} of ten already cast here${byFrame?.at ? `, its lava already found ${byFrame.distance} blocks off` : ', no lava yet found here either'}.${topWhy ? ` What failed here ${fails.n <= 1 ? 'once' : `${fails.n} times`} was "${topWhy}"${topN > 1 && topN < fails.n ? `, ${topN} of them` : ''}${transient ? ': not the site itself, and a new site meets the same kind of failure no less often' : ''}.` : ''}`;
+  }
+  const says = { frame, placed, frameAt, here, diamondPickaxe, water, deepResting: built.deepResting, headings: built.headings, newSiteSays };
+  const tree = {};
+  // The repairs at a frame failing at its site, first: the route held goes
+  // on at this frame, the slot it failed at cleared into or poured into
+  // from another stand (note 767).
+  if (siteFailed) {
+    const fails = siteFailed.siteFailed || { n: 0, whys: {} };
+    const slotAt = fails.slot && method?.kind !== 'build' ? new Vec3(fails.slot.x, fails.slot.y, fails.slot.z) : null;
     if (slotAt && bot.blockAt(slotAt) && bot.blockAt(slotAt).name !== 'obsidian') {
       const pc = require('./portal-cast'), w = pc.view(bot);
       const where = `(${slotAt.x}, ${slotAt.y}, ${slotAt.z})`;
       const blockers = pc.blockersFor(bot, siteFailed, slotAt, w).slice(0, 4);
-      if (blockers.length) tree.clear_blocker = { description: `Repair this site: dig out what blocks the line into the frame slot at ${where} from the open cells beside it, ${blockers.map(b => `the ${String(b.name).replaceAll('_', ' ')} at (${b.at.x}, ${b.at.y}, ${b.at.z})`).join(', ')}, then look for a stand again and go on casting here, the ${placed} of ten cast kept. About ${blockers.length * 2} seconds of digging.` + facts };
+      if (blockers.length) tree.clear_blocker = { description: `Repair this site and keep the route: dig out what blocks the line into the frame slot at ${where} from the open cells beside it, ${blockers.map(b => `the ${String(b.name).replaceAll('_', ' ')} at (${b.at.x}, ${b.at.y}, ${b.at.z})`).join(', ')}, then look for a stand again and go on casting here, the ${placed} of ten cast kept. About ${blockers.length * 2} seconds of digging.` };
       const tried = (siteFailed.standsTried?.[`${slotAt.x},${slotAt.y},${slotAt.z}`] || []).map(pos);
       if (tried.length) {
         const pass = [...pc.slotPass(siteFailed, slotAt), ...tried];
         const ways = pc.standWays(bot, siteFailed, slotAt, w, { pass, missed: pc.slotMissed(siteFailed, slotAt) });
-        if (ways.stands || ways.make || ways.cut) tree.other_stand = { description: `Repair this site: pour into the frame slot at ${where} from another stand than the ${tried.length} tried there (${tried.map(c => `(${c.x}, ${c.y}, ${c.z})`).join(', ')}), those passed over for this slot: with them passed, ${ways.says}. The ${placed} of ten cast kept.` + facts };
+        if (ways.stands || ways.make || ways.cut) tree.other_stand = { description: `Repair this site and keep the route: pour into the frame slot at ${where} from another stand than the ${tried.length} tried there (${tried.map(c => `(${c.x}, ${c.y}, ${c.z})`).join(', ')}), those passed over for this slot: with them passed, ${ways.says}. The ${placed} of ten cast kept.` };
       }
     }
-    // Kept or repaired, the answer holds through the next failures of the
-    // same kind at this frame (commit.js, note 764): not asked again at each.
-    const holdSite = { until: { seconds: 180, throughFailures: true, also: ['a block goes in', 'a failure of another kind comes'] } };
-    for (const k of [current, 'cast_frame', 'build_new', 'clear_blocker', 'other_stand']) if (k && tree[k]) tree[k].commit = holdSite;
   }
-  // The lava held, its staircase resting: the ways a player has from there,
-  // as their costs allow, said with it. Only "set aside" was said, and
-  // mid-226-f kept the way and met the rest for ten minutes, twice over,
-  // its stairs stopped at the roof of a cave (mid-214-f, note 490). Down
-  // into that cave, when the fall is one a body takes; another lava whose
-  // way is open; or a frame cast here.
-  const heldResting = !!heldRest;
-  const cave = heldResting ? heldCave(bot, goal, method.near) : null;
-  if (cave) {
-    const health = Math.round(bot.health ?? 20), damage = cave.into === 'water' ? 0 : Math.max(0, cave.fall - 3);
-    const level = cave.standY - method.near.y;
-    tree.into_cave = { description: `Go down into the cave the staircase met: the stair at (${cave.at.x}, ${cave.at.y}, ${cave.at.z}) is dug open and the bot drops ${cave.fall} blocks to ${cave.into === 'water' ? 'water' : `its floor at y ${cave.floorY}`}, ${damage ? `about ${damage} of the ${health} health lost in the fall` : 'a fall that does no harm'}. Standing there it is ${level > 0 ? `${level} blocks above the lava's level` : level < 0 ? `${-level} blocks below the lava's level` : "level with the lava"}, ${Math.round(Math.hypot(cave.at.x - method.near.x, cave.at.z - method.near.z))} blocks from it across; the staircase toward the lava goes on from the cave floor, its rest lifted.` + facts };
-  }
-  // The lava held whose walks failed or whose way rests: other lava is
-  // offered whenever any is known, not only at a rest (note 767f).
-  const heldFailing = current === 'cast_at_lava' && (heldRest || method.nearFailed);
-  const farHeld = current === 'cast_at_lava' && method.nearFar ? method.nearFar : null;
-  const otherLava = (heldResting || farHeld || heldFailing) && lava && !(lava.at.x === method.near.x && lava.at.y === method.near.y && lava.at.z === method.near.z) ? lava : null;
-  if (otherLava) {
-    const dy = Math.round(otherLava.at.y - bot.entity.position.y);
-    tree.other_lava = { description: `Cast a frame of its own beside another lava instead, ${farHeld && !heldResting ? 'nearer than the lava chosen before' : 'its way not resting'}: ${otherLava.distance} blocks away (${otherLava.how}), at y ${Math.round(otherLava.at.y)}, ${dy < 0 ? `${-dy} blocks below here` : dy > 0 ? `${dy} blocks above here` : 'level with here'}, about ${duration(require('./levels').walkSeconds(otherLava.distance))} at the bot's measured pace. The lava chosen before is left.` + facts };
-  }
-  // A frame begun far from the lava its trips go to, the way held being to
-  // go on with it: restarting beside that lava is a way of its own, priced
-  // against the trips still owed here (note 767c). With cast_at_lava held
-  // and a frame begun, that option means going on at the frame, and no way
-  // to start again beside the lava was on offer: 25585 (2026-09-30 23:5xZ)
-  // and 25589 (2026-10-01 01:19:39Z, 74 blocks, two-minute trips, kept).
-  const restartAt = frameBegun && method?.kind === 'cast' && frameLava?.at && lavaTrip(frameAt, frameLava)?.distance > 16 && !tree.cast_here ? frameLava : null;
-  if (restartAt && (current === 'cast_at_lava' || !tree.cast_at_lava)) {
-    const owed = castTrips(castCount), here = trip ? owed.trips * trip.seconds : null;
-    tree.restart_at_lava = { description: `Leave the frame at (${goal.portalFrame.origin.x}, ${goal.portalFrame.origin.y}, ${goal.portalFrame.origin.z}) as it stands, ${placed} of ten in it${placed ? `, its obsidian out only with a diamond pickaxe (${diamondPickaxe ? 'one carried' : 'none carried'})` : ''}, and cast a new frame beside the lava its trips go to, at (${restartAt.at.x}, ${restartAt.at.y}, ${restartAt.at.z}), ${lavaTrip(frameAt, restartAt).distance} blocks from the frame: there each of the ten buckets is a few seconds, the walk there once${trip ? `, against ${owed.trips} trip${owed.trips === 1 ? '' : 's'} still owed here at ${fetchSays(trip)}, about ${duration(here)} in all` : ''}.` + facts };
-  }
-  // The held lava become far, said on keeping it (note 763).
-  if (farHeld && tree.cast_at_lava) tree.cast_at_lava.description = `Asked again because the lava chosen before is now ${farHeld.held} blocks off (the walks, detours and trips since took the bot there), and other lava is known ${farHeld.other} blocks off. ` + tree.cast_at_lava.description;
-  if (heldResting && !tree.cast_here) {
-    tree.cast_here = { description: `Cast a new frame of its own here, where the bot stands, the lava chosen before left while its way rests. ` + castSays({ ...castCount, standing: 0, waterBucket: countOf(bot, 'water_bucket') > 0,
-      iron: countOf(bot, 'iron_ingot'), walls: plannedWalls(), blocks: portalSupports(bot).count, lighter, lava, from: bot.entity.position, frameBegun: false }) + facts };
-  }
-  // Buckets are the trips: each carries one lava per bucket held, and the
-  // iron in hand makes more (mid-237-d carried one bucket and eight ingots).
-  // No more than the lava still to fetch wants, and each trip's time said:
-  // mid-244-j was offered twelve buckets for all its iron, "1 trip against
-  // 10", chose the cast with its one bucket, and spent thirty-eight minutes
-  // carrying lava a bucket at a time from sixty blocks down (2026-09-27).
-  // Raw iron counts, smelted first (note 767c): 25589 (2026-10-01
-  // 01:19:39-01:25:08Z) carried 33 raw iron and three buckets, and its
-  // trips of two minutes each carried two lava a round trip, with no more
-  // buckets on offer since it had no ingots.
-  const ingots = countOf(bot, 'iron_ingot'), raw = countOf(bot, 'raw_iron'), iron = ingots + raw;
-  const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket'), toFetch = Math.max(0, 10 - placed - obsidian - countOf(bot, 'lava_bucket'));
-  const more = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - Math.max(1, carriers)));
-  const smeltNeed = Math.max(0, 3 * more - ingots);
-  const smeltSays = smeltNeed ? ` ${smeltNeed} of the ${raw} raw iron carried are smelted first, about ${Math.round(smeltNeed * 10 / 60) || 1} minute${Math.round(smeltNeed * 10 / 60) > 1 ? 's' : ''} in a furnace (${countOf(bot, 'furnace') ? 'one carried' : 'none carried: eight cobblestone make one'}).` : '';
-  if (more > 0) {
-    const trips = n => Math.ceil(toFetch / Math.max(1, n));
-    // From the frame, climb and all (note 470), at the one trip every way
-    // says: its own ten seconds more had made it a fourth price (note 553).
-    const minutes = n => trip ? ` (about ${Math.max(1, Math.round(trips(n) * trip.seconds / 60))} minutes of trips)` : '';
-    tree.craft_buckets = { description: `Make ${more} more bucket${more === 1 ? '' : 's'} first from the iron carried (three ingots each, ${3 * more} of the ${ingots} ingot${ingots === 1 ? '' : 's'} and ${raw} raw iron carried).${smeltSays} A cast frame takes one lava bucket a block and each trip to lava carries one lava per bucket held: with ${carriers + more} buckets the ${toFetch} lava still to fetch is about ${trips(carriers + more)} trip${trips(carriers + more) === 1 ? '' : 's'}${minutes(carriers + more)}, against ${trips(carriers)}${minutes(carriers)} with ${carriers ? `the ${carriers} carried` : 'the one a cast would make'}.${trip ? ` A trip to the nearest known lava, ${trip.distance} blocks from ${frameBegun ? 'the frame' : 'here'}, is ${fetchSays(trip)}.` : ''} The iron goes to buckets, not to armour or tools. ${current ? 'The way held goes on with them.' : 'Then this is asked again with them in hand.'}` + facts };
-  }
+  // The cast routes, cheapest first; those whose lava's record says it
+  // failed after the ones that go on (note 767f).
+  const failing = r => r.lava.kind === 'pool' ? !!require('./obsidian').lavaRecord(goal, r.lava.l, here) || PP.failuresFor(goal, { lava: r.lava.at }).length > 0 : PP.failuresFor(goal, { lava: r.lava.kind === 'deep' ? { deep: true } : r.lava.at }).length > 0;
+  const ordered = Object.values(routes).sort((a, b) => (failing(a) - failing(b)) || ((a.price.seconds ?? Infinity) - (b.price.seconds ?? Infinity)));
+  for (const r of ordered) tree[r.key] = { description: routeSays(bot, goal, r, says), ...(r.site === 'beside' ? { target: { x: r.lava.at.x, y: r.lava.at.y, z: r.lava.at.z } } : {}) };
+  // A frame of its own from obsidian: the diamond route, as the steps it is
+  // (note 470), with the trip to the nearest lava where the obsidian is made.
+  const trip = fetchTrip(frameAt, frame ? nearestLava(bot, goal, sources, frameAt) || lava : lava, null);
+  tree.build_new = { description: buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun: !!frame, castTrips: castTrips({ obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') }).trips }) + PP.failuresSays(goal, { key: 'build_new' }) };
   // Where the walk to a ruin gives out, the staircase toward it: said
   // while it rests (tunneling.js restingSays, note 500).
   const { restingSays } = require('./tunneling');
   ruins.forEach(k => {
-    const rest = restingSays(goal, new Vec3(k.landmark.x, k.landmark.y ?? bot.entity.position.y, k.landmark.z), bot.entity.position);
-    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(bot.entity.position.y), z: k.landmark.z }, description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + (rest ? ` Where the walk gives out, ${rest}.` : '') + facts };
+    const rest = restingSays(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z), here);
+    tree[ruinKey(goal, k)] = { target: { x: k.landmark.x, y: k.landmark.y ?? Math.round(here.y), z: k.landmark.z }, description: ruinSays(k, { obsidian, diamonds, diamondPickaxe }) + (rest ? ` Where the walk gives out, ${rest}.` : '') + PP.failuresSays(goal, { key: ruinKey(goal, k) }) };
   });
-  // Asked again: the way held says its minutes and what they made; the
-  // others say what becomes of a frame begun.
-  if (current) {
-    for (const [key, node] of Object.entries(tree)) {
-      if (key === current) node.description += methodSoFar(bot, goal, method, key.startsWith('ruin_') ? ruinOf(key, ruins, goal) : null);
-      else if (placed && !['craft_buckets', 'cast_at_lava', 'cast_here', 'other_lava', 'into_cave', 'new_site', 'restart_at_lava', 'clear_blocker', 'other_stand'].includes(key)) node.description += key.startsWith('ruin_') || (key === 'cast_at_lava' && !method.near) ? ` The frame begun here, ${placed} of ten standing, is left as it stands.` : ` The frame begun here, ${placed} of ten standing, is finished this way.`;
-    }
+  // The lava held over a cave its staircase stopped at: down into it, the
+  // route held going on from its floor (note 490).
+  const heldRest = method?.near ? nearRest(goal, method.near, here) : null;
+  const cave = heldRest ? heldCave(bot, goal, method.near) : null;
+  if (cave) {
+    const health = Math.round(bot.health ?? 20), damage = cave.into === 'water' ? 0 : Math.max(0, cave.fall - 3);
+    const level = cave.standY - method.near.y;
+    tree.into_cave = { description: `Keep the route and go down into the cave its staircase met: the stair at (${cave.at.x}, ${cave.at.y}, ${cave.at.z}) is dug open and the bot drops ${cave.fall} blocks to ${cave.into === 'water' ? 'water' : `its floor at y ${cave.floorY}`}, ${damage ? `about ${damage} of the ${health} health lost in the fall` : 'a fall that does no harm'}. Standing there it is ${level > 0 ? `${level} blocks above the lava's level` : level < 0 ? `${-level} blocks below the lava's level` : "level with the lava"}, ${Math.round(Math.hypot(cave.at.x - method.near.x, cave.at.z - method.near.z))} blocks from it across; the staircase toward the lava goes on from the cave floor, its rest lifted.` };
   }
-  // The lava held, its walks failed or its way resting, is said with its
-  // distance and time and comes after the ways that can be gone on with
-  // (note 767f): 25595 (mid-237-bi, 2026-10-01 04:18:01-04:18:19Z) kept
-  // cast_at_lava toward (140, -55, 65), "29 walks toward it came no nearer
-  // than 117 blocks ... staircase set aside", listed first, over other
-  // lava 55 blocks off, about 70 seconds.
-  if (heldFailing && tree.cast_at_lava) {
-    const held = tree.cast_at_lava; delete tree.cast_at_lava;
-    held.description += ` The lava chosen before is ${castBy.distance} blocks off, about ${duration(require('./levels').walkSeconds(castBy.distance))} at the bot's measured pace had its walks got there.`;
-    tree.cast_at_lava = held;
+  // The route held, asked again: why, what it has made, and what keeping
+  // it means; a frame failing or out of reach said on every route.
+  if (current && tree[current]) tree[current].description = `This is the route held.${methodSoFar(bot, goal, method, current.startsWith('ruin_') ? ruinOf(current, ruins, goal) : null)} ` + tree[current].description;
+  if (siteFailed) {
+    const holdSite = { until: { seconds: 180, throughFailures: true, also: ['a block goes in', 'a failure of another kind comes'] } };
+    for (const k of [current, 'clear_blocker', 'other_stand', ...Object.keys(tree).filter(k => /^here_/.test(k))]) if (k && tree[k]) tree[k].commit = holdSite;
   }
-  // context: the old order, read by the tests' stand-in only (note 707).
-  const decision = await decide('portal_method', { client, bot, task, goal, save, tree, context: { current, leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
+  // Kept, the walk to the lava held goes on by staircase until the
+  // staircase is set aside (note 505); kept with its staircase resting, every
+  // way to it rests until then (note 488).
+  if (current && tree[current] && method?.nearFailed) tree[current].description += ` Kept, the walk goes on by staircase until the staircase gains on it or is set aside.`;
+  if (current && tree[current] && heldRest) tree[current].description += ` Kept, its staircase rests (${heldRest.why}) for ${heldRest.minutes} minute${heldRest.minutes === 1 ? '' : 's'}: every way to it is said as resting until then, and the minutes go to other work.`;
+  if (current && tree[current] && frameFailed) {
+    const minutes = Math.max(1, Math.ceil((frameFailed.until - Date.now()) / 60000));
+    tree[current].description += ` Kept, the frame is made for again: the walk is tried again${frameFailed.legs ? ' and the legs when their rest ends' : ''}, and the staircase in ${minutes} minute${minutes === 1 ? '' : 's'}.`;
+  }
+  const askedBecause = due && due.kind !== 'none' ? due.why : null;
+  const decision = await decide('portal_plan', { client, bot, task, goal, save, tree,
+    context: { current, oldOrder: ordered[0]?.key || 'build_new', leaveSite: !!siteFailed && (siteFailed.siteFailures || 0) >= 10 },
     state: { dimension: String(bot.game?.dimension || ''), obsidian, diamonds, diamondPickaxe, flintAndSteel: countOf(bot, 'flint_and_steel'), fireCharges: countOf(bot, 'fire_charge'),
-      buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: countOf(bot, 'iron_ingot'),
-      ...(current ? { wayHeld: current, minutesOnWay: Math.round((method.activeMs || 0) / 60000) } : {}),
-      ...(made ? { bucketsJustMade: made.carried } : {}),
-      ...(flipped ? { flipped: `${flipped.pair.join(' and ')}: ${flipped.why}` } : {}),
-      // What is owed at the surface and at depth, a cast down by the lava or
-      // up top weighed with it (note 763).
-      ...((() => { const says = require('./levels').levelsSays(bot, goal).trim(); return says ? { byLevel: says } : {}; })()),
+      buckets: countOf(bot, 'bucket'), waterBuckets: countOf(bot, 'water_bucket'), lavaBuckets: countOf(bot, 'lava_bucket'), ironIngots: ingots, rawIron: raw,
+      ...(askedBecause ? { askedAgainBecause: askedBecause } : {}),
+      ...(current ? { routeHeld: current, minutesOnRoute: Math.round((method.activeMs || 0) / 60000), minutesStated: method.minutes ?? null } : {}),
+      ...(frame ? { frame: `(${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten cast` } : { frame: 'none begun' }),
+      ...(frameFailed ? { frameOutOfReach: frameFailedSays(frameFailed).trim() } : {}),
+      ...(siteFailed ? { siteFailure: siteFailedSays(siteFailed, placed).trim() } : {}),
+      ...(method?.flipped ? { flipped: `${method.flipped.pair.join(' and ')}: ${method.flipped.why}. ${method.flipped.fact || ''}`.trim() } : {}),
+      ...(built.notOffered.length ? { lavaNotOffered: built.notOffered.join(' ') } : {}),
+      knownForEveryRoute: portalFacts(bot, goal, ruins, lava).trim(),
+      pickaxes: require('./levels').pickSays(bot).trim(),
+      paces: `Walks at ${require('./levels').walkPaceSays()}; climbs ${require('./levels').LEVEL_RECORD.upSecondsABlock} seconds a block risen; a staircase about three seconds a stair; the cast about ${PP.CAST_RECORD.secondsABlock} seconds a block and a scoop about ${PP.CAST_RECORD.scoopSeconds} seconds (${PP.CAST_RECORD.window}).`,
+      holds: 'The route chosen is held and the work follows it; it is asked again only when the route fails, lava is found nearer than its lava, the frame loses obsidian, buckets are lost, a death comes, or its own stated minutes are worked through.',
+      // What is owed at the surface and at depth, weighed with a cast down
+      // by the lava or up top (note 763).
+      ...((() => { const s = require('./levels').levelsSays(bot, goal).trim(); return s ? { byLevel: s } : {}; })()),
       riskNow: require('./risk').riskNow(bot) } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
-  if (made) { delete goal.portalBucketsMade; save(); }
-  const nearWalked = method?.nearFailed;
-  // The failed walk is answered, whatever the answer.
+  const now = Date.now();
   // A frame kept or repaired at its site's failure: what its hold is read
   // against (buildPortalFrame, commit.js; note 767).
-  const siteKept = ['cast_frame', 'build_new', 'clear_blocker', 'other_stand'].includes(pick) || pick === current;
+  const siteKept = ['clear_blocker', 'other_stand'].includes(pick) || pick === current || /^here_/.test(pick);
   if (method?.siteFailed && goal.portalFrame?.siteFailed && siteKept) {
     const f = goal.portalFrame.siteFailed;
-    method.siteAnswer = { cast: f.cast, kind: f.kind || failureKind(Object.keys(f.whys || {})[0] || ''), at: Date.now(), pick };
+    method.siteAnswer = { cast: f.cast, kind: f.kind || failureKind(Object.keys(f.whys || {})[0] || ''), at: now, pick };
   }
-  // A repair: the way held goes on at this frame, the slot it failed at
+  const restate = r => { if (!method) return;
+    // The route's lava as it is offered now (the lava in sight moves with
+    // the bot): the plan holds that.
+    if (r?.lava && method.kind === 'cast') { const v = r.lava; method.lava = { way: v.kind, ...(v.kind === 'deep' ? {} : { at: { x: v.at.x, y: v.at.y, z: v.at.z } }) }; if (r.site === 'beside' && v.kind !== 'pool') method.near = { x: v.at.x, y: v.at.y, z: v.at.z }; }
+    method.facts = PP.planFacts(bot, goal, { lavaKnown: [...(method.facts?.lavaKnown || []), ...lavaKnownFrom(bot, goal, frameAt, sources).map(l => l.at)], lavaDistance: planLavaDistance(method, frameAt), frameAt });
+    method.minutes = Math.round((method.activeMs || 0) / 60000 + (r?.price?.seconds || 0) / 60); delete method.routeFailed; };
+  // A repair: the route held goes on at this frame, the slot it failed at
   // cleared into or stood at from elsewhere.
   if ((pick === 'clear_blocker' || pick === 'other_stand') && goal.portalFrame?.siteFailed?.slot) {
     const f = goal.portalFrame, slot = f.siteFailed.slot, k = `${slot.x},${slot.y},${slot.z}`;
@@ -5524,72 +5494,66 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
       delete f.standsMade?.[k];
       bot.chat?.(`Pouring into the frame slot at (${slot.x}, ${slot.y}, ${slot.z}) from another side and going on here.`);
     }
-    delete method.siteFailed; method.reasked = (method.reasked || 0) + 1; save();
+    delete method.siteFailed; method.reasked = (method.reasked || 0) + 1; restate(routes[current]); save();
     return true;
   }
-  if (method?.nearFar) { if (pick === current) method.nearFarKept = method.nearFar.held; delete method.nearFar; save(); }
-  if (method?.flipped) { delete method.flipped; save(); }
-  if (method?.tripsFar) { delete method.tripsFar; save(); }
-  if (method?.nearFailed || method?.frameFailed || method?.siteFailed) { delete method.nearFailed; delete method.frameFailed; delete method.siteFailed; save(); }
-  // A new site: the frame begun passed over and left as it stands, the way
-  // held going on from none there.
-  if (pick === 'new_site') {
-    const f = goal.portalFrame;
-    (goal.portalSitesLeft ||= []).push({ ...f.origin, why: f.siteFailure, at: Date.now() });
-    delete goal.portalFrame;
-    goal.portalMethod = { kind: method.kind === 'build' ? 'build' : 'cast', activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: 0 } };
-    bot.chat?.('Leaving this frame for another spot.');
-    save(); return false;
-  }
-  // Buckets first: made on the next passes (netherStep), the way held
-  // going on with them, or none held and the question asked with them.
-  if (pick === 'craft_buckets') {
-    goal.portalBuckets = { target: carriers + more, before: carriers, at: Date.now() };
-    if (current) method.reasked = (method.reasked || 0) + 1;
-    // Said as the two steps it is, so the question that comes back once they
-    // are made is heard as the plan, not a change of mind (note 753).
-    bot.chat?.(`Making ${more} more bucket${more === 1 ? '' : 's'} first, ${current ? `then on with the ${current.replaceAll('_', ' ')}` : `then choosing how to make the portal with ${carriers + more}`}.`);
-    save(); return false;
-  }
-  // Kept: the clock runs on to the next twenty minutes.
+  const nearWalked = method?.nearFailed;
+  if (method?.flipped) delete method.flipped;
+  if (method?.nearFailed || method?.frameFailed || method?.siteFailed) { delete method.nearFailed; delete method.frameFailed; delete method.siteFailed; }
+  // Kept: the plan goes on, its facts read afresh and its minutes stated
+  // again from here.
   if (current && pick === current) {
     method.reasked = (method.reasked || 0) + 1;
+    restate(routes[current]);
     // Kept with its staircase resting: every way to it rests until then, a
     // fact for persist to answer, not a pass to repeat (note 488).
-    const rest = current === 'cast_at_lava' && nearRest(goal, method.near, bot.entity.position);
-    if (rest) { method.nearAsked = rest.until; save(); throw nearResting(method.near, rest); }
-    // Kept with its walks failed: the staircase goes on, as the option
-    // says, and its own rounds judge it; it is asked again when the
-    // staircase is set aside, not for every three passes it does not
-    // gain. Counted afresh after each keep, mid-214-g was asked nine times
-    // in three minutes, every five to eight seconds, while survival pulled
-    // it back up each pass (note 505).
-    if (current === 'cast_at_lava' && nearWalked) { method.nearByStairs = true; method.nearKept = true; }
-    save(); return goal.portalFrame ? true : portalMethod(bot, task, goal, save, client);
+    if (heldRest) { method.nearAsked = heldRest.until; save(); throw nearResting(method.near, heldRest); }
+    if (method.near && nearWalked) { method.nearByStairs = true; method.nearKept = true; }
+    save(); return goal.portalFrame ? true : method.kind !== 'ruin' || portalMethod(bot, task, goal, save, client);
   }
-  // Down into the cave: the way held, gone on from its floor (intoCave).
+  // Down into the cave: the route held, gone on from its floor (intoCave).
   if (pick === 'into_cave') {
-    method.intoCave = { ...cave }; method.reasked = (method.reasked || 0) + 1; delete method.nearAsked;
+    method.intoCave = { ...cave }; method.reasked = (method.reasked || 0) + 1; delete method.nearAsked; restate(routes[current]);
     save(); return false;
   }
+  const r = routes[pick];
   const ruin = pick.startsWith('ruin_') ? ruinOf(pick, ruins, goal) : null;
-  const next = pick === 'build_new' ? { kind: 'build' } : pick === 'cast_frame' ? { kind: 'cast' } : pick === 'cast_here' ? { kind: 'cast', here: true } : pick === 'cast_at_lava' ? { kind: 'cast', near: { ...castBy.at } }
-    : pick === 'other_lava' ? { kind: 'cast', near: { ...otherLava.at } }
-    : pick === 'restart_at_lava' ? { kind: 'cast', near: { ...restartAt.at } }
-    : { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } };
-  // A frame begun goes on the new way: its obsidian stays in its slots and
-  // the rest is cast or placed. A ruin's frame, or a move to a ruin, leaves
-  // the frame where it stands.
-  const frame = goal.portalFrame;
-  if (frame && pick === 'restart_at_lava') (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: 'restarted beside the lava its trips went to', at: Date.now() });
-  if (frame && (frame.ruin || next.kind === 'ruin' || next.near || next.here)) delete goal.portalFrame;
-  else if (frame && next.kind === 'cast') { frame.cast = true; frame.axis ||= 'x'; frame.castTemp ||= []; }
-  else if (frame && next.kind === 'build') delete frame.cast;
-  delete next.here;
-  goal.portalMethod = { ...next, activeMs: 0, reasked: 0, from: { obsidian, diamonds, diamondPickaxe, placed: goal.portalFrame ? placed : 0, ...(ruin ? { distance: ruin.distance } : {}) },
+  const v = r?.lava;
+  const next = pick === 'build_new' ? { kind: 'build' } : ruin ? { kind: 'ruin', at: { x: ruin.landmark.x, y: ruin.landmark.y, z: ruin.landmark.z } }
+    : { kind: 'cast', lava: { way: v.kind, ...(v.kind === 'deep' ? {} : { at: { x: v.at.x, y: v.at.y, z: v.at.z } }) }, ...(r.site === 'beside' ? { near: { x: v.at.x, y: v.at.y, z: v.at.z } } : {}) };
+  // A frame begun goes on the new route where the route keeps it: its
+  // obsidian stays in its slots and the rest is cast or placed. A route
+  // beside the lava, at a new site or to a ruin leaves it where it stands.
+  const f = goal.portalFrame;
+  if (f && !f.ruin && r && r.site !== 'here') (goal.portalSitesLeft ||= []).push({ ...f.origin, why: r.site === 'beside' ? 'a frame cast beside the lava chosen' : f.siteFailure || 'a new site chosen', at: now });
+  if (f && (f.ruin || next.kind === 'ruin' || (r && r.site !== 'here'))) delete goal.portalFrame;
+  else if (f && next.kind === 'cast') { f.cast = true; f.axis ||= 'x'; f.castTemp ||= []; }
+  else if (f && next.kind === 'build') delete f.cast;
+  // The lava the fetch went for before is the plan's now, or none.
+  if (goal.lavaFetch && !(next.lava?.at && goal.lavaFetch.lava && PP.sameLava(goal.lavaFetch.lava, next.lava.at)) && !(next.lava?.way === 'deep' && goal.lavaFetch.way === 'deep')) delete goal.lavaFetch;
+  delete goal.lavaChosen; delete goal.lavaPick;
+  goal.portalMethod = { ...next, key: pick, chosenAt: now, minutes: r?.price?.seconds ? Math.round(r.price.seconds / 60) : null, activeMs: 0, reasked: 0,
+    from: { obsidian, diamonds, diamondPickaxe, placed: goal.portalFrame ? placed : 0, ...(ruin ? { distance: ruin.distance } : {}) },
     ...(goal.portalFrame && method?.siteAnswer ? { siteAnswer: method.siteAnswer } : {}) };
+  goal.portalMethod.facts = PP.planFacts(bot, goal, { lavaKnown: lavaKnownFrom(bot, goal, frameAt, sources).map(l => l.at), lavaDistance: planLavaDistance(goal.portalMethod, goal.portalFrame ? pos(goal.portalFrame.origin) : here), frameAt: goal.portalFrame?.origin || null });
+  // The buckets the route takes, made first.
+  if (r?.price?.make > 0) {
+    const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket');
+    goal.portalBuckets = { target: carriers + r.price.make, before: carriers, at: now };
+  }
+  bot.chat?.(planChat(goal.portalMethod, r, ruin));
   save();
+  if (goal.portalBuckets && r?.price?.make > 0) return false;
   return next.kind !== 'ruin' || (goal.portalFrame ? true : portalMethod(bot, task, goal, save, client));
+}
+// The plan chosen, said once: where the frame goes and where its lava
+// comes from, and what that was priced at.
+function planChat(m, r, ruin) {
+  if (m.kind === 'build') return 'Portal plan: a frame of obsidian.';
+  if (m.kind === 'ruin') return `Portal plan: finishing the ruined portal ${ruin?.distance ?? '?'} blocks away.`;
+  const lava = m.lava.way === 'deep' ? 'the lava layer' : `the lava at (${m.lava.at.x}, ${m.lava.at.y}, ${m.lava.at.z})`;
+  const site = r.site === 'beside' ? `beside ${lava}` : `${r.site === 'new_site' ? 'at a new site near here' : 'here'}, its lava from ${lava}`;
+  return `Portal plan: a frame cast ${site}${r.price.make ? `, ${r.price.make} more bucket${r.price.make === 1 ? '' : 's'} made first` : ''}${m.minutes ? `, about ${m.minutes} minutes` : ''}.`;
 }
 
 // The rest on the way to a lava: the staircase dug toward it (portalStep
@@ -5757,7 +5721,9 @@ async function crossing(bot, task, goal, save, client) {
 // carrying one per bucket held. Null when not casting or no lava is known.
 function castSiteCost(bot, goal, near, casting) {
   if (!casting) return null;
-  const lava = near || nearestLava(bot, goal)?.at;
+  // The plan's lava where it names one (note 782), else the nearest known.
+  const planned = goal.portalMethod?.lava?.at || (goal.portalMethod?.lava?.way === 'deep' && bot.entity?.position ? { x: Math.floor(bot.entity.position.x), y: require('./obsidian').LAVA_DEPTH, z: Math.floor(bot.entity.position.z) } : null);
+  const lava = near || planned || nearestLava(bot, goal)?.at;
   if (!lava) return null;
   const standing = goal.portalFrame && !goal.portalFrame.ruin ? goal.portalFrame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
   const t = castTrips({ obsidian: countOf(bot, 'obsidian'), standing, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') });
@@ -5778,10 +5744,8 @@ async function portalStep(bot, task, goal, save, client) {
   const buckets = goal.portalBuckets;
   if (buckets) {
     const carriers = countOf(bot, 'bucket') + countOf(bot, 'lava_bucket');
-    if (carriers >= buckets.target || countOf(bot, 'iron_ingot') < 3) {
-      if (carriers > (buckets.before ?? carriers)) goal.portalBucketsMade = { at: Date.now(), chosenAt: buckets.at ?? Date.now(), carried: carriers, before: buckets.before };
-      delete goal.portalBuckets; save();
-    }
+    // Made, or no iron left for more: the plan goes on with them (note 782).
+    if (carriers >= buckets.target || countOf(bot, 'iron_ingot') < 3) { delete goal.portalBuckets; save(); }
     else {
       goal.step = { action: 'buckets_for_portal', carried: carriers, target: buckets.target }; save();
       try { await acquireStep(bot, task, 'bucket', countOf(bot, 'bucket') + buckets.target - carriers, goal, save); }
@@ -5802,8 +5766,9 @@ async function portalStep(bot, task, goal, save, client) {
   if (goal.portalFrame && goal.portalFrame.blocks.every(p => bot.blockAt(pos(p)) && bot.blockAt(pos(p)).name !== 'obsidian') &&
       ![...(goal.portalFrame.supports || []), ...(goal.portalFrame.castTemp || [])].some(p => bot.blockAt(pos(p))?.name === p.material) &&
       !portalSiteClear(bot, goal.portalFrame.origin)) { delete goal.portalFrame; save(); }
-  if (flagFarLava(bot, goal)) save();
-  if ((!goal.portalFrame || portalDue(goal.portalMethod)) && !await portalMethod(bot, task, goal, save, client)) return false;
+  // The portal plan, asked when none is held or a named fact has changed
+  // (note 782).
+  if ((!goal.portalFrame || planDueNow(bot, goal)) && !await portalMethod(bot, task, goal, save, client)) return false;
   if (!goal.portalFrame) {
     // Cast in place (portal-cast.js), the obsidian is made in its slots.
     const casting = goal.portalMethod?.kind === 'cast';
@@ -6136,7 +6101,7 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     const why = String(err.message).slice(0, 160);
     frame.siteFailed.n++; frame.siteFailed.whys[why] = (frame.siteFailed.whys[why] || 0) + 1;
     // The slot it failed at and the kind of failure, for the ways to repair
-    // it that portal_method offers and for the answer's hold (note 767).
+    // it that portal_plan offers and for the answer's hold (note 767).
     if (goal.step?.action === 'cast_portal' && goal.step.slot) frame.siteFailed.slot = { ...goal.step.slot };
     frame.siteFailed.kind = failureKind(why);
     save();
@@ -6163,17 +6128,17 @@ async function buildPortalFrame(bot, task, goal, save, frame) {
     // at the second the ledger rested it from here, so 25595's third asking
     // offered only build_new and new_site, and new_site was taken.
     const answered = goal.portalMethod?.siteAnswer;
-    const C = require('./decisions/commit'), held = answered && C.holding(bot, 'portal_method');
+    const C = require('./decisions/commit'), held = answered && C.holding(bot, 'portal_plan');
     if (held && !frame.ruin && goal.portalFrame === frame && castIn) {
       const ends = answered.cast !== castIn ? `a block went in since (${castIn} of ten cast, from ${answered.cast})`
         : answered.kind !== frame.siteFailed.kind ? `a failure of another kind came ("${why.slice(0, 80)}")`
         : C.endedBy(held, C.factsOf(bot, goal), {});
       if (!ends) {
         answered.held = (answered.held || 0) + 1;
-        console.log(`[commit] portal_method: ${String(answered.pick).replaceAll('_', ' ')} held at the frame's failure ${frame.siteFailed.n} (${answered.held} since it was chosen): ${why}`);
+        console.log(`[commit] portal_plan: ${String(answered.pick).replaceAll('_', ' ')} held at the frame's failure ${frame.siteFailed.n} (${answered.held} since it was chosen): ${why}`);
         return false;
       }
-      C.end(bot, 'portal_method', ends);
+      C.end(bot, 'portal_plan', ends);
     }
     if (!frame.ruin && goal.portalFrame === frame && castIn && goal.portalMethod) {
       goal.portalMethod.siteFailed = true; save();
@@ -6890,40 +6855,25 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
         jobs.push({ key: 'to_portal_frame', description: `The portal's own work: go back to the portal frame begun at (${o.x}, ${o.y}, ${o.z}), ${walkSays(o)}${frame.placedSeen !== undefined || placed ? `, ${placed || frame.placedSeen || 0} of ten standing` : ''}; the cast goes on there.`,
           run: (t, save) => navigate(bot, t, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 120000, stallMs: 8000, sprint: true }) });
       }
-      if (!routeKinds) return jobs;
     }
     const { lavaResting } = require('./tunneling');
     const { lavaRecord } = require('./obsidian');
     const open = k => !require('./obsidian').poolSpent(k.landmark) && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z));
-    const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool', routeKinds ? 256 : 128);
+    const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool', 256);
     const pools = known.filter(open).filter(k => k.distance > 12);
-    const owed = castTrips({ obsidian: countOf(bot, 'obsidian'), buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') });
-    const toPool = (key, k, lead) => {
-      const l = k.landmark, at = new Vec3(l.x, l.y ?? here.y, l.z);
-      jobs.push({ key, description: `${lead}: go to the lava pool found at (${l.x}, ${l.y ?? '?'}, ${l.z}), ${walkSays(at)}. A frame cast beside it makes each of the ${owed.toFetch} lava buckets still owed a trip of seconds (${owed.carriers} bucket${owed.carriers === 1 ? '' : 's'} carried); the portal's way is asked there with it in sight.${lavaRecord(goal, l, here)}`,
-        // Chosen, the walk is tried again whatever rest it had (note 767e):
-        // a walk set aside is not walked by goToLandmark, and the option
-        // offered to walk there did nothing.
-        run: async (t, save) => { require('./progress').attemptsFor(goal).clear('landmark_trip', `lava_pool:${l.x},${l.z}`); await require('./exploration').goToLandmark(bot, t, goal, save, ['lava_pool'], { navigate, filter: x => x === l }); } });
-    };
-    if (!frame && pools[0]) toPool('to_known_lava', pools[0], "The portal's own work");
-    // A pool whose walk did not get there (its route search out of time,
-    // or no nearer): a staircase dug to it, priced (note 767e). 25593's
-    // pool 17 to 21 blocks off and 12 to 16 down was offered only walks
-    // that had failed, none good at 0.80 and 0.85.
-    const walkFailed = k => require('./progress').isSetAside(goal, 'landmark_trip', `lava_pool:${k.landmark.x},${k.landmark.z}`) || k.landmark.lastWalk?.timedOut;
-    const digTo = pools.find(k => k.distance <= 128 && k.landmark.y !== undefined && walkFailed(k)) || known.filter(open).find(k => k.distance <= 12 && k.landmark.y !== undefined && walkFailed(k));
-    if (digTo) {
-      const l = digTo.landmark, at = new Vec3(l.x, l.y, l.z);
-      const c = require('./obsidian').wayCosts(here, at, null);
-      const secs = c.there < 90 ? `about ${Math.max(5, Math.round(c.there / 5) * 5)} seconds` : `about ${Math.round(c.there / 60)} minutes`;
-      jobs.push({ key: 'dig_to_lava', description: `The portal's own work: dig a staircase to the lava pool at (${l.x}, ${l.y}, ${l.z}), ${c.across} blocks across${c.dy <= -4 ? `, ${-c.dy} down` : c.dy >= 4 ? `, ${c.dy} up` : ''}: ${secs} to dig there (about ${c.digs} blocks dug), then its lava scooped from the shore; the pool is held for the fetch after.${lavaRecord(goal, l, here)}`,
-        run: async () => {
-          const now = Date.now(), dim = String(bot.game?.dimension || 'overworld');
-          goal.lavaFetch = { way: 'dig', lava: { x: l.x, y: l.y, z: l.z }, dest: { x: l.x, y: l.y + 1, z: l.z }, since: now, carried: countOf(bot, 'lava_bucket'), dimension: dim, switches: 0, pick: { way: 'pool', at: { x: l.x, y: l.y, z: l.z }, chosenAt: now } };
-          goal.lavaChosen = { at: { x: l.x, y: l.y, z: l.z }, by: 'Jev', since: now, dimension: dim };
-          bot.chat?.(`Digging down to the lava at (${l.x}, ${l.y}, ${l.z}).`);
-        } });
+    // The portal plan held, asked again with this stall said as its route's
+    // failure (note 782): the route is the plan's to change, priced against
+    // the others, not a detour to another pool taken here. Before the plan,
+    // to_known_lava, to_other_lava, dig_to_lava and cast_at_pool each went to
+    // other lava from the stall: 244 stall answers chose a portal route on
+    // 172 portal rungs (2026-09-30T17:00Z to 2026-10-01T04:58Z).
+    const m = goal.portalMethod;
+    if (m?.facts && !m.routeFailed) {
+      const route = m.kind === 'build' ? 'a frame of obsidian' : m.kind === 'ruin' ? 'a ruined portal finished' : `a frame cast ${m.near ? 'beside its lava' : 'here'}, its lava ${m.lava?.way === 'deep' ? 'from the lava layer' : m.lava?.at ? `at (${m.lava.at.x}, ${m.lava.at.y}, ${m.lava.at.z})` : 'the nearest'}`;
+      const step = String(goal.step?.action || 'the work').replaceAll('_', ' ');
+      const failed = goal.lastFailure && Date.now() - goal.lastFailure.at < 120000 ? goal.lastFailure.why : null;
+      jobs.push({ key: 'replan_portal', description: `The portal's own plan: ask it again, this stall on ${step}${failed ? ` ("${failed.slice(0, 120)}")` : ''} said as its route's failure. The route held: ${route}, ${Math.round((m.activeMs || 0) / 60000)} of its stated ${m.minutes ?? '?'} minutes worked. Each route is then priced afresh, this one with the stall in its record.`,
+        run: async (t, save) => { require('./portal-plan').planFailed(goal, `a stall on ${step}${failed ? `: ${failed.slice(0, 120)}` : ''}`); save(); } });
     }
     // None good on top at the last stall question here: a different kind of
     // route, each with its target's record (the reviewer's rule of the
@@ -6933,19 +6883,6 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
     // pool, the frame cast down beside a pool, or a search for lava on the
     // surface.
     if (routeKinds) {
-      const other = pools[frame ? 0 : 1];
-      if (other) toPool('to_other_lava', other, `Another route for the portal's lava${frame ? ', the frame begun kept' : ''}`);
-      const beside = pools[0];
-      if (beside) {
-        const l = beside.landmark, at = new Vec3(l.x, l.y ?? here.y, l.z);
-        const placed = frame ? frame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : 0;
-        jobs.push({ key: 'cast_at_pool', description: `Another route for the portal: cast a frame of its own down beside the lava pool at (${l.x}, ${l.y ?? '?'}, ${l.z}), ${walkSays(at)}, each of the ${owed.toFetch} lava buckets still owed a trip of seconds there${frame ? `; the frame begun at (${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${placed} of ten standing, is left as it stands` : ''}.${lavaRecord(goal, l, here)}`,
-          run: async () => {
-            if (frame) { (goal.portalSitesLeft ||= []).push({ ...frame.origin, why: 'a cast beside a lava pool chosen at a stall', at: Date.now() }); delete goal.portalFrame; }
-            goal.portalMethod = { kind: 'cast', near: { x: l.x, y: l.y ?? Math.round(here.y), z: l.z }, activeMs: 0, reasked: 0, from: { obsidian: countOf(bot, 'obsidian'), placed: 0 } };
-            bot.chat?.(`I'll cast the portal down by the lava at (${l.x}, ${l.y ?? '?'}, ${l.z}).`);
-          } });
-      }
       const spent = known.filter(k => require('./obsidian').poolSpent(k.landmark)).length, resting = known.filter(k => !require('./obsidian').poolSpent(k.landmark) && !open(k)).length;
       // Each pool known named, with its record (note 767e).
       const named = known.slice(0, 3).map(k => `(${k.landmark.x}, ${k.landmark.y ?? '?'}, ${k.landmark.z}), ${k.distance} blocks off${lavaRecord(goal, k.landmark, here).replace(/^ Its record:/, ':') || ''}`).join('; ');
@@ -7105,7 +7042,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // portal's own work (portalJobs) named first, ahead of the stalled work's
   // own answers (note 753b).
   const work = await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) });
-  const PORTAL_JOB = /^(to_known_lava|to_portal_frame|to_other_lava|cast_at_pool|search_lava|dig_to_lava)$/;
+  const PORTAL_JOB = /^(to_portal_frame|replan_portal|search_lava)$/;
   for (const w of work.filter(w => PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
   for (const w of work.filter(w => !PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);
@@ -8372,4 +8309,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear };
+module.exports = { wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom };

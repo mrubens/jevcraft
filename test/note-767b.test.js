@@ -45,10 +45,10 @@ test('25581: a pool reached with its lava covered is gone to, not forgotten; wit
   assert.equal(dry.spentWhy, 'no lava source left within sixteen blocks of it');
 });
 
-test('lava_way says the known pools it does not offer, each with its record (25581 00:42:17Z: the near pool gone from the question)', async () => {
-  const { collectLava } = require('../src/obsidian');
-  const items = [{ name: 'bucket', count: 1 }, { name: 'stone_pickaxe', count: 1 }];
-  const bot = { registry, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {},
+test('the portal plan says the known pools it does not offer, each with its record (25581 00:42:17Z: the near pool gone from the question; note 782)', async () => {
+  const { portalMethod } = require('../src/work');
+  const items = [{ name: 'bucket', count: 1 }, { name: 'stone_pickaxe', count: 1 }, { name: 'water_bucket', count: 1 }];
+  const bot = { registry, health: 20, food: 20, game: { gameMode: 'survival', difficulty: 'normal', dimension: 'overworld' }, entities: {},
     entity: { position: new Vec3(200.5, 22, -100.5) }, inventory: { items: () => items }, world: { raycast: () => null },
     blockAt: p => ({ name: p.y < 22 ? 'stone' : 'air', position: p.clone(), boundingBox: p.y < 22 ? 'block' : 'empty' }),
     findBlocks: () => [], pathfinder: { movements: {}, getPathTo: async () => ({ status: 'noPath', path: [] }) }, chat: () => {} };
@@ -57,12 +57,15 @@ test('lava_way says the known pools it does not offer, each with its record (255
     { kind: 'lava_pool', dimension: 'overworld', x: 57, y: 21, z: -234 },
     { kind: 'lava_pool', dimension: 'overworld', x: 202, y: 8, z: -117, spent: new Date().toISOString(), spentWhy: 'no lava source left within sixteen blocks of it' }] };
   for (const k of ['lava_pool:255,-8', 'lava_pool:57,-234']) setAside(goal, 'landmark_trip', k, 'no nearer', 1800000);
-  let state = null;
-  const task = new Task('lava');
-  task.opportunityClient = { systemOne: async arg => { const { questions } = arg; state = JSON.stringify(arg); return { answers: { branch_0: { choice: 'deep', confidence: 0.7 } } }; } };
-  await collectLava(bot, task, { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, { navigate: async () => {}, dig: async () => {}, resourceTunnelStep: async () => {} });
+  let state = null, offered = null;
+  const task = new Task('nether');
+  task.opportunityClient = { systemOne: async arg => { state = arg.state; offered = arg.questions.branch_0.criteria; return { answers: { branch_0: { choice: 'here_deep', confidence: 0.7 } } }; } };
+  await portalMethod(bot, task, goal, () => {});
   assert(state, 'asked');
-  assert.match(state, /\(202, 8, -117\), 22 blocks off: found with no lava to take when last reached, 1 minutes ago \(no lava source left within sixteen blocks of it\), passed over for now/);
+  assert.match(state.lavaNotOffered, /\(202, 8, -117\), 21 blocks off: found with no lava to take when last reached, 1 minutes ago \(no lava source left within sixteen blocks of it\), passed over for now/);
+  // The pools whose walk did not get there are routes by a staircase dug to them, their record said.
+  const pool = Object.keys(offered).find(k => /^here_pool_/.test(k) && /\(255, 21, -8\)/.test(offered[k]));
+  assert.match(offered[pool], /by a staircase dug to it \(its walk did not get there\).*Its record: the walk there set aside: no nearer/);
 });
 
 test('the frame\'s nearest lava is the lava nearest the frame, by its distance in three dimensions (25581: "302 blocks from it")', () => {

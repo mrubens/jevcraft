@@ -45,15 +45,17 @@ test('new_site says the blocks already cast and the lava already found here, aga
   bot.blockAt = p => ({ name: obsidianAt.has(`${p.x},${p.y},${p.z}`) ? 'obsidian' : 'air', position: p.floored?.() || p, boundingBox: 'empty', getProperties: () => ({ level: 0 }) });
   const frame = { origin, axis: 'x', cast: true, castTemp: [], blocks,
     siteFailed: { cast: 4, n: 1, whys: { 'navigation timed out without reaching new ground': 1 } } };
-  const goal = { portalFrame: frame, portalMethod: { kind: 'cast', activeMs: 0, reasked: 0, siteFailed: true },
+  const goal = { portalFrame: frame, portalMethod: { kind: 'cast', key: 'here_pool_0', lava: { way: 'pool', at: { x: origin.x + 7, y: origin.y, z: origin.z } }, activeMs: 0, reasked: 0, siteFailed: true },
     landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: origin.x + 7, y: origin.y, z: origin.z }] };
   const task = new Task('nether');
   let offered;
-  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cast_frame', confidence: 0.7 } } }; } };
+  task.opportunityClient = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'here_pool_0', confidence: 0.7 } } }; } };
   await portalMethod(bot, task, goal, () => {}).catch(() => {});
-  assert(offered.new_site, `new_site was not offered; options were ${Object.keys(offered || {}).join(', ')}`);
-  assert.match(offered.new_site, /Against retrying: 4 of ten already cast here, its lava already found \d+ blocks off \(a new site starts with no lava found, a fresh search or walk before the first bucket\)\./);
-  assert.match(offered.new_site, /What failed here once was "navigation timed out without reaching new ground": not the site itself, and a new site meets the same kind of failure no less often\./);
+  // As a portal plan (note 782), the new site is a route of its own, said with what leaving costs.
+  const key = Object.keys(offered || {}).find(k => k.startsWith('new_site_'));
+  assert(key, `no new site was offered; options were ${Object.keys(offered || {}).join(', ')}`);
+  assert.match(offered[key], /Against retrying: 4 of ten already cast here, its lava already found \d+ blocks off\./);
+  assert.match(offered[key], /What failed here once was "navigation timed out without reaching new ground": not the site itself, and a new site meets the same kind of failure no less often\./);
 });
 
 // --- (b) secure_shelter and continue_request: the threat said honestly ---

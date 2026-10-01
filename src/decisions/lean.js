@@ -30,7 +30,7 @@
 // here: their builders are where the words go.
 const CAP = 2500;
 const CEILING = { encounter_stance: 27500, stillness_detour: 16000, pocket_next: 15500, nether_gather: 14000, unstuck_move: 12500,
-  fortress_approach: 12000, portal_method: 11500, hunt_target: 11500, kit_food: 10500, fortress_leg: 9500, upkeep: 8500,
+  fortress_approach: 12000, portal_plan: 11500, hunt_target: 11500, kit_food: 10500, fortress_leg: 9500, upkeep: 8500,
   bastion_raid: 8500, body_way: 7000, fortress_visit: 6000, shelter_method: 5000, nether_food_kit: 5000, rung_progress: 5000,
   way_down: 4500, while_cooking: 4500, climb_out: 4000, leave_nether: 4000, empty_spawner: 3900, surface_trip: 3000 };
 // empty_spawner (note 704): the plain cap was set on its full-health cases;

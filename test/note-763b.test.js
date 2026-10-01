@@ -20,26 +20,27 @@ function lavaBot(items = [{ name: 'bucket', count: 1 }, { name: 'iron_ingot', co
   };
   return { bot, chat };
 }
-test('the lava\'s way is Jev\'s when a known pool and the lava layer are both on offer, each with its dig, trips and the buckets; held after (25590)', async () => {
+test('the lava\'s way is the portal plan\'s: the fetch digs to the plan\'s lava layer or pool and asks nothing of its own (25590, note 763b, note 782)', async () => {
   const { collectLava, LAVA_DEPTH } = require('../src/obsidian');
   const { bot } = lavaBot();
-  const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 201, y: 21, z: 39 }] };
+  const goal = { landmarks: [{ kind: 'lava_pool', dimension: 'overworld', x: 201, y: 21, z: 39 }],
+    portalMethod: { kind: 'cast', key: 'here_deep', lava: { way: 'deep' }, chosenAt: Date.now(), facts: { dimension: 'overworld' } } };
   setAside(goal, 'landmark_trip', 'lava_pool:201,39', 'no nearer', 1800000);
   const asked = [];
   const task = new Task('lava');
   task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'deep', confidence: 0.7 } } }; } };
   const dug = [], actions = { navigate: async () => {}, dig: async () => {}, resourceTunnelStep: async (b, t, g, s, dest) => { dug.push(dest); } };
   await collectLava(bot, task, { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);
-  assert.equal(asked.length, 1);
-  const o = asked[0];
-  assert.match(o.pool_0, /^Dig toward the lava pool known at \(201, 21, 39\): 165 blocks across, about 8 minutes to dig there .*10 lava still to fetch with 1 bucket is 10 trips: about \d+ minutes in all\.( Its record: [^.]*\.)? Pickaxes carried for the depth: stone pickaxe/);
-  assert.match(o.deep, /^Dig a staircase down to the lava layer at y -56 .*: 24 blocks across, 78 down, about 4 minutes to dig there/);
-  assert.match(o.craft_buckets, /^Make 3 more buckets first from the iron carried \(three ingots each; 9 ingots and 0 raw iron, 0 of them smelted first\): 3 trips instead of 10/);
-  assert.match(o.cast_at_pool, /^Cast the frame down beside the pool at \(201, 21, 39\)/);
-  assert.equal(dug[0].y, LAVA_DEPTH, 'the lava layer, as chosen');
   await collectLava(bot, task, { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);
-  assert.equal(asked.length, 1, 'held with the fetch, not asked again');
+  assert.equal(asked.length, 0, 'nothing asked: the plan chose the lava');
+  assert.equal(dug[0].y, LAVA_DEPTH, 'the lava layer, as the plan holds');
   assert.equal(dug[1].y, LAVA_DEPTH);
+  // The plan's pool held: dug to, its walk having failed.
+  goal.portalMethod = { kind: 'cast', key: 'here_pool_0', lava: { way: 'pool', at: { x: 201, y: 21, z: 39 } }, chosenAt: Date.now() + 1, facts: { dimension: 'overworld' } };
+  delete goal.lavaFetch;
+  await collectLava(bot, task, { action: 'fill_bucket', item: 'lava_bucket', count: 1 }, goal, () => {}, actions);
+  assert.equal(asked.length, 0);
+  assert(Math.hypot(dug[2].x - 201, dug[2].z - 39) <= 2, `dug toward the pool: ${dug[2]}`);
 });
 
 test('the depth\'s needs say the pickaxes it would be worked with, and what the pockets make first (25583: down to y 16 with a wooden pickaxe)', () => {

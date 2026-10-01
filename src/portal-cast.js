@@ -855,18 +855,9 @@ async function castFrame(bot, task, goal, save, actions) {
         t.n++; t.ms += Math.max(0, (m.activeMs || 0) - m.tripFrom); delete m.tripFrom;
         if (Number.isFinite(m.tripHealth) && Number.isFinite(bot.health)) t.hurt = Math.round(((t.hurt || 0) + Math.max(0, m.tripHealth - bot.health)) * 10) / 10;
         delete m.tripHealth;
-        // Trips as they have been, long or hurtful: the way is asked again
-        // with them (portalDue), once and then at each doubling. 25585
-        // (mid-241-bi, 2026-09-30 23:4x-00:0xZ), its frame at (-118, -11,
-        // -483) 54 blocks from its lava, made three one-bucket trips, each
-        // through low air and pointed dripstone (20 health to 12), and left
-        // the frame; a frame begun was never weighed again against one cast
-        // beside the lava (note 767).
-        const each = t.ms / t.n;
-        if ((each >= 90000 || (t.hurt || 0) >= 4) && (!m.tripsAsked || each >= 2 * m.tripsAsked.each || (t.hurt || 0) >= m.tripsAsked.hurt + 4)) {
-          m.tripsFar = { n: t.n, each: Math.round(each / 1000), hurt: t.hurt || 0, left: order.filter(q => w.name(q) !== 'obsidian').length };
-          m.tripsAsked = { each, hurt: t.hurt || 0 };
-        }
+        // The trips as they have gone price the plan's routes when it is
+        // next asked (fetchTrip); a slow trip no longer asks it again by
+        // itself (note 782): the plan's own stated minutes do.
       }
       stepIs(p, 'lava');
       await pourAlong(bot, task, 'lava_bucket', aim, () => sourceLava(bot.blockAt(p)), actions.pourMs);

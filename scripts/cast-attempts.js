@@ -79,7 +79,7 @@ function readPort(files, since, to) {
         continue;
       }
       const iv = invOf(line);
-      const cast = line.includes('"cast_portal"'), pm = line.includes('"portal_method"');
+      const cast = line.includes('"cast_portal"'), pm = line.includes('"portal_method"') || line.includes('"portal_plan"');
       let step = null, o = null;
       if (cast || pm || line.startsWith('{"kind":"error"')) {
         try { o = JSON.parse(line); } catch (_) { o = null; }
@@ -106,13 +106,14 @@ function readPort(files, since, to) {
       if (o?.kind === 'error' && step?.action === 'cast_portal') { const r = reasonOf(o.label); errors[r] = (errors[r] || 0) + 1; }
       if (pm && o?.kind === 'decision') {
         const d = o.snapshot?.decision;
-        if (d?.id === 'portal_method') {
-          const sf = siteFailure(d.options);
+        if (d?.id === 'portal_method' || d?.id === 'portal_plan') {
+          // The plan (note 782) says the site failure in its state, once.
+          const sf = siteFailure(d.id === 'portal_plan' ? { s: { description: d.state?.siteFailure || '' } } : d.options);
           const pick = (d.path || []).at(-1);
           if (sf) asks.push({ port: f.port, t, ...sf, pick, options: Object.keys(d.options || {}) });
-          if (pick === 'new_site') {
-            const m = String(d.options?.new_site?.description || '').match(/as it stands, (\d+) of ten in it/);
-            leaves.push({ port: f.port, t, placed: m ? +m[1] : null, sf });
+          if (pick === 'new_site' || /^new_site_/.test(pick || '')) {
+            const m = String(d.options?.[pick]?.description || '').match(/as it stands, (\d+) of ten in it|, (\d+) of ten cast, left as it stands/);
+            leaves.push({ port: f.port, t, placed: m ? +(m[1] ?? m[2]) : null, sf });
           }
         }
       }

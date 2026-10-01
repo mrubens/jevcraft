@@ -52,7 +52,7 @@ const SIDES = [
   // 25581 chose cast_at_lava (portal_method) and in the same second chose
   // climb (surface_trip), undoing the stand it had just taken to work by the
   // lava (note 714).
-  { topic: 'portal_site', toward: /^portal_method\/(build_new|cast_frame|cast_at_lava|cast_here|into_cave|other_lava|new_site|ruin_\d+)$/,
+  { topic: 'portal_site', toward: /^portal_plan\/(build_new|(?:here|beside|new_site)_(?:pool_\d+|deep|sight)|into_cave|clear_blocker|other_stand|ruin_\d+)$/,
     away: /^surface_trip\/(climb|mine_first)$/, towardSays: 'work here on the portal', awaySays: 'climb to open sky' },
 ];
 function sidesOf(path) {

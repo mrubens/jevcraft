@@ -106,7 +106,7 @@ function readTrial({ port, start, end, dir = FLIGHT }) {
         health: typeof s.health === 'number' ? s.health : null, food: typeof s.food === 'number' ? s.food : null,
         lava: s.inventory ? (+s.inventory.lava_bucket || 0) : null,
         pool: sa?.action === 'landmark_found' && sa.kind === 'lava_pool' && sa.position ? sa.position : null,
-        answer: d?.id === 'portal_method' && Array.isArray(d.path) ? d.path.at(-1) : null, stall: o.kind === 'navigation_stall',
+        answer: /^(portal_method|portal_plan)$/.test(d?.id || '') && Array.isArray(d.path) ? d.path.at(-1) : null, stall: o.kind === 'navigation_stall',
         detour: o.kind === 'decision' && /^(stillness_detour|rung_progress)$/.test(d?.id || '') && Array.isArray(d.path) ? d.path.at(-1) : null });
     }
   }
