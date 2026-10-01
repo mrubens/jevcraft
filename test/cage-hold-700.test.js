@@ -123,18 +123,25 @@ test('each unstuck move says where it leaves the bot against the cage: 25585\'s 
   assert.doesNotMatch(u.describeMove(u.localMoves(view, FEET, { goal: 'away', from: FEET }).moves.find(m => m.key === 'dig_down')), /spawner/);
 });
 
-test('25591 at 22:58:06Z: beside a live cage with an iron sword and no pickaxe, the upkeep says the rods need the sword and does not put the pickaxe first', async () => {
+test('25591 at 22:58:06Z: beside a live cage with an iron sword and no pickaxe, the upkeep says the rods need the sword and does not put the pickaxe first; with note 783 the stems are not offered there at all', async () => {
   const { upkeepStep } = require('../src/work');
   const cage = new Vec3(158, 64, 356);
   const inv = Object.entries({ stone_axe: 1, mutton: 9, coal: 128, crafting_table: 2, gravel: 21, water_bucket: 1, oak_fence: 15, blaze_rod: 1, beef: 3, bucket: 1, white_wool: 4, iron_sword: 1, flint_and_steel: 1, netherrack: 15 }).map(([n, c]) => stack(n, c));
-  const bot = { registry, game: { gameMode: 'survival', dimension: 'the_nether' }, time: { timeOfDay: 3000 }, health: 20, food: 19,
+  const make = () => ({ bot: { registry, game: { gameMode: 'survival', dimension: 'the_nether' }, time: { timeOfDay: 3000 }, health: 20, food: 19,
     entity: { isInWater: false, position: new Vec3(157.5, 63, 353.5) }, entities: {}, inventory: { items: () => inv },
-    blockAt: p => ({ name: p.x === cage.x && p.y === cage.y && p.z === cage.z ? 'spawner' : p.y < 63 ? 'netherrack' : 'air', position: p, boundingBox: p.y < 63 ? 'block' : 'empty' }), findBlocks: () => [] };
-  const goal = { kind: 'win', step: { action: 'break_their_line', entity: 'blaze' }, mobHunt: { entity: 'blaze', item: 'blaze_rod', targetCount: 7 },
-    fortressSearch: { map: { spawners: [{ x: cage.x, y: cage.y, z: cage.z }] } } };
+    blockAt: p => ({ name: p.x === cage.x && p.y === cage.y && p.z === cage.z ? 'spawner' : p.y < 63 ? 'netherrack' : 'air', position: p, boundingBox: p.y < 63 ? 'block' : 'empty' }), findBlocks: () => [] },
+  goal: { kind: 'win', step: { action: 'break_their_line', entity: 'blaze' }, mobHunt: { entity: 'blaze', item: 'blaze_rod', targetCount: 7 },
+    fortressSearch: { map: { spawners: [{ x: cage.x, y: cage.y, z: cage.z }] } } } });
   const asked = [];
   const client = { systemOne: async req => { const q = req.questions.branch_0; asked.push({ options: q.criteria, state: req.state }); return { answers: { branch_0: { choice: 'carry_on', confidence: 0.7 } } }; } };
-  await upkeepStep(bot, { check() {} }, goal, () => {}, client);
+  // Note 783: beside the live cage with rods owed, the stems are not offered
+  // and carry on is taken unasked.
+  { const { bot, goal } = make(); const log = console.log; console.log = () => {};
+    try { await upkeepStep(bot, { check() {} }, goal, () => {}, client); } finally { console.log = log; } }
+  assert.equal(asked.length, 0, 'not asked: the stems are not offered beside the cage');
+  // The words as they are said where the rule does not apply (JEV_BLAZE_GOAL=0).
+  process.env.JEV_BLAZE_GOAL = '0';
+  try { const { bot, goal } = make(); await upkeepStep(bot, { check() {} }, goal, () => {}, client); } finally { delete process.env.JEV_BLAZE_GOAL; }
   assert.equal(asked.length, 1);
   const { options, state } = asked[0];
   assert.equal(Object.keys(options)[0], 'carry_on', `order: ${Object.keys(options)}`);

@@ -198,6 +198,8 @@ const ALREADY_SO = 'alreadySo: options not offered because what they would bring
 // Note 749 (loops.js): the askings of this question just before, each within
 // a minute of the one before, wherever the bot walked between.
 const SPELL = 'spellSoFar: this question has been asked again and again just now, each asking within a minute of the one before: how many times, what was answered, how far the bot walked and how far it is from where the askings began, whether anything new is carried, and how often none of the options was good. The same answers again seldom end it.';
+// Note 783 (blaze-goal.js): the errands not offered with blazes within reach.
+const TO_THE_BLAZES = 'toTheBlazes: blaze rods are still needed and blazes are known within reach: options that are no way to them, not the rods\' carry-out and not the body\'s safety are not offered here, and the record of each kind of way is said on it.';
 const ASIDE_HOLDS = 'asideHolds: options that would take back a rung set aside a moment ago, not offered while nothing named has changed since it was set aside.';
 // Note 764 (commit.js): an answer holds until what ends it happens.
 const HOLDS = 'answersHold: what ends each answer here once chosen; until one of those happens the answer goes on and this question is not asked again. lastCommitment: how the answer that held last ended.';
@@ -236,7 +238,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const off = offOverworld(dimension);
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
-  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}${/recorded as failed/.test(state.answerChangedNothing) ? ` ${RECORDED_FAILED}` : ''}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
+  const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}${/recorded as failed/.test(state.answerChangedNothing) ? ` ${RECORDED_FAILED}` : ''}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.toTheBlazes ? ` ${TO_THE_BLAZES}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
   const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
@@ -746,6 +748,17 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     tree = a.tree;
     if (a.facts.length) { asideHolds = a.facts; console.log(`[aside holds] ${id}: ${a.facts.join(' | ')}`); }
   }
+  // Once blazes are known within reach and rods are owed, a question about
+  // the work offers the ways to them, the rods' carry-out, the body's safety
+  // and keeping on; the errands are not offered, said (blaze-goal.js, note
+  // 783). Of 2,026 such questions after a first blaze in the record, 328
+  // were answered with an errand, 223 of them with the blazes within reach.
+  let toTheBlazes = null;
+  if (bot && goal && GAMEPLAY_AREAS.has(spec.area) && !aside) {
+    const b = require('../blaze-goal').gate(bot, goal, id, tree, { area: spec.area });
+    tree = b.tree;
+    if (b.facts.length) { toTheBlazes = b.facts; console.log(`[to the blazes] ${id}: ${b.facts.slice(0, 2).join(' | ')}`); }
+  }
   // Leaving is Jev's, asked (fortress-hold.js, note 721): a lone leave, or a
   // lone resting way kept only beside one, is not taken unasked. Its failure
   // goes to the answer it serves, where it is that answer's way (the fetch of
@@ -985,6 +998,7 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     if (atOnce) state = { ...state, failedAtOnce: atOnce };
   }
   if (asideHolds && state && typeof state === 'object') state = { ...state, asideHolds };
+  if (toTheBlazes && state && typeof state === 'object') state = { ...state, toTheBlazes };
   // What ends each answer that would hold, and how the last one ended.
   if (bot && GAMEPLAY_AREAS.has(spec.area) && state && typeof state === 'object') {
     const holds = commit.holdsSays(spec, tree);
