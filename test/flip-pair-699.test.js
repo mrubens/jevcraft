@@ -182,3 +182,20 @@ test('a walk that brings nothing for three minutes ends and says so; its answer 
   t.mock.timers.tick(5 * 60000);
   assert(intention.holding(bot, goal, Date.now()), 'a wait holds');
 });
+
+test('a trip held that is no walk by name (portal_way\'s around_right) ends the same after three minutes with nothing gained (25589, note 811)', async t => {
+  const T0 = Date.parse('2026-10-01T13:14:00Z');
+  t.mock.timers.enable({ apis: ['Date'], now: T0 });
+  const { decide } = require('../src/decisions');
+  const intention = require('../src/intention');
+  const client = { systemOne: async () => ({ answers: { branch_0: { choice: 'around_right', confidence: 0.9, probabilities: { around_right: 0.9 } } } }) };
+  const bot = netherBot(new Vec3(289, 65, 106));
+  const goal = { kind: 'win', rungTime: { phase: 'obtain_blaze_rods' }, survival: {} };
+  const portal = { x: 52, y: 39, z: 21 };
+  await decide('portal_way', { client, bot, goal, target: portal, tree: { around_right: { description: 'Round the lava to the right.', target: portal }, around_left: { description: 'Round to the left.', target: portal } }, state: { health: 20 } });
+  assert.equal(goal.intention?.choice, 'around_right');
+  assert.ok(goal.intention?.trip, 'a trip');
+  for (let i = 0; i < 24; i++) { t.mock.timers.tick(10000); bot.entity.position = new Vec3(i % 2 ? 293 : 291, 64, 106); intention.holding(bot, goal, Date.now()); if (!goal.intention) break; }
+  assert.equal(goal.intention, undefined);
+  assert.match(goal.intentionEnded.why, /^no yield: 3 minutes with nothing gained/);
+});

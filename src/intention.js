@@ -323,9 +323,14 @@ function endOf(bot, goal, i, now) {
   // there: escalated.
   const up = (t?.escalations || []).find(e => e.at > i.at);
   if (up) return `failed: ${String(up.why || 'its ways came to nothing').slice(0, 160)}`;
-  // A walk that has brought nothing for YIELD_MS (note 699).
+  // A walk that has brought nothing for YIELD_MS (note 699), and any trip
+  // held (an answer that goes somewhere, tripOf): portal_way's around_right
+  // was no walk by name, and 25589 (mid-226-aj, 2026-10-01 13:14-13:22Z)
+  // held it at a blaze spawner, its portal 248 blocks off and nothing gained
+  // toward it in six minutes, while the rung's question was gated to
+  // keep_at_it with seven rods wanted (note 811).
   const y = yieldLook(bot, goal, i, now);
-  if (y && WALKS.test(i.choice) && now - y.gainAt >= YIELD_MS) {
+  if (y && (WALKS.test(i.choice) || i.trip) && now - y.gainAt >= YIELD_MS) {
     const RM = require('./rung-measure');
     // The food rung's own search is a question about food (note 728): its
     // yield is said as that, not as the pseudo-item rungItems names after
