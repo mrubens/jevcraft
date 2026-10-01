@@ -107,8 +107,12 @@ function recordSays(log = []) {
 
 // The seal chosen (survival_priority, shelter_method), kept on the layer's
 // state for pocket_next to read.
-function noteSeal(state, reason, { now = Date.now(), how = null } = {}) {
+// With it the seal's hold (night-record.js, note 789): what a stay in the
+// pocket it makes is held until (dawn, the threat gone, health back).
+function noteSeal(state, reason, { now = Date.now(), how = null, health = 20 } = {}) {
   state.lastSeal = { at: now, none: !!reason?.none, short: reason?.short || null, ...(how ? { how } : {}) };
+  const hold = require('./night-record').holdOf(reason, { now, health });
+  if (hold) state.sealHold = hold; else delete state.sealHold;
 }
 // pocket_next's answers after a seal: the first that opens the pocket, or a
 // stay once the minute is up, logged with how long after the seal.
