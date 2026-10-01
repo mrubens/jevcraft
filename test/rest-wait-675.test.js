@@ -164,3 +164,19 @@ test('25585 mid-242-ca-nether-1: leave_nether\'s wait_here says what the hold ha
     assert.equal(goal.leaveNether, undefined);
   }
 });
+
+test('the portal plan marked failed while a rest is held (replan_portal chosen): the hold ends at once, for the plan to be asked (note 803)', async () => {
+  const w = win('mid-242-bb-nether-1-fortress-9');
+  const { bot, goal } = recorded(w);
+  const { holdForRest } = require('../src/work');
+  goal.portalMethod = { kind: 'cast', key: 'here_pool_0', lava: { way: 'pool', at: { x: 0, y: 40, z: 0 } } };
+  const client = { model: 'jev', systemOne: async () => { goal.portalMethod.routeFailed = { why: 'a stall on enter nether', at: Date.now() }; return { answers: { branch_0: { choice: 'none_good', confidence: 0.5 } } }; } };
+  setTimeout(() => { goal.portalMethod.routeFailed ||= { why: 'a stall on enter nether', at: Date.now() }; }, 300);
+  const logs = []; const log = console.log; console.log = (...a) => logs.push(a.join(' '));
+  const t0 = Date.now(); let done;
+  try { done = await holdForRest(bot, new Task('hold'), goal, () => {}, { client, reason: 'step:enter_nether', until: Date.now() + 8000, idle: true }); }
+  finally { console.log = log; }
+  assert.equal(done, false);
+  assert(Date.now() - t0 < 7000, `ended early: ${Date.now() - t0} ms`);
+  assert(logs.some(l => /^\[wait\] the portal plan is to be asked again \(a stall on enter nether\): the hold on enter nether ends/.test(l)), logs.join('\n'));
+});

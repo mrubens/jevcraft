@@ -7415,8 +7415,19 @@ function restWorkSays(bot, work, { until, now = Date.now() } = {}) {
 // asked again with that said, not a silent wait in the work's name.
 async function holdForRest(bot, task, goal, save, { client, survival, onStep = () => {}, reason, until, why = null, above = undefined, idle = true }) {
   let waitSaid = false;
+  // The portal's plan marked failed meanwhile (replan_portal chosen): the
+  // rest was its route's, and the plan is asked again at the step's next
+  // pass, not when the rest runs out. 25585 (mid-227-ai, 2026-10-01
+  // 11:45-11:48Z) chose replan_portal twice, "changed nothing within 5
+  // seconds" each time, the step held under its rest (note 803).
+  const routeFailedAtStart = !!goal.portalMethod?.routeFailed;
   try {
     while (Date.now() < until) {
+      if (!routeFailedAtStart && goal.portalMethod?.routeFailed) {
+        console.log(`[wait] the portal plan is to be asked again (${String(goal.portalMethod.routeFailed.why || "its route failed").slice(0, 120)}): the hold on ${String(reason).replace(/^\w+:/, '').replaceAll('_', ' ')} ends`);
+        if (goal.restHeld?.until === until) { delete goal.restHeld; save(); }
+        return false;
+      }
       task.check();
       const started = Date.now(), minutes = Math.max(1, Math.ceil((until - started) / 60000));
       // `none`: nothing was on offer (a detour tried and failed is not that).
