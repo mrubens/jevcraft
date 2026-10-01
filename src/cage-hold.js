@@ -96,6 +96,10 @@ function planEnd(bot, h, now = Date.now()) {
   if (Number.isFinite(h.rods) && rods > h.rods) return `${rods - h.rods === 1 ? 'a rod' : `${rods - h.rods} rods`} carried`;
   if (Number.isFinite(h.health) && h.health - (bot.health ?? 20) >= PLAN_HEALTH) return `${Math.round((h.health - (bot.health ?? 20)) * 10) / 10} health gone since it began`;
   if (h.box && insideBlaze(bot)) return 'a blaze came inside the box';
+  // The shield it was begun with, broken or at its last volley (shield-
+  // wear.js, note 786): the plan was priced with the shield facing the
+  // window or the slit.
+  if (h.shield) { const sw = require('./shield-wear'), changed = sw.changed(h.shield, sw.state(bot)); if (changed) return changed; }
   return null;
 }
 function insideBlaze(bot) {
@@ -156,7 +160,7 @@ function openings(bot, goal = bot?._goal, now = Date.now()) {
 // What ends the plan's answer as a commitment (decisions/commit.js, note
 // 764): a kill, health falling a band, the bot off its cell, its time; the
 // plan's own end (a blaze inside, a hit through) is said with them.
-const planCommit = () => ({ until: { kills: true, health: true, moved: 3, seconds: PLAN_MS / 1000, also: ['a blaze comes inside the box or a hit lands through it'] } });
+const planCommit = () => ({ until: { kills: true, health: true, moved: 3, seconds: PLAN_MS / 1000, also: ['a blaze comes inside the box or a hit lands through it', 'the shield breaks or comes to its last volley'] } });
 // The node fields that make an answer at the cage one plan: judged by what
 // it killed (outcome.js judgeBy, note 765), over its own time, and held as
 // a commitment until then.
@@ -184,7 +188,7 @@ function beginHold(bot, goal, save, choice, now = Date.now(), { site = null, ope
   const box = site ? { cell: P(site.cell), window: P(site.window), walls: (site.walls || []).map(P), slit: (site.slit || []).map(P),
     openings: require('./blaze-tactics').openingsOf(site).map(P) } : null;
   goal.cageHold = { choice, at: now, until: now + (plan ? PLAN_MS : HOLD_MS), from: P(site?.cell || p), rods: require('./skills').countOf(bot, 'blaze_rod'),
-    kills: killsOf(bot), health: bot.health ?? 20, ...(box ? { box } : {}), ...(!box && open?.length ? { openings: open.map(P) } : {}),
+    kills: killsOf(bot), health: bot.health ?? 20, ...(plan ? { shield: require('./shield-wear').state(bot) } : {}), ...(box ? { box } : {}), ...(!box && open?.length ? { openings: open.map(P) } : {}),
     ...(fight ? { cage: { x: fight.cage.x, y: fight.cage.y, z: fight.cage.z } } : {}) };
   try { require('./rung-measure').watchKills(bot); } catch (_) { /* no events */ }
   save?.();

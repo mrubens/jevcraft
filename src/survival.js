@@ -4910,7 +4910,12 @@ class Survival {
             try { await this.actions.acquireStep(bot, task, coverMade.item, countOf(bot, coverMade.item) + Math.min(coverMade.available, Math.ceil(coverBlocks / 4) * 4), goal, save); }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
           }
-          const material = (ghastCovered && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials)) || shelter.buildingItem(bot, 1)?.name;
+          // The block for each cell is picked as it is laid, from what is
+          // still carried (note 786): one kind picked for them all ran out
+          // part way, "Need more nether bricks" with netherrack carried, 18
+          // of the 111 ways out at the blazes that failed at once.
+          const pickMaterial = () => (ghastCovered && require('./ghast').blastProofMaterial(bot, shelter.buildingMaterials)) || shelter.buildingItem(bot, 1)?.name;
+          const material = pickMaterial();
           const now = plans.map(({ t }) => { const e = bot.entities?.[t.entity.id] || t.entity; return { t, e, plan: e.isValid === false ? { cells: [], stoppedBy: true } : blockPlan(bot, e) }; });
           const todo = now.filter(p => p.plan.cells.length);
           if (!todo.length && !now.some(p => p.plan.stoppedBy)) throw Object.assign(new Error(now.map(p => `${p.t.entity.name.replaceAll('_', ' ')}: ${p.plan.why}`).join('; ') || 'no shooter in its line'), { name: 'StanceFailed' });
@@ -4920,7 +4925,8 @@ class Survival {
           for (const p of todo) {
             for (const c of p.plan.cells) {
               task.check();
-              try { await this.actions.place(bot, task, c, material, { stay: true }); placed++; }
+              const kind = countOf(bot, material) > 0 ? material : pickMaterial() || material;
+              try { await this.actions.place(bot, task, c, kind, { stay: true }); placed++; }
               catch (err) {
                 task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
                 // The line cut is the cover; the rest is the second of two high.
@@ -5437,6 +5443,13 @@ class Survival {
     const crowdX = require('./crowd');
     const crowdNow = crowdX.crowdOf(danger, { apartIds: this.lastApart?.ids });
     const crowdGrew = crowdX.grew(held, crowdNow);
+    // The shield chosen with, broken or come to its last volley (shield-
+    // wear.js, note 786): 24 shields broke under blaze fire in the spans of
+    // 2026-09-30T06:08Z to 2026-10-01T05:00Z and 13 of those bots were dead
+    // within two minutes, the stance chosen with the shield running on.
+    const shieldWear = require('./shield-wear');
+    const shieldNow = shieldWear.state(bot);
+    const shieldChanged = held?.shield ? shieldWear.changed(held.shield, shieldNow) : null;
     // A held fight or charge ends at the floor while Jev cannot be asked
     // (note 778b): the question waits, and meanwhile the body's reflex backs
     // off and eats (outageFloorReflex).
@@ -5521,7 +5534,7 @@ class Survival {
     if (held && heldNow.length && heldNow.every(t => !t.visible && noNearer(t))) held.unseenSince ||= Date.now(); else if (held) delete held.unseenSince;
     const unseenLong = !!held?.unseenSince && Date.now() - held.unseenSince >= UNSEEN_HOLD_MS;
     if (unseenLong) this.state.stanceFailed = [...[].concat(this.state.stanceFailed || []).filter(f => Date.now() - f.at < 20000), { choice: held.choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), why: `held ${Math.round((Date.now() - held.at) / 1000)} seconds with the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} out of sight and no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)}: nothing for it to answer` }];
-    const physical = !!held && !leftBe && !runStuck && !unseenLong && !crowdGrew && !outageLow && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
+    const physical = !!held && !leftBe && !runStuck && !unseenLong && !crowdGrew && !shieldChanged && !outageLow && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -5760,7 +5773,7 @@ class Survival {
     // the bot off its spot), a way new on offer or a shot on its way: those
     // are asked, as they were.
     let askedNow = false, noneGoodNow = false;
-    const triggered = !!held && (!!held.lethalAgain || runStuck || unseenLong || crowdGrew || outageLow || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
+    const triggered = !!held && (!!held.lethalAgain || runStuck || unseenLong || crowdGrew || !!shieldChanged || outageLow || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
       || /^a way not on offer|^a shot came/.test(holdEnded || ''));
     if (!choice && !holdCapped && !triggered) {
       const kept = scenes.holdFor(book, Object.keys(options));
@@ -5807,6 +5820,7 @@ class Survival {
             : unseenLong ? { askedAgainFor: `the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} it was chosen against ${heldNow.length === 1 ? 'has' : 'have'} been out of sight and no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)} seconds` }
             : runStuck ? { askedAgainFor: `the ${held.choice.replaceAll('_', ' ')} has not moved: ${ranBlocks} blocks in ${Math.round((Date.now() - held.at) / 1000)} seconds` }
             : crowdGrew ? { askedAgainFor: crowdX.grewSays(held, crowdNow) }
+            : shieldChanged ? { askedAgainFor: `${shieldChanged}, since the ${held.choice.replaceAll('_', ' ')} was chosen ${Math.round((Date.now() - held.at) / 1000)} seconds ago` }
             : outageLow ? { askedAgainFor: `Jev could not be reached and health came down to ${Math.round(bot.health * 10) / 10}, the floor of ${JEV_DOWN_FLOOR}: the ${held.choice.replaceAll('_', ' ')} held ended there, and the body backed off and ate while it waited` }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
@@ -5970,6 +5984,9 @@ class Survival {
       // How many stood within four when it was chosen: more than that, two
       // or more, ends it (crowd.js, note 778).
       crowd: { n: crowdNow.length },
+      // The shield as it was when chosen: broken or at its last volley, the
+      // stance is asked again (shield-wear.js changed, note 786).
+      shield: shieldNow,
       // What it was chosen on, for holding on while that stands (holds.js).
       hold: require('./holds').begin({ choice, health: bot.health, expects: options[choice]?.expects || null, mobs: danger, offered: [...Object.keys(options), ...leftOut] }) };
     // An answer in this scene, asked or held without asking (note 659).
@@ -6068,7 +6085,7 @@ class Survival {
       this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }];
       if (resumable) {
         const now = Date.now();
-        this.state.stance = { ...resumable, at: now, health: bot.health, crowd: { n: crowdNow.length }, hold: require('./holds').begin({ choice: resumable.choice, health: bot.health, expects: resumable.expects || null, mobs: danger, offered: Object.keys(options) }) };
+        this.state.stance = { ...resumable, at: now, health: bot.health, crowd: { n: crowdNow.length }, shield: shieldNow, hold: require('./holds').begin({ choice: resumable.choice, health: bot.health, expects: resumable.expects || null, mobs: danger, offered: Object.keys(options) }) };
         bot._stance = this.state.stance;
         console.log(`[stance] ${choice.replaceAll('_', ' ')} failed at once${why ? ` (${String(why).slice(0, 80)})` : ''}: ${resumable.choice.replaceAll('_', ' ')} goes on, the failure said at the next asking`);
       }

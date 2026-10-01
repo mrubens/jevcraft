@@ -189,7 +189,7 @@ function windowSite(bot, from) {
 // that `ok` takes. A walk passes no cell beside a mob that bites, nor one
 // a push from which is a fall.
 function walkTo(bot, ok, { steps = 8, avoid = [] } = {}) {
-  const feet = feetCell(bot);
+  const feet = feetCell(bot), takes = walkTakes(bot);
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const seen = new Set([`${feet}`]);
   let ring = [feet];
@@ -202,7 +202,7 @@ function walkTo(bot, ok, { steps = 8, avoid = [] } = {}) {
       if (seen.has(key)) continue;
       if (dy === 1 && solid(bot.blockAt(c.offset(0, 2, 0)))) continue;
       if (dy === -1 && solid(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
-      if (!bunker.standable(bot, to) || near(to) || lavaWithin(bot, to, 1)) continue;
+      if (!bunker.standable(bot, to) || near(to) || lavaWithin(bot, to, 1) || !takes(to)) continue;
       seen.add(key); next.push(to);
     }
     ring = next;
@@ -790,11 +790,13 @@ const REACH_STEPS = 40, REACH_MEMO_MS = 400;
 // four times in 30 seconds. Where there are no such movements (a world read
 // without a pathfinder), blaze-tactics.js walkCells.
 const REACH_NODES = 6000;
-function moveWalk(bot, mv) {
+// `edges`: the walk of a way out names its cells beside a drop and walks
+// them (movement.js edgeTaken, note 610), so the drop's edge is not refused.
+function moveWalk(bot, mv, { edges = false } = {}) {
   let Move;
   try { Move = require('mineflayer-pathfinder/lib/move'); } catch (_) { return null; }
-  const saved = { canDig: mv.canDig, allow1by1towers: mv.allow1by1towers, allowParkour: mv.allowParkour, scafoldingBlocks: mv.scafoldingBlocks };
-  Object.assign(mv, { canDig: false, allow1by1towers: false, allowParkour: false, scafoldingBlocks: [] });
+  const saved = { canDig: mv.canDig, allow1by1towers: mv.allow1by1towers, allowParkour: mv.allowParkour, scafoldingBlocks: mv.scafoldingBlocks, edgeTaken: mv.edgeTaken };
+  Object.assign(mv, { canDig: false, allow1by1towers: false, allowParkour: false, scafoldingBlocks: [], ...(edges ? { edgeTaken: () => true } : {}) });
   // Walked as the attack walks it: the blazes claimed (claimBlazes), so a
   // cell nearer them is not refused for that (danger.js safeFromHostiles).
   const claims = { h: bot._huntingEntity, c: bot._closingOn };
@@ -819,6 +821,9 @@ function moveWalk(bot, mv) {
         }
       }
       ring = next;
+      // Cut short by the node budget: past the depth reached, a cell not in
+      // the map is not known to be refused (walkTakes).
+      if (looked >= REACH_NODES && ring.length) { map.cutAt = n; break; }
     }
   } finally { Object.assign(mv, saved); bot._huntingEntity = claims.h; bot._closingOn = claims.c; }
   return map;
@@ -834,6 +839,46 @@ function reachWalk(bot) {
   }
   bot._reachWalk = { k, at: now, map };
   return map;
+}
+// Whether the walk takes the bot to a cell (note 786): the ways out of the
+// fire and to heal (leave_and_heal's cell, the corner, the box's cell, the
+// wall's, a spot out of their line) were found by walks of their own
+// (blaze-tactics.js walkCells, bunker.js coverWithin, walkTo here), a step
+// up or down over standable ground, while the walk taken is the bot's own
+// movements, which refuse in the Nether a cell beside a deadly drop or at a
+// lava's edge, and with rods carried note 762's rules. 25591 (mid-242-vd,
+// 2026-09-30 07:33:40Z, 5 rods) chose leave_and_heal at 14.4 health, "walk
+// 1 block ... to (-156, 81, 168), where none of the 10 blazes about has a
+// line", and the walk found no path to the next cell; step_out_and_eat to
+// the same cell failed the same way a second later, and it charged at 11.4
+// and died. Of 901 such ways chosen at the blazes in the spans of
+// 2026-09-30T06:08Z to 2026-10-01T05:00Z, 71 ended with the walk not getting
+// there (scripts/blaze-deaths.js --escapes). The cell a way names is one
+// reachWalk holds; where the movement walk ran out of nodes before a cell's
+// depth, the cell is not refused for it. Where there are no movements (a
+// world read without a pathfinder), every cell is taken. -> (cell) => bool
+// `edges`: for a way whose walk names its cells beside a drop and walks
+// them (bunker.js coverWithin's walk, edgeTaken), those are taken; the
+// lava's edge, the rods' rules and the rest are the walk's either way. The
+// box's, the corner's and the heal's walks name none (blaze-tactics.js).
+function walkTakes(bot, { edges = false } = {}) {
+  const mv = bot?.pathfinder?.movements;
+  if (!bot?.entity?.position || typeof mv?.getNeighbors !== 'function') return () => true;
+  const feet = feetCell(bot);
+  let walk;
+  if (edges) {
+    const k = `${feet}`, m = bot._wayOutWalk, now = Date.now();
+    walk = m && m.k === k && now - m.at < REACH_MEMO_MS ? m.map : null;
+    if (!walk) { walk = moveWalk(bot, mv, { edges: true }); bot._wayOutWalk = { k, at: now, map: walk }; }
+  } else walk = reachWalk(bot);
+  if (!walk) return () => true;
+  return c => {
+    if (!c) return false;
+    if (walk.has(`${c}`)) return true;
+    // Past the depth the budget reached (a cell needs at least its
+    // Chebyshev distance in steps), unknown, not refused.
+    return Number.isFinite(walk.cutAt) && Math.max(Math.abs(c.x - feet.x), Math.abs(c.z - feet.z)) >= walk.cutAt;
+  };
 }
 function blazeReach(bot, blaze) {
   if (!blaze?.position || !bot?.entity?.position) return null;
@@ -2135,4 +2180,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };

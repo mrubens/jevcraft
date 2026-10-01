@@ -180,6 +180,10 @@ const STOCK = 'blockStock is what can be laid: with no pickaxe carried none come
 const SCULK = 'sculk is the sculk sensors and shriekers near and what a shrieker calls.';
 const HEALING = 'healing is health, hunger, whether health comes back, the food carried and nearest; standing still spends no hunger.';
 const RODS_AT_RISK = 'rodsAtRisk is the blaze rods carried and what a death now does to them, with the trials\' record of lives that carried as many.';
+// Note 786 (shield-wear.js): the shield's uses left against the blazes.
+const SHIELD_WEAR = 'shieldWear is the shield\'s uses left against blaze fireballs, the spare carried or makeable, and the trials\' record of shields broken at the blazes.';
+// The questions at the blazes the shield's wear is said with (note 786).
+const SHIELD_ASKS = new Set(['encounter_stance', 'shot_answer', 'hunt_target', 'empty_spawner', 'combat_kit', 'turn_priority', 'body_way']);
 // Off the Overworld, hurt with nothing that brings hunger to eighteen: the
 // ways health could come back, each with its cost (healing.js, note 607).
 const WITHOUT_FOOD = 'withoutFood: health does not come back here; tripBackForFood is the way back through the portal for food; hoglinHunt, the one food of the Nether.';
@@ -239,7 +243,7 @@ function withRealTime(spec, state = {}, dimension = state?.dimension) {
   const risk = state && (state.riskNow || state.deathWouldCost) && !guidance.includes('riskNow') ? ` ${RISK}` : '';
   const trail = (state?.recentPositions ? ` ${TRAIL}` : '') + (state?.underWay || state?.lastIntention ? ` ${UNDER_WAY}` : '');
   const deaths = (state?.recentDeaths ? ` ${DEATHS}` : '') + (state?.sameAnswerAgain || state?.lastAnswersCameToNothing || state?.answersThatCameToNothing ? ` ${AGAIN}` : '') + (state?.waysResting || state?.whatFailedBelow ? ` ${LEDGER}` : '') + (state?.leastBadLast ? ` ${LEAST_BAD}` : '') + (state?.failedAtOnce ? ` ${AT_ONCE}` : '') + (state?.lastHit ? ` ${LAST_HIT}` : '') + (state?.answerChangedNothing ? ` ${CHANGED_NOTHING}${/recorded as failed/.test(state.answerChangedNothing) ? ` ${RECORDED_FAILED}` : ''}` : '') + (state?.alreadySo ? ` ${ALREADY_SO}` : '') + (state?.spellSoFar ? ` ${SPELL}` : '') + (state?.asideHolds ? ` ${ASIDE_HOLDS}` : '') + (state?.toTheBlazes ? ` ${TO_THE_BLAZES}` : '') + (state?.answersHold || state?.lastCommitment ? ` ${HOLDS}` : '');
-  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '');
+  const clock = (state?.runClock ? ` ${CLOCK}` : '') + (state?.sculk ? ` ${SCULK}` : '') + (state?.healing ? ` ${HEALING}` : '') + (state?.healing?.withoutFood ? ` ${WITHOUT_FOOD}` : '') + (state?.blockStock ? ` ${STOCK}` : '') + (state?.rodsAtRisk ? ` ${RODS_AT_RISK}` : '') + (state?.shieldWear ? ` ${SHIELD_WEAR}` : '');
   const dark = off && normDimension(dimension) === 'the_nether' && (state?.darkHere !== undefined || /\bdark\b/.test(guidance)) ? ` ${NETHER_DARK}` : '';
   return { ...own, task, guidance: `${guidance}${guidance ? ' ' : ''}${off ? elsewhereTime(placeName(dimension)) : REAL_TIME}${dark}${clock}${risk}${trail}${deaths}` };
 }
@@ -886,6 +890,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (bot && state && typeof state === 'object' && GAMEPLAY_AREAS.has(spec.area) && !state.rodsAtRisk && !state.rodsCarried) {
     let atRisk = null; try { atRisk = require('../rod-risk').risk(bot, goal); } catch (_) { /* no body */ }
     if (atRisk) state = { ...state, rodsAtRisk: atRisk.says };
+  }
+  // The shield's wear at the blazes (shield-wear.js, note 786), with the
+  // questions asked among them: 24 shields broke under blaze fire in the
+  // spans of 2026-09-30T06:08Z to 2026-10-01T05:00Z, 13 of those bots dead
+  // within two minutes, and no question had said how much a shield had left.
+  if (bot && state && typeof state === 'object' && SHIELD_ASKS.has(id) && !state.shieldWear) {
+    let wear = null; try { wear = require('../shield-wear').fact(bot); } catch (_) { /* no body */ }
+    if (wear) state = { ...state, shieldWear: wear };
   }
   // Sculk near, with every such question: mid-230-n worked beside a
   // shrieker it was never told of, and the warden it called killed it.

@@ -246,8 +246,11 @@ const inSight = (bot, shooters, cell, opts) => shooters.some(e => seenFrom(bot, 
 const standable = (bot, c) => { const f = bot.blockAt(c), h = bot.blockAt(c.offset(0, 1, 0)), u = bot.blockAt(c.offset(0, -1, 0));
   return passable(f) && passable(h) && !/lava|water|fire/.test(`${f?.name} ${h?.name}`) && solid(u) && !/magma|campfire/.test(u.name || ''); };
 // `skip`: cells not to end on (a walk to them just failed), still walked through.
+// A spot the bot's own walk does not take is not offered (blaze-stand.js
+// walkTakes, note 786): out_of_sight and step_out_and_eat named spots the
+// walk then found no route to.
 function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false } = {}) {
-  const feet = feetCell(bot);
+  const feet = feetCell(bot), takes = require('./blaze-stand').walkTakes(bot, { edges: true });
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const seen = new Set([`${feet}`]);
   // Each cell's way from the feet, for the walk's cells (note 610: the
@@ -265,7 +268,7 @@ function coverWithin(bot, shooters, { steps = 8, avoid = [], skip = () => false 
       // A step up wants the head room over where it steps from.
       if (dy === 1 && !passable(bot.blockAt(c.offset(0, 2, 0)))) continue;
       if (dy === -1 && !passable(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
-      if (!standable(bot, to) || near(to)) continue;
+      if (!standable(bot, to) || near(to) || !takes(to)) continue;
       seen.add(key); next.push(to); from.set(key, { cell: to, prev: c });
     }
     ring = next;

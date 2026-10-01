@@ -88,8 +88,11 @@ const eyeOf = e => e.position.offset(0, (e.height || 1.8) * 0.85, 0);
 const seeing = (bot, blazes, cell, walls = new Set()) => blazes.filter(e => e.position && BODY.some(dy => lineThrough(bot, eyeOf(e), cell.offset(0.5, dy, 0.5), walls)));
 
 // The cells a walk reaches within `steps`, nearest first; `ok` picks.
+// A cell the bot's own walk does not take is not one (blaze-stand.js
+// walkTakes, note 786): the heal, the corner and the box were offered at
+// cells the walk then refused.
 function walkCells(bot, { steps = 16, avoid = [] } = {}) {
-  const feet = feetCell(bot);
+  const feet = feetCell(bot), takes = require('./blaze-stand').walkTakes(bot);
   const near = c => avoid.some(e => e.position && Math.hypot(e.position.x - (c.x + 0.5), e.position.z - (c.z + 0.5)) < 1.5 && Math.abs(e.position.y - c.y) < 2);
   const out = [{ cell: feet, steps: 0 }], seen = new Set([`${feet}`]);
   let ring = [feet];
@@ -100,7 +103,7 @@ function walkCells(bot, { steps = 16, avoid = [] } = {}) {
       if (seen.has(key)) continue;
       if (dy === 1 && solid(bot.blockAt(c.offset(0, 2, 0)))) continue;
       if (dy === -1 && solid(bot.blockAt(c.plus(s).offset(0, 1, 0)))) continue;
-      if (!bunker.standable(bot, to) || near(to)) continue;
+      if (!bunker.standable(bot, to) || near(to) || !takes(to)) continue;
       seen.add(key); next.push(to); out.push({ cell: to, steps: n });
     }
     ring = next;

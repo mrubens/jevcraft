@@ -135,7 +135,7 @@ function measure(frames, { trialStart, end }) {
   // Busy, not progressing: wasted-minutes.js's waste over the span's Nether minutes.
   const bins = WM.minutesOf(frames, { start: trialStart });
   let busyMs = 0, busyOffMs = 0, slowMs = 0, deadMs = 0, downMs = 0, progressMs = 0, upkeepMs = 0;
-  const busyBy = {};
+  const busyBy = {}, busy = [];
   for (const b of bins) {
     if (!b.botMs || b.from + MINUTE <= start || b.from > end) continue;
     if (!b.frames.some(x => x.dim === 'nether')) continue;
@@ -144,6 +144,7 @@ function measure(frames, { trialStart, end }) {
     else if (v.cls === 'waste' && v.pattern === 'died') deadMs += b.botMs;
     else if (v.cls === 'waste') {
       busyMs += b.botMs; busyBy[v.pattern] = (busyBy[v.pattern] || 0) + b.botMs;
+      busy.push({ from: b.from, botMs: b.botMs, pattern: v.pattern, why: v.why, doing: b.m.doing, steps: b.m.steps, ...WM.attribution(b.m) });
       // Under an errand: the minute's question and answer (wasted-minutes.js attribution) is one.
       const q = WM.attribution(b.m).question, m = /^(.+) → (.+)$/.exec(q || '');
       if (m && BG.classify(m[1].replaceAll(' ', '_'), m[2].replaceAll(' ', '_')) === 'off') busyOffMs += b.botMs;
@@ -165,7 +166,7 @@ function measure(frames, { trialStart, end }) {
     a.rodAfter = rodLine.some(([u, v]) => u > a.t && u <= a.t + AFTER_MS && v > before);
     a.deathAfter = deaths.some(d => d.t > a.t && d.t <= a.t + AFTER_MS);
   });
-  return { start, how, base, firstRod, seven, left, maxRods, deaths, asks, netherMs, busyMs, busyOffMs, slowMs, busyBy, deadMs, downMs, progressMs, upkeepMs };
+  return { start, how, base, firstRod, seven, left, maxRods, deaths, asks, netherMs, busyMs, busyOffMs, slowMs, busyBy, busy, deadMs, downMs, progressMs, upkeepMs };
 }
 function maxRodsNow(frames, i) { for (let j = i; j >= 0; j--) if (Number.isFinite(frames[j].rods)) return frames[j].rods; return 0; }
 const lastRods = maxRodsNow;
@@ -269,4 +270,4 @@ function recordReport(spans) {
 }
 
 if (require.main === module) main();
-module.exports = { measure, slim, report, replayAsk };
+module.exports = { measure, slim, report, replayAsk, portFiles, readTrial };

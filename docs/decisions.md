@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-100 questions: 50 decision trees and 50 batched questions.
+101 questions: 51 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -715,6 +715,24 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `raid_chests` | root | raid the bastion's chests: walk there, open the nearest chest, take the loot list, go on to the next | a bastion is remembered within 384 blocks in the Nether and its walk is not resting; said with the distance and legs, what is in view, what the chests hold by room (from the 26.1.2 jar), what lifting a lid does, the fights priced from the game's numbers, gold armor worn or not, health, hunger, food, and that no bastion chest has ever been opened by the bot |
 | `gold_only` | root | take only the gold blocks and gilded blackstone no piglin is within 16 blocks of, open no chest | the same bastion; the gold rung as it was before chests were a question |
 | `leave_it` | root | leave the bastion alone for thirty minutes and go on with the ladder's next step or another way to the pearls | always with the others |
+
+### `pearl_order`
+
+**In the Nether, short of both the blaze rods and the ender pearls, with a way to the pearls real from here: go on with the rods (the ladder's order), or take that way to the pearls now and the rods after?**
+
+- When: In the Nether on the game ladder, the rods the step in hand (not resting) and short, the pearls short, and a way to the pearls real from here: an enderman within 24 blocks, a warped forest known within 512 blocks whose walk and hunt are not resting, or gold to throw with a piglin within 32 (barterReady). Asked when no answer is held, and again only when a named fact changes, said in askedBecause: a kind of way real now that was not on offer at the answer, a death since, or the half hour the answer holds run out (five minutes for an answer taken as none good). A pearl way held is the step while it stays real (an enderman within 48, the forest open, the barter ready), the rods again after; the answer then stands as the order until a named fact changes.
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/pearl-order.js (routes, orderStage, tree, ask), src/pearl-record.js (the record each way is said with), src/game-progress.js (nextGameStage, gameStep)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `rods_first` | root | go on with the rods, the pearls after them | always; said with the fortress known (its distance, and from the forest known), the rods carried and wanted, and the trials' record of the ladder's order (no pearl ever carried; the pearl rung reached only with the rods resting) |
+| `hunt_enderman` (trip: the enderman in reach) | root | hunt the enderman in reach now for its pearl, the rods after | an enderman within 24 blocks; said with its distance, how many are within 24, the fight priced from the game's numbers at the health and kit carried, the arena's record of one at a time, that none was ever struck in the trials, and this run's record of the way |
+| `warped_forest` (trip: the warped forest) | root | go to the warped forest known and hunt its endermen, the rods after | a warped forest known within 512 blocks, its walk and its hunt not resting; said with its distance, its distance from the fortress known, the measured Nether pace, the arena's forest drills, the trials' forest hunts, and this run's record of the way |
+| `barter_gold` | root | barter the gold carried with the piglins in reach, the rods after | gold to throw once a gold piece is worn, and a piglin within 32 (barterReady); said with the gold, the pearls it makes at the measured nine ingots a pearl, the rounds, the trials' one barter, and this run's record of the way |
 
 ## work
 

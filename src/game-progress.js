@@ -941,6 +941,14 @@ function nextGameStage(bot, goal, skip = new Set()) {
   if (rodsShort && where !== 'nether' && !overworldPearls) return { phase: 'reach_nether', action: 'enter_nether' };
   if (rodsShort) {
     const rodStage = asideStage(goal, { phase: 'obtain_blaze_rods', action: 'acquire', item: 'blaze_rod', count: keptRods - (kept?.blaze_rod || 0) }, skip);
+    // The pearls beside the rods (pearl-order.js, note 788): with a way to
+    // them real from here, which first is Jev's, asked and held; a pearl way
+    // held is the step while it stays real. The rods first by rule never
+    // reached the pearls in the trials but with the rods resting.
+    if (rodStage && where === 'nether' && pearlsHereShort) {
+      const order = require('./pearl-order').orderStage(bot, goal, { count: target - eyes });
+      if (order) return order;
+    }
     if (rodStage) return rodStage;
   }
   // Short of pearls with gold on hand and a piglin in view: barter before
@@ -1097,6 +1105,7 @@ async function gameStep(bot, task, goal, save, actions) {
   if (stage.action === 'acquire') await actions.acquireStep(bot, task, stage.item, stage.count, goal, save, { elsewhere: away => elsewhereStep(bot, task, goal, save, stage, away, actions) });
   else if (stage.action === 'elsewhere') await elsewhereStep(bot, task, goal, save, stage, null, actions);
   else if (stage.action === 'rods_waiting') await leaveNetherStep(bot, task, goal, save, stage, actions);
+  else if (stage.action === 'pearl_order') await require('./pearl-order').ask(bot, task, goal, save, actions);
   else if (stage.action === 'collect_rod_stash') await require('./rod-stash').collect(bot, task, goal, save, actions.stashActions || actions);
   else if (stage.action === 'bank_rods') await require('./rod-bank').bank(bot, task, goal, save, actions.stashActions || actions);
   else if (stage.action === 'home_with_rods') await readyForHomeStep(bot, task, goal, save, actions);
