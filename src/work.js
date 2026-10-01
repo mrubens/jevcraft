@@ -7289,6 +7289,14 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     const { biomeFacts } = require('./biomes');
     const buckets = countOf(bot, 'bucket');
     const bucketSays = buckets ? `${buckets} empty bucket${buckets === 1 ? '' : 's'} carried, filled at any water` : `no empty bucket is carried either: the water there comes back only in one, three iron ingots (${countOf(bot, 'iron_ingot')} carried, ${countOf(bot, 'raw_iron')} raw iron)`;
+    // The water itself, where it is in view with an empty bucket carried
+    // (note 844): 25597 (2026-10-01 22:42 to 22:48Z), water 2 blocks off and
+    // an empty bucket carried, its cast waiting on it, was offered search
+    // lava, wait out the rests and work free, and answered none good 302 of
+    // 478 askings in six minutes, each answer back within a second.
+    const water = buckets ? require('./water').waterKnown(bot) : null;
+    if (water?.kind === 'source' && !tree.fill_water) offer('fill_water', `The cast's own want: fill the empty bucket at the water in view ${water.distance} blocks off at (${water.at.x}, ${water.at.y}, ${water.at.z}), about ${Math.max(2, Math.round(water.distance / 4.3) + 1)} seconds, and the frame's next block can be poured.`,
+      async (t, save) => { await require('./water').collectWater(bot, t, goal, save, { navigate, explore }); }, { ...water.at });
     for (const [key, node] of Object.entries(tree)) {
       if (/^travel_/.test(key) && holdsWater({ biome: key.slice(7), has: biomeFacts(key.slice(7)) })) node.description += ` It has water, which is what the portal frame's cast is waiting for: no water bucket is carried; ${bucketSays}.`;
     }
