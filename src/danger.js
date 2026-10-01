@@ -641,7 +641,13 @@ function seen(bot, entity) {
   return !hit || eye.distanceTo(hit.intersect || hit.position) >= eye.distanceTo(target) - 0.5;
 }
 
-function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
+// `sight`: a Map kept by the caller for one look at the mobs (movement.js's
+// quarter-second observation), each mob's line of sight to the bot worked
+// out once, not once a cell: the route search asked it of every cell it
+// expanded, a raycast a mob a cell, 9 of 20 seconds of a bot's CPU in its
+// lava fetch, and the event loop held 3 to 6 seconds at a time (25598,
+// 2026-10-01 12:41Z, note 806). The line is the bot's, whatever the cell.
+function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64), sight = null) {
   if (bot.game?.gameMode === 'creative' || bot.game?.difficulty === 'peaceful') return true;
   return entities.every(entity => {
     // The mob the hunt has claimed is not avoided by the pathfinder either.
@@ -659,8 +665,14 @@ function safeFromHostiles(bot, point, entities = hostileEntities(bot, 64)) {
     // 13.1 (note 602); six live deaths chose it and closed on nothing.
     if (combatTarget(bot, entity) || hunted(bot, entity) || closingOn(bot, entity)) return true;
     // Out of sight, a mob only matters when it is nearly at the wall.
-    const radius = !seen(bot, entity) ? 6 : shooter(entity) ? 20 : 12;
-    return entity.position.distanceTo(point) >= Math.min(radius, entity.position.distanceTo(bot.entity.position) - 0.25);
+    const toPoint = entity.position.distanceTo(point), toBot = entity.position.distanceTo(bot.entity.position) - 0.25;
+    // Far enough by the widest radius, or by the mob's own distance: no
+    // line of sight to work out.
+    if (toPoint >= Math.min(shooter(entity) ? 20 : 12, toBot)) return true;
+    let isSeen = sight?.get(entity);
+    if (isSeen === undefined) { isSeen = seen(bot, entity); sight?.set(entity, isSeen); }
+    const radius = !isSeen ? 6 : shooter(entity) ? 20 : 12;
+    return toPoint >= Math.min(radius, toBot);
   });
 }
 

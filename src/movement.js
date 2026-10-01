@@ -159,13 +159,13 @@ class SurvivalMovements extends Movements {
   getNeighbors(node) {
     const neighbors = super.getNeighbors(node);
     if (!this._hostileObservation || Date.now() - this._hostileObservation.at > 250) {
-      this._hostileObservation = { at: Date.now(), entities: hostileEntities(this.bot, 64) };
+      this._hostileObservation = { at: Date.now(), entities: hostileEntities(this.bot, 64), sight: new Map() };
     }
     // Upstream checks body space but accepts a damaging solid as the floor.
     // A ruined portal's magma must not become an ordinary walking surface.
     const kept = neighbors.filter(next => ![-1, 0, 1].some(dy => damagingTerrain.has(this.getBlock(next, 0, dy, 0).name)) &&
       (!this.allowedPosition || this.allowedPosition(next)) &&
-      safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities));
+      safeFromHostiles(this.bot, new Vec3(next.x + 0.5, next.y, next.z + 0.5), this._hostileObservation.entities, this._hostileObservation.sight));
     // A cell with lava beside it costs more than open ground: a path along
     // the lava sea's edge is a step's drift from it, and mid-92-o, walking a
     // soul sand shore on a fortress leg, went a block and a half into the
