@@ -184,7 +184,8 @@ function main() {
         const offeredNow = fallsBlocked && torch && scaffold >= (d.state?.blocksToOpenSky ?? Infinity);
         // The way a surface_trip climb after it would be held to (chooseClimb's keep).
         lastClimb = { t: f.t, way: chosen, picks: String(d.state?.pickaxes || '').replace(/\s*\(\d+ uses left\)/g, '') };
-        answers.push({ port, at: new Date(f.t).toISOString(), offered, chosen, digsSaid, upSaid, fallsBlocked, torch, offeredNow, overhead: offered.includes('straight_up') ? null : overheadOf(d.state?.straightUpBlocked) || 'no column read',
+        const kindsSaid = (text.match(/blocks? (?:dug|to dig) \(([^)]*)\)/) || [])[1] || '';
+        answers.push({ port, at: new Date(f.t).toISOString(), offered, chosen, digsSaid, upSaid, kindsSaid, underFalls: /sand|gravel|concrete powder/.test(kindsSaid), fallsBlocked, torch, offeredNow, overhead: offered.includes('straight_up') ? null : overheadOf(d.state?.straightUpBlocked) || 'no column read',
           hand: /no pickaxe/.test(picks), up: d.state?.blocksToOpenSky ?? null, said: saidSeconds(d.options?.[chosen]?.description),
           seconds: Math.max(0, (end - f.t) / 1000), rose: riseBetween(frames, f.t, end), uses: usesBetween(frames, f.t, end) });
       }

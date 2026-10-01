@@ -79,7 +79,11 @@ const climbMinutes = blocks => Math.max(1, Math.round(blocks * require('./levels
 // a second a stair for the walking. Three digs a block of height also wore
 // the pickaxes out on the way up: two of mid-72-b's climbs went on by hand
 // from y 65 and y 58 after the last pickaxe broke on them (2026-09-26).
-const WOOD_FIRST_REST_MS = 10 * 60000;
+const WOOD_FIRST_REST_MS = 10 * 60000, CLIMB_STILL_MS = 60000;
+// scripts/climb-record.js, 2026-09-30 06:00Z to 2026-10-01 00:47Z: the
+// staircases with a pickaxe chosen with sand or gravel among the blocks on
+// their way, against the rest, and straight up (all runs, every second).
+const UNDER_FALLS_RECORD = 'The record: 114 staircases with a pickaxe chosen with sand or gravel on their way took 5.8 seconds a block risen, 16 of them rising nothing; 570 others took 4.8; 319 climbs straight up with a pickaxe took 1.9.';
 const STAIR_STEP_SECONDS = 1.2, PILLAR_RISE_SECONDS = 1, HAND_STONE_SECONDS = 7.5, PICKAXE_STONE_SECONDS = 0.6;
 const { falls, drainPlan, drainSays, drainOverhead } = require('./fall-column');
 const liquid = block => /^(water|lava|bubble_column|flowing_water|flowing_lava)$/.test(block?.name || '') || [true, 'true'].includes(block?.getProperties?.().waterlogged);
@@ -168,24 +172,21 @@ function stairwayCost(bot, feet, target, rises, level, usesLeft, { stopAtSky = f
     const cost = digSeconds(bot, block);
     seconds += !cost.wears ? cost.seconds : left > 0 ? (left--, cost.seconds) : cost.hand;
   };
-  // A stair cell with sand or gravel over it is dug again for each of them
-  // as they come down into it (note 768): 25590 was told "about 16 blocks
-  // dug (sand, sandstone) ... about 35 seconds" under seven blocks of sand,
-  // and its staircase walked level at y 56 for three minutes.
+  // A stair with sand or gravel over its head cell, or over the head where
+  // it rises, is one the staircase does not dig (tunneling.js tunnelStep:
+  // "gravel or sand over the way"; dug out, it would fall into the head):
+  // it goes round at its own height instead (note 768b). Note 768 had
+  // counted them as dug again as they came down, which the staircase never
+  // does: 25590 walked level at y 56 for three minutes, 25597 (00:41:52 to
+  // 00:43:09Z on 2026-10-01) at y 57 for 77 seconds.
   const dig = cell => {
     if (dug.has(key(cell))) return;
     dug.add(key(cell));
     const block = bot.blockAt(cell);
     if (block && (block.boundingBox !== 'block' || liquid(block))) return;
     one(block);
-    for (let y = 1; y <= 64; y++) {
-      const c = cell.offset(0, y, 0);
-      if (dug.has(key(c))) continue;
-      const b = bot.blockAt(c);
-      if (!falls(b)) break;
-      dug.add(key(c)); one(b); fallen++;
-    }
   };
+  const fallsOver = c => !dug.has(key(c)) && falls(bot.blockAt(c));
   // Open sky over a stair, the cells dug counted open.
   const skyOver = cell => {
     const maximum = (bot.game?.minY ?? -64) + (bot.game?.height ?? 384);
@@ -209,6 +210,7 @@ function stairwayCost(bot, feet, target, rises, level, usesLeft, { stopAtSky = f
     const d = Math.abs(dx) >= Math.abs(dz) && dx !== 0 ? new Vec3(Math.sign(dx), 0, 0) : dz !== 0 ? new Vec3(0, 0, Math.sign(dz)) : last;
     last = d;
     const rise = i < rises || (stopAtSky && i >= rises + level) ? 1 : 0, next = pos.plus(d).offset(0, rise, 0);
+    if (fallsOver(next.offset(0, 2, 0)) || (rise && (fallsOver(pos.offset(0, 2, 0)) || fallsOver(pos.offset(0, 3, 0))))) fallen++;
     if (rise) dig(pos.offset(0, 2, 0));
     dig(next); dig(next.offset(0, 1, 0));
     pos = next; stairs++;
@@ -317,7 +319,10 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
   const toward = landing ? `to the open ground seen at ${target.x}, ${target.y}, ${target.z}, ${rises} up and ${across} across`
     : stairs.out ? `up toward open sky: the stairs come out under open sky at ${stairs.out.x}, ${stairs.out.y}, ${stairs.out.z}, ${stairs.rose} up (no open ground seen within reach to head for; ${rises} blocks of it over this cell)`
       : `up toward open sky, ${stairs.rose} blocks up and still under cover there (no open ground seen within reach to head for; ${rises} blocks of it over this cell)`;
-  options.staircase = { description: `Dig a staircase ${toward}: about ${stairs.digs} blocks dug${stairs.kinds ? ` (${stairs.kinds})` : ''}, up to three for each block of height and two for each stair across${stairs.fallen ? `, ${stairs.fallen} of them sand or gravel over the stairs that comes down into a cell as it is dug and is dug again there` : ''}, and ${stairs.stairs} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(stairs.digs, stairs.wears)}${measuredSays('staircase')} The stairs stay open behind: a walk back down to this mine later.${rests ? ` Now ${rests}: taken, it digs nothing until then.` : ''}` };
+  // Under falling blocks the figure is not what the staircase does: said,
+  // with the record of staircases chosen with sand or gravel on their way.
+  const underFalls = stairs.fallen ? ` But ${stairs.fallen} of these stairs ha${stairs.fallen === 1 ? 's' : 've'} sand or gravel over the head, and the staircase does not dig a stair under falling blocks (dug out, they come down on the head): it goes round at its own height instead, so the time is not what it digs. ${UNDER_FALLS_RECORD}` : '';
+  options.staircase = { ...(stairs.fallen ? { underFalls: stairs.fallen } : {}), description: `Dig a staircase ${toward}: about ${stairs.digs} blocks dug${stairs.kinds ? ` (${stairs.kinds})` : ''}, up to three for each block of height and two for each stair across, and ${stairs.stairs} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}${stairs.fallen ? ' were they dug as planned' : ''}.${wearNote(stairs.digs, stairs.wears)}${measuredSays('staircase')}${underFalls} The stairs stay open behind: a walk back down to this mine later.${rests ? ` Now ${rests}: taken, it digs nothing until then.` : ''}` };
 
   if (column?.cells) {
     const wearing = column.cells.filter(b => digSeconds(bot, b).wears).length;
@@ -433,7 +438,9 @@ function tripCost(bot, goal = {}) {
   const column = straightUpColumn(bot, feet, { throughFalls: true });
   const { estimate, state, options, rise, digs: digsOf } = climbOptions(bot, feet.offset(0, up, 0), column, { goal });
   const held = heldClimb(bot, goal, options);
-  const quicker = ['staircase', 'straight_up'].filter(k => estimate[k] !== undefined).sort((a, b) => estimate[a] - estimate[b])[0];
+  // A staircase under falling blocks is not the quicker by its figure (note 768b).
+  const priceable = k => estimate[k] !== undefined && !(options[k]?.underFalls && Object.keys(estimate).some(o => o !== k && !options[o]?.underFalls));
+  const quicker = ['staircase', 'straight_up'].filter(priceable).sort((a, b) => estimate[a] - estimate[b])[0];
   const way = held && ['staircase', 'straight_up'].includes(held.method) && estimate[held.method] !== undefined ? held.method : quicker;
   const duration = s => s < 90 ? `about ${Math.max(5, Math.round(s / 5) * 5)} seconds` : `about ${Math.round(s / 60)} minutes`;
   const digs = digsOf[way] ?? 3 * up, picks = pickaxesCarried(bot).length, wayUp = rise[way] ?? up;
@@ -758,10 +765,30 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   // is not the way it was chosen as (note 668).
   const since = state.climb?.at ? Date.now() - Date.parse(state.climb.at) : 0;
   const overdue = kept && state.climb.estimate > 0 && since > Math.max(120000, 2 * state.climb.estimate * 1000);
-  if (overdue) facts.climbSoFar = `the ${state.climb.method.replaceAll('_', ' ')} chosen ${Math.round(since / 60000)} minutes ago, said then as ${Math.max(1, Math.round(state.climb.estimate / 60))} minutes, has risen ${feet.y - (state.climb.fromY ?? feet.y)} blocks since`;
+  // The height the way kept has reached and when (note 768b): a way that
+  // has not risen a block in CLIMB_STILL_MS is asked about again. 25597
+  // (mid-236-ab, 00:41:52 to 00:43:09Z on 2026-10-01) held a staircase that
+  // rose 51 to 57 in 15 s and then walked 77 s across at y 57, its stairs
+  // under sand it does not dig beneath (tunneling.js), until its pickaxes
+  // changed; asked again, nothing said what it had done.
+  if (state.climb?.method) {
+    const best = state.climb.best;
+    if (!best || feet.y > best.y) state.climb.best = { y: feet.y, at: Date.now() };
+  }
+  const stillMs = state.climb?.best ? Date.now() - state.climb.best.at : 0;
+  // Not where all that is left is level stairs to a landing at this height.
+  const still = kept && stillMs > CLIMB_STILL_MS && !(landing && target && target.y <= feet.y);
+  const seconds = ms => ms <= 90000 ? `${Math.max(1, Math.round(ms / 1000))} seconds` : `${Math.round(ms / 60000)} minutes`;
+  // Said whenever a way was chosen before and is asked about again: what it
+  // was said to take and what it has done.
+  if (state.climb?.method && since > 0) {
+    const rose = feet.y - (state.climb.fromY ?? feet.y);
+    facts.climbSoFar = `the ${state.climb.method.replaceAll('_', ' ')} chosen ${seconds(since)} ago, said then as ${seconds((state.climb.estimate || 0) * 1000)}, has risen ${rose} block${rose === 1 ? '' : 's'} since${stillMs > 15000 ? `, none in the last ${seconds(stillMs)} (best y ${state.climb.best.y})` : ''}`;
+  }
   // Asked again only when something new is on offer, the staircase kept
-  // has come to rest since, or the way kept has run long.
-  if (kept && !overdue && !(state.climb.method === 'staircase' && rests) && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column, walkTo: state.climb.walkTo };
+  // has come to rest since, the way kept has run long, or it has stopped
+  // rising.
+  if (kept && !overdue && !still && !(state.climb.method === 'staircase' && rests) && Object.keys(options).every(k => offered.includes(k))) return { method: state.climb.method, column, walkTo: state.climb.walkTo };
   // What ends a climb held as the intention (below) by name: the pickaxes
   // carried changed, the way kept failed here (its column would not rise, or
   // it was dropped), it has run to twice what it was said to take, or the
@@ -772,10 +799,10 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
     const why = state.climb.tools !== tools ? `the pickaxes carried changed (${state.climb.tools} then, ${tools} now)`
       : state.climb.method === 'straight_up' && !column?.cells ? 'the column overhead would not rise'
         : state.climb.method === 'walk_then_up' && !state.climb.walkTo ? 'the walk to the column did not arrive'
-          : overdue ? facts.climbSoFar : state.climb.method === 'staircase' && rests ? 'the staircase came to rest' : null;
+          : overdue ? facts.climbSoFar : still ? `it has not risen a block in ${seconds(stillMs)}` : state.climb.method === 'staircase' && rests ? 'the staircase came to rest' : null;
     if (why) require('./intention').end(goal, `a named change: ${why}`);
   }
-  const quicker = Object.keys(estimate).sort((a, b) => estimate[a] - estimate[b])[0];
+  const quicker = Object.keys(estimate).filter(k => !(options[k]?.underFalls && Object.keys(estimate).some(o => o !== k && !options[o]?.underFalls))).sort((a, b) => estimate[a] - estimate[b])[0];
   // Each way out is a trip to open sky (note 749c): its target is where it
   // comes out, so the answer is held as the intention until it is there, has
   // failed or ten minutes pass, and a stall's question or the rung's is asked
@@ -789,7 +816,7 @@ async function chooseClimb(bot, task, goal, save, state, target, { landing = fal
   if (decision.stale) return chooseClimb(bot, task, goal, save, state, target, { landing });
   const method = decision.path.at(-1);
   const walkTo = method === 'walk_then_up' ? options.walk_then_up?.walkTo : undefined;
-  state.climb = { method, tools, offered: Object.keys(options), ...(state.climb?.failedColumn ? { failedColumn: state.climb.failedColumn } : {}), estimate: Math.round(estimate[method] ?? 0), fromY: feet.y, ...(walkTo ? { walkTo } : {}), at: new Date().toISOString() };
+  state.climb = { method, tools, offered: Object.keys(options), ...(state.climb?.failedColumn ? { failedColumn: state.climb.failedColumn } : {}), estimate: Math.round(estimate[method] ?? 0), fromY: feet.y, best: { y: feet.y, at: Date.now() }, ...(walkTo ? { walkTo } : {}), at: new Date().toISOString() };
   save();
   return { method, column, walkTo };
 }
@@ -905,4 +932,4 @@ function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } 
   return lid;
 }
 
-module.exports = { openSkyOver, climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, climbStraightUp, heldClimb, stairwayCost, walkedColumns, walkedColumn, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { openSkyOver, climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, climbStraightUp, chooseClimb, heldClimb, stairwayCost, walkedColumns, walkedColumn, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };

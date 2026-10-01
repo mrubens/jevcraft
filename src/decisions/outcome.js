@@ -50,6 +50,7 @@ const CAP_MS = 10 * 60000;
 const NOOP_NEAR = 16;
 const NOOP_MS = 10 * 60000;
 const SAID_MS = 2 * 60000;
+const CLIMB_JUDGE_MS = 15000;
 
 const P = v => v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z) ? { x: v.x, y: v.y, z: v.z } : null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -180,8 +181,18 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
   delete memo[id];
   const here = markOf(bot);
   if (o.quote) { try { require('../quote-record').record(goal, o, here, { now }); } catch (_) { /* the judgment stands */ } }
+  // A climb (an answer quoted for blocks risen, quote-record.js) is judged
+  // by its height (note 768b): moving across, digging, picking up what it
+  // dug is what a climb that rises nothing does too. 25597 (mid-236-ab,
+  // 00:43:10Z on 2026-10-01) chose a staircase that came back in a second,
+  // "not gaining on it", walked six blocks across at y 57 over the next 25,
+  // and was listed first again, as changed. Judged once it has had 15
+  // seconds, or its question comes back after that.
+  const tookMs = now - o.at;
+  const noRise = o.quote?.rise > 0 && o.mark?.p && here?.p && (!o.mark.dimension || o.mark.dimension === here.dimension) && here.p.y - o.mark.p.y < 1 && tookMs >= CLIMB_JUDGE_MS
+    ? `it rose nothing: ${Math.round(Math.hypot(here.p.x - o.mark.p.x, here.p.z - o.mark.p.z))} blocks across at y ${Math.floor(here.p.y)}, ${o.quote.rise} blocks short of open sky as it was said` : null;
   const changed = effect(o.mark, here);
-  if (changed) return { changed };
+  if (changed && !noRise) return { changed };
   if (o.wait) return { waited: o.wait };
   // Cut short by the survival layer (tried.cut), or a wait the ledger
   // judges by its world (note 599): not this rule's.
@@ -189,7 +200,7 @@ function judge(bot, goal, id, { asked = false, now = Date.now() } = {}) {
   if (e && (e.cut || e.waiting)) return { cut: e.cut || 'a wait, judged by its world' };
   const took = now - o.at;
   const within = took <= o.ms ? `within ${secs(took)} (its own time ${secs(o.ms)})` : `in its own time, ${secs(o.ms)}`;
-  const nothing = nothingSays(o.mark, here);
+  const nothing = noRise || nothingSays(o.mark, here);
   let why = null;
   try { why = require('./repeats').whyItEnded(bot, goal, o.at); } catch (_) { why = null; }
   const says = `${words(o.key)} was chosen ${secs(took)} ago and changed nothing ${within}: ${nothing}${why ? `; it ended: ${String(why).replace(/\.$/, '')}` : ''}`;
