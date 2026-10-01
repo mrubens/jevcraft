@@ -73,12 +73,12 @@ const ARENAS = Object.freeze({
   // cell within the sword's reach of them; a step or a pillar of placed
   // blocks does (note 834).
   raised_room: {
-    shell: [1900, 66, 1900, 1932, 90, 1916],
-    hollow: [1902, 70, 1902, 1930, 86, 1914],
-    fills: [[[1902, 70, 1902, 1930, 70, 1914], 'nether_bricks'], [[1904, 71, 1904, 1912, 73, 1912], 'nether_bricks']],
-    blocks: [[[1908, 74, 1908], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
-    open: [1918.5, 71, 1908.5],
-    wall: [1918.5, 71, 1908.5],
+    shell: [2150, 64, 2150, 2186, 92, 2170],
+    hollow: [2154, 70, 2154, 2182, 88, 2166],
+    fills: [[[2154, 70, 2154, 2182, 70, 2166], 'nether_bricks'], [[2156, 71, 2156, 2164, 73, 2164], 'nether_bricks']],
+    blocks: [[[2160, 74, 2160], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
+    open: [2170.5, 71, 2160.5],
+    wall: [2170.5, 71, 2160.5],
   },
   // A pit in a cavern floor, one wide and two deep, the bot in it and
   // blazes hovering over the cavern: a hole open above is a hole they
@@ -266,7 +266,7 @@ const DRILLS = Object.freeze([
   // 602).
   { name: 'blaze_raised_spawner', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 3, arena: 'raised_room', stand: 'open',
     loadout: 'fortress', fire: true, nudge: false,
-    at: [[1909.5, 76, 1907.5], [1910.5, 76, 1909.5], [1908.5, 76, 1910.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
+    at: [[2161.5, 76, 2159.5], [2162.5, 76, 2161.5], [2160.5, 76, 2162.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
     why: '25583 (mid-230-bc, 2026-10-01 18:22 to 18:31Z): the spawner on a platform three over the corridor, five blazes hovering over it seven to eight off; offered no fight in reach (none of them can be reached from here), it boxed in, broke two shields and killed none (note 834).' },
   { name: 'blaze_spawner_four_near', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'fortress', stand: 'near',
     loadout: 'fortress', fire: true, nudge: false,
