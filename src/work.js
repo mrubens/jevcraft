@@ -360,6 +360,12 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       }
     }
   } };
+  // The lava pool chosen is not what "another way" drops (note 767e): the
+  // step off is to come at it again, the pool kept. 25593 (2026-10-01
+  // 03:14:54Z) answered rung_progress "differently" beside its pool 17
+  // blocks off, and the fetch then set off for one 410 blocks away.
+  const lavaKept = goal.lavaFetch?.lava && /^(pool|dig)$/.test(goal.lavaFetch.way) ? goal.lavaFetch.lava : goal.lavaChosen?.at;
+  if (answers.differently && lavaKept && !mine) answers.differently.description += ` The lava chosen at (${lavaKept.x}, ${lavaKept.y}, ${lavaKept.z}) is kept: the fresh ground is another way to it, not to other lava.`;
   // The block the mine step digs, carried, for a drop that is not the block
   // itself (note 749e): 25590 circled a pit for flint from 18:08 to 18:23Z,
   // 829 blocks walked within 13 blocks, "I can't get at the gravel here"
@@ -6757,9 +6763,30 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
     const toPool = (key, k, lead) => {
       const l = k.landmark, at = new Vec3(l.x, l.y ?? here.y, l.z);
       jobs.push({ key, description: `${lead}: go to the lava pool found at (${l.x}, ${l.y ?? '?'}, ${l.z}), ${walkSays(at)}. A frame cast beside it makes each of the ${owed.toFetch} lava buckets still owed a trip of seconds (${owed.carriers} bucket${owed.carriers === 1 ? '' : 's'} carried); the portal's way is asked there with it in sight.${lavaRecord(goal, l, here)}`,
-        run: async (t, save) => { await require('./exploration').goToLandmark(bot, t, goal, save, ['lava_pool'], { navigate, filter: x => x === l }); } });
+        // Chosen, the walk is tried again whatever rest it had (note 767e):
+        // a walk set aside is not walked by goToLandmark, and the option
+        // offered to walk there did nothing.
+        run: async (t, save) => { require('./progress').attemptsFor(goal).clear('landmark_trip', `lava_pool:${l.x},${l.z}`); await require('./exploration').goToLandmark(bot, t, goal, save, ['lava_pool'], { navigate, filter: x => x === l }); } });
     };
     if (!frame && pools[0]) toPool('to_known_lava', pools[0], "The portal's own work");
+    // A pool whose walk did not get there (its route search out of time,
+    // or no nearer): a staircase dug to it, priced (note 767e). 25593's
+    // pool 17 to 21 blocks off and 12 to 16 down was offered only walks
+    // that had failed, none good at 0.80 and 0.85.
+    const walkFailed = k => require('./progress').isSetAside(goal, 'landmark_trip', `lava_pool:${k.landmark.x},${k.landmark.z}`) || k.landmark.lastWalk?.timedOut;
+    const digTo = pools.find(k => k.distance <= 128 && k.landmark.y !== undefined && walkFailed(k)) || known.filter(open).find(k => k.distance <= 12 && k.landmark.y !== undefined && walkFailed(k));
+    if (digTo) {
+      const l = digTo.landmark, at = new Vec3(l.x, l.y, l.z);
+      const c = require('./obsidian').wayCosts(here, at, null);
+      const secs = c.there < 90 ? `about ${Math.max(5, Math.round(c.there / 5) * 5)} seconds` : `about ${Math.round(c.there / 60)} minutes`;
+      jobs.push({ key: 'dig_to_lava', description: `The portal's own work: dig a staircase to the lava pool at (${l.x}, ${l.y}, ${l.z}), ${c.across} blocks across${c.dy <= -4 ? `, ${-c.dy} down` : c.dy >= 4 ? `, ${c.dy} up` : ''}: ${secs} to dig there (about ${c.digs} blocks dug), then its lava scooped from the shore; the pool is held for the fetch after.${lavaRecord(goal, l, here)}`,
+        run: async () => {
+          const now = Date.now(), dim = String(bot.game?.dimension || 'overworld');
+          goal.lavaFetch = { way: 'dig', lava: { x: l.x, y: l.y, z: l.z }, dest: { x: l.x, y: l.y + 1, z: l.z }, since: now, carried: countOf(bot, 'lava_bucket'), dimension: dim, switches: 0, pick: { way: 'pool', at: { x: l.x, y: l.y, z: l.z }, chosenAt: now } };
+          goal.lavaChosen = { at: { x: l.x, y: l.y, z: l.z }, by: 'Jev', since: now, dimension: dim };
+          bot.chat?.(`Digging down to the lava at (${l.x}, ${l.y}, ${l.z}).`);
+        } });
+    }
     // None good on top at the last stall question here: a different kind of
     // route, each with its target's record (the reviewer's rule of the
     // check-in of 23:39Z on 2026-09-30, problem 1: seven of nine loop
@@ -6782,7 +6809,9 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
           } });
       }
       const spent = known.filter(k => require('./obsidian').poolSpent(k.landmark)).length, resting = known.filter(k => !require('./obsidian').poolSpent(k.landmark) && !open(k)).length;
-      jobs.push({ key: 'search_lava', description: `Another route for the portal's lava: search the surface for another lava pool, walking to ground not yet explored. ${known.length ? `${known.length} pool${known.length === 1 ? '' : 's'} known within 256 blocks: ${spent} found spent, ${resting} whose way rests, ${pools.length} open` : 'No lava pool known within 256 blocks'}; pools lie on the surface in most places, and any found is then asked about.`,
+      // Each pool known named, with its record (note 767e).
+      const named = known.slice(0, 3).map(k => `(${k.landmark.x}, ${k.landmark.y ?? '?'}, ${k.landmark.z}), ${k.distance} blocks off${lavaRecord(goal, k.landmark, here).replace(/^ Its record:/, ':') || ''}`).join('; ');
+      jobs.push({ key: 'search_lava', description: `Another route for the portal's lava: search the surface for another lava pool, walking to ground not yet explored. ${known.length ? `${known.length} pool${known.length === 1 ? '' : 's'} known within 256 blocks: ${spent} found spent, ${resting} whose way rests, ${pools.length} open: ${named}` : 'No lava pool known within 256 blocks'}; pools lie on the surface in most places, and any found is then asked about.`,
         run: async (t, save) => { await explore(bot, t, goal, save, 'lava pool', { surfaceOnly: true }); } });
     }
     return jobs;
@@ -6938,7 +6967,7 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // portal's own work (portalJobs) named first, ahead of the stalled work's
   // own answers (note 753b).
   const work = await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) });
-  const PORTAL_JOB = /^(to_known_lava|to_portal_frame|to_other_lava|cast_at_pool|search_lava)$/;
+  const PORTAL_JOB = /^(to_known_lava|to_portal_frame|to_other_lava|cast_at_pool|search_lava|dig_to_lava)$/;
   for (const w of work.filter(w => PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
   for (const w of work.filter(w => !PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);

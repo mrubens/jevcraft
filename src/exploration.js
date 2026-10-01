@@ -451,6 +451,8 @@ async function exploreStep(bot, task, goal, save, { navigate, home, noticeVillag
 // planning after a few seconds (its think timeout), which a walk of a
 // hundred and fifty blocks over rough ground outruns. It found no way and
 // no lack of one.
+// Said where a walk's route search ran out of time (note 767e).
+const ROUTE_TIMED_OUT = 'the route search for the walk ran out of time, no way found closed';
 const planningTimedOut = err => err?.name === 'Timeout' || /took to long to decide path/i.test(String(err?.message || ''));
 
 // A trip to the nearest remembered landmark of the given kinds (or the
@@ -502,6 +504,19 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   // no nearer, mid-230-u set aside the four lava pools within two hundred
   // blocks in twenty seconds, five seconds a pool (note 524).
   const flat = Math.hypot(landmark.x - from.x, landmark.z - from.z);
+  // A route search that ran out of time is not a way found closed: tried
+  // once more with four times the time to think (note 767e). 25593
+  // (mid-243-bi, 2026-10-01 03:13-03:15Z), its pool 17 to 21 blocks off
+  // and 12 to 16 down, had every option say "the walk there came no nearer:
+  // Took to long to decide path to goal!", answered none good at 0.80 and
+  // 0.85, and set off for a pool 410 blocks off.
+  if (timedOut && distanceNow() > arrive && before - distanceNow() < 8 && bot.pathfinder && Number.isFinite(bot.pathfinder.thinkTimeout ?? 5000)) {
+    const think = bot.pathfinder.thinkTimeout;
+    bot.pathfinder.thinkTimeout = Math.max(20000, 4 * (think || 5000));
+    try { await navigate(bot, task, goal3, { timeoutMs: 120000, stallMs: 8000, sprint: true }); timedOut = false; walkWhy = null; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; timedOut = planningTimedOut(err); walkWhy = String(err.message || err).slice(0, 160); }
+    finally { if (think === undefined) delete bot.pathfinder.thinkTimeout; else bot.pathfinder.thinkTimeout = think; }
+  }
   if (timedOut && distanceNow() > arrive && before - distanceNow() < 8 && flat > 16) {
     const k = Math.min(32, flat - 8) / flat;
     try { await navigate(bot, task, legGoal(from.x + (landmark.x - from.x) * k, from.z + (landmark.z - from.z) * k, 4, landmark.y, from.y), { timeoutMs: 30000, stallMs: 8000, sprint: true }); }
@@ -517,8 +532,13 @@ async function goToLandmark(bot, task, goal, save, kinds, { navigate, reach = 51
   landmark.nearest = Math.min(best, after);
   // How the walk ended, kept with the place: said where the place is
   // offered (the rung set aside for it, note 583), not only "no nearer".
-  landmark.lastWalk = { at: Date.now(), from: { x: Math.round(from.x), y: Math.round(from.y), z: Math.round(from.z) }, began: Math.round(before), ended: Math.round(after), ...(walkWhy ? { why: walkWhy } : {}) };
-  if (before - after < 8 || after >= best - 1) { setAside(goal, 'landmark_trip', key, `the walk there came no nearer than before (${Math.round(before)} blocks off to ${Math.round(after)})${walkWhy ? `: ${walkWhy}` : ''}`, 1800000); }
+  landmark.lastWalk = { at: Date.now(), from: { x: Math.round(from.x), y: Math.round(from.y), z: Math.round(from.z) }, began: Math.round(before), ended: Math.round(after), ...(walkWhy ? { why: walkWhy } : {}), ...(timedOut ? { timedOut: true } : {}) };
+  // Out of time twice, the walk is set aside a short while and said as
+  // that, not as the place's failure: a staircase dug to it is the way
+  // meanwhile (obsidian.js, work.js portalJobs dig_to_lava).
+  if (before - after < 8 || after >= best - 1) setAside(goal, 'landmark_trip', key, timedOut
+    ? `${ROUTE_TIMED_OUT} (${Math.round(before)} blocks off, ${Math.round(Math.abs((landmark.y ?? from.y) - from.y))} up or down; twice, the second with ${Math.round(Math.max(20000, 4 * 5000) / 1000)} seconds to think)`
+    : `the walk there came no nearer than before (${Math.round(before)} blocks off to ${Math.round(after)})${walkWhy ? `: ${walkWhy}` : ''}`, timedOut ? 300000 : 1800000);
   save();
   return false;
 }
@@ -545,4 +565,4 @@ function foundEntries(known = {}) {
     dimension: l.dimension, firstAt: l.firstAt }));
 }
 
-module.exports = { legGoal, biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };
+module.exports = { ROUTE_TIMED_OUT, legGoal, biomeView, biomeTrips, biomeRay, headingFacts, surfaceRay, waterAhead, swimAcross, HEADINGS, foundEntries, goToLandmark, foundSentence, AREA, DETECTORS, LANDMARK_KINDS, areaOf, markExplored, rememberLandmark, noticeLandmarks, knownLandmarks, unexploredArea, explorationSummary, summaryText, exploreStep };

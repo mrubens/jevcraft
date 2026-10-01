@@ -394,7 +394,8 @@ function pickFailed(goal, pick, { deepFailing = false, deep = null } = {}, now =
   // A walk set aside since it was chosen (one set aside before is why it
   // is dug to).
   const P = require('./progress'), walk = l && P.attemptsFor(goal).entries[P.keyOf('landmark_trip', `lava_pool:${l.x},${l.z}`)];
-  if (walk && walk.until > now && walk.at > (pick.chosenAt || 0)) return `the walk there came no nearer (${walk.why || 'set aside'})`;
+  // A route search out of time is not the pool's failure (note 767e): dug to instead.
+  if (walk && walk.until > now && walk.at > (pick.chosenAt || 0) && !String(walk.why || '').startsWith(require('./exploration').ROUTE_TIMED_OUT)) return `the walk there came no nearer (${walk.why || 'set aside'})`;
   return null;
 }
 function pickedWay(pick, pools, deep) {
@@ -582,7 +583,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   const tripKey = l => `lava_pool:${l.x},${l.z}`;
   const chosenFails = !chosenPool ? null : poolSpent(chosenPool) ? `it was found with no lava to take${chosenPool.spentWhy ? ` (${chosenPool.spentWhy})` : ''}`
     : lavaResting(goal, landmarkAt(chosenPool)) ? `the way into it rests (${require('./tunneling').staircaseWhy(goal, lavaWay(landmarkAt(chosenPool)))})`
-    : (e => e && e.until > Date.now() && e.at > chosenSince)(require('./progress').attemptsFor(goal).entries[require('./progress').keyOf('landmark_trip', tripKey(chosenPool))]) ? `the walk there was set aside (${require('./progress').attemptsFor(goal).why('landmark_trip', tripKey(chosenPool)) || 'no nearer'})` : null;
+    : (e => e && e.until > Date.now() && e.at > chosenSince && !String(e.why || '').startsWith(require('./exploration').ROUTE_TIMED_OUT))(require('./progress').attemptsFor(goal).entries[require('./progress').keyOf('landmark_trip', tripKey(chosenPool))]) ? `the walk there was set aside (${require('./progress').attemptsFor(goal).why('landmark_trip', tripKey(chosenPool)) || 'no nearer'})` : null;
   const keepTo = chosenPool && !chosenFails ? chosenPool : null;
   const pool = l => poolOpen(l) && (!keepTo || l === keepTo);
   if (chosenPool && chosenFails && task.opportunityClient && !(Date.now() - (goal.lavaSwitchAsked?.[tripKey(chosenPool)] || 0) < 10 * 60000)) {
@@ -885,4 +886,4 @@ function noLavaWay(bot, goal, surface = []) {
   return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
-module.exports = { poolSpent, poolLava, arrivedAtPool, POOL_REST_MS, lavaRecord, pickFailed, heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
+module.exports = { wayCosts, poolSpent, poolLava, arrivedAtPool, POOL_REST_MS, lavaRecord, pickFailed, heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
