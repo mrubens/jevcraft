@@ -478,6 +478,8 @@ const GUARD_CREEPER_REACH = 5;
 // found yet: 2 of 24 spots ... tried" in their last minute, and a way found
 // is chosen 29% of the time against 2.6% (note 793).
 const SCOUT_FAR_MS = 1200, SCOUT_CLOSE = 4, SCOUT_CREEPER_CLOSE = 7;
+// From a shield answer to the shield raised, the median measured (note 829).
+const SHIELD_ANSWER_RAISE_S = 0.5;
 function scoutBudget(danger = []) {
   const { shooter } = require('./mob-policy');
   // A creeper out of sight lights only once it sees the bot: close within
@@ -5040,8 +5042,23 @@ class Survival {
       const ceS = require('./combat-estimate');
       const secs = Math.max(0, (creeperNear.distance - ceS.LIGHTS_AT) / ceS.APPROACH) + ceS.FUSE;
       const others = danger.filter(t => t !== creeperNear && !shooter(t.entity) && t.distance <= 4).length;
-      options.shield_the_blast = { expects: { damage: 0, seconds: Math.round(secs * 10) / 10, oneHit },
-        description: `Face the creeper ${Math.round(creeperNear.distance * 10) / 10} blocks off${creeperNear.visible ? '' : ' (out of sight)'} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and hold it until it goes off or is gone: a blast from the side the shield faces does no damage once the shield has been up a quarter second (the game's explosion damage is not one a shield lets through), the knockback still throws the bot. From here it can be at its lighting distance and go off in about ${Math.round(secs * 10) / 10} seconds.${inWater(bot) ? ` In water the shield blocks a blast as on land; the bot holds where it is${bot.entity?.onGround ? ', on the floor,' : ', sinking unless it swims,'} and does not swim meanwhile (air ${bot.oxygenLevel ?? 20} of 20).` : ''}${others ? ` ${others} other biter${others === 1 ? '' : 's'} within four blocks strike${others === 1 ? 's' : ''} from wherever the shield does not face.` : ''}${edge || ''}`,
+      // Whether the shield can be blocking before the blast (note 829): a
+      // shield blocks once up a quarter second and a tick (combat.js
+      // SHIELD_BLOCKS_AFTER_MS); from an answer the raise has come a median
+      // half second later (12:00 to 17:00Z on 2026-10-01, 728 shield answers),
+      // and a shield not in the off hand is equipped first. Lit, the blast
+      // comes when the fuse left runs out; not lit, it lights at three and
+      // goes off a fuse later. Priced at 0 whatever the fuse: 25591 (14:41Z)
+      // and 25581 (16:49Z) chose it with the creeper at 2.7 and 0.6 blocks
+      // and died to the blast.
+      const blockIn = (bot._shieldRaised && Date.now() - (bot._shieldRaisedAt || 0) >= 300 ? 0 : (shielded ? 0 : 0.25) + SHIELD_ANSWER_RAISE_S + 0.3);
+      const litFor = creeperLitFor(bot, creeperNear.entity);
+      const blastIn = Number.isFinite(litFor) ? Math.max(0, ceS.FUSE - litFor) : secs;
+      const tooLate = blastIn < blockIn;
+      const blastHits = mobs.find(m => m.id === creeperNear.entity.id)?.hitsBot ?? 0;
+      const lateSays = tooLate ? ` The shield cannot be blocking in time: ${Number.isFinite(litFor) ? `the creeper is lit, about ${Math.round(blastIn * 10) / 10} seconds of fuse left` : `about ${Math.round(blastIn * 10) / 10} seconds until it goes off`}, against about ${Math.round(blockIn * 10) / 10} seconds for the shield to be up and blocking from this answer; its blast lands whole, about ${Math.round(blastHits * 10) / 10}.` : '';
+      options.shield_the_blast = { expects: { damage: tooLate ? blastHits : 0, seconds: Math.round(secs * 10) / 10, oneHit },
+        description: `Face the creeper ${Math.round(creeperNear.distance * 10) / 10} blocks off${creeperNear.visible ? '' : ' (out of sight)'} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and hold it until it goes off or is gone: a blast from the side the shield faces does no damage once the shield has been up a quarter second (the game's explosion damage is not one a shield lets through), the knockback still throws the bot. From here it can be at its lighting distance and go off in about ${Math.round(secs * 10) / 10} seconds.${inWater(bot) ? ` In water the shield blocks a blast as on land; the bot holds where it is${bot.entity?.onGround ? ', on the floor,' : ', sinking unless it swims,'} and does not swim meanwhile (air ${bot.oxygenLevel ?? 20} of 20).` : ''}${others ? ` ${others} other biter${others === 1 ? '' : 's'} within four blocks strike${others === 1 ? 's' : ''} from wherever the shield does not face.` : ''}${lateSays}${edge || ''}`,
         run: async () => {
           this.report(goal, save, { action: 'shield_the_blast', target: 'creeper', threats: ['creeper'], health: bot.health, stance: true });
           if (!shielded) { const sh = bot.inventory.items().find(i => i.name === 'shield'); if (sh) await bot.equip(sh, 'off-hand'); }
