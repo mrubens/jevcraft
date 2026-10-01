@@ -992,7 +992,9 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (!due.length) return false;
   // Falling short of the step and the way home is asked anew, whatever
   // was carried on from before.
-  const keys = due.sort().join(',') + (budget?.short ? ':short' : '');
+  // The shield's wear band is part of what is due: a carry-on at two-thirds
+  // is asked again at a third (note 791).
+  const keys = due.sort().join(',') + (budget?.short ? ':short' : '') + (options.spare_shield ? `:shield${options.spare_shield.band}` : '');
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
   // The route to the stems surveyed only for a question asked.
   if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
@@ -1118,6 +1120,13 @@ async function upkeepOffers(bot, task, goal, save) {
     run: async () => { const unmade = await require('./mob-hunt').makePickaxe(bot, task, goal, save, { acquireStep }, netherSpare); if (unmade) throw new Error(`The spare was not made: ${unmade}`);
       goal.pickaxeCraftHistory = [...(goal.pickaxeCraftHistory || []).filter(e => Date.now() - e.at < PICKAXE_CRAFT_MEMORY_MS), { at: Date.now(), kind: netherSpare.item || 'pickaxe' }].slice(-10); save(); } };
   else if (spareDue(bot, budget)) options.spare_pickaxe = { get description() { return `Make a stone pickaxe now, a spare${budget?.short ? '' : `: the pickaxes carried are nearly worn out (${worn.join(', ')})`}, and one that breaks deep in a mine leaves the bot digging out by hand: ${require('./hand-dig').handPaceSays(bot)}.${budget ? said() : ''}${pickaxeCraftHistorySays(goal)}${spareHistory(bot, goal)}${craftRoomSays(bot)}`; }, run: () => maintainPickaxe(bot, task, goal, save, budget) };
+  // A spare shield while the one held is worn, made from the pockets (note
+  // 791): 24 shields broke in the Nether stays of the record, the minutes
+  // after a break killed 4.4 an hour against 1.0, and at 7 of the breaks the
+  // pockets made one and nothing offered it.
+  const shieldSpare = goal.kind === 'win' && reserveWeather(bot) ? require('./entry-kit').netherSpare(bot) : null;
+  if (shieldSpare) options.spare_shield = { description: shieldSpare.says, band: shieldSpare.band,
+    run: async () => { goal.step = { action: 'spare_shield', item: 'shield' }; save(); await acquireStep(bot, task, 'shield', countOf(bot, 'shield') + 1, goal, save); } };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
@@ -7562,7 +7571,14 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const seen = goal.kitSeen || {};
   const empty = left.filter(i => i.carried === 0 && /^(food|blocks)$/.test(i.key) && (seen[i.key] || 0) > 0);
   goal.kitSeen = Object.fromEntries(items.map(i => [i.key, i.carried]));
-  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !empty.length) { delete goal.preparingNether; return true; }
+  // The pieces the Nether's record speaks to (note 791): a spare shield,
+  // armour, a stack of one ghast-proof kind, each priced from the pockets
+  // against the stays with and without it. Of 111 Nether stays none carried
+  // a spare shield, and this question never said one. Offers, not gaps: they
+  // make the question worth asking, as the cauldron and the chest do.
+  let entry = [];
+  try { entry = require('./entry-kit').offers(bot); } catch (_) { entry = []; }
+  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !empty.length && !entry.length) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -7588,6 +7604,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const tree = {
     cross_now: { description: `Cross with what is carried now${short.length ? `, short of what the code would take in ${short.map(i => i.key).join(', ')}` : ''}${valuables ? `, and with the valuables carried (${valuables.what})` : ''}.${going}${leftSays}${hungerWeigh} ${items.filter(i => !i.rung).map(i => i.says).join(' ')}` },
   };
+  tree.cross_now.description += require('./entry-kit').goingWithout(entry);
+  for (const o of entry) tree[`top_up_${o.key}`] = { description: `${o.says}${soFar({ carried: countOf(bot, o.item) }, o.key)}` };
   if (empty.some(i => i.key === 'food')) {
     const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));
     tree.cross_now.description += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;
@@ -7630,7 +7648,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     bot.chat?.(`The ${key} for the Nether is empty: taking it up again first.`);
     return false;
   }
-  const item = short.find(i => `top_up_${i.key}` === pick);
+  const offer = entry.find(o => `top_up_${o.key}` === pick);
+  const item = short.find(i => `top_up_${i.key}` === pick) || (offer && { key: offer.key, carried: countOf(bot, offer.item) });
   const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
   const started = Date.now();
   try {
@@ -7639,6 +7658,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     else if (pick === 'top_up_pickaxe') {
       goal.step = { action: 'pickaxe_for_nether', item: pickMade }; save();
       await acquireStep(bot, task, pickMade, countOf(bot, pickMade) + 1, goal, save);
+    }
+    else if (offer) {
+      // One piece a pass; the next asks again with what is carried then.
+      goal.step = { action: `${offer.key}_for_nether`, item: offer.item }; save();
+      await acquireStep(bot, task, offer.item, offer.count, goal, save);
     }
     else if (pick === 'top_up_chest') {
       goal.step = { action: 'chest_for_nether' }; save();

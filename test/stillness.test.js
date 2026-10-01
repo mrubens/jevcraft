@@ -576,7 +576,8 @@ test('the kit for the crossing is one question: every item said against what the
   assert.equal(await crossingKitReady(bot, task, goal, () => {}, client), true, 'crosses with what it has');
   // The food, the blocks and the spare pickaxe are the ladder's rungs before the portal (note 673): said here as left
   // from them, not offered again.
-  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_gold']);
+  // No spare shield and no armour: each offered, priced (note 791).
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_armour', 'top_up_gold', 'top_up_shield']);
   assert.match(asked.cross_now, /short of what the code would take in gold/);
   assert.match(asked.cross_now, /Left from the ladder's kit steps: food 16 of 80, blocks 30 of 128, pickaxe 1 of 2\./);
   assert.doesNotMatch(asked.cross_now, /Food: 16 food points carried/);

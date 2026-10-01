@@ -221,8 +221,13 @@ function kitSummary(bot, goal) {
   if (valuables) parts.push(`valuables carried (${valuables.what})${valuables.how === 'stash' ? `, the home chest ${valuables.far} blocks away` : ''}`);
   const cauldron = all.find(i => i.key === 'cauldron' && i.offer);
   if (cauldron) parts.push('a cauldron and a water bucket to put a fire out in the Nether, which the bot could make now (an option, not a gap)');
-  return parts.length ? ` At the portal the kit is said and topping any of it up is a choice, not a wait: short now of ${parts.join('; ')}.`
-    : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood, a chest) is carried.';
+  // The pieces the Nether's record speaks to (note 791), on offer there.
+  let entry = [];
+  try { entry = require('./entry-kit').offers(bot); } catch (_) { entry = []; }
+  const ENTRY = { shield: 'a spare shield (none carried in 111 Nether stays; the minutes after a break killed 4.4 an hour against 1.0)', armour: 'the iron armour pieces not had', stone: '64 blocks of one ghast-proof kind' };
+  const offered = entry.length ? ` Offered there besides, each priced: ${entry.map(o => ENTRY[o.key]).join('; ')}.` : '';
+  return (parts.length ? ` At the portal the kit is said and topping any of it up is a choice, not a wait: short now of ${parts.join('; ')}.`
+    : ' The kit for the crossing (food, blocks, a pickaxe, gold, wood, a chest) is carried.') + offered;
 }
 
 // The kit as rungs of the ladder, before the one that enters the portal

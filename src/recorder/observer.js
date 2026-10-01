@@ -86,6 +86,8 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       // Worn, which items() leaves out: the armour and the off-hand.
       equipment: Object.fromEntries([[5, 'head'], [6, 'torso'], [7, 'legs'], [8, 'feet'], [45, 'offhand']]
         .map(([slot, name]) => [name, bot.inventory?.slots?.[slot]?.name || null])),
+      // The off hand's uses left (note 791: no record held a shield's wear).
+      ...(() => { const o = bot.inventory?.slots?.[45], max = o && bot.registry?.itemsByName?.[o.name]?.maxDurability; return max ? { offhandUses: max - (o.durabilityUsed || 0) } : {}; })(),
       goal: goalView(goal), decision: goal.decisions?.at(-1), world, route,
       // Who is moving the bot, and how: the step on the goal went stale
       // while other code held the keys, and a fall had to be reconstructed.
