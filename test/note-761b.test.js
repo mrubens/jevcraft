@@ -98,6 +98,7 @@ test('a walk home for food chosen is held as a trip, not asked again every ten s
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
   survival.decide = async () => ({ path: ['obtain_food', 'go_home_for_food'], action: { run: async () => {} }, stale: false });
   await survival.step(new Task('t', 'food'), netherGoal(), () => {});
-  assert.equal(survival.state.searchFoodHold?.key, 'go_home_for_food');
-  assert(survival.state.searchFoodHold.until - Date.now() > 100000);
+  // Held as the food plan (note 784): its way, and a time of two minutes or more.
+  assert.equal(survival.state.foodChoice?.key, 'obtain_food/go_home_for_food');
+  assert(survival.state.foodChoice.ms >= 120000);
 });

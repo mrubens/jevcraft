@@ -88,18 +88,27 @@ test('25589 at 23:52:38Z: the night reserve trip keeps the work on offer at ever
   assert.match(food, /This trip is for the reserve alone\. 0 food points carried of the 12 kept for healing and the night: 12 short\./);
   assert.match(food, /Where: the bot is 29 blocks up to open sky/);
   assert.match(food, /Food errands for the reserve alone in the flight records .*begun underground: 90 errands/);
-  assert(survival.state.foodPlan, 'the top-up held as a plan');
-  // Asked again under the plan (the search's own hold aside): the work is
-  // still on offer beside it, where it had been left out.
-  delete survival.state.searchFoodHold;
+  // Note 784: the answer is the food plan, priced, held until its end.
+  assert.equal(survival.state.foodChoice?.key, 'obtain_food/search_food', 'the trip held as the food plan');
+  assert.match(food, /Food or the work: the nearest way to food here is search food, about/);
+  assert.match(food, /Hunger 18: at the record's 23\.7 hunger an hour of play \(in the Overworld under y 56\), it falls under eighteen \(where health stops coming back\) in about 3 minutes and to six \(where sprinting stops\) in about 30 minutes; nothing carried puts it off\./);
+  assert.match(asked[0].tree.continue_request.description, /Chosen over food, the work holds and no food is asked until hunger falls two/);
+  // Asked again while it holds: the search runs again unasked.
   await survival.step(new Task('t', 'food'), goal, () => {});
-  assert(asked[1]?.tree?.continue_request, 'continue_request still offered');
-  // At hunger 13 (under eighteen, nothing to meet it) the plan keeps the work out, as before.
+  assert.equal(asked.length, 1, 'held, not asked');
+  // The way fails (the herd's no route at 23:53:42Z in 25589's case): the
+  // plan ends, the work is on offer again, and the failure is said.
+  goal.tried = { entries: [{ q: 'survival_priority', method: 'obtain_food/search_food', at: Date.now(), place: { x: 205, y: 35, z: 422 }, outcome: 'blocked', why: 'no way to the sheep seen at (236, 73, 452): No route' }] };
+  await survival.step(new Task('t', 'food'), goal, () => {});
+  assert(asked[1]?.tree?.continue_request, 'continue_request offered again once the way failed');
+  assert.match(asked[1].state.lastFoodChoice, /^food first \(survival priority\), chosen \d+ seconds? ago, ended: the way chosen failed: no way to the sheep/);
+  assert.match(asked[1].tree.obtain_food.children.search_food.description.failedHere, /^failed here once in the last 30 minutes, the last \d+ seconds? ago: no way to the sheep/);
+  // At hunger 13 (under eighteen, nothing to meet it) a food plan keeps the work out, as before.
   const hungry = underBot({ food: 13 });
   const s2 = survivalOf(hungry);
   const q2 = [];
   s2.decide = async (task, g, save, q) => { q2.push(q); return { path: ['obtain_food', 'search_food'], action: { run: async () => {} }, stale: false }; };
-  s2.state.foodPlan = { until: Date.now() + 300000 };
+  require('../src/food-plan').begin(s2.state, hungry, { choice: 'food', by: 'turn_priority', supply: 0 });
   await s2.step(new Task('t', 'food'), { kind: 'win', request: 'beat the game', stockFood: true, step: { action: 'gather_wool' } }, () => {});
   assert(q2[0]?.tree?.obtain_food, 'asked at hunger 13');
   assert.equal(q2[0].tree.continue_request, undefined);

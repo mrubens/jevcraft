@@ -52,7 +52,8 @@ test('a night mine that would not dig holds nothing (note 755c, 25592 "No night 
 
 test('a food errand the bot chose is not taken over by the night mine (note 755c, 25592 seen_food_3 at 15.8 and hunger 15)', () => {
   const survival = { nightMineOff: () => null, currentShelter: () => null };
-  for (const extra of [{ foodPlan: { until: Date.now() + 60000 } }, { pocketPlan: { choice: 'seen_food_3', until: Date.now() + 60000 } }, { searchFoodHold: { until: Date.now() + 30000 } }]) {
+  // The food plan held (note 784), or the pocket's food way.
+  for (const extra of [{ foodChoice: { choice: 'food', key: 'obtain_food/seen_food_3', at: Date.now(), ms: 120000, facts: {} } }, { pocketPlan: { choice: 'seen_food_3', until: Date.now() + 60000 } }]) {
     const state = { ...mineState(), ...extra };
     assert.equal(nightMineHolds(below(), state, survival), false, JSON.stringify(extra));
     assert.notEqual(claim(below(), { kind: 'win' }, { ...survival, state })?.action, 'night_mine');

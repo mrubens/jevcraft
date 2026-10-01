@@ -7186,6 +7186,20 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     for (const k of Object.keys(tree)) delete tree[k];
     Object.assign(tree, copy);
   }
+  // The food plan Jev chose, said on the stall's question and on each
+  // answer here that is not a way to food (note 784; the health that does
+  // not come back is note 639's, said on them already): 25598 (mid-242-sf,
+  // 2026-09-30 05:43:21Z) at 7 health with nothing to eat, its
+  // return_for_food chosen 21 seconds before, answered rung_progress
+  // keep_at_it three times, told nothing of the trip, and sealed in again;
+  // a blaze took it to 1.7 at 05:44:03.
+  {
+    const fp = require('./food-plan'), held = fp.heldFood(stats, now);
+    if (held) {
+      context.foodPlan = `The food plan stands: ${fp.says(held, now)}.`;
+      for (const [k, node] of Object.entries(tree)) if (!/^(restock_food|return_for_food|go_for_food|hoglin_\w+|cook_food|eat\w*)$/.test(k) && typeof node.description === 'string') node.description += ` ${context.foodPlan}`;
+    }
+  }
   try {
     // Through decide: the ledger reads and records every answer to it, the
     // one way included.

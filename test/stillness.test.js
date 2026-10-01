@@ -294,6 +294,20 @@ test('at 3.5 health with hunger 13 and nothing to eat the stall\'s options say h
   assert.doesNotMatch(asked[0].differently, /does not come back at hunger/);
 });
 
+test('the food plan Jev chose is said on the stall\'s answers that are not a way to food (note 784, 25598 at 05:43Z: keep_at_it over its return_for_food at 7 health)', async () => {
+  const { answerStall } = require('../src/work');
+  const { bot, goal } = stranded([stack('netherrack', 64), stack('iron_sword', 1)]);
+  Object.assign(bot, { health: 7, food: 15 });
+  require('../src/food-plan').begin(goal.survival, bot, { choice: 'food', by: 'pocket_next', key: 'go_for_food/return_for_food', need: 'heal', supply: 0, minutesMs: 4 * 60000, goal });
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'keep_on', confidence: 0.8 } } }; } };
+  const survival = { state: goal.survival, canNightMine: () => false, foodHunt: () => {} };
+  await answerStall(bot, new Task('stall'), goal, () => {}, { key: 'step:return_to_portal', layer: 'work', strikes: 2, error: 'No way back to the nether portal' }, { client, survival }).catch(() => {});
+  const offered = asked[0];
+  assert.match(offered.keep_on, /The food plan stands: food first \(return for food\), chosen \d+ seconds? ago at pocket next at hunger 15 and health 7, holds until food is eaten or carried/);
+  assert.doesNotMatch(offered.restock_food, /The food plan stands/, 'a way to food carries it on');
+});
+
 test('gathering food for the crossing never waits: a rested search is taken up again; ten minutes without a point more set the food rung aside', async () => {
   // The food is a rung before the portal now (work.js kitFoodStep, note 673): without Jev, its way is the
   // search, and a search that brings nothing sets the rung aside rather than being passed over at the crossing.

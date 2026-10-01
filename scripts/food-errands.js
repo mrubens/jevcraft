@@ -5,7 +5,12 @@
 // errand (obtain_food wins no more than SPELL_GAP_MS apart) with what it cost:
 // minutes, blocks climbed, hunger and food points at its start and end, and
 // the wins taken after it was met (hunger 18 or more with safe food carried).
-//   node scripts/food-errands.js [--since 2026-09-30T06:00Z] [--until ISO] [--port 25588] [--json]
+//   node scripts/food-errands.js [--since 2026-09-30T06:00Z] [--until ISO] [--port 25588] [--json] [--asks]
+// --asks (note 784): the food questions a bot-hour by hunger, health, food
+// carried and place; what came of each food answer within ten minutes; the
+// errands that gained nothing; food errands dropped for the work while
+// health could not come back, and errands at full hunger and health taken
+// over the work (scripts/food-asks.js, also run alone).
 // Read-only, one file at a time.
 //
 // Reserve errands (note 771): the wins taken for the reserve alone (hunger
@@ -179,5 +184,7 @@ out.herdWalks = { walks: R.herdWalks.length, noRoute: missed.length,
   chosenAgainAfterNoRoute: missed.filter(w => R.herdWalks.some(o => o.port === w.port && o.leaf === w.leaf && Date.parse(o.at) > Date.parse(w.at) && Date.parse(o.at) - Date.parse(w.at) <= 10 * 60000)).length,
   noRouteAgainSameHerd: missed.filter(w => missed.some(o => o !== w && o.port === w.port && o.leaf === w.leaf && Date.parse(o.at) > Date.parse(w.at) && Date.parse(o.at) - Date.parse(w.at) <= 10 * 60000)).length,
   noRouteHerdAboveBy20: missed.filter(w => w.goal && Number.isFinite(w.y) && w.goal.y - w.y >= 20).length };
+// Note 784: every food question and answer, and what came of the answers.
+if (argv.includes('--asks')) out.asks = require('./food-asks').report(dir, { since, until, port });
 if (asJson) console.log(JSON.stringify({ ...out, wins: R.wins, claims: R.claims }, null, 1));
 else console.log(JSON.stringify(out, null, 1));

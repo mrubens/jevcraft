@@ -1341,11 +1341,11 @@ const WAITS_IN = new Set(['seal', 'dig_down', 'bunker', 'nook', 'pillar', 'take_
 function healWaitSays(bot, state = {}, now = Date.now()) {
   const hp = bot.health ?? 20, food = bot.food ?? 20;
   const errand = (() => {
-    const h = state?.searchFoodHold?.until > now ? state.searchFoodHold : null;
-    const plan = state?.foodPlan?.until > now ? state.foodPlan : null;
-    if (!h && !plan) return '';
-    const at = h?.at || (plan?.at ? Date.parse(plan.at) : now);
-    return ` The food errand chosen ${Math.max(1, Math.round((now - at) / 1000))} seconds ago${h?.key ? ` (${h.key.replaceAll('_', ' ')})` : ''} waits while this holds.`;
+    // The food plan Jev chose (food-plan.js, note 784).
+    const plan = require('./food-plan').heldFood(state, now);
+    if (!plan) return '';
+    const leaf = plan.key ? String(plan.key).split('/').at(-1) : null;
+    return ` The food errand chosen ${Math.max(1, Math.round((now - plan.at) / 1000))} seconds ago${leaf ? ` (${leaf.replaceAll('_', ' ')})` : ''} waits while this holds.`;
   })();
   if (hp >= 20) return errand;
   const r = n => Math.round(n * 10) / 10;
@@ -9899,9 +9899,15 @@ class Survival {
           run: async () => {
             delete this.state.watchedSince; delete this.state.pocketWatch;
             if (!(await this.leave(task, goal, save, refuge, 'Out for food.', { past: true }))) return false;
-            // Held as the food question's own plan: the next steps go on
-            // with food, not back to the question.
-            this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
+            // Held as the food plan (food-plan.js, note 784): the next steps
+            // go on with food, not back to the question, until it is eaten
+            // or carried, hunger or health fall a line, the way fails or its
+            // priced time passes.
+            {
+              const fp = require('./food-plan'), supply = foodSupply(bot);
+              const cannot = (bot.health ?? 20) < 14 && (bot.food ?? 20) < 18 && !chooseFood(bot);
+              fp.begin(this.state, bot, { choice: 'food', by: 'pocket_next', key: `go_for_food/${k}`, need: cannot ? 'heal' : 'hunger', supply, minutesMs: fp.minutesOf(k, way, fp.placeOf(bot)), goal });
+            }
             if (night) this.state.nightPlan = { plan: 'stay_up', until: Date.now() + 120000, from: 'go_for_food' };
             if (way.valid && !way.valid()) return true;
             try { await way.run(); }
@@ -9919,15 +9925,16 @@ class Survival {
           children: foodWays };
       }
       // A food errand Jev chose before the pocket was sealed (survival
-      // priority's obtain_food, held as searchFoodHold or foodPlan): said on
+      // priority's obtain_food, held as the food plan, note 784): said on
       // the way that carries it on and on the stay that puts it off (note
       // 773: 25594 chose seen_food_2 at 01:00:34, was sealed against a cave
       // spider at 01:00:52 and chose stay at 0.3 health, hunger 17).
       {
-        const now = Date.now(), h = this.state.searchFoodHold?.until > now ? this.state.searchFoodHold : null, plan = this.state.foodPlan?.until > now ? this.state.foodPlan : null;
-        if ((h || plan) && options.go_for_food) {
-          const ago = Math.max(1, Math.round((now - (h?.at || Date.parse(plan?.at || '') || now)) / 1000));
-          const what = `the food errand chosen ${ago} seconds ago${h?.key ? ` (${h.key.replaceAll('_', ' ')})` : ''}`;
+        const now = Date.now(), plan = require('./food-plan').heldFood(this.state, now);
+        const leaf = plan?.key ? String(plan.key).split('/').at(-1) : null;
+        if (plan && options.go_for_food) {
+          const ago = Math.max(1, Math.round((now - plan.at) / 1000));
+          const what = `the food errand chosen ${ago} seconds ago${leaf ? ` (${leaf.replaceAll('_', ' ')})` : ''}`;
           options.go_for_food.description = `Carries on ${what}. ${options.go_for_food.description}`;
           if (options.stay) options.stay.description += ` Staying puts off ${what}${(bot.food ?? 20) < 18 ? `: health does not come back meanwhile (hunger ${bot.food}, under eighteen${chooseFood(bot) ? '' : ', nothing carried to eat'})` : ''}.`;
         }
@@ -10331,7 +10338,7 @@ class Survival {
     if (foodMet && this.state.foodErrand) {
       const e = this.state.foodErrand;
       this.report(goal, save, { action: 'food_errand_met', food: bot.food, foodPoints: supplyNow, wanted: desiredFood, minutes: Math.round((now - e.since) / 6000) / 10, climbed: e.climbed || 0, asks: e.asks });
-      errands.end(this.state); delete this.state.foodPlan; delete this.state.searchFoodHold; save();
+      errands.end(this.state); save();
     }
     let errand = null;
     if (!foodMet && supplyNow < desiredFood && (stockDriven || hungry) && (!hungry || fills) && !isSetAside(this, 'food_search', 'stock', now)) {
@@ -10340,7 +10347,7 @@ class Survival {
         const why = errands.restWhy(errand, supplyNow, now);
         setAside(this, 'food_search', 'stock', why, errands.REST_MS);
         this.report(goal, save, { action: 'food_errand_rested', why, food: bot.food, foodPoints: supplyNow, wanted: desiredFood });
-        errands.end(this.state); errand = null; delete this.state.foodPlan; save();
+        errands.end(this.state); errand = null; save();
       }
     } else if (supplyNow >= desiredFood) errands.end(this.state);
     const stockPaused = isSetAside(this, 'food_search', 'stock', now);
@@ -10361,16 +10368,24 @@ class Survival {
     // Resting, low hunger that what is carried fills is met by eating, not by
     // a search.
     const needsFood = !workHasIt && !foodMet && supplyNow < desiredFood && ((hungry && !(stockPaused && fills)) || (stockDriven && !stockPaused));
+    // Food or the work, answered once and held (food-plan.js, note 784): the
+    // answer to it, wherever it was given (here, the turn given to the claim
+    // for food or to the work over it, the pocket's go_for_food), holds with
+    // its end stated. The ad hoc holds it replaces (a top-up five minutes,
+    // carrying on five, a search 45 seconds, a herd walk two) each asked
+    // again on its own clock: 1,115 of the 4,183 askings of this question
+    // and turn_priority's claim for food from 2026-09-30 12:00Z to
+    // 2026-10-01 04:57Z were answered already by that rule's reading.
+    const foodPlan = require('./food-plan');
+    for (const k of ['carryOnPlan', 'foodPlan', 'searchFoodHold']) delete this.state[k];
+    const planHeld = foodPlan.holding(this.state, bot, { goal, supply: supplyNow, needsShelter, now });
+    if (planHeld?.choice === 'food' && !needsFood) foodPlan.end(this.state, 'no food is asked for now (met, resting, or the work\'s own)', now);
     if (!needsShelter && !needsFood) return false;
-    // "Carry on" is an answer too, held as a food trip is: on the surface
-    // at hunger eighteen the question came back every pass while Jev said
-    // carry on, each asking with its route surveys, until one pass said
-    // food (the decision review, 2026-09-26). Held for five minutes, until
-    // hunger falls two or health four from when it was chosen, or the night
-    // comes; then asked again with what changed.
-    const carryOn = this.state.carryOnPlan;
-    if (carryOn && (carryOn.until < now || needsShelter || bot.food <= carryOn.food - 2 || (bot.health ?? 20) <= carryOn.health - 4)) delete this.state.carryOnPlan;
-    if (this.state.carryOnPlan) return false;
+    // Carrying on is an answer too: on the surface at hunger eighteen the
+    // question came back every pass while Jev said carry on (the decision
+    // review, 2026-09-26). Held until hunger falls two or under a line,
+    // health four, the night comes, or the drain's minutes pass.
+    if (planHeld?.choice === 'work') return false;
     // Whether the shelter kept can be walked to from here, looked for before
     // it is offered (refugeWay; the walk reads the same search).
     const refugeWay = needsShelter && refuge ? await this.refugeWay(task, refuge, { keep: true }) : null;
@@ -10586,6 +10601,21 @@ class Survival {
         (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state, { target: desiredFood }) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
+    // Food or the work, priced from the record (note 784): each way's
+    // minutes to the food with what such ways got where the bot is, the ways
+    // that failed here said as facts on themselves, the hunger drain to the
+    // next line, the work set aside, and what each answer holds until.
+    const priced = tree.obtain_food ? foodPlan.price(bot, goal, { children: tree.obtain_food.children, supply: supplyNow, now }) : null;
+    if (priced) {
+      tree.obtain_food.description += ` ${priced.foodSays}`;
+      if (tree.continue_request && !stayUp) tree.continue_request.description += ` ${priced.workSays}`;
+      state.foodOrWork = priced.facts;
+      for (const w of foodPlan.failedWays(goal, bot, now)) {
+        const node = tree.obtain_food.children[w.key];
+        if (node && node.description && typeof node.description === 'object') node.description.failedHere = foodPlan.failedSays(w, { name: false });
+        else if (node && typeof node.description === 'string') node.description += ` It ${foodPlan.failedSays(w, { name: false })}.`;
+      }
+    }
     // Hunger that the food carried meets is a meal of seconds, offered as
     // one beside the trips (note 761b): 25593 (mid-237-cc, 19:47 to 19:50Z)
     // at hunger 17, full health and 35 points carried was offered only trips
@@ -10634,20 +10664,19 @@ class Survival {
           for (const until = Date.now() + 30000; Date.now() < until && bot.health < 20 && (bot.food ?? 0) >= 18;) { task.check(); checkThreats(bot); await sleep(250); }
         } };
     }
-    // A reserve top-up once chosen is held, not asked again: at full health
-    // and hunger "get food or carry on" went to Jev every five seconds,
-    // thirty times in two bursts, obtain_food each time at 0.96 to 0.98.
-    // Held for five minutes, while food is still wanted and nothing needs
-    // shelter; the source is still Jev's to choose each time.
-    const foodPlan = this.state.foodPlan;
-    if (foodPlan && (foodPlan.until < Date.now() || !needsFood || needsShelter || stockPaused)) delete this.state.foodPlan;
-    // Not for the reserve alone (note 771): nothing about the body waits on
-    // that trip, and the work stays on offer beside it at every asking, the
-    // trip priced (food-errand.js says). 25589 (2026-09-30 23:52:38 to
-    // 23:55:44Z) at hunger 18, full health, nothing carried, 30 blocks under
-    // rock at dusk was asked obtain_food 20 times with the work left out
-    // after the first, the herds seen 40 blocks up with no route to them.
-    if (this.state.foodPlan && tree.obtain_food && !reserveTrip) delete tree.continue_request;
+    // Food chosen over the work, held (note 784): while it holds, carrying on
+    // is not asked again beside it; the way to food is (when the way chosen
+    // is no longer on offer). It ends when food is eaten or carried, hunger
+    // or health fall a line, the way fails, or its priced time passes, and
+    // the asking after says how. Note 771's rule (the work on offer at every
+    // asking of a reserve trip) answered the five-minute top-up that held
+    // through failures: 25589 (2026-09-30 23:52:38 to 23:55:44Z) was asked
+    // 20 times with the work left out, the herds 40 blocks up with no route
+    // to them. A way that fails ends this plan at once, and the work is on
+    // offer again with the failure said.
+    const continueRequest = tree.continue_request;
+    if (planHeld?.choice === 'food' && tree.obtain_food && !needsShelter) { delete tree.continue_request; state.foodChoiceHeld = foodPlan.says(planHeld, now); }
+    { const ended = foodPlan.endedSays(this.state, now); if (ended) state.lastFoodChoice = ended; }
     // A choice whose way is resting is not a choice now: first-days-213
     // chose secure_shelter thirty times in five seconds, its sealing resting
     // after "Shelter verification failed", each run refused at once and the
@@ -10684,15 +10713,33 @@ class Survival {
     // seen_food_0, 3, 0, 1, each herd kept its number and each answer a walk
     // to it, re-asked before any arrived. The herd chosen is walked on while
     // it is still on offer (not yet reached within 32 blocks, nor rested for
-    // a failed walk), up to two minutes; the search, 45 seconds as before.
-    const searchFoodHold = this.state.searchFoodHold;
-    if (searchFoodHold?.until < Date.now()) delete this.state.searchFoodHold;
-    const heldKey = this.state.searchFoodHold?.key || 'search_food';
-    if (this.state.searchFoodHold && tree.obtain_food?.children?.[heldKey] && !immediateThreat(bot)) {
-      console.log(`[food trip] obtain_food/${heldKey} held: on offer still, chosen ${Math.round((Date.now() - (this.state.searchFoodHold.at || Date.now())) / 1000)}s ago`);
+    // a failed walk), now as the food plan's way, below.
+    // The way chosen under the food plan, held (note 784): run again unasked
+    // while it is on offer. A hunt goes by its own hold (its kind, note
+    // 764); a cook or a meal is done at once.
+    // Its run judged by its own time first (note 765's rule, as decide does
+    // for a held answer): one that changed nothing is recorded failed in the
+    // ledger, which ends the plan, and the question is asked with it said.
+    // 25589 (2026-09-30 23:57:55 to 00:00:11Z) chose search_food five times
+    // standing at (205, 36, 416), each run going nowhere.
+    let heldLeaf = planHeld?.choice === 'food' && planHeld.key ? String(planHeld.key).split('/').at(-1) : null;
+    const walkHeld = heldLeaf && /^(seen_food_\d+|search_food|go_home_for_food|village_food|return_for_food|hoglin_food|raid_bastion)$/.test(heldLeaf) && tree.obtain_food?.children?.[heldLeaf] && !immediateThreat(bot);
+    if (walkHeld) {
+      const outcome = require('./decisions/outcome');
+      try { outcome.judge(bot, goal, 'survival_priority', { now }); } catch (_) { /* judged at the next asking */ }
+      if (!foodPlan.holding(this.state, bot, { goal, supply: supplyNow, needsShelter, now })) {
+        heldLeaf = null;
+        if (continueRequest) tree.continue_request = continueRequest;
+        delete state.foodChoiceHeld;
+        { const ended = foodPlan.endedSays(this.state, now); if (ended) state.lastFoodChoice = ended; }
+      } else { try { outcome.begin(bot, goal, require('./decisions').question('survival_priority'), ['obtain_food', heldLeaf], tree.obtain_food.children[heldLeaf], { held: true, now }); } catch (_) { /* judged at the next asking */ } }
+    }
+    if (walkHeld && heldLeaf) {
+      console.log(`[food plan] obtain_food/${heldLeaf} held, not asked: ${foodPlan.says(planHeld, now)}`);
       let ok = false;
-      try { ok = await runChosen('obtain_food', { run: () => tree.obtain_food.children[heldKey].run() }); }
-      finally { if (!ok) delete this.state.searchFoodHold; }
+      try { ok = await runChosen('obtain_food', { run: () => tree.obtain_food.children[heldLeaf].run() }); }
+      catch (err) { if (!['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) foodPlan.end(this.state, `the way chosen failed: ${String(err.message || err).slice(0, 160)}`); throw err; }
+      if (!ok) foodPlan.end(this.state, 'the way chosen rests');
       onStep(goal); return true;
     }
     // The food and the shelter answers, each said with the other's lately
@@ -10717,17 +10764,18 @@ class Survival {
     onStep(goal);
     if (decision.stale) return true;
     this.state.priorityAnswers = [...(this.state.priorityAnswers || []).filter(a => Date.now() - a.at < 10 * 60000), { choice: decision.path[0], leaf: decision.path.at(-1), at: Date.now() }].slice(-20);
-    const foodKey = decision.path[0] === 'obtain_food' ? decision.path.at(-1) : null;
-    if (foodKey === 'search_food') this.state.searchFoodHold = { key: foodKey, until: Date.now() + 45000, at: Date.now() };
-    // The walk home and to a village are trips too (note 761b): 25593 was
-    // asked six times in two minutes on its way home, and turned to a hunt.
-    else if (foodKey && /^(seen_food_\d+|go_home_for_food|village_food)$/.test(foodKey)) this.state.searchFoodHold = { key: foodKey, until: Date.now() + 120000, at: Date.now() };
-    else delete this.state.searchFoodHold;
-    if (decision.path[0] === 'obtain_food' && !hungry && !this.state.foodPlan) this.state.foodPlan = { until: Date.now() + 300000, at: new Date().toISOString() };
-    if (decision.path[0] === 'continue_request') {
-      delete this.state.foodPlan;
-      if (!needsShelter) this.state.carryOnPlan = { until: Date.now() + 300000, food: bot.food, health: bot.health ?? 20 };
-    } else delete this.state.carryOnPlan;
+    // The answer to food or the work, held as the food plan (note 784). The
+    // walk home and to a village are trips too (note 761b): 25593 was asked
+    // six times in two minutes on its way home, and turned to a hunt.
+    if (decision.path[0] === 'obtain_food') {
+      const key = decision.path.join('/'), leaf = decision.path.at(-1);
+      const minutesMs = foodPlan.minutesOf(leaf, decision.action, foodPlan.placeOf(bot));
+      if (!(planHeld?.choice === 'food' && this.state.foodChoice === planHeld && foodPlan.setWay(this.state, key, minutesMs)))
+        foodPlan.begin(this.state, bot, { choice: 'food', by: 'survival_priority', key, need: cannotHeal ? 'heal' : hungry ? 'hunger' : 'reserve', supply: supplyNow, minutesMs, goal });
+    } else if (decision.path[0] === 'continue_request') {
+      if (!needsShelter && needsFood) foodPlan.begin(this.state, bot, { choice: 'work', by: 'survival_priority', supply: supplyNow, goal });
+      else foodPlan.end(this.state, 'carrying on was chosen');
+    } else if (decision.path[0] !== 'eat_carried') foodPlan.end(this.state, `${decision.path[0].replaceAll('_', ' ')} was chosen`);
     if (!await runChosen(decision.path[0], { run: () => decision.action.run() })) return false;
     return decision.path[0] !== 'continue_request';
   }
@@ -10848,7 +10896,7 @@ function nightMineHolds(bot, state, survival = null, now = Date.now()) {
   if (!nightMineOn(bot, mine)) return false;
   try { if (survival?.nightMineOff?.()) return false; } catch (_) { return false; }
   if (now - (mine.minedAt || mine.startedAt || now) > NIGHT_MINE_IDLE_MS) return false;
-  if (state.foodPlan?.until > now || state.searchFoodHold?.until > now || state.pocketPlan?.choice && /^(go_for_food|seen_food_\w+|search_food|hunt_\w+|return_for_food|hoglin_food)$/.test(state.pocketPlan.choice) && state.pocketPlan.until > now) return false;
+  if (require('./food-plan').heldFood(state, now) || state.pocketPlan?.choice && /^(go_for_food|seen_food_\w+|search_food|hunt_\w+|return_for_food|hoglin_food)$/.test(state.pocketPlan.choice) && state.pocketPlan.until > now) return false;
   return true;
 }
 function nightMineOn(bot, mine) {
@@ -11092,9 +11140,13 @@ function claim(bot, goal = {}, survival = null) {
   if (!needsShelter && shelterNeeded(bot) && nightMineHolds(bot, state, survival, now) && !threat) return make('night_mine', 'routine', {
     nightMine: { minutes: Math.round((now - (state.nightMine.startedAt || now)) / 60000), mined: state.nightMine.mined || 0 }, minutesToDawn: minutesToDawn(bot) });
   if (!needsShelter && !needsFood) return null;
-  // "Carry on" is Jev's own answer, held: the work's turn by his choice.
-  const carryOn = state.carryOnPlan;
-  if (carryOn && !(carryOn.until < now || needsShelter || bot.food <= carryOn.food - 2 || hp <= carryOn.health - 4)) return null;
+  // Food or the work, Jev's answer held (food-plan.js, note 784): the work
+  // over food is the work's turn by his choice, no claim made until it ends;
+  // food over the work is said on the claim as going on, and the turn's
+  // ruling for it renewed while it holds (arbiter.js broken).
+  const fp = require('./food-plan');
+  const planNow = needsFood || needsShelter ? fp.holding(state, bot, { goal, supply, needsShelter, now }) : null;
+  if (planNow?.choice === 'work' && !needsShelter) return null;
   const plan = nightPlan?.plan === 'shelter' || nightPlan?.plan === 'home' ? nightPlan.plan : null;
   // Whether health comes back, and the sealed wait for daylight when it does
   // not, said on the claim: turn_priority read "find food" beside the work
@@ -11125,9 +11177,29 @@ function claim(bot, goal = {}, survival = null) {
   // through the portal (note 771c), and pressing where health that cannot
   // come back is at six or under.
   const offWorldTrip = needsFood && offWorld ? (() => { try { return require('./game-progress').portalTrip(bot, goal); } catch (_) { return null; } })() : null;
-  return make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', (needsShelter && !quietNight) || bot.food <= 6 || (needsFood && noHeal && hp <= 6) ? 'pressing' : 'routine',
+  const made = make(needsShelter ? (plan === 'home' ? 'go_home_for_night' : 'secure_shelter') : 'obtain_food', (needsShelter && !quietNight) || bot.food <= 6 || (needsFood && noHeal && hp <= 6) ? 'pressing' : 'routine',
     { ...(needsShelter ? { night: true, underground, ...(plan ? { plan } : {}), ...way, ...(underground && debt ? { sleepDebt: true } : {}), ...mining, sealFor: sealFor.says } : {}), ...(needsFood ? { foodCarried: supply, foodWanted: desiredFood, ...(last.points ? { lastResortCarried: last.points } : {}), ...foodCost(bot, goal, state, supply, hungry, now), ...(offWorldTrip ? { portalTrip: offWorldTrip } : {}) } : {}),
       ...(wait ? { waitSealedMinutes: wait.minutes, ...(wait.day ? { waitSealedDayNow: true } : {}) } : {}) });
+  // The claim for food: the plan held said on it, with the hunger's drain
+  // to its next line; and Jev's answer to it at turn_priority (the turn to
+  // the food, or to the work over it) begun as the food plan, so the same
+  // choice is not put again at survival_priority or a minute later
+  // (arbiter.js arbitrate calls `answered`). Health that cannot come back
+  // is said as such (note 771c), so the food holds over the work's own
+  // questions (rung_progress, the stall's) once chosen.
+  if (made.action === 'obtain_food') {
+    const d = fp.drain(bot, supply);
+    made.facts.hungerDrain = d.says;
+    if (noHeal) made.facts.cannotHeal = `health ${round(hp)} does not come back: hunger ${bot.food}, under eighteen, and nothing safe carried to eat`;
+    if (planNow?.choice === 'food') { made.facts.foodChoiceHeld = fp.says(planNow, now); made.holds = true; }
+    const ended = state.foodChoiceEnded && now - state.foodChoiceEnded.endedAt < 2 * 60000 ? state.foodChoiceEnded : null;
+    if (ended) made.facts.lastFoodChoice = `${ended.choice === 'food' ? 'food first' : 'the work over food'} (${String(ended.by).replaceAll('_', ' ')}) ended ${Math.max(1, Math.round((now - ended.endedAt) / 1000))} seconds ago: ${ended.why}`;
+    made.answered = layer => {
+      if (layer === 'survival' && !fp.heldFood(state)) fp.begin(state, bot, { choice: 'food', by: 'turn_priority', need: noHeal ? 'heal' : hungry ? 'hunger' : 'reserve', supply, goal });
+      else if (layer === 'work') fp.begin(state, bot, { choice: 'work', by: 'turn_priority', supply, goal });
+    };
+  }
+  return made;
 }
 
 module.exports = { healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

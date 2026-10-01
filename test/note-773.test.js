@@ -228,7 +228,7 @@ test('the hiding ways say health does not come back under hunger eighteen with n
   const bot = surfaceBot();
   bot.health = 0.3; bot.food = 17;
   const now = Date.now();
-  const said = healWaitSays(bot, { searchFoodHold: { key: 'seen_food_2', until: now + 100000, at: now - 18000 } }, now);
+  const said = healWaitSays(bot, { foodChoice: { choice: 'food', key: 'obtain_food/seen_food_2', at: now - 18000, ms: 120000, facts: {} } }, now);
   assert.equal(said, ' Health does not come back while this holds: 0.3 now, hunger 17, under the eighteen it comes back at; nothing carried to eat, so the wait gains no health, and only food brings it back. The food errand chosen 18 seconds ago (seen food 2) waits while this holds.');
   bot.food = 19;
   assert.equal(healWaitSays(bot, {}, now), '', 'health comes back at eighteen and more: nothing to add');

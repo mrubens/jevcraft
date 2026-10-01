@@ -1221,7 +1221,7 @@ test('beside a drop is a neighbouring cell with no floor for three blocks or lav
   assert(cell && cell.z >= 1 && !besideDrop(wide, cell), `a cell with ground all round: ${cell}`);
 });
 
-test('a reserve top-up for the reserve alone keeps the work on offer at every asking (note 771; it had been left out for five minutes once the top-up was chosen)', async () => {
+test('food chosen over the work for the reserve is held as the food plan: the work is not asked again beside it until the plan ends, then it is, with how it ended (notes 771, 784)', async () => {
   const { Survival } = require('../src/survival');
   const client = { systemOne: async () => { throw new Error('offline'); } };
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 3000 },
@@ -1234,8 +1234,12 @@ test('a reserve top-up for the reserve alone keeps the work on offer at every as
   const goal = { kind: 'win', request: 'beat the game', stockFood: true };
   for (let i = 0; i < 3; i++) await survival.step(new Task('test', 'food'), goal, () => {});
   assert.deepEqual(offered[0], ['continue_request', 'obtain_food']);
-  assert(survival.state.foodPlan, 'the top-up is held as a plan');
-  assert(offered.slice(1).every(keys => keys.includes('continue_request')), `the work still on offer: ${JSON.stringify(offered)}`);
+  assert.equal(survival.state.foodChoice?.choice, 'food', 'the food plan held');
+  assert(offered.slice(1).every(keys => !keys.includes('continue_request')), `the work not asked again while it holds: ${JSON.stringify(offered)}`);
+  // Its priced time passed: the work is on offer again.
+  survival.state.foodChoice.at -= survival.state.foodChoice.ms + 1000;
+  await survival.step(new Task('test', 'food'), goal, () => {});
+  assert(offered.at(-1).includes('continue_request'), 'the work on offer once the plan ended');
 });
 
 test('search_food, once chosen, is not asked about again at once: 25598 was asked every twenty to forty seconds while it climbed for it', async () => {
@@ -5829,7 +5833,7 @@ test('going for food from the pocket opens it first and runs the way chosen', as
   await survival.step(new Task('day'), goal, () => {});
   assert.deepEqual(dug, [[0, 83, 0]]);
   assert.deepEqual(explored, ['food animals']);
-  assert(survival.state.foodPlan?.until > Date.now(), 'held as the food question\'s plan');
+  assert.equal(survival.state.foodChoice?.key, 'go_for_food/search_food', 'held as the food plan (note 784)');
 });
 
 test('a leave that finds no door says so and rests a minute, not chosen again five seconds on', async () => {

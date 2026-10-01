@@ -335,7 +335,10 @@ function broken(ruling, claims, seen, now, print = fingerprintOf(claims), scene 
   if (now >= ruling.until) {
     // Renewed while nothing it was made on has changed (note 764).
     const since = ruling.since ?? ruling.at;
-    if (scene && ruling.scene === scene && !ruling.idleSince && now - since < RULING_MAX_MS) { ruling.until = now + RULING_MS; ruling.renewed = (ruling.renewed || 0) + 1; }
+    // And while its winner's claim is an answer Jev gave that still holds
+    // (a claim with `holds`: the food plan, note 784), whatever else of the
+    // scene moved: the claim says so, and it ends by its own stated end.
+    if (scene && (ruling.scene === scene || winner.holds) && !ruling.idleSince && now - since < RULING_MAX_MS) { ruling.until = now + RULING_MS; ruling.renewed = (ruling.renewed || 0) + 1; }
     else return 'a minute passed';
   }
   // Its winner stopped by a mob since the ruling: the ruling was made
@@ -583,7 +586,8 @@ function claimSays(c) {
     // Said with the hunger against what health needs, what the food carried
     // covers, what it is for, the errand's cost and whether the work is the
     // food already (note 761).
-    case 'obtain_food': return `Find food${f.foodFor ? ` for ${f.foodFor}` : ''}: ${notAsked(f) || 'where is asked next'}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for ${f.waitSealedDayNow ? `the next daylight (it is day now: the wait runs through dusk and the whole night), about ${f.waitSealedMinutes} real minutes` : `daylight, about ${f.waitSealedMinutes} real minutes`}, standing still and spending no hunger` : ''}.${f.hungerSays ? ` ${f.hungerSays}` : ` Hunger ${f.food}.`}${f.foodCarried !== undefined ? ` ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}${f.foodCarried !== undefined ? '.' : ''}${f.errandSoFar ? ` ${f.errandSoFar[0].toUpperCase()}${f.errandSoFar.slice(1)}.` : ''}${f.workIsFood ? ` ${f.workIsFood[0].toUpperCase()}${f.workIsFood.slice(1)}: given the turn, this takes it from that step to a search of its own.` : ''}${f.where ? ` ${f.where}` : ''}${f.reserveRecord ? ` ${f.reserveRecord}` : ''}${f.portalTrip ? ` ${f.portalTrip}` : ''}${hp}${f.hungerSays ? '' : heals}`;
+    // The food plan Jev chose, held, said as going on (note 784).
+    case 'obtain_food': return `Find food${f.foodFor ? ` for ${f.foodFor}` : ''}: ${notAsked(f) || (f.foodChoiceHeld ? `${f.foodChoiceHeld}; given the turn, it goes on unasked, and given the work, it ends` : 'where is asked next')}${f.waitSealedMinutes !== undefined ? `, beside waiting sealed in a pocket for ${f.waitSealedDayNow ? `the next daylight (it is day now: the wait runs through dusk and the whole night), about ${f.waitSealedMinutes} real minutes` : `daylight, about ${f.waitSealedMinutes} real minutes`}, standing still and spending no hunger` : ''}.${f.hungerSays ? ` ${f.hungerSays}` : ` Hunger ${f.food}.`}${f.foodCarried !== undefined ? ` ${f.foodCarried} food points carried` : ''}${f.foodWanted !== undefined ? ` of ${f.foodWanted} wanted` : ''}${f.lastResortCarried ? `, and ${f.lastResortCarried} more in the last resort (rotten flesh or raw chicken, which may bring on Hunger)` : ''}${f.foodCarried !== undefined ? '.' : ''}${f.errandSoFar ? ` ${f.errandSoFar[0].toUpperCase()}${f.errandSoFar.slice(1)}.` : ''}${f.workIsFood ? ` ${f.workIsFood[0].toUpperCase()}${f.workIsFood.slice(1)}: given the turn, this takes it from that step to a search of its own.` : ''}${f.where ? ` ${f.where}` : ''}${f.reserveRecord ? ` ${f.reserveRecord}` : ''}${f.portalTrip ? ` ${f.portalTrip}` : ''}${hp}${f.hungerSays ? '' : heals}${f.cannotHeal ? ` The ${f.cannotHeal}.` : ''}${f.hungerDrain ? ` ${f.hungerDrain}` : ''}${f.lastFoodChoice ? ` The last answer to food or the work: ${f.lastFoodChoice}.` : ''}`;
     case 'night_mine': return `Go on with the night mine chosen from the pocket ${f.nightMine?.minutes ?? 0} minute${f.nightMine?.minutes === 1 ? '' : 's'} ago (${f.nightMine?.mined ?? 0} mined), under the rock, until dawn about ${f.minutesToDawn} real minutes off or until it ends; given to the work, the work's own steps (a climb to the surface among them) run instead.${hp}`;
     case 'wait_for_day_sealed': return `Go on sealing a pocket and waiting in it for daylight, as chosen: about ${f.minutesToDawn} real minutes to dawn, standing still and spending no hunger.${f.underground ? UNDERGROUND : ''}${hp}${heals}`;
     // The hunt's claim was said as "hunt: hunt." to mid-235-p-fortress-1,
@@ -662,6 +666,9 @@ async function arbitrate(bot, claims, ctx = {}) {
     // given the turn by rule; asked again at the next pass.
     if (!winner) { delete result.pending; return { ...result, winner: null, by: 'stale', ask: true, why }; }
     state.ruling = { winner: winner.layer, action: winner.action, fingerprint: fingerprintOf(live), scene: result.pending.scene, at: now, until: now + RULING_MS, ...seen };
+    // A claim that keeps Jev's answer to it (the food plan, note 784): told
+    // which layer was given the turn over it.
+    for (const c of live) if (typeof c.answered === 'function') { try { c.answered(winner.layer); } catch (err) { console.log(`[arbiter] ${c.layer} answered: ${err?.message || err}`); } }
     // Jev's answer to this scene, given again to it for a while (sameScene).
     if (decision?.path && !decision.standIn && result.pending.scene) answeredScene(state, result.pending.scene, winner.layer, seen.health, now);
     Object.assign(result, { winner, by: decision.standIn ? 'stand-in' : 'jev', ruling: state.ruling });

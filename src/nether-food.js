@@ -317,7 +317,10 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
   if (actions.returnOverworld && !closed) {
     let there = ''; try { there = require('./healing').overworldFoodSays(bot, goal) || ''; } catch (_) { there = ''; }
     const nv = require('./nether-travel');
-    routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}`,
+    // What such trips came to in the flight records (note 784): 25581 took
+    // it twice at hunger 18 and full health (critic 2026-09-30 12:40Z).
+    const record = require('./food-plan').recordSays('portal', 'nether');
+    routes.return_for_food = { description: `Go back through the portal to the Overworld for food, hunted and cooked there, and come back fed. ${require('./game-progress').portalTrip(bot, goal)}${there ? ` ${there}` : ''}${nv.keepOnSays(bot, goal)}${nv.standingTripSays(bot, goal, 'return_for_food')}${record ? ` ${record[0].toUpperCase()}${record.slice(1)}.` : ''}`,
       run: async () => {
         nv.chooseReturnForFood(goal); delete goal.netherFoodKit;
         goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; save?.();
