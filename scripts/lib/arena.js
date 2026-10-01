@@ -66,6 +66,20 @@ const ARENAS = Object.freeze({
     // mid-243-ag-fortress-1 stood with four blazes about it (note 602).
     near: [1824.5, 71, 1809.5],
   },
+  // A spawner on a brick platform three blocks over the corridor the bot
+  // stands in, as 25583's fortress had it (mid-230-bc, 2026-10-01 18:22Z:
+  // the cage's floor at y 62, the corridor's at y 59, the blazes hovering
+  // two over the platform, seven to eight blocks off): no walk reaches a
+  // cell within the sword's reach of them; a step or a pillar of placed
+  // blocks does (note 834).
+  raised_room: {
+    shell: [1900, 66, 1900, 1932, 90, 1916],
+    hollow: [1902, 70, 1902, 1930, 86, 1914],
+    fills: [[[1902, 70, 1902, 1930, 70, 1914], 'nether_bricks'], [[1904, 71, 1904, 1912, 73, 1912], 'nether_bricks']],
+    blocks: [[[1908, 74, 1908], 'spawner{SpawnData:{entity:{id:"minecraft:blaze"}}}']],
+    open: [1918.5, 71, 1908.5],
+    wall: [1918.5, 71, 1908.5],
+  },
   // A pit in a cavern floor, one wide and two deep, the bot in it and
   // blazes hovering over the cavern: a hole open above is a hole they
   // shoot into (the stands in holes of notes 548 and 557).
@@ -250,6 +264,10 @@ const DRILLS = Object.freeze([
   // spread round the bot, two over the floor and two over the lava sea
   // (mid-243-ag-fortress-1 at 11:45, and the three close_in deaths of note
   // 602).
+  { name: 'blaze_raised_spawner', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 3, arena: 'raised_room', stand: 'open',
+    loadout: 'fortress', fire: true, nudge: false,
+    at: [[1909.5, 76, 1907.5], [1910.5, 76, 1909.5], [1908.5, 76, 1910.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
+    why: '25583 (mid-230-bc, 2026-10-01 18:22 to 18:31Z): the spawner on a platform three over the corridor, five blazes hovering over it seven to eight off; offered no fight in reach (none of them can be reached from here), it boxed in, broke two shields and killed none (note 834).' },
   { name: 'blaze_spawner_four_near', mode: 'hunt', entity: 'blaze', item: 'blaze_rod', count: 4, arena: 'fortress', stand: 'near',
     loadout: 'fortress', fire: true, nudge: false,
     at: [[1834.5, 73, 1809.5], [1832.5, 75, 1806.5], [1831.5, 72, 1815.5], [1816.5, 73, 1815.5]], seconds: 120, expect: { deaths: 0, drops: 1 },
