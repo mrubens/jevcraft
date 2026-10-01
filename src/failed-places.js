@@ -262,6 +262,14 @@ function pacingSays(bot, there, { now = Date.now(), atGoal = false } = {}) {
   const since = Math.max(now - WINDOW_MS, bot?._lastAnswer?.at || 0);
   const fails = failedWalks(bot, now).filter(w => w.at > since && w.from && dist(w.from, here) <= HERE);
   if (!fails.length) return null;
+  // Refused once since the last failure, the next walk begins (note 798):
+  // the refusal is there to put the failures to the next question, and when
+  // no question is answered after it (one option taken unasked, an answer
+  // held) refusing again only stands the bot still. 25597 had 80 walks
+  // refused under blaze fire (2026-10-01 10:57-11:08Z), mid-231-ai 50, each
+  // "since the last question was answered" by a question not asked again.
+  const refusedSince = (bot?._walks || []).some(w => w.kind === 'refused' && w.at > fails.at(-1).at && w.at <= now && w.from && dist(w.from, here) <= HERE);
+  if (refusedSince) return null;
   const asked = bot?._lastAnswer?.at && now - bot._lastAnswer.at < WINDOW_MS ? `since the last question was answered (${bot._lastAnswer.id.replaceAll('_', ' ')}, ${ago(now - bot._lastAnswer.at)} ago)` : `in the last ${ago(now - fails[0].at)} with no question answered`;
   const toward = g ? fails.filter(w => w.goal && dist(w.goal, g) <= TARGET_NEAR) : [];
   if (toward.length >= TIMES) {

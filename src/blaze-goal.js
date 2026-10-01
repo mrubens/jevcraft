@@ -223,6 +223,15 @@ function gate(bot, goal, id, tree, { area = null } = {}) {
   if (!keys.some(k => purpose(id, k, { rodsCarried, needsFood: hungry }) === 'off')) return none;
   const known = knownBlazes(bot, goal);
   if (!known.length) return none;
+  // Walks from about here refused for failing (note 785): a way to the
+  // blazes is a walk that will not begin, and with the rest withheld the
+  // question had one option, taken without Jev, so no answer came to lift
+  // the refusal. 25597 (2026-10-01 10:57-11:08Z) stood under blaze fire 11
+  // minutes, 80 walks refused, no rod, and died (note 798). Then nothing is
+  // withheld, and the refusal is said.
+  let refused = null;
+  try { refused = require('./failed-places').pacingSays(bot, null); } catch (_) { refused = null; }
+  if (refused) return { tree, facts: [`${plural(owed, 'blaze rod')} still needed and blazes are known, but walks from here are not begun: ${refused}. Every option is offered.`] };
   const atBlazes = known[0].off <= BLAZES_AT;
   const s = sieve(id, keys, { rodsOwed: owed, known: true, atBlazes, rodsCarried, needsFood: hungry });
   if (!s.gated) return none;

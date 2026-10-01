@@ -129,7 +129,11 @@ test("walks from about here that keep failing with no question answered are not 
   bot._turn = { holder: 'vitals', phase: 'eat', since: Date.now() };
   assert.equal(fp().pacingSays(bot, { x: 30, y: 64, z: 50 }), null);
   delete bot._turn;
-  assert.ok(fp().pacingSays(bot, { x: 30, y: 64, z: 50 }));
+  // Refused once since the last failure: the next walk begins (note 798);
+  // a new failure refuses again.
+  assert.equal(fp().pacingSays(bot, { x: 30, y: 64, z: 50 }), null);
+  fp().noteWalk(bot, { kind: 'no_route', goal: { x: 30, y: 64, z: 50 }, from, at: Date.now() + 1 });
+  assert.ok(fp().pacingSays(bot, { x: 30, y: 64, z: 40 }, { now: Date.now() + 2 }));
 });
 
 test('two failed walks toward one goal from about here: the third not begun until a question (note 777 subsumed, 785)', () => {
