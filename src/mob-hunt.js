@@ -4540,8 +4540,16 @@ function claim(bot, goal = {}) {
   // option does not read as the open ground being the only way (note 731).
   let cage = false;
   if (target.name === 'blaze') { try { cage = !!require('./cage-hold').cageFight(bot, goal); } catch (_) { cage = false; } }
+  // The pearls the run wants, not the step's one at a time ("0 of 1
+  // carried" with 13 wanted), and the work's own stalk of this kind said:
+  // it closes on and watches, the strike is this hunt. Asked "work" (the
+  // stalk) or "hunt", 25597 gave the stalk the turn 0.76 to 0.21 with an
+  // enderman 6 blocks off, and it watched (2026-10-01 12:24:58Z, note 804).
+  let want = huntTarget(bot, goal);
+  if (state.item === 'ender_pearl') { try { want = Math.max(want || 0, require('./eye-need').need(bot, goal).pearlsWanted || 0); } catch (_) { /* the step's own count */ } }
+  const ownPursuit = /^(stalk_mob|dig_toward_them|dig_down_to_them|open_a_door|break_their_line|hunt_mob)$/.test(String(goal.step?.action || '')) && goal.step?.entity === target.name;
   return { layer: 'hunt', action: 'hunt', urgency: 'routine', facts: { entity: target.name, distance: Math.round(target.position.distanceTo(bot.entity.position) * 10) / 10,
-    item: state.item, have: countOf(bot, state.item), want: huntTarget(bot, goal), health: bot.health, ...(seen ? {} : { outOfSight: true }),
+    item: state.item, have: countOf(bot, state.item), want, health: bot.health, ...(seen ? {} : { outOfSight: true }), ...(ownPursuit ? { ownPursuit: String(goal.step.action) } : {}),
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
