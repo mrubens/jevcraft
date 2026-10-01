@@ -12,7 +12,7 @@ const { dryStanding } = require('./mining-access');
 const { fillWaterBucket, fillBucket } = require('./water');
 const { checkThreats, safeFromHostiles, threats } = require('./danger');
 const { checkAir } = require('./vitals');
-const { makeRoom } = require('./inventory-tidy');
+const { makeRoom, tidyInventory, tidyContext } = require('./inventory-tidy');
 
 const SIDES = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 const UP = new Vec3(0, 1, 0), DOWN = new Vec3(0, -1, 0);
@@ -606,7 +606,11 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
         // (mid-226-am, 2026-10-01 15:49-15:52Z) was asked nine times and
         // dropped its cobblestone and flint and steel (note 820). Room is
         // asked for only when not one lava bucket is carried.
-        if (countOf(bot, 'lava_bucket') > 0) { console.log(`[lava] no slot free for another lava bucket: the cast takes the ${countOf(bot, 'lava_bucket')} carried`); break; }
+        // The tidy first, which asks nothing and drops only what it keeps
+        // none of or past its budgets (note 821).
+        try { await tidyInventory(bot, task, { away: p, keep: new Set(['bucket', 'lava_bucket', 'water_bucket', 'flint_and_steel', 'fire_charge']), ctx: tidyContext(bot, goal) }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        if (!room() && countOf(bot, 'lava_bucket') > 0) { console.log(`[lava] no slot free for another lava bucket: the cast takes the ${countOf(bot, 'lava_bucket')} carried`); break; }
         const wanted = Math.min(target - countOf(bot, 'lava_bucket'), countOf(bot, 'bucket'));
         await makeRoom(bot, task, 'lava_bucket', { goal, away: p, keep: new Set(['bucket', 'lava_bucket', 'water_bucket']),
           purpose: `lava for the portal frame (${wanted} more bucket${wanted === 1 ? '' : 's'} to fill here, each a slot of its own)` });

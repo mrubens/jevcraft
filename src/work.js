@@ -5382,7 +5382,15 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
   // The lava buckets the pockets hold at once (note 819): the slots free and
   // those the buckets already take (empty ones stack sixteen to a slot,
   // full ones one each).
-  const room = (() => { try { const free = bot.inventory.emptySlotCount?.(); if (!Number.isFinite(free)) return Infinity; return free + lavaBuckets + Math.ceil(buckets / 16); } catch (_) { return Infinity; } })();
+  // And the slots the tidy frees without asking (note 821): what it keeps
+  // none of or carries past its budgets.
+  const room = (() => { try {
+    const free = bot.inventory.emptySlotCount?.(); if (!Number.isFinite(free)) return Infinity;
+    const T = require('./inventory-tidy'), counts = {};
+    for (const i of bot.inventory.items()) counts[i.name] = (counts[i.name] || 0) + i.count;
+    const freed = T.tidyPlan(counts, { free, dimension: bot.game?.dimension, keep: new Set(['bucket', 'lava_bucket', 'water_bucket', 'flint_and_steel']), stackOf: n => bot.registry?.itemsByName?.[n]?.stackSize || 64, headroom: 99, ...T.tidyContext(bot, goal) }).reduce((n, d) => n + d.slots, 0);
+    return free + freed + lavaBuckets + Math.ceil(buckets / 16);
+  } catch (_) { return Infinity; } })();
   const owedHere = castTrips({ obsidian, standing: placed, buckets, lavaBuckets }), owedNew = castTrips({ obsidian, standing: 0, buckets, lavaBuckets });
   // The lava: pools remembered, not spent and their way into them not
   // resting (those are said in the state with their records); the lava in
