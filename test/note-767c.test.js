@@ -100,7 +100,7 @@ test('25589: a cast beside the lava does not take a site more than 32 blocks fro
 test('25589: the crossing counts a food kit gone empty since it last looked, and offers its step back', async () => {
   const { crossingKitReady } = require('../src/work');
   const registry = require('minecraft-data')('26.1');
-  let items = [{ name: 'cobblestone', count: 128 }, { name: 'cooked_beef', count: 1 }, { name: 'iron_pickaxe', count: 2 }, { name: 'golden_boots', count: 1 }, { name: 'oak_log', count: 8 }, { name: 'crafting_table', count: 1 }, { name: 'chest', count: 1 }];
+  let items = [{ name: 'cobblestone', count: 128 }, { name: 'cooked_beef', count: 5 }, { name: 'iron_pickaxe', count: 2 }, { name: 'golden_boots', count: 1 }, { name: 'oak_log', count: 8 }, { name: 'crafting_table', count: 1 }, { name: 'chest', count: 1 }];
   const bot = { registry, health: 20, food: 20, game: { gameMode: 'survival', dimension: 'overworld', difficulty: 'normal' }, entity: { position: new Vec3(0.5, 64, 0.5) }, entities: {},
     inventory: { items: () => items, slots: [] }, blockAt: p => ({ name: p.y < 64 ? 'stone' : 'air', position: p, boundingBox: p.y < 64 ? 'block' : 'empty' }), findBlocks: () => [] };
   const goal = { kitFood: { choice: { pick: 'go_without', at: Date.now() } } };
@@ -108,7 +108,7 @@ test('25589: the crossing counts a food kit gone empty since it last looked, and
   let offered = null;
   const client = { systemOne: async ({ questions }) => { offered = questions.branch_0.criteria; const k = Object.keys(offered).find(x => x.startsWith('take_up_')) || 'cross_now'; return { answers: { branch_0: { choice: k, confidence: 0.6 } } }; } };
   await crossingKitReady(bot, new Task('win'), goal, () => {}, client);
-  assert(!offered || !Object.keys(offered).some(k => k.startsWith('take_up_')), 'some food then: not offered');
+  assert(!offered || !Object.keys(offered).some(k => k.startsWith('take_up_')), 'food at the reserve then: not offered');
   items = items.filter(i => i.name !== 'cooked_beef');
   offered = null;
   assert.equal(await crossingKitReady(bot, new Task('win'), goal, () => {}, client), false);

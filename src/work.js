@@ -7683,7 +7683,17 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // Empty since the crossing last looked (some carried then, none now):
   // the step's own question was answered with some in hand.
   const seen = goal.kitSeen || {};
-  const empty = left.filter(i => i.carried === 0 && /^(food|blocks)$/.test(i.key) && (seen[i.key] || 0) > 0);
+  // Food under the Nether's own reserve is offered back too, not only when
+  // it is empty (note 824): 25583 (mid-230-bb, 2026-10-01 13:32Z) came back
+  // through the portal for food, its errand ended at hunger 18 with 12 points
+  // carried, the food step resting from its ten-minute stall, and the
+  // crossing offered wood and a chest but no food; it crossed with 12 of 80,
+  // ran out at the fortress and died at 3.5 health, hunger 15, leaving its
+  // dug-in hole for the portal past a wither skeleton (14:49Z). Not after
+  // Jev's own go_without, which holds until the food is gone (note 767c).
+  const stallRest = (g, phase, at) => { const r = require('./progress').attemptsFor(g).of('rung', at)[phase]; return !!r && !require('./game-progress').GOING_WITHOUT.test(r.why || ''); };
+  const NETHER_FLOOR = require('./food-reserve').FLOOR.nether;
+  const empty = left.filter(i => /^(food|blocks)$/.test(i.key) && ((i.carried === 0 && (seen[i.key] || 0) > 0) || (i.key === 'food' && i.carried < NETHER_FLOOR && stallRest(goal, 'nether_food', now))));
   goal.kitSeen = Object.fromEntries(items.map(i => [i.key, i.carried]));
   // The pieces the Nether's record speaks to (note 791): a spare shield,
   // armour, a stack of one ghast-proof kind, each priced from the pockets
@@ -7727,11 +7737,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   };
   tree.cross_now.description += require('./entry-kit').goingWithout(entry);
   for (const o of entry) tree[`top_up_${o.key}`] = { description: `${o.says}${soFar({ carried: countOf(bot, o.item) }, o.key)}` };
-  if (empty.some(i => i.key === 'food')) {
+  if (empty.some(i => i.key === 'food' && i.carried === 0)) {
     const minutes = Math.max(0, Math.round((hungerNow - 17) / NETHER_HUNGER_AN_HOUR * 60));
     tree.cross_now.description += ` No food at all is carried: in the Nether hunger falls about ${NETHER_HUNGER_AN_HOUR} an hour with nothing to eat${hungerNow >= 18 ? `, and at hunger ${hungerNow} health stops coming back in about ${minutes} minute${minutes === 1 ? '' : 's'}` : ', and health is not coming back now'}.`;
   }
-  for (const i of empty) tree[`take_up_${i.key}`] = { description: `Take up the ${i.key} for the Nether again first: it is empty now, 0 of ${i.wants} carried (${seen[i.key]} when the crossing last looked), and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.` };
+  for (const i of empty) tree[`take_up_${i.key}`] = { description: `Take up the ${i.key} for the Nether again first: ${i.carried === 0 ? `it is empty now, 0 of ${i.wants} carried${seen[i.key] ? ` (${seen[i.key]} when the crossing last looked)` : ''}` : `${i.carried} of ${i.wants} points carried, under the Nether's reserve of ${NETHER_FLOOR}`}, and its step was set aside by the ladder; its rest is lifted and the ladder takes it up next.` };
   const pickMade = noPickaxe ? (countOf(bot, 'iron_ingot') >= 3 ? 'iron_pickaxe' : ['cobblestone', 'cobbled_deepslate', 'blackstone'].some(n => countOf(bot, n) >= 3) ? 'stone_pickaxe' : 'wooden_pickaxe') : null;
   if (noPickaxe) {
     let budget = null; try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal); } catch (_) { budget = null; }
