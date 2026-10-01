@@ -22,7 +22,13 @@ function install(bot, { log = console.log, slowMs = SLOW_MS } = {}) {
     const t0 = Date.now();
     const found = find(options);
     const ms = Date.now() - t0;
-    if (ms >= slowMs) log(`[slow] findBlocks ${ms} ms (${callerOf(new Error().stack)}): ${Array.isArray(found) ? found.length : 0} found, maxDistance ${options?.maxDistance ?? 16}`);
+    if (ms >= slowMs) {
+      const caller = callerOf(new Error().stack);
+      // Kept for the event loop's watch (index.js): a hold that a search
+      // ended in is said with it (note 795).
+      bot._slowLast = { what: 'findBlocks', ms, caller, at: Date.now() };
+      log(`[slow] findBlocks ${ms} ms (${caller}): ${Array.isArray(found) ? found.length : 0} found, maxDistance ${options?.maxDistance ?? 16}`);
+    }
     return found;
   }, { _slowWatched: true });
   return bot;

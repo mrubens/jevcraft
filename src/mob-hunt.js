@@ -2519,7 +2519,11 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
 function portalBack(bot, goal, here) {
   const off = p => Math.round(Math.hypot(p.x - here.x, p.z - here.z));
   let seen = null;
-  try { seen = bot.findBlock?.({ matching: b => b?.name === 'nether_portal', maxDistance: 64 }) || null; } catch (_) { seen = null; }
+  // By the portal's id, not a function of the Block: a function made
+  // mineflayer build every cell of a section holding a portal, 0.8 to 1.1 s
+  // live a call within 64 of the bot's own portal (note 795).
+  const portalId = bot.registry?.blocksByName?.nether_portal?.id;
+  try { seen = bot.findBlock?.({ matching: portalId ?? (b => b?.name === 'nether_portal'), maxDistance: 64 }) || null; } catch (_) { seen = null; }
   if (seen) return { portal: seen.position, says: `the one in view ${off(seen.position)} blocks off at ${seen.position.x}, ${seen.position.y}, ${seen.position.z}` };
   const known = (goal.portals || []).filter(p => p.dimension === 'nether').sort((a, b) => off(a) - off(b))[0];
   if (known) return { portal: known, says: `the nearest known ${off(known)} blocks off at ${known.x}, ${known.y}, ${known.z}` };

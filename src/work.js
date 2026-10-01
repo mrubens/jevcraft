@@ -1850,17 +1850,8 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
     save();
     // Keep the same waypoint until reached. Rotating on every short walk made
     // the bot circle the mountain forever instead of reaching the wider ring.
-    const landIds = ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'mycelium', 'moss_block', 'stone', 'deepslate', 'tuff',
-      'granite', 'diorite', 'andesite', 'cobblestone', 'cobbled_deepslate', 'sand', 'red_sand', 'gravel', 'sandstone',
-      'red_sandstone', 'netherrack', 'basalt', 'blackstone', 'end_stone', 'obsidian', 'clay', 'snow_block']
-      .map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
-    // Filter surface blocks before truncating results. Taking the nearest 512
-    // solids first filled the list with underground stone and hid every shore.
-    const land = bot.findBlocks({ matching: landIds, maxDistance: 48, count: 256,
-      useExtraInfo: b => b.position.distanceTo(bot.entity.position) > 8 &&
-        dryPassable(bot.blockAt(b.position.offset(0, 1, 0))) && dryPassable(bot.blockAt(b.position.offset(0, 2, 0))) &&
-        (!surface || surface.isSurface(b.position.offset(0, 1, 0))),
-    }).map(p => p.offset(0, 1, 0))
+    const landIds = exploreLandIds(bot);
+    const land = (await exploreLandYielding(bot, landIds, surface, () => task.check()))
       .sort((a, b) => Math.hypot(a.x - target.x, a.z - target.z) - Math.hypot(b.x - target.x, b.z - target.z));
     search.visited ||= {};
     const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.y / 8)},${Math.floor(p.z / 8)}`;
@@ -1890,7 +1881,7 @@ async function explore(bot, task, goal, save, resource, { surfaceOnly = isSurfac
       // A long route can fail from a tree perch even when a short safe step
       // down is available. Survey that local exit before declaring no route;
       // the normal >8-block exploration filter deliberately omits these cells.
-      const nearby = bot.findBlocks({ matching: landIds, maxDistance: 8, count: 64,
+      const nearby = bot.findBlocks({ matching: landIds, maxDistance: 8, count: 64, openAbove: 2,
         useExtraInfo: b => b.position.offset(0, 1, 0).distanceTo(bot.entity.position) > 1 &&
           dryPassable(bot.blockAt(b.position.offset(0, 1, 0))) && dryPassable(bot.blockAt(b.position.offset(0, 2, 0))) &&
           (!surface || surface.isSurface(b.position.offset(0, 1, 0))),
@@ -3668,6 +3659,33 @@ async function harden(bot, task, goal, save, item = 'purple_concrete') {
   }
 }
 
+// The ground explore walks to: kinds a body stands on.
+function exploreLandIds(bot) {
+  return ['grass_block', 'dirt', 'coarse_dirt', 'podzol', 'mycelium', 'moss_block', 'stone', 'deepslate', 'tuff',
+    'granite', 'diorite', 'andesite', 'cobblestone', 'cobbled_deepslate', 'sand', 'red_sand', 'gravel', 'sandstone',
+    'red_sandstone', 'netherrack', 'basalt', 'blackstone', 'end_stone', 'obsidian', 'clay', 'snow_block']
+    .map(n => bot.registry.blocksByName[n]?.id).filter(n => n !== undefined);
+}
+// Explore's next ground, more than 8 blocks off, two dry cells over it (and
+// under open sky on a surface walk), as the cells to stand in. Filter surface
+// blocks before truncating results: taking the nearest 512 solids first
+// filled the list with underground stone and hid every shore. openAbove
+// (note 795) refuses a floor with a full block over it before the block is
+// built: 1.1 to 1.7 s live a call in the [slow] lines.
+function exploreLandSearch(bot, landIds, surface) {
+  return { matching: landIds, maxDistance: 48, count: 256, openAbove: 2,
+    useExtraInfo: b => b.position.distanceTo(bot.entity.position) > 8 &&
+      dryPassable(bot.blockAt(b.position.offset(0, 1, 0))) && dryPassable(bot.blockAt(b.position.offset(0, 2, 0))) &&
+      (!surface || surface.isSurface(b.position.offset(0, 1, 0))) };
+}
+function exploreLand(bot, landIds, surface) {
+  return bot.findBlocks(exploreLandSearch(bot, landIds, surface)).map(p => p.offset(0, 1, 0));
+}
+// The same, giving the game its turn as it reads (note 795).
+async function exploreLandYielding(bot, landIds, surface, check = () => {}) {
+  return (await require('./block-search').findBlocksYielding(bot, exploreLandSearch(bot, landIds, surface), check)).map(p => p.offset(0, 1, 0));
+}
+
 function catalogPlan(bot, item, count, stock, goal = {}) {
   const outputs = Array.isArray(item) ? item : [{ item, count }];
   // A Creative step is sized as the shortfall against `stock`, which has had
@@ -3680,7 +3698,9 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     // Planks only where the world put them, not the bot's own (a house, a
     // pocket's lid) nor a build's (note 754e).
     const ownPlank = b => /_planks$/.test(b.name) && (() => { try { return !!require('./own-blocks').laidAt(bot, b.position, goal) || reservedForConstruction(goal || {}, b.position); } catch (_) { return true; } })();
-    const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48,
+    // exposed (note 795): a block with no air on a face is refused by state
+    // before mineflayer builds it; 0.5 to 2.1 s live a call underground.
+    const positions = bot.findBlocks({ matching: ids, maxDistance: 32, count: 48, exposed: true,
       useExtraInfo: b => faces.some(f => air(bot.blockAt(b.position.plus(f)))) && !ownPlank(b) });
     rememberResources(bot, goal, positions);
     const nearby = positions.map(p => bot.blockAt(p)?.name).filter(Boolean);
@@ -8462,4 +8482,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };

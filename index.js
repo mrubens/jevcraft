@@ -29,8 +29,12 @@ async function main() {
   setInterval(() => {
     const lag = Date.now() - tickAt - 250;
     if (lag >= 2000) {
-      const goal = global.__jevBot?._survivalGoal;
-      const what = { lagMs: lag, step: goal?.step?.action, survival: goal?.survivalAction?.action, at: new Date().toISOString() };
+      // The work's step beside the survival layer's, and the slow search that
+      // ended in the hold where there was one (note 795: 655 of 2,818 holds
+      // said neither, the survival goal not yet reported).
+      const bot = global.__jevBot, goal = bot?._survivalGoal, slow = bot?._slowLast;
+      const what = { lagMs: lag, step: goal?.step?.action, survival: goal?.survivalAction?.action, work: bot?._goal?.step?.action,
+        ...(slow && slow.at >= Date.now() - lag - 1000 ? { slow: `${slow.what} ${slow.ms} ms (${slow.caller})` } : {}), at: new Date().toISOString() };
       console.log(`[lag] event loop held ${(lag / 1000).toFixed(1)}s ${JSON.stringify(what)}`);
       recorder?.record?.({ kind: 'lag', label: `event loop held ${(lag / 1000).toFixed(1)}s`, at: what.at, detail: what });
     }

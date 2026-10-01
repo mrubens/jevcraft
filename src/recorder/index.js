@@ -14,6 +14,10 @@ function startRecorder({ directory, label }) {
   return {
     trace,
     attach(bot, options) { observer?.detach('replaced'); observer = observeBot(trace, bot, options); return observer; },
+    // A frame from outside the observer: index.js's "[lag] event loop held"
+    // (it called record?.() on a recorder that had none, and no hold reached
+    // a flight record until note 795).
+    record(frame) { return trace.append(frame); },
     async close() { observer?.detach('closed'); observer = null; },
   };
 }

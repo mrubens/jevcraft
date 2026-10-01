@@ -81,10 +81,7 @@ async function reachShore(bot, task, goal, save, { move = navigate, surface = fl
   const safe = p => p.y >= waterY - 3 && dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name) &&
     policy.isSurface(p) && movement.allowedPosition(p) && (fight ? true : safeFromHostiles(bot, p));
   try {
-    const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)).map(b => b.id);
-    const land = bot.findBlocks({ matching: ids, maxDistance: 64, count: 256,
-      useExtraInfo: block => safe(block.position.offset(0, 1, 0)),
-    }).map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+    const land = (await shoreLandYielding(bot, safe, () => task.check())).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     // Under fire, the landings the shooters cannot see come first.
     if (shooters.length) land.sort((a, b) => (hiddenFrom(bot, a, shooters) ? 0 : 1) - (hiddenFrom(bot, b, shooters) ? 0 : 1) || a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
     const checked = new Set(), unrouted = [];
@@ -219,6 +216,23 @@ function hiddenFrom(bot, p, shooters) {
     return !!hit && eye.distanceTo(hit.intersect || hit.position) < eye.distanceTo(head) - 0.5;
   });
 }
+// The swim's landings within 64, the cells over a solid floor that `safe`
+// takes (it stands a body there: dryStanding first). openAbove refuses a
+// floor under a full cube before the Block is built (note 795): reachShore's
+// search was 1.6 to 4.5 s live a call.
+function shoreLandSearch(bot, safe) {
+  const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)).map(b => b.id);
+  return { matching: ids, maxDistance: 64, count: 256, openAbove: 2, useExtraInfo: block => safe(block.position.offset(0, 1, 0)) };
+}
+function shoreLand(bot, safe) {
+  return bot.findBlocks(shoreLandSearch(bot, safe)).map(p => p.offset(0, 1, 0));
+}
+// The same, giving the game its turn as it reads: the swimmer's air and the
+// survival layer's reflexes run between its slices (note 795).
+async function shoreLandYielding(bot, safe, check = () => {}) {
+  return (await require('./block-search').findBlocksYielding(bot, shoreLandSearch(bot, safe), check)).map(p => p.offset(0, 1, 0));
+}
+
 // The banks about, for the fact on the stance: the nearest dry landing near
 // the water's level within `reach`, and the nearest of them the shooters
 // cannot see, each with its distance.
@@ -228,7 +242,7 @@ function landingsAbout(bot, shooters, { reach = 32 } = {}) {
   let waterY = start.y;
   while (waterY < start.y + 16 && swimmableWater(bot.blockAt(new Vec3(start.x, waterY + 1, start.z)))) waterY++;
   const ids = bot.registry.blocksArray.filter(b => b.boundingBox === 'block' && !/_leaves$|_log$/.test(b.name)).map(b => b.id);
-  const land = bot.findBlocks({ matching: ids, maxDistance: reach, count: 256, useExtraInfo: block => { const p = block.position.offset(0, 1, 0); return p.y >= waterY - 3 && p.y <= waterY + 3 && dryStanding(bot, p); } })
+  const land = bot.findBlocks({ matching: ids, maxDistance: reach, count: 256, openAbove: 2, useExtraInfo: block => { const p = block.position.offset(0, 1, 0); return p.y >= waterY - 3 && p.y <= waterY + 3 && dryStanding(bot, p); } })
     .map(p => p.offset(0, 1, 0)).sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
   const at = p => p ? { x: p.x, y: p.y, z: p.z, distance: Math.round(p.distanceTo(bot.entity.position)) } : null;
   return { nearest: at(land[0]), hidden: at(land.find(p => hiddenFrom(bot, p, shooters))) };
@@ -368,7 +382,7 @@ async function digToShore(bot, task, goal, save, movement, move, failed = {}) {
   const dry = p => dryStanding(bot, p) && !damagingTerrain.has(bot.blockAt(supportCell(p))?.name);
   const lavaNear = p => [[0, 0, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, 2, 0], [0, -1, 0]]
     .some(([dx, dy, dz]) => /lava/.test(bot.blockAt(p.offset(dx, dy, dz))?.name || ''));
-  const cells = bot.findBlocks({ matching: ids, maxDistance: 10, count: 128, useExtraInfo: block => dry(block.position.offset(0, 1, 0)) })
+  const cells = bot.findBlocks({ matching: ids, maxDistance: 10, count: 128, openAbove: 2, useExtraInfo: block => dry(block.position.offset(0, 1, 0)) })
     .map(p => p.offset(0, 1, 0))
     // A landing the swim just failed to reach is not tried again by digging.
     .filter(p => !(failed[`${p}`] > Date.now() - 60000))
@@ -487,7 +501,7 @@ function ownGround(bot, from) {
 function landInView(bot, reach, own = new Set()) {
   const ids = LAND_IDS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined);
   const islets = new Set(own), level = Math.floor(bot.entity.position.y) - 2;
-  const cells = bot.findBlocks({ matching: ids, maxDistance: reach, count: 64,
+  const cells = bot.findBlocks({ matching: ids, maxDistance: reach, count: 64, openAbove: 2,
     useExtraInfo: b => { const p = b.position.offset(0, 1, 0); return p.y >= level && !own.has(`${p.x},${p.z}`) && dryStanding(bot, p); } })
     .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
   for (const c of cells) {
@@ -571,4 +585,4 @@ async function crossSea(bot, task, goal, save, { segmentMs = SEGMENT_MS, swimMs 
   return before - flat() >= 4 || !!goal.step.landInView;
 }
 
-module.exports = { hiddenFrom, landingsAbout, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
+module.exports = { hiddenFrom, landingsAbout, shoreLand, shoreLandYielding, clearHeadroom, reachShore, digToShore, notchOut, stepOut, crossSea, atSea, knownLand, landInView, ownGround };
