@@ -216,7 +216,7 @@ test('resource shafts survive shelter and other-resource interruptions without b
   assert(resumed.miningSites['overworld:iron_ore']);
 });
 
-test('unreachable saved shafts record bounded retry failures and restore movement rules', async () => {
+test('an unreachable saved shaft is a failed way recorded as a walk, not walked back to again from about here, and movement rules restored (note 785)', async () => {
   const bot = world(); bot.game = { dimension: 'overworld' };
   bot.pathfinder = { movements: { canDig: true, allow1by1towers: true, scafoldingBlocks: [1] },
     getPathFromTo: function * () { yield { result: { status: 'noPath', path: [] } }; } };
@@ -224,11 +224,19 @@ test('unreachable saved shafts record bounded retry failures and restore movemen
   const site = { steps: 20, visited: {}, workPosition: { x: 20, y: 30, z: 0 } };
   const goal = { miningSites: { 'overworld:diamond_ore': site } };
   const actions = { dig: async () => assert.fail('Must not mine while retrying'), navigate: async () => assert.fail('No route') };
-  for (let i = 1; i <= 3; i++) {
-    await assert.rejects(resourceTunnelStep(bot, new Task('mine'), goal, () => {}, new Vec3(10, 40, 0), 'diamond_ore', actions), /No existing route/);
-    assert.equal(site.rejoinFailures, i); assert.deepEqual(bot.pathfinder.movements, before);
-  }
-  assert(site.rejoinBlockedUntil > Date.now());
+  await assert.rejects(resourceTunnelStep(bot, new Task('mine'), goal, () => {}, new Vec3(10, 40, 0), 'diamond_ore', actions), /No existing route/);
+  assert.deepEqual(bot.pathfinder.movements, before);
+  assert.equal(bot._walks.at(-1).kind, 'no_route');
+  assert.deepEqual(bot._walks.at(-1).goal, { x: 20, y: 30, z: 0 });
+  // The next pass from about here does not walk back: it goes on from here.
+  let rejoined = false;
+  const tunneling = require('../src/tunneling');
+  const failed = require('../src/failed-places').towardFailures(bot, goal, site.workPosition);
+  assert.equal(failed.length, 1);
+  bot.pathfinder.getPathFromTo = function * () { rejoined = true; yield { result: { status: 'noPath', path: [] } }; };
+  await resourceTunnelStep(bot, new Task('mine'), goal, () => {}, new Vec3(10, 40, 0), 'diamond_ore', { ...actions, dig: async () => {} }).catch(() => {});
+  assert.equal(rejoined, false, 'no second survey of the way back from about here');
+  assert.ok(tunneling);
 });
 
 test('with no pickaxe, a staircase through stone exists only for an exit being dug by hand', () => {

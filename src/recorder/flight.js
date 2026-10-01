@@ -29,7 +29,7 @@ const KEEP_WORLD = new Set(['danger', 'connection']);
 // on every one (its step counter), so "only when it changes" never skipped
 // it: forty megabytes in half an hour. They are written slim like the
 // heartbeats; the full goal goes with deaths, connections and once a minute.
-const HEARTBEAT = new Set(['observation', 'vitals', 'motion', 'action']);
+const HEARTBEAT = new Set(['observation', 'vitals', 'motion', 'action', 'walk_end']);
 const FULL_GOAL = new Set(['danger', 'connection']), FULL_GOAL_EVERY_MS = 60000;
 const compact = goal => goal && { request: goal.request, kind: goal.kind, status: goal.status, step: goal.step,
   survivalAction: goal.survivalAction, lastError: goal.lastError, lastErrorAt: goal.lastErrorAt, lastErrorFrom: goal.lastErrorFrom };

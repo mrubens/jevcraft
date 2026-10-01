@@ -69,8 +69,10 @@ const crossingResting = (bot, goal, target) => isSetAside(goal, 'crossing', cros
 // bot has made already, and is not made: the way on from where it stands is
 // something else's, and the walk over its own tunnel took it from the work
 // the crossing left for the next pass (note 629).
-async function crossToward(bot, task, goal, save, target, { what = 'the target', beat = null } = {}) {
-  if (!inNether(bot) || typeof bot.blockAt !== 'function') return { tried: false };
+// `anywhere`: outside the Nether too, where a walk's route there failed
+// (work.js straightToward, note 785).
+async function crossToward(bot, task, goal, save, target, { what = 'the target', beat = null, anywhere = false } = {}) {
+  if ((!anywhere && !inNether(bot)) || typeof bot.blockAt !== 'function') return { tried: false };
   if (crossingResting(bot, goal, target)) return { tried: false, resting: true };
   const survey = surveyCrossing(bot, target, { cells: CROSS_STRETCH });
   if (!survey.cells || survey.gain < 1) return { tried: false, survey };

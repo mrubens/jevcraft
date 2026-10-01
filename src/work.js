@@ -205,7 +205,7 @@ function looseEnds(goal, now = Date.now()) {
 // stalled is refused by the survival layer for ten minutes
 // (Survival.report), which falls through to its next answer; nothing more
 // is needed here.
-const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No path to the goal|No reachable surveyed ground/i.test(errors.filter(Boolean).join(' '));
+const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No path to the goal|No reachable surveyed ground|Took to long to decide path|The walk is not begun/i.test(errors.filter(Boolean).join(' '));
 // A key with no thing named in it ("rung:none") is the work in hand: said
 // "Keep at the none" to 25591 on its islet (critic 11:36Z item 1, note 751).
 const thingOf = key => { const t = key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ').trim(); return !t || /^none\b/.test(t) ? 'work in hand' : t; };
@@ -239,6 +239,24 @@ function stallAbove(goal, { idle = false, now = Date.now() } = {}) {
   if (rung && isSetAside(goal, 'rung', rung, now)) return { parent: null, says: `The ${rung.replaceAll('_', ' ')} is set aside, and a rung set aside is not brought to its own question while it waits: nothing above this question is asked; every way here stays on offer with its rest said.` };
   return undefined;
 }
+// The way straight at a failed walk's goal, as the stall's answer, or null
+// (note 785): the goal about level (three blocks) and within 64 across,
+// the crossing's survey coming nearer, not resting from here.
+function straightToward(bot, task, goal, save, walk, now = Date.now()) {
+  try {
+    const nt = require('./nether-travel'), fp = require('./failed-places');
+    const g = walk.goal, here = bot.entity?.position;
+    if (!g || !here || !Number.isFinite(g.y) || Math.abs(g.y - here.y) > 3 || Math.hypot(g.x - here.x, g.z - here.z) > 64 || typeof bot.blockAt !== 'function') return null;
+    const target = new Vec3(Math.floor(g.x), Math.floor(g.y), Math.floor(g.z));
+    if (nt.crossingResting(bot, goal, target)) return null;
+    const survey = require('./bridging').surveyCrossing(bot, target, { cells: nt.CROSS_STRETCH });
+    if (!survey.cells || survey.gain < 1) return null;
+    const what = `where the last walk was going, (${target.x}, ${target.y}, ${target.z})`;
+    const failed = `The walk there from about here failed ${Math.max(1, Math.round((now - walk.at) / 1000))} seconds ago: ${fp.KIND_SAYS[walk.kind] || walk.kind}${Number.isFinite(walk.blocks) ? `, ${Math.round(walk.blocks)} blocks walked` : ''}${Number.isFinite(walk.left) ? `, ending ${Math.round(walk.left)} blocks from it` : ''}.`;
+    return { target: { x: target.x, y: target.y, z: target.z }, description: `${failed} ${nt.crossingSays(survey, `${what}, ${Math.round(Math.hypot(target.x - here.x, target.z - here.z))} blocks off`)}`,
+      run: async () => { await nt.crossToward(bot, task, goal, save, target, { what, anywhere: true }); } };
+  } catch (_) { return null; }
+}
 async function answerStall(bot, task, goal, save, stall, { client, survival, onStep = () => {}, idle = false, now = Date.now(), failed = null, chose = {}, recoveryAdviser = null } = {}) {
   const stats = survival?.state || goal.survival || goal;
   // A stall of the stall's own answer (a detour, persist, work free) is the
@@ -267,7 +285,11 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // said at every asking from a ledge of its own stairs, and working free
   // was never offered (note 588).
   const wayOff = (goal.survival || goal).wayOffShort;
-  const walksFailing = walksFailed(stall.error, goal.lastError, wayOff && now - wayOff.at < DETOUR_MEMORY_MS ? wayOff.error : null);
+  // And the walks' own record (failed-places.js, note 785): a walk from about
+  // here whose route failed in the last two minutes, whatever the step's
+  // failure said.
+  const failedWalk = require('./failed-places').lastFailedWalk(bot, { now });
+  const walksFailing = walksFailed(stall.error, goal.lastError, wayOff && now - wayOff.at < DETOUR_MEMORY_MS ? wayOff.error : null) || !!failedWalk;
   const terrain = client && bot.game?.gameMode === 'survival' && require('./unstuck').aimFor(bot, { walksFailing });
   if (stall.layer === 'survival') {
     recordStill(stats, stall.key, STALL_MS, { now, detour: terrain ? 'work_free' : 'refused' }); save();
@@ -403,6 +425,17 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       if (Math.floor(bot.entity.position.y) < rising.move.top) throw new Error(`The rise stopped at y ${Math.floor(bot.entity.position.y)}, short of y ${rising.move.top}`);
     } };
   if (cage) Object.assign(answers, require('./cage-hold').stallAnswers(bot, task, goal, save, cage, { dig, now, navigate }));
+  // Straight at where the failed walk was going, at this height, where its
+  // route failed (no route, the search out of time, a stall, ended short)
+  // and the place is about level: the crossing's own survey and price, in
+  // any dimension (note 785). The Nether's own (netherAnswers, the leg's or
+  // the portal's target) comes first. 25593's walk to its lava 27 blocks
+  // off at its own height failed on the pathfinder's search time, and
+  // nothing ever came at it another way.
+  if (!idle && failedWalk && !nether.cross_toward) {
+    const straight = straightToward(bot, task, goal, save, failedWalk, now);
+    if (straight) answers.cross_toward = straight;
+  }
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the
   // decision audit, 2026-09-25).
@@ -6852,7 +6885,7 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
       };
       if (here.distanceTo(o) > 16 && !castRests()) {
         const placed = frame.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length;
-        jobs.push({ key: 'to_portal_frame', description: `The portal's own work: go back to the portal frame begun at (${o.x}, ${o.y}, ${o.z}), ${walkSays(o)}${frame.placedSeen !== undefined || placed ? `, ${placed || frame.placedSeen || 0} of ten standing` : ''}; the cast goes on there.`,
+        jobs.push({ key: 'to_portal_frame', target: { x: o.x, y: o.y, z: o.z }, description: `The portal's own work: go back to the portal frame begun at (${o.x}, ${o.y}, ${o.z}), ${walkSays(o)}${frame.placedSeen !== undefined || placed ? `, ${placed || frame.placedSeen || 0} of ten standing` : ''}; the cast goes on there.`,
           run: (t, save) => navigate(bot, t, new goals.GoalNear(o.x, o.y, o.z, 3), { timeoutMs: 120000, stallMs: 8000, sprint: true }) });
       }
     }
@@ -6905,7 +6938,7 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
   // (note 749e); not saved or recorded with the scratch goal.
   if (!Object.hasOwn(scratch, 'mainGoal')) Object.defineProperty(scratch, 'mainGoal', { value: goal, enumerable: false });
   const out = [];
-  const add = (key, description, run) => { if (!resting(key) && !out.some(w => w.key === key)) out.push({ key, description, run }); };
+  const add = (key, description, run, target = null) => { if (!resting(key) && !out.some(w => w.key === key)) out.push({ key, description, run, ...(target ? { target } : {}) }); };
   const overworld = dimension(bot) === 'overworld';
   const dark = overworld && bot.time?.timeOfDay >= DAY.DUSK;
   // The portal's own work first, while the rung is the portal's: the known
@@ -6915,7 +6948,7 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
   // detours offered explore, a river, earn_xp and fourteen others, none of
   // them that pool, so it explored, looked around and smelted for
   // experience (note 753b). Run on the player's goal: it is the rung's work.
-  for (const job of portalJobs(bot, goal)) add(job.key, job.description, () => job.run(bounded, save));
+  for (const job of portalJobs(bot, goal)) add(job.key, job.description, () => job.run(bounded, save), job.target);
   if (survival?.canNightMine?.(goal)) add('night_mine', 'Dig a mine from here for the night: toward ore in the rock, or down and along a branch. Rock around a tunnel is shelter.',
     // A step a pass, yielding between: a failed step returns at once, and
     // this loop without a pause spun the event loop until the bot, unable
@@ -7043,9 +7076,11 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // own answers (note 753b).
   const work = await detourWork(bot, task, goal, save, { survival, bounded, scratch, holding: !!holding, resting: key => attempts.resting('detour', key, now) });
   const PORTAL_JOB = /^(to_portal_frame|replan_portal|search_lava)$/;
-  for (const w of work.filter(w => PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);
+  // Each with where it goes, where it says: the ledger and the walks' record
+  // read an option by its target (failed-places.js, note 785).
+  for (const w of work.filter(w => PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run, w.target);
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
-  for (const w of work.filter(w => !PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run);
+  for (const w of work.filter(w => !PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run, w.target);
   // A walk to water is what the portal frame's cast is waiting for when it
   // has none: said on the travel to a biome that has some (the walk is built
   // from the scratch goal, which does not know the rung; note 630).
@@ -8309,4 +8344,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom };
+module.exports = { wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };

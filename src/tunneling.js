@@ -669,7 +669,13 @@ async function floorStair(bot, task, goal, save, target, p, { dig, place }) {
 
 // Resource work survives food, tool and shelter interruptions. Each resource
 // retains its own shaft; returning walks through existing space before any new
-// excavation is allowed. An unreachable saved shaft has a bounded retry budget.
+// excavation is allowed. A saved shaft a way back to has failed from about
+// here (any kind, the walks' record, failed-places.js, note 785) is not
+// walked back to again from here for the record's ten minutes: the work goes
+// on from where the bot is. It had its own budget (three failures, then two
+// minutes), and 25597 walked 1,117 blocks for 9 net between "no route to
+// saved mining worksite" failures.
+const rejoinFailed = (bot, goal, work) => require('./failed-places').towardFailures(bot, goal, work).length > 0;
 async function resourceTunnelStep(bot, task, goal, save, target, resource, actions) {
   const dimension = bot.game?.dimension || 'overworld', key = `${dimension}:${resource}`;
   goal.miningSites ||= {};
@@ -683,7 +689,7 @@ async function resourceTunnelStep(bot, task, goal, save, target, resource, actio
   const sameTarget = site.target && Math.hypot(site.target.x - target.x, site.target.y - target.y, site.target.z - target.z) < 4;
   if (work && sameTarget && work.distanceTo(target) > bot.entity.position.distanceTo(target) + 8) {
     site.workPosition = { ...bot.entity.position.floored() }; save();
-  } else if (work && work.distanceTo(bot.entity.position) > 6 && !(site.rejoinBlockedUntil > Date.now())) {
+  } else if (work && work.distanceTo(bot.entity.position) > 6 && !(site.rejoinBlockedUntil > Date.now()) && !rejoinFailed(bot, goal, work)) {
     const movement = bot.pathfinder.movements;
     const previous = { canDig: movement.canDig, allow1by1towers: movement.allow1by1towers, scafoldingBlocks: movement.scafoldingBlocks };
     Object.assign(movement, { canDig: false, allow1by1towers: false, scafoldingBlocks: [] });
@@ -691,16 +697,19 @@ async function resourceTunnelStep(bot, task, goal, save, target, resource, actio
       task.check();
       const destination = new goals.GoalNear(work.x, work.y, work.z, 1);
       const route = await surveyRoute(bot, task, movement, destination, 1200);
-      if (route.status !== 'success') throw new Error('No existing route to the saved mining worksite');
+      if (route.status !== 'success') {
+        // A way that failed, recorded as a walk's is (note 785): the next
+        // pass from about here goes on from where the bot is.
+        require('./failed-places').noteWalk(bot, { kind: route.status === 'timeout' ? 'search_timeout' : 'no_route', goal: work, from: bot.entity.position, why: `no existing route to the saved mining worksite (${route.status})` });
+        throw new Error('No existing route to the saved mining worksite');
+      }
       goal.step = { action: 'return_to_mine', resource, destination: { ...work } }; save();
       await actions.navigate(bot, task, destination, { timeoutMs: 30000, stallMs: 5000 });
-      site.rejoinFailures = 0; save(); return;
+      save(); return;
     } catch (err) {
       task.check();
       if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
-      site.rejoinFailures = (site.rejoinFailures || 0) + 1;
       site.lastRejoinError = err.message;
-      if (site.rejoinFailures >= 3) site.rejoinBlockedUntil = Date.now() + 120000;
       save(); throw err;
     } finally { Object.assign(movement, previous); }
   }

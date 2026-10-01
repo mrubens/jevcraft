@@ -1182,6 +1182,10 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
   if (ledgered && !decision.stale && decision.path) require('../intention').after(bot, goal, id, decision.path, { target: decision.action?.target || target, state, chosen: !decision.noneGood || !require('../intention').WALKS.test(decision.path.at(-1)) });
   if (ledgered && !decision.stale && decision.path) require('../plan-chain').note(bot, goal, id, decision.path);
   if (bot && !decision.stale && decision.path) bot._lastDecision = { id, choice: decision.path.at(-1), at: Date.now() };
+  // A question about the work answered (not a fight's, not the turn's):
+  // walks from about here that keep failing are walked again only after
+  // one (failed-places.js pacingSays, note 785).
+  if (bot && !decision.stale && decision.path && decision.judgments?.length && spec.area !== 'combat' && id !== 'turn_priority') bot._lastAnswer = { id, at: Date.now() };
   if (!decision.stale && decision.action?.valid && !decision.action.valid()) decision.stale = true;
   stage(trace, 'recorded');
   if (client) decision.stages = trace.stages;

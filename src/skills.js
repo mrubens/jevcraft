@@ -118,11 +118,12 @@ class NavigationCorrectionLoop extends Error {
 class NavigationStall extends Error {
   constructor() { super('navigation timed out without reaching new ground'); }
 }
-// A walk not begun: walks to the same goal from about here have stalled
-// twice already (stallsToward, note 777). Thrown at once, said with where and
-// how often, as the stall it would have been: its callers read it as one.
-class RepeatStall extends NavigationStall {
-  constructor(says, facts = {}) { super(); this.name = 'RepeatStall'; this.message = says; Object.assign(this, facts); }
+// A walk not begun: walks from about here keep failing with no question
+// answered between (failed-places.js pacingSays, note 785; note 777's
+// RepeatStall before it). Thrown at once, said with where, how often and
+// how, as the stall it would have been: its callers read it as one.
+class WalksFailing extends NavigationStall {
+  constructor(says, facts = {}) { super(); this.name = 'WalksFailing'; this.message = says; Object.assign(this, facts); }
 }
 
 // A saved position can already overlap a wall by floating-point precision.
@@ -435,9 +436,12 @@ function stallsToward(bot, point, now = Date.now(), { from = null } = {}) {
   }
   return [...out.values()].sort((a, b) => a.at - b.at);
 }
-// A walk to a goal that walks begun from about here (within REPEAT_START of
-// where this one begins) have stalled going to twice already: not walked a
-// third time (note 777). The fact, in words, or null. Never where no walk is
+// Note 777's third-walk ban, as it read: a walk to a goal that walks begun
+// from about here (within REPEAT_START of where this one begins) have
+// stalled going to twice already. navigate no longer refuses by it (note
+// 785: failed-places.js pacingSays reads every kind of failure, and only
+// until a question is answered); kept for scripts/ask-loops.js's replay of
+// the records. The fact, in words, or null. Never where no walk is
 // wanted: the bot already at the goal or within reach of it (note 777b:
 // 25598 mid-241-br at 04:18:34Z on 2026-10-01 stood a block from the lava it
 // was to scoop, and every walk there was refused for two stalls nine blocks
@@ -507,14 +511,41 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // Where the bot is going, kept for the shore rule (shore.js): out of the
   // water on the side it was heading for, not back where it went in.
   if (!shore && Number.isFinite(goal?.x) && Number.isFinite(goal?.z)) bot._heading = { x: goal.x, z: goal.z, at: Date.now() };
+  // Walks from about here keep failing with no question answered between:
+  // this one is not begun, and the stall it would have been is thrown at
+  // once with the facts (failed-places.js pacingSays, note 785; note 777's
+  // third-walk ban before it). Its caller takes it as a stall, and the step
+  // that ends on it goes to the question with them.
+  const fp = require('./failed-places');
+  const there = goalPoint(goal) || (flatGoalPoint(goal) ? { ...flatGoalPoint(goal), y: undefined } : null);
+  let atGoal = false;
+  try { const h = bot.entity?.position; atGoal = !!h && !!goal?.isEnd?.(new Vec3(Math.floor(h.x), Math.floor(h.y), Math.floor(h.z))); } catch (_) { atGoal = false; }
+  const pacing = !stopWhen?.() ? fp.pacingSays(bot, there, { atGoal }) : null;
+  if (pacing) {
+    console.log(`[walks] ${pacing}`);
+    fp.noteWalk(bot, { kind: 'refused', goal: there, from: bot.entity.position, why: pacing });
+    throw new WalksFailing(`The walk is not begun: ${pacing}`, { goal: there });
+  }
+  // Every walk's end recorded once, with its kind, its start and where it
+  // was going (failed-places.js noteWalk, note 785).
+  const walk = bot._walkSeq = (bot._walkSeq || 0) + 1, from = { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z }, startedAt = Date.now();
+  let blocks = 0, last = bot.entity.position.clone?.() || { ...from };
+  const pace = setInterval(() => { const p = bot.entity?.position; if (!p) return; const d = Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z); if (d < 10) blocks += d; last = p.clone?.() || { x: p.x, y: p.y, z: p.z }; }, 250);
+  pace.unref?.();
+  const ended = (kind, why = null) => { clearInterval(pace); const p = bot.entity?.position; if (p) blocks += Math.min(10, Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z)); fp.noteWalk(bot, { kind, goal: there, from, startedAt, blocks, why, walk }); };
+  try {
+    const result = await walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, besideLava, edgeTaken, onFoot, walk, from });
+    ended('arrived');
+    return result;
+  } catch (err) {
+    const kind = fp.kindOf(err);
+    ended(kind, kind === 'interrupted' ? err?.name || null : String(err?.message || err).slice(0, 160));
+    throw err;
+  }
+}
+// The walk itself (navigate records its end).
+async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, besideLava, edgeTaken, onFoot, walk, from }) {
   if (require('./flight').canFly(bot)) return require('./flight').flyNavigate(bot, task, goal, { timeoutMs, stallMs, stopWhen });
-  // Walks to this goal from about here have stalled twice: the third is not
-  // begun, and the stall it would have been is thrown at once with the fact
-  // (note 777). Its caller takes it as a stall: the step's failure, the
-  // ledger, the stall's question to Jev, the ore set aside.
-  const repeated = !stopWhen?.() ? repeatStallSays(bot, goal) : null;
-  if (repeated) { console.log(`[stall-spot] ${repeated}`); throw new RepeatStall(`The walk is not begun: ${repeated}`, { goal: goalPoint(goal) }); }
-  const walk = bot._walkSeq = (bot._walkSeq || 0) + 1, from = { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z };
   // A stopped trip can leave our empty boat underfoot. Clear only that owned
   // boat before player physics attempts to walk through its solid hull.
   if (bot._ownedBoats?.size && !bot.vehicle) await require('./boats').clearOwnedBoatAtFeet(bot, task);
@@ -1016,7 +1047,7 @@ function closeStrayWindow(bot) {
   return String(w.type || 'a window').replace(/^minecraft:/, '').replace(/_/g, ' ');
 }
 
-module.exports = { emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, RepeatStall, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
+module.exports = { emptyHand, SCOOPED_COST, noteStallSpot, stallsToward, repeatStallSays, WalksFailing, REPEAT_TIMES, badSteps, noteHazard, hazardSpots, HAZARD_COST, STALL_SPOT_COST, openWindow, opensOnClick, closeStrayWindow, wholeGoal, goalGuardPlugin, digGuardPlugin, pickaxeDurability,
   Task,
   Cancelled,
   navigate,

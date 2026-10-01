@@ -390,7 +390,13 @@ test('while a long batch cooks and there is ore about, the walks go on: no count
       : matching.includes(registry.blocksByName.iron_ore.id) ? [new Vec3(4 + (next % 6), 64, Math.floor(next / 6))] : [],
     blockAt: p => p.equals(furnaceAt) ? { name: 'furnace', position: p } : { name: 'iron_ore', position: p, diggable: false },
     canDigBlock: () => true, world: { raycast: () => ({ position: furnaceAt }) },
-    pathfinder: { movements: {}, goto: async g => { if (g.x !== undefined && !(g.x === 1 && g.z === 0)) { walks++; next++; } }, setGoal: () => {} },
+    pathfinder: { movements: {}, goto: async g => {
+      if (g.x !== undefined && !(g.x === 1 && g.z === 0)) { walks++; next++; }
+      // Each walk gets there, the bot left where it is for the furnace's
+      // reach (a walk that ends short is a failed one, and failed walks from
+      // one spot are not walked on unasked, note 785).
+      g.isEnd = () => true;
+    }, setGoal: () => {} },
     openFurnace: async () => furnace(),
   };
   const task = new Task('smelt', 'test');

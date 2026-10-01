@@ -39,9 +39,15 @@ test('a walk to a goal that walks from about here have stalled going to twice is
   let walked = false;
   Object.assign(bot, { pathfinder: { movements: {}, goto: async () => { walked = true; }, setGoal: () => {}, isMoving: () => false },
     clearControlStates: () => {}, getControlState: () => false, setControlState: () => {}, food: 20 });
+  // Note 785: refused by the walks' record (failed-places.js pacingSays),
+  // until a question is answered.
   await assert.rejects(navigate(bot, new Task('walk'), new goals.GoalNear(table.x, table.y, table.z, 1), { timeoutMs: 2000 }),
-    err => err.name === 'RepeatStall' && /navigation timed out/.test(err.message) && /not walked a third time/.test(err.message));
+    err => err.name === 'WalksFailing' && /failed 2 times/.test(err.message) && /the walk stalled 2 times/.test(err.message) && /until a question is answered/.test(err.message));
   assert.equal(walked, false);
+  bot._lastAnswer = { id: 'stillness_detour', at: Date.now() };
+  await navigate(bot, new Task('walk'), new goals.GoalNear(table.x, table.y, table.z, 1), { timeoutMs: 2000 }).catch(() => {});
+  assert.equal(walked, true, 'walked once a question was answered');
+  delete bot._lastAnswer; bot._walks = [];
   // Ten minutes on, walked again.
   for (const s of bot._stallSpots) for (const g of s.goals) g.at -= 10 * 60000;
   assert.equal(repeatStallSays(bot, new goals.GoalNear(table.x, table.y, table.z, 1)), null);
@@ -63,7 +69,7 @@ test('never refused with the bot already at the goal or within reach of it (2559
   let walked = false;
   Object.assign(bot, { pathfinder: { movements: {}, goto: async () => { walked = true; }, setGoal: () => {}, isMoving: () => false },
     clearControlStates: () => {}, getControlState: () => false, setControlState: () => {}, food: 20 });
-  await navigate(bot, new Task('walk'), new goals.GoalNear(lava.x, lava.y, lava.z, 1), { timeoutMs: 2000 }).catch(err => assert.notEqual(err.name, 'RepeatStall'));
+  await navigate(bot, new Task('walk'), new goals.GoalNear(lava.x, lava.y, lava.z, 1), { timeoutMs: 2000 }).catch(err => assert.notEqual(err.name, 'WalksFailing'));
   assert.equal(walked, true, 'walked (or found there)');
   // Ten blocks off, begun from a start the stalled walks did not: walked.
   bot.entity.position = new Vec3(-60.5, 5, -480.5);
