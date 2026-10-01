@@ -5379,6 +5379,10 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
   const d3 = (a, b) => Math.round(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z));
   const walkTo = (a, b) => { const dy = b.y - a.y; return L.walkSeconds(Math.hypot(b.x - a.x, b.z - a.z)) + (Math.abs(dy) > 8 ? (dy > 0 ? L.upSeconds(Math.abs(dy)) : L.downSeconds(Math.abs(dy))) : 0); };
   const buckets = countOf(bot, 'bucket'), lavaBuckets = countOf(bot, 'lava_bucket'), obsidian = countOf(bot, 'obsidian');
+  // The lava buckets the pockets hold at once (note 819): the slots free and
+  // those the buckets already take (empty ones stack sixteen to a slot,
+  // full ones one each).
+  const room = (() => { try { const free = bot.inventory.emptySlotCount?.(); if (!Number.isFinite(free)) return Infinity; return free + lavaBuckets + Math.ceil(buckets / 16); } catch (_) { return Infinity; } })();
   const owedHere = castTrips({ obsidian, standing: placed, buckets, lavaBuckets }), owedNew = castTrips({ obsidian, standing: 0, buckets, lavaBuckets });
   // The lava: pools remembered, not spent and their way into them not
   // resting (those are said in the state with their records); the lava in
@@ -5440,17 +5444,17 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
     // Here: the frame begun, or a frame near where the bot stands.
     const s = fromSite(v, frameAt, !!frame);
     const toFrame = frame && here.distanceTo(frameAt) > 16 ? walkTo(here, frameAt) : 0;
-    add(`here_${v.key}`, 'here', v, PP.priceCast({ reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra, ...surfaceExtra });
+    add(`here_${v.key}`, 'here', v, PP.priceCast({ room, reach: wait + toFrame + s.first, trip: s.trip, cast: owedHere.cast, toFetch: owedHere.toFetch, carriers: owedHere.carriers, ingots, raw }), { digs: s.digs, measured: s.measured, ...waitExtra, ...surfaceExtra });
     // Beside the lava: a frame cast within a few blocks of it.
     if (d3(frameAt, v.at) > 16 || (v.kind === 'deep' && frameAt.y - LAVA_DEPTH > 16) || method?.key === `beside_${v.key}`) {
       const r = reachLava(v);
-      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra, ...surfaceExtra });
+      add(`beside_${v.key}`, 'beside', v, PP.priceCast({ room, reach: wait + r.seconds, trip: PP.CAST_RECORD.scoopSeconds + L.walkSeconds(2 * PP.BESIDE_BLOCKS), cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: r.digs, ...waitExtra, ...surfaceExtra });
     }
     // A new site near here, the frame begun left: where it fails at its
     // site or cannot be got back to.
     if (frame && (method?.siteFailed || method?.frameFailed)) {
       const n = fromSite(v, here.floored());
-      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra, ...surfaceExtra });
+      add(`new_site_${v.key}`, 'new_site', v, PP.priceCast({ room, reach: wait + n.first, trip: n.trip, cast: owedNew.cast, toFetch: owedNew.toFetch, carriers: owedNew.carriers, ingots, raw }), { digs: n.digs, ...waitExtra, ...surfaceExtra });
     }
   }
   // Two pools a site, the shortest routes, beside the plan's own lava, the

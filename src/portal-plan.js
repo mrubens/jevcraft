@@ -77,12 +77,18 @@ function parse(key) {
 //            buckets carried (empty and full of lava)
 //   iron     ingots, raw iron; furnace carried
 // -> { seconds, trips, buckets, make, parts }
-function priceCast({ reach = 0, trip = 0, cast = 10, toFetch = 10, carriers = 0, ingots = 0, raw = 0 }) {
-  const tripsWith = n => n > 0 ? Math.ceil(toFetch / n) : Infinity;
+// `room`: the lava buckets the pockets hold at once (a full bucket does not
+// stack: a slot each), where known. A plan of more buckets than that filled
+// its pockets and asked what to drop at each fill: 25589 (mid-226-am,
+// 2026-10-01 15:49-15:52Z) made 6 more for 10 with 3 slots free, and nine
+// drop questions later had given up its cobblestone and its flint and
+// steel, then needed cobblestone for the cast's walls (note 819).
+function priceCast({ reach = 0, trip = 0, cast = 10, toFetch = 10, carriers = 0, ingots = 0, raw = 0, room = Infinity }) {
+  const tripsWith = n => n > 0 ? Math.ceil(toFetch / Math.min(n, Math.max(1, room))) : Infinity;
   const castSeconds = cast * CAST_RECORD.secondsABlock;
   const makeSeconds = n => { const smelt = Math.max(0, 3 * n - ingots); return n ? 15 + smelt * 10 : 0; };
   const iron = ingots + raw;
-  const most = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - carriers));
+  const most = Math.min(Math.floor(iron / 3), Math.max(0, toFetch - carriers), Math.max(0, room - carriers));
   let best = null;
   for (let more = carriers ? 0 : Math.min(1, most); more <= most; more++) {
     const trips = tripsWith(carriers + more);
@@ -92,7 +98,7 @@ function priceCast({ reach = 0, trip = 0, cast = 10, toFetch = 10, carriers = 0,
   }
   if (!best) return { seconds: null, trips: toFetch, buckets: 0, make: 0, makeSeconds: 0, castSeconds, reach, trip, noBucket: true };
   const carried = carriers ? { trips: tripsWith(carriers), seconds: reach + tripsWith(carriers) * trip + castSeconds } : null;
-  return { ...best, castSeconds, reach, trip, carried };
+  return { ...best, castSeconds, reach, trip, carried, ...(Number.isFinite(room) ? { room } : {}) };
 }
 // A route's price in words: the parts and all of it.
 function priceSays(p, { tripWhat = 'a trip for lava' } = {}) {
@@ -100,6 +106,7 @@ function priceSays(p, { tripWhat = 'a trip for lava' } = {}) {
   const parts = [];
   if (p.reach) parts.push(`getting there ${mins(p.reach)}`);
   if (p.make) parts.push(`${p.make} more bucket${p.make === 1 ? '' : 's'} made first, ${mins(p.makeSeconds)}`);
+  if (Number.isFinite(p.room)) parts.push(`the pockets hold ${p.room} lava bucket${p.room === 1 ? '' : 's'} at once (a full one takes a slot of its own), so no more are carried a trip`);
   if (p.trips) parts.push(`${p.trips} trip${p.trips === 1 ? '' : 's'} with ${p.buckets} bucket${p.buckets === 1 ? '' : 's'}, ${tripWhat} ${mins(p.trip)} each`);
   parts.push(`casting the blocks ${mins(p.castSeconds)} (${CAST_RECORD.secondsABlock} seconds a block at the record's pace)`);
   const carried = p.make && p.carried ? ` With only the ${p.buckets - p.make} bucket${p.buckets - p.make === 1 ? '' : 's'} carried it would be ${p.carried.trips} trips, ${mins(p.carried.seconds)} in all.` : '';
