@@ -45,8 +45,15 @@ test('a walk to a hoglin that finds no way is said as that, the place rests, and
   assert.equal(routes.routes.hoglin_pillar, undefined);
   assert.equal(routes.routes.hoglin_walk, undefined);
   assert(routes.notOffered.some(s => /^a hoglin: 1 hoglin seen just now, 43 blocks south \(-168, 90\), but the walk there found no way \d+ seconds ago \(No path to the goal! \(partial\)\); that place rests five minutes from then$/.test(s)), routes.notOffered.join(' | '));
-  // A hoglin seen elsewhere is offered, and the walk that failed is said on both ways of hunting it.
+  // A hoglin seen elsewhere is not offered from where the walk found no way
+  // (note 775: from about here no walk to one seen is offered for five
+  // minutes), said as that.
   goal.sightings.hoglin.push(sighting(-120, 75, 20));
+  const fromHere = nf.foodRoutes(bot, new Task('work'), goal, () => {}, { actions: { navigate } });
+  assert.equal(fromHere.routes.hoglin_walk, undefined);
+  assert(require('../src/nether-travel').hoglinsKnown(bot, goal).noWay.some(w => w.fromHere && w.x === -120), 'withheld for the walk that found no way from here');
+  // From 20 blocks off it is offered, and the walk that failed is said on both ways of hunting it.
+  bot.entity.position = bot.entity.position.offset(20, 0, 0);
   const other = nf.foodRoutes(bot, new Task('work'), goal, () => {}, { actions: { navigate } });
   assert.match(other.routes.hoglin_walk.description, /Made in this trial: 1, 0 brought meat .*found no way there: No path/);
   assert.match(other.routes.hoglin_pillar.description, /Made in this trial: 1, 0 brought meat .*found no way there: No path/);

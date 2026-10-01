@@ -70,7 +70,7 @@ test('while the saved batch cooks, the walks are said in pickaxe uses against th
   }
   assert.match(offered.wait_here, /and wears no pickaxe\.$/);
   assert.match(offered.leave_cooking, /^Leave the 64 raw iron cooking and go on with the wood reserve \(oak log\) now: the furnace cooks on its own/);
-  assert.match(offered.leave_cooking, /within 16 blocks of the furnace once it is done \(in about 11 minutes\), or in 20 minutes/);
+  assert.match(offered.leave_cooking, /within 16 blocks of the furnace once it is done \(in about 11 minutes\), or after 20 minutes once the bot is within 16 blocks of it; farther off then, the walk back is offered at upkeep with its distance \(fetch_batch\), never taken unasked/);
   assert.match(state.pickaxeBudget, /171 uses left/);
   // Asked again after a walk, with what the walks wore.
   await whileCooking(bot, task, goal, () => {}, { cooking: 500000, oreInReach: () => null, walkTarget: () => far, what: 'raw iron', count: 50, leave, walks: 'The walks so far this batch: 3 out and back, 86 pickaxe uses worn.' });
@@ -80,7 +80,7 @@ test('while the saved batch cooks, the walks are said in pickaxe uses against th
   assert(!offered.leave_cooking);
 });
 
-test('a batch left to cook is not finished first until it is done and the bot is back by the furnace, or twenty minutes pass', () => {
+test('a batch left to cook is not finished first until it is done and the bot is back by the furnace, or twenty minutes pass with the bot by it (note 775)', () => {
   const { localBatch } = require('../src/work');
   const { bot } = startBot();
   const now = Date.now();
@@ -94,7 +94,10 @@ test('a batch left to cook is not finished first until it is done and the bot is
   assert.equal(goal.smelting.left, undefined);
   goal.smelting.left = { at: now - 21 * 60000, doneAt: now + 60000 };
   bot.entity.position = new Vec3(48.5, 100, 8.5);
-  assert.equal(localBatch(bot, goal), goal.smelting, 'twenty minutes on, wherever the bot is');
+  assert.equal(localBatch(bot, goal), null, 'twenty minutes on, 72 blocks off: not walked back to unasked (upkeep offers it)');
+  assert(goal.smelting.left.lapsed);
+  bot.entity.position = new Vec3(48.5, 28, 8.5);
+  assert.equal(localBatch(bot, goal), goal.smelting, 'twenty minutes on and by it: taken out though not yet done');
 });
 
 test('with the pickaxe worn out and ingots carried, the ladder asks for an iron pickaxe, not a stone one', () => {

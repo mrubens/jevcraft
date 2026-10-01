@@ -1963,17 +1963,38 @@ function knownFortressOutOfView(bot, goal, state, here, now = Date.now()) {
   const mins = ms => { const m = Math.max(1, Math.round(ms / 60000)); return `${m} minute${m === 1 ? '' : 's'}`; };
   const knownFor = p.firstAt ? `, known ${mins(now - p.firstAt)}` : '';
   const asideSays = aside ? ` It is set aside ${mins(aside.until - now)} more: ${aside.why || 'left for now'}${aside.from ? `, from (${aside.from.x}, ${aside.from.y}, ${aside.from.z})` : ''}${aside.left?.length ? `, its ways in then: ${aside.left.slice(0, 6).join(', ')}` : ''}.` : ' It is not set aside.';
-  const says = `The fortress at (${at.x}, ${at.y}, ${at.z}), ${off} blocks off and out of view${knownFor}; ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and it is where they are known to be.${asideSays} Every leg from here searches for another fortress.`;
-  const option = save => ({ description: `Go back to the fortress known at (${at.x}, ${at.y}, ${at.z}), ${off} blocks off: ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and it is where they are known to be. The walk is the leg's own (the pathfinder, then straight across, then the staircase), and once its bricks are in view the way in is asked.${aside ? ` Taken, it is no longer set aside (${aside.why || 'left for now'}).` : ''}`,
+  // The walk back found no way from about here (note 775): said on the way
+  // back and in the facts, with what each way that could change it does.
+  const failed = backFailedHere(state, here, at, now);
+  const failedSays = failed ? ` Tried ${Math.max(1, Math.round((now - failed.at) / 1000))} seconds ago from about here: the walk back (the pathfinder, then straight across at this height, then the staircase) found no way, ${failed.why}${failed.carried != null ? `, with ${failed.carried} blocks carried` : ''}.` : '';
+  const says = `The fortress at (${at.x}, ${at.y}, ${at.z}), ${off} blocks off and out of view${knownFor}; ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and it is where they are known to be.${asideSays}${failedSays} Every leg from here searches for another fortress.`;
+  const option = save => ({ description: `Go back to the fortress known at (${at.x}, ${at.y}, ${at.z}), ${off} blocks off: ${rods} blaze rod${rods === 1 ? '' : 's'} still needed, and it is where they are known to be. The walk is the leg's own (the pathfinder, then straight across, then the staircase), and once its bricks are in view the way in is asked.${aside ? ` Taken, it is no longer set aside (${aside.why || 'left for now'}).` : ''}${failedSays}`,
     target: at,
     run: () => {
       state.shunned = (state.shunned || []).filter(sh => Math.hypot(sh.x - at.x, sh.z - at.z) > Math.max(sh.radius || 16, reach));
       delete state.leaving;
+      // A level walk headed at it: the mode and heading the last leg left
+      // (a staircase, the floor, a step round) are not the way back, and the
+      // chat said "Searching past the fortress ... heading east" of a walk
+      // west (25585, note 775).
+      const toward = bearingOf(here, at);
+      state.heading = toward; state.lastHeading = toward; state.legMode = 'level'; delete state.descent; delete state.sidestep;
       state.target = { ...at }; state.rememberedTarget = true; state.legSince = Date.now(); state.legFrom = { x: Math.round(here.x), z: Math.round(here.z) };
+      delete state.lastLegError; delete state.lastCrossStop; delete state.legBest;
       save(); return 'fortress';
     } });
   // Within the leg's own arrival (8 blocks) the walk there is no walk.
-  return { at, off, says, option: off >= 8 ? option : null };
+  return { at, off, says, option: off >= 8 ? option : null, ...(failed ? { failed } : {}) };
+}
+// The walk back to a fortress known that found no way, from within 16 blocks
+// of here in the last ten minutes (note 775).
+const BACK_FAILED_MS = 10 * 60000, BACK_FAILED_NEAR = 16;
+function backFailedHere(state, here, at = null, now = Date.now()) {
+  const f = state?.backFailed;
+  if (!f || now - f.at > BACK_FAILED_MS || !here) return null;
+  if (Math.hypot(f.from.x - here.x, f.from.y - here.y, f.from.z - here.z) > BACK_FAILED_NEAR) return null;
+  if (at && Math.hypot(f.target.x - at.x, f.target.z - at.z) > 16) return null;
+  return f;
 }
 
 async function chooseLeg(bot, task, goal, save, actions, state, fortress = null) {
@@ -2335,6 +2356,17 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
   // named first, before the legs over open air it is for (note 751c; a
   // player mines a stack before stepping out over the void).
   if (options.restock_blocks && surveys.some(sv => Number.isInteger(sv?.runsOut))) { const r = options.restock_blocks; delete options.restock_blocks; const rest = { ...options }; for (const k of Object.keys(options)) delete options[k]; Object.assign(options, { restock_blocks: r }, rest); }
+  // The walk back to the fortress known found no way from about here (note
+  // 775): the ways that change what stopped it (blocks dug here, stems for a
+  // pickaxe, a pickaxe made) are named first, each saying so, then the way
+  // back with its failure, then the legs away; not the legs away alone.
+  if (knownFortress?.failed) {
+    const f = knownFortress.failed, ago = Math.max(1, Math.round((Date.now() - f.at) / 1000));
+    const lead = ['restock_blocks', 'fetch_stems', 'make_pickaxe'].filter(k => options[k]);
+    for (const k of lead) options[k].description += ` The walk back to the fortress at (${knownFortress.at.x}, ${knownFortress.at.z}), ${knownFortress.off} blocks off, found no way from about here ${ago} seconds ago (${f.why}); the leg's question is asked again after this, with the way back on offer.`;
+    const first = [...lead, ...(options.back_to_fortress ? ['back_to_fortress'] : [])];
+    if (first.length) { const rest = Object.fromEntries(Object.entries(options).filter(([k]) => !first.includes(k))); const head = Object.fromEntries(first.map(k => [k, options[k]])); for (const k of Object.keys(options)) delete options[k]; Object.assign(options, head, rest); }
+  }
   // Every way from here rests or is gone: nothing to ask. The step says so
   // and the stall's own question takes it from there.
   const left = waysLeftSays(state, here);
@@ -4219,7 +4251,9 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // aside 3.2 minutes into the trial with eleven of its twelve ways never
   // tried (note 605). The fortress remembered is said on the legs that lie
   // its way (sightingsThatWay).
-  const remembered = !owedLeg && require('./exploration').knownLandmarks(bot, goal, 'nether_fortress').find(k => k.distance > 24 && !shunnedThere(k.landmark));
+  // Nor where the walk back to it found no way from about here (note 775):
+  // taken again unasked, it fails the same way; the legs' question says it.
+  const remembered = !owedLeg && require('./exploration').knownLandmarks(bot, goal, 'nether_fortress').find(k => k.distance > 24 && !shunnedThere(k.landmark) && !backFailedHere(state, here, k.landmark));
   if (remembered && !state.rememberedTarget) {
     state.target = { x: remembered.landmark.x, y: remembered.landmark.y, z: remembered.landmark.z }; state.rememberedTarget = true; state.legSince = Date.now();
   }
@@ -4325,6 +4359,23 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // mid-242-ac-nether-1's legs each made a block or two to the lava's edge
   // and came back to it at the next ask (note 557).
   const along = state.legFrom ? Math.hypot(state.legFrom.x - here.x, state.legFrom.z - here.z) : Infinity;
+  // The walk back to a fortress known (back_to_fortress) that found no way
+  // is that answer's failure, not a heading's: said as that, kept for the
+  // next asking of the legs, and the ledger's entry for it marked. 25585
+  // (mid-227-ab, 02:47:58 and 02:51:59Z on 2026-10-01) chose it twice; each
+  // ended "No way on east from here. Choosing another." of a walk west, and
+  // the legs away were asked as if it had not been chosen (note 775).
+  if (state.rememberedTarget && state.target && along < LEG_REST_WITHIN) {
+    const f = bot.entity.position.floored(), why = String(state.lastLegError || state.lastCrossStop || 'no way on').split(/;\s/)[0].slice(0, 160);
+    state.backFailed = { at: Date.now(), from: { x: f.x, y: f.y, z: f.z }, target: { ...state.target }, why, carried: blocksCarried(bot) };
+    try {
+      const tried = require('./tried'), e = tried.latestOf(goal, 'fortress_leg');
+      if (e && String(e.method).split('/').at(-1) === 'back_to_fortress') tried.markBlocked(e, `the walk back to the fortress found no way: ${why}`);
+    } catch (_) { /* no ledger */ }
+    delete state.target; delete state.rememberedTarget; state.legFails = 0; save();
+    if (!(state.turnSaidAt > Date.now() - 60000)) { state.turnSaidAt = Date.now(); bot.chat?.(`No way back to the fortress at ${Math.round(state.backFailed.target.x)}, ${Math.round(state.backFailed.target.z)} from here${why.length <= 60 ? `: ${why}` : ''}. Choosing how.`); }
+    return;
+  }
   if (along < LEG_REST_WITHIN) {
     restLeg(state, state.lastLegError || state.lastCrossStop, here, Math.round(along));
     delete state.target; state.legFails = 0; save();
@@ -4383,4 +4434,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

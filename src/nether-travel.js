@@ -779,10 +779,16 @@ function hoglinsKnown(bot, goal) {
   // huntHoglin): the hoglin there is seen again from afar at the next look,
   // and on 25598 the hunt was chosen at it and failed the same way eight
   // times in five minutes (note 682). Said, not hidden.
+  // A walk that found no way from about here is not offered from here to
+  // another sighting either (note 775): the same hoglin seen again 55 blocks
+  // on is out of the place's 24, and 25589's hoglin_pillar was chosen twice
+  // in four minutes from one ledge, its own words saying "the walk to where
+  // ... found no way there". From 16 blocks off it is offered again.
   const now = Date.now(), resting = (goal?.netherFood?.noWay || []).filter(w => w.until > now);
-  const noWayAt = s => resting.find(w => Math.hypot(w.x - s.x, w.z - s.z) <= 24);
+  const fromHere = resting.find(w => w.from && Math.hypot(w.from.x - here.x, w.from.y - here.y, w.from.z - here.z) <= 16) || null;
+  const noWayAt = s => resting.find(w => Math.hypot(w.x - s.x, w.z - s.z) <= 24) || fromHere;
   const seen = all.filter(s => !noWayAt(s));
-  const noWay = all.filter(s => noWayAt(s)).map(s => ({ ...s, walk: noWayAt(s) }));
+  const noWay = all.filter(s => noWayAt(s)).map(s => ({ ...s, walk: noWayAt(s), ...(!resting.find(w => Math.hypot(w.x - s.x, w.z - s.z) <= 24) ? { fromHere: true } : {}) }));
   return { inView, seen, noWay };
 }
 

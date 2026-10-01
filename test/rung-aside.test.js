@@ -71,7 +71,9 @@ test('a rung set aside seconds ago from here is not offered back while what it w
   goal.rungAside = { phase: 'obtain_blaze_rods', at: T0, where: { x: -104, y: 41, z: 108 }, until: T0 + 270000, why: BELOW };
   t.mock.timers.tick(1000);
   const stall = { key: 'step:go_to_landmark', work: 'step:rung:obtain_ender_pearls', layer: 'work', strikes: 1, error: 'The walk to the warped forest at (-88, 64), 48 blocks off, came no nearer: No path to the goal!' };
-  let asked = await ask(bot, goal, stall);
+  // Answered "differently": where the walks fail, the crossing is named
+  // first (note 775), and the stand-in's first pick would carry it out.
+  let asked = await ask(bot, goal, stall, 'differently');
   assert.equal(asked[0].options.take_up_obtain_blaze_rods, undefined, 'not offered back a second after');
   assert.match(asked[0].state.stalled.takeUpNotOffered[0], /^the obtain blaze rods taken up again: set aside 1 second ago from about here for this: fortress leg: every way it had from here rests: .*; that stands 4 minutes more from here, and taken up now it meets the same\./);
   assert.match(asked[0].state.stalled.takeUpNotOffered[0], /It is offered again once the bot is more than 4 blocks from there or that time is out\.$/);

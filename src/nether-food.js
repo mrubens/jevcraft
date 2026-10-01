@@ -162,7 +162,8 @@ async function huntHoglin(bot, task, goal, save, known, { navigate, method = 'wa
       noteRoute(goal, { route: method === 'pillar' ? 'hoglin_pillar' : 'hoglin_walk', kills: 0, meat: 0, why, walk: failed ? 'failed' : 'none there' });
       if (failed) {
         const f = goal.netherFood ||= { hunts: [] }, now = Date.now();
-        f.noWay = [...(f.noWay || []).filter(w => w.until > now), { x: s.x, y: s.y, z: s.z, at: now, until: now + require('./tried').REST_MS, why: String(out.why || '').slice(0, 120) }].slice(-8);
+        const from = bot.entity.position.floored();
+        f.noWay = [...(f.noWay || []).filter(w => w.until > now), { x: s.x, y: s.y, z: s.z, at: now, until: now + require('./tried').REST_MS, why: String(out.why || '').slice(0, 120), from: { x: from.x, y: from.y, z: from.z } }].slice(-8);
       }
       failAnswer(goal, method === 'pillar' ? 'hoglin_pillar' : 'hoglin_walk', why);
       save?.();
@@ -259,7 +260,9 @@ function foodRoutes(bot, task, goal, save, { actions = {}, survival = null } = {
     } else notOffered.push(`the hunt from a pillar: ${laid} blocks carried that can be laid, ${PILLAR_BLOCKS} are needed`);
   } else if (known.noWay?.length) {
     const w = known.noWay[0], ago = Math.max(1, Math.round((Date.now() - w.walk.at) / 1000));
-    notOffered.push(`a hoglin: ${w.says}, but the walk there found no way ${ago} seconds ago (${w.walk.why}); that place rests five minutes from then`);
+    notOffered.push(w.fromHere
+      ? `a hoglin: ${w.says}, but a walk from about here to a hoglin seen found no way ${ago} seconds ago (${w.walk.why}); no walk to one seen is offered from within 16 blocks of here for five minutes from then`
+      : `a hoglin: ${w.says}, but the walk there found no way ${ago} seconds ago (${w.walk.why}); that place rests five minutes from then`);
   } else notOffered.push('a hoglin: none in view and none seen in the last half hour within 192 blocks (they are found in the crimson forests and the bastions\' stables)');
 
   // The stew.

@@ -24,7 +24,7 @@ test('a request that keeps failing is never marked blocked; the bot says so once
   assert.equal(result.ok, false); assert.equal(result.reason, 'Action budget reached', 'only the test budget ended it');
   assert(goal.struggles >= 3, `struggled ${goal.struggles} times`);
   const said = bot.said.filter(l => /keep trying/.test(l)).length;
-  assert(said >= 1 && said < goal.struggles, `said ${said} times over ${goal.struggles} rounds: once, then every fifth`);
+  assert(said === 1, `said ${said} times over ${goal.struggles} rounds: once, never as a counter (note 775)`);
   assert.equal(attempts, 9);
 });
 

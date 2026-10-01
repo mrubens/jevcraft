@@ -2,6 +2,7 @@
 const { move } = require('./motion');
 const { attemptsFor, setAside, isSetAside, watch, unwatch } = require('./progress');
 const { DAY } = require('./day');
+const { relocationsTried, relocationSays, noteRelocation } = require('./route-aside');
 const { STALL_MS, GROUND, watchStalls, unwatchStalls, checkStall, takeStall, recordStill } = require('./stillness');
 
 const { Vec3 } = require('vec3');
@@ -384,6 +385,17 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   const cage = !idle ? require('./cage-hold').cageFight(bot, goal) : null;
   if (terrain) answers.work_free = { description: `Work free of the terrain one move at a time, choosing each move (walk, climb, dig, place a block, pillar, swim): ${terrain.aim}${terrain.says ? ` (${terrain.says})` : ''}.${walled ? ` It is ${walled}.` : ''}${cage ? require('./cage-hold').workFreeSays(cage) : ''}${risingSays}${spellSays}`,
     run: () => require('./unstuck').workFree(bot, task, goal, save, { client, dig, aim: terrain }) };
+  // Where the walks fail from here, the way that changes the bot's height is
+  // its own answer, priced, not a move inside working free: 25589's
+  // work_free said the rise to y 96 (22 seconds) in passing, and Jev chose
+  // walk_off, relocations of two blocks and hunts whose walks found no way
+  // for nine minutes on one ledge (note 775).
+  if (rising?.move && walksFailing && !idle) answers.rise_through = { description: `${rising.move.does} The walks from here have found no route${stall.error ? ` (${String(stall.error).slice(0, 160)})` : ''}; this changes the height the work is come at from, and the work is taken up again from the top.`,
+    run: async () => {
+      const u = require('./unstuck');
+      await u.perform(bot, task, rising.move, { dig });
+      if (Math.floor(bot.entity.position.y) < rising.move.top) throw new Error(`The rise stopped at y ${Math.floor(bot.entity.position.y)}, short of y ${rising.move.top}`);
+    } };
   if (cage) Object.assign(answers, require('./cage-hold').stallAnswers(bot, task, goal, save, cage, { dig, now, navigate }));
   const rung = goal.rungTime?.phase;
   // What the rung is for and what half an hour without it costs (the
@@ -541,7 +553,8 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   let againRests = null;
   // Two steps resting together from here (note 699): neither as it was.
   const pairHere = stall.flip ? require('./flip-pairs').resting(goal, stall.flip.pair, bot.entity.position, now) : null;
-  if (failed?.action && !idle && pairHere?.pair.includes(failed.action)) againRests = `the ${String(failed.action).replaceAll('_', ' ')} step as it was: it and the ${pairHere.pair.filter(n => n !== failed.action).map(n => n.replaceAll('_', ' ')).join(' and ')} rest together from here.`;
+  if (failed?.action && !idle && stall.routeAside) againRests = `the ${String(failed.action).replaceAll('_', ' ')} step as it was: ${require('./route-aside').asideSays(stall.routeAside, now)}.`;
+  else if (failed?.action && !idle && pairHere?.pair.includes(failed.action)) againRests = `the ${String(failed.action).replaceAll('_', ' ')} step as it was: it and the ${pairHere.pair.filter(n => n !== failed.action).map(n => n.replaceAll('_', ' ')).join(' and ')} rest together from here.`;
   else if (failed?.action && !idle) {
     const here = bot.entity.position, target = stepTarget(failed);
     const list = tried.about(goal, { q: 'step', method: failed.action, target, here, now });
@@ -563,11 +576,23 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     // place was given when first offered (keys.js, note 749), not by its
     // place in the adviser's list.
     const K = require('./decisions/keys');
+    // A move to footing a few blocks off, when the work fails the same way
+    // after each such move from about here, is said as tried, and listed
+    // after the rest: 25589's recover_relocate_1, 2 and 3 each moved two to
+    // four blocks and the work's walk to a place 657 blocks off failed again
+    // as before, the bot back on the same cell (note 775).
+    const relocated = relocationsTried(goal, bot.entity.position, stall.error, now);
+    const later = {};
     for (const option of (observed?.options || []).slice(0, 6)) {
       const what = `recover_${K.name([option.kind, option.item].filter(Boolean).join('_'))}`;
-      answers[option.position ? `${what}_${K.id(goal, what, option.position, { base: 1 })}` : what] = { ...(option.position ? { target: { x: option.position.x, y: option.position.y, z: option.position.z } } : {}), description: `${require('./recovery-adviser').describeOption(option)} A bounded move the code checked from here; the work is taken up again after it.`,
-        run: async () => { adviser.adopt(goal, save, option, observed.context); } };
+      const triedSays = option.kind === 'relocate' ? relocationSays(relocated, option, bot.entity.position, stall.error, now) : '';
+      (triedSays ? later : answers)[option.position ? `${what}_${K.id(goal, what, option.position, { base: 1 })}` : what] = { ...(option.position ? { target: { x: option.position.x, y: option.position.y, z: option.position.z } } : {}), description: `${require('./recovery-adviser').describeOption(option)} A bounded move the code checked from here; the work is taken up again after it.${triedSays}`,
+        run: async () => {
+          if (option.kind === 'relocate') noteRelocation(goal, bot.entity.position, option.position, stall.error);
+          adviser.adopt(goal, save, option, observed.context);
+        } };
     }
+    Object.assign(answers, later);
   }
   // Keeping at the rung, with what has been tried said: its budget starts
   // again, and the ways resting from here stay resting.
@@ -613,6 +638,22 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // Hurt where health does not come back, said on the options that leave it
   // out (healing.js noHealSays, note 639).
   try { require('./healing').withNoHealSays(bot, goal, answers); } catch (_) { /* no body */ }
+  // Where the walks fail from here, the ways that change the bot's height
+  // or line are named first, with their prices (note 775): the rise through
+  // the rock, the crossing straight at the target, the floor below, the
+  // pillar to a floor overhead. Relocations said as tried come last.
+  {
+    const first = walksFailing ? ['rise_through', 'cross_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [];
+    const last = Object.keys(answers).filter(k => /^recover_relocate/.test(k) && /Tried: /.test(answers[k].description || ''));
+    if (first.length || last.length) {
+      const ordered = {};
+      for (const k of first) ordered[k] = answers[k];
+      for (const [k, v] of Object.entries(answers)) if (!first.includes(k) && !last.includes(k)) ordered[k] = v;
+      for (const k of last) ordered[k] = answers[k];
+      for (const k of Object.keys(answers)) delete answers[k];
+      Object.assign(answers, ordered);
+    }
+  }
   // Reached: the question goes out (a rung's question cut off before here
   // is put off to a later pass, runGoal).
   stall.asked = true;
@@ -944,7 +985,7 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const step = goal.step;
   let chosen = null;
   const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, run: async () => { chosen = k; await o.run(); } }]));
-  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.` }, 'upkeep'); }
+  try { await decideAction(bot, task, goal, save, client, onStep, tree, { situation: `${lead ? `${lead} ` : ''}${due.every(k => ['fetch_batch', 'leave_batch'].includes(k)) ? 'A batch left cooking in a furnace far off is done. Choose whether to go back for it, leave it for good, or carry on with the work.' : 'Something the bot keeps in its pockets is running short. Choose whether to see to it now or carry on with the work.'}` }, 'upkeep'); }
   finally { if (chosen === 'carry_on') goal.step = step; }
   // A pickaxe made is done: the work it was made for is the step again. Left
   // as the craft, the next asking offered "carry on with the wooden pickaxe"
@@ -1088,6 +1129,18 @@ async function upkeepOffers(bot, task, goal, save) {
     const fe = require('./food-errand');
     if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood && !(fe.reserveOnly(bot, carried) && fe.crossingReserve(goal))) options.food_reserve = { description: `Find food before dusk: ${carried} food points carried, hunger ${bot.food}, dusk (when the bot stops work for the evening; the dark comes about two minutes after) in about ${toDusk} seconds; chosen, the food is looked for as survival's need when it next has the turn. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing.${foodReservePrice(bot, carried)}`,
       run: async () => { goal.stockFood = true; save(); } };
+  }
+  // A batch left cooking whose time is up, the bot away from its furnace:
+  // the walk back is Jev's, priced, or the batch is left for good (note
+  // 775). Taken back unasked, it was a walk of 207 to 657 blocks that found
+  // no route, retried at every step.
+  const lb = leftBatch(bot, goal);
+  if (lb) {
+    const w = leftBatchSays(bot, lb);
+    if (!lb.noRoute) options.fetch_batch = { description: `Go back for the batch ${lb.left.away ? "in a furnace" : "left cooking"}: ${w.what} in the furnace at ${w.at}, ${lb.distance} blocks off, ${lb.left.away ? 'begun' : 'left'} ${w.ago} minute${w.ago === 1 ? '' : 's'} ago${lb.left.away ? ' and walked away from' : ''}; ${w.carried} ${String(lb.batch.item).replaceAll('_', ' ')} carried besides.${w.rungs} The walk there is ${w.walk}, and the work in hand waits meanwhile.${w.tried}`,
+      run: async () => { delete lb.batch.left; save(); await smelt(bot, task, { item: lb.batch.item, from: lb.batch.from, fuelItem: lb.batch.fuelItem, count: lb.batch.count }, goal, save); } };
+    options.leave_batch = { description: `Leave the batch where it is for good: ${w.what} in the furnace at ${w.at}, ${lb.distance} blocks off. It is not offered again; it is taken out only if the work brings the bot within ${LEFT_NEAR} blocks of the furnace, and the ${String(lb.batch.item).replaceAll('_', ' ')} wanted is made again from what is carried or gathered.${w.tried}`,
+      run: async () => { lb.left.forgone = Date.now(); save(); } };
   }
   return { options, budget };
 }
@@ -2655,16 +2708,72 @@ function localBatch(bot, goal, save = () => {}) {
   // Left to cook while the work went on (whileCooking's leave_cooking): not
   // finished first until it is done and the bot is back within 16 blocks of
   // its furnace, or LEAVE_BATCH_MS have passed.
+  // Its time up with the bot more than 16 blocks from the furnace, it is not
+  // walked back to unasked: upkeep offers the walk, priced (fetch_batch), or
+  // leaving it for good (leave_batch). 25589 left 3 raw iron at its portal
+  // in the Nether, and twenty minutes on, 657 blocks off, every step began
+  // with the walk back, "No route" 398 times in nine minutes; 25592, 25595
+  // and 25581 the same, 207 to 533 blocks off (note 775).
+  // A batch not left but walked away from (a survival errand, a trip for
+  // food) is the same once the bot is more than 64 blocks off: 25592 had
+  // cooked mutton in a furnace at (101, 43, 100), climbed out for food, and
+  // 207 blocks off its next acquire began with the walk back, 287 times in
+  // seven minutes (note 775).
+  if (goal.smelting && !goal.smelting.left && goal.smelting.position && bot.entity?.position && (!goal.smelting.dimension || goal.smelting.dimension === here)) {
+    const p = goal.smelting.position, at = bot.entity.position;
+    if (Math.hypot(at.x - p.x - 0.5, at.y - p.y, at.z - p.z - 0.5) > AWAY_FROM_BATCH) { const now = Date.now(); goal.smelting.left = { at: now, doneAt: now, lapsed: now, away: true }; save(); }
+  }
   const left = goal.smelting?.left;
   if (left) {
     const now = Date.now(), p = goal.smelting.position, at = bot.entity?.position;
     const near = p && at ? Math.hypot(at.x - p.x - 0.5, at.y - p.y, at.z - p.z - 0.5) <= 16 : false;
-    if (now - left.at < LEAVE_BATCH_MS && !(near && now >= left.doneAt)) return null;
+    const lapsed = !!left.lapsed || now - left.at >= LEAVE_BATCH_MS;
+    if (!(near && now >= left.doneAt) && !(near && lapsed)) {
+      if (lapsed && !left.lapsed) { left.lapsed = now; save(); }
+      return null;
+    }
     delete goal.smelting.left; save();
   }
   return goal.smelting || null;
 }
-const LEAVE_BATCH_MS = 20 * 60000;
+const LEAVE_BATCH_MS = 20 * 60000, LEFT_NEAR = 16, AWAY_FROM_BATCH = 64;
+// The batch left cooking whose time is up, with the bot away from its
+// furnace in this dimension: offered at upkeep (note 775). Not while the walk
+// there found no route from within 16 blocks of here in the last ten
+// minutes (said on the leaving instead), nor once left for good.
+function leftBatch(bot, goal, now = Date.now()) {
+  const b = goal?.smelting, left = b?.left;
+  if (!left || left.forgone || !b.position || (b.dimension && b.dimension !== dimension(bot))) return null;
+  const at = bot.entity?.position;
+  if (!at || !(left.lapsed || now - left.at >= LEAVE_BATCH_MS)) return null;
+  const d = Math.hypot(at.x - b.position.x - 0.5, at.y - b.position.y, at.z - b.position.z - 0.5);
+  if (d <= LEFT_NEAR) return null;
+  const noRoute = left.noRoute && now - left.noRoute.at < 10 * 60000 && Math.hypot(left.noRoute.from.x - at.x, left.noRoute.from.y - at.y, left.noRoute.from.z - at.z) <= LEFT_NEAR ? left.noRoute : null;
+  return { batch: b, left, distance: Math.round(d), noRoute };
+}
+// The walk to the batch's furnace found no route: the batch is left where
+// it is, its time up, with where that was found and why (note 775).
+function batchNoRoute(bot, goal, pending, err, save = () => {}, now = Date.now()) {
+  if (err?.name !== 'NoRoute' || !pending || goal?.smelting !== pending) return false;
+  const f = bot.entity.position.floored();
+  pending.left = { at: now, doneAt: now, lapsed: now, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why: String(err.message).slice(0, 160) } };
+  save();
+  return true;
+}
+function leftBatchSays(bot, lb, now = Date.now()) {
+  const { batch: b, left, distance, noRoute } = lb;
+  const what = `${b.count} ${String(b.from || 'items').replaceAll('_', ' ')} (to ${String(b.item).replaceAll('_', ' ')})`;
+  const ago = Math.max(1, Math.round((now - (left.away ? (b.startedAt || left.at) : left.at)) / 60000));
+  const carried = countOf(bot, b.item);
+  const rungs = b.forRungs?.length ? ` It was sized for ${b.forRungs.map(r => r.replaceAll('_', ' ')).join(', ')}.` : '';
+  const nether = /nether/.test(String(b.dimension || dimension(bot)));
+  const { NETHER_TRIPS } = require('./game-progress');
+  const walk = nether
+    ? `about ${Math.max(1, Math.round(distance / NETHER_TRIPS.fast))} to ${Math.max(1, Math.round(distance / NETHER_TRIPS.slow))} minutes each way at the Nether's walks (${NETHER_TRIPS.slow} to ${NETHER_TRIPS.fast} blocks a minute, stops counted)`
+    : `about ${Math.max(1, Math.round(distance / 4.3))} seconds each way at a walk if the way is open`;
+  const tried = noRoute ? ` The walk there found no route from about here ${Math.max(1, Math.round((now - noRoute.at) / 1000))} seconds ago (${noRoute.why}).` : left.noRoute ? ` The walk there found no route ${Math.max(1, Math.round((now - left.noRoute.at) / 60000))} minutes ago from (${left.noRoute.from.x}, ${left.noRoute.from.y}, ${left.noRoute.from.z}) (${left.noRoute.why}).` : '';
+  return { what, ago, carried, rungs, walk, tried, at: `(${b.position.x}, ${b.position.y}, ${b.position.z})` };
+}
 
 // Not copper (see survival.js NIGHT_ORES).
 const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_ore', 'diamond_ore',
@@ -2722,7 +2831,7 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
     if (work.length) tree.leave_cooking = { description: `Leave the ${count} ${what} cooking${besides} and work from here meanwhile, the smelt step held off until it is done in about ${seconds} seconds: ${restWorkSays(bot, work, { until })} Then back to the furnace at (${own.at.x}, ${own.at.y}, ${own.at.z}) for the output: the walk back from where the work ends is about a second for every 4 blocks (16 blocks off, about 4 seconds), against the ${seconds} seconds of standing by it it saves. A piece of work still under way when the batch is done is ended there.${forRungs}` };
     else ownState = `not offered: ${restWorkSays(bot, work, { until })}`;
   }
-  if (leave) tree.leave_cooking = { description: `Leave the ${count} ${what} cooking and go on with ${leave.work} now: the furnace cooks on its own, and the batch is taken out when the work next brings the bot within 16 blocks of the furnace once it is done (in about ${Math.max(1, Math.round(cooking / 60000))} minute${cooking >= 90000 ? 's' : ''}), or in ${Math.round(LEAVE_BATCH_MS / 60000)} minutes wherever the bot is then. ${leave.carried}` };
+  if (leave) tree.leave_cooking = { description: `Leave the ${count} ${what} cooking and go on with ${leave.work} now: the furnace cooks on its own, and the batch is taken out when the work next brings the bot within 16 blocks of the furnace once it is done (in about ${Math.max(1, Math.round(cooking / 60000))} minute${cooking >= 90000 ? 's' : ''}), or after ${Math.round(LEAVE_BATCH_MS / 60000)} minutes once the bot is within ${LEFT_NEAR} blocks of it; farther off then, the walk back is offered at upkeep with its distance (fetch_batch), never taken unasked. ${leave.carried}` };
   // Each of them keeps the bot at or near the furnace for the batch, among
   // the mobs about (note 628).
   const among = require('./risk').standingAmong(bot, seconds, { what: 'at or near the furnace' });
@@ -2887,7 +2996,18 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     const p = pos(pending.position);
     // Return to the recorded area before deciding that an unloaded furnace
     // disappeared. Once observed, the same visible-face checks apply.
-    if (!bot.blockAt(p)) await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3));
+    // The walk there finding no route leaves the batch where it is, said,
+    // and the work goes on: the next step began with the same walk, and 25589
+    // tried it 398 times in nine minutes 657 blocks off (note 775). Upkeep
+    // offers it again (fetch_batch) from elsewhere.
+    if (!bot.blockAt(p)) {
+      try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3)); }
+      catch (err) {
+        task.check();
+        batchNoRoute(bot, goal, pending, err, save);
+        throw err;
+      }
+    }
     // Gone (a creeper, a player): the batch went with it. Retrying cannot
     // bring a furnace back, and with the record kept every later step
     // tried this one first and the bot shook itself loose every forty
@@ -2927,6 +3047,9 @@ async function smelt(bot, task, step, goal, save = () => {}) {
   let sideLoaded = 0;
   if (!pending && carriedInput >= needed) { sideLoaded = await loadSideFurnaces(bot, task, goal, save, block, { item: step.item, from: step.from, fuelItem: plannedFuel, total: needed }); needed -= sideLoaded; }
   if (goal && !pending) {
+    // A batch left cooking elsewhere is let go, said: the new one takes its
+    // place in the record (note 775).
+    if (goal.smelting?.left && goal.smelting !== pending) goal.lostSmelting = { ...goal.smelting, at: new Date().toISOString(), why: 'left cooking in its furnace; a new batch begun at another' };
     goal.smelting = { item: step.item, from: step.from, fuelItem: plannedFuel, position: { ...block.position }, dimension: dimension(bot), targetInventory: before + needed, count: needed, startedAt: Date.now(), ...(sideLoaded ? { sides: sideLoaded } : {}), ...(batch?.wants ? { rungsWant: batch.wants, forRungs: batch.rungs.map(r => r.phase) } : {}) };
     save();
   }
@@ -6099,9 +6222,19 @@ const turnSearch = search => Object.fromEntries(Object.entries(search || {})
 async function persist(bot, task, goal, save, err, onStep, { client, survival, recoveryAdviser } = {}) {
   goal.struggles = (goal.struggles || 0) + 1;
   goal.lastStruggle = { at: new Date().toISOString(), error: err.message, from: goal.lastErrorFrom };
-  if (goal.struggles === 1 || goal.struggles % 5 === 0) {
-    bot.chat?.(`${friendlyProblem(err, { known: (goal.fortressSearch?.found && goal.fortressSearch.fortressAt) || goal.fortressSearch?.found || null })} I'll keep trying${goal.struggles > 1 ? ` (attempt ${goal.struggles})` : ''}.`);
+  // A route that found no way three times from about here is set aside with
+  // its reason (route-aside.js, note 775): not retried silently, and the
+  // stall's question is asked with it said.
+  const routeAside = require('./route-aside');
+  const route = bot.entity?.position ? routeAside.noteFailure(goal, err, bot.entity.position) : null;
+  // Said once for a problem, never as a counter: 25589 said "I'll keep
+  // trying (attempt 5 ... 130)" over nine minutes in one spot (note 775).
+  const problemKey = route?.target ? `route:${route.target.x},${route.target.z}` : String(err.message).slice(0, 60);
+  if (route?.newly) bot.chat?.(routeAside.chatSays(route.aside));
+  else if (goal.struggles === 1 || goal.struggleSaid !== problemKey) {
+    bot.chat?.(`${friendlyProblem(err, { known: (goal.fortressSearch?.found && goal.fortressSearch.fortressAt) || goal.fortressSearch?.found || null })} I'll keep trying.`);
   }
+  goal.struggleSaid = problemKey;
   const failed = goal.lastStruggleStep || goal.step;
   const key = `step:${failed?.block || failed?.item || failed?.action || 'none'}`;
   const tried = require('./tried');
@@ -6120,8 +6253,11 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
   // question (note 490).
   const until = err.name === 'WaysResting' && err.until > Date.now() ? err.until : 0;
   const held = until && goal.restHeld?.until === until ? goal.restHeld : null;
-  // The answer this step was carrying out: asked again, not the step.
-  const owner = !until && tried.owner(goal, { work, skip: new Set(['stillness_detour', 'rung_progress']) });
+  // The answer this step was carrying out: asked again, not the step. Not
+  // where the step's route is set aside from here: going up to the question
+  // that held its answer and asked nothing, the step ran again at once, four
+  // times a second (25589, note 775); the stall's question is asked instead.
+  const owner = !until && !route?.aside && tried.owner(goal, { work, skip: new Set(['stillness_detour', 'rung_progress']) });
   const what = `the ${String(failed?.action || 'step').replaceAll('_', ' ')} step failed${goal.struggles === 1 ? '' : ` ${goal.struggles} times running`}: ${String(err.message).slice(0, 160)}${err.facts ? ` (${err.facts})` : ''}`;
   const up = owner ? tried.escalate(goal, { from: 'step', to: owner.q, why: what, parentOf: require('./decisions').parentOf, here: bot.entity?.position }) : null;
   if (owner) tried.markBlocked(owner, what);
@@ -6133,7 +6269,7 @@ async function persist(bot, task, goal, save, err, onStep, { client, survival, r
     }
     const rungAsk = up?.to === 'rung_progress' ? { escalated: { from: owner.q, to: 'rung_progress', says: up.says, passed: up.passed } } : {};
     if (held) await holdForRest(bot, task, goal, save, { client, survival, onStep, reason: held.reason || key, until, why: err.message, above: stallAbove(goal), idle: held.idle === true });
-    else await answerStall(bot, task, goal, save, { key, work, layer: 'work', strikes: goal.struggles, error: err.message, ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
+    else await answerStall(bot, task, goal, save, { key, work, layer: 'work', strikes: goal.struggles, error: route?.aside ? `${err.message}; ${route.says}` : err.message, ...(route?.aside ? { routeAside: route.aside } : {}), ...(until ? { until } : {}), ...rungAsk }, { client, survival, onStep, failed, chose, recoveryAdviser });
   }
   finally {
     // Back in hand only when Jev chose to try it again, and not where it
@@ -8035,4 +8171,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk };
+module.exports = { smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk };
