@@ -218,10 +218,9 @@ test('the bed and the armour can be left for later when they failed twice; the t
   const { bot, goal } = fixture(); observeProgress(bot, goal);
   const { setAside } = require('../src/progress');
   bot.inventory.items = () => [{ name: 'iron_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'shield', count: 1 }, { name: 'water_bucket', count: 1 }];
-  // The bed is optional before the Nether (note 776): not the ladder's
-  // unless chosen; chosen, it is, and may be set aside like any rung.
-  assert.notEqual(nextGameStage(bot, goal).phase, 'bed', 'not handed unless chosen');
-  goal.rungOptIn = { bed: Date.now() };
+  // The bed is the ladder's before the Nether by the nights it saves (note
+  // 841, after note 776 had made it optional), and may be set aside like
+  // any rung.
   assert.equal(nextGameStage(bot, goal).phase, 'bed');
   goal.survival = {}; setAside(goal, 'rung', 'bed', 'failed twice without progress', 1800000);
   const next = nextGameStage(bot, goal).phase;
@@ -243,9 +242,9 @@ test('the steps still open are said with what each is for and what it takes from
     entities: {}, inventory: { items: () => items, slots: [] }, blockAt: () => null, findBlocks: () => [], health: 20, food: 20 };
   const planFor = (b, item, count, goal) => catalogPlan(b, item, count, planningInventory(b), goal);
   const ahead = rungsAhead(bot, { kind: 'win', dream: 'beat_the_game' }, planFor);
-  // The bed is optional before the Nether (note 776): not a step ahead.
-  assert.deepEqual(ahead.map(r => r.step), ['iron pickaxe']);
-  assert.match(ahead[0].takes, /^mine 3 iron ore.*smelt 3 iron ingot.*craft 1 iron pickaxe$/);
+  // The bed a step ahead again (note 841).
+  assert.deepEqual(ahead.map(r => r.step), ['bed', 'iron pickaxe']);
+  assert.match(ahead[1].takes, /^mine 3 iron ore.*smelt 3 iron ingot.*craft 1 iron pickaxe$/);
   const chosen = rungsAhead(bot, { kind: 'win', dream: 'beat_the_game', rungOptIn: { bed: Date.now() } }, planFor);
   assert.deepEqual(chosen.map(r => r.step), ['bed', 'iron pickaxe'], 'chosen, the bed is on the ladder again');
   assert.match(chosen[0].for, /wool/);

@@ -19,7 +19,8 @@ const record = require('../src/kit-record');
 const gp = require('../src/game-progress');
 const levels = require('../src/levels');
 
-const GEAR = ['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'golden_boots'];
+// A bed carried: the bed is the ladder's before the Nether now (note 841).
+const GEAR = ['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'golden_boots', 'white_bed'];
 function fixture(names = GEAR, extra = {}) {
   const items = [...names.map(name => ({ name, count: 1 })), ...Object.entries(extra).map(([name, count]) => ({ name, count }))];
   const bot = Object.assign(new EventEmitter(), { registry, _client: new EventEmitter(), game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, chat() {},
@@ -34,7 +35,10 @@ test('the record and its rule: a rung that may wait is the ladder\'s before the 
   assert.equal(record.needBeforeNether('iron_sword'), true);
   // No benefit: the food (67% died against 55%), the bed (rods 26% against
   // 41%), the armour (rods 23% against 42%), the kit's blocks and pickaxe.
-  for (const p of ['nether_food', 'bed', 'home_bed', 'iron_armour', 'iron_helmet', 'nether_blocks', 'nether_pickaxe', 'nether_chest', 'bow']) assert.equal(record.needBeforeNether(p), false, p);
+  for (const p of ['nether_food', 'iron_armour', 'iron_helmet', 'nether_blocks', 'nether_pickaxe', 'nether_chest', 'bow']) assert.equal(record.needBeforeNether(p), false, p);
+  // The bed by the nights it saves (note 841), not the first stays.
+  assert.equal(record.needBeforeNether('bed'), true);
+  assert.match(record.rungRecordSays('bed'), /on the surface at night 1478 bot-minutes awake, 468 of them sealed in a pocket waiting .* A benefit before the Nether, in the nights it saves/);
   // Too few stays without it to measure: no benefit shown.
   assert.deepEqual([record.benefitOf('shield').measured, record.benefitOf('shield').benefit], [false, false]);
   const food = record.rungRecordSays('nether_food');
@@ -52,7 +56,7 @@ test('the ladder goes on to the portal past the optional rungs; chosen, one is t
   assert.deepEqual(gp.openRungs(bot, goal), []);
   const optional = gp.optionalRungs(bot, goal).map(r => r.phase);
   // (The golden boots worn count for the feet: the armour's first piece missing is the helmet.)
-  for (const p of ['bed', 'iron_helmet', 'nether_pickaxe', 'nether_blocks', 'nether_food']) assert(optional.includes(p), `${p} in ${optional}`);
+  for (const p of ['iron_helmet', 'nether_pickaxe', 'nether_blocks', 'nether_food']) assert(optional.includes(p), `${p} in ${optional}`);
   // Chosen: the ladder's next, until it is made.
   gp.optIn(goal, 'nether_food');
   assert.equal(gp.nextGameStage(bot, goal).phase, 'nether_food');
@@ -68,14 +72,15 @@ test('the ladder goes on to the portal past the optional rungs; chosen, one is t
   // After a first Nether entry the ladder rebuilds what a death took, as before.
   gp.observeProgress(bot, goal);
   goal.gameProgress.milestones.nether_entered = { at: Date.now(), dimension: 'nether' };
-  assert.equal(gp.nextGameStage(bot, goal).phase, 'bed');
+  assert.equal(gp.nextGameStage(bot, goal).phase, 'iron_helmet');
   assert.deepEqual(gp.optionalRungs(bot, goal), []);
 });
 
 test('a tool that may not wait still comes first, and the golden boots stay on the ladder', () => {
   const { bot, goal } = fixture(['stone_pickaxe', 'stone_sword']);
-  assert.equal(gp.nextGameStage(bot, goal).phase, 'iron_pickaxe', 'the bed is no longer before the mine');
-  const g2 = fixture(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket']);
+  // The bed before the mine again, by the nights it saves (note 841).
+  assert.equal(gp.nextGameStage(bot, goal).phase, 'bed');
+  const g2 = fixture(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'white_bed']);
   assert.equal(gp.nextGameStage(g2.bot, g2.goal).phase, 'golden_boots');
 });
 
@@ -85,7 +90,7 @@ test('win_strategy offers each optional rung with its record beside the Nether, 
   const stage = gp.nextGameStage(bot, goal);
   const options = strategyOptions(bot, goal, stage, {});
   assert(options.stage_reach_nether?.ladderNext, Object.keys(options).join(','));
-  assert(options.rung_nether_food && options.rung_bed && options.rung_iron_helmet, Object.keys(options).join(','));
+  assert(options.rung_nether_food && options.rung_iron_helmet && !options.rung_bed, Object.keys(options).join(','));
   assert.equal(options.rung_nether_food.ladderNext, false);
   assert.match(options.rung_nether_food.description, /^Get food carried for the Nether stay\./);
   assert.match(options.rung_nether_food.description, /No benefit in the record: optional before the Nether, made only if chosen/);
@@ -112,7 +117,7 @@ test('win_strategy offers each optional rung with its record beside the Nether, 
 // diamond sword chosen: the plan by level puts the surface first, once, and
 // the depth with the portal's lava last.
 function deepBot(extra = {}) {
-  const items = Object.entries({ iron_pickaxe: 3, coal: 125, iron_ingot: 29, cobblestone: 128, mutton: 5, iron_sword: 1, shield: 1, bucket: 1, golden_boots: 1, furnace: 1, ...extra })
+  const items = Object.entries({ iron_pickaxe: 3, coal: 125, iron_ingot: 29, cobblestone: 128, mutton: 5, iron_sword: 1, shield: 1, bucket: 1, golden_boots: 1, furnace: 1, white_bed: 1, ...extra })
     .map(([name, count]) => ({ name, count }));
   return {
     registry, health: 20, food: 18, game: { gameMode: 'survival', dimension: 'overworld', difficulty: 'normal' }, time: { timeOfDay: 1000 },
@@ -173,7 +178,7 @@ test('the per-rung measure: what each rung makes, how it came to be worked on, a
   assert.equal(r.nether_food.finished, true);
   assert.deepEqual(r.bed.by, { 'handed by the ladder': 1 });
   const sim = pt.simulateLevels({ rungsPursued: r, height: { climbs: [] } });
-  assert.equal(sim.handed, 1, 'the bed the ladder handed is not handed now');
+  assert.equal(sim.handed, 0, 'the bed the ladder handed is handed still (note 841: the nights it saves)');
   assert.equal(sim.chosen, 1);
   assert(sim.chosenSaved > 0 && sim.chosenSaved < 1, 'the food named by Jev, weighed at the probe\'s rate');
 });
