@@ -413,6 +413,40 @@ function pickFailed(goal, pick, { deepFailing = false, deep = null } = {}, now =
 // the bot never steps into it. A pool the bot cannot stand beside is gone
 // round as the obsidian step goes round it: a remembered lava pool, then a
 // dig toward lava.
+// Where the bot stood to fill at a lava, kept so a later trip to the same
+// lava walks the stairs already dug there before digging any new way (note
+// 823): 25589 (mid-226-an, 2026-10-01 16:03-16:14Z), its frame up top and
+// its lava 73 blocks down, dug a fresh staircase toward (365, -15, 187)
+// from each place a trip began (the user, watching: "It seems to be
+// re-digging the holes to the lava every time").
+const LAVA_STANDS_KEEP = 8;
+function noteLavaStand(bot, goal, lava) {
+  const p = bot.entity?.position; if (!p || !lava) return;
+  const dim = String(bot.game?.dimension || 'overworld');
+  const stand = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), lava: { x: lava.x, y: lava.y, z: lava.z }, dimension: dim, at: Date.now() };
+  goal.lavaStands = [...(goal.lavaStands || []).filter(s => !(s.dimension === dim && Math.hypot(s.x - stand.x, s.y - stand.y, s.z - stand.z) < 3)), stand].slice(-LAVA_STANDS_KEEP);
+}
+// The stand kept nearest a lava, for the trip there: walked by the stairs
+// dug before, routed without digging; true when the bot got there.
+async function walkKnownStairs(bot, task, goal, save, lava, navigate) {
+  const dim = String(bot.game?.dimension || 'overworld'), here = bot.entity.position;
+  const stands = (goal.lavaStands || []).filter(s => s.dimension === dim && Math.hypot(s.lava.x - lava.x, s.lava.y - lava.y, s.lava.z - lava.z) <= SAME_LAVA && here.distanceTo(new Vec3(s.x, s.y, s.z)) > 4 && !(s.failedAt > Date.now() - 300000))
+    .sort((a, b) => b.at - a.at);
+  const s = stands[0];
+  if (!s || !navigate) return false;
+  const movements = bot.pathfinder?.movements;
+  const previous = movements ? { canDig: movements.canDig } : null;
+  if (movements) movements.canDig = false;
+  try {
+    const route = typeof surveyRoute === 'function' && movements ? await surveyRoute(bot, task, movements, new goals.GoalNear(s.x, s.y, s.z, 1), 2000) : { status: 'success' };
+    if (route.status !== 'success') { s.failedAt = Date.now(); save(); return false; }
+    goal.step = { ...goal.step, phase: 'known_stairs', to: { x: s.x, y: s.y, z: s.z } }; save();
+    bot.chat?.(`Back down the stairs dug before to the lava at (${s.lava.x}, ${s.lava.y}, ${s.lava.z}).`);
+    await navigate(bot, task, new goals.GoalNear(s.x, s.y, s.z, 1), { timeoutMs: 180000, stallMs: 12000 });
+    return true;
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; s.failedAt = Date.now(); save(); return false; }
+  finally { if (movements && previous) movements.canDig = previous.canDig; }
+}
 async function collectLava(bot, task, step, goal, save, { navigate, dig, resourceTunnelStep }) {
   task.check(); checkAir(bot); checkThreats(bot);
   if (threats(bot).some(t => t.visible && t.distance < 16)) { goal.step = { ...step, phase: 'wait_for_quiet' }; save(); await sleep(1000); return; }
@@ -439,7 +473,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     for (const p of surface.length ? [] : inReach) {
       if (countOf(bot, 'lava_bucket') >= target || !countOf(bot, 'bucket') || !room()) break;
       goal.step = { ...step, phase: 'scoop_in_reach', position: { x: p.x, y: p.y, z: p.z } }; save();
-      try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); took++; }
+      try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); took++; noteLavaStand(bot, goal, p); save(); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     if (took) return;
@@ -616,11 +650,16 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
           purpose: `lava for the portal frame (${wanted} more bucket${wanted === 1 ? '' : 's'} to fill here, each a slot of its own)` });
         if (!room()) { noRoom = true; break; }
       }
-      try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); filled++; }
+      try { await fillBucket(bot, task, p, { fluid: 'lava', guard: () => checkThreats(bot) }); filled++; noteLavaStand(bot, goal, p); save(); }
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
     }
     if (filled || (!noRoom && countOf(bot, 'lava_bucket') > 0 && !room())) return;
     if (noRoom) { goal.step = { ...step, phase: 'no_room' }; save(); throw new Error('No room in my pockets for a lava bucket: each takes a slot of its own, and nothing was dropped for one'); }
+  }
+  // The stairs dug to this lava before, walked down again first (note 823).
+  {
+    const pick = lavaPickNow(bot, goal), lavaAt = pick?.at || goal.lavaFetch?.lava;
+    if (lavaAt && pick?.way !== 'deep' && await walkKnownStairs(bot, task, goal, save, lavaAt, navigate)) return;
   }
   // A spot whose route search ran out of its half second is not a spot with
   // no way to it: the walk there is made, with a walk's own time to find it.
@@ -839,4 +878,4 @@ function noLavaWay(bot, goal, surface = []) {
   return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
-module.exports = { wayCosts, poolSpent, poolLava, arrivedAtPool, POOL_REST_MS, lavaRecord, pickFailed, heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
+module.exports = { noteLavaStand, walkKnownStairs, wayCosts, poolSpent, poolLava, arrivedAtPool, POOL_REST_MS, lavaRecord, pickFailed, heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
