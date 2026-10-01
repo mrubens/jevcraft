@@ -1401,8 +1401,40 @@ function headWays(bot, task, onAction = () => {}) {
       } catch (err) { if (err.name === 'Cancelled') throw err; }
       return !suffocatingBlock(bot);
     } };
+  // A cell beside dug out and stepped into, where none is open (note 842):
+  // under a column of gravel the head's own cell fills again after each dig,
+  // and 25581 (2026-10-01 22:37:49 to 22:38:00Z), mining gravel down a
+  // shaft with no cell open beside it, dug at the head's cell eleven seconds
+  // and suffocated from 20 to none.
+  const feet = bot.entity.position.floored();
+  const falls = b => /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$/.test(b?.name || '');
+  const column = (() => { let n = 0; for (let dy = 1; dy <= 16; dy++) { const b = bot.blockAt(feet.offset(0, dy, 0)); if (!falls(b)) break; n++; } return n; })();
+  if (!aside) {
+    const diggable = b => !b || b.boundingBox === 'empty' || (b.boundingBox === 'block' && b.diggable !== false && !falls(b) && !/bedrock|obsidian|lava|water/.test(b.name));
+    const side = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => feet.offset(dx, 0, dz))
+      .filter(c => bot.blockAt(c.offset(0, -1, 0))?.boundingBox === 'block' && diggable(bot.blockAt(c)) && diggable(bot.blockAt(c.offset(0, 1, 0))) && !falls(bot.blockAt(c.offset(0, 2, 0))) &&
+        !/lava|water/.test(bot.blockAt(c.offset(0, 2, 0))?.name || ''))
+      .map(c => ({ c, secs: [c, c.offset(0, 1, 0)].reduce((t, x) => { const b = bot.blockAt(x); return t + (b?.boundingBox === 'block' ? digSeconds(bot, b) : 0); }, 0) }))
+      .sort((a, b) => a.secs - b.secs)[0];
+    if (side) ways.dig_aside = { description: `Dig into the wall beside the feet at (${side.c.x}, ${side.c.y}, ${side.c.z}), its head cell then its feet cell (about ${round(side.secs)} seconds with the best tool carried), and step in: nothing falls over that cell, so the head comes out of the block for good${column > 1 ? `, where ${column} blocks of ${bot.blockAt(feet.offset(0, 1, 0))?.name?.replaceAll('_', ' ') || 'it'} over the head fill its own cell again after each is dug` : ''}.`,
+      run: async () => {
+        onAction({ action: 'dig_out_of_block', block: bot.blockAt(feet.offset(0, 1, 0))?.name, digAside: { x: side.c.x, y: side.c.y, z: side.c.z } });
+        for (const x of [side.c.offset(0, 1, 0), side.c]) {
+          if (task.cancelled) throw new (require('./skills').Cancelled)(task.label);
+          const b = bot.blockAt(x);
+          if (b?.boundingBox !== 'block') continue;
+          try { await require('./skills').equipBestTool(bot, b); } catch (_) { /* the hand, then */ }
+          try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; }
+        }
+        const only = { get cancelled() { return task.cancelled; }, label: task.label, check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
+        try { await require('./motion').move(bot, only, { label: 'out_from_under', keys: ['forward'], sneak: false, why: 'stepping into the cell dug beside, out from under a block over the head',
+          look: side.c.offset(0.5, 1.6, 0.5), maxMs: 1500, tick: 50, until: () => !suffocatingBlock(bot) }); }
+        catch (err) { if (err.name === 'Cancelled') throw err; }
+        return !suffocatingBlock(bot);
+      } };
+  }
   const secs = block ? digSeconds(bot, block) : null;
-  ways.dig_out = { description: `Dig the ${block ? block.name.replaceAll('_', ' ') : 'block'} the head is in${secs != null ? `, about ${round(secs)} seconds with the best tool carried` : ''}, and whatever falls after it${block && /sand|gravel/.test(block.name) ? ' (a falling column keeps coming, a dig each block)' : ''}.`,
+  ways.dig_out = { description: `Dig the ${block ? block.name.replaceAll('_', ' ') : 'block'} the head is in${secs != null ? `, about ${round(secs)} seconds with the best tool carried` : ''}${column > 1 ? ` (${column} blocks of it stacked over the head: each dug, the next falls into the cell)` : ''}, and whatever falls after it${block && /sand|gravel/.test(block.name) ? ' (a falling column keeps coming, a dig each block)' : ''}.`,
     run: async () => true };
   return ways;
 }
