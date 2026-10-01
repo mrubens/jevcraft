@@ -1181,7 +1181,7 @@ async function upkeepOffers(bot, task, goal, save) {
     // (the crossing's reserve, the hunger met: note 771): chosen there, it
     // changed nothing (note 765: food_reserve 37 of 64 no-ops).
     const fe = require('./food-errand');
-    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood && !(fe.reserveOnly(bot, carried) && fe.crossingReserve(goal))) options.food_reserve = { description: `Find food before dusk: ${carried} food points carried, hunger ${bot.food}, dusk (when the bot stops work for the evening; the dark comes about two minutes after) in about ${toDusk} seconds; chosen, the food is looked for as survival's need when it next has the turn. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing.${foodReservePrice(bot, carried)}`,
+    if (carried < KIT_FOOD_POINTS && t < DAY.DUSK && toDusk <= FOOD_BEFORE_DUSK_S && !goal.stockFood && !(fe.reserveOnly(bot, carried) && fe.crossingReserve(goal))) options.food_reserve = { description: `Find food before dusk: ${carried} food points carried, hunger ${bot.food}, dusk (when the bot stops work for the evening; the dark comes about two minutes after) in about ${toDusk} seconds; chosen, the food is looked for as survival's need when it next has the turn. Health comes back only while hunger is eighteen or more; a night's fights at lower hunger are fought without healing. ${require('./food-reserve').sayHere(bot, carried)}${foodReservePrice(bot, carried)}`,
       run: async () => { goal.stockFood = true; save(); } };
   }
   // A batch left cooking whose time is up, the bot away from its furnace:
@@ -7716,7 +7716,7 @@ function droppedFoodNear(bot, goal, now = Date.now()) {
   return { drop: d, says: `Walk back for the ${d.count} ${d.item.replaceAll('_', ' ')} dropped for room at (${d.x}, ${d.y}, ${d.z}) ${Math.max(1, Math.round((now - d.at) / 60000))} minute${now - d.at < 90000 ? '' : 's'} ago: ${d.points} food points, ${distance} blocks off, about ${walk} seconds at a walk; it vanishes about ${left} seconds from now, five minutes after it fell.${room}` };
 }
 async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.opportunityClient, now = Date.now()) {
-  const want = stage.wants || require('./crossing-kit').netherStay(bot, goal).points;
+  const want = stage.wants || require('./food-reserve').crossingWant(bot, goal);
   const carried = foodSupply(bot);
   if (carried >= want) return true;
   // A stretch left over half an hour starts afresh, its stall clock too.
@@ -7741,7 +7741,8 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
     return parts.length ? ` ${parts.join('; ')}.` : '';
   };
   const tree = {
-    go_without: { description: `Go on without more food for now: ${carried} of ${want} points carried.${onHandMore()} The food step is set aside half an hour and the ladder goes on, to the crossing if nothing else is left.` },
+    // What crossing with what is carried came to in the record (note 796).
+    go_without: { description: `Go on without more food for now: ${carried} of ${want} points carried.${onHandMore()} The food step is set aside half an hour and the ladder goes on, to the crossing if nothing else is left. ${require('./food-reserve').says(carried, 'nether')}` },
     // With the points carried and the hunger now: the top-up is for the
     // stay in the Nether, not a meal (note 755: 25588 at hunger 19).
     top_up_food: { description: `Gather food: the home chest, the farm plot if there is one, or hunting animals. ${carried} of ${want} points carried for the Nether; hunger ${bot.food} of 20 now${(bot.food ?? 0) >= 18 ? ', nothing to eat for' : ''}.${foodTopUpSays(bot, goal, pending, item)}${soFar('food')}` },

@@ -109,7 +109,7 @@ function nightBot({ time = 13000 } = {}) {
   const air = p => p.x === 0 && p.z === 0 && p.y >= 30;
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: {}, health: 20, food: 20,
     registry: require('minecraft-data')('26.1'), time: { timeOfDay: time }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
-    inventory: { items: () => [{ name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] }, heldItem: null, isSleeping: false,
+    inventory: { items: () => [{ name: 'cobblestone', count: 32 }, { name: 'cooked_beef', count: 2 }], emptySlotCount: () => 10, slots: [] }, heldItem: null, isSleeping: false,
     equip: async () => {}, lookAt: async () => {},
     blockAt: p => ({ name: air(p) ? 'air' : 'stone', boundingBox: air(p) ? 'empty' : 'block', diggable: true, position: p }),
     world: { raycast: () => null }, findBlocks: () => [], chat() {} });

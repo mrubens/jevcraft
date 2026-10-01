@@ -75,7 +75,7 @@ function belowBot({ mobs = [], health = 20, food = 18, time = 13000, sight = fal
     registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
     entities, health, food, oxygenLevel: 20, time: { timeOfDay: time, age: 200000 },
     entity: { position: new Vec3(0.5, 8, 0.5), onGround: true, velocity: new Vec3(0, 0, 0), height: 1.8, width: 0.6 },
-    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 64 }], slots: [], emptySlotCount: () => 10 },
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 64 }, { name: 'cooked_beef', count: 2 }], slots: [], emptySlotCount: () => 10 },
     heldItem: { name: 'iron_sword' },
     blockAt: p => { const q = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }; const air = open.has(`${q.x},${q.y},${q.z}`) || q.y > 90; return { name: air ? 'air' : 'stone', boundingBox: air ? 'empty' : 'block', position: p, skyLight: 0 }; },
     world: { raycast: () => sight ? null : ({ intersect: new Vec3(0, 0, 0) }) }, on() {}, once() {}, removeListener() {}, emit() {},

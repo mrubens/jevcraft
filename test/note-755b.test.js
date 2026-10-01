@@ -22,7 +22,7 @@ function world({ at = new Vec3(0.5, 72.9375, 0.5), farmland = new Vec3(0, 72, 0)
     registry, entities, health: 20, food: 19, oxygenLevel: 20, time: { timeOfDay: time, age: 1000 },
     game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal', minY: -64, height: 384 },
     entity: { position: at, onGround: true, velocity: new Vec3(0, 0, 0), height: 1.8, width: 0.6 },
-    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 30 }], slots: [], emptySlotCount: () => 10 },
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cobblestone', count: 30 }, { name: 'cooked_beef', count: 2 }], slots: [], emptySlotCount: () => 10 },
     heldItem: null,
     blockAt: p => {
       const q = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }, k = `${q.x},${q.y},${q.z}`;

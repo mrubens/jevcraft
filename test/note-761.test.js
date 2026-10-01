@@ -89,9 +89,16 @@ test('25588 at 17:12:33: the survival claim says the hunger against health, what
   assert.doesNotMatch(said, /It does not come back at hunger 13\. .*It does not come back/);
 });
 
-test('25588 at 17:16:26: back at hunger 18 with a beef carried, the errand ends and neither the claim nor the question comes back', async () => {
+test('25588 at 17:16:26: back at hunger 18 with the reserve carried, the errand ends and neither the claim nor the question comes back', async () => {
   const { claim, Survival } = require('../src/survival');
-  const bot = foodBot({ items: ['iron_sword', ['beef', 1]], food: 18, health: 18.08 });
+  // Note 796: one beef (3 points) is under the reserve's floor of 12, the
+  // last meal before none: with the food rung not the work in hand it is
+  // asked as the reserve alone (note-796 test); with the floor carried the
+  // errand is met as before.
+  const one = foodBot({ items: ['iron_sword', ['beef', 1]], food: 18, health: 18.08 });
+  assert.equal(claim(one, netherGoal(), { state: {} }), null, 'one beef with the food rung in hand: the work\'s');
+  assert.equal(claim(one, { ...netherGoal(), gameProgress: { phase: 'nether_pickaxe' } }, { state: {} })?.action, 'obtain_food', 'one beef, another rung in hand: under the floor');
+  const bot = foodBot({ items: ['iron_sword', ['beef', 4]], food: 18, health: 18.08 });
   const goal = netherGoal();
   assert.equal(claim(bot, goal, { state: {} }), null, 'no survival claim for the reserve at 18 with food carried');
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
@@ -108,9 +115,11 @@ test('25588 at 17:16:26: back at hunger 18 with a beef carried, the errand ends 
   assert.equal(met.climbed, 112);
 });
 
-test('25592: hunger 19 with 10 points carried is not a food question (no cook or walk home to flip between)', async () => {
+test('25592: hunger 19 with the reserve carried is not a food question (no cook or walk home to flip between)', async () => {
   const { Survival, claim } = require('../src/survival');
-  const bot = foodBot({ items: [['mutton', 2], ['cooked_mutton', 1]], food: 19, health: 20 });
+  // 25592's 10 points are under note 796's floor of 12 (asked once, held:
+  // note-796 test); 16 are not.
+  const bot = foodBot({ items: [['mutton', 2], ['cooked_mutton', 2]], food: 19, health: 20 });
   const goal = { kind: 'win', request: 'beat the game', preparingNether: true, stockFood: true };
   assert.equal(claim(bot, goal, { state: {} }), null);
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });

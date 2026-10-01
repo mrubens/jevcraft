@@ -46,7 +46,6 @@ const MEAL_CUT_MS = 10000;
 const LETHAL_SAID_MS = 15000;
 const pos = p => new Vec3(p.x, p.y, p.z);
 const { DAY, night } = require('./day');
-const { NETHER_FOOD_POINTS, KIT_FOOD_POINTS } = require('./home-stash');
 // Lava within two blocks sideways or one below: a knockback lands in it.
 // A cell the bot can step into without falling or burning: solid under it,
 // room for its body, and no lava beside.
@@ -1457,6 +1456,29 @@ function mealHelps(bot) {
   const food = chooseFood(bot) || lastResortFood(bot);
   if (!food) return null;
   return (bot.food ?? 20) + (bot.registry.foodsByName?.[food.name]?.foodPoints || 0) >= 18 ? food : null;
+}
+// What a meal would do in the encounter, or why none is on offer (note
+// 796): of 100 low-health moments with food carried and a stance asked in
+// the half minute before, the meal was on offer at 51 and chosen at 15; at
+// 44 of the rest the stance was asked at full health or full hunger, and
+// no meal was offered or said. Said every time, so the food carried is never a
+// silence in a fight.
+function mealSays(bot) {
+  const hunger = bot.food ?? 20, hp = bot.health ?? 20;
+  const supply = foodSupply(bot), last = lastResortFood(bot);
+  const carried = supply ? `${supply} food points carried that heal` : 'nothing carried that heals';
+  if (!supply && !last) return `Nothing carried to eat: ${hunger >= 18 ? `health comes back while hunger stays at eighteen or more (${hunger} now), then not` : `hunger ${hunger}, under eighteen, so health does not come back here`}.`;
+  if (hunger >= 20) return `Hunger full (20): no meal can be eaten now; health comes back from the saturation and then the hunger it spends. ${carried[0].toUpperCase()}${carried.slice(1)} for after.`;
+  if (hp >= 20) return `Health full: a meal heals nothing now; ${carried}.`;
+  if (mealHelps(bot)) return `A meal is on offer (eat): ${carried}${last && !supply ? `, the last resort only (${last.name.replaceAll('_', ' ')})` : ''}.`;
+  // One meal short of eighteen: how many in a row reach it, from what is carried.
+  const pts = n => bot.registry.foodsByName?.[n]?.foodPoints || 0;
+  const pieces = bot.inventory.items().filter(i => pts(i.name) && (require('./vitals').safeFood(bot, i) || i.name === last?.name))
+    .flatMap(i => Array(i.count).fill(i.name)).sort((a, b) => pts(b) - pts(a));
+  let h = hunger, n = 0;
+  for (const name of pieces) { if (h >= 18) break; h = Math.min(20, h + pts(name)); n++; }
+  const best = pieces[0];
+  return `No single meal reaches eighteen, where health comes back: the best carried, the ${String(best).replaceAll('_', ' ')}, takes hunger ${hunger} to ${Math.min(20, hunger + pts(best))}. ${h >= 18 ? `Eaten in a row, ${n} reach it, about ${Math.round(n * EAT_SECONDS * 10) / 10} seconds standing with the hand busy and the shield down.` : `All of it eaten (${n}) reaches only ${h}.`} ${carried[0].toUpperCase()}${carried.slice(1)}.`;
 }
 // The meal's bill is for the eating alone: said, so it is not read as a way
 // out of the crowd.
@@ -5894,6 +5916,8 @@ class Survival {
         ...(lethalNow || this.state.lethalLine ? { oneShotEnds: [lethalNow?.says || this.state.lethalLine?.says, this.state.lethalLine?.did ? `Just now: ${this.state.lethalLine.did}.` : null].filter(Boolean).join(' ') } : {}),
         // When the way chosen is asked again on its damage (danger.js
         // pacedLoss, note 793): said, not kept as a threshold of the code's.
+        // The meal here, or why none is offered (note 796).
+        meal: mealSays(bot),
         holdEnds: `A way chosen here is asked again once it has cost more than its own estimate at the estimate's pace (six health where it gives none), and in any case once half the health it is chosen at is gone: from ${Math.round(bot.health * 10) / 10} health, at ${Math.round(bot.health * 5) / 10}.`,
         riskNow: require('./risk').riskNow(bot), deathWouldCost: this.deathCost(goal), recentPositions: require('./stillness').recentPositions(bot) };
       // At a live cage, what the stay there has come to, on each hold, and
@@ -10414,7 +10438,11 @@ class Survival {
     const expeditionFood = ((goal.preparingExpedition && goal.kind !== 'win') || goal.preparingEnd || goal.preparingNether) && bot.game.difficulty !== 'peaceful';
     // One reserve for the crossing, kept with the stash that fills it: it was
     // written out here, in the Nether gate and in the stash, three times.
-    const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
+    // And one reserve everywhere (food-reserve.js, note 796): the crossing's
+    // stay, never under the Nether's floor, or the floor the record bears
+    // out where the bot is (12 points in the Overworld).
+    const reserve = require('./food-reserve');
+    const desiredFood = reserve.wanted(bot, goal).points;
     // A missing reserve is worth a hunt while the bot is already on the
     // surface, where the animals are. Underground it is worth the climb only
     // once hunger is real: the dream run was leaving its iron shaft at 18 of
@@ -10440,7 +10468,13 @@ class Survival {
     // one hit ends the bot (last-hit.js).
     const cannotHeal = (bot.health ?? 20) < 14 && bot.food < 18 && !chooseFood(bot) && !(offWorld && netherKeepOn(bot, goal));
     const hungry = bot.food <= hungerTrigger || cannotHeal;
-    const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful'));
+    // Under the reserve's floor on the game's ladder the stock is wanted too
+    // (note 796): nothing asked for food at hunger eighteen and more, so the
+    // last beef was eaten in a healing and the next asking found nothing
+    // carried, often under rock. 163 of the 259 spells with none that began
+    // with the last food eaten had no food answer while the food ran down
+    // from under twelve; 50 of 177 low-health moments had nothing that heals.
+    const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game.difficulty !== 'peaceful') || reserve.short(bot, goal, foodSupply(bot)));
     const now = Date.now();
     // Stocked is stocked: the flag that asked for a reserve was never taken
     // down, so the stock-driven search ran for the rest of the goal.
@@ -10462,7 +10496,7 @@ class Survival {
     // (kit_food): 25588 (mid-241-ce, 17:16:26Z) was sent after a cow at
     // hunger 18 with a beef carried; 25592 flipped between cooking and the
     // walk home at 19 (note 761).
-    const foodMet = errands.met(bot, supplyNow);
+    const foodMet = errands.met(bot, supplyNow, reserve.floorFor(bot, goal));
     if (foodMet && this.state.foodErrand) {
       const e = this.state.foodErrand;
       this.report(goal, save, { action: 'food_errand_met', food: bot.food, foodPoints: supplyNow, wanted: desiredFood, minutes: Math.round((now - e.since) / 6000) / 10, climbed: e.climbed || 0, asks: e.asks });
@@ -10492,7 +10526,9 @@ class Survival {
     // chose the Nether first; the flags its food step had raised kept this
     // layer after the 80 points for four minutes more.
     const reserveTrip = errands.reserveOnly(bot, supplyNow);
-    const workHasIt = reserveTrip && (errands.workIsFood(goal) || errands.crossingReserve(goal));
+    // Under the floor the crossing's reserve is the survival layer's to ask
+    // as well (note 796): the rung may be far up the ladder.
+    const workHasIt = reserveTrip && (errands.workIsFood(goal) || (errands.crossingReserve(goal) && !reserve.short(bot, goal, supplyNow)));
     // Resting, low hunger that what is carried fills is met by eating, not by
     // a search.
     const needsFood = !workHasIt && !foodMet && supplyNow < desiredFood && ((hungry && !(stockPaused && fills)) || (stockDriven && !stockPaused));
@@ -11262,22 +11298,23 @@ function claim(bot, goal = {}, survival = null) {
   const needsShelter = shelterNeeded(bot) && !nightFree && nightPlan?.plan !== 'stay_up' && nightPlan?.plan !== 'hunt';
   if (!needsShelter && state.recovery?.status === 'pending') return make('recover_items', 'routine', { dropsAt: state.recovery.position || null });
   const expeditionFood = ((goal.preparingExpedition && goal.kind !== 'win') || goal.preparingEnd || goal.preparingNether) && bot.game?.difficulty !== 'peaceful';
-  const desiredFood = goal.preparingEnd ? 64 : goal.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
+  const reserve = require('./food-reserve');
+  const desiredFood = reserve.wanted(bot, goal).points;
   const offWorld = !/overworld/.test(String(bot.game?.dimension || 'overworld'));
   const hungerTrigger = offWorld ? 8 : !underground ? 18 : 12;
   // Hurt where health cannot come back, in the Nether too (note 771c).
   const noHeal = hp < 14 && bot.food < 18 && !chooseFood(bot) && !(offWorld && netherKeepOn(bot, goal));
   const hungry = bot.food <= hungerTrigger || noHeal;
-  const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game?.difficulty !== 'peaceful'));
   const supply = foodSupply(bot);
+  const stockDriven = !offWorld && (goal.stockFood || expeditionFood || (goal.kind === 'survive' && bot.game?.difficulty !== 'peaceful') || reserve.short(bot, goal, supply));
   // As the layer reads it: resting, low hunger that what is carried fills is met by eating (note 702).
   const errands = require('./food-errand');
   const stockRests = rests('food_search', 'stock'), fills = errands.fillsHunger(bot, supply);
   // Met, as the layer reads it: hunger eighteen or more with food carried (note 761).
   // For the reserve alone with the work's own step the food: the work has
   // it, no claim (note 771).
-  const workHasIt = errands.reserveOnly(bot, supply) && (errands.workIsFood(goal) || errands.crossingReserve(goal));
-  const needsFood = !workHasIt && !errands.met(bot, supply) && supply < desiredFood && ((hungry && !(stockRests && fills)) || (stockDriven && !stockRests));
+  const workHasIt = errands.reserveOnly(bot, supply) && (errands.workIsFood(goal) || (errands.crossingReserve(goal) && !reserve.short(bot, goal, supply)));
+  const needsFood = !workHasIt && !errands.met(bot, supply, reserve.floorFor(bot, goal)) && supply < desiredFood && ((hungry && !(stockRests && fills)) || (stockDriven && !stockRests));
   // A night mine Jev chose from a pocket holds the turn under the rock until
   // dawn or until it ends, as a chosen stance does (note 755b): with the
   // night "free" below, survival claimed nothing, the work's sheep search
@@ -11354,4 +11391,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

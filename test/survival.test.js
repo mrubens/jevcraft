@@ -396,9 +396,12 @@ test('an empty food reserve pulls the bot off its work at 18 hunger on the surfa
     return survival;
   };
   assert.equal(await make(70, 18).step(new Task('surface'), { kind: 'win' }, () => {}), true, 'on the surface, 18 with no reserve is a hunt');
-  assert.equal(await make(20, 18).step(new Task('deep'), { kind: 'win' }, () => {}), false, 'underground, 18 with no reserve is not worth the climb');
+  // Off the game's ladder the climb waits for hunger 12; on it, nothing
+  // carried is under the reserve's floor and is asked (note 796).
+  assert.equal(await make(20, 18).step(new Task('deep'), { kind: 'request', request: 'mine' }, () => {}), false, 'underground, 18 with no reserve is not worth the climb');
+  assert.equal(await make(20, 18).step(new Task('deep, the ladder'), { kind: 'win' }, () => {}), true, 'on the ladder, under the floor');
   assert.equal(await make(20, 12).step(new Task('deep hungry'), { kind: 'win' }, () => {}), true, 'underground, 12 is');
-  assert.deepEqual(forages, ['70:18', '20:12']);
+  assert.deepEqual(forages, ['70:18', '20:18', '20:12']);
 });
 
 test('a pocket in a one-wide staircase is a shelter site underground even without a two-block exit', () => {
@@ -921,7 +924,7 @@ test('at night with a bed the choices are sleep, stay up, or shelter, the shelte
     entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
     inventory: { items: () => items, slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' },
     blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
-  const bot = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }]);
+  const bot = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }]);
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client });
   // The fallback is the question's own, from its definition.
   const { question } = require('../src/decisions');
@@ -930,7 +933,7 @@ test('at night with a bed the choices are sleep, stay up, or shelter, the shelte
   await survival.step(new Task('test', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
   assert.deepEqual(seen, [['continue_request', 'secure_shelter', 'sleep_in_bed'], 'slept'], 'with a bed at hand, the fallback sleeps');
   // In a one-wide shaft the bed does not fit, so sleep is not on the list.
-  const shaft = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }]);
+  const shaft = make([{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }]);
   shaft.blockAt = p => ({ name: p.y < 64 || (p.x !== 0 || p.z !== 0) ? 'stone' : 'air', boundingBox: p.y < 64 || (p.x !== 0 || p.z !== 0) ? 'block' : 'empty', position: p });
   const narrow = new Survival(shaft, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client });
   const offered = [];
@@ -1007,7 +1010,7 @@ test('at dusk with a bed at home, Jev heads home before bedtime; from a mine onl
   const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 11600, age: 100000 },
     entity: { position: new Vec3(30.5, 40, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
-    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'stone' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
   const walked = [], climbed = [];
   const survival = new Survival(bot, { navigate: async (b, t, g) => walked.push([g.x, g.y, g.z]), surfaceStep: async () => climbed.push(1), dig: async () => {}, place: async () => {} }, { state: { home } });
@@ -1262,7 +1265,7 @@ test('after two nights awake, staying up says phantoms come on the third; it is 
   const seen = [];
   const make = () => Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 13000, age: 100000 },
     entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
-    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' },
+    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' }, 7: { name: 'iron_leggings' }, 8: { name: 'iron_boots' }, 45: { name: 'shield' } } }, heldItem: { name: 'iron_sword' },
     blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
   const bot = make();
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
@@ -2163,7 +2166,7 @@ test('at dusk with the bed at home forty blocks off, the walk home is Jev\'s opt
   const blocks = new Map([[`${new Vec3(bed.foot.x, bed.foot.y, bed.foot.z)}`, 'white_bed'], [`${new Vec3(bed.head.x, bed.head.y, bed.head.z)}`, 'white_bed']]);
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 10000 },
     entity: { position: new Vec3(40.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
-    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
   const goal = { kind: 'win', request: 'beat the game', survival: { home } };
   let walks = 0; const asked = [];
@@ -2188,7 +2191,7 @@ test('the bed at home is offered with its walk and the monsters beside it that r
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 13000 },
     entities: { 60: { id: 60, name: 'zombie', position: new Vec3(-5.5, 64, -3.5), height: 1.95, isValid: true } },
     entity: { position: new Vec3(5.5, 64, -2.5) }, health: 20, food: 20, oxygenLevel: 20, isSleeping: false, registry: require('minecraft-data')('26.1'),
-    inventory: { items: () => [{ name: 'iron_sword' }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }], slots: {} }, heldItem: null, findBlocks: () => [], world: { raycast: () => null }, chat() {},
     blockAt: p => ({ name: blocks.get(`${p}`) || (p.y < 64 ? 'grass_block' : 'air'), boundingBox: blocks.has(`${p}`) || p.y < 64 ? 'block' : 'empty', position: p }) });
   const goal = { kind: 'win', request: 'beat the game', survival: { home } };
   const survival = new Survival(bot, { navigate: async () => {} }, { state: goal.survival, client: { systemOne: async () => ({}) } });
@@ -2599,7 +2602,7 @@ test('a held pillar faces a wither skeleton at arm\'s length whose blow reaches 
 // A bed nook: the carried bed where no two level cells lie beside the feet.
 // Six midgame trials (2026-09-26): the one bot carrying a bed sealed itself
 // in eleven times with it, sleep offered only on two level cells.
-function nookFixture({ time = 13000, items = [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open = null } = {}) {
+function nookFixture({ time = 13000, items = [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }, { name: 'cooked_beef', count: 2 }], open = null } = {}) {
   const origin = new Vec3(0, 30, 0), blocks = new Map();
   let inventory = items.map(i => ({ ...i }));
   const air = p => open ? open(p) : p.equals(origin) || p.equals(origin.offset(0, 1, 0));
@@ -3271,7 +3274,7 @@ test('underground at night nothing is asked until two nights awake, and then sta
   const open = p => p.y >= 20 && p.y <= 21 && Math.floor(p.z) === 0;
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival', minY: -64, height: 384 }, entities: {}, time: { timeOfDay: 14000, age: 100000 },
     entity: { position: new Vec3(0.5, 20, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
-    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
+    inventory: { items: () => [{ name: 'iron_sword' }, { name: 'cobblestone', count: 64 }, { name: 'cooked_beef', count: 2 }], slots: {} }, heldItem: null, pathfinder: { movements: {}, setGoal() {} },
     blockAt: p => ({ name: open(p) || p.y > 80 ? 'air' : 'stone', boundingBox: open(p) || p.y > 80 ? 'empty' : 'block', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
   survival.decide = async (task, goal, save, { tree }) => { seen.push(tree); return { path: ['continue_request'], action: tree.continue_request, stale: false }; };
@@ -3319,7 +3322,7 @@ test('a mob nine blocks off does not refuse the bed itself, but the game\'s slee
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, time: { timeOfDay: 13000, age: 100000 },
     entities: { 50: { id: 50, name: 'zombie', position: new Vec3(9.5, 64, 0.5), height: 1.95, isValid: true } },
     entity: { position: new Vec3(0.5, 64, 0.5) }, health: 20, food: 20, oxygenLevel: 20, registry: require('minecraft-data')('26.1'),
-    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } } }, heldItem: { name: 'iron_sword' },
+    inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_sword' }, { name: 'cooked_beef', count: 2 }], slots: { 5: { name: 'iron_helmet' }, 6: { name: 'iron_chestplate' } } }, heldItem: { name: 'iron_sword' },
     blockAt: p => ({ name: p.y < 64 ? 'grass_block' : 'air', boundingBox: p.y < 64 ? 'block' : 'empty', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => ({}) } });
   survival.decide = async (task, goal, save, q) => { seen = q; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
@@ -3930,8 +3933,11 @@ test('a golden apple is eaten only when one is gone: an eat cut short by the han
 
 test('hurt and fed, resting where it is while health comes back is on offer, with the seconds said', async () => {
   // mid-241-i, at 2.3 health and hunger nineteen, had only food to choose and walked back past the skeleton it had got away from.
-  const { bot } = nookFixture({ open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
+  const { bot } = nookFixture({ items: [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], open: p => p.x === 0 && p.z === 0 && p.y >= 30 });
   bot.health = 6; bot.food = 19;
+  // Nothing carried is under the reserve's floor (note 796): the food is
+  // asked beside the rest, and the search looks round with the pathfinder.
+  bot.pathfinder = { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) };
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { client: { systemOne: async () => { throw new Error('offline'); } } });
   let tree = null;
   survival.decide = async (task, goal, save, q) => { tree = tree || q.tree; return { path: ['rest_to_heal'], action: q.tree.rest_to_heal, stale: true }; };

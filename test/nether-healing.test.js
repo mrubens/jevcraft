@@ -37,8 +37,10 @@ test('the crossing kit wants food for the Nether stay the goal still needs, and 
   assert.equal(food().wants, 40); assert.equal(food().short, false);
   assert.match(food().says, /The goal still needs 13 ender pearls \(it wants 7 rods and 13 pearls in all.*\): a practiced player takes about 60 minutes/);
   // Everything in hand: half an hour is still a stay.
+  // Its 24 points raised to the Nether's floor of 36 (note 796).
   bot.inventory.items = () => [item('ender_eye', 13)];
-  assert.equal(food().wants, 24);
+  assert.equal(food().wants, 36);
+  assert.match(food().says, /the code would take 36, food for the whole stay \(the stay's 24, raised to the 36 the record keeps in the Nether/);
   assert.match(food().says, /The goal needs nothing more from the Nether's fortress or barter: about 30 minutes is the stay counted/);
 });
 

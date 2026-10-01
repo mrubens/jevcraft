@@ -96,9 +96,9 @@ function kitItems(bot) {
     const food = foodSupply(bot), last = lastResortSupply(bot);
     const meals = bot.inventory.items().filter(i => safeFood(bot, i)).map(i => `${i.count} ${words(i.name)}`).join(', ');
     const lastSays = last.points ? ` Beside it, ${last.points} points in the last resort, not counted: ${last.says}.` : '';
-    const stay = netherStay(bot);
-    items.push({ key: 'food', rung: 'nether_food', short: food < stay.points, carried: food, wants: stay.points,
-      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${stay.points}, food for the whole stay. ${staySays(stay)} ${require('./food-facts').regenSays(bot)} ${require('./food-facts').clockSays(bot)} ${require('./food-facts').recordSays(bot)} A fortress trip is fighting and running; in the Nether, hoglins are the meat (a mushroom stew and a bastion's chests are the only other food there, note 639), and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
+    const stay = netherStay(bot), want = require('./food-reserve').crossingWant(bot, null, stay);
+    items.push({ key: 'food', rung: 'nether_food', short: food < want, carried: food, wants: want,
+      says: `Food: ${food} food points carried (${meals || 'nothing to eat'}); the code would take ${want}, food for the whole stay${want > stay.points ? ` (the stay's ${stay.points}, raised to the ${want} the record keeps in the Nether: under it, health fell under 8 with nothing that heals within half an hour 7% to 70% of the time, food-reserve.js)` : ''}. ${staySays(stay)} ${require('./food-facts').regenSays(bot)} ${require('./food-facts').clockSays(bot)} ${require('./food-facts').recordSays(bot)} A fortress trip is fighting and running; in the Nether, hoglins are the meat (a mushroom stew and a bastion's chests are the only other food there, note 639), and a hoglin hits for three to eight and has forty health, so a hurt bot with nothing to eat is left to go back through the portal for food or fight one at the health it has.${lastSays}` });
     const health = Math.round(bot.health ?? 20), hunger = bot.food ?? 20;
     const back = health >= NETHER_HEALTH ? '' : hunger >= 18
       ? ` At hunger ${hunger} it comes back about a point every four seconds: about ${(NETHER_HEALTH - health) * 4} seconds to ${NETHER_HEALTH}.`
@@ -289,7 +289,8 @@ function kitRungs(bot, goal = {}) {
   if (blocks < NETHER_BLOCKS) out.push({ phase: 'nether_blocks', action: 'acquire', item: 'cobblestone', count: countOf(bot, 'cobblestone') + NETHER_BLOCKS - blocks, kit: 'blocks', carried: blocks, wants: NETHER_BLOCKS });
   if (bot.game?.difficulty !== 'peaceful') {
     const food = foodSupply(bot);
-    if (food < stay.points) out.push({ phase: 'nether_food', action: 'nether_food', kit: 'food', carried: food, wants: stay.points });
+    const want = require('./food-reserve').crossingWant(bot, goal, stay);
+    if (food < want) out.push({ phase: 'nether_food', action: 'nether_food', kit: 'food', carried: food, wants: want });
   }
   // The chest itself, not only the wood for one (note 760): of 122 Nether
   // entries none carried a chest, and the wood carried in went to sticks,

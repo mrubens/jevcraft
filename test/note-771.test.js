@@ -64,11 +64,18 @@ test('25589 at 23:55:46Z: with its own nether-food step begun, a reserve-only er
   const { claim } = require('../src/survival');
   assert.equal(claim(bot, goal, survival), null, 'no claim on the turn');
   // At 23:57:06Z the rung had been set aside (the Nether first) and the
-  // step was other work; the 80 points are still the ladder's rung's.
+  // step was other work; the 80 points are still the ladder's rung's once
+  // the reserve's floor is carried (note 796: 12 points; under it, with
+  // nothing carried, the survival layer asks it, priced, the work beside).
   const aside = { ...goal, step: { action: 'mine_first', block: 'lapis_ore' } };
-  assert.equal(await survival.step(new Task('t', 'food'), aside, () => {}), false);
-  assert.equal(asked, null, 'nothing asked with the rung set aside');
-  assert.equal(claim(bot, aside, survival), null);
+  const stocked = underBot({ items: [['iron_pickaxe', 1], ['cooked_beef', 2]] });
+  const s2 = survivalOf(stocked);
+  s2.decide = survival.decide;
+  assert.equal(await s2.step(new Task('t', 'food'), aside, () => {}), false);
+  assert.equal(asked, null, 'nothing asked with the rung set aside and the floor carried');
+  assert.equal(claim(stocked, aside, s2), null);
+  await survival.step(new Task('t', 'food'), aside, () => {});
+  assert(asked?.tree?.obtain_food && asked.tree.continue_request, 'nothing carried: under the floor, asked with the work on offer');
   // Hunger under eighteen with nothing to meet it is still the survival layer's.
   const hungry = underBot({ food: 9 });
   const c = claim(hungry, goal, survivalOf(hungry));

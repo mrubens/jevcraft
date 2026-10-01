@@ -20,7 +20,9 @@ const { TOOL_TIERS } = require('./plan');
 // The chest lives in the base state (goal.survival.home.stash) with its
 // contents as of the last time the lid was opened, so the ladder can decide
 // to restock from memory and only walks to the chest when it has something.
-const KIT_FOOD_POINTS = 12;
+// The Overworld's reserve the record bears out (food-reserve.js, note 796):
+// what the stash leaves in the pockets and the day's kit takes.
+const KIT_FOOD_POINTS = require('./food-reserve').FLOOR.overworld;
 const RETRY_MS = 10 * 60 * 1000;
 const NEAR = 6;
 
@@ -236,7 +238,9 @@ function stashDeposits(bot, home, { valuables = false, items = bot.inventory.ite
 // time under eight health with nothing to eat, and most of those stretches
 // ended in a death.
 const NETHER_FOOD_POINTS = 80;
-const foodTarget = goal => goal?.preparingNether ? NETHER_FOOD_POINTS : KIT_FOOD_POINTS;
+// One reserve (food-reserve.js, note 796): the crossing's want, or the
+// Overworld's floor the record bears out (12 points, KIT_FOOD_POINTS).
+const foodTarget = (goal, bot = null) => goal?.preparingNether ? (bot ? require('./food-reserve').crossingWant(bot, goal) : NETHER_FOOD_POINTS) : KIT_FOOD_POINTS;
 
 function stashWithdrawals(bot, home, wants = [], { items = bot.inventory.items(), foodPoints: target = KIT_FOOD_POINTS } = {}) {
   const stored = { ...contentsOf(home) }, moves = [];
@@ -368,7 +372,7 @@ function restockStage(bot, goal, wants = [], { now = Date.now() } = {}) {
   const home = homeOf(bot, goal);
   if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return null;
   if (isSetAside(goal, 'stash', 'chest', now)) return null;
-  const moves = stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) }).filter(m => !isSetAside(goal, 'restock_item', m.item, now));
+  const moves = stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal, bot) }).filter(m => !isSetAside(goal, 'restock_item', m.item, now));
   if (!moves.length) return null;
   return { phase: 'home_restock', action: 'restock', items: moves };
 }
@@ -540,7 +544,7 @@ async function expandStash(bot, task, goal, save, home, actions) {
 
 // Take the kit out: what the pockets are short of and what the ladder wants.
 async function restockFromStash(bot, task, goal, save, home, actions, wants = []) {
-  const step = () => { goal.step = { action: 'restock', items: stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal) }) }; save(); };
+  const step = () => { goal.step = { action: 'restock', items: stashWithdrawals(bot, home, wants, { foodPoints: foodTarget(goal, bot) }) }; save(); };
   step();
   // Room first, with the lid shut (nothing can be dropped from an open
   // window): with thirty-six slots taken the spare pickaxe had nowhere to
@@ -553,7 +557,7 @@ async function restockFromStash(bot, task, goal, save, home, actions, wants = []
     const taken = await withChest(bot, task, goal, save, home, actions, async window => {
       step();
       const taken = [];
-      for (const move of stashWithdrawals(bot, home, wants, { items: window.items(), foodPoints: foodTarget(goal) })) {
+      for (const move of stashWithdrawals(bot, home, wants, { items: window.items(), foodPoints: foodTarget(goal, bot) })) {
         task.check();
         try { await moveOut(bot, window, move); taken.push(move); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }

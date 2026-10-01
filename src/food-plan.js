@@ -184,18 +184,22 @@ function price(bot, goal, { children = {}, supply = 0, now = Date.now() } = {}) 
   const d = drain(bot, supply);
   const work = workSays(goal);
   const waySays = w => `${words(w.key)}, about ${w.ms != null ? (w.ms < 60000 ? `${Math.max(1, Math.round(w.ms / 1000))} seconds` : mins(w.ms)) : 'an unknown time'} to the food${w.kind ? `; ${recordSays(w.kind, place)}` : ''}${w.failed ? `; ${failedSays(w.failed, { name: false })}` : ''}`;
+  // The reserve's record for what is carried (note 796).
+  const fr = require('./food-reserve');
+  const reserveSays = fr.keeps(bot, goal) ? fr.sayHere(bot, supply) : null;
   const facts = {
     waysToFood: ways.map(waySays),
     ...(failed.length ? { failedHere: failed.map(w => failedSays(w)) } : {}),
     hungerDrain: d.says,
+    ...(reserveSays ? { foodReserve: `${supply} food points carried. ${reserveSays}` } : {}),
     workSetAside: work,
   };
-  const foodSays = `Food or the work: ${nearest ? `the nearest way to food here is ${waySays(nearest)}` : 'no way to food here has a known time'}${failed.length ? `. Failed here: ${failed.map(w => failedSays(w)).join('; ')}` : ''}. ${d.says} The work set aside meanwhile: ${work}. Chosen, ${FOOD_HOLDS}`;
+  const foodSays = `Food or the work: ${nearest ? `the nearest way to food here is ${waySays(nearest)}` : 'no way to food here has a known time'}${failed.length ? `. Failed here: ${failed.map(w => failedSays(w)).join('; ')}` : ''}. ${d.says}${reserveSays ? ` ${reserveSays}` : ''} The work set aside meanwhile: ${work}. Chosen, ${FOOD_HOLDS}`;
   const workHoldSays = `Chosen over food, ${WORK_HOLDS} ${d.says}`;
   return { facts, foodSays, workSays: workHoldSays, nearest, drain: d };
 }
 const FOOD_HOLDS = 'the way to food holds (neither the work nor another way asked) until food is eaten or carried, hunger falls under a line it is above (eighteen, six), health falls a band of four, the way fails, or twice its minutes to the food pass (two to ten).';
-const WORK_HOLDS = 'the work holds and no food is asked until hunger falls two from now (or under eighteen, or to six), health falls four, the night needs a shelter, or the minutes the drain takes hunger two lower pass (two to ten).';
+const WORK_HOLDS = 'the work holds and no food is asked until hunger falls two from now (or under eighteen, or to six), health falls four, the food carried falls under the reserve kept (where it is at or over it now), the night needs a shelter, or the minutes the drain takes hunger two lower pass (two to ten).';
 
 // Begin the plan: Jev's answer to food or the work, kept on `holder` (the
 // survival layer's state). `minutesMs`: the way's priced minutes, for food.
@@ -204,7 +208,7 @@ function begin(holder, bot, { choice, by, key = null, need = null, supply = 0, m
   const d = drain(bot, supply);
   const ms = choice === 'food' ? clamp(minutesMs != null ? 2 * minutesMs : 3 * 60000) : clamp(d.twoMs);
   const plan = { choice, by, ...(key ? { key, keyAt: now } : {}), ...(need ? { need } : {}), at: now, ms,
-    facts: { food: bot.food ?? 20, health: bot.health ?? 20, supply, dimension: dimOf(bot), deaths: (goal?.survival?.deaths || []).length, pos: P(bot.entity?.position) } };
+    facts: { food: bot.food ?? 20, health: bot.health ?? 20, supply, floor: require('./food-reserve').floorFor(bot, goal), dimension: dimOf(bot), deaths: (goal?.survival?.deaths || []).length, pos: P(bot.entity?.position) } };
   holder.foodChoice = plan;
   console.log(`[food plan] ${choice} chosen (${by}${key ? `: ${key}` : ''}), holds until ${untilSays(plan)}`);
   return plan;
@@ -218,10 +222,11 @@ function setWay(holder, key, minutesMs, now = Date.now()) {
   p.ms = Math.max(p.ms, (now - p.at) + clamp(minutesMs != null ? 2 * minutesMs : 3 * 60000));
   return p;
 }
+const reserveHolds = p => (p.facts.floor ?? 1) > 1 && (p.facts.supply ?? 0) >= p.facts.floor;
 function untilSays(p) {
   return p.choice === 'food'
     ? `food is eaten or carried, hunger falls under ${p.facts.food >= HEALS_AT ? 'eighteen' : 'six'}, health falls a band of four, the way chosen fails, or ${mins(p.ms)} pass`
-    : `hunger falls to ${Math.max(0, p.facts.food - 2)}${p.facts.food >= HEALS_AT ? ' (or under eighteen)' : ''}, health falls four, the night needs a shelter, or ${mins(p.ms)} pass`;
+    : `hunger falls to ${Math.max(0, p.facts.food - 2)}${p.facts.food >= HEALS_AT ? ' (or under eighteen)' : ''}, health falls four, ${reserveHolds(p) ? `the food carried falls under the ${p.facts.floor} points kept, ` : ''}the night needs a shelter, or ${mins(p.ms)} pass`;
 }
 
 // Why the plan has ended, or null while it holds.
@@ -233,6 +238,12 @@ function endOf(p, bot, { supply = 0, goal = null, needsShelter = false, now = Da
   const food = bot?.food ?? 20, hp = bot?.health ?? 20;
   if (p.choice === 'work') {
     if (needsShelter) return 'the night needs a shelter';
+    // The food carried run down under the reserve since the work was chosen
+    // (food-reserve.js, note 796): the healing eats it in a minute (the
+    // median from under twelve to none in the record), and the next asking
+    // came with nothing carried.
+    const floor = p.facts.floor ?? 1;
+    if (floor > 1 && (p.facts.supply ?? 0) >= floor && supply < floor) return `the food carried fell under the reserve: ${p.facts.supply} to ${supply} food points, under the ${floor} kept`;
     if (food <= p.facts.food - 2 || (p.facts.food >= HEALS_AT && food < HEALS_AT) || (p.facts.food > SPRINT_AT && food <= SPRINT_AT)) return `hunger fell from ${p.facts.food} to ${food}`;
     if (hp <= p.facts.health - HURT) return `health fell from ${Math.round(p.facts.health)} to ${Math.round(hp)}`;
     return null;

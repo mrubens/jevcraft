@@ -46,8 +46,11 @@ function fillsHunger(bot, supply) {
 // in the flight records from 2026-09-30T06:00Z to 17:30Z, 1,269 were at
 // hunger 18 or more with food carried (scripts/food-errands.js). The reserve for a crossing is the work's own food
 // step (kit_food), asked there with its trips and minutes.
-function met(bot, supply) {
-  return (bot?.food ?? 20) >= HEALS_AT && supply > 0;
+// And at the reserve's floor where the game's ladder keeps one (note 796,
+// food-reserve.js floorFor): hunger at eighteen with one beef carried is
+// the last meal before none.
+function met(bot, supply, floor = 1) {
+  return (bot?.food ?? 20) >= HEALS_AT && supply > 0 && supply >= floor;
 }
 
 // Hunger met by what is carried (note 761b): under eighteen, with safe food
@@ -241,7 +244,10 @@ function says(bot, goal, { supply, desired, hungry, errand = null, now = Date.no
     const stays = goal?.preparingNether ? require('./kit-record').staysSays('nether_food') : '';
     priced = `${where ? ` ${where}` : ''} ${reserveRecordSays({ underground, night })}${stays ? ` The Nether's ${stays}.` : ''}`;
   }
-  return `Get food. ${hungerSays(bot, supply)} ${purpose} ${supply} food points carried of the ${desired} kept for ${reserveFor(goal)}: ${short} short.${cookSays(bot)}${yieldSays(errand, supply, now)}${reserveOnly && holder ? ` ${recordSays(holder, now)}` : ''}${priced}`;
+  // The reserve's record for what is carried (note 796).
+  const fr = require('./food-reserve');
+  const record = fr.keeps(bot, goal) ? ` ${fr.sayHere(bot, supply)}` : '';
+  return `Get food. ${hungerSays(bot, supply)} ${purpose} ${supply} food points carried of the ${desired} kept for ${reserveFor(goal)}: ${short} short.${record}${cookSays(bot)}${yieldSays(errand, supply, now)}${reserveOnly && holder ? ` ${recordSays(holder, now)}` : ''}${priced}`;
 }
 
 module.exports = { crossingReserve, workIsFood, WORK_FOOD_STEPS, reserveOnly, RESERVE_RECORD, reserveRecordSays, whereSays, track, end, noYield, yieldSays, restWhy, says, fillsHunger, reserveFor, cookSays, met, covered, hungerSays, costSays, recordSays, logErrand, HEALS_AT, NO_YIELD_MS, GAP_MS, REST_MS };

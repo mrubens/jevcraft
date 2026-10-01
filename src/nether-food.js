@@ -390,7 +390,9 @@ async function askRestockFood(bot, task, goal, save, { actions = {}, survival = 
   const state = { carried: `${stock.points} food points${stock.raw.length ? `, of raw meat ${stock.raw.map(m => `${m.n} ${words(m.item)}`).join(', ')} (cooked, +${stock.cookedGain} points)` : ''}`,
     hunger: bot.food, health: r1(bot.health ?? 20), stay: { minutesWanted: stay.minutes, pointsWanted: stay.points, carriedLastMinutes: stay.lasts },
     waysNotOffered: notOffered, whatTheNetherHas: `${CHEST_FOOD} ${NOT_FOOD}`,
-    theNetherPace: `the Nether's walks back to a portal made ${require('./game-progress').NETHER_TRIPS.slow} to ${require('./game-progress').NETHER_TRIPS.fast} blocks a minute` };
+    theNetherPace: `the Nether's walks back to a portal made ${require('./game-progress').NETHER_TRIPS.slow} to ${require('./game-progress').NETHER_TRIPS.fast} blocks a minute`,
+    // What staying on with this much carried came to in the record (note 796).
+    foodReserve: require('./food-reserve').says(stock.points, 'nether') };
   const decision = await require('./decisions').decide('restock_food', { client: client || actions.client || task.opportunityClient, bot, task, goal, save, tree, state, context: {} });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
@@ -467,6 +469,7 @@ async function askStayKit(bot, task, goal, save, { actions = {}, survival = null
   save?.();
   if (Object.keys(tree).length < 2) return 'go_on';
   const state = { stay: { minutesWanted: stay.minutes, pointsWanted: stay.points, pointsCarried: stay.carried, carriedLastMinutes: stay.lasts, short: stay.short }, hunger: bot.food, health: r1(bot.health ?? 20), staying: staySays(bot, stay),
+    foodReserve: require('./food-reserve').says(stay.carried, 'nether'),
     note: `This is the food${stay.cauldron ? ' and cauldron lines' : ' line'} of the crossing kit, asked inside the Nether because this stay began here (a save, or a crossing made before the kit counted food for the stay).${stay.short ? '' : ' Food is not short for this stay.'}` };
   const decision = await require('./decisions').decide('nether_food_kit', { client: client || actions.client || task.opportunityClient, bot, task, goal, save, tree, state, context: {} });
   if (decision.stale) { delete goal.netherFoodKit; return null; }

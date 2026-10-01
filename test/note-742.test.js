@@ -73,7 +73,7 @@ function pocketBotOneZombie({ armour = [] } = {}) {
     registry, game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' },
     entities: { 99: zombie }, health: 20, food: 20, oxygenLevel: 20, time: { timeOfDay: 13500 },
     entity: { position: new Vec3(0, 64, 0), onGround: true, velocity: new Vec3(0, 0, 0) },
-    inventory: { items: () => [{ name: 'iron_sword', count: 1 }], slots: armourSlots, emptySlotCount: () => 10 },
+    inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'cooked_beef', count: 2 }], slots: armourSlots, emptySlotCount: () => 10 },
     heldItem: { name: 'iron_sword' },
     // Open sky at and above the bot's own feet (y 64): on the surface, not
     // underground (surfaceObserver looks for the top solid block strictly

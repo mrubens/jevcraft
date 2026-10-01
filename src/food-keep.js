@@ -40,6 +40,13 @@ function crossingAhead(bot, goal) {
 function foodStays(bot, goal = bot?._goal) {
   if (nether(bot)) return 'in the Nether the food carried is all there is: nothing there reliably gives meat, and more is a trip home';
   if (crossingAhead(bot, goal)) return 'the Nether crossing is ahead, and the stay there eats only what is carried';
+  // At or under the reserve on the game's ladder (food-reserve.js, note
+  // 796): the food carried is what the next healing eats.
+  const fr = require('./food-reserve');
+  if (fr.keeps(bot, goal)) {
+    const c = carriedPoints(bot);
+    if (c > 0 && c <= fr.FLOOR.overworld) return `the ${c} food points carried are within ${fr.floorSays('overworld')}`;
+  }
   return null;
 }
 

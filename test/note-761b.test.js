@@ -75,8 +75,12 @@ test('25593 at 19:47:18: the meal is offered beside the trips, and the trip is s
   // frame: nothing is asked (note 771).
   tree = null;
   assert.equal(await survival.step(new Task('t', 'food'), netherGoal('nether_food'), () => {}), false);
-  assert.equal(await survival.step(new Task('t', 'food'), netherGoal(), () => {}), false);
   assert.equal(tree, null);
+  // With no food step in hand, the 5 points are under the reserve's floor
+  // (12, note 796): the survival layer asks it, the work on offer.
+  survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['continue_request'], action: { run: async () => {} }, stale: false }; };
+  await survival.step(new Task('t', 'food'), netherGoal(), () => {});
+  assert(tree?.obtain_food && tree.continue_request, 'under the floor: asked, the work beside it');
 });
 
 test('the survival claim for 25593 is for the reserve, with no healing line at full health', () => {
