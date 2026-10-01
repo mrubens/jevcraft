@@ -2734,7 +2734,10 @@ function localBatch(bot, goal, save = () => {}) {
     const now = Date.now(), p = goal.smelting.position, at = bot.entity?.position;
     const near = p && at ? Math.hypot(at.x - p.x - 0.5, at.y - p.y, at.z - p.z - 0.5) <= 16 : false;
     const lapsed = !!left.lapsed || now - left.at >= LEAVE_BATCH_MS;
-    if (!(near && now >= left.doneAt) && !(near && lapsed)) {
+    // Its way found wanting from about here lately: not taken again from
+    // here (note 775b), however near the furnace is.
+    const unreached = left.noRoute && now - left.noRoute.at < BATCH_NO_ROUTE_MS && at && Math.hypot(left.noRoute.from.x - at.x, left.noRoute.from.y - at.y, left.noRoute.from.z - at.z) <= LEFT_NEAR;
+    if (unreached || (!(near && now >= left.doneAt) && !(near && lapsed))) {
       if (lapsed && !left.lapsed) { left.lapsed = now; save(); }
       return null;
     }
@@ -2742,7 +2745,41 @@ function localBatch(bot, goal, save = () => {}) {
   }
   return goal.smelting || null;
 }
-const LEAVE_BATCH_MS = 20 * 60000, LEFT_NEAR = 16, AWAY_FROM_BATCH = 64;
+const LEAVE_BATCH_MS = 20 * 60000, LEFT_NEAR = 16, AWAY_FROM_BATCH = 64, BATCH_NO_ROUTE_MS = 10 * 60000;
+// A portal frame being cast (portal_method's cast, a frame kept): the job in
+// hand outranks a batch in a furnace (note 775b).
+const castUnderWay = goal => !!(goal?.portalFrame?.cast && goal.portalMethod?.kind === 'cast');
+// The batch in a furnace taken out at the head of a step, as it comes: true
+// when that was the pass's work. Not while a portal frame is being cast, and
+// a batch whose furnace cannot be walked to or reached from here is left
+// where it is, said, and the step goes on: 25598 (mid-241-bq, 03:56:18Z on
+// 2026-10-01) said "Lava in, water on top: I'm casting the portal frame",
+// and in the same second its next step began with the batch of 3 raw iron
+// in a furnace 11 blocks off and 7 up through rock; "I can't reach the
+// furnace holding our saved batch", then "stayed out of reach; starting the
+// batch again", a climb to daylight, a new furnace and the 3 iron again, the
+// portal 1 block from done and then 26 (note 775b).
+async function takeOutBatch(bot, task, goal, save = () => {}) {
+  if (castUnderWay(goal)) return false;
+  const batch = localBatch(bot, goal, save);
+  if (!batch) return false;
+  try { await smelt(bot, task, batch, goal, save); }
+  catch (err) {
+    task.check();
+    if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+    if (!(err?.name === 'NoRoute' || /furnace holding our saved batch/.test(String(err?.message)))) throw err;
+    if (goal.smelting === batch && !batch.left) leaveUnreached(bot, goal, batch, String(err.message).slice(0, 160), save);
+    console.log(`[batch] left in its furnace at (${batch.position?.x}, ${batch.position?.y}, ${batch.position?.z}): ${String(err.message).slice(0, 120)}; the step goes on`);
+    return false;
+  }
+  return true;
+}
+function leaveUnreached(bot, goal, batch, why, save = () => {}, now = Date.now()) {
+  const f = bot.entity.position.floored();
+  delete batch.unreachable;
+  batch.left = { at: now, doneAt: now, lapsed: now, away: true, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why } };
+  save();
+}
 // The batch left cooking whose time is up, with the bot away from its
 // furnace in this dimension: offered at upkeep (note 775). Not while the walk
 // there found no route from within 16 blocks of here in the last ten
@@ -2750,11 +2787,15 @@ const LEAVE_BATCH_MS = 20 * 60000, LEFT_NEAR = 16, AWAY_FROM_BATCH = 64;
 function leftBatch(bot, goal, now = Date.now()) {
   const b = goal?.smelting, left = b?.left;
   if (!left || left.forgone || !b.position || (b.dimension && b.dimension !== dimension(bot))) return null;
+  // Not run inside a portal cast (note 775b): offered once the frame is done.
+  if (castUnderWay(goal)) return null;
   const at = bot.entity?.position;
   if (!at || !(left.lapsed || now - left.at >= LEAVE_BATCH_MS)) return null;
   const d = Math.hypot(at.x - b.position.x - 0.5, at.y - b.position.y, at.z - b.position.z - 0.5);
-  if (d <= LEFT_NEAR) return null;
-  const noRoute = left.noRoute && now - left.noRoute.at < 10 * 60000 && Math.hypot(left.noRoute.from.x - at.x, left.noRoute.from.y - at.y, left.noRoute.from.z - at.z) <= LEFT_NEAR ? left.noRoute : null;
+  const noRoute = left.noRoute && now - left.noRoute.at < BATCH_NO_ROUTE_MS && Math.hypot(left.noRoute.from.x - at.x, left.noRoute.from.y - at.y, left.noRoute.from.z - at.z) <= LEFT_NEAR ? left.noRoute : null;
+  // Near it, only where its furnace could not be reached from here (note
+  // 775b): leave_batch is offered then, fetch_batch is not.
+  if (d <= LEFT_NEAR && !noRoute) return null;
   return { batch: b, left, distance: Math.round(d), noRoute };
 }
 // The walk to the batch's furnace found no route: the batch is left where
@@ -3522,7 +3563,7 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
 // furnace batch and four crafts rather than four of everything.
 async function acquireSetStep(bot, task, items, goal, save) {
   task.check(); checkAir(bot);
-  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (await takeOutBatch(bot, task, goal, save)) return false;
   const inv = planningInventory(bot);
   const outputs = items.map(item => ({ item, count: 1 })).filter(o => (inv[o.item] || 0) < o.count);
   if (!outputs.length) return true;
@@ -3538,7 +3579,7 @@ async function acquireSetStep(bot, task, items, goal, save) {
 
 async function acquireStep(bot, task, item, count, goal, save, { minimumMiningY, reserved = {}, elsewhere } = {}) {
   task.check(); checkAir(bot);
-  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (await takeOutBatch(bot, task, goal, save)) return false;
   const inv = planningInventory(bot);
   for (const [name, amount] of Object.entries(reserved)) inv[name] = Math.max(0, (inv[name] || 0) - amount);
   if ((inv[item] || 0) >= count) return true;
@@ -4099,7 +4140,7 @@ async function executeDesignedBuildStep(bot, task, goal, save, client, onStep = 
     }
   }
   const batch = goal.buildBatch;
-  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (await takeOutBatch(bot, task, goal, save)) return false;
   if (batch) {
     const cells = remainingBuildBatch(bot, batch), outputs = materialCounts(cells);
     if (bot.game.gameMode === 'creative') for (const output of outputs) output.count = 1;
@@ -4264,7 +4305,7 @@ async function prepareBuildTerrain(bot, task, goal, save) {
 }
 
 async function obtainStep(bot, task, goal, save, client, onStep) {
-  if (localBatch(bot, goal, save)) { await smelt(bot, task, goal.smelting, goal, save); return false; }
+  if (await takeOutBatch(bot, task, goal, save)) return false;
   if ((goal.delivered || 0) >= goal.count) return true;
   const remaining = (goal.deliver ? Math.min(goal.count, goal.deliveryTarget ?? goal.count) : goal.count) - (goal.delivered || 0);
   if (goal.pendingDelivery || goal.pendingChestDelivery || goal.deliveryMode === 'chest' || countOf(bot, goal.item) >= remaining) {
@@ -8272,4 +8313,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { wantedItems, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear };
+module.exports = { wantedItems, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear };
