@@ -92,7 +92,7 @@ async function readFile(file) {
       if (Number.isFinite(t) && t >= since && t <= until && line.startsWith('{"kind":"navigation_stall"') && argv.includes('--stalls')) {
         let o; try { o = JSON.parse(line); } catch (_) { continue; }
         const p = P(o.detail?.position || o.snapshot?.position), g = o.detail?.goal;
-        if (p) stalls.push({ t: o.detail?.at || t, p, dim: o.snapshot?.dimension, step: o.snapshot?.goal?.step?.action || '?', walk: o.detail?.walk ?? null,
+        if (p) stalls.push({ t: o.detail?.at || t, p, dim: o.snapshot?.dimension, step: o.snapshot?.goal?.step?.action || '?', walk: o.detail?.walk ?? null, from: P(o.detail?.from),
           g: g && Number.isFinite(g.x) && Number.isFinite(g.z) ? { x: g.x, y: Number.isFinite(g.y) ? g.y : p.y, z: g.z } : null });
       }
       continue;
@@ -489,14 +489,17 @@ function placesReplay(asks, stalls, routes, out) {
     bot.game.dimension = e.dim || e.a?.dimension || bot.game.dimension;
     if (e.kind === 'stall') {
       out.stalls++;
-      bot.entity.position = { x: e.p.x + 0.5, y: e.p.y, z: e.p.z + 0.5 };
+      // Where the walk began (recorded from note 777b on; before, the stall's
+      // own spot stands for it).
+      const start = e.from || e.p;
+      bot.entity.position = { x: start.x + 0.5, y: start.y, z: start.z + 0.5 };
       // The walk before it, begun from here: would it have been begun?
       if (e.g && S.repeatStallSays(bot, { x: Math.floor(e.g.x), y: e.g.y, z: Math.floor(e.g.z) }, e.t)) out.refused++;
       // One walk's stall and its stall after the recovery are one walk.
       // The walk's own number where the record has it (from note 777 on).
       const same = e.walk != null ? lastStall?.walk === e.walk : lastStall && e.t - lastStall.t < SAME_WALK_MS && e.g && lastStall.g && Math.hypot(e.g.x - lastStall.g.x, e.g.z - lastStall.g.z) <= 4;
       if (!same) walk++;
-      S.noteStallSpot(bot, e.p, e.t, { goal: e.g, walk: e.walk != null ? `w${e.walk}` : walk });
+      S.noteStallSpot(bot, e.p, e.t, { goal: e.g, walk: e.walk != null ? `w${e.walk}` : walk, from: start });
       lastStall = e;
       continue;
     }

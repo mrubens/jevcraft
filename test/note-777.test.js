@@ -16,24 +16,25 @@ function flatBot(at = new Vec3(0.5, 64, 0.5)) {
   };
 }
 
-test('a walk to a goal that walks from about here have stalled going to twice is not begun a third time, said (note 777)', async () => {
+test('a walk to a goal that walks from about here have stalled going to twice is not begun a third time, said (note 777, 777b)', async () => {
   const { noteStallSpot, stallsToward, repeatStallSays, navigate } = require('../src/skills');
   const { goals } = require('mineflayer-pathfinder');
   const bot = flatBot(new Vec3(188.5, 61, 139.5));
   const now = Date.now();
-  const table = { x: 191, y: 61, z: 141 };
+  const from = { x: 188.5, y: 61, z: 139.5 };
+  const table = { x: 199, y: 61, z: 141 };
   // One walk's stall and its stall again after the recovery are one.
-  noteStallSpot(bot, new Vec3(188.4, 61, 139.6), now - 30000, { goal: table, walk: 1 });
-  noteStallSpot(bot, new Vec3(188.6, 61, 139.4), now - 28000, { goal: table, walk: 1 });
+  noteStallSpot(bot, new Vec3(193.4, 61, 139.6), now - 30000, { goal: table, walk: 1, from });
+  noteStallSpot(bot, new Vec3(193.6, 61, 139.4), now - 28000, { goal: table, walk: 1, from });
   assert.equal(stallsToward(bot, table, now).length, 1);
   assert.equal(repeatStallSays(bot, new goals.GoalNear(table.x, table.y, table.z, 1), now), null, 'once is a stall');
-  noteStallSpot(bot, new Vec3(188.5, 61, 139.5), now - 5000, { goal: { x: 190.5, y: 61, z: 141.5 }, walk: 2 });
+  noteStallSpot(bot, new Vec3(193.5, 61, 139.5), now - 5000, { goal: { x: 198.5, y: 61, z: 141.5 }, walk: 2, from: { x: 189, y: 61, z: 140 } });
   const says = repeatStallSays(bot, new goals.GoalNear(table.x, table.y, table.z, 1), now);
-  assert.match(says, /^walks to \(190, 61, 141\) stalled 2 times in the last 28 seconds, at \(188, 61, 139\), the last 5 seconds ago: not walked a third time from about here \(navigation timed out without reaching new ground each time\)$/);
-  // Another goal is walked; so is the same one from far off.
+  assert.match(says, /^walks to \(198, 61, 141\) begun from about here stalled 2 times in the last 28 seconds, at \(193, 61, 139\), the last 5 seconds ago: not walked a third time from here \(navigation timed out without reaching new ground each time\)$/);
+  // Another goal is walked; so is the same one from another start.
   assert.equal(repeatStallSays(bot, new goals.GoalNear(220, 61, 141, 1), now), null);
-  const far = flatBot(new Vec3(230.5, 61, 139.5)); far._stallSpots = bot._stallSpots;
-  assert.equal(repeatStallSays(far, new goals.GoalNear(table.x, table.y, table.z, 1), now), null, 'from far off it is another way there');
+  const other = flatBot(new Vec3(183.5, 61, 139.5)); other._stallSpots = bot._stallSpots;
+  assert.equal(repeatStallSays(other, new goals.GoalNear(table.x, table.y, table.z, 1), now), null, 'from another start it is another walk');
   // The walk itself: thrown at once, as a stall, nothing walked.
   let walked = false;
   Object.assign(bot, { pathfinder: { movements: {}, goto: async () => { walked = true; }, setGoal: () => {}, isMoving: () => false },
@@ -44,6 +45,29 @@ test('a walk to a goal that walks from about here have stalled going to twice is
   // Ten minutes on, walked again.
   for (const s of bot._stallSpots) for (const g of s.goals) g.at -= 10 * 60000;
   assert.equal(repeatStallSays(bot, new goals.GoalNear(table.x, table.y, table.z, 1)), null);
+});
+
+test('never refused with the bot already at the goal or within reach of it (25598 mid-241-br 04:18:34Z, note 777b)', async () => {
+  const { noteStallSpot, repeatStallSays, navigate } = require('../src/skills');
+  const { goals } = require('mineflayer-pathfinder');
+  const now = Date.now();
+  const lava = { x: -66, y: 5, z: -490 };
+  // Two walks to the lava stalled nine blocks under it, begun down there.
+  const bot = flatBot(new Vec3(-69.5, -4, -491.5));
+  noteStallSpot(bot, new Vec3(-68, -4, -490), now - 60000, { goal: lava, walk: 1, from: { x: -69.5, y: -4, z: -491.5 } });
+  noteStallSpot(bot, new Vec3(-68, -4, -490), now - 30000, { goal: lava, walk: 2, from: { x: -69.5, y: -4, z: -491.5 } });
+  assert.match(repeatStallSays(bot, new goals.GoalNear(lava.x, lava.y, lava.z, 1), now) || '', /not walked a third time/, 'from the same start below: refused');
+  // Stood a block from the lava: no walk is wanted, never refused.
+  bot.entity.position = new Vec3(-64.5, 5, -488.5);
+  assert.equal(repeatStallSays(bot, new goals.GoalNear(lava.x, lava.y, lava.z, 1), now), null);
+  let walked = false;
+  Object.assign(bot, { pathfinder: { movements: {}, goto: async () => { walked = true; }, setGoal: () => {}, isMoving: () => false },
+    clearControlStates: () => {}, getControlState: () => false, setControlState: () => {}, food: 20 });
+  await navigate(bot, new Task('walk'), new goals.GoalNear(lava.x, lava.y, lava.z, 1), { timeoutMs: 2000 }).catch(err => assert.notEqual(err.name, 'RepeatStall'));
+  assert.equal(walked, true, 'walked (or found there)');
+  // Ten blocks off, begun from a start the stalled walks did not: walked.
+  bot.entity.position = new Vec3(-60.5, 5, -480.5);
+  assert.equal(repeatStallSays(bot, new goals.GoalNear(lava.x, lava.y, lava.z, 1), now), null);
 });
 
 test('a target the ways to have failed twice, whatever asked, is said on the option going there and rests it (note 777)', () => {
@@ -73,7 +97,7 @@ test('a run of ways from about here to other targets each failing: the place is 
   const now = Date.now();
   const goal = { tried: { entries: [], escalations: [] } };
   // Two ores' walks stalled about here, each a different ore.
-  noteStallSpot(bot, new Vec3(-78, 35, 576), now - 60000, { goal: { x: -78, y: 35, z: 574 }, walk: 1 });
+  noteStallSpot(bot, new Vec3(-78, 35, 576), now - 60000, { goal: { x: -78, y: 35, z: 574 }, walk: 1, from: { x: -77.5, y: 34, z: 573.5 } });
   noteStallSpot(bot, new Vec3(-77, 34, 573), now - 20000, { goal: { x: -70, y: 34, z: 569 }, walk: 2 });
   const tree = {
     ore_21: { description: 'Dig to the coal ore 5 blocks off.', target: { x: -72, y: 35, z: 578 } },

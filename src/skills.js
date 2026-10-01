@@ -396,7 +396,7 @@ const SCOOPED_COST = 1000, STALL_SPOT_MS = 15 * 60000, STALL_SPOT_NEAR = 3, STAL
 // four blocks of where the walk is going, and 225 of the 366 stalls at a
 // spot stalled at twice before (2026-10-01 00:41-02:50Z) were walks to a
 // goal within four blocks of it, the same goal as before.
-function noteStallSpot(bot, position, now = Date.now(), { goal = null, walk = null } = {}) {
+function noteStallSpot(bot, position, now = Date.now(), { goal = null, walk = null, from = null } = {}) {
   if (!position) return null;
   const dim = String(bot.game?.dimension || 'overworld'), cell = new Vec3(Math.floor(position.x), Math.floor(position.y), Math.floor(position.z));
   const spots = (bot._stallSpots ||= []).filter(s => now - s.last < STALL_SPOT_MS);
@@ -404,7 +404,9 @@ function noteStallSpot(bot, position, now = Date.now(), { goal = null, walk = nu
   if (spot) { spot.n++; spot.last = now; }
   else { spot = { dim, x: cell.x, y: cell.y, z: cell.z, n: 1, first: now, last: now }; spots.push(spot); }
   const g = goal && Number.isFinite(goal.x) && Number.isFinite(goal.z) ? { x: Math.round(goal.x * 10) / 10, y: Number.isFinite(goal.y) ? Math.round(goal.y * 10) / 10 : null, z: Math.round(goal.z * 10) / 10 } : null;
-  if (g) spot.goals = [...(spot.goals || []), { ...g, at: now, walk }].slice(-8);
+  // And where the walk began (note 777b): from another start it is another walk.
+  const f = from && Number.isFinite(from.x) ? { x: Math.round(from.x * 10) / 10, y: Math.round(from.y * 10) / 10, z: Math.round(from.z * 10) / 10 } : null;
+  if (g) spot.goals = [...(spot.goals || []), { ...g, at: now, walk, ...(f ? { from: f } : {}) }].slice(-8);
   bot._stallSpots = spots.slice(-32);
   if (spot.n === STALL_SPOT_TIMES) console.log(`[stall-spot] walks have stalled ${spot.n} times at (${spot.x}, ${spot.y}, ${spot.z}); the next walks go round it where they can`);
   return spot;
@@ -413,8 +415,9 @@ function noteStallSpot(bot, position, now = Date.now(), { goal = null, walk = nu
 // with no height by its x and z), in this dimension, in the last
 // REPEAT_MS: one per walk (a walk's stall and its stall again after the
 // recovery are one), newest last. -> [{ at, spot, goal }]
-const REPEAT_NEAR = 4, REPEAT_MS = 10 * 60000, REPEAT_FROM = 16, REPEAT_TIMES = 2;
-function stallsToward(bot, point, now = Date.now()) {
+// `from`: only the walks begun within REPEAT_START of it (note 777b).
+const REPEAT_NEAR = 4, REPEAT_MS = 10 * 60000, REPEAT_START = 4, REPEAT_REACH = 4.5, REPEAT_TIMES = 2;
+function stallsToward(bot, point, now = Date.now(), { from = null } = {}) {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.z)) return [];
   const dim = String(bot?.game?.dimension || 'overworld'), out = new Map();
   for (const s of bot?._stallSpots || []) {
@@ -423,27 +426,34 @@ function stallsToward(bot, point, now = Date.now()) {
       if (now - g.at >= REPEAT_MS) continue;
       const d = Number.isFinite(point.y) && Number.isFinite(g.y) ? Math.hypot(g.x - point.x, g.y - point.y, g.z - point.z) : Math.hypot(g.x - point.x, g.z - point.z);
       if (d > REPEAT_NEAR) continue;
+      if (from && !(g.from && Math.hypot(g.from.x - from.x, g.from.y - from.y, g.from.z - from.z) <= REPEAT_START)) continue;
       const k = g.walk ?? `${g.at}`;
       if (!out.has(k) || out.get(k).at < g.at) out.set(k, { at: g.at, spot: { x: s.x, y: s.y, z: s.z }, goal: { x: g.x, y: g.y, z: g.z } });
     }
   }
   return [...out.values()].sort((a, b) => a.at - b.at);
 }
-// A walk to a goal that walks from about here have stalled going to twice
-// already: not walked a third time (note 777). The fact, in words, or null.
-// "From about here": the bot within REPEAT_FROM of where the last of them
-// stalled; from farther off it is another way there, and is walked.
+// A walk to a goal that walks begun from about here (within REPEAT_START of
+// where this one begins) have stalled going to twice already: not walked a
+// third time (note 777). The fact, in words, or null. Never where no walk is
+// wanted: the bot already at the goal or within reach of it (note 777b:
+// 25598 mid-241-br at 04:18:34Z on 2026-10-01 stood a block from the lava it
+// was to scoop, and every walk there was refused for two stalls nine blocks
+// lower on walks begun elsewhere; it climbed 52 blocks out instead). A walk
+// from another start is another walk, and is walked.
 function repeatStallSays(bot, goal, now = Date.now()) {
   const there = goalPoint(goal) || (flatGoalPoint(goal) ? { ...flatGoalPoint(goal), y: undefined } : null);
   const here = bot?.entity?.position;
   if (!there || !here) return null;
-  const list = stallsToward(bot, there, now);
+  try { if (goal?.isEnd?.(new Vec3(Math.floor(here.x), Math.floor(here.y), Math.floor(here.z)))) return null; } catch (_) { /* judged by distance */ }
+  const reach = Number.isFinite(there.y) ? Math.hypot(there.x - here.x, there.y - here.y, there.z - here.z) : Math.hypot(there.x - here.x, there.z - here.z);
+  if (reach <= REPEAT_REACH) return null;
+  const list = stallsToward(bot, there, now, { from: here });
   if (list.length < REPEAT_TIMES) return null;
   const last = list.at(-1);
-  if (Math.hypot(last.spot.x + 0.5 - here.x, last.spot.y - here.y, last.spot.z + 0.5 - here.z) > REPEAT_FROM) return null;
   const secs = ms => ms < 90000 ? `${Math.max(1, Math.round(ms / 1000))} seconds` : `${Math.round(ms / 60000)} minutes`;
   const g = last.goal, at = [...new Set(list.map(x => `(${x.spot.x}, ${x.spot.y}, ${x.spot.z})`))].join(' and ');
-  return `walks to (${Math.floor(g.x)}, ${Number.isFinite(g.y) ? Math.floor(g.y) : '?'}, ${Math.floor(g.z)}) stalled ${list.length} times in the last ${secs(now - list[0].at)}, at ${at}, the last ${secs(now - last.at)} ago: not walked a third time from about here (navigation timed out without reaching new ground each time)`;
+  return `walks to (${Math.floor(g.x)}, ${Number.isFinite(g.y) ? Math.floor(g.y) : '?'}, ${Math.floor(g.z)}) begun from about here stalled ${list.length} times in the last ${secs(now - list[0].at)}, at ${at}, the last ${secs(now - last.at)} ago: not walked a third time from here (navigation timed out without reaching new ground each time)`;
 }
 // The spots stalled at often enough to route round, in this dimension, not
 // within four blocks of where the walk is going (the goal itself is not
@@ -502,7 +512,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
   // ledger, the stall's question to Jev, the ore set aside.
   const repeated = !stopWhen?.() ? repeatStallSays(bot, goal) : null;
   if (repeated) { console.log(`[stall-spot] ${repeated}`); throw new RepeatStall(`The walk is not begun: ${repeated}`, { goal: goalPoint(goal) }); }
-  const walk = bot._walkSeq = (bot._walkSeq || 0) + 1;
+  const walk = bot._walkSeq = (bot._walkSeq || 0) + 1, from = { x: bot.entity.position.x, y: bot.entity.position.y, z: bot.entity.position.z };
   // A stopped trip can leave our empty boat underfoot. Clear only that owned
   // boat before player physics attempts to walk through its solid hull.
   if (bot._ownedBoats?.size && !bot.vehicle) await require('./boats').clearOwnedBoatAtFeet(bot, task);
@@ -560,7 +570,7 @@ async function navigate(bot, task, goal, { timeoutMs = 90000, stallMs = 15000, s
       if (stopWhen?.()) return;
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error('navigation timed out');
-      try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen, walk }); }
+      try { return await navigateAttempt(bot, task, goal, { timeoutMs: remaining, stallMs, stopWhen, walk, from }); }
       catch (err) {
         if (err?.name === 'NeedsAir') noteHazard(bot, bot.entity?.position, 'its air ran low');
         // The server keeps putting the body back: this client's view of the
@@ -651,7 +661,7 @@ function noRoute(bot, goal, status) {
   return Object.assign(new Error(`No route from here to ${to} (${status})${lava}`), { name: 'NoRoute', destination, besideLava: refused.lavaRefusals > 0 });
 }
 
-async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen, walk = null }) {
+async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen, walk = null, from = null }) {
   task.check(); checkAir(bot);
   if (stopWhen?.()) return;
   const doorUse = require('./doors').guardNavigationDoors(bot, task, goal);
@@ -773,14 +783,14 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen, 
       }
       if (task.cancelled || Date.now() - started > timeoutMs || Date.now() - lastProgress > stallMs) {
         if (!task.cancelled) {
-          bot._lastNavigationFailure = { at: Date.now(), walk, position: { ...bot.entity.position },
+          bot._lastNavigationFailure = { at: Date.now(), walk, from, position: { ...bot.entity.position },
           goal: { type: goal.constructor?.name, x: goal.x, y: goal.y, z: goal.z, rangeSq: goal.rangeSq,
             target: goal.entity ? { name: goal.entity.username || goal.entity.name, position: { ...goal.entity.position } } : undefined },
           controls: Object.fromEntries(['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map(key => [key, bot.getControlState?.(key)])), inWater: bot.entity.isInWater, oxygen: bot.oxygenLevel,
           feet: bot.blockAt?.(bot.entity.position)?.name, head: bot.blockAt?.(bot.entity.position.offset(0, 1.62, 0))?.name,
           route: latestRoute };
           bot.emit?.('navigation_stall', bot._lastNavigationFailure);
-          if (Date.now() - started < timeoutMs) noteStallSpot(bot, bot.entity.position, Date.now(), { goal: goalPoint(goal) || (flatGoalPoint(goal) ? { ...flatGoalPoint(goal) } : null), walk });
+          if (Date.now() - started < timeoutMs) noteStallSpot(bot, bot.entity.position, Date.now(), { goal: goalPoint(goal) || (flatGoalPoint(goal) ? { ...flatGoalPoint(goal) } : null), walk, from });
         }
         bot.pathfinder.setGoal(null);
         reject(task.cancelled ? new Cancelled(task.label) : Date.now() - started >= timeoutMs
