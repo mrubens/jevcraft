@@ -96,6 +96,14 @@ function planEnd(bot, h, now = Date.now()) {
   if (Number.isFinite(h.rods) && rods > h.rods) return `${rods - h.rods === 1 ? 'a rod' : `${rods - h.rods} rods`} carried`;
   if (Number.isFinite(h.health) && h.health - (bot.health ?? 20) >= PLAN_HEALTH) return `${Math.round((h.health - (bot.health ?? 20)) * 10) / 10} health gone since it began`;
   if (h.box && insideBlaze(bot)) return 'a blaze came inside the box';
+  // A hit that lands through it: said as the plan's end in its commitment,
+  // and never read here until note 810. 25583 (mid-230-ba, 2026-10-01
+  // 13:11:49-13:12:30Z) held its box through fireballs and their fire from
+  // 20 health to 1.4, four blazes in its line, the take_cover Jev chose
+  // given way to the box's hold each time, the plan ended only at six
+  // health gone and chosen again from there.
+  const hitAt = Math.max(bot?._hurtBy?.blaze || 0, bot?._hurtBy?.small_fireball || 0);
+  if (Number.isFinite(h.at) && hitAt > h.at) return `a hit landed through it (a blaze's fireball, ${Math.max(0, Math.round((now - hitAt) / 1000))} seconds ago)`;
   // The shield it was begun with, broken or at its last volley (shield-
   // wear.js, note 786): the plan was priced with the shield facing the
   // window or the slit.

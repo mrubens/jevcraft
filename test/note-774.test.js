@@ -118,10 +118,15 @@ test('the cage\'s plan holds until it kills or fails, and meanwhile only a blaze
   assert.equal(ch.shelterKeepsOff(bot, t), true);
   assert.equal(danger.immediateThreat(bot), undefined, 'held: the blaze at the window is the box\'s, not a threat');
   // A hit through it ends that.
-  bot._hurtBy = { blaze: Date.now() };
+  bot._hurtBy = { blaze: Date.now() + 1 };
   assert.equal(ch.shelterKeepsOff(bot, t), false);
   assert(danger.immediateThreat(bot), 'a hit through the box is');
+  // And ends the plan, as its commitment says (note 810).
+  assert.equal(ch.holding(bot, goal), null);
+  assert.match(goal.cageHold.endedBy, /^a hit landed through it/);
   bot._hurtBy = {};
+  ch.beginHold(bot, goal, () => {}, 'box_here', Date.now(), { site });
+  assert(ch.holding(bot, goal), 'held again, begun anew');
   // A blaze inside the box is, and ends the plan.
   const inside = blazeAt(9, 0.6, 64.2, 0.4);
   bot.entities[9] = inside;
