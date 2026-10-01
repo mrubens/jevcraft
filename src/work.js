@@ -4927,7 +4927,9 @@ async function portalMethod(bot, task, goal, save, client = task.opportunityClie
   // One trip for every way, said in the same words (note 553): to the lava
   // that serves the next bucket, and the trips this frame's cast has made,
   // whichever way is held (beside a lava chosen, the frame is its frame).
-  const trip = fetchTrip(frameAt, lava, frameBegun && method?.kind === 'cast' ? method : null);
+  // The trip from the frame is to the lava nearest the frame (note 767b).
+  const frameLava = frameBegun ? nearestLava(bot, goal, sources, frameAt) || lava : lava;
+  const trip = fetchTrip(frameAt, frameLava, frameBegun && method?.kind === 'cast' ? method : null);
   const castCount = { obsidian, standing: placed, buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') };
   const tree = {
     build_new: { description: buildSays({ obsidian, diamonds, diamondPickaxe, need: Math.max(0, 10 - placed - obsidian), trip, atLava: !!lava && lava.distance <= 16, frameBegun, castTrips: castTrips(castCount).trips }) + facts },
@@ -5268,8 +5270,13 @@ const nearResting = (near, rest) => new (require('./tunneling').WaysResting)(`Th
 // loaded about it, or one remembered (exploration.js), not one spent.
 // In sight, the sources a bucket can still take before the rest: lava in
 // sight that no scooping spot reaches fills no bucket (note 553).
-function nearestLava(bot, goal, sources = lavaSources(bot)) {
-  const here = bot.entity.position;
+// From `from` (the frame, note 767b) when given: the lava nearest it, its
+// distance from it, in three dimensions as everywhere. Read from the bot,
+// 25581's frame at (50, 31, -230) was said to have "its nearest known lava
+// 302 blocks from it", the pool nearest the bot, with a pool 22 blocks from
+// the frame known (2026-10-01 00:42:23Z).
+function nearestLava(bot, goal, sources = lavaSources(bot), from = null) {
+  const here = from ? new Vec3(from.x, from.y, from.z) : bot.entity.position;
   const loaded = (sources.scoopable.length ? sources.scoopable : sources.surface).map(p => ({ distance: Math.round(p.distanceTo(here)), how: 'in sight about here', at: { x: p.x, y: p.y, z: p.z } }));
   // The pools the lava fetch would use (obsidian.js collectLava): not one
   // whose staircase rests. mid-211-g was told of lava seven blocks off
@@ -5277,8 +5284,8 @@ function nearestLava(bot, goal, sources = lavaSources(bot)) {
   // toward the deep lava instead, that pool's way resting (2026-09-27).
   // By the way into it (tunneling.js lavaResting), not its own block.
   const { lavaResting } = require('./tunneling');
-  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? 0, k.landmark.z)))
-    .map(k => ({ distance: k.distance, how: 'a lava pool remembered', at: { x: k.landmark.x, y: k.landmark.y, z: k.landmark.z } }));
+  const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !require('./obsidian').poolSpent(k.landmark) && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? 0, k.landmark.z)))
+    .map(k => ({ distance: from ? Math.round(Math.hypot(k.landmark.x - here.x, (k.landmark.y ?? here.y) - here.y, k.landmark.z - here.z)) : k.distance, how: 'a lava pool remembered', at: { x: k.landmark.x, y: k.landmark.y, z: k.landmark.z } }));
   return [...loaded, ...known].sort((a, b) => a.distance - b.distance)[0] || null;
 }
 // The lava sources loaded about the bot, and those of them a bucket can
@@ -6448,7 +6455,7 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
     }
     const { lavaResting } = require('./tunneling');
     const { lavaRecord } = require('./obsidian');
-    const open = k => !k.landmark.spent && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z));
+    const open = k => !require('./obsidian').poolSpent(k.landmark) && !lavaResting(goal, new Vec3(k.landmark.x, k.landmark.y ?? here.y, k.landmark.z));
     const known = require('./exploration').knownLandmarks(bot, goal, 'lava_pool', routeKinds ? 256 : 128);
     const pools = known.filter(open).filter(k => k.distance > 12);
     const owed = castTrips({ obsidian: countOf(bot, 'obsidian'), buckets: countOf(bot, 'bucket'), lavaBuckets: countOf(bot, 'lava_bucket') });
@@ -6479,7 +6486,7 @@ function portalJobs(bot, goal, { routeKinds = noneGoodTopped(bot) } = {}) {
             bot.chat?.(`I'll cast the portal down by the lava at (${l.x}, ${l.y ?? '?'}, ${l.z}).`);
           } });
       }
-      const spent = known.filter(k => k.landmark.spent).length, resting = known.filter(k => !k.landmark.spent && !open(k)).length;
+      const spent = known.filter(k => require('./obsidian').poolSpent(k.landmark)).length, resting = known.filter(k => !require('./obsidian').poolSpent(k.landmark) && !open(k)).length;
       jobs.push({ key: 'search_lava', description: `Another route for the portal's lava: search the surface for another lava pool, walking to ground not yet explored. ${known.length ? `${known.length} pool${known.length === 1 ? '' : 's'} known within 256 blocks: ${spent} found spent, ${resting} whose way rests, ${pools.length} open` : 'No lava pool known within 256 blocks'}; pools lie on the surface in most places, and any found is then asked about.`,
         run: async (t, save) => { await explore(bot, t, goal, save, 'lava pool', { surfaceOnly: true }); } });
     }
@@ -6895,7 +6902,7 @@ function framePending(bot, goal) {
   const at = pos(f.origin);
   const loaded = f.blocks.every(p => bot.blockAt(pos(p)));
   const placed = loaded ? f.blocks.filter(p => bot.blockAt(pos(p))?.name === 'obsidian').length : (Number.isFinite(f.placedSeen) ? f.placedSeen : null);
-  const lava = nearestLava(bot, goal), fromFrame = lava && lavaTrip(f.origin, lava);
+  const lava = nearestLava(bot, goal, undefined, f.origin), fromFrame = lava && lavaTrip(f.origin, lava);
   return { frame: f, at, distance: Math.round(bot.entity.position.distanceTo(at)), placed, lava: fromFrame ? fromFrame.distance : null };
 }
 // With how many blocks it is from done (note 755: 25588 left one 8 of ten

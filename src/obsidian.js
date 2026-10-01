@@ -193,7 +193,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
   if (!surface.length) {
     const diamond = bot.inventory.items().some(i => /^(diamond|netherite)_pickaxe$/.test(i.name));
     const kinds = diamond ? ['ruined_portal', 'lava_pool'] : ['lava_pool'];
-    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind === 'ruined_portal' ? (l.obsidian || 0) > 0 : !l.spent && !require('./tunneling').lavaResting(goal, new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
+    const arrived = await require('./exploration').goToLandmark(bot, task, goal, save, kinds, { navigate, filter: l => l.kind === 'ruined_portal' ? (l.obsidian || 0) > 0 : !poolSpent(l) && !require('./tunneling').lavaResting(goal, new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z)) });
     if (arrived !== null) {
       if (!arrived) return;
       goal.step = { ...step, phase: 'at_landmark', kind: arrived.kind }; save();
@@ -201,7 +201,7 @@ async function makeObsidian(bot, task, step, goal, save, actions) {
       // spent (poured over already, or its lava not a pool to stand beside),
       // or the step arrives at it again at once, every pass: mid-110-o "made
       // obsidian" twenty-one times a second there (2026-09-26).
-      if (arrived.kind === 'lava_pool' && !poolSurface(bot).length) { arrived.spent = new Date().toISOString(); save(); return; }
+      if (arrived.kind === 'lava_pool' && !poolSurface(bot).length) { if (!(await arrivedAtPool(bot, task, goal, save, arrived, navigate))) return; }
       // At a ruined portal: its frame is the obsidian, mined where it
       // stands. Only crust was mined here before, and a frame is not crust
       // (air under it, often), so mid-79-d stood at one and "made obsidian"
@@ -361,7 +361,7 @@ function lavaRecord(goal, l, from = null, now = Date.now()) {
   const { restingSays, lavaWay } = require('./tunneling');
   const p = new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z);
   const out = [];
-  if (l.spent) out.push('found spent when last reached');
+  if (l.spent) out.push(`found with no lava to take when last reached${Number.isFinite(Date.parse(l.spent)) ? `, ${Math.max(1, Math.round((now - Date.parse(l.spent)) / 60000))} minutes ago` : ''}${l.spentWhy ? ` (${l.spentWhy})` : ''}${poolSpent(l, now) ? ', passed over for now' : ''}`);
   const rest = restingSays(goal, lavaWay(p), from, now);
   if (rest) out.push(rest);
   const key = `lava_pool:${l.x},${l.z}`;
@@ -382,7 +382,7 @@ function pickFailed(goal, pick, { deepFailing = false, deep = null } = {}, now =
   if (pick?.way !== 'pool' || !pick.at) return null;
   const p = new Vec3(pick.at.x, pick.at.y, pick.at.z);
   const l = (goal.landmarks || []).find(x => x.kind === 'lava_pool' && sameLava({ x: x.x, y: x.y ?? p.y, z: x.z }, p));
-  if (l?.spent) return 'the pool was found spent';
+  if (poolSpent(l, now) && Date.parse(l.spent) > (pick.chosenAt || 0)) return `the pool was found with no lava to take${l.spentWhy ? ` (${l.spentWhy})` : ''}`;
   if (staircaseResting(goal, lavaWay(p))) return `the staircase toward it is set aside (${staircaseWhy(goal, lavaWay(p))})`;
   // A walk set aside since it was chosen (one set aside before is why it
   // is dug to).
@@ -433,6 +433,13 @@ async function askLavaWay(bot, task, goal, save, { pools, deep, poolDig, here, b
   const decision = await require('./decisions').decide('lava_way', { client: task.opportunityClient, bot, task, goal, save, tree,
     context: { oldOrder: tree[oldOrder] ? oldOrder : 'deep' },
     state: { lavaToFetch: t.toFetch, buckets: t.carriers, ironIngots: iron, y: Math.round(here.y), frame: frame ? `(${frame.origin.x}, ${frame.origin.y}, ${frame.origin.z}), ${standing} of ten standing` : 'none begun',
+      // The pools known and not offered, with why: a pool is a fact with
+      // its record, not gone from the question (note 767b).
+      ...(() => { const offered = new Set(pools.map(l => `${l.x},${l.z}`));
+        const rest = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && !offered.has(`${l.x},${l.z}`))
+          .map(l => ({ l, d: Math.round(Math.hypot(l.x - here.x, (l.y ?? here.y) - here.y, l.z - here.z)) })).filter(x => x.d <= 256).sort((a, b) => a.d - b.d).slice(0, 4)
+          .map(({ l, d }) => `(${l.x}, ${l.y ?? '?'}, ${l.z}), ${d} blocks off:${lavaRecord(goal, l, here).replace(/^ Its record:/, '') || ' a longer dig and carry back than the two offered.'}`);
+        return rest.length ? { poolsNotOffered: rest.join(' ') } : {}; })(),
       ...(goal.lavaWayFailed?.length && Date.now() - goal.lavaWayFailed.at(-1).at < 120000 ? { askedAgainBecause: `the way chosen before (${goal.lavaWayFailed.at(-1).way === 'deep' ? 'the lava layer' : `the pool at (${goal.lavaWayFailed.at(-1).x}, ${goal.lavaWayFailed.at(-1).y}, ${goal.lavaWayFailed.at(-1).z})`}) failed: ${goal.lavaWayFailed.at(-1).why}` } : {}) } });
   if (decision.stale) return false;
   const pick = decision.path.at(-1);
@@ -524,7 +531,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
   // pool known is then taken before it, however its carry compares.
   const deepFailing = headings.filter(headingResting).length >= 2;
   const landmarkAt = l => new Vec3(l.x, l.y ?? LAVA_DEPTH, l.z);
-  const pool = l => !l.spent && !lavaResting(goal, landmarkAt(l));
+  const pool = l => !poolSpent(l) && !lavaResting(goal, landmarkAt(l));
   // A deep dig already real steps into (resourceTunnelStep's own site,
   // tunneling.js tunnelStep) is not left for a pool only nominally shorter:
   // `deep` (and so `carry(deep)`) is recomputed from wherever the bot now
@@ -559,7 +566,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
         onWalk: l => holdLava(bot, goal, save, { way: 'pool', lava: landmarkAt(l) }) });
       if (arrived === false) return;
       // Arrived and no lava of its own there: that pool is spent.
-      if (arrived && !ownLava(bot, arrived)) { arrived.spent = new Date().toISOString(); save(); return; }
+      if (arrived && !(await arrivedAtPool(bot, task, goal, save, arrived, navigate))) return;
       // Arrived after a walk: the pass ends, and the next reads the lava,
       // the spots and the pools from where the bot now stands. Read from
       // where the walk began, this pass went on with the lava in sight from
@@ -652,7 +659,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     // On the way, or at a pool found dry. At one still holding lava, whose
     // every way rests, it is not done: the other ways below are.
     if (arrived === false) return;
-    if (arrived && !ownLava(bot, arrived)) { arrived.spent = new Date().toISOString(); save(); return; }
+    if (arrived && !(await arrivedAtPool(bot, task, goal, save, arrived, navigate))) return;
     if (arrived && bot.entity.position.distanceTo(walkedFrom) > 2) return;
   }
   const rank = (a, b) => to ? carry(a) - carry(b) : a.distanceTo(here) - b.distanceTo(here);
@@ -721,7 +728,7 @@ async function collectLava(bot, task, step, goal, save, { navigate, dig, resourc
     // A pool whose way rests is still a pool known, said with its rest:
     // 25590 two blocks from the pool it had chosen was told "no pool known"
     // once its staircase rested (note 767).
-    const known = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && !l.spent && l.y !== undefined);
+    const known = (goal.landmarks || []).filter(l => l.kind === 'lava_pool' && l.dimension === (bot.game?.dimension || 'overworld') && !poolSpent(l) && l.y !== undefined);
     const passed = known.slice().sort((a, b) => landmarkAt(a).distanceTo(here) - landmarkAt(b).distanceTo(here))[0];
     const failing = headings.filter(headingResting).length;
     const why = `${passed ? `, no lava in sight; the pool known at (${passed.x}, ${passed.y}, ${passed.z}) is passed: ${passedWhy(passed) || 'not dug to'}` : ', no lava in sight and no pool known'}${failing ? `; ${failing} of the ${headings.length} headings down from about here are set aside` : ''}`;
@@ -742,13 +749,58 @@ function ownLava(bot, landmark) {
   return poolSurface(bot).some(p => Math.hypot(p.x - at.x, p.z - at.z) <= 16 && (landmark.y === undefined || Math.abs(p.y - at.y) <= 16));
 }
 
+// A pool found with no lava to take is a fact with a rest, not forgotten
+// (note 767b): "spent" is when it was last found so, and it is passed over
+// for half an hour, then known again, its record said wherever it is
+// offered. 25581 (mid-235-aa, 2026-10-01 00:37:48-00:39:48Z) found a pool
+// 28 blocks off, stalled on the walk, came back within twelve blocks of it
+// from the side, saw no source with open air over it and marked it spent
+// for good: at 00:42:17 lava_way offered only pools 156 and 270 blocks off.
+const POOL_REST_MS = 30 * 60000;
+const poolSpent = (l, now = Date.now()) => !!l?.spent && !(now - Date.parse(l.spent) >= POOL_REST_MS);
+// The lava a pool arrived at holds: sources with open air over them (its
+// own surface), and sources within sixteen blocks under a ledge or in a
+// wall, which a bucket takes from the side.
+function poolLava(bot, landmark) {
+  const at = new Vec3(landmark.x, landmark.y ?? bot.entity.position.y, landmark.z);
+  if (ownLava(bot, landmark)) return { open: true, covered: [] };
+  const id = bot.registry?.blocksByName?.lava?.id;
+  const near = id === undefined || typeof bot.findBlocks !== 'function' ? [] : bot.findBlocks({ matching: id, maxDistance: 48, count: 256, useExtraInfo: b => sourceLava(b) });
+  const covered = near.filter(p => Math.hypot(p.x - at.x, p.z - at.z) <= 16 && Math.abs(p.y - at.y) <= 16)
+    .sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
+  return { open: false, covered };
+}
+// Arrived at a pool with no open lava: its covered sources are gone to
+// (within three blocks, where a bucket reaches from the side: collectLava's
+// scoop in reach), twice; with none, or not reached, it is found spent for
+// now, said with why.
+async function arrivedAtPool(bot, task, goal, save, l, navigate) {
+  const lava = poolLava(bot, l);
+  if (lava.open) return true;
+  const src = lava.covered[0];
+  const tries = l.covered && Date.now() - l.covered.at < POOL_REST_MS ? l.covered.tries : 0;
+  if (src && tries < 2) {
+    l.covered = { at: Date.now(), n: lava.covered.length, tries: tries + 1, x: src.x, y: src.y, z: src.z }; save();
+    if (bot.entity.position.distanceTo(src.offset(0.5, 0.5, 0.5)) > 3.5) {
+      try { await navigate(bot, task, new goals.GoalNear(src.x, src.y, src.z, 3), { timeoutMs: 30000, stallMs: 8000 }); }
+      catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    }
+    return false;
+  }
+  l.spent = new Date().toISOString();
+  l.spentWhy = src ? `its ${lava.covered.length} lava source${lava.covered.length === 1 ? '' : 's'} lie covered and none was taken in two tries` : 'no lava source left within sixteen blocks of it';
+  delete l.covered;
+  save();
+  return false;
+}
+
 // Every way to lava resting, as the fact Jev is given: the lava known, how
 // long until a way into it opens, and why it rests. A step that arrived
 // and did nothing said none of this: mid-229-m (tunneling.js lavaResting).
 function noLavaWay(bot, goal, surface = []) {
   const { lavaWay, staircaseUntil, staircaseWhy, WaysResting } = require('./tunneling');
   const here = bot.entity.position, now = Date.now();
-  const pools = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !k.landmark.spent)
+  const pools = require('./exploration').knownLandmarks(bot, goal, 'lava_pool').filter(k => !poolSpent(k.landmark))
     .map(k => new Vec3(k.landmark.x, k.landmark.y ?? LAVA_DEPTH, k.landmark.z));
   const seen = surface.slice().sort((a, b) => a.distanceTo(here) - b.distanceTo(here))[0];
   if (seen && !pools.some(p => p.distanceTo(seen) <= 16)) pools.unshift(seen);
@@ -766,4 +818,4 @@ function noLavaWay(bot, goal, surface = []) {
   return new WaysResting(`${known}, and the deep lava on all sixteen headings near and far rests ${rests(deepUntil)}`, Math.min(poolUntil, deepUntil));
 }
 
-module.exports = { lavaRecord, pickFailed, heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
+module.exports = { poolSpent, poolLava, arrivedAtPool, POOL_REST_MS, lavaRecord, pickFailed, heldLava, holdLava, ownLava, makeObsidian, collectLava, poolSurface, pourSpots, scoopSpots, scoopable, safeCrust, pour, sourceLava, LAVA_DEPTH, CONVERSION_MS, REACH };
