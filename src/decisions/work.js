@@ -373,16 +373,16 @@ define({
 define({
   id: 'while_cooking', area: 'resources', parent: null, kind: 'smelting', primitive: 'choice', stakes: 'low', tree: true,
   question: 'A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?',
-  trigger: 'Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, and after a walk to ore that wore the pickaxes.',
+  trigger: 'Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, after a walk to ore that wore the pickaxes, and on coming back to the furnace after leaving it to cook. A new batch is sized to what the rungs still open want of the output, up to the input and fuel carried (note 771).',
   source: 'src/work.js (smelt, whileCooking)',
   options: [
     { key: 'dig_in_reach', label: 'dig the ore within arm\'s reach', when: 'an ore within reach of where the bot stands that a tool carried takes a drop from', level: 'root' },
     { key: 'mine_nearby', label: 'walk to an ore or tree nearby and dig', when: 'an ore within sixteen blocks (thirty-two with a minute or more of cooking) that a tool carried takes a drop from, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking', level: 'root' },
     { key: 'dig_stone', label: 'dig the stone around the furnace', when: 'fewer than 128 cobblestone carried, and a pickaxe to take the cobblestone', level: 'root' },
     { key: 'wait_here', wait: true, label: 'stand by the furnace', when: 'always; a wait: it names what it waits for and when (src/waits.js), and is not offered where that cannot come or its coming changes nothing, said in waitsForNothing (note 698)', level: 'root' },
-    { key: 'leave_cooking', label: 'leave the batch to cook and go on with the work in hand, taking it out when back by the furnace once it is done, or in twenty minutes', when: 'a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch\'s own', level: 'root' },
+    { key: 'leave_cooking', label: 'leave the batch to cook: go on with the work in hand (a batch saved earlier), or, for the batch\'s own step, hold the step off and do the work on offer from here until it is done, then come back to the furnace for it', when: 'a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch\'s own; or the batch\'s own step, once a batch, with work on offer from here meanwhile (said in `leaveCooking` when none is), priced by the seconds of standing it saves against the walk back (note 771)', level: 'root' },
   ],
-  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. With a pickaxe carried, the ways that dig say the uses it has left against the way back out of the mine and whether another can be made from the pockets (`pickaxeBudget`), and after a walk, what the walks so far wore (`walksSoFar`); `workInHand` is the work waiting on the batch when it may be left to cook.'),
+  instructions: workInstructions('A furnace batch is cooking. Choose what the bot does meanwhile; each option says what it gets and how long the batch takes. With a pickaxe carried, the ways that dig say the uses it has left against the way back out of the mine and whether another can be made from the pockets (`pickaxeBudget`), and after a walk, what the walks so far wore (`walksSoFar`); `workInHand` is the work waiting on the batch when it may be left to cook; `sideFurnaces` is the rest of the batch cooking beside at the same time; `leaveCooking` says why leaving is not on offer when it is not.'),
 });
 
 // Dug into water or lava.
@@ -416,7 +416,7 @@ define({
     { key: 'craft_from_string', label: 'craft wool from the string carried', when: 'four or more string carried and wool still wanted', level: 'root' },
     { key: 'cut_cobwebs', label: 'cut the cobwebs in view with the sword for string', when: 'a sword carried, two or more cobwebs within thirty-two blocks, and string still wanted for the bed', level: 'root' },
   ],
-  instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look, or make the wool from string carried. The biome underfoot and those about are in the state with their distance and direction, and `sheepSeenEarlier` lists flocks the bot saw and walked on from.'),
+  instructions: workInstructions('The bot needs wool for a bed and no sheep are in view. Choose where to look, or make the wool from string carried. The biome underfoot and those about are in the state with their distance and direction, and `sheepSeenEarlier` lists flocks the bot saw and walked on from. A biome where sheep do not spawn says so on its walk and in `sheepHere`; `bedRecord` is what the bed rung cost the trials that chose it and what first Nether stays with and without a bed came to (note 771).'),
 });
 
 // Which way a search for a resource heads when none is in view: each of

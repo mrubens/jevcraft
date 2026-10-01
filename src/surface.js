@@ -9,23 +9,34 @@ const { dryPassable, dryLeaf, dryBodySpace, supportCell, swimmableWater } = requ
 
 // Inspect loaded columns, ignoring tree canopies but not terrain, roofs or
 // water. Two clear cave blocks are not evidence of a surface destination.
+// A point is on the surface when nothing over it, from its own height up,
+// is a solid block, water, lava or powder snow, and none of it is unloaded.
+// Read upward from the point, so a cave's point stops at its roof a block
+// or two up: read down from the world's top, each column under 250 blocks
+// of air was read whole, and returnToSurface's search for a landing read
+// 1.2 million cells for the cave floors within 48 blocks at mid-241's
+// start (y -18), 2 million in all with the search; the event loop was held
+// 13 to 21 seconds at a time on ascend_to_surface while zombies bit
+// (note 772). Each column keeps what it has read: the highest height found
+// stopped (any point at or under it is under it) and the lowest height
+// from which the column is open (any point at or over it is on top).
 function surfaceObserver(bot) {
-  const heights = new Map();
+  const columns = new Map();
   const minimum = bot.game.minY ?? -64;
   const maximum = minimum + (bot.game.height ?? 384);
+  const stops = block => !block || (!/_leaves$|_log$|_wood$/.test(block.name) && (block.boundingBox === 'block' || swimmableWater(block) || ['lava', 'bubble_column', 'powder_snow'].includes(block.name)));
   return point => {
     const x = Math.floor(point.x), z = Math.floor(point.z), key = `${x},${z}`;
-    if (!heights.has(key)) {
-      let top = minimum - 1;
-      for (let y = maximum - 1; y >= minimum; y--) {
-        const block = bot.blockAt(new Vec3(x, y, z));
-        if (!block) { top = Infinity; break; }
-        if (/_leaves$|_log$|_wood$/.test(block.name)) continue;
-        if (block.boundingBox === 'block' || swimmableWater(block) || ['lava', 'bubble_column', 'powder_snow'].includes(block.name)) { top = y; break; }
-      }
-      heights.set(key, top);
+    const from = Math.max(minimum, Math.ceil(point.y));
+    let c = columns.get(key);
+    if (!c) columns.set(key, c = { stoppedAt: -Infinity, openFrom: Infinity });
+    if (from >= c.openFrom) return true;
+    if (from <= c.stoppedAt) return false;
+    for (let y = from; y < Math.min(maximum, c.openFrom); y++) {
+      if (stops(bot.blockAt(new Vec3(x, y, z)))) { c.stoppedAt = Math.max(c.stoppedAt, y); return false; }
     }
-    return point.y > heights.get(key);
+    c.openFrom = from;
+    return true;
   };
 }
 
@@ -590,6 +601,26 @@ function surfaceReturnComplete(bot, goal, isSurface = surfaceObserver(bot)) {
 // intentionally cannot leave a deep alcove, so first route to an inspected
 // surface landing using ordinary mining/scaffolding capabilities. Keep the
 // lower bound local to prevent this recovery from becoming a deeper cave trip.
+// Landings under open sky within 48 blocks: a cell two high and clear over
+// the ground as the world makes it, no lower than three under the start.
+// The cheap tests first, the sky over the cell (surfaceObserver, read up
+// from the cell) only for a cell two high and clear: at mid-241's start (y
+// -18) the search had read about 1.8 million cells a call, 1.2 million of
+// them cave floors' columns read down from the world's top, and the event
+// loop was held 13 to 21 seconds on ascend_to_surface with zombies biting
+// (note 772); read up, about 0.7 million.
+const LANDING_FLOORS = ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'];
+function surfaceCandidates(bot, start, { minimumY = null, isSurface = surfaceObserver(bot) } = {}) {
+  const clear = p => dryPassable(bot.blockAt(p));
+  const lowest = Math.max(start.y - 3, minimumY ?? -Infinity);
+  return bot.findBlocks({ matching: LANDING_FLOORS.map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
+    maxDistance: 48, count: 128, useExtraInfo: block => {
+      const p = block.position.offset(0, 1, 0);
+      return p.y >= lowest && clear(p) && clear(p.offset(0, 1, 0)) && isSurface(p) && safeFromHostiles(bot, p);
+    },
+  }).map(p => p.offset(0, 1, 0));
+}
+
 async function returnToSurface(bot, task, goal, save, actions = {}) {
   if (!hasSurface(bot)) { delete goal.surfaceReturn; save(); return; }
   const isSurface = surfaceObserver(bot), start = bot.entity.position.floored();
@@ -638,13 +669,7 @@ async function returnToSurface(bot, task, goal, save, actions = {}) {
       catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
       if (surfaceReturnComplete(bot, goal, surfaceObserver(bot))) { delete goal.surfaceReturn; save(); return; }
     }
-    const clear = p => dryPassable(bot.blockAt(p));
-    const candidates = bot.findBlocks({ matching: ['grass_block', 'dirt', 'stone', 'sand', 'gravel', 'deepslate'].map(n => bot.registry.blocksByName[n]?.id).filter(id => id !== undefined),
-      maxDistance: 48, count: 128, useExtraInfo: block => {
-        const p = block.position.offset(0, 1, 0);
-        return p.y >= Math.max(start.y - 3, state.minimumY ?? -Infinity) && clear(p) && clear(p.offset(0, 1, 0)) && isSurface(p) && safeFromHostiles(bot, p);
-      },
-    }).map(p => p.offset(0, 1, 0));
+    const candidates = surfaceCandidates(bot, start, { minimumY: state.minimumY, isSurface });
     const key = p => `${Math.floor(p.x / 4)},${Math.floor(p.y / 4)},${Math.floor(p.z / 4)}`;
     candidates.sort((a, b) => a.distanceTo(start) + (state.visited[key(a)] || 0) * 16 - b.distanceTo(start) - (state.visited[key(b)] || 0) * 16);
     const checked = new Set();
@@ -932,4 +957,4 @@ function lidExit(bot, { origin = bot.entity.position.floored(), maxHeight = 3 } 
   return lid;
 }
 
-module.exports = { openSkyOver, climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, climbStraightUp, chooseClimb, heldClimb, stairwayCost, walkedColumns, walkedColumn, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE };
+module.exports = { openSkyOver, climbToSurface, climbMinutes, climbStraightMinutes, straightUpColumn, climbOptions, climbStraightUp, chooseClimb, heldClimb, stairwayCost, walkedColumns, walkedColumn, tripCost, lidExit, hasSurface, surfaceObserver, surfaceMovement, descendCanopy, returnToSurface, beginSurfaceAscent, surfaceReturnComplete, handDiggableExit, HAND_DIGGABLE, surfaceCandidates };

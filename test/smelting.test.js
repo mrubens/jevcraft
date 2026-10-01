@@ -362,8 +362,11 @@ test('a while-cooking choice that runs out is asked again among what is left, no
   } };
   await smelt(bot, task, { item: 'iron_ingot', from: 'raw_iron', count: 4, fuelItem: 'coal' }, {});
   assert.equal(ingots, 4);
-  assert.equal(asked.length, 2, 'asked again once the walk had nothing left');
+  // Asked again once the walk had nothing left, and once more when the
+  // stone ran out too: leaving the batch to cook (note 771) is still a way.
+  assert.equal(asked.length, 3, 'asked again once the walk had nothing left');
   assert(!asked[1].includes('mine_nearby'), 'the spent choice is not offered again');
+  assert.deepEqual(asked[2].filter(k => k !== 'none_good').sort(), ['leave_cooking', 'wait_here']);
   assert(opens >= 2, 'the stone was dug meanwhile (the furnace shut and opened again)');
 });
 

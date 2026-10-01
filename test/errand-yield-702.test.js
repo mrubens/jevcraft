@@ -180,15 +180,22 @@ test('25595\'s stock-up: met at full hunger with food carried, it is not asked (
     // Hunger 20 with 76 points carried: met, nothing to ask.
     await survival.step(new Task('t', 'food'), goal, () => {});
     assert.equal(trees.length, 0, 'met: hunger 20 with food carried');
+    // Hunger 17 met by the 76 carried: the Nether's reserve for the reserve
+    // alone is the ladder's food rung's, not asked here (note 771).
     bot.food = 17;
     await survival.step(new Task('t', 'food'), goal, () => {});
+    assert.equal(trees.length, 0, 'the crossing\'s reserve, the hunger met: the ladder\'s');
+    assert.match(require('../src/food-errand').cookSays(bot), /Cooking the raw meat carried \(12 beef, 8 mutton\) adds 92 points\./);
+    // The night's reserve (12 points) with a bread carried at hunger 17: asked.
+    items.splice(0, items.length, stack('iron_sword'), stack('bread', 1));
+    const night = { kind: 'win', request: 'beat the game', stockFood: true };
+    await survival.step(new Task('t', 'food'), night, () => {});
     assert.equal(trees.length, 1);
-    assert.match(trees[0].obtain_food.description, /^Get food\. Hunger 17, health full: nothing waits on the hunger now; the 76 food points carried bring it to eighteen or more when eaten, in seconds\. This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 76 food points carried of the 80 kept for the Nether stay/);
-    assert.match(trees[0].obtain_food.description, /Cooking the raw meat carried \(12 beef, 8 mutton\) adds 92 points\./);
+    assert.match(trees[0].obtain_food.description, /^Get food\. Hunger 17, health full: nothing waits on the hunger now; the 5 food points carried bring it to eighteen or more when eaten, in seconds\. This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 5 food points carried of the 12 kept for healing and the night/);
     // Three and a half minutes on, the reserve no higher: it rests.
-    delete survival.state.foodPlan;
+    delete survival.state.foodPlan; delete survival.state.searchFoodHold;
     Date.now = () => t0 + 210000;
-    await survival.step(new Task('t', 'food'), goal, () => {});
+    await survival.step(new Task('t', 'food'), night, () => {});
     assert.equal(trees.length, 1, 'not asked: the errand rests');
     assert(isSetAside(survival, 'food_search', 'stock', t0 + 210000));
     assert.equal(survival.state.foodErrand, undefined);

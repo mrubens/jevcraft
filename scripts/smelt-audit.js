@@ -3,7 +3,11 @@
 // Every smelt in the flight records (note 766): started, what went in (the
 // raw input and the fuel), what came out, and each wait that timed out with
 // what it came of. Read-only.
-//   node scripts/smelt-audit.js [--since 2026-09-30T12:00:00Z] [--until ISO] [--port N] [--json] [--list]
+//   node scripts/smelt-audit.js [--since 2026-09-30T12:00:00Z] [--until ISO] [--port N] [--json] [--list] [--cooking]
+// --cooking (note 771): every while_cooking ask (Jev's answer, none good,
+// leave_cooking on offer, wait_here's seconds) and the iron smelts (their
+// counts, and those followed by another within 15 minutes with the raw iron
+// for both carried at the first).
 // JEV_ROOT reads another checkout's records (from a worktree).
 //
 // A smelt is the run of "smelt <item>" action frames for one item with no
@@ -209,6 +213,34 @@ const summary = {
   timeoutsWithServerLagBefore: timeouts.filter(t => t.serverLag).length,
 };
 for (const t of timeouts) delete t.label;
+if (argv.includes('--cooking')) {
+  const asks = [], iron = [];
+  for (const f of files) {
+    const m = /-(\d{5})-Jev-/.exec(f);
+    if (!m || (onlyPort && m[1] !== String(onlyPort))) continue;
+    let frames; try { if (fs.statSync(path.join(dir, f)).mtimeMs < since) continue; frames = readRecord(path.join(dir, f)); } catch (_) { continue; }
+    let inv = null, cur = null;
+    for (const x of frames) {
+      if (x.s.inventory) inv = x.s.inventory;
+      if (x.at < since || x.at > until) continue;
+      if (x.kind === 'action' && /^smelt iron/.test(x.label)) {
+        if (!cur || x.at - cur.last > GAP_MS) { cur = { f, start: x.at, last: x.at, count: x.s.step?.count, raw: inv?.raw_iron ?? null }; iron.push(cur); }
+        cur.last = x.at;
+      }
+      const d = x.s.decision;
+      if (x.kind === 'decision' && d?.id === 'while_cooking') asks.push({ f, at: x.at, answer: d.path?.join('>'), jev: (d.judgments || [])[0]?.choice || null, seconds: d.state?.seconds || 0, leave: !!d.options?.leave_cooking });
+    }
+  }
+  const waits = asks.filter(a => a.answer === 'wait_here');
+  let followed = 0, foldable = 0;
+  const byFile = {};
+  for (const s of iron) (byFile[s.f] ||= []).push(s);
+  for (const l of Object.values(byFile)) for (let i = 0; i + 1 < l.length; i++) if (l[i + 1].start - l[i].last < 15 * 60000) { followed++; if (l[i].raw != null && l[i].raw >= (l[i].count || 0) + (l[i + 1].count || 0)) foldable++; }
+  console.log(JSON.stringify({ whileCooking: { asks: asks.length, answers: by(asks, 'answer'), jevNoneGood: asks.filter(a => a.jev === 'none_good').length, leaveOnOffer: asks.filter(a => a.leave).length,
+    waitHere: { runs: waits.length, seconds: waits.reduce((n, a) => n + a.seconds, 0), thirtyOrMore: waits.filter(a => a.seconds >= 30).length } },
+  ironSmelts: { episodes: iron.length, byCount: by(iron, 'count'), followedWithin15Minutes: followed, rawForBothCarriedAtTheFirst: foldable } }, null, 1));
+  process.exit(0);
+}
 if (asJson) { console.log(JSON.stringify({ summary, timeouts, smelts: list ? smelts : undefined }, null, 2)); process.exit(0); }
 console.log(JSON.stringify(summary, null, 2));
 console.log('\nTimeouts after smelting:');

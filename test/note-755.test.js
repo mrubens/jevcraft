@@ -96,17 +96,28 @@ async function askPriority(bot, state = {}) {
   return { tree, survival };
 }
 
-test('secure_shelter under the rock with no reason says so first, with the cost and the bot\'s own record, not "before hostile mobs spawn at night" (note 755, 25594)', async () => {
+// Note 773: under the rock with no reason to seal and no bed known, the
+// night is no question (nightFreeBelow); with a bed to pay the sleep owed it
+// is asked, and the pocket is not offered there, said why.
+test('under the rock with no reason to seal: no bed known, the night is not asked; a village bed known, it is asked without secure_shelter, said why (notes 755, 773)', async () => {
   const log = [{ at: 1, none: true, next: 'night_mine', afterS: 8 }, { at: 2, none: true, next: 'stay', afterS: 70 }];
   const { tree } = await askPriority(belowBot(), { sealLog: log });
-  assert(tree?.secure_shelter, `secure_shelter was offered; options were ${Object.keys(tree || {}).join(', ')}`);
-  const d = tree.secure_shelter.description;
-  assert.match(d, /^No reason to seal: health 20 of 20, nothing hostile within 24 blocks, underground, where the night changes nothing/);
-  assert.match(d, /Sealing costs the building, then up to \d+ real minutes sealed to dawn/);
-  assert.match(d, /Of this bot's last 2 seals with no reason named, 1 was opened again within a minute \(night mine 1\)\./);
-  assert.match(d, /Prepare and enter a sealed shelter here under the rock\./);
-  assert.doesNotMatch(d, /before hostile mobs spawn at night/);
-  assert.match(tree.continue_request.description, /phantoms come for a player on the third, and only to one under open sky, not down here; only a bed pays the sleep owed\./);
+  assert.equal(tree, undefined, 'survival_priority is not asked for the night under the rock with no reason and no bed');
+  const bot = belowBot();
+  const { Survival } = require('../src/survival');
+  const survival = new Survival(bot, {}, { state: { sleptAtAge: 0, sealLog: log } });
+  let asked;
+  survival.decide = async (task, goal, save, { id, tree: t, state }) => {
+    if (id === 'survival_priority') asked = { tree: t, state };
+    return { path: ['continue_request'], stale: false, action: t.continue_request };
+  };
+  // A village remembered with beds pays the sleep owed: the night is asked.
+  await survival.step(new Task('wait'), { kind: 'win', request: 'beat the game', rungTime: { phase: 'reach_nether' }, villages: [{ dimension: 'overworld', x: 60, y: 8, z: 0, beds: 3 }] }, () => {});
+  assert(asked, 'asked with a village bed known');
+  assert(asked.tree.village_bed);
+  assert.equal(asked.tree.secure_shelter, undefined);
+  assert.match(asked.state.secureShelterNotOffered, /^under the rock with no reason to seal \(health 20 of 20, nothing hostile within 24 blocks, underground, where the night changes nothing.*\); a pocket does not pay the sleep owed, only a bed does$/);
+  assert.match(asked.tree.continue_request.description, /phantoms come for a player on the third, and only to one under open sky, not down here; only a bed pays the sleep owed\./);
 });
 
 test('with a mob in sight, secure_shelter opens with it (note 755)', async () => {
@@ -115,15 +126,12 @@ test('with a mob in sight, secure_shelter opens with it (note 755)', async () =>
   assert.match(tree.secure_shelter.description, /^Sealing against the zombie 12 blocks off/);
 });
 
-test('the turn: a shelter under the rock with no reason is routine and said as a pocket under the rock, not "Shelter for the night"; a mob in sight keeps it pressing (note 755)', () => {
+test('the turn: under the rock with no reason and no bed nothing is claimed for the night (note 773); a mob in sight keeps the shelter pressing (note 755)', () => {
   const { claim } = require('../src/survival');
   const { claimSays } = require('../src/arbiter');
   const state = { sleptAtAge: 0 };
-  const quiet = claim(belowBot(), { kind: 'win' }, { state, currentShelter: () => null });
-  assert.equal(quiet.action, 'secure_shelter');
-  assert.equal(quiet.urgency, 'routine');
-  assert.match(claimSays(quiet), /^A sealed pocket under the rock \(no reason to seal: health 20, nothing hostile in sight within 24 blocks or within 8\):/);
-  assert.match(claimSays(quiet), /a pocket does not pay that: only a bed does/);
+  // No reason and no bed known: nothing claimed for the night (note 773).
+  assert.equal(claim(belowBot(), { kind: 'win' }, { state, currentShelter: () => null }), null);
   const seen = claim(belowBot({ mobs: [{ name: 'zombie', at: new Vec3(14, 8, 0) }], sight: true }), { kind: 'win' }, { state, currentShelter: () => null });
   assert.equal(seen.action, 'secure_shelter');
   assert.equal(seen.urgency, 'pressing');

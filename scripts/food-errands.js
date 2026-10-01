@@ -7,6 +7,16 @@
 // the wins taken after it was met (hunger 18 or more with safe food carried).
 //   node scripts/food-errands.js [--since 2026-09-30T06:00Z] [--until ISO] [--port 25588] [--json]
 // Read-only, one file at a time.
+//
+// Reserve errands (note 771): the wins taken for the reserve alone (hunger
+// eighteen or more, or under it with food carried that brings it there),
+// joined into errands the same way, each with its minutes, the food points
+// it gained (the most carried within a minute after its last win, less what
+// was carried at its first), its hunger and points at the start, whether it
+// began underground or at night, and whether the work's own step was the
+// food; and every walk to a herd seen (seen_food_N) that met "no route" to
+// that herd within ten seconds, with how often the same herd was chosen
+// again after.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -28,7 +38,8 @@ const band = h => h == null ? '?' : h <= 6 ? '0-6' : h <= 12 ? '7-12' : h <= 17 
 const BANDS = ['0-6', '7-12', '13-17', '18-20'];
 const round = n => Math.round(n * 10) / 10;
 
-const R = { files: 0, wins: [], claims: [], errands: [] };
+const R = { files: 0, wins: [], claims: [], errands: [], reserve: [], herdWalks: [] };
+const reserveOnly = (food, carried) => food >= 18 || (food < 18 && carried > 0 && carried >= 18 - food);
 
 function readFile(file) {
   const name = path.basename(file), m = name.match(/-(\d{5})-Jev-/);
@@ -41,7 +52,7 @@ function readFile(file) {
   const frames = [];
   for (const line of text.split('\n')) {
     if (!line) continue;
-    try { const r = JSON.parse(line); const at = Date.parse(r.at); if (at >= since && at <= until) frames.push({ at, kind: r.kind, s: r.snapshot }); } catch (_) { /* a torn line */ }
+    try { const r = JSON.parse(line); const at = Date.parse(r.at); if (at >= since && at <= until) frames.push({ at, kind: r.kind, s: r.snapshot, detail: r.detail }); } catch (_) { /* a torn line */ }
   }
   frames.sort((a, b) => a.at - b.at);
   // The positions over time, for the climb.
@@ -55,6 +66,28 @@ function readFile(file) {
     R.errands.push({ ...spell, minutes: round((spell.to - spell.from) / 60000), climbed: Math.round(climbed) });
     spell = null;
   };
+  // The food points carried over time, for what a reserve errand gained.
+  const carriedAt = frames.filter(f => f.s?.inventory).map(f => ({ at: f.at, n: points(f.s.inventory) }));
+  let rspell = null;
+  const rclose = () => {
+    if (!rspell) return;
+    const after = carriedAt.filter(c => c.at >= rspell.from && c.at <= rspell.to + 60000);
+    const peak = after.reduce((n, c) => Math.max(n, c.n), rspell.startCarried);
+    const inside = ys.filter(p => p.at >= rspell.from && p.at <= rspell.to + 30000);
+    let climbed = 0;
+    for (let i = 1; i < inside.length; i++) if (inside[i].dim === inside[i - 1].dim) climbed += Math.max(0, inside[i].y - inside[i - 1].y);
+    R.reserve.push({ ...rspell, minutes: round((rspell.to - rspell.from) / 60000 + 0.5), gained: Math.max(0, peak - rspell.startCarried), climbed: Math.round(climbed) });
+    rspell = null;
+  };
+  // Walks to a herd seen that met no route to it.
+  const noRoutes = frames.filter(f => f.kind === 'no_route' && f.detail?.goal);
+  for (const f of frames) {
+    const d0 = f.s?.decision;
+    if (f.kind !== 'decision' || d0?.id !== 'survival_priority' || d0.path?.[0] !== 'obtain_food' || !/^seen_food_\d+$/.test(String(d0.path.at(-1)))) continue;
+    const t = Date.parse(d0.at), leaf = d0.path.at(-1), target = d0.options?.obtain_food?.children?.[leaf]?.target || null;
+    const miss = noRoutes.find(n => n.at >= t && n.at <= t + 10000);
+    R.herdWalks.push({ port: p, at: d0.at, leaf, target, noRoute: !!miss, goal: miss?.detail?.goal || null, y: f.s.position?.y });
+  }
   for (const f of frames) {
     const d = f.s?.decision;
     if (f.kind !== 'decision' || !d) continue;
@@ -70,7 +103,7 @@ function readFile(file) {
       : /fills it|Eating what is carried meets that|[Ee]at what is carried/.test(text) ? 'hunger, carried covers it'
         : /does not fill|This is for the hunger\./.test(text) ? 'hungry, carried short'
           : /for the hunger and the reserve/.test(text) ? 'under 18, reserve' : 'other';
-    const win = { port: p, at: d.at, food, health: s.health, carried, leaf: d.path.at(-1), mode, y: s.position?.y, dim: s.dimension, step: s.goal?.step?.action || null };
+    const win = { port: p, at: d.at, food, health: s.health, carried, leaf: d.path.at(-1), mode, y: s.position?.y, dim: s.dimension, step: s.goal?.step?.action || null, workOffered: !!d.options?.continue_request, desired: d.state?.foodReserve?.desiredMinimum ?? null };
     R.wins.push(win);
     const t = Date.parse(d.at);
     if (spell && t - spell.to > SPELL_GAP_MS) close();
@@ -79,8 +112,13 @@ function readFile(file) {
     spell.endFood = food; spell.endCarried = carried;
     const met = food >= 18 && carried > 0;
     if (met) { if (!spell.metAt) spell.metAt = t; spell.afterMet++; }
+    if (reserveOnly(food, carried)) {
+      if (rspell && t - rspell.to > SPELL_GAP_MS) rclose();
+      if (!rspell) rspell = { port: p, from: t, to: t, startFood: food, startCarried: carried, health: s.health, wins: 0, underground: !!d.state?.survivalFacts?.underground, night: Number.isFinite(d.state?.timeOfDay) ? d.state.timeOfDay >= 11500 && d.state.timeOfDay < 23000 : null, workFood: FOOD_STEPS.has(win.step), desired: d.state?.foodReserve?.desiredMinimum ?? null };
+      rspell.to = t; rspell.wins++;
+    }
   }
-  close();
+  close(); rclose();
 }
 
 for (const f of fs.readdirSync(dir)) if (f.endsWith('.jsonl')) readFile(path.join(dir, f));
@@ -112,5 +150,34 @@ const out = {
   errandsMetThenReAsked: (() => { const l = R.errands.filter(e => e.afterMet > 0); return { n: l.length, winsAfterMet: sum(l.map(e => e.afterMet)), minutesAfterMet: round(sum(l.map(e => (e.to - e.metAt) / 60000))) }; })(),
   longest: R.errands.slice().sort((a, b) => b.minutes - a.minutes).slice(0, 8).map(e => `${e.port} ${new Date(e.from).toISOString().slice(11, 19)} ${e.minutes} min, ${e.wins} wins, climbed ${e.climbed}, hunger ${e.startFood}->${e.endFood}, points ${e.startCarried}->${e.endCarried}, ${[...e.leaves].join('/')}`),
 };
+// Reserve errands (note 771), by the hunger they began at and whether food was carried.
+const reserveGroup = l => ({ errands: l.length, wins: sum(l.map(e => e.wins)), minutes: round(sum(l.map(e => e.minutes))), gainedNothing: l.filter(e => !e.gained).length,
+  pointsGained: sum(l.map(e => e.gained)), pointsAMinute: round(sum(l.map(e => e.gained)) / Math.max(0.1, sum(l.map(e => e.minutes)))), medianMinutes: median(l.map(e => e.minutes)), climbed: sum(l.map(e => e.climbed)) });
+out.reserveErrands = {
+  all: reserveGroup(R.reserve),
+  hunger18to20NothingCarried: reserveGroup(R.reserve.filter(e => e.startFood >= 18 && !e.startCarried)),
+  hunger18to20FoodCarried: reserveGroup(R.reserve.filter(e => e.startFood >= 18 && e.startCarried > 0)),
+  under18Covered: reserveGroup(R.reserve.filter(e => e.startFood < 18)),
+  underground: reserveGroup(R.reserve.filter(e => e.underground)),
+  undergroundAtNight: reserveGroup(R.reserve.filter(e => e.underground && e.night)),
+  overTheWorksFoodStep: reserveGroup(R.reserve.filter(e => e.workFood)),
+  forTheNightReserve: reserveGroup(R.reserve.filter(e => e.desired != null && e.desired < 80)),
+  forTheNetherReserve: reserveGroup(R.reserve.filter(e => e.desired >= 80)),
+  longest: R.reserve.slice().sort((a, b) => b.minutes - a.minutes).slice(0, 6).map(e => `${e.port} ${new Date(e.from).toISOString().slice(11, 19)} ${e.minutes} min, ${e.wins} wins, hunger ${e.startFood}, ${e.startCarried} carried, gained ${e.gained}${e.underground ? ', underground' : ''}${e.night ? ', night' : ''}`),
+};
+// Under note 771's rules, on the same wins: a reserve-only win over the
+// work's own food step, or for the crossing's reserve (64 points or more
+// wanted: the Nether's or the End's), is not asked (the ladder's food rung
+// has it); every other reserve-only win is asked with the work on offer.
+const rWins = R.wins.filter(w => reserveOnly(w.food, w.carried) && w.dim !== 'the_nether');
+const workHasIt = w => FOOD_STEPS.has(w.step) || w.desired >= 64;
+out.under771 = { reserveOnlyWins: rWins.length, notAskedWorkHasIt: rWins.filter(workHasIt).length, ofThemOverTheFoodStep: rWins.filter(w => FOOD_STEPS.has(w.step)).length,
+  askedWithoutTheWorkBefore: rWins.filter(w => !workHasIt(w) && !w.workOffered).length, askedWithTheWorkBefore: rWins.filter(w => !workHasIt(w) && w.workOffered).length };
+// The herd walks that met no route, and the same herd chosen again after.
+const missed = R.herdWalks.filter(w => w.noRoute);
+out.herdWalks = { walks: R.herdWalks.length, noRoute: missed.length,
+  chosenAgainAfterNoRoute: missed.filter(w => R.herdWalks.some(o => o.port === w.port && o.leaf === w.leaf && Date.parse(o.at) > Date.parse(w.at) && Date.parse(o.at) - Date.parse(w.at) <= 10 * 60000)).length,
+  noRouteAgainSameHerd: missed.filter(w => missed.some(o => o !== w && o.port === w.port && o.leaf === w.leaf && Date.parse(o.at) > Date.parse(w.at) && Date.parse(o.at) - Date.parse(w.at) <= 10 * 60000)).length,
+  noRouteHerdAboveBy20: missed.filter(w => w.goal && Number.isFinite(w.y) && w.goal.y - w.y >= 20).length };
 if (asJson) console.log(JSON.stringify({ ...out, wins: R.wins, claims: R.claims }, null, 1));
 else console.log(JSON.stringify(out, null, 1));

@@ -284,12 +284,26 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
   // bad go by it.
   const herdIds = require('./decisions/keys').ids(goal, 'seen_food', herds.map(h => h.s), { near: 24 });
   herds.forEach(({ kind, s }, i) => {
-    choices[`seen_food_${herdIds[i]}`] = { target: { x: Math.round(s.x), y: Math.round(s.y ?? bot.entity.position.y), z: Math.round(s.z) }, description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
+    const key = `seen_food_${herdIds[i]}`;
+    choices[key] = { target: { x: Math.round(s.x), y: Math.round(s.y ?? bot.entity.position.y), z: Math.round(s.z) }, description: { action: `Walk back to where ${s.says} and hunt there; animals wander, but not far.`, animal: kind, count: s.count, distance: s.distance, direction: s.direction, minutesAgo: s.minutesAgo, ...walkFacts(s.distance, s) },
       run: async () => {
         goal.survivalAction = { action: 'search_food', toward: { x: s.x, y: s.y, z: s.z }, animal: kind, at: new Date().toISOString() }; save();
         const outerCheck = task.interruptCheck; task.interruptCheck = () => checkThreats(bot);
-        try { await sightings.walkToSighting(bot, task, goal, save, kind, s, actions.navigate); }
+        const out = {};
+        try { await sightings.walkToSighting(bot, task, goal, save, kind, s, actions.navigate, out); }
         finally { task.interruptCheck = outerCheck; }
+        // A walk that found no way there is a try that came to nothing,
+        // recorded as such (note 771): it had returned quietly, so the
+        // ledger had no failure to say or rest, and 25589 (2026-09-30
+        // 23:53:42 to 23:55:03Z) chose seen_food_0, sheep 37 blocks up at
+        // (236, 73, 452) from 30 blocks under rock, four times, each "no
+        // route" within a second, the herd seen again and offered again.
+        if (out.walk === 'failed') {
+          const tried = require('./tried'), entry = tried.latestOf(goal, 'survival_priority');
+          const why = `no way to the ${kind} seen at (${Math.round(s.x)}, ${Math.round(s.y ?? 0)}, ${Math.round(s.z)}) from (${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}): ${out.why}`;
+          if (entry && entry.outcome === 'pending' && String(entry.method).endsWith(`/${key}`)) tried.markBlocked(entry, why);
+          throw new Error(`The walk to the ${kind} seen came to nothing: ${why}`);
+        }
       } };
   });
   // Always on offer: the animals in view may be the wrong ones to go for.

@@ -60,7 +60,7 @@ const RUNG_WHY = {
   shield: 'blocks arrows and creeper blasts; the fights ahead are easier behind one',
   iron_sword: 'kills faster than stone',
   bucket: 'water for lava, falls and the End portal room',
-  golden_boots: 'piglins leave a player wearing gold alone in the Nether',
+  golden_boots: 'a piglin leaves a player wearing any one gold armour piece alone in the Nether, save one the player struck (and those near it) for about 30 seconds; a brute ignores gold; four gold ingots at a crafting table',
   bow: 'answers skeletons, blazes and the dragon\'s crystals from range',
   arrows: 'the bow is nothing without them; here they come only from skeletons, none to two a skeleton, and are spent as they are shot (feathers for crafting come from chickens, which the bot never hurts)',
   diamond_sword: 'ends a blaze or a piglin in two swings',
@@ -89,7 +89,8 @@ const WITHOUT = {
   shield: 'every arrow and every creeper blast lands in full',
   iron_armour: 'every hit lands on what is worn now',
   bucket: 'there is no water for fire, lava or a fall',
-  golden_boots: 'every piglin in the Nether attacks on sight',
+  // Priced by the record (scripts/piglin-gold.js, note 773).
+  golden_boots: 'every piglin in the Nether goes for the bot on sight (141 piglin hits on the bots in the Nether from 06:00Z on 2026-09-30 to 01:10Z the next day, none with gold worn; 658 stance questions with a piglin among the threats, 4 with gold worn, and 5 deaths within fifteen seconds of a piglin\'s hit)',
   bow: 'shooters are answered only by closing on them',
   arrows: 'the bow cannot shoot',
   home_bed: 'a death respawns far from home',

@@ -24,6 +24,9 @@
 // Heard, out of sight, but a walker's few seconds off: said as a threat.
 const HEARD_NEAR = 8;
 const SEAL_LOG_MAX = 20;
+// The night's last seconds, said as seconds rather than "about 1 real
+// minutes" (note 773).
+const LAST_OF_NIGHT_S = 180;
 // A seal opened again within this is a reversal of it.
 const REVERSAL_MS = 60000;
 const round = n => Math.round(n * 10) / 10;
@@ -33,7 +36,7 @@ const named = s => String(s).replaceAll('_', ' ');
 // hostiles: [{ name, distance, visible }] within 24; coming: those coming at
 // the bot (danger.js coming), [{ entity: { name }, distance, atBotIn }] or
 // [{ name, distance }].
-function sealReason({ health = 20, food = 20, underground = false, night = false, overworld = true, minutesToDawn = null, hostiles = [], coming = [], sleepDebt = false } = {}) {
+function sealReason({ health = 20, food = 20, underground = false, night = false, overworld = true, minutesToDawn = null, secondsToDawn = null, hostiles = [], coming = [], sleepDebt = false } = {}) {
   const list = hostiles.filter(h => Number.isFinite(h.distance) && h.distance <= 24).slice().sort((a, b) => a.distance - b.distance);
   const seen = list.filter(h => h.visible);
   const close = list.filter(h => !h.visible && h.distance <= HEARD_NEAR);
@@ -48,7 +51,12 @@ function sealReason({ health = 20, food = 20, underground = false, night = false
   }
   if (overworld && night && !underground) {
     kinds.push('surface_night');
-    parts.push(`for the night on the surface: mobs spawn in the open until dawn${Number.isFinite(minutesToDawn) ? `, about ${minutesToDawn} real minutes off` : ''}`);
+    // The last minutes of the night said in seconds, with what dawn ends
+    // and what it does not (note 773): 25588 was given the turn for a
+    // shelter thirteen times "about 1 real minutes" from dawn.
+    parts.push(Number.isFinite(secondsToDawn) && secondsToDawn <= LAST_OF_NIGHT_S
+      ? `for the night on the surface, about ${Math.round(secondsToDawn)} seconds of it left: mobs spawn in the open until dawn; from dawn none spawn there, and the zombies and skeletons out then burn in the sun (creepers, spiders and the rest stay out)`
+      : `for the night on the surface: mobs spawn in the open until dawn${Number.isFinite(minutesToDawn) ? `, about ${minutesToDawn} real minutes off` : ''}`);
   }
   if (health < 20) {
     if (food >= 18) { kinds.push('heal'); parts.push(`to heal out of reach: health ${round(health)} of 20 comes back at hunger ${food}, about ${Math.round((20 - health) * 4)} seconds to full`); }
@@ -73,9 +81,16 @@ function sealReason({ health = 20, food = 20, underground = false, night = false
 // What sealing costs, said after the reason: the building, the minutes
 // sealed against the work waiting, and what this bot's own last seals of
 // the same kind came to.
-function sealCostSays({ blocks = null, minutesToDawn = null, waiting = null, log = [], none = false } = {}) {
-  const build = Number.isFinite(blocks) && blocks > 0 ? `about ${Math.round(blocks * 0.6)} seconds of building (${blocks} blocks)` : 'the building';
-  const time = Number.isFinite(minutesToDawn) ? `, then up to ${minutesToDawn} real minutes sealed to dawn${waiting ? ` with ${waiting} waiting` : ''}` : waiting ? `, then each minute sealed a minute with ${waiting} waiting` : '';
+// In the night's last minutes the time sealed is said in seconds against
+// the building's own (note 773): sealed for the last minute of the night,
+// a shelter gains about that minute, less its building.
+function sealCostSays({ blocks = null, minutesToDawn = null, secondsToDawn = null, waiting = null, log = [], none = false } = {}) {
+  const buildS = Number.isFinite(blocks) && blocks > 0 ? Math.round(blocks * 0.6) : null;
+  const build = buildS != null ? `about ${buildS} seconds of building (${blocks} blocks)` : 'the building';
+  const last = Number.isFinite(secondsToDawn) && secondsToDawn <= LAST_OF_NIGHT_S;
+  const left = last ? Math.max(0, Math.round(secondsToDawn - (buildS || 0))) : null;
+  const time = last ? (left > 0 ? `, then about ${left} seconds sealed before dawn${waiting ? ` with ${waiting} waiting` : ''}` : `: dawn comes about when the building is done (${Math.round(secondsToDawn)} seconds off), so nothing of the night is spent sealed`)
+    : Number.isFinite(minutesToDawn) ? `, then up to ${minutesToDawn} real minutes sealed to dawn${waiting ? ` with ${waiting} waiting` : ''}` : waiting ? `, then each minute sealed a minute with ${waiting} waiting` : '';
   return ` Sealing costs ${build}${time}.${none ? recordSays(log) : ''}`;
 }
 
@@ -114,4 +129,4 @@ function reversalSays(state, now = Date.now()) {
   return `Undoes the seal chosen ${ago} seconds ago (${s.none ? 'with no reason named for it' : s.short}): the pocket is opened again and its building spent for nothing. `;
 }
 
-module.exports = { sealReason, sealCostSays, recordSays, noteSeal, noteAfter, reversalSays, HEARD_NEAR, REVERSAL_MS };
+module.exports = { sealReason, sealCostSays, recordSays, noteSeal, noteAfter, reversalSays, HEARD_NEAR, REVERSAL_MS, LAST_OF_NIGHT_S };

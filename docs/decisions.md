@@ -370,6 +370,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `eat` | root | eat food now | food carried, health below full, hunger below full and eighteen or more after the meal (health comes back); said with whether it is done before a shot from a shooter with a line here can land (each one's next shot: a blaze's glow, a draw, a ghast's mouth) and the spawner's next try; while it is eaten no warning raises the shield, a shot on its way that lands inside it cuts it for the shield, and it is begun again once no shot is on its way (src/meal.js, note 701) |
 | `step_out_and_eat` | root | walk to a spot no shooter's line reaches, then eat there | food a meal helps with carried, a shooter with a line to the bot, and a spot out of every shooter's line within eight blocks of walking; said with the blocks, the seconds in their fire, when each shooter has a line on it again, and the cost of the walk and the meal (note 701) |
 | `charge_shooter` | root | run at the ground shooters one after another and strike | skeletons, strays, bogged, pillagers or witches in view within sixteen, a sword or axe carried, not in water |
+| `wear_gold` | root | put on the gold armour piece carried: a piglin leaves a player wearing any gold piece alone, save one the player struck (and those near it) for about 30 seconds; a brute ignores gold | a piglin among the mobs, no gold armour worn and a golden helmet, chestplate, leggings or boots carried; said with what it replaces and the armour points lost, and the piglins struck lately (note 773) |
 | `shield_the_blast` | root | face the creeper with the shield raised and hold until it goes off or is gone: a blast from the side the shield faces does no damage once the shield is up a quarter second, the knockback still comes | a creeper within seven and a shield carried |
 | `creeper_dance` | root | hit the creeper and back out of its blast, or hold at reach where the swings kill it before it goes off, again and again | a creeper within six, a sword or axe carried, no drop or lava to back into |
 | `keep_working` | root | carry on with the work and leave the mobs be for fifteen seconds | nothing within three blocks; ends early when one comes within three or lands a hit |
@@ -856,7 +857,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 **A furnace batch is cooking: dig what is in reach, walk to an ore or tree nearby, dig stone, or wait by the furnace?**
 
-- When: Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, and after a walk to ore that wore the pickaxes.
+- When: Once a smelting batch, from one item (eight seconds) up, when something besides waiting is possible; asked again when the way chosen has run out, after a walk to ore that wore the pickaxes, and on coming back to the furnace after leaving it to cook. A new batch is sized to what the rungs still open want of the output, up to the input and fuel carried (note 771).
 - Decision tree, choice; stakes low; ledger kind `smelting`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
@@ -869,7 +870,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `mine_nearby` | root | walk to an ore or tree nearby and dig | an ore within sixteen blocks (thirty-two with a minute or more of cooking) that a tool carried takes a drop from, or a log while fewer than sixteen are carried, and the walk there and back fits in the cooking |
 | `dig_stone` | root | dig the stone around the furnace | fewer than 128 cobblestone carried, and a pickaxe to take the cobblestone |
 | `wait_here` | root | stand by the furnace | always; a wait: it names what it waits for and when (src/waits.js), and is not offered where that cannot come or its coming changes nothing, said in waitsForNothing (note 698) |
-| `leave_cooking` | root | leave the batch to cook and go on with the work in hand, taking it out when back by the furnace once it is done, or in twenty minutes | a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch's own |
+| `leave_cooking` | root | leave the batch to cook: go on with the work in hand (a batch saved earlier), or, for the batch's own step, hold the step off and do the work on offer from here until it is done, then come back to the furnace for it | a batch saved earlier that other work (a climb for wood, a rung) came to finish first, and that work is not this batch's own; or the batch's own step, once a batch, with work on offer from here meanwhile (said in `leaveCooking` when none is), priced by the seconds of standing it saves against the walk back (note 771) |
 
 ### `dug_into_liquid`
 

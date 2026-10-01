@@ -201,4 +201,4 @@ function rungLevelSays(bot, goal, phase) {
   return '';
 }
 
-module.exports = { pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };
+module.exports = { IRON_FOR, pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };

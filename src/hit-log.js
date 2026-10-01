@@ -26,11 +26,27 @@ function sideOf(bot, p) {
   return cross > 0 ? 'to the right' : 'to the left';
 }
 
-// One hit, as the hurt listener sees it (survival.js).
+// The shield as it stood at the hit: up and blocking, raised but still
+// rising (under the quarter second a raised shield takes to block, combat.js
+// SHIELD_BLOCKS_AFTER_MS, when a blow lands whole), or down (note 773).
+// 25584 (mid-229-aa, 2026-10-01 00:44:13 and 00:44:23Z) took two piglin
+// arrows with the shield rising, "(shield rising, not yet blocking)" in the
+// record, and the stance options said "it landed with the shield up": this
+// read the raised flag alone. Of 1,427 hits with the shield raised in the
+// records from 06:00Z on 2026-09-30, 678 landed with it rising.
+function shieldAt(bot, now = Date.now()) {
+  if (!bot?._shieldRaised) return 'down';
+  let after = 300;
+  try { after = require('./combat').SHIELD_BLOCKS_AFTER_MS ?? after; } catch (_) { /* default */ }
+  return Number.isFinite(bot._shieldRaisedAt) && now - bot._shieldRaisedAt < after ? 'rising' : 'up';
+}
+
+// One hit, as the hurt listener sees it (survival.js), with the shield's
+// state at that moment.
 function note(bot, source, now = Date.now()) {
   if (!bot) return;
-  const shield = !!bot._shieldRaised;
-  const entry = { at: now, name: source?.name || null, id: source?.id ?? null, health: bot.health ?? null, shield,
+  const state = shieldAt(bot, now);
+  const entry = { at: now, name: source?.name || null, id: source?.id ?? null, health: bot.health ?? null, shield: state === 'up', ...(state === 'rising' ? { rising: true } : {}),
     side: source?.position ? sideOf(bot, source.position) : null };
   bot._hitLog = [...(bot._hitLog || []).filter(h => now - h.at < KEEP_MS), entry];
 }
@@ -56,7 +72,8 @@ function install(bot) {
   bot.on('shot', s => { const now = Date.now(); bot._shotLog = [...(bot._shotLog || []).filter(x => now - x.at < KEEP_MS * 2), { at: now, name: s?.name || null, landed: !!s?.landed }]; });
 }
 function noteDrop(bot, from, to, now = Date.now()) {
-  bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: !!bot._shieldRaised }];
+  const state = shieldAt(bot, now);
+  bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: state === 'up', ...(state === 'rising' ? { rising: true } : {}) }];
 }
 function drops(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
   return (bot?._dropLog || []).filter(d => now - d.at <= ms);
@@ -73,8 +90,8 @@ function hitters(bot, list = [], { now = Date.now(), ms = RECENT_MS } = {}) {
   for (const h of recent(bot, { now, ms })) {
     if (!h.name) continue;
     const k = h.id ?? h.name;
-    const e = by.get(k) || { name: h.name, id: h.id, hits: 0, last: 0, sides: new Set(), shielded: 0 };
-    e.hits++; e.last = Math.max(e.last, h.at); if (h.side) e.sides.add(h.side); if (h.shield) e.shielded++;
+    const e = by.get(k) || { name: h.name, id: h.id, hits: 0, last: 0, sides: new Set(), shielded: 0, rising: 0 };
+    e.hits++; e.last = Math.max(e.last, h.at); if (h.side) e.sides.add(h.side); if (h.shield) e.shielded++; if (h.rising) e.rising++;
     by.set(k, e);
   }
   return [...by.values()].map(e => ({ ...e, t: (list || []).find(t => t.entity?.id === e.id) || (list || []).filter(t => t.entity?.name === e.name).sort((a, b) => a.distance - b.distance)[0] || null }))
@@ -91,12 +108,15 @@ function says(bot, list = [], { now = Date.now(), ms = RECENT_MS } = {}) {
   const named = hs.reduce((n, h) => n + h.hits, 0);
   // The blows by the health itself, where more fell than were named.
   const r1 = v => Math.round(v * 10) / 10;
-  const fell = ds.length > named ? ` Health fell ${ds.length} times in the last ${Math.round(ms / 1000)} seconds, ${r1(ds[0].from)} to ${r1(ds.at(-1).to)} health${ds.every(d => d.shield) ? ', every one with the shield up' : ds.some(d => d.shield) ? `, ${ds.filter(d => d.shield).length} with the shield up` : ''}${named ? `; the server named the source of ${named}` : ''}.` : '';
+  const risingDrops = ds.filter(d => d.rising).length;
+  const fell = ds.length > named ? ` Health fell ${ds.length} times in the last ${Math.round(ms / 1000)} seconds, ${r1(ds[0].from)} to ${r1(ds.at(-1).to)} health${ds.every(d => d.shield) ? ', every one with the shield up' : ds.some(d => d.shield) ? `, ${ds.filter(d => d.shield).length} with the shield up` : ''}${risingDrops ? `, ${risingDrops === ds.length ? 'every one' : risingDrops} with the shield rising, before it blocks` : ''}${named ? `; the server named the source of ${named}` : ''}.` : '';
   if (!hs.length) return fell ? `Hitting the bot now:${fell}` : '';
   const each = hs.slice(0, 3).map(h => {
     const where = h.t ? `${Math.round(h.t.distance * 10) / 10} blocks off${h.t.visible === false ? ', out of sight' : ''}` : 'not in view now';
     const sides = h.sides.size ? `, from ${[...h.sides].join(' and ')}` : '';
-    const shield = h.shielded ? `; ${h.shielded === h.hits ? (h.hits === 1 ? 'it' : 'each') : h.shielded} landed with the shield up` : '';
+    // Up and blocking, or raised and still rising: said apart (note 773).
+    const shield = [h.shielded ? `${h.shielded === h.hits ? (h.hits === 1 ? 'it' : 'each') : h.shielded} landed with the shield up` : null,
+      h.rising ? `${h.rising === h.hits ? (h.hits === 1 ? 'it' : 'each') : h.rising} landed with the shield rising, before it blocks (a raised shield blocks only a quarter second after it goes up)` : null].filter(Boolean).map(x => `; ${x}`).join('');
     return `the ${String(h.name).replaceAll('_', ' ')} ${where} (${plural(h.hits, 'hit')} in the last ${Math.round(ms / 1000)} seconds, the last ${Math.max(0, Math.round((now - h.last) / 1000))} seconds ago${sides}${shield})`;
   });
   const shieldedBehind = recent(bot, { now, ms }).filter(h => h.shield && h.side && h.side !== 'in front');
@@ -104,4 +124,4 @@ function says(bot, list = [], { now = Date.now(), ms = RECENT_MS } = {}) {
   return `Hitting the bot now: ${each.join('; ')}.${fell}${second}`;
 }
 
-module.exports = { install, note, noteDrop, drops, recent, hitters, says, sideOf, RECENT_MS };
+module.exports = { install, note, noteDrop, drops, recent, hitters, says, sideOf, shieldAt, RECENT_MS };

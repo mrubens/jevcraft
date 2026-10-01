@@ -1221,7 +1221,7 @@ test('beside a drop is a neighbouring cell with no floor for three blocks or lav
   assert(cell && cell.z >= 1 && !besideDrop(wide, cell), `a cell with ground all round: ${cell}`);
 });
 
-test('a reserve top-up once chosen is held: "get food or carry on" is not asked again every step', async () => {
+test('a reserve top-up for the reserve alone keeps the work on offer at every asking (note 771; it had been left out for five minutes once the top-up was chosen)', async () => {
   const { Survival } = require('../src/survival');
   const client = { systemOne: async () => { throw new Error('offline'); } };
   const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, entities: {}, time: { timeOfDay: 3000 },
@@ -1233,8 +1233,9 @@ test('a reserve top-up once chosen is held: "get food or carry on" is not asked 
   survival.decide = async (task, goal, save, { tree }) => { offered.push(Object.keys(tree).sort()); return { path: ['obtain_food'], action: { run: async () => {} }, stale: false }; };
   const goal = { kind: 'win', request: 'beat the game', stockFood: true };
   for (let i = 0; i < 3; i++) await survival.step(new Task('test', 'food'), goal, () => {});
-  assert.deepEqual(offered[0], ['continue_request', 'obtain_food'], 'asked once');
-  assert(offered.slice(1).every(keys => !keys.includes('continue_request')), `then held: ${JSON.stringify(offered)}`);
+  assert.deepEqual(offered[0], ['continue_request', 'obtain_food']);
+  assert(survival.state.foodPlan, 'the top-up is held as a plan');
+  assert(offered.slice(1).every(keys => keys.includes('continue_request')), `the work still on offer: ${JSON.stringify(offered)}`);
 });
 
 test('search_food, once chosen, is not asked about again at once: 25598 was asked every twenty to forty seconds while it climbed for it', async () => {
@@ -3274,8 +3275,16 @@ test('underground at night nothing is asked until two nights awake, and then sta
   assert.equal(await survival.step(new Task('t', 'night'), goal, () => {}), false, 'the work goes on');
   assert.equal(seen.length, 0, 'no night question underground');
   bot.time.age += SLEEP_DEBT_TICKS + 1;
+  // Two nights awake with no bed known: a pocket does not pay the sleep
+  // owed, and under the rock there is no reason to seal (note 773).
   await survival.step(new Task('t', 'night'), goal, () => {});
-  assert.equal(seen.length, 1, 'two nights awake: the night is a question again');
+  assert.equal(seen.length, 0, 'two nights awake, no bed known: still no night question underground');
+  // A village remembered with beds is a bed to pay it: the night is a question again.
+  goal.villages = [{ dimension: 'overworld', x: 60, y: 20, z: 0, beds: 2 }];
+  await survival.step(new Task('t', 'night'), goal, () => {});
+  assert.equal(seen.length, 1, 'two nights awake with a bed known: the night is a question again');
+  assert(seen[0].village_bed, 'the bed that pays it offered');
+  assert(!seen[0].secure_shelter, 'no pocket under the rock with no reason to seal');
   assert.match(seen[0].continue_request.description, /keep on with the request underground/);
   assert.doesNotMatch(seen[0].continue_request.description, /outside/);
 });
@@ -5498,22 +5507,19 @@ test('underground at dusk, carrying on names the work and says the night changes
     blockAt: p => ({ name: open(p) || p.y > 80 ? 'air' : 'stone', boundingBox: open(p) || p.y > 80 ? 'empty' : 'block', position: p }), findBlocks: () => [], world: { raycast: () => null }, chat() {} });
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {} }, { state: { sleptAtAge: 100000 }, client: { systemOne: async () => ({}) } });
   const seen = [];
-  survival.decide = async (task, goal, save, { tree }) => { seen.push(tree); return { path: ['continue_request'], action: tree.continue_request, stale: false }; };
-  await survival.step(new Task('t', 'dusk'), { kind: 'win', request: 'beat the game', gameProgress: { phase: 'reach_nether' }, portalMethod: { kind: 'cast', near: { x: 30, y: 20, z: 0 } } }, () => {});
+  const states = [];
+  survival.decide = async (task, goal, save, { tree, state }) => { seen.push(tree); states.push(state); return { path: ['continue_request'], action: tree.continue_request, stale: false }; };
+  // A village with beds known: the sleep owed has a bed to pay it (note 773).
+  await survival.step(new Task('t', 'dusk'), { kind: 'win', request: 'beat the game', gameProgress: { phase: 'reach_nether' }, portalMethod: { kind: 'cast', near: { x: 30, y: 20, z: 0 } }, villages: [{ dimension: 'overworld', x: 60, y: 20, z: 0, beds: 2 }] }, () => {});
   assert.equal(seen.length, 1, 'two nights awake: the night is asked');
   const [tree] = seen;
   assert.match(tree.continue_request.description, /Keep on with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) underground/);
   assert.match(tree.continue_request.description, /nightfall changes nothing down here/);
   assert.doesNotMatch(tree.continue_request.description, /while outside/);
-  // Said as what sealing costs, after its reason or that none holds (note 755).
-  assert.match(tree.secure_shelter.description, /real minutes sealed to dawn with the reach nether step \(the portal: no frame begun; to be cast from lava and water; the lava chosen 30 blocks off\) waiting/);
-  assert.match(tree.secure_shelter.description, /underground, where the night changes nothing|Underground the dark is the same at any hour/);
-  // Health and armed-or-not said on secure_shelter itself, not only on
-  // continue_request: 25592 walled itself in at full health over one
-  // skeleton 26 blocks off, told nothing of either on secure_shelter's own
-  // text (note 747).
-  assert.match(tree.secure_shelter.description, /Health 20 of 20, (no weapon|the [a-z ]+) carried, (no armour worn|[0-9]+ pieces? of armour worn)\./);
-  assert.doesNotMatch(tree.secure_shelter.description, /Within \d+ blocks now/, 'no hostile mob here: nothing to list');
+  // Under the rock with no reason to seal the pocket is not offered, said
+  // why (note 773; it was offered with "No reason to seal" first, note 755).
+  assert(!tree.secure_shelter);
+  assert.match(states[0].secureShelterNotOffered, /^under the rock with no reason to seal \(.*underground, where the night changes nothing.*\); a pocket does not pay the sleep owed, only a bed does$/);
 });
 
 // Note 534: a block in a creeper's line. Its fuse burns only while it sees

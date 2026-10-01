@@ -250,6 +250,22 @@ function openRungs(bot, goal = {}, now = Date.now()) {
   }
   return out;
 }
+// Every rung still open on the ladder from here, deferrable or not, as far
+// as the ladder names a new one with the ones before it set aside: what the
+// ladder still wants made (note 771: a smelt batch sized to the iron the
+// rungs ahead want, not to one rung's three ingots at a time).
+function rungsOpenAhead(bot, goal = {}, now = Date.now()) {
+  const skipped = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
+  const out = [];
+  for (let i = 0; i < 16; i++) {
+    let rung = null;
+    try { rung = ladderRung(bot, goal, skipped); } catch (_) { rung = null; }
+    if (!rung || out.some(r => r.phase === rung.phase)) break;
+    out.push(rung);
+    skipped.add(rung.phase);
+  }
+  return out;
+}
 function ladderRung(bot, goal, waiting) {
   const ready = rung => rung && !waiting.has(rung.phase) ? rung : null;
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
@@ -1099,4 +1115,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, rungsOpenAhead, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

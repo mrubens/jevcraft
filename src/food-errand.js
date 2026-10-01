@@ -138,6 +138,75 @@ function restWhy(e, supply, now = Date.now()) {
   return `${plural(minutes(now - e.window.since), 'minute')} of the food errand kept nothing: ${e.window.start} points carried then, ${supply} now`;
 }
 
+// For the reserve alone (note 771): hunger at eighteen or more, where
+// health comes back, or under it with food carried that brings it there.
+// Nothing about the body waits on such a trip; it is work, weighed beside
+// the work in hand, not a need that outranks it.
+function reserveOnly(bot, supply) {
+  return (bot?.food ?? 20) >= HEALS_AT || covered(bot, supply);
+}
+
+// What reserve-only errands came to in the flight records (note 771:
+// `node scripts/food-errands.js --since 2026-09-30T06:00Z --until
+// 2026-10-01T00:00Z`, 666 records): the wins of obtain_food taken for the
+// reserve alone, joined into errands three minutes apart, each with its
+// minutes and the food points it gained (the most carried within a minute
+// of its last win, less what it began with).
+const RESERVE_RECORD = Object.freeze({
+  window: '2026-09-30 06:00Z to 2026-10-01 00:00Z',
+  all: { errands: 268, minutes: 605, nothing: 95, perMinute: 6.4 },
+  underground: { errands: 90, minutes: 233, nothing: 59, perMinute: 3.0 },
+  undergroundNight: { errands: 33, minutes: 91, nothing: 22, perMinute: 2.3 },
+  overWorkFood: { errands: 131, minutes: 386 },
+});
+const pct = (a, b) => `${Math.round(100 * a / Math.max(1, b))}%`;
+const recordRow = (r, where) => `${where}: ${r.errands} errands, ${r.minutes} minutes, ${pct(r.nothing, r.errands)} of them gained no food, ${r.perMinute} food points a minute in all`;
+// The record that bears on the bot where it is: underground at night,
+// underground, or all.
+function reserveRecordSays({ underground = false, night = false } = {}) {
+  const R = RESERVE_RECORD;
+  const rows = [recordRow(R.all, 'all of them')];
+  if (underground) rows.push(recordRow(R.underground, 'begun underground'));
+  if (underground && night) rows.push(recordRow(R.undergroundNight, 'begun underground at night'));
+  return `Food errands for the reserve alone in the flight records (${R.window}): ${rows.join('; ')}.`;
+}
+// Where the bot is, for a trip to the surface's animals: the rock over it
+// with the climb at its own pace, and the light up there.
+function whereSays(bot) {
+  const { DAY } = require('./day');
+  let depth = null;
+  try { depth = require('./levels').depthHere(bot); } catch (_) { depth = null; }
+  const t = bot?.time?.timeOfDay;
+  const toDawn = Number.isFinite(t) ? Math.round(((DAY.DAWN - t + 24000) % 24000) / 1200) : null;
+  const toNight = Number.isFinite(t) ? Math.round(((DAY.NIGHT - t + 24000) % 24000) / 1200) : null;
+  const night = Number.isFinite(t) && t >= DAY.NIGHT && t < DAY.DAWN;
+  const light = !Number.isFinite(t) ? '' : night ? `night at the surface until dawn, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} off; the animals are found in the dark among its mobs` : `day at the surface for about ${toNight} more real minute${toNight === 1 ? '' : 's'}, night after that`;
+  let climb = '';
+  if (Number.isFinite(depth) && depth > 0) { try { climb = `the bot is ${require('./levels').climbSays(depth)}`; } catch (_) { climb = `the bot is ${depth} blocks under open sky`; } }
+  const parts = [climb, light].filter(Boolean);
+  return parts.length ? `Where: ${parts.join('; ')}.` : '';
+}
+
+// The work's own step is the food for the Nether (work.js kitFoodStep,
+// gatherNetherFood): a reserve-only errand of the survival layer beside it
+// is the same food taken from that step to a search of its own (note 771:
+// 131 of the 268 reserve-only errands in the record, 386 minutes, were
+// over the work's own food step; 25589 at 23:55:46Z, 2026-09-30).
+const WORK_FOOD_STEPS = new Set(['nether_food', 'hunt_food_for_nether', 'food_near_frame', 'food_known', 'cook_for_nether', 'fetch_food_from_stash', 'harvest_for_nether']);
+function workIsFood(goal) {
+  return goal?.gameProgress?.phase === 'nether_food' || WORK_FOOD_STEPS.has(goal?.step?.action);
+}
+// The reserve wanted is the crossing's, on the game's ladder: its food rung
+// (kit_food) asks for it with its trips and minutes, and sets it aside or
+// goes without (note 761); the survival layer's own errand for it, the
+// hunger met, is that rung taken off the work's hands (note 771: 25589 set
+// its nether-food rung aside at 23:55:53Z, 2026-09-30, and chose the
+// Nether first; the flags its food step had raised kept the survival layer
+// after the 80 points, asked 18 times in four minutes).
+function crossingReserve(goal) {
+  return goal?.kind === 'win' && !!(goal.preparingNether || goal.preparingEnd);
+}
+
 // The raw meat carried and what cooking it adds, in points.
 function cookSays(bot) {
   let stock = null;
@@ -158,7 +227,21 @@ function says(bot, goal, { supply, desired, hungry, errand = null, now = Date.no
   const purpose = reserveOnly ? `This trip is for the reserve alone${hunger < HEALS_AT ? ' (the hunger is a meal of what is carried)' : ''}.`
     : hungry ? 'This is for the hunger.' : 'This is for the hunger and the reserve.';
   const short = Math.max(0, Math.round(desired - supply));
-  return `Get food. ${hungerSays(bot, supply)} ${purpose} ${supply} food points carried of the ${desired} kept for ${reserveFor(goal)}: ${short} short.${cookSays(bot)}${yieldSays(errand, supply, now)}${reserveOnly && holder ? ` ${recordSays(holder, now)}` : ''}`;
+  // For the reserve alone, priced (note 771): where the bot is (the rock
+  // over it, the climb, the light up there) and what such errands came to
+  // in the record, and for the Nether's reserve, what the first stays with
+  // and without it came to (note 763's kit record).
+  let priced = '';
+  if (reserveOnly) {
+    const { DAY } = require('./day'), t = bot?.time?.timeOfDay;
+    let underground = false;
+    try { underground = require('./levels').depthHere(bot) > 0; } catch (_) { underground = false; }
+    const night = Number.isFinite(t) && t >= DAY.NIGHT && t < DAY.DAWN;
+    const where = whereSays(bot);
+    const stays = goal?.preparingNether ? require('./kit-record').staysSays('nether_food') : '';
+    priced = `${where ? ` ${where}` : ''} ${reserveRecordSays({ underground, night })}${stays ? ` The Nether's ${stays}.` : ''}`;
+  }
+  return `Get food. ${hungerSays(bot, supply)} ${purpose} ${supply} food points carried of the ${desired} kept for ${reserveFor(goal)}: ${short} short.${cookSays(bot)}${yieldSays(errand, supply, now)}${reserveOnly && holder ? ` ${recordSays(holder, now)}` : ''}${priced}`;
 }
 
-module.exports = { track, end, noYield, yieldSays, restWhy, says, fillsHunger, reserveFor, cookSays, met, covered, hungerSays, costSays, recordSays, logErrand, HEALS_AT, NO_YIELD_MS, GAP_MS, REST_MS };
+module.exports = { crossingReserve, workIsFood, WORK_FOOD_STEPS, reserveOnly, RESERVE_RECORD, reserveRecordSays, whereSays, track, end, noYield, yieldSays, restWhy, says, fillsHunger, reserveFor, cookSays, met, covered, hungerSays, costSays, recordSays, logErrand, HEALS_AT, NO_YIELD_MS, GAP_MS, REST_MS };

@@ -25,7 +25,11 @@ function surfaceBot({ items = PACK, food = 17, health = 20 } = {}) {
     world: { raycast: () => null }, findBlocks: () => [], chat() {},
     blockAt: p => { const y = Math.floor(p.y); const name = y < 79 ? 'grass_block' : 'air'; return { name, position: new Vec3(Math.floor(p.x), y, Math.floor(p.z)), boundingBox: name === 'air' ? 'empty' : 'block' }; } });
 }
-const netherGoal = () => ({ kind: 'win', request: 'beat the game', preparingNether: true, stockFood: true, gameProgress: { phase: 'nether_food' } });
+// The work's own step elsewhere (the iron pickaxe): with it the food for the
+// Nether, a reserve-only errand is the work's, not survival's (note 771).
+const netherGoal = (phase = 'iron_pickaxe') => ({ kind: 'win', request: 'beat the game', preparingNether: true, stockFood: true, gameProgress: { phase } });
+// The night's reserve: upkeep's food before dusk chosen (stockFood alone).
+const nightGoal = () => ({ kind: 'win', request: 'beat the game', stockFood: true, gameProgress: { phase: 'iron_pickaxe' } });
 const supplyOf = bot => require('../src/foraging').foodSupply(bot);
 
 test('covered: under eighteen with food carried that brings it back; not with too little or none', () => {
@@ -48,33 +52,44 @@ test('at full health the healing is not said as waiting on the hunger', () => {
 
 test('25593 at 19:47:18: the meal is offered beside the trips, and the trip is said as the reserve alone with this bot\'s record', async () => {
   const { Survival } = require('../src/survival');
-  const bot = surfaceBot();
-  assert.equal(supplyOf(bot), 4 * 6 + 3 * 2 + 5);
+  // The night's reserve (12 points), a bread carried: hunger 17 met by it.
+  // The Nether's reserve, the hunger met, is the ladder's food rung's and
+  // not asked here at all (note 771), as 25593's own was.
+  const bot = surfaceBot({ items: [['bread', 1], 'iron_sword'] });
+  assert.equal(supplyOf(bot), 5);
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
   // Two errands of this bot before: 9 minutes, 0 points kept, 60 blocks climbed.
   const t = Date.now();
   survival.state.foodErrandLog = [{ at: t - 3600000, minutes: 5, start: 20, end: 18, climbed: 40, asks: 9 }, { at: t - 1800000, minutes: 4, start: 18, end: 20, climbed: 20, asks: 6 }];
   let tree = null;
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['eat_carried'], action: { run: async () => {} }, stale: false }; };
-  await survival.step(new Task('t', 'food'), netherGoal(), () => {});
+  await survival.step(new Task('t', 'food'), nightGoal(), () => {});
   assert(tree, 'asked');
-  assert.match(tree.eat_carried.description, /^Eat the \w[\w ]* carried now: about two seconds standing still, hunger 17 to (19|20), eighteen or more\. Health is full: nothing waits on it now; eaten, the hunger holds up the healing for later\. No walk; the reserve stays where it is, \d+ points after\.$/);
+  assert.match(tree.eat_carried.description, /^Eat the bread carried now: about two seconds standing still, hunger 17 to 20, eighteen or more\. Health is full: nothing waits on it now; eaten, the hunger holds up the healing for later\. No walk; the reserve stays where it is, 0 points after\./);
   const food = tree.obtain_food.description;
   assert.doesNotMatch(food, /does not come back/);
-  assert.match(food, /This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 35 food points carried of the 80 kept for the Nether stay/);
+  assert.match(food, /This trip is for the reserve alone \(the hunger is a meal of what is carried\)\. 5 food points carried of the 12 kept for healing and the night/);
   assert.match(food, /This bot's last 2 food errands \(three hours\): 9 minutes in all, 0 points more carried at their ends than their starts, 60 blocks climbed\./);
   for (const leaf of Object.values(tree.obtain_food.children)) assert.equal(leaf.description?.healing, undefined, 'no "healing: none meanwhile" at full health');
+  // 25593's own: the Nether's reserve, its work's step the food near the
+  // frame: nothing is asked (note 771).
+  tree = null;
+  assert.equal(await survival.step(new Task('t', 'food'), netherGoal('nether_food'), () => {}), false);
+  assert.equal(await survival.step(new Task('t', 'food'), netherGoal(), () => {}), false);
+  assert.equal(tree, null);
 });
 
 test('the survival claim for 25593 is for the reserve, with no healing line at full health', () => {
   const { claim } = require('../src/survival');
   const { claimSays } = require('../src/arbiter');
-  const bot = surfaceBot();
-  const c = claim(bot, netherGoal(), { state: {} });
+  const bot = surfaceBot({ items: [['bread', 1], 'iron_sword'] });
+  const c = claim(bot, nightGoal(), { state: {} });
   assert.equal(c?.action, 'obtain_food');
   const said = claimSays(c);
   assert.match(said, /^Find food for the reserve \(the hunger is a meal of what is carried, eaten in seconds\): /);
   assert.doesNotMatch(said, /does not come back/);
+  // The Nether's reserve, the hunger met: the ladder's, no claim (note 771).
+  assert.equal(claim(surfaceBot(), netherGoal(), { state: {} }), null);
 });
 
 test('a walk home for food chosen is held as a trip, not asked again every ten seconds', async () => {

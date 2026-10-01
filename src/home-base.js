@@ -829,6 +829,13 @@ function farPoint(bot, heading) {
   const p = bot.entity.position, a = heading * Math.PI / 4;
   return { x: Math.round(p.x + Math.cos(a) * FAR_LEG), z: Math.round(p.z + Math.sin(a) * FAR_LEG) };
 }
+// Where sheep do not spawn, from the biome's own facts (biomes.js), said on
+// the sheep search's walks there (note 771).
+function noSheepSays(biome) {
+  const has = require('./biomes').biomeFacts(biome);
+  return has && !/sheep/.test(has) ? ` No sheep spawn in the ${String(biome).replaceAll('_', ' ')}: a flock there would have wandered in from next door.` : '';
+}
+
 async function searchForSheep(bot, task, goal, save, actions) {
   // A search last worked on over half an hour ago is a new search: one
   // carried from the first days' world said "searching for sheep for 1033
@@ -937,7 +944,12 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // "the sheep I saw 158 blocks north-east", on offer all along below them.
   const flockIds = K.ids(goal, 'sheep_flock', flocks, { near: 24 });
   for (const [i, s] of flocks.entries()) { const key = `seen_${flockIds[i]}`; ways[key] = { flock: s }; tree[key] = { description: `Walk back to where ${s.says}; sheep wander, but not far. The one place sheep are known to be.${walk(s.distance)}${belowSays}`, target: { x: Math.round(s.x), y: Math.round(s.y ?? y), z: Math.round(s.z) } }; }
-  for (const b of nearby) { const key = `biome_${K.name(b.biome)}`; ways[key] = { biome: b }; tree[key] = { description: `Walk to ${b.says} and look for sheep there.${walk(b.distance)}${belowSays}`, target: { x: Math.round(b.x), y, z: Math.round(b.z) } }; }
+  // Where sheep do not spawn, said so on the walk there (note 771): 25588
+  // (mid-231-ab, 2026-10-01 ~01:20Z) answered about 30 sheep searches among
+  // snowy biomes whose own words said "rabbits and polar bears spawn", far
+  // east and west in turn.
+  const noSheep = noSheepSays;
+  for (const b of nearby) { const key = `biome_${K.name(b.biome)}`; ways[key] = { biome: b }; tree[key] = { description: `Walk to ${b.says} and look for sheep there.${noSheep(b.biome)}${walk(b.distance)}${belowSays}`, target: { x: Math.round(b.x), y, z: Math.round(b.z) } }; }
   // The long walk one way (note 749): 25594 hopped between biomes 32 blocks
   // apart for thirteen minutes, each hop ending about 25 blocks from where it
   // began, none good Jev's likeliest at 52 of 67 askings; the biomes further
@@ -969,7 +981,7 @@ async function searchForSheep(bot, task, goal, save, actions) {
   // measured pace (note 763: 239's trials climbed for sheep 22 times from
   // the home bed's wool hunt, 54.6 minutes, before the Nether).
   if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.${nightSays}${require('./levels').levelsSays(bot, goal, { going: 'up' })}` };
-  else tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
+  else tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${view?.biome ? noSheep(view.biome) : ''}${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
   if (nightNow) tree.until_day = { description: `Leave the sheep until day, about ${toDawn} real minutes to dawn: the bed's search rests until then and the ladder's other work goes on meanwhile${underground ? ' down here, where the dark is the same at any hour (a night mine chosen from a pocket holds until dawn)' : ''}; taken up again at dawn.` };
   if (webs.length >= 2 && stringWanted) {
     const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
@@ -984,6 +996,10 @@ async function searchForSheep(bot, task, goal, save, actions) {
       state: { biome: view?.biome, biomeHas: view?.biomeHas, biomesNearby: nearby.map(({ x, z, says, ...b }) => b), sheepSeenEarlier: flocks.map(({ says, ...s }) => s), searchingMinutes: minutes, woolCarried: woolCarried(bot).total, woolOfOneColour: woolCarried(bot).count, stringCarried: string,
         timeOfDay: tod, ...(underground ? { underground: true, climbToSurface: climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known' } : {}), ...(underwater ? { underwater: true, oxygen: bot.oxygenLevel } : {}),
         ...(bot.game?.gameMode === 'survival' ? { riskNow: require('./risk').riskNow(bot) } : {}),
+        // The bed's own record (note 763's kit record): what the trials that
+        // chose it spent, and what first Nether stays with and without a bed came to.
+        ...(goal?.kind === 'win' ? { bedRecord: require('./kit-record').rungRecordSays('bed', y).trim() } : {}),
+        ...(view?.biome && noSheep(view.biome) ? { sheepHere: noSheep(view.biome).trim() } : {}),
         withoutSheep: 'Four string craft a white wool, twelve a bed\'s three: spiders drop up to two string each (they come out at night), and cobwebs cut with a sword drop one (abandoned mineshafts are full of them). An igloo, in snowy plains and taiga, always has a bed in it, and so do most village houses. Phantoms only come after three nights without sleep.' } });
     // Held through an outage (note 707): asked fresh at the next step.
     if (decision.stale) return;
@@ -1405,6 +1421,6 @@ function homeChores(bot, goal, { now = Date.now() } = {}) {
   return options;
 }
 
-module.exports = { searchForSheep, takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
+module.exports = { noSheepSays, searchForSheep, takeHomeBed, bedCarried, placeOriented, isBed, siteWork, levelSite, clearStray, repairPlot, HOME_REACH, BREAD_WHEAT, layout, inside, baseAnchor, siteFits, chooseBaseSite, establishHome, homeOf, homeDistance, goHome, plotStatus, bedStatus, penStatus,
   woolCarried, woodSpecies, homeStage, homeComplete, homeStep, tillPlot, plantPlot, harvestPlot, placeBed, claimBed, buildPen, gatherWool, lureCows, breedCows, takeSteak, bake,
   homeFood, eatFromHome, homeChores };

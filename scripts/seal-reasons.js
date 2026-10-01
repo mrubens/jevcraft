@@ -63,12 +63,18 @@ async function readFile(file, { since = -Infinity, to = Infinity } = {}) {
     if (kind === 'chat') { const m = line.match(/"message":"((?:[^"\\]|\\.)*)"/); if (m && /"from":"Jev"/.test(line)) out.chats.push({ t, message: m[1] }); }
     { const tm = line.match(/"timeOfDay":(\d+)/); if (tm && (out.tods.length === 0 || t - out.tods.at(-1).t > 10000)) out.tods.push({ t, tod: +tm[1] }); }
     if (kind !== 'decision') continue;
-    if (!/"id":"(survival_priority|shelter_method|pocket_next|turn_priority|rung_progress|stillness_detour)"/.test(line)) continue;
+    if (!/"id":"(survival_priority|shelter_method|pocket_next|turn_priority|rung_progress|stillness_detour|encounter_stance)"/.test(line)) continue;
     let o; try { o = JSON.parse(line); } catch (_) { continue; }
     const s = o.snapshot || {}, d = s.decision;
     if (!d?.id || !Array.isArray(d.path)) continue;
     const st = d.state || {};
     const rec = { t: Date.parse(d.askedAt || o.at) || t, id: d.id, path: d.path, standIn: !!d.standIn, p: s.position || p, dimension: s.dimension };
+    // The turn's survival claim as offered (note 773: which path claims a
+    // seal under the rock at night).
+    if (d.id === 'turn_priority') {
+      const c = d.options?.survival?.description;
+      if (c && typeof c === 'object') rec.claim = { action: c.action, urgency: c.urgency, underground: c.facts?.underground ?? null, sleepDebt: !!c.facts?.sleepDebt, sealFor: c.facts?.sealFor || null, plan: c.facts?.plan || null, timeOfDay: c.facts?.timeOfDay ?? null };
+    }
     if (['survival_priority', 'shelter_method'].includes(d.id)) {
       const hw = st.riskNow?.hostilesWithin || {};
       rec.facts = { health: st.health ?? s.health, food: st.food ?? s.food, timeOfDay: st.timeOfDay, underground: st.underground ?? st.survivalFacts?.underground ?? null,
@@ -167,6 +173,42 @@ function analyse(tr, { examples = 0, simulate = false } = {}) {
       underground: s.facts.underground, within24: s.facts.count, inSight: s.facts.inSight, followed, sealedMin: round(min), says: why.says.slice(0, 200) });
   }
   r.noneSealedMin = round(r.noneSealedMin); r.simRoutineMin = round(r.simRoutineMin);
+  // Under the rock at night (note 773): each seal chosen there, by its
+  // reason, the question that chose it and the turn's claim that led to it;
+  // and seals made there with no question asked (a held night plan).
+  const deep = r.deepNight = { seals: 0, byReason: {}, byPath: {}, byClaim: {}, sealedMin: 0, noneMin: 0, unasked: 0, unaskedNone: 0, examples: [] };
+  const turnsBefore = t => ds.filter(x => x.id === 'turn_priority' && x.t <= t && t - x.t <= 15000 && x.claim).at(-1);
+  for (const s of seals) {
+    if (!s.facts.underground || !night(s.facts.timeOfDay)) continue;
+    const why = reasonOf(s.facts), kind = why.none ? 'none' : why.kinds[0];
+    deep.seals++; deep.byReason[kind] = (deep.byReason[kind] || 0) + 1;
+    const pathKey = `${s.via}${s.method ? `>${s.method}` : ''}`;
+    deep.byPath[pathKey] = (deep.byPath[pathKey] || 0) + 1;
+    const turn = turnsBefore(s.t);
+    const claimKey = !turn ? 'no turn asked within 15 s' : turn.path[0] !== 'survival' ? `turn to ${turn.path[0]}` : `${turn.claim.action} ${turn.claim.urgency}${turn.claim.sleepDebt ? ' (sleep owed)' : ''}${turn.claim.plan ? ` plan ${turn.claim.plan}` : ''}`;
+    deep.byClaim[claimKey] = (deep.byClaim[claimKey] || 0) + 1;
+    const exits = [...ds.filter(x => x.t > s.t && ((x.id === 'pocket_next' && x.path[0] !== 'stay') || (x.id === 'turn_priority' && x.path[0] === 'work'))).map(x => x.t),
+      ...tr.survival.filter(x => x.t > s.t && EXIT_LABELS.has(x.label)).map(x => x.t)];
+    const end = Math.min(s.t + SEALED_CAP_MS, seals.find(o => o.t > s.t)?.t ?? Infinity, ...exits, tr.positions.at(-1)?.t ?? Infinity);
+    if (s.method !== 'night_mine') { deep.sealedMin += Math.max(0, (end - s.t) / 60000); if (kind === 'none') deep.noneMin += Math.max(0, (end - s.t) / 60000); }
+    if (deep.examples.length < Math.max(examples, 0)) deep.examples.push({ at: new Date(s.t).toISOString(), path: pathKey, reason: kind, claim: claimKey, health: s.facts.health, food: s.facts.food, tod: s.facts.timeOfDay });
+  }
+  // Seals made under the rock at night with no question in the 30 s before
+  // (dig in or seal shelter reported; underground read from the turn's last
+  // claim within two minutes): one per minute.
+  const QUESTIONS = new Set(['survival_priority', 'shelter_method', 'encounter_stance', 'pocket_next']);
+  const todNear = t => { let v = null; for (const x of tr.tods) { if (x.t > t) break; v = x.tod; } return v; };
+  let lastUnasked = -Infinity;
+  for (const f of tr.survival.filter(x => x.label === 'dig in' || x.label === 'seal shelter')) {
+    if (f.t - lastUnasked < 60000) continue;
+    if (ds.some(x => QUESTIONS.has(x.id) && x.t <= f.t && f.t - x.t <= 30000)) continue;
+    const turn = ds.filter(x => x.id === 'turn_priority' && x.claim && x.t <= f.t && f.t - x.t <= 120000).at(-1);
+    if (!turn?.claim?.underground || !night(todNear(f.t))) continue;
+    lastUnasked = f.t; deep.unasked++;
+    if (/^no reason/.test(turn.claim.sealFor || '')) deep.unaskedNone++;
+    if (deep.examples.length < Math.max(examples, 0) * 2) deep.examples.push({ at: new Date(f.t).toISOString(), path: `unasked ${f.label}`, reason: turn.claim.sealFor ? turn.claim.sealFor.slice(0, 40) : null, claim: `${turn.claim.action} ${turn.claim.urgency}` });
+  }
+  deep.sealedMin = round(deep.sealedMin); deep.noneMin = round(deep.noneMin);
   // Travel answers.
   const JH = simulate ? require('../src/job-in-hand') : null;
   for (const d of ds.filter(x => ['rung_progress', 'stillness_detour'].includes(x.id) && AWAY.test(x.path.at(-1)))) {
@@ -225,6 +267,9 @@ function total(rows) {
   const t = { seals: 0, byReason: {}, followed: {}, noneFollowed: {}, sealedMin: {}, noneSealedMin: 0, noneNotNightMine: 0, simNone: 0, simRoutine: 0, simRoutineMin: 0, oldNamedReason: 0,
     travel: 0, travelNeedsAtStart: 0, travelReturned: 0, travelReturnedNeeds: 0, travelWalked: 0, travelNet: 0, travelById: {}, travelSimNamed: 0 };
   for (const r of rows) {
+    const d = t.deepNight ||= { seals: 0, byReason: {}, byPath: {}, byClaim: {}, sealedMin: 0, noneMin: 0, unasked: 0, unaskedNone: 0 };
+    for (const k of ['seals', 'sealedMin', 'noneMin', 'unasked', 'unaskedNone']) d[k] = round(d[k] + (r.deepNight?.[k] || 0));
+    for (const f of ['byReason', 'byPath', 'byClaim']) for (const [k, v] of Object.entries(r.deepNight?.[f] || {})) d[f][k] = (d[f][k] || 0) + v;
     for (const k of ['sealSpells', 'sealSpellMin', 'sealSpellPasses', 'rawKeys', 'daylightAtNight', 'stayUpAfterFailedSeal', 'nightMines', 'nightMinesClimbed']) t[k] = round((t[k] || 0) + (r[k] || 0));
     for (const k of ['seals', 'noneSealedMin', 'noneNotNightMine', 'simNone', 'simRoutine', 'simRoutineMin', 'oldNamedReason', 'travel', 'travelNeedsAtStart', 'travelReturned', 'travelReturnedNeeds', 'travelWalked', 'travelNet', 'travelSimNamed']) t[k] = round(t[k] + r[k]);
     for (const f of ['byReason', 'followed', 'noneFollowed', 'sealedMin']) for (const [k, v] of Object.entries(r[f])) t[f][k] = round((t[f][k] || 0) + v);
@@ -263,6 +308,8 @@ async function main() {
   console.log(`  After a seal with no reason: ${list(all.noneFollowed)}.`);
   console.log(`Bot-minutes from seal to its end (at most 15 min), by reason: ${list(all.sealedMin)}; with no reason named (the way not the night mine): ${all.noneSealedMin} over ${all.noneNotNightMine} seals.`);
   if (simulate) console.log(`Simulated: the rule's words on each recorded seal say "No reason to seal" on ${all.simNone} of ${all.seals}; every other one opens with its reason. Under the rock with none, the turn's claim is routine, not pressing: ${all.simRoutine} seals, ${all.simRoutineMin} bot-minutes sealed after them.`);
+  const dn = all.deepNight || { seals: 0, byReason: {}, byPath: {}, byClaim: {}, sealedMin: 0, unasked: 0, unaskedNone: 0 };
+  console.log(`Under the rock at night (note 773): ${dn.seals} seals chosen, ${dn.sealedMin} bot-minutes sealed after them (${dn.noneMin || 0} after those with no reason); by reason ${list(dn.byReason)}; by question ${list(dn.byPath)}; the turn's claim before ${list(dn.byClaim)}. Sealed there with no question in the 30 s before: ${dn.unasked} (the claim saying no reason: ${dn.unaskedNone}).`);
   console.log(`Seal passes going round (5+ "seal shelter" each within 15 s of the last, no "sheltered"): ${all.sealSpells} spells, ${all.sealSpellPasses} passes, ${all.sealSpellMin} bot-minutes.`);
   console.log(`Night mines chosen from a pocket: ${all.nightMines}; climbed out of at night within 10 minutes: ${all.nightMinesClimbed}.`);
   console.log(`Chat: a game key said raw ${all.rawKeys} times; "daylight" said at night ${all.daylightAtNight} times; "staying up" within 30 s of "closing myself in" ${all.stayUpAfterFailedSeal} times.`);
@@ -274,6 +321,7 @@ async function main() {
   for (const r of rows.sort((a, b) => b.noneSealedMin - a.noneSealedMin)) {
     console.log(`  ${r.port}: ${r.byReason.none || 0}/${r.seals}; ${r.noneSealedMin} min; travel ${r.travelNeedsAtStart}/${r.travel}, back ${r.travelReturned}`);
     for (const e of r.examples) console.log(`    ${e.at} ${e.via}${e.method ? `>${e.method}` : ''} hp ${e.health} food ${e.food} tod ${e.tod} below ${e.underground} within24 ${e.within24} sight ${e.inSight} -> ${e.followed} (${e.sealedMin} min)`);
+    for (const e of r.deepNight?.examples || []) console.log(`    deep night ${e.at} ${e.path} reason ${e.reason} claim ${e.claim}${e.health != null ? ` hp ${e.health} food ${e.food} tod ${e.tod}` : ''}`);
     for (const e of r.travelExamples) console.log(`    ${e.at} ${e.id}>${e.choice} from ${e.start} step ${e.step} needsAtStart ${e.needsAtStart} back ${e.back} walked ${e.walked} net ${e.net}`);
   }
 }
