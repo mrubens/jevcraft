@@ -645,7 +645,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
-      if (!canStrike(bot, target) && !await combatRoute(bot, task, target, movement, 400, { pushed })) {
+      // A blaze no walk reaches is still a fight with a bow in range (note
+      // 774): offered as the bow's alone, said so below (bowOnly).
+      const reached = canStrike(bot, target) || await combatRoute(bot, task, target, movement, 400, { pushed });
+      const range = target.position.distanceTo(bot.entity.position);
+      const bowOnly = !reached && handler.ranged && bowReady(bot) && range >= 4 && range <= 20 && !pushed.includes(target) &&
+        !!(() => { try { return threats(bot, 24).find(t => t.entity === target)?.visible; } catch (_) { return false; } })();
+      if (!reached && !bowOnly) {
         if (!pushed.includes(target)) { const d = target.position.distanceTo(bot.entity.position), dy = Math.round(target.position.y - bot.entity.position.y); unreached.push(`the ${target.name.replaceAll('_', ' ')} ${Math.round(d)} blocks off${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'up' : 'down'}` : ''}: no way on foot to within a sword's reach of it from here${walledSays()}, so no fight with it is offered; the ways that wait for it to come (a stand, a box) are`); }
         continue;
       }
@@ -700,7 +706,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // that lands, a box or slit takes only what has a line through its
       // one opening.
       const coveredOffered = target.name === 'blaze' && liveCage && typeof bot.dig === 'function' ? ' A box or a slit built at the cage is offered too, alongside this: walled in but for one opening toward it, only a blaze in line with that opening sees the bot, where the open ground here gives every one of them a shot.' : '';
-      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + towardRods(rodsNeed, gain, { spawner: liveCage, of: rodsOf }) + coveredOffered,
+      const bowSays = bowOnly ? ` No walk reaches it within the sword's reach from here${walledSays()}: this fight is the bow's alone, shot from here while it is in view, and ends when three draws cannot be loosed or it goes out of the bow's twenty; the sword's figures above are what a kill would cost if it comes in.` : '';
+      tree[`hunt_${target.id}`] = { description: huntSays(bot, target, { handler, distance, mob, one, all, others, spawnerSays, newcomers, lavaNear, dropNear, footing: target.name === 'blaze' ? footing : '', hitters, UNPROVOKED, item: state.item }) + bowSays + towardRods(rodsNeed, gain, { spawner: liveCage, of: rodsOf }) + coveredOffered,
         run: () => fightForDrop(bot, task, target, goal, save, actions) };
     } finally { movement.restore(); restore(); }
   }

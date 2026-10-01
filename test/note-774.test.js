@@ -234,3 +234,27 @@ test('a box whose window sees none of where the blazes come is not offered to th
   assert.match(asStance.box_here.description, /stay in it as cover, not as a rod farm/);
   assert.doesNotMatch(asStance.box_here.description, /the rod farm players build/);
 });
+
+test('a blaze no walk reaches is not priced as a kill by fight, and is offered a rise to its height on placed blocks and a hold behind the shield for it to come in (25584, 02:07:18Z)', () => {
+  // The bot on a ledge at y 63 (x <= 2); past it a drop to y 52: the blaze
+  // hovers over the drop at the bot's height, no ground within reach of it
+  // that a walk gets to; but the ledge's edge cell under a two-block pillar
+  // puts the eyes within its reach.
+  const bot = world({ walls: p => false });
+  const floor = p => (p.x <= 2 ? p.y <= 63 : p.y <= 52);
+  const registry = require('minecraft-data')('26.1'), Block = require('prismarine-block')(registry);
+  bot.blockAt = p => { const f = p.floored(); const b = Block.fromStateId(registry.blocksByName[floor(f) ? 'nether_bricks' : 'air'].defaultState); b.position = f; return b; };
+  bot.findBlocks = () => [];
+  bot.entity.position = new Vec3(0.5, 64, 0.5);
+  const blaze = blazeAt(9, 5.5, 66.2, 0.5);
+  bot.entities = { 9: blaze };
+  assert.equal(stand.blazeReach(bot, blaze), null, 'no strike cell a walk reaches');
+  assert.deepEqual(require('../src/survival').chargeStopsAt(bot, blaze)?.blocks, 0, 'fight says no step: not a kill estimate');
+  const options = stand.blazeStands(bot, danger.threats(bot, 24), { dig: false, hunted: true });
+  assert(!options.close_in && !options.charge_nearest);
+  assert(options.rise_to_strike, Object.keys(options).join(','));
+  assert.equal(options.rise_to_strike.kind, 'rise');
+  assert.match(options.rise_to_strike.description, /^Rise to the blaze \d(\.\d)? blocks off, which no walk on the ground reaches within the sword's reach: walk \d blocks? to \(2, 64, 0\) and pillar [1-3] blocks? up/);
+  assert(options.await_in_reach, 'with a shield, the hold for it to come in');
+  assert.match(options.await_in_reach.description, /It comes only as it chooses: nothing here brings it in\./);
+});

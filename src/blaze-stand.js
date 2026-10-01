@@ -796,6 +796,31 @@ function blazeReach(bot, blaze) {
   const best = strikeCells(bot, blaze).map(c => walk.get(`${c}`)).filter(Boolean).sort((a, b) => a.steps - b.steps)[0];
   return best ? { cell: best.cell, steps: best.steps } : null;
 }
+// A pillar to strike a hovering blaze from (note 774): a walked cell under
+// a column of air whose top, RISE_MAX up at most, puts the eyes within the
+// sword's reach of the blaze, no lava within a push of it. -> { base, top,
+// up, steps } or null
+const RISE_MAX = 3;
+function riseSite(bot, blaze) {
+  if (!blaze?.position) return null;
+  const p = blaze.position, mid = p.offset(0, 0.9, 0), walk = reachWalk(bot);
+  const air = c => { const b = bot.blockAt(c); return b && b.boundingBox === 'empty' && !/lava|fire/.test(b.name); };
+  let best = null;
+  for (const w of walk.values()) {
+    if (Math.abs(w.cell.x + 0.5 - p.x) > 3 || Math.abs(w.cell.z + 0.5 - p.z) > 3) continue;
+    for (let up = 1; up <= RISE_MAX; up++) {
+      const top = w.cell.offset(0, up, 0);
+      // The column the body rises through, the top's feet and head with it.
+      if (![...Array(up + 1).keys()].every(i => air(w.cell.offset(0, i + 1, 0)))) continue;
+      if (top.offset(0.5, 1.62, 0.5).distanceTo(mid) > 3.2) continue;
+      if (lavaWithin(bot, top, KNOCK + 1)) continue;
+      const score = w.steps + up * 2;
+      if (!best || score < best.score) best = { base: w.cell, top, up, steps: w.steps, score };
+      break;
+    }
+  }
+  return best;
+}
 // No reach, and the ground beside it standable but every such cell within
 // a push of lava or a drop: not fought in the open for that (mob-hunt.js
 // notFoughtInTheOpen).
@@ -1403,6 +1428,33 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
           closeInSays(one, hp) + ` It ends at the kill, after ${runs} seconds, or once six health is gone.` };
     }
   }
+  // A blaze in sight that no walk reaches (note 774): 25584 at (136, 59,
+  // -277), 2026-10-01 02:07Z, a blaze 4.8 off hovering beside a drop, was
+  // offered fight "about 5.5 seconds and 2.4 damage to kill them all" beside
+  // "the ground straight at it stops a closing run after 1 block", and no
+  // way that reaches a hovering blaze: rise to its height on placed blocks,
+  // or hold behind the shield where it is and strike when it comes in.
+  // Priced by the same reach (blazeReach, riseSite) and said with it.
+  if (!reachable.length) {
+    const seen = blazes.filter(t => t.visible).sort((a, b) => a.distance - b.distance);
+    const first = seen[0], shield = shieldCarried(bot);
+    const rise = first ? riseSite(bot, first.entity) : null;
+    const carried = require('./blaze-tactics').blocksCarried(bot, { standing: true });
+    const priced = withinSixteen(bot, danger);
+    const sum = first ? closeInCost(bot, priced, { upTo: 1 }) : null;
+    if (rise && carried >= rise.up) {
+      const secs = round(rise.steps / WALK + rise.up * 0.6);
+      const fall = rise.up >= 4 ? ` A push off it falls ${rise.up} blocks.` : ` A push off it falls ${rise.up} block${rise.up === 1 ? '' : 's'}, about ${Math.max(0, rise.up - 3)} damage.`;
+      options.rise_to_strike = { kind: 'rise', site: { target: first.entity.id, base: rise.base, top: rise.top, up: rise.up, steps: rise.steps },
+        expects: { damage: round((sum?.damage || 0) + secs * 0.3), seconds: Math.max(1, round(secs + (sum?.seconds || 5))) },
+        description: `Rise to the blaze ${round(first.distance)} blocks off, which no walk on the ground reaches within the sword's reach: ${rise.steps ? `walk ${rise.steps} block${rise.steps === 1 ? '' : 's'} to (${rise.base.x}, ${rise.base.y}, ${rise.base.z}) and ` : ''}pillar ${rise.up} block${rise.up === 1 ? '' : 's'} up (about ${secs} seconds in their fire${shield ? ', the shield up for each volley between blocks' : ''}) to (${rise.top.x}, ${rise.top.y}, ${rise.top.z}), within the sword's reach of where it hovers now, and strike it until it dies; a blaze moves, and one that drifts off leaves the bot on the pillar, asked again then.${fall}${sum ? closeInSays(sum, hp) : ''}` };
+    }
+    if (first && shield) {
+      options.await_in_reach = { kind: 'await', site: { target: first.entity.id },
+        expects: { damage: round(standCost(bot, danger, {}).damage || 0), seconds: 15 },
+        description: `Hold here behind the shield facing the blaze ${round(first.distance)} blocks off, which no walk reaches within the sword's reach, and strike it if it comes within reach (a blaze within two blocks of its target swings instead of shooting, and closes): up to fifteen seconds, the shield up for each volley. It comes only as it chooses: nothing here brings it in.` };
+    }
+  }
   let planned = false;
   try { planned = !!(goal && require('./cage-hold').cageFight(bot, goal)); } catch (_) { planned = false; }
   Object.assign(options, tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket, dig, runs, hunted, planned }));
@@ -1851,6 +1903,7 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
     await breakSpawner(bot, task, goal, save, site, { navigate, seconds: 15 });
     return true;
   }
+  if (kind === 'rise' || kind === 'await') return riseOrAwait(bot, task, goal, save, option, { navigate });
   if (kind === 'close' || kind === 'charge') {
     goal.step = { action: kind === 'charge' ? 'charge_nearest' : 'close_in' }; save?.();
     const { stalled } = await closeIn(bot, task, goal, save, { navigate, seconds: 15, ...(kind === 'charge' ? { upTo: 1 } : {}), ...(stallMs ? { stallMs } : {}) });
@@ -1883,6 +1936,50 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
   return true;
 }
 
+// rise_to_strike and await_in_reach (note 774), run: the walk and the
+// pillar, then the strike at the one blaze; or the hold behind the shield
+// facing it, a swing when it comes in. -> true when it ran
+async function riseOrAwait(bot, task, goal, save, option, { navigate, seconds = 15 } = {}) {
+  const { site, kind } = option;
+  const blaze = bot.entities?.[site.target];
+  const live = () => blaze && bot.entities[blaze.id] === blaze && blaze.isValid !== false;
+  if (!live()) throw Object.assign(new Error('the blaze it was chosen against is gone'), { name: 'StanceFailed' });
+  claimBlazes(bot);
+  if (kind === 'rise') {
+    const base = new Vec3(site.base.x, site.base.y, site.base.z);
+    goal.step = { action: 'rise_to_strike', blaze: blaze.id, up: site.up }; save?.();
+    if (!feetCell(bot).equals(base)) {
+      if (!navigate) throw Object.assign(new Error('no way to walk'), { name: 'StanceFailed' });
+      try { await navigate(bot, task, new goals.GoalBlock(base.x, base.y, base.z), { timeoutMs: Math.max(4000, site.steps * 700), stallMs: 1500, onFoot: true }); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      if (!feetCell(bot).equals(base)) throw Object.assign(new Error(`the walk to (${base.x}, ${base.y}, ${base.z}) under the pillar did not get there`), { name: 'StanceFailed' });
+    }
+    await require('./pillar-recovery').pillarUp(bot, task, site.top.y, { maxBlocks: site.up, threats: false });
+    if (Math.floor(bot.entity.position.y) < site.top.y) throw Object.assign(new Error(`the pillar rose ${Math.floor(bot.entity.position.y) - base.y} of ${site.up} blocks`), { name: 'StanceFailed' });
+  }
+  const { canStrike, strike } = require('./combat');
+  const deadline = Date.now() + seconds * 1000;
+  let swung = 0;
+  while (Date.now() < deadline && live()) {
+    task.check(); bot._threatResponseAt = Date.now(); claimBlazes(bot);
+    if (await putOutFlames(bot, task)) continue;
+    if (canStrike(bot, blaze)) {
+      const wait = (ce.SWING_MS?.sword || 625) - (Date.now() - (bot._defenseAttackAt || 0));
+      if (wait > 0) { await sleep(Math.min(wait, 120)); continue; }
+      require('./combat').lowerShield(bot);
+      await bot.lookAt(blaze.position.offset(0, 0.9, 0), true);
+      if (live() && canStrike(bot, blaze)) { await strike(bot, task, blaze); swung++; bot._defenseAttackAt = bot._threatResponseAt = Date.now(); bot._struck = { id: blaze.id, at: bot._defenseAttackAt }; }
+      continue;
+    }
+    if (await shieldVolley(bot, task, { toward: blaze.position })) continue;
+    await bot.lookAt(blaze.position.offset(0, 0.9, 0), true);
+    // Out of reach from the pillar's top a stand of the rise ends (it drifted).
+    if (kind === 'rise' && Date.now() - (bot._defenseAttackAt || 0) > 3000 && blaze.position.distanceTo(bot.entity.position) > 4.5) break;
+    await sleep(150);
+  }
+  return true;
+}
+
 // The hunt's run of a stand: taken, then held as the bunker is held (the
 // shield up facing out, the sword at what comes, until a rod is in hand,
 // the blazes are quiet or the hold runs out), then the rods picked up.
@@ -1910,6 +2007,10 @@ async function huntFromStandRun(bot, task, goal, save, actions, option, { item =
     const gained = countOf(bot, item) - before;
     state.standResults = [...(state.standResults || []), { at: new Date().toISOString(), kind: 'break', broke, kills, gained, health: bot.health }].slice(-12); save?.();
     return gained;
+  }
+  if (option.kind === 'rise' || option.kind === 'await') {
+    await riseOrAwait(bot, task, goal, save, option, { navigate: actions.navigate });
+    return countOf(bot, item) - before;
   }
   if (option.kind === 'close' || option.kind === 'charge') {
     const state = goal.mobHunt ||= {};
@@ -1976,4 +2077,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS };
+module.exports = { behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };

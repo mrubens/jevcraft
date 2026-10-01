@@ -640,8 +640,8 @@ function shotState(bot, warned) {
 // keep_working and the rest (a creeper's block, a span, a fireball struck
 // back) ask at each warning as before.
 const STANCE_SHOTS = {
-  closing: new Set(['charge_nearest', 'charge', 'charge_shooter', 'close_in', 'fight', 'fight_at_spawner', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'low_ceiling', 'shield_the_charge', 'break_spawner', 'dig_in_and_fight']),
-  holding: new Set(['shield_guard', 'take_cover', 'back_to_wall', 'corner_ambush', 'box_here', 'box_at_spawner', 'dig_in', 'dig_in_at_spawner', 'bunker', 'seal', 'nook', 'out_of_sight', 'pillar', 'stand_by_spawner']),
+  closing: new Set(['charge_nearest', 'charge', 'charge_shooter', 'close_in', 'fight', 'fight_at_spawner', 'fight_from_footing', 'rail_and_fight', 'strike_from_above', 'low_ceiling', 'shield_the_charge', 'break_spawner', 'dig_in_and_fight', 'rise_to_strike']),
+  holding: new Set(['shield_guard', 'take_cover', 'back_to_wall', 'corner_ambush', 'box_here', 'box_at_spawner', 'dig_in', 'dig_in_at_spawner', 'bunker', 'seal', 'nook', 'out_of_sight', 'pillar', 'stand_by_spawner', 'await_in_reach']),
   walking: new Set(['retreat', 'leave_reach', 'leave_and_heal', 'step_out_and_eat', 'out_of_the_push', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance', 'wait_far_off']),
 };
 const stanceShotsOf = choice => Object.keys(STANCE_SHOTS).find(k => STANCE_SHOTS[k].has(choice)) || null;
