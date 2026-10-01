@@ -65,9 +65,9 @@ const wallBlocksOf = walls => walls.reduce((n, w) => n + (w.floor ? 2 : 1), 0);
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
 // one-block span. The sneak itself is held by bridgeTo for the whole span.
-async function creepTo(bot, task, cell, ms = 2500, keys = ['forward']) {
+async function creepTo(bot, task, cell, ms = 2500, keys = ['forward'], { sneak = true, why = null } = {}) {
   const centre = cell.offset(0.5, 0, 0.5);
-  return move(bot, task, { label: 'bridge_step', keys, sneak: true, look: centre.offset(0, 1.6, 0), maxMs: ms, tick: 40,
+  return move(bot, task, { label: 'bridge_step', keys, sneak, ...(why ? { why } : {}), look: centre.offset(0, 1.6, 0), maxMs: ms, tick: 40,
     until: () => { const p = bot.entity.position; return Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + 0.6 && p.y > cell.y - 0.6; } });
 }
 
@@ -322,6 +322,74 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {
   return placed;
 }
 
+// Down a staircase of laid blocks to a floor below with open air between
+// (note 839): a block laid ahead level with the one stood on, one laid
+// under it, the first dug out, and a step down onto the second, a block
+// down and a block on each time. A bridge built level toward a fortress
+// left 25585 sixteen to twenty blocks over its one-wide bridge at (15, 60,
+// -176) five times from 17:11 to 21:34Z on 2026-10-01, every way down
+// refused (no rock to dig, a drop over lava), and it left the fortress each
+// time. Stops level with `target` (its top, stood on at target.y + 1), at
+// lava in the way, or after maxSteps. -> steps taken
+async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
+  let steps = 0, last = null;
+  const molten = b => /lava|water|fire/.test(b?.name || '');
+  while (steps < maxSteps) {
+    task.check();
+    const here = bot.entity.position.floored();
+    if (here.y - 1 <= target.y) return steps;
+    const dx = target.x - here.x, dz = target.z - here.z;
+    // One way the whole flight: turned back, it would step into its own dug cells.
+    const d = last || (Math.abs(dx) >= Math.abs(dz) && dx !== 0 ? new Vec3(Math.sign(dx), 0, 0) : dz !== 0 ? new Vec3(0, 0, Math.sign(dz)) : new Vec3(1, 0, 0));
+    last = d;
+    const support = bot.blockAt(here.offset(0, -1, 0));
+    if (!solid(support)) throw new Error('Nothing solid underfoot to lay the stairs down from');
+    const head = here.plus(d), a = head.offset(0, -1, 0), b = head.offset(0, -2, 0);
+    if ([head, a, b].some(c => molten(bot.blockAt(c)))) throw new Error(`Lava or water in the way of the stairs down at ${head}`);
+    await clear(bot, task, head);
+    if (!solid(bot.blockAt(b))) {
+      const item = material(bot);
+      if (!item) throw new Error('No blocks to lay the stairs down with');
+      const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
+      if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
+      if (!solid(bot.blockAt(a))) {
+        await bot.equip(item, 'hand'); task.check();
+        await bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
+        await bot.placeBlock(support, d);
+        if (!solid(bot.blockAt(a))) throw new Error('The block ahead did not land');
+      }
+      const again = material(bot);
+      if (!again) throw new Error('No blocks to lay the stairs down with');
+      await bot.equip(again, 'hand'); task.check();
+      const above = bot.blockAt(a);
+      await bot.lookAt(a.offset(0.5, 0, 0.5), true);
+      await bot.placeBlock(above, new Vec3(0, -1, 0));
+      if (!solid(bot.blockAt(b))) throw new Error('The step down did not land');
+    }
+    // A guard beyond the step, level with it: the step down is taken
+    // upright, and upright the body goes on past a cell with open air
+    // beyond it (motion.js refuses such a step over a deadly fall, rightly).
+    // The next step digs it out as its headroom.
+    const guard = a.plus(d);
+    if (!solid(bot.blockAt(guard)) && solid(bot.blockAt(a))) {
+      const item = material(bot);
+      if (!item) throw new Error('No blocks to lay the stairs down with');
+      if (molten(bot.blockAt(guard))) throw new Error(`Lava or water beyond the step at ${guard}`);
+      await bot.equip(item, 'hand'); task.check();
+      await bot.lookAt(a.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
+      await bot.placeBlock(bot.blockAt(a), d);
+      if (!solid(bot.blockAt(guard))) throw new Error('The guard beyond the step did not land');
+    }
+    await clear(bot, task, a);
+    if (solid(bot.blockAt(a))) throw new Error(`The way onto the step at ${a} would not clear`);
+    // Upright: a crouched step does not go over the edge a block down.
+    if (!await creepTo(bot, task, a, 2500, ['forward'], { sneak: false, why: 'a step a block down onto the stairs laid, the cell beyond it walled by nothing but stopped at its centre' })) throw new Error('Could not step down onto the stairs');
+    if (bot.entity.position.y < a.y - 0.5) throw new Error('Fell off the stairs down');
+    steps++;
+  }
+  return steps;
+}
+
 // A way across along the ground, as fortress-map.js crossing found it,
 // walked cell by cell, crouched: lava lying on the floor covered (a block
 // laid into it from the floor under it takes its place, and the way goes on
@@ -541,4 +609,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

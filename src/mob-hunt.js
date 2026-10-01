@@ -3185,6 +3185,24 @@ async function fortressApproaches(bot, task, goal, save, actions, state, nearest
     options.descend = { description: `Dig straight down where the bot stands toward the bricks, ${Math.round(here.y - nearest.y - 1)} blocks below and ${flat} across, a block at a time.${under} A drop deeper than the health allows (nine blocks at full health, less hurt) or one onto or beside lava is refused, and the bot stays where it is; under 12 health it goes no lower at all (${Math.round((bot.health ?? 20) * 10) / 10} now), and it stops after 24 steps (note 677).`,
       run: async () => { const dropped = await descendTo(bot, task, nearest); return dropped >= 1 ? null : 'dropped no lower'; } };
   }
+  // Down a staircase of laid blocks to bricks below with open air between
+  // (bridging.js stairsDown, note 839): a block down and a block on each
+  // step, along the way toward them. The terrain drill stairs_down_to_bridge
+  // (16 down to a bridge one wide over lava): 3 of 3 runs on the bricks,
+  // about 52 seconds, about two blocks a step net.
+  if (nearest.y < here.y - 2 && typeof bot.placeBlock === 'function') {
+    const drop = Math.round(here.y - 1 - nearest.y), carriedNow = require('./bridging').blocksCarried(bot);
+    const under = bot.blockAt?.(here.floored().offset(0, -1, 0));
+    if (under?.boundingBox === 'block' && flatTo(nearest, here) <= drop + 12 && carriedNow >= drop * 2 + 2) {
+      options.stairs_down = { description: `Lay a staircase of blocks down toward the bricks, ${drop} blocks below and ${flat} across: a block down and a block on each step (a block laid ahead, one under it, a guard beyond it, the first dug out, a step down), ${drop} steps, about ${Math.round(drop * 3.3)} seconds and ${drop * 2} blocks of the ${carriedNow} carried; it stops at lava or water in its way, and goes one way along the line toward them. Measured: from 16 up to a bridge one wide over lava, 3 of 3 down on its bricks, about 52 seconds.`,
+        run: async () => {
+          const before = bot.entity.position.y;
+          try { await require('./bridging').stairsDown(bot, task, nearest, { maxSteps: drop + 4 }); }
+          catch (err) { task.check(); if (!retryable(err)) throw err; return `the stairs down ended ${Math.round(before - bot.entity.position.y)} blocks lower: ${err.message}`; }
+          return bot.entity.position.y <= nearest.y + 1.6 ? null : `the stairs down ended ${Math.round(bot.entity.position.y - nearest.y - 1)} blocks above the bricks`;
+        } };
+    }
+  }
   let crossNotNow = null, bridgeReady = false;
   if (typeof bot.blockAt === 'function') {
     const survey = surveyCrossing(bot, nearest, { cells: APPROACH_CROSS });

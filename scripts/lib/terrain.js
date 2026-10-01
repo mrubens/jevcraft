@@ -227,6 +227,27 @@ const TERRAIN = Object.freeze([
     target: [3114, 100, 3021],
   },
   {
+    name: 'stairs_down_to_bridge',
+    why: '25585 (mid-227, 2026-10-01 17:11 to 21:34Z): its own bridge sixteen over a fortress bridge one wide over lava, no rock to dig down and a drop over lava refused; it left the fortress five times (note 839).',
+    dimension: 'the_nether', seconds: 90,
+    start: [4400.5, 77, 4402.5],
+    kit: [['cobblestone', 64], ['iron_pickaxe', 1]],
+    build: [
+      'forceload add 4380 4370 4420 4420',
+      // In thirds: one fill stops at 32768 blocks, and a refused clear left the
+      // last run's stairs standing.
+      'fill 4385 40 4375 4415 95 4388 minecraft:air',
+      'fill 4385 40 4389 4415 95 4402 minecraft:air',
+      'fill 4385 40 4403 4415 95 4415 minecraft:air',
+      'fill 4385 40 4375 4415 42 4415 minecraft:lava',
+      // The fortress bridge, one wide, sixteen under the ledge.
+      'fill 4400 60 4378 4400 60 4398 minecraft:nether_bricks',
+      // The bot's own bridge over open air.
+      'fill 4399 76 4402 4401 76 4404 minecraft:cobblestone',
+    ],
+    target: [4400, 60, 4396],
+  },
+  {
     name: 'portal_platform',
     why: 'Death ten: holding forward for eight seconds, the bot walked through its portal and off the platform beyond it.',
     dimension: 'the_nether', seconds: 45, edge: true,

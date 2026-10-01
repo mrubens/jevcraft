@@ -1,3 +1,4 @@
+const { Vec3 } = require('vec3');
 'use strict';
 // Terrain drills (see scripts/lib/terrain.js): the places that killed or
 // stalled the bot, staged on the isolated arena server and run against the
@@ -15,7 +16,7 @@ const { compatibilityPlugin } = require('../src/compatibility');
 const { configureMovements } = require('../src/movement');
 const { Task, navigate, countOf } = require('../src/skills');
 const { createSurvival, dig, waitFor, enterPortal } = require('../src/work');
-const { bridgeTo } = require('../src/bridging');
+const { bridgeTo, stairsDown } = require('../src/bridging');
 const { restockFromStash } = require('../src/home-stash');
 const { TERRAIN, terrainDrill, buildCommands, placeCommands, vec } = require('./lib/terrain');
 
@@ -178,6 +179,15 @@ const RUNS = {
     try { await bridgeTo(bot, bounded, vec(d.target), { maxBlocks: 20 }); }
     catch (err) { refused = err.message; }
     return { pass: /Not bridging/.test(refused || '') && watch.minY >= d.start[1] - 0.2, detail: { refused } };
+  },
+  async stairs_down_to_bridge(d, bounded) {
+    let error = null, steps = 0;
+    try { steps = await stairsDown(bot, bounded, vec(d.target)); } catch (err) { error = err.message; }
+    const p = bot.entity.position, on = bot.blockAt(p.offset(0, -0.5, 0).floored())?.name;
+    const level = Math.abs(p.y - (d.target[1] + 1)) < 0.6;
+    const cells = Object.fromEntries([[4401, 76], [4401, 75], [4400, 76], [4400, 75]].map(([z, y]) => [`${z},${y}`, bot.blockAt(new Vec3(4400, y, z))?.name]));
+    const under = bot.blockAt(new Vec3(Math.floor(p.x), d.target[1], Math.floor(p.z)))?.name;
+    return { pass: level && !watch.died && under === 'nether_bricks', detail: { under, cells, steps, on, y: Math.round(p.y * 10) / 10, across: Math.round(Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5) * 10) / 10, minY: Math.round(watch.minY * 10) / 10, error } };
   },
   async portal_platform(d, bounded) {
     const arrived = () => !String(bot.game.dimension).includes('nether');

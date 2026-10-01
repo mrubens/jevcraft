@@ -31,7 +31,7 @@
 const TIMED = {
   fortress_leg: /^(blazes_\w+|back_to_fortress|leg_\w+|floor_\w+|round_\w+|go_to_blazes(_about)?|go_to_spawner(_\d+)?|wait_at_spawner|stay_in_fortress|unwalked_\d+|fetch_stems|return_for_blocks|restock_blocks|back_to_ground|seek_fortress_height|blocks_then_cross|pillar_up|blocks_then_pillar)$/,
   fortress_visit: /^(go_in|go_back|heal_first|get_food_here|hoglin_hunt)$/,
-  fortress_approach: /^(walk_route|cross_level|tunnel|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
+  fortress_approach: /^(walk_route|cross_level|tunnel|stairs_down|blocks_then_cross|pillar_up|blocks_then_pillar|dig_through|descend|fetch_stems|cover_lava|scoop_lava|span_round|return_for_blocks)$/,
   nether_gather: /^(leg_\w+|cross_to_\d+|walk_to_\d+|floor_to_\d+|climb_to_\d+|wood_in_view|dig_in_reach|portal_trip)$/,
   nether_food_kit: /^(restock_food|return_for_food)$/,
   leave_nether: /^(go_back|restock_food|heal_first)$/,
