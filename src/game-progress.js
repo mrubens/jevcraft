@@ -142,7 +142,79 @@ function preparationRung(bot, goal = {}, now = Date.now()) {
   // any reason waits out its rest, and the crossing goes on without it
   // (note 673). Handed back, a food search that had stalled was the step
   // again the moment it was set aside.
-  return ladderRung(bot, goal, new Set(Object.keys(resting))) || ladderRung(bot, goal, new Set([...goingWithout(resting), ...kitResting(resting)]));
+  const rung = ladderRung(bot, goal, new Set(Object.keys(resting)));
+  // Ordered by level (note 776): of the rungs that may wait, the ones owed
+  // at the level the portal is cast at come last (openRungs).
+  if (rung && DEFERRABLE.has(rung.phase)) {
+    const ordered = openRungs(bot, goal, now);
+    if (ordered.length && ordered.some(r => r.phase === rung.phase) && DEFERRABLE.has(ordered[0].phase)) return ordered[0];
+  }
+  return rung || ladderRung(bot, goal, new Set([...goingWithout(resting), ...kitResting(resting)]));
+}
+// Rungs that may wait and show no benefit in the record are optional before
+// the Nether (note 776, kit-record.js needBeforeNether): the ladder does not
+// hand them; each is offered at win_strategy with its minutes and its
+// record, and one Jev chooses (goal.rungOptIn) is on the ladder until it is
+// made, set aside, the Nether first is chosen, or OPT_IN_MS pass. The home's steps
+// are a side trip of their own (strategy.js homeOption), not this.
+// Between 2026-09-30 20:00Z and 2026-10-01 03:00Z the ladder handed them
+// 162 pre-Nether minutes unasked (116 of the bed's 193, 23 of the iron
+// armour's 56); the food for the Nether (848 minutes, 23% of every
+// pre-Nether minute, 20 of 79 trials finished it) was Jev's choice each
+// time, with the food the ladder's default and the Nether the alternative.
+const OPT_IN_MS = 30 * 60000;
+const familyOf = phase => require('./kit-record').familyOf(phase);
+const optionalRung = phase => DEFERRABLE.has(phase) && !/^home_/.test(phase) && !require('./kit-record').needBeforeNether(phase);
+// Before the first Nether entry only: the record is of first Nether stays,
+// and after one the ladder rebuilds what a death took as it did.
+const beforeNether = goal => !goal?.gameProgress?.milestones?.nether_entered;
+const skipsOptional = (goal, phase) => beforeNether(goal) && optionalRung(phase) && !optedIn(goal, phase);
+// goal.rungOptIn: { [rung family]: when chosen }, the armour's pieces one
+// family, the beds another (kit-record.js familyOf).
+function optedIn(goal, phase, now = Date.now()) {
+  const at = goal?.rungOptIn?.[familyOf(phase)];
+  return Number.isFinite(at) && now - at < OPT_IN_MS;
+}
+function optIn(goal, phase, now = Date.now()) {
+  if (!optionalRung(phase)) return;
+  goal.rungOptIn = Object.fromEntries(Object.entries(goal.rungOptIn || {}).filter(([, at]) => Number.isFinite(at) && now - at < OPT_IN_MS));
+  goal.rungOptIn[familyOf(phase)] = now;
+}
+// A chosen optional rung made is no longer chosen: lost again (the food
+// eaten, the bed set down), it is optional again, not handed back on the
+// old choice. Read each game step; the rungs still open counted with every
+// optional one on.
+function settleOptIns(bot, goal, now = Date.now()) {
+  if (!goal?.rungOptIn) return;
+  const open = new Set(), skipped = new Set();
+  let blocked = false;
+  for (let i = 0; i < 16; i++) {
+    let rung = null;
+    try { rung = ladderRung(bot, goal, skipped, { allOptional: true }); } catch (_) { rung = null; }
+    // A tool that may not wait stands before the rest: what lies past it is
+    // not read from here, and no choice is dropped for it.
+    if (rung && skipped.has(rung.phase)) { blocked = true; break; }
+    if (!rung) break;
+    skipped.add(rung.phase); open.add(familyOf(rung.phase));
+  }
+  for (const [fam, at] of Object.entries(goal.rungOptIn)) if ((!blocked && !open.has(fam)) || !(now - at < OPT_IN_MS)) delete goal.rungOptIn[fam];
+  if (!Object.keys(goal.rungOptIn).length) delete goal.rungOptIn;
+}
+// The optional rungs the ladder passes over from here, in its order, each
+// as the ladder would hand it were it chosen: what win_strategy offers
+// beside the ladder's own next. A rung resting is not among them.
+function optionalRungs(bot, goal = {}, now = Date.now()) {
+  if (!beforeNether(goal)) return [];
+  const skipped = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
+  const out = [];
+  for (let i = 0; i < 16; i++) {
+    let rung = null;
+    try { rung = ladderRung(bot, goal, skipped, { allOptional: true }); } catch (_) { rung = null; }
+    if (!rung || skipped.has(rung.phase) || out.some(r => r.phase === rung.phase)) break;
+    skipped.add(rung.phase);
+    if (skipsOptional(goal, rung.phase)) out.push(rung);
+  }
+  return out;
 }
 const kitResting = resting => Object.keys(resting).filter(k => require('./crossing-kit').KIT_PHASES.has(k));
 const GOING_WITHOUT = /Nether first|fight with what is carried/;
@@ -155,7 +227,8 @@ function asideRungs(bot, goal = {}, now = Date.now()) {
   const skipped = new Set(Object.keys(resting).filter(k => !without.has(k)));
   const out = [];
   for (let i = 0; i < 12; i++) {
-    const rung = ladderRung(bot, goal, skipped);
+    // An optional rung set aside to go without is one of them (note 776).
+    const rung = ladderRung(bot, goal, skipped, { allOptional: true });
     if (!rung || !without.has(rung.phase)) break;
     out.push({ ...rung, until: resting[rung.phase].until });
     skipped.add(rung.phase);
@@ -221,6 +294,8 @@ function rungAsideSays(goal, phase, now = Date.now()) {
   return `The ${phase.replaceAll('_', ' ')} was set aside ${agoSays(now - entry.at)} ago (${String(entry.why).slice(0, 120)}).${stuck} It comes back on its own in ${minutes} minute${minutes === 1 ? '' : 's'} (${at}Z); taken now, that rest is cut short and what it was stuck on is before it again.`;
 }
 function takeBackRung(goal, phase) {
+  // Taken back, an optional rung is chosen (note 776).
+  optIn(goal, phase);
   if (goal.rungAside?.phase === phase) delete goal.rungAside;
   attemptsFor(goal).clear('rung', phase);
   if (goal.elsewhere?.phase === phase) delete goal.elsewhere;
@@ -238,7 +313,7 @@ const pearlRouteHeld = (goal, now = Date.now()) => goal.pearlRoute && goal.pearl
 // ladder would go on to if the ones before it waited their turn, for as long
 // as those before it may wait (DEFERRABLE). A rung that may not wait, or one
 // already set aside, closes the list. What Jev chooses among (strategy.js).
-function openRungs(bot, goal = {}, now = Date.now()) {
+function openRungs(bot, goal = {}, now = Date.now(), { ordered = true } = {}) {
   const skipped = new Set(Object.keys(attemptsFor(goal).of('rung', now)));
   const out = [];
   for (let i = 0; i < 12; i++) {
@@ -248,7 +323,23 @@ function openRungs(bot, goal = {}, now = Date.now()) {
     if (!DEFERRABLE.has(rung.phase)) break;
     skipped.add(rung.phase);
   }
-  return out;
+  return ordered ? levelOrder(bot, goal, out) : out;
+}
+// The rungs that may wait, ordered so each level is visited once (note
+// 776, levels.js levelPlan): what the pockets make now first, then what is
+// owed at the level the portal is not cast at, and last what is owed where
+// its lava is, the portal cast there after them. With no lava owed, the
+// level the bot is at goes first. A rung that may not wait keeps its place
+// at the end. Ladder order within each group.
+function levelOrder(bot, goal, rungs) {
+  const waits = rungs.filter(r => DEFERRABLE.has(r.phase));
+  if (waits.length < 2) return rungs;
+  let plan = null;
+  try { plan = require('./levels').levelPlan(bot, goal); } catch (_) { plan = null; }
+  if (!plan?.last) return rungs;
+  const key = r => { const at = plan.of[r.phase]; return !at ? 0 : at === plan.last ? 2 : 1; };
+  const sorted = waits.map((r, i) => ({ r, i, k: key(r) })).sort((a, b) => a.k - b.k || a.i - b.i).map(x => x.r);
+  return [...sorted, ...rungs.filter(r => !DEFERRABLE.has(r.phase))];
 }
 // Every rung still open on the ladder from here, deferrable or not, as far
 // as the ladder names a new one with the ones before it set aside: what the
@@ -266,8 +357,10 @@ function rungsOpenAhead(bot, goal = {}, now = Date.now()) {
   }
   return out;
 }
-function ladderRung(bot, goal, waiting) {
-  const ready = rung => rung && !waiting.has(rung.phase) ? rung : null;
+function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
+  // An optional rung (note 776) is the ladder's only when Jev chose it, or
+  // for optionalRungs' listing of them all.
+  const ready = rung => rung && !waiting.has(rung.phase) && (allOptional || !skipsOptional(goal, rung.phase)) ? rung : null;
   // Equipped gear lives outside inventory.items(): armour in slots 5 to 8,
   // the shield in the off-hand at 45. A shield on the arm is not a missing shield.
   const equipped = [5, 6, 7, 8, 45].map(slot => bot.inventory.slots?.[slot]).filter(Boolean);
@@ -959,6 +1052,7 @@ async function gameStep(bot, task, goal, save, actions) {
   // is met or set aside by choice, or thirty minutes pass.
   if (dimension(bot) === 'overworld' && goal.step?.action === 'return_for_food' && !goal.foodTrip) { goal.foodTrip = { at: Date.now() }; save(); }
   if (goal.foodTrip && (Date.now() - goal.foodTrip.at >= FOOD_TRIP_MS || !require('./crossing-kit').kitRungs(bot, goal).some(r => r.phase === 'nether_food'))) { delete goal.foodTrip; save(); }
+  settleOptIns(bot, goal);
   let stage = nextGameStage(bot, goal);
   // Back for what the last death dropped, before anything else: close to
   // the respawn its drops have five minutes (corpse-run.js).
@@ -1115,4 +1209,4 @@ function rungsAhead(bot, goal = {}, planFor = null) {
   });
 }
 
-module.exports = { rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, rungsOpenAhead, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };
+module.exports = { settleOptIns, skipsOptional, optionalRung, optedIn, optIn, optionalRungs, levelOrder, OPT_IN_MS, rungAsideSays, portalDistance, NETHER_TRIPS, netherPaceSays, cameThrough, agoSays, asideStands, takeBackRungs, takeBackRung, pearlRouteHeld, PEARL_ROUTE_MS, portalTrip, arrivalSays, leaveNetherStep, readyForHomeStep, routeThreatsSays, netherLeaveHeld, foodTripDrives, errandStage, elsewhereStep, tallyClock, runClock, bedRung, carryBedRung, rungsAhead, timeRung, preparationRung, openRungs, rungsOpenAhead, DEFERRABLE, RUNG_BUDGET_MS, RUNG_WAIT_MS, dimension, observeProgress, watchGameProgress, verifyGameCompletion, nextGameStage, preparationStage, gameStep, asideRungs, GOING_WITHOUT };

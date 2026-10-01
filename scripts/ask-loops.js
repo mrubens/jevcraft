@@ -65,7 +65,7 @@ function leaves(tree, pre = [], out = {}) {
 }
 
 async function readFile(file) {
-  const asks = [], takenBack = [], stale = [], positions = [], weak = [], errors = [];
+  const asks = [], takenBack = [], stale = [], positions = [], weak = [], errors = [], stalls = [], routes = [];
   let first = null, last = null;
   const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
   for await (const line of rl) {
@@ -84,6 +84,17 @@ async function readFile(file) {
     if (/^\{"kind":"(error|no_route|navigation_stall)"/.test(line)) {
       const t = Number.isFinite(t0) ? t0 : NaN;
       if (Number.isFinite(t) && t >= since && t <= until) errors.push({ t, label: (line.match(/"label":"([^"]{0,80})/) || [])[1] || '' });
+      if (Number.isFinite(t) && t >= since && t <= until && line.startsWith('{"kind":"no_route"') && argv.includes('--stalls')) {
+        let o; try { o = JSON.parse(line); } catch (_) { continue; }
+        const g = o.detail?.goal, p = P(o.snapshot?.position);
+        if (g && Number.isFinite(g.x) && Number.isFinite(g.z) && p) routes.push({ t, p, dim: o.snapshot?.dimension, g: { x: g.x, y: Number.isFinite(g.y) ? g.y : p.y, z: g.z } });
+      }
+      if (Number.isFinite(t) && t >= since && t <= until && line.startsWith('{"kind":"navigation_stall"') && argv.includes('--stalls')) {
+        let o; try { o = JSON.parse(line); } catch (_) { continue; }
+        const p = P(o.detail?.position || o.snapshot?.position), g = o.detail?.goal;
+        if (p) stalls.push({ t: o.detail?.at || t, p, dim: o.snapshot?.dimension, step: o.snapshot?.goal?.step?.action || '?', walk: o.detail?.walk ?? null,
+          g: g && Number.isFinite(g.x) && Number.isFinite(g.z) ? { x: g.x, y: Number.isFinite(g.y) ? g.y : p.y, z: g.z } : null });
+      }
       continue;
     }
     if (!line.startsWith('{"kind":"decision"')) continue;
@@ -107,9 +118,9 @@ async function readFile(file) {
     const topKey = Object.entries(probs).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
     asks.push({ t, id: d.id, choice: d.path.join('/'), pos: P(s.position), dimension: s.dimension, kinds: Object.keys(s.inventory || {}), top: topKey, noneGood: topKey === 'none_good',
       ids: leaves(d.options), state: d.state, options: d.options, health: s.health, inventory: s.inventory, food: s.food, mobs: s.mobs,
-      deaths: (s.goal?.survival?.deaths || []).length || 0 });
+      deaths: (s.goal?.survival?.deaths || []).length || 0, step: s.goal?.step?.action || null });
   }
-  return { asks, takenBack, stale, positions, weak, errors, minutes: first && last ? (last - first) / 60000 : 0 };
+  return { asks, takenBack, stale, positions, weak, errors, stalls, routes, minutes: first && last ? (last - first) / 60000 : 0 };
 }
 
 // The figures over one record's asks (all, or those a replay lets through).
@@ -318,12 +329,20 @@ function strategyReplay(asks, out) {
   let h = null;
   const kept = [];
   const named = a => String(a.state?.beforeTheNether || '').toLowerCase();
+  const { DEFERRABLE } = require('../src/game-progress');
   for (const a of asks) {
     if (a.id !== 'win_strategy') { kept.push(a); continue; }
     out.asks++;
     if (h && a.t - h.at < 10 * 60000 && a.dimension === h.dimension && a.options?.stage_reach_nether) {
       const w = String(a.state?.workingOn || '').toLowerCase();
-      if (w === 'reach nether' || h.named.includes(w)) { out.held++; continue; }
+      if (w === 'reach nether' || h.named.includes(w)) { out.held++; out.heldBefore = (out.heldBefore || 0) + 1; continue; }
+    }
+    // Note 777: held through a rung that may wait (DEFERRABLE) opening, the
+    // portal's stage taken whether or not the ladder's own stage is it; a
+    // rung offered that may not wait ends it.
+    if (h && a.t - h.at < 10 * 60000 && a.dimension === h.dimension && argv.includes('--777')) {
+      const rungs = Object.keys(a.options || {}).filter(k => /^(rung|stage)_/.test(k) && k !== 'stage_reach_nether').map(k => k.replace(/^(rung|stage)_/, ''));
+      if (rungs.every(p => DEFERRABLE.has(p))) { out.held++; continue; }
     }
     kept.push(a);
     const c = a.choice.split('/').at(-1);
@@ -361,6 +380,142 @@ function commitMeasure(asks, ev, out) {
   }
   return asks.filter(a => kept.has(a));
 }
+// Answers turned within a minute (note 777): consecutive askings of one
+// question, each weighed by Jev, the second within 60 s of the first and
+// another answer. Each turn is put to what the record shows came between,
+// the first that applies: a failure said (an error, no route, a stalled
+// walk), the step stopped by a threat, a named fact (the dimension, the
+// health band, the hunger band, the mobs about), 16 blocks walked; then
+// whether the first answer's goal was still open at the second asking (its
+// option still offered; for win_strategy a rung answer's rung still open,
+// read from the options, the stage worked on and beforeTheNether, and
+// going to the Nether open while the dimension is the same), and if so
+// whether only what is carried had changed (a count, a kind) or nothing the
+// record names. What is carried is split by the step under way at the first
+// asking (a craft or a smelt finished between) and by a count that came
+// back at the next asking of any question within 30 s (a read in passing).
+const TURN_MS = 60000;
+const rungPhase = key => (String(key).match(/^(?:rung|stage)_(.+)$/) || [])[1] || null;
+function goalOpen(prev, a) {
+  const key = prev.choice.split('/').at(-1);
+  if (a.id === 'win_strategy') {
+    if (/^(nether_first|stage_reach_nether)$/.test(key)) return !a.dimension || !prev.dimension || a.dimension === prev.dimension;
+    const phase = rungPhase(key);
+    if (phase) {
+      const label = phase.replaceAll('_', ' ');
+      return !!(a.options?.[`rung_${phase}`] || a.options?.[`stage_${phase}`] || String(a.state?.workingOn || '') === label || String(a.state?.beforeTheNether || '').split(/Set aside by choice/)[0].includes(label));
+    }
+  }
+  return !!leafNode(a.options, prev.choice);
+}
+function carriedChanged(f0, f1) {
+  const ks = new Set([...Object.keys(f0.inv || {}), ...Object.keys(f1.inv || {})]);
+  return [...ks].filter(k => (f0.inv?.[k] || 0) !== (f1.inv?.[k] || 0));
+}
+function turnCause(prev, a, { errors }, all) {
+  const C = require('../src/decisions/commit');
+  const err = errors.find(e => e.t > prev.t && e.t <= a.t);
+  if (err) return /Threat nearby|Preempted|hurt|creeper|NeedsSafety/i.test(err.label) ? 'stopped by a threat' : 'a failure said between';
+  const f0 = facts(prev), f1 = facts(a);
+  if (f0.dimension && f1.dimension && f0.dimension !== f1.dimension) return 'a fact: the dimension';
+  const hb0 = C.healthBand(f0.health), hb1 = C.healthBand(f1.health);
+  if (hb0 != null && hb1 != null && hb0 !== hb1) return 'a fact: the health band';
+  if (C.foodBand(f0.food) !== C.foodBand(f1.food)) return 'a fact: the hunger band';
+  if (C.threatsChanged(f0.threats, f1.threats)) return 'a fact: the mobs about';
+  if (f0.pos && f1.pos && dist(f0.pos, f1.pos) >= 16) return 'walked 16 blocks or more';
+  const changed = carriedChanged(f0, f1);
+  if (!goalOpen(prev, a)) return changed.length ? 'its goal done or gone, only what is carried changed' : 'its goal done or gone, nothing named changed';
+  if (!changed.length) return 'goal still open: nothing named changed';
+  const next = all.find(x => x.t > a.t && x.t - a.t <= WITHIN);
+  if (next && changed.some(k => (next.inventory?.[k] || 0) === (prev.inventory?.[k] || 0))) return 'goal still open: only carried changed, a count back at the next asking';
+  if (/^(craft|smelt|bootstrap_pickaxe)$/.test(String(prev.step || ''))) return 'goal still open: only carried changed, a craft or smelt between';
+  return 'goal still open: only carried changed';
+}
+function turnsMeasure(asks, ev, out) {
+  const lastOf = {};
+  for (const a of asks) {
+    const prev = lastOf[a.id]; lastOf[a.id] = a;
+    const r = out[a.id] ||= { asks: 0, turns: 0, turnsMin: 0, by: {} };
+    r.asks++;
+    if (!prev || prev.choice === a.choice) continue;
+    r.turns++;
+    if (a.t - prev.t > TURN_MS) continue;
+    r.turnsMin++;
+    const k = turnCause(prev, a, ev, asks);
+    r.by[k] = (r.by[k] || 0) + 1;
+  }
+}
+// Navigation stalls at a spot already stalled at (note 777): each
+// navigation_stall in the record, against the stalls before it in the same
+// record within 3 blocks, the same dimension and 15 minutes (skills.js
+// noteStallSpot's own spot), and whether its walk was going to within 4
+// blocks of the spot (the bad step is never routed round there: it is the
+// walk's goal) and to the same goal as one of those (the target retried).
+function stallsMeasure(stalls, out) {
+  const seen = [];
+  for (const s of stalls) {
+    out.all++;
+    const prior = seen.filter(x => x.dim === s.dim && s.t - x.t < 15 * 60000 && dist(x.p, s.p) <= 3);
+    seen.push(s);
+    if (prior.length < 2) continue;
+    out.repeat++;
+    const atSpot = s.g && dist(s.g, s.p) <= 4, sameGoal = s.g && prior.some(x => x.g && dist(x.g, s.g) <= 4);
+    const k = `${atSpot ? 'its goal within 4 blocks of the spot' : 'its goal elsewhere'}, ${sameGoal ? 'the same goal as a stall there before' : 'another goal'}`;
+    out.by[k] = (out.by[k] || 0) + 1;
+    out.step[s.step] = (out.step[s.step] || 0) + 1;
+  }
+}
+
+// Note 777's two rules over the record (with --stalls): a walk to a goal
+// that walks from about here stalled going to twice is not begun
+// (skills.js repeatStallSays), and an option going to a target the ways to
+// failed twice, or from a spot ways from failed to two other targets, rests
+// (failed-places.js). The record's stalls (with their goals) and no-route
+// walks are put to a bot and a ledger in time order; each stall is asked
+// whether its walk would have been begun, and each ask weighed by Jev whether
+// its chosen option would have been resting, and whether a way failure came
+// after it before the question's next asking (it failed again).
+const SAME_WALK_MS = Number(arg("same-walk-ms", 20000));
+function placesReplay(asks, stalls, routes, out) {
+  const S = require('../src/skills'), F = require('../src/failed-places');
+  const bot = { game: { dimension: 'overworld' }, entity: { position: null }, _stallSpots: [] };
+  const goal = { tried: { entries: [], escalations: [] } };
+  const events = [...stalls.map(x => ({ ...x, kind: 'stall' })), ...routes.map(x => ({ ...x, kind: 'route' })), ...asks.map(a => ({ t: a.t, kind: 'ask', a }))].sort((a, b) => a.t - b.t);
+  let walk = 0, lastStall = null;
+  const failsAfter = (a, next) => events.some(e => e.kind !== 'ask' && e.t > a.t && e.t <= next);
+  const nextOf = new Map();
+  { const last = {}; for (const a of [...asks].reverse()) { nextOf.set(a, last[a.id] ?? Infinity); last[a.id] = a.t; } }
+  for (const e of events) {
+    bot.game.dimension = e.dim || e.a?.dimension || bot.game.dimension;
+    if (e.kind === 'stall') {
+      out.stalls++;
+      bot.entity.position = { x: e.p.x + 0.5, y: e.p.y, z: e.p.z + 0.5 };
+      // The walk before it, begun from here: would it have been begun?
+      if (e.g && S.repeatStallSays(bot, { x: Math.floor(e.g.x), y: e.g.y, z: Math.floor(e.g.z) }, e.t)) out.refused++;
+      // One walk's stall and its stall after the recovery are one walk.
+      // The walk's own number where the record has it (from note 777 on).
+      const same = e.walk != null ? lastStall?.walk === e.walk : lastStall && e.t - lastStall.t < SAME_WALK_MS && e.g && lastStall.g && Math.hypot(e.g.x - lastStall.g.x, e.g.z - lastStall.g.z) <= 4;
+      if (!same) walk++;
+      S.noteStallSpot(bot, e.p, e.t, { goal: e.g, walk: e.walk != null ? `w${e.walk}` : walk });
+      lastStall = e;
+      continue;
+    }
+    if (e.kind === 'route') { goal.tried.entries.push({ q: 'walk', method: 'walk', target: e.g, place: e.p, at: e.t, settledAt: e.t, outcome: 'blocked', why: 'no route' }); continue; }
+    const a = e.a;
+    if (/^(encounter_stance|body_way|shot_answer|turn_priority)$/.test(a.id) || !a.pos) continue;
+    bot.entity.position = a.pos;
+    const node = leafNode(a.options, a.choice), tgt = P(node?.target);
+    const restedAny = Object.entries(a.options || {}).some(([, n]) => P(n?.target) && F.read(bot, goal, P(n.target), { here: a.pos, now: a.t }));
+    if (restedAny) out.offeredRested++;
+    if (!tgt) continue;
+    out.asks++;
+    const r = F.read(bot, goal, tgt, { here: a.pos, now: a.t });
+    if (!r) continue;
+    out.chosenRested++; out.byKind[r.kind] = (out.byKind[r.kind] || 0) + 1; out.byQ[a.id] = (out.byQ[a.id] || 0) + 1;
+    if (failsAfter(a, nextOf.get(a))) out.chosenRestedFailed++;
+  }
+}
+
 function leafNode(tree, choice) {
   let n = { children: tree };
   for (const k of String(choice).split('/')) n = n?.children?.[k];
@@ -375,16 +530,21 @@ async function main() {
   const before = {}, after = {};
   let minutes = 0, asksAll = 0, sentAll = 0;
   const held = {};
+  const turns = {}, turnsAfter = {}, stallOut = { all: 0, repeat: 0, by: {}, step: {} };
+  const placesOut = { stalls: 0, refused: 0, refusedRepeat: 0, asks: 0, chosenRested: 0, chosenRestedFailed: 0, byKind: {}, byQ: {}, offeredRested: 0 };
   const trig = {}, committed = {}, afterCommit = {}, turnHeld = { asks: 0, held: 0, by: {} }, stratHeld = { asks: 0, held: 0 };
   let commitAsks = 0;
   const trips = { trips: 0, turned: 0, before: 0, after: 0, pairsBefore: {}, pairsAfter: {} };
   const extra = { takenBack: 0, takenBackHeld: 0, stale: 0, staleWatched: 0, staleBy: {}, weak: 0, weakCalm: 0, weakNone: 0, weakBy: {} };
   for (const f of files) {
-    const { asks, takenBack, stale, positions, weak, errors, minutes: m } = await readFile(path.join(dir, f));
+    const { asks, takenBack, stale, positions, weak, errors, stalls, routes, minutes: m } = await readFile(path.join(dir, f));
     if (argv.includes('--triggers')) triggersMeasure(asks, { errors, stale }, trig);
+    if (argv.includes('--turns')) turnsMeasure(asks, { errors }, turns);
+    if (argv.includes('--stalls')) { stallsMeasure(stalls, stallOut); placesReplay(asks, stalls, routes, placesOut); }
     if (argv.includes('--commit')) {
       const left = strategyReplay(turnReplay(commitMeasure(asks, { errors, stale }, committed), turnHeld), stratHeld);
       commitAsks += left.length; measure(left, afterCommit, f);
+      if (argv.includes('--turns')) turnsMeasure(left, { errors }, turnsAfter);
     }
     for (const w of weak) { if (w.safety) continue; extra.weak++; (extra.weakBy[w.id] = (extra.weakBy[w.id] || 0) + 1); if (w.calm && w.calm !== w.took.split('/')[0]) extra.weakCalm++; else if (!w.calm) extra.weakNone++; }
     // Set-asides taken back (asides.js): held had the bot been within 16
@@ -454,11 +614,29 @@ async function main() {
     for (const [id, r] of rows) console.log(`${(r.ms / 60000).toFixed(1)}\t\t${r.within}\t${kinds.map(k => r.byWithin[k] ? `${Math.round(100 * r.byWithin[k] / r.within)}%` : '-').join('\t')}\t${id}`);
     if (trig.turn_priority) console.log(`turn_priority's own reason at its re-asks within 30 s: ${Object.entries(trig.turn_priority.why).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join('; ')}`);
   }
+  if (argv.includes('--turns')) {
+    const rows = Object.entries(turns).filter(([, r]) => r.turnsMin).sort((a, b) => b[1].turnsMin - a[1].turnsMin).slice(0, top);
+    const all = Object.values(turns).reduce((s, r) => { s.asks += r.asks; s.turns += r.turns; s.min += r.turnsMin; for (const [k, n] of Object.entries(r.by)) s.by[k] = (s.by[k] || 0) + n; return s; }, { asks: 0, turns: 0, min: 0, by: {} });
+    const show = by => Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join('; ');
+    console.log(`\nanswers turned (note 777): ${all.turns} of ${all.asks} asks gave another answer than the last asking of the question; ${all.min} within a minute, by what came between: ${show(all.by)}`);
+    for (const [id, r] of rows) console.log(`  ${id}: ${r.turns} turns of ${r.asks} asks, ${r.turnsMin} within a minute: ${show(r.by)}`);
+    if (argv.includes('--commit')) {
+      const w = turnsAfter.win_strategy || { asks: 0, turns: 0, turnsMin: 0, by: {} };
+      const a = Object.values(turnsAfter).reduce((s, r) => ({ asks: s.asks + r.asks, min: s.min + r.turnsMin }), { asks: 0, min: 0 });
+      console.log(`  after the holds replayed (--commit${argv.includes('--777') ? ' --777' : ''}): ${a.min} turns within a minute of ${a.asks} asks; win_strategy ${w.turns} turns of ${w.asks} asks, ${w.turnsMin} within a minute: ${show(w.by)}`);
+    }
+  }
+  if (argv.includes('--stalls')) {
+    console.log(`\nnavigation stalls (note 777): ${stallOut.all}; at a spot stalled at twice or more before (3 blocks, 15 minutes): ${stallOut.repeat}: ${Object.entries(stallOut.by).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join('; ')}`);
+    const po = placesOut;
+    console.log(`  note 777's rules replayed: of ${po.stalls} stalls, ${po.refused} were walks to a goal stalled going to twice from about here (not begun, thrown at once with the fact); asks weighed by Jev with an option going to a failed target or from a failing spot: ${po.offeredRested}; asks whose chosen option has a target: ${po.asks}, of which ${po.chosenRested} would have been resting (${Object.entries(po.byKind).map(([k, n]) => `${k} ${n}`).join(', ')}; ${Object.entries(po.byQ).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${k} ${n}`).join(', ')}), ${po.chosenRestedFailed} of them followed by a failed way before the question's next asking`);
+    console.log(`  by the step walking: ${Object.entries(stallOut.step).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  }
   if (argv.includes('--commit')) {
     console.log(`\nreplayed through the commitment rule (note 764, src/decisions/commit.js): ${asksAll} asks become ${commitAsks} (${(commitAsks / hours).toFixed(1)} a bot-hour); held by question:`);
     for (const [id, r] of Object.entries(committed).sort((a, b) => b[1].held - a[1].held)) console.log(`  ${id}: ${r.asks} -> ${r.asks - r.held} (${r.held} held); ended by ${Object.entries(r.ends).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, n]) => `${k} ${n}`).join(', ')}`);
     console.log(`  turn_priority (arbiter.js ruling): ${turnHeld.asks} -> ${turnHeld.asks - turnHeld.held} (${turnHeld.held} held; by the reason it had been asked: ${Object.entries(turnHeld.by).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ')})`);
-    console.log(`  win_strategy (going to the Nether held): ${stratHeld.asks} -> ${stratHeld.asks - stratHeld.held} (${stratHeld.held} held)`);
+    console.log(`  win_strategy (going to the Nether held): ${stratHeld.asks} -> ${stratHeld.asks - stratHeld.held} (${stratHeld.held} held${argv.includes('--777') ? `; ${stratHeld.heldBefore || 0} by note 764's hold, the rest by note 777's` : ''})`);
     table(afterCommit, 'after the commitment rule');
   }
   if (loops) {

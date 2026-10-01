@@ -369,7 +369,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     const priced = p => {
       const phase = p === 'iron_armour' ? (left.find(q => /^iron_/.test(q)) || p) : p;
       const level = require('./levels').rungLevelSays(bot, goal, phase).replace(/^ Its gathering/, ' Its gathering from here');
-      return `${level}${require('./kit-record').rungRecordSays(p, bot?.entity?.position?.y)}`;
+      return `${level}${require('./kit-record').rungRecordShort(p)}`;
     };
     // Going for the Nether takes up the reach nether if it was set aside:
     // said, and its rest cut short when chosen (note 694).
@@ -387,7 +387,7 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
       // live critic's report of 11:57Z, note 753).
       chat: `I'll leave the ${left.map(label).join(' and the ')} for later and go for the Nether now.`,
       side: true, aside: true,
-      run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); if (left.includes('nether_food')) delete goal.foodTrip; },
+      run: async () => { for (const p of left) setAside(goal, 'rung', p, 'Jev chose the Nether first', 1800000); if (left.includes('nether_food')) delete goal.foodTrip; delete goal.rungOptIn; },
     };
   };
   if (rungs.length && rungs[0].phase === stage.phase && dimension(bot) === 'overworld' && rungs.every(r => DEFERRABLE.has(r.phase))) {
@@ -422,6 +422,23 @@ function strategyOptions(bot, goal, stage, sides = {}, planFor = null) {
     }
   }
   else return null;
+  // The rungs optional before the Nether (note 776, game-progress.js
+  // optionalRungs): no benefit in the record, so the ladder does not hand
+  // them; each is on offer here with its minutes, its record and its level,
+  // and chosen it goes on the ladder (rungOptIn) until it is made. Not while
+  // a basic tool is the next step, nor past the Nether's own stage.
+  const preNether = dimension(bot) === 'overworld' && (stage.action === 'enter_nether' || (rungs.length && rungs[0].phase === stage.phase))
+    && !(rungs.length && /^(stone_pickaxe|stone_sword|iron_pickaxe)$/.test(rungs[0].phase));
+  if (preNether) {
+    let optional = [];
+    try { optional = require('./game-progress').optionalRungs(bot, goal); } catch (_) { optional = []; }
+    for (const rung of optional) {
+      const key = `rung_${rung.phase}`;
+      if (options[key] || options[`take_up_${rung.phase}`]) continue;
+      const o = rungOption(rung, false, bot, goal, planFor);
+      options[key] = { ...o, optIn: true };
+    }
+  }
   const fit = (bot.health ?? 20) >= 14 && (bot.food ?? 20) >= 12 && !immediateThreat(bot);
   // Whether a trip fits in the daylight left is Jev's to weigh, not a rule
   // that hides it (the user, 2026-09-26: "drop the daylight rule, let Jev
@@ -541,7 +558,10 @@ function strategyState(bot, goal, stage, extra = {}) {
       // And the kit for the crossing, said: it was a second ladder of gates
       // at the portal that this line never mentioned (the decision review,
       // 2026-09-26).
-      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${kit.length ? ` The crossing's kit, last before the portal, each of which may be gone without: ${kit.map(p => RUNG_WHY[p]).join(', ')}.` : ''}${aside.length ? ` Set aside by choice, to go without for now: ${aside.join(', ')}, each back on its own after that.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
+      // The rungs optional before the Nether, said as that (note 776).
+      let optional = [];
+      try { optional = require('./game-progress').optionalRungs(bot, goal).map(r => r.phase); } catch (_) { optional = []; }
+      return `${needed.length ? `Needed before the Nether: ${needed.map(label).join(', ')}.` : 'Nothing left is needed before the Nether: a portal can be made or found now.'}${may.length ? ` May wait until after it: ${may.map(label).join(', ')}.` : ''}${optional.length ? ` Optional before the Nether, not on the ladder unless chosen (no benefit for them in the first Nether stays' record, kit-record.js): ${optional.map(label).join(', ')}.` : ''}${kit.length ? ` The crossing's kit, last before the portal, each of which may be gone without: ${kit.map(p => RUNG_WHY[p]).join(', ')}.` : ''}${aside.length ? ` Set aside by choice, to go without for now: ${aside.join(', ')}, each back on its own after that.` : ''}${require('./crossing-kit').kitSummary(bot, goal)}`; })(),
     // What is owed at the surface and at depth from here, and the climb
     // between them at the bot's own pace (note 763).
     ...((() => { const says = require('./levels').levelsSays(bot, goal).trim(); return says ? { byLevel: says } : {}; })()),
@@ -609,12 +629,32 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // a rung it set aside coming back is one), the portal's stage is not on
     // offer, or HOLD_MS.
     const openNow = openRungs(bot, goal, now());
-    const newlyOpen = openNow.some(r => !(held.openPhases || []).includes(r.phase));
+    // Keyed to its goal, the Nether, not to what is carried (note 777): a
+    // rung that may wait (game-progress.js DEFERRABLE: the crossing's kit,
+    // the armour, the side gear) opening since is the work's own wear or
+    // spend (a spare pickaxe dug with, the food eaten, the blocks laid) or a
+    // may-wait rung come into reach, which going to the Nether put after it,
+    // and the crossing's kit is asked at the portal anyway (crossing_kit).
+    // From 00:41Z to 02:50Z on 2026-10-01, 56 of 57 askings within a held
+    // going-to-the-Nether came with the portal's stage off the tree because
+    // such a rung had become the ladder's next (the nether pickaxe reopened
+    // 11 times of the 51 it finished). A rung that may not wait (a pickaxe
+    // to dig with at all) still ends it.
+    const fresh = openNow.filter(r => !(held.openPhases || []).includes(r.phase));
+    const ends = fresh.filter(r => !require('./game-progress').DEFERRABLE.has(r.phase));
     const dim = String(bot.game?.dimension || '').replace(/^minecraft:/, '');
     // Only the ladder's own stage is taken unasked: nether_first again would
     // set rungs aside again, which is Jev's to say.
     const key = options.stage_reach_nether ? 'stage_reach_nether' : null;
-    if (key && !newlyOpen && (!held.dimension || held.dimension === dim)) { choice = key; heldOption = options[key]; }
+    if (!ends.length && (!held.dimension || held.dimension === dim)) {
+      if (key) { choice = key; heldOption = options[key]; }
+      else if (dimension(bot) === 'overworld' && openNow.every(r => require('./game-progress').DEFERRABLE.has(r.phase))) {
+        const waiting = fresh.map(r => label(r.phase));
+        const said = waiting.join(', ');
+        if (held.waitingSaid !== said) { held.waitingSaid = said; save(); console.log(`[strategy] held: ${label(held.choice)} goes on, chosen ${agoWords(now() - held.at)} ago${waiting.length ? `; the ${said} opened meanwhile and may wait (the crossing's kit is said at the portal)` : ''}`); }
+        return { stage: { phase: 'reach_nether', action: 'enter_nether' } };
+      }
+    }
   } else if (same && held?.ladderNext === stage.phase && now() - held.at < HOLD_MS && options[held.choice]) {
     choice = held.choice; heldOption = options[choice];
   }
@@ -678,6 +718,9 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // never in openRungs at all (the base's steps are not on the ladder),
     // so it is held the old way, by the tree's shape.
     const rungPhase = choice.startsWith('rung_') ? options[choice]?.rung?.phase || null : null;
+    // An optional rung chosen goes on the ladder (note 776) before the hold
+    // reads the rungs open, so its own opening is not a new rung.
+    if (options[choice]?.optIn && rungPhase) require('./game-progress').optIn(goal, rungPhase);
     if (last?.rungPhase && last.open && rungPhase !== last.rungPhase) console.log(`[strategy] reversal: ${choice} (${rungPhase ? label(rungPhase) : 'no rung'}) chosen over ${label(last.choice)}, with ${label(last.rungPhase)} still open and nothing decided about it since it was chosen ${agoWords(now() - last.at)} ago`);
     goal.strategy = { choice, rungPhase, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev',
       ...(rungPhase || TO_THE_NETHER.test(choice) ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}),
@@ -695,7 +738,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
   }
   if (option.stage) return null;
   // A step set aside to go without, taken up again now.
-  if (option.takeUp) { attemptsFor(goal).clear('rung', option.rung.phase); delete goal.strategy; save(); return { stage: option.rung }; }
+  if (option.takeUp) { attemptsFor(goal).clear('rung', option.rung.phase); require('./game-progress').optIn(goal, option.rung.phase); delete goal.strategy; save(); return { stage: option.rung }; }
   if (option.rung) return option.rung.phase === stage.phase ? null : { stage: option.rung };
   // Setting steps aside is not work: nothing to run in the world, no step to
   // stall on, no rest. The ladder is read again at once (gameStep).

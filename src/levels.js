@@ -79,7 +79,7 @@ function woodShort(bot, rungs) {
 // below). A rung the pockets already cover owes nothing.
 // Read once a second a bot: the win_strategy tree says it with each rung
 // and again with the Nether now, and each reading scans for lava about.
-const OWED_MS = 1000, owedMemo = new WeakMap();
+const OWED_MS = 1000, owedMemo = new WeakMap(), lavaMemo = new WeakMap();
 function owed(bot, goal = {}) {
   const memo = bot && typeof bot === 'object' ? owedMemo.get(bot) : null;
   if (memo && memo.goal === goal && Date.now() - memo.at < OWED_MS) return memo.value;
@@ -87,31 +87,31 @@ function owed(bot, goal = {}) {
   if (bot && typeof bot === 'object') owedMemo.set(bot, { goal, at: Date.now(), value });
   return value;
 }
+// What one rung still owes and at which level: { level: 'up'|'down', says },
+// or null where the pockets cover it.
+function rungNeed(bot, r, y) {
+  if (r.phase === 'nether_food') {
+    let cook = 0;
+    try { const c = require('./work').cookable(bot); cook = c?.ready ? Math.round(c.after - c.now) : 0; } catch (_) { cook = 0; }
+    const short = Math.max(0, (r.wants || 0) - (r.carried || 0) - cook);
+    return short > 0 ? { level: 'up', says: `food for the Nether (${r.carried} of ${r.wants} points carried${cook ? `, ${cook} more once the raw food carried is cooked` : ''}; animals and crops are at the surface)` } : null;
+  }
+  if (/^(bed|home_bed|carry_bed)$/.test(r.phase) && /gather_wool|village_bed/.test(r.action || '')) return { level: 'up', says: r.action === 'village_bed' ? `a bed from the village (at the surface)` : `wool for the ${words(r.phase)} (${r.count || 3} more; sheep are at the surface)` };
+  if (r.phase === 'diamond_sword') return count(bot, /^diamond$/) < 2 ? { level: 'down', says: `diamonds for the diamond sword (${count(bot, /^diamond$/)} of 2 carried; ${oreAt('diamond', y)})` } : null;
+  if (r.phase === 'golden_boots') return goldCarried(bot) < 4 ? { level: 'down', says: `gold for the golden boots (${goldCarried(bot)} of 4 carried, raw gold counted; ${oreAt('gold', y)})` } : null;
+  const items = r.items || (r.item ? [r.item] : []);
+  const iron = items.reduce((n, i) => n + (IRON_FOR[i] || 0), 0);
+  return iron && ironCarried(bot) < iron ? { level: 'down', says: `iron for the ${words(r.phase)} (${ironCarried(bot)} of ${iron} carried, raw iron counted; ${oreAt('iron', y)})` } : null;
+}
 function owedNow(bot, goal = {}) {
-  const up = [], down = [], of = {};
-  if (!overworld(bot) || !bot?.inventory?.items) return { up, down, of };
+  const up = [], down = [], of = {}, way = [], optional = [];
+  if (!overworld(bot) || !bot?.inventory?.items) return { up, down, of, way, optional };
   const put = (list, phase, says) => { list.push(says); of[phase] = list === up ? 'up' : 'down'; };
   let rungs = [];
-  try { rungs = require('./game-progress').openRungs(bot, goal); } catch (_) { rungs = []; }
+  // The ladder's own order, not the level order this feeds (game-progress.js levelOrder).
+  try { rungs = require('./game-progress').openRungs(bot, goal, Date.now(), { ordered: false }); } catch (_) { rungs = []; }
   const y = bot.entity?.position?.y ?? 64;
-  for (const r of rungs) {
-    if (r.phase === 'nether_food') {
-      let cook = 0;
-      try { const c = require('./work').cookable(bot); cook = c?.ready ? Math.round(c.after - c.now) : 0; } catch (_) { cook = 0; }
-      const short = Math.max(0, (r.wants || 0) - (r.carried || 0) - cook);
-      if (short > 0) put(up, r.phase, `food for the Nether (${r.carried} of ${r.wants} points carried${cook ? `, ${cook} more once the raw food carried is cooked` : ''}; animals and crops are at the surface)`);
-    } else if (/^(bed|home_bed|carry_bed)$/.test(r.phase) && /gather_wool|village_bed/.test(r.action || '')) {
-      put(up, r.phase, r.action === 'village_bed' ? `a bed from the village (at the surface)` : `wool for the ${words(r.phase)} (${r.count || 3} more; sheep are at the surface)`);
-    } else if (r.phase === 'diamond_sword' && count(bot, /^diamond$/) < 2) {
-      put(down, r.phase, `diamonds for the diamond sword (${count(bot, /^diamond$/)} of 2 carried; ${oreAt('diamond', y)})`);
-    } else if (r.phase === 'golden_boots' && goldCarried(bot) < 4) {
-      put(down, r.phase, `gold for the golden boots (${goldCarried(bot)} of 4 carried, raw gold counted; ${oreAt('gold', y)})`);
-    } else {
-      const items = r.items || (r.item ? [r.item] : []);
-      const iron = items.reduce((n, i) => n + (IRON_FOR[i] || 0), 0);
-      if (iron && ironCarried(bot) < iron) put(down, r.phase, `iron for the ${words(r.phase)} (${ironCarried(bot)} of ${iron} carried, raw iron counted; ${oreAt('iron', y)})`);
-    }
-  }
+  for (const r of rungs) { const need = rungNeed(bot, r, y); if (need) put(need.level === 'up' ? up : down, r.phase, need.says); }
   const wood = woodShort(bot, rungs);
   if (wood) {
     up.push(wood);
@@ -119,10 +119,69 @@ function owedNow(bot, goal = {}) {
     // pickaxe's sticks: 20 climbs, 140 minutes, after rung_iron_pickaxe on
     // the hard worlds).
     for (const r of rungs) if (WOODY.test(r.phase) && !of[r.phase]) of[r.phase] = 'up';
+  } else {
+    // Short of the wood kept for spare pickaxes and a table, taken while up
+    // there (note 776): 25598 (mid-241-bp, 2026-10-01 02:50Z) was on the
+    // iron pickaxe's step at night underground for one oak log, its stone
+    // pickaxe at 3 uses, the surface left with no wood for a spare.
+    const reserve = woodReserveShort(bot);
+    if (reserve) up.push(reserve);
   }
   const lava = portalLava(bot, goal);
   if (lava) put(lava.level === 'up' ? up : down, 'reach_nether', lava.says);
-  return { up, down, of };
+  // Water and buckets for the cast, owed at either level (note 776): 25590
+  // (mid-218-ab, 02:53Z) stood 5 blocks from its chosen lava at y 32,
+  // climbed 31 blocks for water, made a bucket at the surface and walked
+  // back 49 blocks, about 4 minutes, for one water bucket.
+  const water = castWater(bot, goal, lava);
+  if (water) way.push(water);
+  // What Jev may choose and the ladder does not hand (note 776): said
+  // apart, with the level each would take the bot to.
+  let opts = [];
+  try { opts = require('./game-progress').optionalRungs(bot, goal); } catch (_) { opts = []; }
+  for (const r of opts) { const need = rungNeed(bot, r, y); optional.push({ phase: r.phase, level: need?.level || null, says: need?.says || `the ${words(r.phase)} (made from what is carried)` }); }
+  return { up, down, of, way, optional };
+}
+function woodReserveShort(bot) {
+  let reserve = 6;
+  try { reserve = require('./work').WOOD_RESERVE || 6; } catch (_) { reserve = 6; }
+  const units = count(bot, /_log$|_stem$/) + count(bot, /_planks$/) / 4 + count(bot, /^stick$/) / 8;
+  if (units >= reserve) return null;
+  return `wood toward the ${reserve} logs' worth kept for spare pickaxes and a crafting table (${Math.floor(units * 10) / 10} carried; trees grow at the surface): taken while up there, or each spare pickaxe made below is a climb for its sticks`;
+}
+// The cast's water: a water bucket carried, or an empty bucket and water to
+// fill it, at whichever level the lava is. Null when nothing is owed.
+function castWater(bot, goal, lava) {
+  if (!lava || goal.portalMethod?.kind === 'ruined' || goal.portalFrame?.ruin) return null;
+  const waterB = count(bot, /^water_bucket$/), empty = count(bot, /^bucket$/), lavaB = count(bot, /^lava_bucket$/);
+  if (waterB) return null;
+  const iron = ironCarried(bot);
+  const bucket = empty ? `an empty bucket carried to fill` : iron >= 3 ? `no empty bucket: one is made from 3 of the ${iron} iron carried, raw iron counted` : `no empty bucket and ${iron} of the 3 iron one takes`;
+  return `water for the cast (no water bucket carried; ${bucket}${lavaB ? `, ${lavaB} lava bucket${lavaB === 1 ? '' : 's'} carried` : ''}): water lies in lakes and rivers at the surface and in springs and aquifers underground, and is filled at whichever level is passed first on the way to the lava, not on a trip of its own`;
+}
+
+// The plan by level (note 776): the needs owed at each level, the order
+// that visits each once, and the portal cast at the level of its lava. The
+// level the portal is not cast at goes first; with no lava owed, the level
+// the bot is at goes first. -> { here, last, of, up, down, way, optional, says }
+function levelPlan(bot, goal = {}) {
+  const depth = depthHere(bot);
+  if (depth === null) return null;
+  const o = owed(bot, goal);
+  const here = depth >= UNDER ? 'down' : 'up', lava = o.of.reach_nether || null;
+  const last = lava || (here === 'up' ? 'down' : 'up'), first = last === 'up' ? 'down' : 'up';
+  const name = l => l === 'up' ? 'the surface' : 'depth';
+  // Short names for the plan's order; the needs in full are said beside it.
+  const list = l => [...Object.entries(o.of).filter(([p, at]) => at === l && p !== 'reach_nether').map(([p]) => words(p)),
+    ...((l === 'up' ? o.up : o.down).some(x => /^wood/.test(x)) ? ['wood'] : []), ...(lava === l ? ['the portal\'s lava'] : [])];
+  const parts = [];
+  if (list(first).length) parts.push(`${name(first)} first, once, for all of it (${list(first).join(', ')})`);
+  if (list(last).length) parts.push(`${parts.length ? 'then ' : ''}${name(last)}, once (${list(last).join(', ')})${lava ? `, the portal cast there beside its lava` : ''}`);
+  const trip = list(first).length && here === last ? ` The bot is at ${name(last)} now: ${name(first)}'s needs are one trip there and back before the portal, all of them in it.` : '';
+  const way = o.way.length ? ` On the way, at either level: ${o.way.join('; ')}.` : '';
+  const opt = o.optional.length ? ` Optional, not owed (the ladder does not hand them; each is on offer with its minutes and its record): ${o.optional.map(x => `${x.says}${x.level ? ` [${name(x.level)}]` : ''}`).join('; ')}.` : '';
+  const says = parts.length ? `The plan by level: ${parts.join('; ')}.${trip}${way}${opt}` : `${way}${opt}`.trim();
+  return { here, last, of: o.of, up: o.up, down: o.down, way: o.way, optional: o.optional, says };
 }
 
 // The lava the portal still wants, and where the lava known is: none owed
@@ -134,8 +193,16 @@ function portalLava(bot, goal = {}) {
   const wants = Math.max(0, 10 - obsidian - buckets - placed);
   if (!wants) return null;
   const here = bot.entity?.position;
+  // The lava scan once a second a bot (note 776): the ladder's level order
+  // reads this on copies of the goal (takeBackRungs' probes), each a miss in
+  // owed's memo, and a scan for lava is a findBlocks.
   let lava = null;
-  try { lava = require('./work').nearestLava(bot, goal); } catch (_) { lava = null; }
+  const memo = bot && typeof bot === 'object' ? lavaMemo.get(bot) : null;
+  if (memo && Date.now() - memo.at < OWED_MS && memo.frame === (goal.portalFrame?.origin ? JSON.stringify(goal.portalFrame.origin) : null)) lava = memo.value;
+  else {
+    try { lava = require('./work').nearestLava(bot, goal); } catch (_) { lava = null; }
+    if (bot && typeof bot === 'object') lavaMemo.set(bot, { at: Date.now(), value: lava, frame: goal.portalFrame?.origin ? JSON.stringify(goal.portalFrame.origin) : null });
+  }
   const depth = depthHere(bot) ?? 0, top = (here?.y ?? 64) + depth;
   const at = lava?.at ? lava.at : { y: require('./obsidian').LAVA_DEPTH };
   const level = at.y >= top - UNDER ? 'up' : 'down';
@@ -165,7 +232,9 @@ function levelsSays(bot, goal = {}, { going = null } = {}) {
   const depth = depthHere(bot);
   if (depth === null) return '';
   const { up, down } = owed(bot, goal);
-  if (!up.length && !down.length) return '';
+  const plan = levelPlan(bot, goal);
+  const planSays = plan?.says ? ` ${plan.says}` : '';
+  if (!up.length && !down.length) return planSays;
   const under = depth >= UNDER;
   const upSaid = up.length ? `Owed at the surface${under ? ' (up there)' : ''}: ${up.join('; ')}.` : `Nothing open is owed at the surface${under ? ' up there' : ''}.`;
   const downSaid = down.length ? `Owed at depth${under ? ' (down here or below)' : ' (below)'}: ${down.join('; ')}.` : `Nothing open is owed at depth${under ? ' down here' : ''}.`;
@@ -173,7 +242,7 @@ function levelsSays(bot, goal = {}, { going = null } = {}) {
   const once = up.length && down.length ? ' Each level\'s needs done in one visit is one climb between them; each need done on its own is a climb each.'
     : going === 'up' && !up.length && down.length ? ' A climb up now leaves every one of those owed below.'
       : going === 'down' && up.length && !down.length ? ' A way down now leaves every one of those owed up top.' : '';
-  return ` ${upSaid} ${downSaid}${down.length || going === 'down' ? pickSays(bot) : ''}${climb}${once}`;
+  return ` ${upSaid} ${downSaid}${down.length || going === 'down' ? pickSays(bot) : ''}${climb}${once}${planSays}`;
 }
 
 // A trip at the surface priced from here: the climb first when the bot is
@@ -201,4 +270,4 @@ function rungLevelSays(bot, goal, phase) {
   return '';
 }
 
-module.exports = { IRON_FOR, pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };
+module.exports = { levelPlan, rungNeed, castWater, woodReserveShort, IRON_FOR, pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };

@@ -217,7 +217,14 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
   // outranks food (a valuable ore, or more food). A golden apple is not
   // ordinary food (note 656, note 722): it keeps its own place in line,
   // offered once no junk is left, same as before.
-  const worthMoreThanFood = Object.hasOwn(VALUABLES, name) || isFood(bot, name) || LIFESAVER.test(name);
+  // On the way to the Nether with its food short, the food carried is that
+  // rung's stock: it is not offered below a valuable either (note 771b:
+  // 25589 at 03:08:19Z, 2026-10-01, dropped 18 beef, 54 food points, for a
+  // gold ingot from a minecart chest, 8 of 80 points carried after; its
+  // food rung then spent about 13 minutes on one sheep with an 89-block
+  // climb, and the beef was never gone back for).
+  const crossing = crossingFood(bot, goal);
+  const worthMoreThanFood = (Object.hasOwn(VALUABLES, name) && !crossing?.short) || isFood(bot, name) || LIFESAVER.test(name);
   const ordinaryFood = n => isFood(bot, n) && !LIFESAVER.test(n);
   for (let round = 0; round < 3 && !room(); round++) {
     const counts = {};
@@ -271,7 +278,9 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // mined 64 back for the kit (note 754d).
     const ck = require('./crossing-kit'), kitWants = ck.kitBlocksWanted(bot, goal), kitHas = kitWants ? ck.netherBlocks(bot) : 0;
     const KIT_KIND = /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt)$/;
-    const cheap = i => (BUILDING.test(i.name) && blockStock(bot) - i.count >= BLOCK_RESERVE && !(kitWants && KIT_KIND.test(i.name) && kitHas - i.count < kitWants)) || /^(gravel|sand|red_sand|smooth_basalt|soul_sand|soul_soil|calcite|mud|clay|.*terracotta)$/.test(i.name);
+    // Blocks the binding limit of the ways on: not cheap while short (note 751d).
+    const shortNow = require('./block-stock').blocksShortNow(goal);
+    const cheap = i => (BUILDING.test(i.name) && !shortNow && blockStock(bot) - i.count >= BLOCK_RESERVE && !(kitWants && KIT_KIND.test(i.name) && kitHas - i.count < kitWants)) || /^(gravel|sand|red_sand|smooth_basalt|soul_sand|soul_soil|calcite|mud|clay|.*terracotta)$/.test(i.name);
     const tiers = [junkOnly, stacks.filter(cheap)];
     stacks = tiers.find(t => t.length) || stacks;
     // What each stack is to the work in hand and the ladder's next step,
@@ -306,12 +315,16 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       const k = kind(stack.name);
       if (k && !bot.inventory.items().some(i => i !== stack && kind(i.name) === k)) notes.push(`the only ${k}`);
       if (BUILDING.test(stack.name) && blockStock(bot) - stack.count < BLOCK_RESERVE) notes.push(`part of the ${BLOCK_RESERVE}-block reserve for pillars, walls and pockets`);
+      if (BUILDING.test(stack.name) && shortNow) notes.push(`blocks to lay: ${shortNow.what} needs ${shortNow.need} laid and ${blockStock(bot)} are carried, so dropped, these are blocks the ways on are short of`);
       if (kitWants && KIT_KIND.test(stack.name) && kitHas - stack.count < kitWants) notes.push(`blocks the crossing's kit counts for the Nether (${kitHas} carried of ${kitWants}): dropped, ${Math.min(stack.count, kitWants - (kitHas - stack.count))} are mined again for it before the crossing`);
       if (LIFESAVER.test(stack.name)) {
         const enchanted = stack.name === 'enchanted_golden_apple';
         const only = !bot.inventory.items().some(i => i !== stack && LIFESAVER.test(i.name));
         notes.push(`an emergency heal, not ordinary food: a bite gives a few seconds of regeneration and four absorption hearts${enchanted ? ', and five minutes of fire resistance, the one steady answer to a blaze\'s fire' : ''}${only ? `; the only one carried, and made again only from an apple and ${enchanted ? '8 gold blocks (72 gold ingots)' : '8 gold nuggets'}` : ''}`);
-      } else if (food(stack.name)) notes.push(bot.inventory.items().some(i => i !== stack && food(i.name)) ? 'food' : 'the only food carried');
+      } else if (food(stack.name)) {
+        notes.push(bot.inventory.items().some(i => i !== stack && food(i.name)) ? 'food' : 'the only food carried');
+        if (crossing && isFood(bot, stack.name)) notes.push(crossingDropSays(bot, crossing, stack));
+      }
       if (weapon(stack.name) && !bot.inventory.items().some(i => i !== stack && weapon(i.name))) notes.push('the only weapon');
       // The cast frame's buckets, said for the frame whether it is begun or
       // only chosen: mid-211-f dropped its water bucket twice for planks
@@ -379,11 +392,45 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // Food dropped is said: it left 25598's pockets with no word (note 690).
     const dropped = foodSays(bot, [stack]);
     if (dropped) bot.chat?.(`Dropping ${dropped} to make room for the ${name.replaceAll('_', ' ')}.`);
+    // Remembered where it fell, for the food rung to offer the walk back
+    // while it lies there (note 771b).
+    if (dropped && goal) noteDroppedFood(bot, goal, stack);
   }
   // Three rounds and still no room, without Jev ever saying "nothing": the
   // tidy's own order, not "no room". mid-79-a's diamond was refused four
   // times, half a second a time, nothing thrown (2026-09-25).
   return room() || null;
+}
+
+// The crossing's food, where the bot is on the way to the Nether in the
+// Overworld (a win goal, the Nether not yet entered): the stay's points
+// and what is carried; `short` while under them.
+function crossingFood(bot, goal) {
+  if (goal?.kind !== 'win' || !/overworld/.test(String(bot?.game?.dimension || 'overworld')) || goal.gameProgress?.milestones?.nether_entered) return null;
+  let want = 0;
+  try { want = require('./crossing-kit').netherStay(bot, goal).points; } catch (_) { return null; }
+  const carried = require('./food-keep').carriedPoints(bot);
+  return { want, carried, short: carried < want };
+}
+// A food stack's drop said against the Nether's food rung: the points it
+// takes off what is carried, how short of the stay that leaves, and the
+// minutes such food took to gather in the record (food-errand.js).
+function crossingDropSays(bot, crossing, stack) {
+  const pts = (bot.registry?.foodsByName?.[stack.name]?.foodPoints || 0) * stack.count;
+  const after = crossing.carried - pts, short = Math.max(0, crossing.want - after);
+  const perMinute = require('./food-errand').RESERVE_RECORD.all.perMinute;
+  return `the Nether food rung's stock: ${crossing.carried} of the ${crossing.want} points the stay wants carried, ${pts} of them in this stack; dropped, ${after} carried and ${short} short, about ${Math.max(1, Math.round(pts / perMinute))} minutes of food errands to gather again at the record's ${perMinute} points a minute`;
+}
+// Food dropped for room, remembered with where it fell: items on the ground
+// vanish five minutes after they fall (DROP_LASTS_MS).
+const DROP_LASTS_MS = 5 * 60000;
+function noteDroppedFood(bot, goal, stack) {
+  const p = bot.entity?.position;
+  if (!p) return;
+  const points = (bot.registry?.foodsByName?.[stack.name]?.foodPoints || 0) * stack.count;
+  const list = (goal.droppedFood || []).filter(d => Date.now() - d.at < DROP_LASTS_MS);
+  list.push({ at: Date.now(), x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dimension: String(bot.game?.dimension || 'overworld'), item: stack.name, count: stack.count, points });
+  goal.droppedFood = list.slice(-5);
 }
 
 // `count` is how many must fit, a craft's whole output; `room` overrides the
@@ -417,4 +464,4 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpos
 // How many of an item are worth keeping, where there is a cap: past it the
 // tidy drops them first (coal is never tossed, but past two stacks it is said).
 function capOf(name) { return SURPLUS[name] ?? (name === 'coal' ? 128 : undefined); }
-module.exports = { NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };
+module.exports = { crossingFood, crossingDropSays, noteDroppedFood, DROP_LASTS_MS, NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

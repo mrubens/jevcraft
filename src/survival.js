@@ -418,6 +418,22 @@ function comingSays(list, { seconds = null, doing = null, at = null } = {}) {
   if (seconds == null || !doing) return `${head}.`;
   return arrives < seconds ? `${head}, before ${doing} is done (about ${r1(seconds)} seconds): it ${at ? 'gets there' : 'reaches the bot'} first.` : `${head}; ${doing} is done first (about ${r1(seconds)} seconds).`;
 }
+// The standoff with a creeper, said (note 778).
+const standoffSays = so => `${Math.round((Date.now() - so.since) / 1000)} seconds with this creeper ${Math.round(so.near * 10) / 10} to ${Math.round(so.far * 10) / 10} blocks off and the bot not hurt by it`;
+
+// Two or more within four (crowd.js, note 778): who, and the blows a second
+// of those that bite at arm's length summed through the armour worn, as a
+// clock at this health.
+function crowdNowSays(bot, crowdNow) {
+  if (crowdNow.length < 2) return null;
+  try {
+    const ce = require('./combat-estimate'), crowd = require('./crowd');
+    const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+    const biters = crowdNow.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && ce.MOBS[t.entity.name] && (t.distance <= 3 || canStrike(bot, t.entity)));
+    const c = crowd.clock({ biters, worn, health: bot.health ?? 20 });
+    return crowd.stateSays(crowdNow, { biters, rate: c.rate, health: bot.health ?? 20 });
+  } catch (_) { return null; }
+}
 const comingFacts = list => list.slice(0, 4).map(t => ({ name: t.entity.name, distance: Math.round(t.distance * 10) / 10, blocksASecond: Math.round(t.speed * 10) / 10, atBotInSeconds: Math.round(t.atBotIn * 10) / 10, ...(t.following ? { followingSince: t.following } : {}) }));
 // A creeper close walks up to a pillar or a pocket and goes off, and a
 // pocket is not closed before the blast (the live run, 17:16, at three
@@ -491,6 +507,11 @@ const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge', 'shield_the
 const RUN_STANCES = new Set(['retreat', 'leave_reach']), RUN_STUCK_MS = 2000;
 // How long a held stance's mobs may stay unseen and no nearer before it ends (note 752j).
 const UNSEEN_HOLD_MS = 30000;
+// A standoff with one creeper behind blocks (note 778, the critic's ~02:54Z
+// item 4): this long with it within ten blocks, the bot not hurt by it, and
+// the block's hold ends with the standoff said; each later end comes when
+// the hold has run as long again as the standoff before it (20, 40, 80 s).
+const CREEPER_STANDOFF_MS = 20000;
 // The stances that stand still with what is at arm's length hitting (note 752h).
 const STANDING_STANCES = new Set(['shield_guard', 'shield_the_charge', 'take_cover', 'back_to_wall', 'hold_on_span', 'eat', 'eat_golden_apple', 'keep_working']);
 // How long a shooter seen stays in the stance's danger out of sight (note 752g).
@@ -3884,8 +3905,10 @@ class Survival {
           this.report(goal, save, { action: 'shield_the_charge', threats: spearHolders.map(t => t.entity.name), health: bot.health, stance: true });
           if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
           const { holdsSpear } = require('./danger');
+          const crowdStop = this.crowdStop();
           for (const until = Date.now() + 15000; Date.now() < until;) {
             task.check(); checkAir(bot);
+            if (crowdStop()) return true;
             const near = threats(bot, 16).filter(t => holdsSpear(t.entity) && (t.visible || t.distance <= 5)).sort((a, b) => a.distance - b.distance)[0];
             if (!near) return true;
             // A mob at the sword's reach is struck (the swing lowers the
@@ -5157,10 +5180,20 @@ class Survival {
     // Within three blocks of a creeper, each way's own record from there
     // (creeper-record.js, note 772): a run priced "about 0" from a creeper
     // at 1.5 blocks was caught by its blast 42 times in 124, and 5 died.
+    // Said by the creeper's distance band and whether other mobs stand
+    // within four, each cell's own answers (note 778: the record compared a
+    // run from 1.5 blocks with a block put in the line from 3).
+    const crowdHere = require('./crowd').crowdOf(coming, { apartIds: apart.ids });
     try {
       const nearCreeper = danger.filter(t => t.entity.name === 'creeper').sort((a, b) => a.distance - b.distance)[0];
-      if (nearCreeper && !/nether|end/.test(String(bot.game?.dimension || ''))) require('./creeper-record').sayOn(options, { distance: nearCreeper.distance });
+      if (nearCreeper && !/nether|end/.test(String(bot.game?.dimension || ''))) require('./creeper-record').sayOn(options, { distance: nearCreeper.distance, others: crowdHere.filter(t => t.entity !== nearCreeper.entity).length });
     } catch (_) { /* nothing said */ }
+    // A standoff with a creeper behind blocks said on block_creeper: the
+    // ways that end it say they do (note 778).
+    if (options.block_creeper?.standoff) for (const k of ['fight', 'leave_reach', 'retreat']) if (typeof options[k]?.description === 'string' && !(k === 'retreat' && /No way out|Nowhere to run/.test(options[k].description))) options[k].description += options.block_creeper.standoff;
+    // With two or more within four, each way's record with that many, where
+    // six answers or more stand behind it (crowd.js, note 778). The Overworld's.
+    try { if (!/nether|end/.test(String(bot.game?.dimension || ''))) require('./crowd').sayOn(options, crowdHere.length); } catch (_) { /* nothing said */ }
     // What standing here costs now, as a clock: the biters at arm's length,
     // their blows a second through the armour worn, and the seconds that
     // leaves at this health, on every stance that stands still (the
@@ -5172,16 +5205,20 @@ class Survival {
       const wornX = ceX.armourOf([5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean));
       const atReachNow = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && ceX.MOBS[t.entity.name] && (t.distance <= 3 || canStrike(bot, t.entity))).sort((a, b) => a.distance - b.distance);
       if (atReachNow.length) {
-        const perSecond = t => { const m = ceX.MOBS[t.entity.name]; return (m.ignoresArmour ? m.hit : ceX.afterArmour(m.hit, wornX)) / (m.blowEvery || 1); };
-        const all = atReachNow.reduce((n, t) => n + perSecond(t), 0), hp = bot.health ?? 20;
+        // By position (note 778): the shield faced at the nearest covers
+        // those within its cover of that way, not only that one; each other
+        // biter's blows a second are summed (crowd.js clock).
+        const crowdX = require('./crowd'), hp = bot.health ?? 20, here = bot.entity.position;
+        const bare = crowdX.clock({ biters: atReachNow, worn: wornX, health: hp });
+        const shieldClock = crowdX.clock({ biters: atReachNow, worn: wornX, health: hp, facing: atReachNow[0], here });
         const who = atReachNow.slice(0, 4).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off`).join(', ');
         for (const [k, o] of Object.entries(options)) {
           if (!STANDING_STANCES.has(k) || typeof o.description !== 'string') continue;
           const shield = SHIELD_STANCES.has(k) && bot.inventory?.slots?.[45]?.name === 'shield';
-          const rate = shield ? all - perSecond(atReachNow[0]) : all;
+          const c = shield ? shieldClock : bare, rate = c.rate, more = c.covered.length - 1;
           o.description += rate > 0
-            ? ` Standing here: ${atReachNow.length === 1 ? who : `${atReachNow.length} at arm's length (${who})`} land about ${Math.round(rate * 10) / 10} health a second through the armour worn${shield ? `, the ${atReachNow[0].entity.name.replaceAll('_', ' ')} the shield faces blocked` : ''}: at ${Math.round(hp * 10) / 10} health, about ${Math.max(1, Math.round(hp / rate))} seconds of it.`
-            : ` Standing here: the ${atReachNow[0].entity.name.replaceAll('_', ' ')} at arm's length, its blows on the shield.`;
+            ? ` Standing here: ${atReachNow.length === 1 ? who : `${atReachNow.length} at arm's length (${who})`} land about ${Math.round(rate * 10) / 10} health a second through the armour worn${shield ? `, the ${atReachNow[0].entity.name.replaceAll('_', ' ')} the shield faces${more > 0 ? ` and ${more} more within its cover of that way` : ''} blocked` : ''}: at ${Math.round(hp * 10) / 10} health, about ${Math.max(1, Math.round(hp / rate))} seconds of it.`
+            : ` Standing here: ${atReachNow.length === 1 ? `the ${atReachNow[0].entity.name.replaceAll('_', ' ')} at arm's length, its blows on the shield` : `${atReachNow.length} at arm's length (${who}), all within the shield's cover of the way it faces, their blows on the shield`}.`;
         }
       }
     } catch (_) { /* nothing said */ }
@@ -5345,6 +5382,15 @@ class Survival {
     // the same range throughout (note 743): a newcomer of a kind already
     // held against is not news, only one of a kind that was not there.
     const newcomer = held?.ids && danger.find(t => t.distance <= STANCE_NEWCOMER && !held.ids.includes(t.entity.id) && !held.kinds?.split(',').includes(t.entity.name));
+    // But a crowd grown at arm's length is news, whatever the kinds: two or
+    // more within four blocks now and more than when the stance was chosen
+    // (crowd.js, note 778). 25593 (mid-237-ap, 20:54:33Z) held shield_guard
+    // against one zombie 4 blocks off beside a spawner; four more closed
+    // within two blocks by 20:54:43, the guard and its hold ran on, and the
+    // next question came at 11.3 health with no way out.
+    const crowdX = require('./crowd');
+    const crowdNow = crowdX.crowdOf(danger, { apartIds: this.lastApart?.ids });
+    const crowdGrew = crowdX.grew(held, crowdNow);
     // A stance chosen on an estimate is asked again once it has cost more
     // than it was said to, health or time: first-days-219 chose to fight one
     // skeleton in full iron, told 1.3 damage in 3.8 seconds; it stood eleven
@@ -5425,7 +5471,7 @@ class Survival {
     if (held && heldNow.length && heldNow.every(t => !t.visible && noNearer(t))) held.unseenSince ||= Date.now(); else if (held) delete held.unseenSince;
     const unseenLong = !!held?.unseenSince && Date.now() - held.unseenSince >= UNSEEN_HOLD_MS;
     if (unseenLong) this.state.stanceFailed = [...[].concat(this.state.stanceFailed || []).filter(f => Date.now() - f.at < 20000), { choice: held.choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), why: `held ${Math.round((Date.now() - held.at) / 1000)} seconds with the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} out of sight and no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)}: nothing for it to answer` }];
-    const physical = !!held && !leftBe && !runStuck && !unseenLong && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
+    const physical = !!held && !leftBe && !runStuck && !unseenLong && !crowdGrew && (held.ids ? !newcomer : held.kinds === kinds) && !hitSince && !offSpot && !lineAgain.length && !shotThrough && !blockAgain && !pushedOpen && !held.lethalAgain;
     // More damage than priced by now, at the estimate's pace (past its
     // seconds, while held on, at its rate); without an estimate, six health.
     const extendedHold = !!held?.hold?.extended;
@@ -5664,7 +5710,7 @@ class Survival {
     // the bot off its spot), a way new on offer or a shot on its way: those
     // are asked, as they were.
     let askedNow = false, noneGoodNow = false;
-    const triggered = !!held && (!!held.lethalAgain || runStuck || unseenLong || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
+    const triggered = !!held && (!!held.lethalAgain || runStuck || unseenLong || crowdGrew || leftBe || hitSince || offSpot || lineAgain.length > 0 || !!blockAgain || !!shotThrough || pushedOpen || damageOver || (held.ids ? !!newcomer : held.kinds !== kinds)
       || /^a way not on offer|^a shot came/.test(holdEnded || ''));
     if (!choice && !holdCapped && !triggered) {
       const kept = scenes.holdFor(book, Object.keys(options));
@@ -5710,6 +5756,7 @@ class Survival {
             : lineAgain.length ? { askedAgainFor: `${lineAgain.map(e => `the ${e.name.replaceAll('_', ' ')} ${Math.round(e.position.distanceTo(bot.entity.position) * 10) / 10} blocks off`).join(' and ')} ${lineAgain.length === 1 ? 'has' : 'have'} a line to where the bot hid` }
             : unseenLong ? { askedAgainFor: `the ${heldNow.map(t => t.entity.name.replaceAll('_', ' ')).join(' and the ')} it was chosen against ${heldNow.length === 1 ? 'has' : 'have'} been out of sight and no nearer for ${Math.round((Date.now() - held.unseenSince) / 1000)} seconds` }
             : runStuck ? { askedAgainFor: `the ${held.choice.replaceAll('_', ' ')} has not moved: ${ranBlocks} blocks in ${Math.round((Date.now() - held.at) / 1000)} seconds` }
+            : crowdGrew ? { askedAgainFor: crowdX.grewSays(held, crowdNow) }
             : offSpot ? { askedAgainFor: 'the bot is off the spot it hid in' }
             : newcomer ? { askedAgainFor: `a ${newcomer.entity.name.replaceAll('_', ' ')} come within ${Math.round(newcomer.distance)} blocks` }
             // What the hold was chosen on, falsified, or its cap (holds.js).
@@ -5718,6 +5765,9 @@ class Survival {
         // Coming at the bot now, each at its own speed: a retreat's chasers
         // after the run (note 544).
         ...(towardNow.length ? { comingAtTheBot: comingFacts(towardNow) } : {}),
+        // Two or more within four: who, and what standing among those that
+        // bite costs a second at this health (crowd.js, note 778).
+        ...((c => c ? { crowdWithinFour: c } : {})(crowdNowSays(bot, crowdNow))),
         // What failed here just now, and so is not asked again for a while:
         // each question after a failure began with nothing said of it.
         ...(failed.length ? { failedHereJustNow: failed.map(f => ({ choice: f.choice, secondsAgo: Math.round((Date.now() - f.at) / 1000), ...(f.why ? { why: f.why } : {}) })) } : {}),
@@ -5803,6 +5853,12 @@ class Survival {
           }
         }
       }
+      // The stance held, ended by the crowd grown round it, says so on
+      // itself: chosen against fewer than are at the bot now (note 778).
+      if (crowdGrew && typeof options[held.choice]?.description === 'string') {
+        const ago = Math.max(1, Math.round((Date.now() - held.at) / 1000));
+        options[held.choice].description += ` Held now, chosen ${ago} second${ago === 1 ? '' : 's'} ago with ${held.crowd.n} within ${crowdX.CROWD_WITHIN} blocks: ${crowdNow.length} are within ${crowdX.CROWD_WITHIN} now, and its figures above are for them.`;
+      }
       // Each stance's price rides with it (not in its words): what the code
       // takes when Jev says none is good (decisions/index.js pickWhenNoneGood, note 691).
       const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.expects ? { expects: o.expects } : {}) }]));
@@ -5857,6 +5913,9 @@ class Survival {
       // Chosen with one shot's end said: the rule does not step it out again
       // while it holds (note 701).
       ...(lethalNow || this.state.lethalLine ? { lethalKnown: true } : {}),
+      // How many stood within four when it was chosen: more than that, two
+      // or more, ends it (crowd.js, note 778).
+      crowd: { n: crowdNow.length },
       // What it was chosen on, for holding on while that stands (holds.js).
       hold: require('./holds').begin({ choice, health: bot.health, expects: options[choice]?.expects || null, mobs: danger, offered: [...Object.keys(options), ...leftOut] }) };
     // An answer in this scene, asked or held without asking (note 659).
@@ -5955,7 +6014,7 @@ class Survival {
       this.state.stanceFailed = [...failed, { choice, kinds, where: { x: feet.x, y: feet.y, z: feet.z }, at: Date.now(), ...(why ? { why } : {}) }];
       if (resumable) {
         const now = Date.now();
-        this.state.stance = { ...resumable, at: now, health: bot.health, hold: require('./holds').begin({ choice: resumable.choice, health: bot.health, expects: resumable.expects || null, mobs: danger, offered: Object.keys(options) }) };
+        this.state.stance = { ...resumable, at: now, health: bot.health, crowd: { n: crowdNow.length }, hold: require('./holds').begin({ choice: resumable.choice, health: bot.health, expects: resumable.expects || null, mobs: danger, offered: Object.keys(options) }) };
         bot._stance = this.state.stance;
         console.log(`[stance] ${choice.replaceAll('_', ' ')} failed at once${why ? ` (${String(why).slice(0, 80)})` : ''}: ${resumable.choice.replaceAll('_', ' ')} goes on, the failure said at the next asking`);
       }
@@ -7427,6 +7486,27 @@ class Survival {
   // holder) is in sight or within five, within sixteen. Priced with the one
   // faced blocking into the shield and the rest as the fight meets them;
   // said with the game's rules and what the arena measured.
+  // A stop for a stance's own long run (the guard's fifteen seconds, the
+  // charge's): two or more within four blocks and more than the stance was
+  // chosen against (crowd.js, note 778). Read four times a second; once
+  // grown, `stop.grown` says the count.
+  crowdStop() {
+    const bot = this.bot, crowd = require('./crowd');
+    const count = () => crowd.crowdOf(threats(bot, crowd.CROWD_WITHIN + 1), { apartIds: this.lastApart?.ids }).length;
+    const n0 = this.state.stance?.crowd?.n ?? count();
+    let at = 0;
+    const stop = () => {
+      if (stop.grown) return true;
+      if (Date.now() - at < 250) return false;
+      at = Date.now();
+      const n = count();
+      if (n >= 2 && n > n0) stop.grown = `${n} within ${crowd.CROWD_WITHIN} blocks, ${n0} when chosen`;
+      return !!stop.grown;
+    };
+    stop.grown = null;
+    return stop;
+  }
+
   shieldGuardOption(task, goal, save, { coming, mobs, shielded, oneHit }) {
     const bot = this.bot;
     const wg = require('./wither-guard');
@@ -7447,7 +7527,14 @@ class Survival {
     const bearing = p => Math.atan2(p.z - bot.entity.position.z, p.x - bot.entity.position.x) * 180 / Math.PI;
     const off = p => { const d = Math.abs(((bearing(p) - bearing(e.position)) % 360 + 540) % 360 - 180); return d; };
     const flanking = mobs.filter(m => m.shoots && bot.entities?.[m.id]?.position && off(bot.entities[m.id].position) > SHIELD_COVER);
-    const others = mobs.map(m => (m === fm ? { ...m, apart: true } : flanking.includes(m) ? { ...m, unshielded: true } : m));
+    // Priced by where each biter stands (note 778): one within four blocks
+    // and within the shield's cover of the way it faces bites into the
+    // shield as the one faced does, its blows blocked; the rest land as in
+    // the fight. 25588 (01:29:28Z) was priced 87.6 with every zombie but the
+    // one faced counted, while its words said three of them were inside the
+    // cover and blocked.
+    const coveredIds = new Set(coming.filter(t => t.entity !== e && !shooter(t.entity) && t.entity.name !== 'creeper' && t.distance <= 4 && t.entity.position && off(t.entity.position) <= SHIELD_COVER).map(t => t.entity.id));
+    const others = mobs.map(m => (m === fm ? { ...m, apart: true } : flanking.includes(m) ? { ...m, unshielded: true } : coveredIds.has(m.id) && !m.shoots ? { ...m, apart: true, covered: true } : m));
     const rest = others.filter(m => !m.apart && !m.far && m.name !== 'creeper');
     const price = stanceCost({ mobs: others, ...(rest.length ? { fight: { lead: true } } : {}), shield: true, health: bot.health });
     const weapon = defenseWeapon(bot);
@@ -7456,10 +7543,11 @@ class Survival {
     const every = ce_blowEvery(e.name);
     const kill = swings ? ` To kill: about ${swings} swing${swings === 1 ? '' : 's'} that land, one after each of its blows or as it comes in, about ${Math.max(1, Math.round(swings * every))} seconds once it is at reach.` : '';
     const wither = fm?.withers ? ' A wither skeleton\'s wither comes only with a blow that hurts: a blow the shield takes gives none.' : '';
-    const crowd = rest.filter(m => !m.shoots).length;
+    const crowd = rest.filter(m => !m.shoots).length, covered = others.filter(m => m.covered).length;
     const kinds = [...new Set(flanking.map(m => m.name.replaceAll('_', ' ')))];
     const sideFire = flanking.length ? ` The shield faces the ${name}: ${flanking.length === 1 ? `the ${kinds[0]}` : `${flanking.length} ${kinds.length === 1 ? `${kinds[0]}s` : 'shooters'}`} here ${flanking.length === 1 ? 'is' : 'are'} more than ${SHIELD_COVER} degrees off that way, so ${flanking.length === 1 ? 'its shots land' : 'their shots land'} as if it were down${kinds.includes('blaze') ? ', each fireball with five seconds alight' : ''}, counted below.` : '';
-    const flank = sideFire + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
+    const coverSaysN = covered ? ` ${covered === 1 ? 'Another biter stands' : `${covered} other biters stand`} within four blocks and within ${SHIELD_COVER} degrees of the way it faces: ${covered === 1 ? 'its blows go' : 'their blows go'} into the shield too, and ${covered === 1 ? 'is' : 'are'} left out of the figure below while ${covered === 1 ? 'it stays' : 'they stay'} there.` : '';
+    const flank = sideFire + coverSaysN + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here${covered ? ' outside its cover' : ''} the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
     // Each other biter at hand outside the shield's cover as it faces this
     // one, by name, with what it has landed lately (hit-log.js, note 752d):
     // 25598 (15:00:41 to 15:00:47Z) chose shield_guard at 0.96 at 7 health
@@ -7487,16 +7575,28 @@ class Survival {
         return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off is ${d} degrees from that way, ${inside ? `inside the cover: ${what} are blocked once the shield has been up a quarter second` : `outside the cover: ${what} land whole`}${h ? ` (it hit the bot ${Math.max(0, Math.round((Date.now() - h.last) / 1000))} seconds ago${h.sides?.size ? `, from ${[...h.sides].join(' and ')} as the bot faced then` : ''})` : ''}`;
       });
     const coverSays = shotBy.length ? ` As the shield faces the ${name}: ${shotBy.join('; ')}.` : '';
+    // The guard's own record (wither-guard.js RECORD, the overnight trials
+    // of 2026-09-29) is said only with one mob or none within four: its runs
+    // were not split by the crowd, and of the 1,015 shield_guard answers
+    // with a biter within eight since 2026-09-30T12:00Z, 975 had one or none
+    // within four. 25588 was told "144 runs, 6 of them took a blow, none
+    // ended in death" among seven zombies (note 778); with two or more the
+    // crowd's own record is said (crowd.js).
+    const crowdNear = require('./crowd').crowdOf(coming).length;
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
-      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block. It knocks the bot back too: the game gives every blow its knockback whether or not the shield takes the damage, about half a block away from the mob with a hop, crouched or not (a hoglin's throw comes only with a blow that lands).${wither}${kill}${flank}${behindSays}${coverSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block. It knocks the bot back too: the game gives every blow its knockback whether or not the shield takes the damage, about half a block away from the mob with a hop, crouched or not (a hoglin's throw comes only with a blow that lands).${wither}${kill}${flank}${behindSays}${coverSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${crowdNear <= 1 ? wg.recordSays(e.name) : ''}` + costSays(price, bot.health, others),
       run: async () => {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
         const start = bot.health;
         // Asked again once health has fallen by six, as every stance is.
-        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - 6 });
-        this.state.stanceWhy = `the guard ${r.ended === 'none left' ? 'ended with no biter left about' : `ran ${r.swings} swing${r.swings === 1 ? '' : 's'}`}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
+        // And once the crowd has grown past what it was chosen against: the
+        // guard's fifteen seconds ran on while four zombies closed round
+        // 25593 (note 778).
+        const crowdStop = this.crowdStop();
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: e.id, radius: 16, stop: () => bot.health <= start - 6 || crowdStop() });
+        this.state.stanceWhy = `the guard ${r.ended === 'none left' ? 'ended with no biter left about' : crowdStop.grown ? `ended as the crowd grew (${crowdStop.grown}) after ${r.swings} swing${r.swings === 1 ? '' : 's'}` : `ran ${r.swings} swing${r.swings === 1 ? '' : 's'}`}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
         return true;
       } };
   }
@@ -7570,7 +7670,7 @@ class Survival {
           }
         }
         await centreOn(bot, task, plan.stand);
-        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: tall[0].entity.id, radius: 16 });
+        const r = await wg.guard(bot, task, { until: Date.now() + 15000, focus: tall[0].entity.id, radius: 16, stop: this.crowdStop() });
         this.state.stanceWhy = `under the ceiling: ${r.swings} swing${r.swings === 1 ? '' : 's'}, ${r.hurt ? `${r.hurt} health lost` : 'no health lost'}`;
         return true;
       } };
@@ -7589,6 +7689,22 @@ class Survival {
   // aa's stance put a block in each new line as it came round, four in six
   // seconds, never asking, until it came in lit at 1.7 blocks with the bot
   // walled in on three sides by its own blocks (note 547).
+  // The standoff with creeper `c` (a threat record): begun the first time
+  // the block option is built for it, kept while the same creeper stays
+  // about (seen by this option within the last ten seconds), the bot has not
+  // been hurt by a creeper since, and the bot is within six blocks of where
+  // it began (note 778).
+  noteCreeperStandoff(c) {
+    const bot = this.bot, now = Date.now(), p = bot.entity.position;
+    let so = this.state.creeperStandoff;
+    const hurt = (bot._hurtBy?.creeper || 0) > (so?.since || 0);
+    if (!so || so.id !== c.entity.id || now - so.lastAt > 10000 || hurt || Math.hypot(p.x - so.at.x, p.z - so.at.z) > 6) {
+      so = this.state.creeperStandoff = { id: c.entity.id, since: now, lastAt: now, at: { x: p.x, z: p.z }, near: c.distance, far: c.distance, ends: 0 };
+    }
+    so.lastAt = now; so.near = Math.min(so.near, c.distance); so.far = Math.max(so.far, c.distance);
+    return so;
+  }
+
   blockCreeperHeld(held) {
     const hold = held?.choice === 'block_creeper' ? held.blockCreeper : null;
     if (!hold) return null;
@@ -7609,6 +7725,21 @@ class Survival {
     const moved = Math.hypot(e.position.x - hold.creeperAt.x, e.position.z - hold.creeperAt.z) + Math.abs(e.position.y - hold.creeperAt.y);
     const band = x => x >= CREEPER_BLAST_REACH ? CREEPER_BLAST_REACH : Math.floor(x);
     if (moved >= CREEPER_WALKS && d <= hold.distance - CREEPER_WALKS && band(d) < band(hold.distance)) return `the creeper is coming nearer: ${r1(moved)} blocks since its line was cut, from ${r1(hold.distance)} to ${d} blocks off the bot${hold.distance >= CREEPER_BLAST_REACH ? `, into its blast's reach of ${CREEPER_BLAST_REACH}` : ''}`;
+    // A standoff that has not closed: behind the block the creeper neither
+    // lights nor leaves, and the hold ends nothing (note 778). 25581
+    // (mid-235-ad, 02:48:56 to 02:51:08Z) stood still behind stone in full
+    // iron with an iron sword, a creeper 4 to 7 blocks off, asked ten times
+    // and answering block_creeper eight: its hold had no end but the
+    // creeper's moves. Ended here once the hold has run as long as the
+    // standoff said at its last end (CREEPER_STANDOFF_MS the first time).
+    const so = this.state?.creeperStandoff;
+    if (so && so.id === hold.id) {
+      const since = Math.max(hold.at, so.endedAt || 0), due = so.ends ? Math.max(CREEPER_STANDOFF_MS, (so.endedAt - so.since)) : CREEPER_STANDOFF_MS;
+      if (Date.now() - since >= due && Date.now() - so.since >= CREEPER_STANDOFF_MS) {
+        so.ends = (so.ends || 0) + 1; so.endedAt = Date.now();
+        return `a standoff: the creeper has not closed in ${Math.round((Date.now() - since) / 1000)} seconds behind the block (${standoffSays(so)}); the block holds it off and ends nothing`;
+      }
+    }
     return null;
   }
 
@@ -7638,6 +7769,10 @@ class Survival {
       .sort((a, b) => (Number.isFinite(b.litFor) - Number.isFinite(a.litFor)) || a.t.distance - b.t.distance);
     if (!creepers.length) return null;
     const { t: c, litFor } = creepers[0];
+    // The standoff with this creeper (note 778): since when it has been
+    // within reach of this option, how near and far, unhurt by it, and
+    // the bot within six blocks of where it began.
+    const standoff = this.noteCreeperStandoff(c);
     const plan = blockPlan(bot, c.entity);
     const behind = !!plan.stoppedBy;
     const n = plan.cells.length;
@@ -7672,10 +7807,27 @@ class Survival {
     const cost = stanceCost({ mobs: rest, setup: total, reaches: () => true, shield: shielded });
     const damage = Math.round((cost.damage + (b.inTime || behind ? roundBlast : b.blast)) * 10) / 10;
     const what = `the creeper (${d} blocks off${lit ? ', lit' : ''})`;
+    // Long enough, the standoff is said: what staying has come to, and the
+    // two ways that end it (note 778).
+    const standoffNow = standoff && Date.now() - standoff.since >= CREEPER_STANDOFF_MS
+      ? (() => {
+        const ce = require('./combat-estimate'), fr = ce.followRange('creeper');
+        const f = mobs.find(m => m.id === c.entity.id)?.fought;
+        const fightSays = f ? ` the fight: about ${f.swings} swing${f.swings === 1 ? '' : 's'}, ${f.secondsToKillIt} seconds, ${f.diesBeforeItGoesOff ? 'killed inside its fuse by the estimate' : `not inside its fuse by the estimate, going off about ${f.goesOffAt} blocks off for about ${f.blast} after the armour worn`}` : ' the fight (its figures said with it)';
+        const away = Math.max(0, fr - c.distance), awaySeconds = Math.round(away / (ce.PLAYER_SPRINT || 5.6) * 10) / 10;
+        // The run's own scout, where it has looked from here: a way found,
+        // or none (25581's "No way out": the walk away was not there).
+        const scout = this.state.retreatScout && Date.now() - this.state.retreatScout.at < 5000 && this.state.retreatScout.feet === `${feetCell(bot)}` ? this.state.retreatScout : null;
+        const noRun = scout && !scout.destination && (!scout.spots || scout.tried >= scout.candidates);
+        // Said whole: re-asked on 25581's eight standoff questions, this
+        // wording moved 28 and 38 of 80 answers to the fight in two runs, a
+        // shorter one 16 and 19 (block_creeper 75 or 76 of 80 as recorded).
+        return ` A standoff: ${standoffSays(standoff)}. Behind the block it neither lights nor leaves, so staying ends nothing and the work waits. It ends with the creeper dead,${fightSays}; or with the bot more than ${fr} blocks from it, past the range a creeper follows a player from: about ${Math.round(away)} blocks more, about ${awaySeconds} seconds at a sprint (it walks after the bot at about ${ce.APPROACH} blocks a second, and lights only within ${ce.LIGHTS_AT} blocks with the bot in its sight)${noRun ? '; but the run has found no way from here (said on it), so of the two only the fight is open now' : ''}.`;
+      })() : '';
     const description = behind
-      ? `Stay behind the ${plan.stoppedBy.name.replaceAll('_', ' ')} at ${plan.stoppedBy.cell}, in the line from the eyes of ${what} to the bot's.${rule}${fuse}${next}${othersSays}` + costSays(cost, bot.health, rest, { done: 'Behind it' }) + edge
-      : `Put ${n === 1 ? 'a block' : `${n} blocks, two high,`} in the line from the eyes of ${what} to the bot's, ${whereSays(bot, plan.cuts)}: about ${Math.round(cutSeconds * 10) / 10} seconds until the line is cut${n > 1 ? ` (the ${plan.cutAfter === 1 ? 'first' : 'second'} block), ${Math.round(total * 10) / 10} for both` : ''}, and stay behind it.${rule}${fuse}${verdict}${next}${othersSays}` + costSays(cost, bot.health, rest, { doing: 'placing', done: 'Behind it' }) + edge;
-    return { expects: { damage, seconds: cost.seconds, oneHit }, description,
+      ? `Stay behind the ${plan.stoppedBy.name.replaceAll('_', ' ')} at ${plan.stoppedBy.cell}, in the line from the eyes of ${what} to the bot's.${rule}${fuse}${next}${othersSays}${standoffNow}` + costSays(cost, bot.health, rest, { done: 'Behind it' }) + edge
+      : `Put ${n === 1 ? 'a block' : `${n} blocks, two high,`} in the line from the eyes of ${what} to the bot's, ${whereSays(bot, plan.cuts)}: about ${Math.round(cutSeconds * 10) / 10} seconds until the line is cut${n > 1 ? ` (the ${plan.cutAfter === 1 ? 'first' : 'second'} block), ${Math.round(total * 10) / 10} for both` : ''}, and stay behind it.${rule}${fuse}${verdict}${next}${othersSays}${standoffNow}` + costSays(cost, bot.health, rest, { doing: 'placing', done: 'Behind it' }) + edge;
+    return { expects: { damage, seconds: cost.seconds, oneHit }, description, ...(standoffNow ? { standoff: ` This ends the standoff with the creeper (${standoffSays(standoff)}).` } : {}),
       run: async () => {
         const e = bot.entities?.[c.entity.id] || c.entity;
         if (e.isValid === false) return true;

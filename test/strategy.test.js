@@ -19,8 +19,15 @@ const picking = choice => { const asked = []; return { asked, decide: async (id,
 
 test('the open rungs are the ladder\'s next and each one after it that may wait; armour closes the list', () => {
   let { bot, goal } = fixture(['golden_boots', 'diamond_sword']);
+  // The diamond sword is optional before the Nether (note 776): not open
+  // on the ladder unless chosen, and listed apart.
+  const { optionalRungs } = require('../src/game-progress');
+  assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['golden_boots']);
+  assert.deepEqual(optionalRungs(bot, goal).map(r => r.phase), ['diamond_sword']);
+  goal.rungOptIn = { diamond_sword: Date.now() };
   assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['golden_boots', 'diamond_sword']);
   ({ bot, goal } = fixture(['iron_helmet', 'golden_boots']));
+  goal.rungOptIn = { iron_armour: Date.now() };
   assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['iron_helmet', 'golden_boots'], 'armour may wait too, so the steps after it are on offer');
 });
 
@@ -32,7 +39,7 @@ test('Jev may put a later rung first; the choice holds for ten minutes, then is 
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   const first = await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => now });
   assert.equal(first.stage.phase, 'diamond_sword');
-  assert.deepEqual(asked[0].keys, ['rung_golden_boots', 'rung_diamond_sword', 'nether_first']);
+  assert.deepEqual(asked[0].keys, ['rung_golden_boots', 'nether_first', 'rung_diamond_sword'], 'the optional sword offered after the Nether now (note 776)');
   assert.equal(asked[0].id, 'win_strategy');
   assert.match(said[0], /diamond sword first, then the golden boots/);
   now += 60000;
@@ -227,7 +234,7 @@ test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, w
   const { bot, goal } = homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'string', count: 5 }, { name: 'oak_planks', count: 8 }] });
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   const options = strategyOptions(bot, goal, stage);
-  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'rung_diamond_sword', 'nether_first', 'carry_bed']);
+  assert.deepEqual(Object.keys(options), ['rung_golden_boots', 'nether_first', 'rung_diamond_sword', 'carry_bed']);
   const d = options.carry_bed.description;
   assert.match(d, /three wool and three planks; wool from sheep, or crafted from spiders' string, four string a wool and twelve a bed/);
   assert.match(d, /any night on the Overworld, anywhere there .*the night passes in seconds, instead of about eleven real minutes in a pocket or a night mine and the climb out after/);
@@ -237,6 +244,7 @@ test('once the base\'s bed is claimed, a second bed to carry is Jev\'s option, w
   // Not with a bed in the pack, nor before the base's bed is claimed, nor with the wool search set aside.
   assert.equal(strategyOptions(homeFixture(['golden_boots', 'diamond_sword'], { items: [{ name: 'red_bed', count: 1 }] }).bot, goal, stage).carry_bed, undefined);
   const unclaimed = homeFixture(['golden_boots', 'diamond_sword']); delete unclaimed.goal.survival.home.bed.claimedAt;
+  unclaimed.goal.rungOptIn = { bed: Date.now() }; // optional before the Nether, chosen (note 776)
   const first = openRungs(unclaimed.bot, unclaimed.goal)[0];
   assert.equal(first.phase, 'bed', 'the bed rung itself is the ladder\'s');
   assert.equal(strategyOptions(unclaimed.bot, unclaimed.goal, first).carry_bed, undefined);
@@ -264,6 +272,7 @@ test('when every step left before the Nether may wait, going now is offered, and
   // mid-110-i: only the arrows left, chosen seventy-three times over three hours, and never the Nether.
   const { isSetAside } = require('../src/progress');
   const { bot, goal, task } = fixture(['arrow']);
+  goal.rungOptIn = { arrows: Date.now() }; // optional before the Nether, chosen (note 776)
   const stage = openRungs(bot, goal)[0];
   assert.equal(stage.phase, 'arrows');
   const options = strategyOptions(bot, goal, stage);
@@ -280,6 +289,7 @@ test('when every step left before the Nether may wait, going now is offered, and
   assert.notEqual(nextGameStage(bot, goal)?.phase, 'arrows', 'the next stage is not the arrows again');
   // Armour may wait too (the scoreboard, 2026-09-26): with it open, the Nether first is offered.
   const armour = fixture(['iron_helmet']);
+  armour.goal.rungOptIn = { iron_armour: Date.now() };
   assert(strategyOptions(armour.bot, armour.goal, openRungs(armour.bot, armour.goal)[0])?.nether_first);
 });
 
@@ -291,6 +301,7 @@ test('the Nether first moves the ladder on to the Nether at once, and is not off
   const { nextGameStage } = require('../src/game-progress');
   const { bot, goal, task } = fixture(['bow', 'diamond_sword']);
   bot.time.timeOfDay = 17617; // night: the bow is the ladder's next
+  goal.rungOptIn = { bow: Date.now(), diamond_sword: Date.now() }; // optional before the Nether, both chosen (note 776)
   setAside(goal, 'rung', 'iron_boots', 'Jev chose to fight with what is carried', 1800000);
   assert.equal(nextGameStage(bot, goal).phase, 'bow');
   const entered = [], trees = [];
@@ -324,11 +335,13 @@ test('the question says what the Nether waits on, and never that every step come
   await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, { decide, now: () => 1e12 });
   const state = asked[0].state;
   assert.match(state.beforeTheNether, /Nothing left is needed before the Nether/);
-  assert.match(state.beforeTheNether, /May wait until after it: golden boots, diamond sword/);
+  assert.match(state.beforeTheNether, /May wait until after it: golden boots\./);
+  // The rungs with no benefit in the record are optional, said apart (note 776).
+  assert.match(state.beforeTheNether, /Optional before the Nether, not on the ladder unless chosen \(no benefit for them in the first Nether stays' record, kit-record\.js\): diamond sword, nether pickaxe, nether blocks, nether food, nether chest\./);
   // And the kit for the crossing, which had been gates at the portal said nowhere (the decision review, 2026-09-26).
   assert.match(state.beforeTheNether, /At the portal the kit is said and topping any of it up is a choice, not a wait: short now of 0 of 80 food points; 0 of 128 blocks; 1 of 2 pickaxes; a piece of gold to wear \(piglins go for a player with none\); 0 of 8 logs and no crafting table; a chest to keep rods in through a death \(8 planks\)\./);
   // The kit is rungs last before the portal now, said as that and not as waiting until after the Nether (note 673).
-  assert.match(state.beforeTheNether, /The crossing's kit, last before the portal, each of which may be gone without: a spare pickaxe for the Nether, blocks for bridging and pillaring in the Nether, food carried for the Nether stay, a chest to keep the blaze rods in through a death in the Nether\./);
+  assert.doesNotMatch(state.beforeTheNether, /The crossing's kit, last before the portal/, 'the kit rungs are optional, not the ladder\'s (note 776)');
   assert.doesNotMatch(state.beforeTheNether, /May wait until after it: [^.]*nether/);
   assert.match(asked[0].tree.nether_first.description, /short now of 0 of 80 food points/);
   assert.doesNotMatch(state.note, /every step is done before the Nether/);
@@ -391,7 +404,7 @@ test('the question\'s top level is the rungs, the Nether now and one side trip; 
   const { asked, decide } = treeOf();
   await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, { decide, sides: trips, now: () => 1e12 });
   const { tree } = asked[0];
-  assert.deepEqual(Object.keys(tree), ['rung_golden_boots', 'rung_diamond_sword', 'nether_first', 'side_trip']);
+  assert.deepEqual(Object.keys(tree), ['rung_golden_boots', 'nether_first', 'rung_diamond_sword', 'side_trip']);
   assert.deepEqual(Object.keys(tree.side_trip.children), ['loot', 'trade']);
   assert.equal(tree.side_trip.children.loot.description, trips.loot.description, 'the trip\'s facts on its own question');
   assert.match(tree.side_trip.description, /one of 2: loot the ruined portal 120 blocks away; go trade at the village/);
@@ -439,6 +452,7 @@ test('a trip coming into view beside the others does not re-ask, nor one going t
 test('a base begun in an older world is offered from where it stopped, and chosen it holds as a rung, a step at a time', async () => {
   const { bot, goal, task } = homeFixture(['golden_boots', 'diamond_sword']);
   const h = goal.survival.home; delete h.completedAt; delete h.bed.claimedAt;
+  goal.rungOptIn = { bed: Date.now() }; // optional before the Nether, chosen (note 776)
   const stage = openRungs(bot, goal)[0];
   assert.equal(stage.phase, 'bed', 'the base\'s step is not on the ladder; the bed rung is');
   goal.rungClocks = { home_level: { activeMs: 7 * 60000, lastAt: 0 } };

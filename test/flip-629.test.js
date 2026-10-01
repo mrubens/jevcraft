@@ -153,7 +153,7 @@ test('the trip back to the portal says where the crossing straight at it ends an
   const says = portalTrip(bot, goal);
   assert.match(says, /^The nearest portal remembered is 204 blocks off/);
   assert.match(says, /Straight across at y 66, crouched: 109 cells, 48 of rock to dig \(dug by hand, no pickaxe being carried: netherrack so dug drops nothing/);
-  assert.match(says, /where lava or water behind the netherrack stops it\. 0 blocks carried/);
+  assert.match(says, /where lava or water behind the netherrack stops it\. It needs \d+ blocks? laid and 0 are carried: it cannot be done with what is carried\. 0 blocks carried/);
   assert.match(says, /With what is carried that crossing stops \d+ blocks short of it\./);
   // Where the crossing does get there, nothing is said against it.
   const near = require('../src/nether-gather').reachSays(bot, new Vec3(-140, 66, -113));

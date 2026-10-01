@@ -101,6 +101,9 @@ test('a rung put ahead of the ladder holds through the regime flip a craft cause
 
 test('a new rung opening up that was not known when the answer was given still asks again (note 709 kept)', async () => {
   const { bot, goal, task, setItems } = fixture(['golden_boots', 'diamond_sword']);
+  // The bow chosen earlier (optional before the Nether, note 776), so its
+  // loss opens a rung on the ladder.
+  goal.rungOptIn = { bow: Date.now() };
   const { asked, decide } = scripted(['rung_diamond_sword']);
   let now = 1e12;
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };

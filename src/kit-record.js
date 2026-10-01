@@ -56,10 +56,81 @@ function staysSays(phase) {
   if (!k) return '';
   return `first Nether stays by it (${STAYS.stays} fresh stays, ${STAYS.window}; the played record, not a forecast, and the trials that had it differ in other ways): ${rows(STAYS[k])}`;
 }
-// Both, as one sentence for a rung's option.
-function rungRecordSays(phase, y) {
-  const parts = [minutesSays(phase, y), staysSays(phase)].filter(Boolean);
-  return parts.length ? ` In the record: ${parts.join('; ')}.` : '';
+// The rungs before the Nether, measured whole (note 776): Nether reach fell
+// to 6 of 27 fresh trials after 00:41Z on 2026-10-01, 0 of 9 on the worlds
+// that start underground, food 30 to 53% of the pre-Nether minutes on five
+// worlds and the gear rungs 21 to 31% on three. Every rung that may wait was
+// on the ladder by default, handed back after the Nether first's half hour,
+// whatever the record said it bought.
+//
+// Per rung, scripts/portal-time.js --rungs over the fresh trials of
+// RUNGS.window (107 trials, 3,731 pre-Nether minutes): [trials that worked
+// on it before the Nether, the minutes they spent on it (its climbs
+// counted; the night, fights and the survival layer's own food left out),
+// the median minutes a trial, of the trials begun without what it makes how
+// many had it at the Nether or the record's end, and how many were begun
+// without it]. The first Nether stays of fresh trials over RUNG_STAYS.window,
+// by whether what the rung makes was carried or worn at the crossing:
+// [stays, ended in a death, the trial got a blaze rod], with and without.
+const RUNGS = {
+  window: '2026-09-30 20:00Z to 2026-10-01 03:00Z', trials: 107, preNetherMinutes: 3731,
+  stone_pickaxe: [22, 123, 3.4, 3, 6], stone_sword: [1, 1, 1, 1, 1], bed: [39, 193, 2.7, 14, 39],
+  iron_pickaxe: [37, 159, 2.5, 15, 22], bucket: [1, 1.7, 1.7, 0, 0], iron_armour: [24, 56, 1.4, 19, 24],
+  golden_boots: [25, 79, 2.1, 12, 25], bow: [1, 3, 3, 0, 1], diamond_sword: [13, 23, 1.3, 2, 13],
+  nether_pickaxe: [27, 68, 2.3, 9, 14], nether_blocks: [19, 113, 2, 6, 8], nether_food: [79, 848, 10.7, 20, 79],
+  nether_chest: [6, 7.7, 1, 0, 1],
+};
+const RUNG_STAYS = {
+  window: '2026-09-26 to 2026-10-01 03:00Z', stays: 113,
+  bed: [[47, 25, 12], [66, 43, 27]], shield: [[108, 66, 38], [5, 2, 1]], iron_sword: [[102, 62, 38], [11, 6, 1]],
+  bucket: [[108, 67, 38], [5, 1, 1]], iron_armour: [[47, 21, 11], [66, 47, 28]], golden_boots: [[31, 13, 10], [82, 55, 29]],
+  bow: [[13, 5, 2], [100, 63, 37]], arrows: [[0, 0, 0], [113, 68, 39]], diamond_sword: [[5, 2, 2], [108, 66, 37]],
+  nether_pickaxe: [[86, 56, 30], [27, 12, 9]], nether_blocks: [[79, 49, 28], [34, 19, 11]],
+  nether_food: [[48, 32, 17], [65, 36, 22]], nether_chest: [[12, 5, 0], [101, 63, 39]],
+};
+// What a rung makes is a family: the armour pieces one set, the beds one bed.
+const familyOf = phase => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(phase || '') ? 'iron_armour' : /^(bed|home_bed|carry_bed)$/.test(phase || '') ? 'bed' : phase;
+// The rule, stated with every rung it touches: a rung that may wait is on
+// the ladder before the Nether only where its stays show a benefit, at least
+// BENEFIT_MIN stays on each side, and either a blaze rod got BENEFIT_POINTS
+// points more often with it, or a death BENEFIT_POINTS points less often
+// with a rod no more than ROD_SLACK points less often. Fewer stays than that
+// on a side is no measure, and no measure is no benefit shown.
+const BENEFIT_MIN = 10, BENEFIT_POINTS = 10, ROD_SLACK = 5;
+const pctOf = (a, b) => b ? Math.round(100 * a / b) : 0;
+function benefitOf(phase) {
+  const s = RUNG_STAYS[familyOf(phase)];
+  if (!s) return { measured: false, benefit: false };
+  const [[wn, wd, wr], [on, od, or]] = s;
+  if (wn < BENEFIT_MIN || on < BENEFIT_MIN) return { measured: false, benefit: false, with: s[0], without: s[1] };
+  const rodGain = pctOf(wr, wn) - pctOf(or, on), deathCut = pctOf(od, on) - pctOf(wd, wn);
+  const benefit = rodGain >= BENEFIT_POINTS || (deathCut >= BENEFIT_POINTS && rodGain >= -ROD_SLACK);
+  return { measured: true, benefit, rodGain, deathCut, with: s[0], without: s[1] };
+}
+// Whether a rung that may wait stays on the ladder before the Nether.
+const needBeforeNether = phase => benefitOf(phase).benefit;
+const ruleSays = `a rung that may wait is made before the Nether unasked only where the first Nether stays with what it makes did better than those without (at least ${BENEFIT_MIN} stays each side; a blaze rod got ${BENEFIT_POINTS} points more often, or a death ${BENEFIT_POINTS} points less often with a rod no more than ${ROD_SLACK} points less often)`;
+// The record of a rung before the Nether: what it took, whether it was
+// finished, and what the stays with and without it came to; then where the
+// rule puts it. One sentence, the same wherever the rung is weighed.
+function rungRecordSays(phase) {
+  const fam = familyOf(phase), r = RUNGS[fam], s = RUNG_STAYS[fam];
+  if (!r && !s) return '';
+  const parts = [];
+  if (r) parts.push(`fresh trials ${RUNGS.window}: ${r[0]} of ${RUNGS.trials} worked on it before the Nether, a median ${r[2]} minutes each (${r[1]} minutes in all, ${pctOf(r[1], RUNGS.preNetherMinutes)}% of every pre-Nether minute)${r[4] ? `, and ${r[3]} of the ${r[4]} begun without it had it by the Nether` : ''}`);
+  if (s) parts.push(`first Nether stays (${RUNG_STAYS.stays}, ${RUNG_STAYS.window}; the played record, not a forecast, and the trials differ in other ways): with it ${s[0][0]}, ${pctOf(s[0][1], s[0][0])}% ended in a death, ${pctOf(s[0][2], s[0][0])}% got a blaze rod; without it ${s[1][0]}, ${pctOf(s[1][1], s[1][0])}% and ${pctOf(s[1][2], s[1][0])}%`);
+  const b = benefitOf(phase);
+  const verdict = b.benefit ? 'a benefit in the record: made before the Nether unless set aside' : b.measured ? 'no benefit in the record: optional before the Nether, made only if chosen' : 'too few stays on a side to measure: optional before the Nether, made only if chosen';
+  return ` In the record: ${parts.join('; ')}. ${verdict[0].toUpperCase()}${verdict.slice(1)} (${ruleSays}).`;
 }
 
-module.exports = { MINUTES, STAYS, minutesSays, staysSays, rungRecordSays };
+// The same record, short, where several rungs are said in one option (the
+// Nether now, each rung it leaves).
+function rungRecordShort(phase) {
+  const fam = familyOf(phase), r = RUNGS[fam], s = RUNG_STAYS[fam];
+  if (!r && !s) return '';
+  const b = benefitOf(phase);
+  return ` Its record: ${r ? `${r[0]} of ${RUNGS.trials} trials worked on it before the Nether, a median ${r[2]} minutes each${r[4] ? `, ${r[3]} of ${r[4]} had it by the Nether` : ''}` : 'not worked on in the trials measured'}${s ? `; first Nether stays with it ${pctOf(s[0][1], s[0][0])}% ended in a death and ${pctOf(s[0][2], s[0][0])}% got a rod (${s[0][0]}), without it ${pctOf(s[1][1], s[1][0])}% and ${pctOf(s[1][2], s[1][0])}% (${s[1][0]})` : ''}; ${b.benefit ? 'a benefit in the record' : b.measured ? 'no benefit in the record' : 'too few stays to measure'}.`;
+}
+
+module.exports = { rungRecordShort, MINUTES, STAYS, RUNGS, RUNG_STAYS, BENEFIT_MIN, BENEFIT_POINTS, ROD_SLACK, familyOf, benefitOf, needBeforeNether, ruleSays, minutesSays, staysSays, rungRecordSays };

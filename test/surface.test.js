@@ -608,7 +608,9 @@ test('a climb to the surface for the ladder\'s log is Jev\'s trip, said with its
   const { bot } = shaft({ items });
   Object.assign(bot, { time: { timeOfDay: 6000 }, entities: {} });
   bot.inventory.slots = [];
-  const goal = { kind: 'win', gameProgress: { phase: 'iron_pickaxe', milestones: {} } };
+  // The shield chosen (optional before the Nether, note 776); the bucket
+  // not, so the ladder after them is the golden boots, gold dug below.
+  const goal = { kind: 'win', gameProgress: { phase: 'iron_pickaxe', milestones: {} }, rungOptIn: { shield: Date.now() } };
   assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe', 'the ladder wants the spare');
   const task = new Task('win');
   const asked = [];
@@ -622,11 +624,11 @@ test('a climb to the surface for the ladder\'s log is Jev\'s trip, said with its
   assert.match(decision.options.climb.description, /Climb to open sky for wood \(any log\) \(for the iron pickaxe\): 24 blocks up to open sky\. Dug, it is straight up the column, about \d+ seconds\. It wears 22 of the \d+ uses/);
   assert.match(decision.options.climb.description, /the column is filled behind, so this depth is dug down to again/);
   // The shield after it wants the same log for its planks: left with it, and the bucket's ingots are carried (note 543).
-  assert.match(decision.options.stay_below.description, /leave the iron pickaxe and the shield \(it wants the same climb\) for thirty minutes and go on with bucket/);
+  assert.match(decision.options.stay_below.description, /leave the iron pickaxe and the shield \(it wants the same climb\) for thirty minutes and go on with golden boots/);
   assert.match(decision.options.stay_below.description, /Down here meanwhile: Pickaxes carried: iron pickaxe \(49 uses left\), stone pickaxe \(131 uses left\), 180 uses in all\. The way home from here is 24 blocks up/);
   assert.equal(bot.entity.position.y, 40, 'no stair dug');
   assert(isSetAside(goal, 'rung', 'iron_pickaxe'));
-  assert.equal(nextGameStage(bot, goal).phase, 'bucket', 'the spare waits while the worn one works, and the shield with it');
+  assert.equal(nextGameStage(bot, goal).phase, 'golden_boots', 'the spare waits while the worn one works, and the shield with it');
   assert.match(said[0], /leave the iron pickaxe and the shield for now rather than climb/);
   // With no pickaxe of the tier that still works, the rung cannot wait.
   items.splice(0, 1);

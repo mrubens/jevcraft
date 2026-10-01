@@ -426,7 +426,8 @@ function leafAt(tree, key) {
 // keep_searching taken as "the only way offered" (note 721).
 function read(bot, goal, q, tree, { target = null, sayOnly = false, leave = null, now = Date.now() } = {}) {
   const here = P(bot?.entity?.position);
-  if (!goal?.tried?.entries?.length || !here) return { tree, resting: [], allResting: false };
+  // The walks' stall memory bears too (failed-places.js, note 777).
+  if (!goal || (!goal.tried?.entries?.length && !bot?._stallSpots?.length) || !here) return { tree, resting: [], allResting: false };
   const nodes = new Map(), resting = [], lastListed = new Set();
   let kinds = null;
   try { kinds = typeof bot?.inventory?.items === 'function' ? [...new Set(bot.inventory.items().map(i => i.name))] : null; } catch (_) { kinds = null; }
@@ -441,6 +442,17 @@ function read(bot, goal, q, tree, { target = null, sayOnly = false, leave = null
     if (!sayOnly && list.some(e => e.noop)) lastListed.add(key.split('/')[0]);
     const said = [triedSays(list, { here, now, toward: !!t }), sayOnly ? null : justNow(goal, { q, method: key, here, now, counted: list })].filter(Boolean).join(' ') || null;
     const until = restsUntil(list, now);
+    // A target the ways to have failed twice, whatever asked for them, or a
+    // spot the ways from have failed to two other targets (failed-places.js,
+    // note 777): said on the option going there, and resting it as its own
+    // two failures would.
+    const own = P(node?.target);
+    const place = !sayOnly && !until && own ? require('./failed-places').read(bot, goal, own, { here, now, restMs: REST_MS }) : null;
+    if (place && place.until > now) {
+      const both = [said, place.says].filter(Boolean).join(' ');
+      resting.push({ key, until: place.until, held: false, wait: false, place: place.kind, said: both, says: `${label(key)}: ${both} It rests ${ago(place.until - now)} more from here.` });
+      nodes.set(key, node); continue;
+    }
     // Held by the repeat rule (decisions/repeats.js), and still held.
     const held = blockedOf(list).some(e => e.held && e.until > now);
     if (until) { resting.push({ key, until, held, wait: blockedOf(list).every(e => e.wait), said, says: `${label(key)}: ${said} It rests ${ago(until - now)} more from here.` }); nodes.set(key, node); continue; }

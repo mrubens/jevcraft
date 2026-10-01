@@ -229,4 +229,23 @@ function handGather(bot, { reach = 16, walk = 32 } = {}) {
   return { n, sources: found.sources, found, says };
 }
 
-module.exports = { aheadByHandSays, kitLacks, listSays, KIT_BLOCKS, HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };
+// Blocks as the binding limit (note 751d): where a way offered in the
+// Nether (a crossing, a leg) needs more blocks laid than are carried, the
+// need is kept on the goal for ten minutes, and the tidy and the question
+// that makes room are told: netherrack is then the crossing's material, not
+// a surplus. 25588 (mid-231-ad, 03:12:11Z on 2026-10-01) left 51 netherrack
+// "pockets full" while every crossing to the stems stopped for want of
+// blocks.
+const BLOCKS_SHORT_MS = 10 * 60000;
+function noteBlocksShort(goal, need, carried, what, now = Date.now()) {
+  if (!goal || !(need > carried)) return;
+  const was = goal.blocksShort && now - goal.blocksShort.at < BLOCKS_SHORT_MS ? goal.blocksShort : null;
+  if (was && was.need >= need && now - was.at < 60000) return;
+  goal.blocksShort = { need: Math.max(need, was?.need || 0), carried, what, at: now };
+}
+function blocksShortNow(goal, now = Date.now()) {
+  const b = goal?.blocksShort;
+  return b && now - b.at < BLOCKS_SHORT_MS ? b : null;
+}
+
+module.exports = { noteBlocksShort, blocksShortNow, BLOCKS_SHORT_MS, aheadByHandSays, kitLacks, listSays, KIT_BLOCKS, HAND_BLOCKS, handBlocksCarried, handGather, pickaxeWanted, WANTS_PICKAXE, stockSays, afterSays, makingSays, pickaxeCarried, handDigs, handLine, goingOnSays, handWaySays, hardRock, pickaxeLead, pickaxeFirstOrder, NO_RETURN };

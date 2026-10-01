@@ -96,6 +96,9 @@ function readTrial({ port, start, end, dir = FLIGHT }) {
         rung: s.goal?.gameProgress?.phase || null, doing: s.goal?.gameProgress?.clock?.byDoing || null,
         sa: sa?.action || null, decision: d?.id ? { id: d.id, answer: Array.isArray(d.path) ? d.path.join('/') : null, need: d.state?.need || null,
           ...(/^(kit_food)$/.test(d.id) && Array.isArray(d.path) ? { said: String(d.options?.[d.path.at(-1)]?.description || '').slice(0, 600) } : {}),
+          // What win_strategy had on offer (note 776): whether the Nether
+          // was among the options when a rung was chosen.
+          ...(d.id === 'win_strategy' ? { offered: Object.keys(d.options || {}) } : {}),
           ...(/^(stillness_detour|rung_progress)$/.test(d.id) && /cast portal and enter nether come off their rest|enter nether and cast portal come off their rest/.test(JSON.stringify(d.options || {})) ? { castRested: true } : {}),
           ...(/^(stillness_detour|rung_progress)$/.test(d.id) ? (m => m ? { flip: [m[1], m[2]] } : {})(/turning between ([a-z ]+?) and ([a-z ]+?) (?:\d+ times|again)/.exec(JSON.stringify(d.state || {}))) : {}) } : null,
         chat: o.kind === 'chat' && o.detail?.from === 'Jev' ? String(o.detail.message || '') : null,
@@ -130,6 +133,11 @@ function phaseOf(action) {
 }
 
 function measureTrial(tr) {
+  const row = measureTrialRaw(tr);
+  row.sim776 = simulateLevels(row);
+  return row;
+}
+function measureTrialRaw(tr) {
   const start = tr.start, cap = Math.min(tr.end, to);
   const frames = readTrial({ port: tr.port, start, end: cap });
   const netherFrame = frames.find(f => f.dim === 'nether');
@@ -154,7 +162,7 @@ function measureTrial(tr) {
     startY: before.find(f => f.pos)?.pos.y ?? null, work: workMinutes(before), height: heightTrips(before), strategy: strategyFlips(before),
     rungs: rungMinutes(before), kit: netherFrame ? entryKit(before) : null, stay: netherFrame ? netherStay(frames.filter(f => f.t >= cut)) : null,
     cut: /cut: /.test((tr.verdict?.reasons || []).join(' ')) || (!netherFrame && (cap - start) >= 59 * 60000),
-    sim: simulate(before),
+    sim: simulate(before), rungsPursued: rungsPursued(before),
     reachedNether: !!netherFrame, minutesToNether: netherFrame ? round((netherFrame.t - start) / 60000) : null,
     minutesMeasured: round(botMs / 60000), minutesRun: round((cap - start) / 60000),
     byPhase: Object.fromEntries(Object.entries(byPhase).sort((a, b) => b[1] - a[1]).map(([k, ms]) => [k, round(ms / 60000)])),
@@ -425,7 +433,8 @@ function entryKit(frames) {
   const eq = frames.filter(f => f.equipment).at(-1)?.equipment || {};
   const armor = ['head', 'torso', 'legs', 'feet'].filter(s => eq[s]).length;
   const n = re => Object.entries(inv).filter(([k]) => re.test(k)).reduce((s, [, c]) => s + (+c || 0), 0);
-  return { food: foodPoints(inv), bed: n(/_bed$/) > 0, armor, pickaxes: n(/_pickaxe$/), blocks: n(/^(cobblestone|cobbled_deepslate|dirt|netherrack|blackstone|andesite|diorite|granite|tuff)$/) };
+  const has = Object.fromEntries(RUNG_FAMILIES.map(fam => [fam, hasRung(fam, inv, eq)]));
+  return { food: foodPoints(inv), bed: n(/_bed$/) > 0, armor, pickaxes: n(/_pickaxe$/), blocks: n(/^(cobblestone|cobbled_deepslate|dirt|netherrack|blackstone|andesite|diorite|granite|tuff)$/), has };
 }
 // The stay the Nether entry began: minutes until the bot was back in the
 // Overworld (or the record ends), whether it ended in a death, and the most
@@ -439,6 +448,80 @@ function netherStay(frames) {
   }
   for (const f of frames) if (f.inventory) rods = Math.max(rods, (+f.inventory.blaze_rod || 0) + (+f.inventory.blaze_powder || 0) / 2);
   return { minutes: round((end - (frames[0]?.t ?? end)) / 60000), died, rods };
+}
+
+// The rungs pursued before the Nether (note 776): per rung, the minutes
+// worked under it (the ladder's phase, the survival layer's night, food and
+// fights left out but the climbs it took kept), whether it was finished
+// before the Nether (what it makes carried or worn at a later frame), and how
+// it came to be worked on: Jev named it at win_strategy with the Nether on
+// offer beside it, Jev named it with no Nether on offer (the code had put
+// the Nether behind it), or the ladder handed it with no answer naming it
+// (a stand-in, the ladder's next after another rung finished, or a rung
+// set aside coming back on its own).
+const RUNG_FAMILY = phase => /^iron_(armour|helmet|chestplate|leggings|boots)$/.test(phase || '') ? 'iron_armour' : /^(bed|home_bed|carry_bed)$/.test(phase || '') ? 'bed' : phase;
+const PRE_RUNGS = /^(stone_pickaxe|stone_sword|bed|home_bed|carry_bed|iron_pickaxe|shield|iron_sword|bucket|iron_armour|iron_(helmet|chestplate|leggings|boots)|golden_boots|bow|arrows|diamond_sword|nether_pickaxe|nether_blocks|nether_food|nether_chest)$/;
+const TIER = ['wooden', 'stone', 'iron', 'diamond', 'netherite'];
+const tierOf = (inv, kind) => Math.max(0, ...Object.keys(inv || {}).filter(k => k.endsWith(`_${kind}`) && (+inv[k] || 0) > 0).map(k => TIER.indexOf(k.split('_')[0]) + 1));
+// What each rung makes, read off the pockets and what is worn.
+function hasRung(family, inv = {}, eq = {}) {
+  const n = re => Object.entries(inv || {}).filter(([k]) => re.test(k)).reduce((a, [, c]) => a + (+c || 0), 0);
+  switch (family) {
+    case 'stone_pickaxe': return tierOf(inv, 'pickaxe') >= 2;
+    case 'iron_pickaxe': return tierOf(inv, 'pickaxe') >= 3;
+    case 'stone_sword': return tierOf(inv, 'sword') >= 2;
+    case 'iron_sword': return tierOf(inv, 'sword') >= 3;
+    case 'diamond_sword': return tierOf(inv, 'sword') >= 4;
+    case 'bed': return n(/_bed$/) > 0;
+    case 'shield': return n(/^shield$/) > 0 || eq.offhand === 'shield';
+    case 'bucket': return n(/^(bucket|water_bucket|lava_bucket)$/) > 0;
+    case 'iron_armour': return ['head', 'torso', 'legs', 'feet'].every(sl => eq[sl]);
+    case 'golden_boots': return n(/^golden_boots$/) > 0 || eq.feet === 'golden_boots';
+    case 'bow': return n(/^bow$/) > 0;
+    case 'arrows': return n(/^arrow$/) >= 16;
+    case 'nether_pickaxe': return n(/_pickaxe$/) >= 2;
+    case 'nether_blocks': return n(/^(cobblestone|cobbled_deepslate|dirt|netherrack|blackstone|andesite|diorite|granite|tuff)$/) >= 128;
+    case 'nether_food': return foodPoints(inv) >= 80;
+    case 'nether_chest': return n(/^chest$/) > 0;
+    default: return false;
+  }
+}
+const RUNG_FAMILIES = ['stone_pickaxe', 'stone_sword', 'bed', 'iron_pickaxe', 'shield', 'iron_sword', 'bucket', 'iron_armour', 'golden_boots', 'bow', 'arrows', 'diamond_sword', 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest'];
+const RUNG_SKIP_WORK = /^(night|body and fights)$/;
+function rungsPursued(frames) {
+  const out = {};
+  let rung = null, last = null, label = null, spanOf = null, inv = null, eq = null;
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
+    if (f.decision?.id === 'win_strategy' && f.decision.answer) last = { answer: f.decision.answer.split('/').at(-1), nether: (f.decision.offered || []).includes('nether_first') || (f.decision.offered || []).includes('stage_reach_nether'), t: f.t };
+    if (f.inventory) inv = f.inventory;
+    if (f.equipment) eq = f.equipment;
+    if (f.rung) rung = f.rung;
+    if (!rung || !PRE_RUNGS.test(rung)) { spanOf = null; continue; }
+    const fam = RUNG_FAMILY(rung);
+    const o = out[fam] ||= { minutes: 0, climbMinutes: 0, by: {}, spans: 0, finished: false, hadAtStart: null };
+    if (o.hadAtStart === null) o.hadAtStart = inv ? hasRung(fam, inv, eq || {}) : false;
+    if (spanOf !== rung) {
+      spanOf = rung; o.spans++;
+      const named = last && (last.answer === `rung_${rung}` || last.answer === `take_up_${rung}`);
+      label = named ? (last.nether ? 'chosen, the Nether on offer' : 'chosen, no Nether on offer') : 'handed by the ladder';
+    }
+    const dt = (frames[i + 1]?.t ?? f.t) - f.t;
+    if (!(dt > 0) || dt > GAP_MS) continue;
+    const work = workOf(f, rung);
+    if (RUNG_SKIP_WORK.test(work) || (work === 'food' && fam !== 'nether_food')) continue;
+    const m = dt / 60000;
+    o.minutes += m; o.by[label] = (o.by[label] || 0) + m;
+    if (work === 'climb up') o.climbMinutes += m;
+  }
+  // Finished: what it makes carried or worn at the last reading before the
+  // Nether (or the record's end).
+  for (const [fam, o] of Object.entries(out)) {
+    o.finished = inv ? hasRung(fam, inv, eq || {}) : false;
+    o.minutes = round(o.minutes); o.climbMinutes = round(o.climbMinutes);
+    for (const k of Object.keys(o.by)) o.by[k] = round(o.by[k]);
+  }
+  return out;
 }
 
 // Note 763's rules replayed on the recorded frames, before and after:
@@ -596,11 +679,131 @@ function kitRecord(rows) {
   ];
 }
 
+// Note 776's ladder replayed on the recorded frames: what the trial spent
+// that the new rules would not have spent, as upper bounds.
+//  handed: minutes on rungs optional before the Nether (kit-record.js
+//    needBeforeNether false) that the ladder handed with no answer naming
+//    them: the ladder no longer hands them.
+//  chosen: minutes on optional rungs Jev named; offered now as optional
+//    with the record, the Nether the ladder's default (the probe,
+//    scripts/optional-rungs-probe.js, says how often Jev still names them).
+//  revisits: climbs to open sky (20 blocks or more) for a surface need
+//    (food, wood, wool, water, animals) after the trial's first such climb,
+//    not under an optional rung (counted above): the plan by level gathers
+//    the surface's needs in one visit; each one's minutes and the way back
+//    down at the measured pace (levels.js) counted.
+// How often Jev still named each optional rung when the recorded question
+// was asked as note 776 asks it (scripts/optional-rungs-probe.js, 2026-10-01
+// ~03:20Z, recorded asks 2026-09-30 20:00Z to 2026-10-01 03:00Z, 3 runs a
+// case): [named again, asked]. As recorded, 133 of 150 named it again.
+const PROBE_KEPT = { nether_food: [25, 60], nether_pickaxe: [0, 6], nether_chest: [3, 9], nether_blocks: [0, 12], bed: [6, 9], iron_armour: [27, 30], bucket: [3, 9], diamond_sword: [2, 9], bow: [0, 3] };
+const PROBE_ALL = [66, 150];
+const keptRate = fam => { const k = PROBE_KEPT[fam] || PROBE_ALL; return k[0] / k[1]; };
+const SURFACE_NEED = /food|animals|sheep|wool|log|wood|water|hunt|search_food|obtain_food|go_for_food|top_up_food/;
+function simulateLevels(trial) {
+  const { needBeforeNether } = require('../src/kit-record');
+  const { DEFERRABLE } = require('../src/game-progress');
+  const optional = fam => (DEFERRABLE.has(fam) || fam === 'iron_armour') && !needBeforeNether(fam);
+  let handed = 0, chosen = 0, handedClimb = 0, chosenKept = 0;
+  const byRung = {};
+  for (const [fam, o] of Object.entries(trial.rungsPursued || {})) {
+    if (!optional(fam)) continue;
+    const h = o.by['handed by the ladder'] || 0, c = (o.by['chosen, the Nether on offer'] || 0) + (o.by['chosen, no Nether on offer'] || 0);
+    handed += h; chosen += c; chosenKept += c * keptRate(fam);
+    if (h || c) byRung[fam] = { handed: round(h), chosen: round(c) };
+    if (o.minutes) handedClimb += o.climbMinutes * (h / o.minutes);
+  }
+  const LEVEL = require('../src/levels').LEVEL_RECORD;
+  const climbs = (trial.height?.climbs || []).filter(c => c.rose >= 20 && SURFACE_NEED.test(`${c.why} ${c.rung || ''}`) && !(c.rung && optional(RUNG_FAMILY(c.rung))));
+  const extra = climbs.slice(1);
+  const revisitMinutes = extra.reduce((n, c) => n + c.minutes + c.rose * LEVEL.downSecondsABlock / 60, 0);
+  return { handed: round(handed), handedClimb: round(handedClimb), chosen: round(chosen), chosenSaved: round(chosen - chosenKept), byRung, surfaceClimbs: climbs.length, revisits: extra.length, revisitMinutes: round(revisitMinutes) };
+}
+
+// The rungs before the Nether, in all (note 776): for each, the trials
+// that worked on it before the Nether, the minutes (all, a trial's median,
+// the climbs among them, by how it came to be worked on), how many finished
+// it before the Nether, the Nether reached by the trials that worked on it
+// and by those that did not, and the first Nether stays with what it makes
+// carried or worn at the crossing against those without (`stayRows`, a
+// window of their own: stays are few).
+function rungRecord(rows, stayRows = rows) {
+  const out = {};
+  const stays = stayRows.filter(r => r.kit?.has && r.stay);
+  for (const fam of RUNG_FAMILIES) {
+    const pursued = rows.filter(r => (r.rungsPursued?.[fam]?.minutes || 0) >= 0.5);
+    const others = rows.filter(r => !pursued.includes(r));
+    const by = {};
+    for (const r of pursued) for (const [k, m] of Object.entries(r.rungsPursued[fam].by)) by[k] = round((by[k] || 0) + m);
+    const minutes = pursued.reduce((n, r) => n + r.rungsPursued[fam].minutes, 0);
+    const fresh = pursued.filter(r => !r.rungsPursued[fam].hadAtStart);
+    const side = list => ({ n: list.length, died: list.filter(r => r.stay.died).length, rod: list.filter(r => r.stay.rods >= 1).length });
+    out[fam] = {
+      trials: pursued.length, minutes: round(minutes), medianMinutes: median(pursued.map(r => r.rungsPursued[fam].minutes)),
+      climbMinutes: round(pursued.reduce((n, r) => n + r.rungsPursued[fam].climbMinutes, 0)), by,
+      finished: fresh.filter(r => r.rungsPursued[fam].finished).length, begunWithout: fresh.length,
+      reached: { pursued: [pursued.filter(r => r.reachedNether).length, pursued.length], not: [others.filter(r => r.reachedNether).length, others.length] },
+      stays: { with: side(stays.filter(r => r.kit.has[fam])), without: side(stays.filter(r => !r.kit.has[fam])) },
+    };
+  }
+  return out;
+}
+function printRungRecord(rows, stayRows, stayWindow) {
+  const R = rungRecord(rows, stayRows);
+  const pre = rows.reduce((n, r) => n + r.minutesMeasured, 0) || 1;
+  const pct = (a, b) => b ? `${Math.round(100 * a / b)}%` : '-';
+  const { DEFERRABLE } = require('../src/game-progress');
+  let rec = null;
+  try { rec = require('../src/kit-record'); } catch (_) { rec = null; }
+  console.log(`\nRungs before the Nether (note 776), ${rows.length} fresh trials, ${round(pre)} pre-Nether minutes; first Nether stays ${stayWindow}, ${stayRows.filter(r => r.kit?.has && r.stay).length} of them:`);
+  for (const [fam, x] of Object.entries(R).sort((a, b) => b[1].minutes - a[1].minutes)) {
+    if (!x.trials && !x.stays.with.n) continue;
+    const code = !DEFERRABLE.has(fam) && fam !== 'iron_armour' ? 'mandatory by code (may not wait)' : rec?.needBeforeNether?.(fam) ? 'on the ladder before the Nether (a measured benefit)' : 'optional before the Nether';
+    console.log(`  ${fam} [${code}]: ${x.trials} trials, ${x.minutes} min (${pct(x.minutes, pre)} of pre-Nether), median ${x.medianMinutes ?? '-'} a trial, ${x.climbMinutes} climbing; finished ${x.finished} of ${x.begunWithout} begun without it; ${Object.entries(x.by).map(([k, m]) => `${k} ${m}`).join(', ') || '-'}; Nether reached ${x.reached.pursued[0]} of ${x.reached.pursued[1]} working on it, ${x.reached.not[0]} of ${x.reached.not[1]} not; stays with it ${x.stays.with.n} (${pct(x.stays.with.died, x.stays.with.n)} died, ${pct(x.stays.with.rod, x.stays.with.n)} a rod), without ${x.stays.without.n} (${pct(x.stays.without.died, x.stays.without.n)} died, ${pct(x.stays.without.rod, x.stays.without.n)} a rod)`);
+  }
+  // Replayed under note 776 (upper bounds), per world.
+  console.log('\n  Replayed under note 776 (upper bounds): optional rungs the ladder handed (minutes, their climbs), optional rungs Jev named, and surface climbs past the first that one visit would have made unneeded (with the way back down):');
+  const wsim = {};
+  for (const r of rows) {
+    const w = wsim[r.source] ||= { trials: 0, pre: 0, handed: 0, handedClimb: 0, chosen: 0, chosenSaved: 0, revisits: 0, revisitMinutes: 0, surfaceClimbs: 0, reached: 0 };
+    const x = r.sim776 || {};
+    w.trials++; w.pre += r.minutesMeasured; w.reached += r.reachedNether ? 1 : 0;
+    for (const k of ['handed', 'handedClimb', 'chosen', 'chosenSaved', 'revisits', 'revisitMinutes', 'surfaceClimbs']) w[k] += x[k] || 0;
+  }
+  const all = { trials: 0, pre: 0, handed: 0, handedClimb: 0, chosen: 0, chosenSaved: 0, revisits: 0, revisitMinutes: 0, surfaceClimbs: 0, reached: 0 };
+  for (const [w, x] of Object.entries(wsim).sort()) {
+    for (const k of Object.keys(all)) all[k] += x[k];
+    console.log(`    ${w}: ${x.reached} of ${x.trials} reached, ${round(x.pre)} pre-Nether min; handed ${round(x.handed)} (${pct(x.handed, x.pre)}; climbing ${round(x.handedClimb)}), chosen ${round(x.chosen)} (${pct(x.chosen, x.pre)}); surface climbs ${x.surfaceClimbs}, ${x.revisits} past the first, ${round(x.revisitMinutes)} min (${pct(x.revisitMinutes, x.pre)}); saved by the ladder and the plan ${round(x.handed + x.revisitMinutes)} (${pct(x.handed + x.revisitMinutes, x.pre)}), with Jev's choices at the probe's rates ${round(x.handed + x.revisitMinutes + x.chosenSaved)} (${pct(x.handed + x.revisitMinutes + x.chosenSaved, x.pre)}), at most ${round(x.handed + x.revisitMinutes + x.chosen)} (${pct(x.handed + x.revisitMinutes + x.chosen, x.pre)})`);
+  }
+  console.log(`    all: ${all.reached} of ${all.trials} reached, ${round(all.pre)} pre-Nether min; handed ${round(all.handed)} (${pct(all.handed, all.pre)}), chosen ${round(all.chosen)} (${pct(all.chosen, all.pre)}), revisits ${all.revisits}, ${round(all.revisitMinutes)} min (${pct(all.revisitMinutes, all.pre)}); saved by the ladder and the plan ${round(all.handed + all.revisitMinutes)} (${pct(all.handed + all.revisitMinutes, all.pre)}), with Jev's choices at the probe's rates ${round(all.handed + all.revisitMinutes + all.chosenSaved)} (${pct(all.handed + all.revisitMinutes + all.chosenSaved, all.pre)})`);
+  // Per world: the minutes on each rung and how they came about.
+  const worlds = {};
+  for (const r of rows) (worlds[r.source] ||= []).push(r);
+  console.log('\n  By world (minutes on each rung before the Nether; handed by the ladder / chosen):');
+  for (const [w, rs] of Object.entries(worlds).sort()) {
+    const W = rungRecord(rs, []);
+    const pw = rs.reduce((n, r) => n + r.minutesMeasured, 0) || 1;
+    const parts = Object.entries(W).filter(([, x]) => x.minutes >= 1).sort((a, b) => b[1].minutes - a[1].minutes)
+      .map(([fam, x]) => `${fam} ${x.minutes} (${pct(x.minutes, pw)}; ${x.by['handed by the ladder'] || 0}/${round((x.by['chosen, the Nether on offer'] || 0) + (x.by['chosen, no Nether on offer'] || 0))}; done ${x.finished}/${x.begunWithout})`);
+    console.log(`    ${w}: ${rs.filter(r => r.reachedNether).length} of ${rs.length} reached; ${parts.join(', ')}`);
+  }
+}
+
 function main() {
   let trials = audit.trialRecords({ since: since - 1, flight: FLIGHT }).filter(t => t.port && t.start < to);
   if (onlyPort) trials = trials.filter(t => Number(t.port) === onlyPort);
   trials = trials.filter(t => !/\/stages\/(fortress|nether)\//.test(t.source || ''));
   const rows = trials.map(measureTrial);
+  if (has('--rungs')) {
+    // The stays from their own window (note 776): first Nether stays are few.
+    const staysSince = Date.parse(opt('--stays-since', '2026-09-26T00:00:00Z'));
+    const stayTrials = audit.trialRecords({ since: staysSince - 1, flight: FLIGHT }).filter(t => t.port && t.start < to && !/\/stages\/(fortress|nether)\//.test(t.source || ''));
+    const stayRows = stayTrials.map(measureTrial);
+    if (asJson) { console.log(JSON.stringify({ since: new Date(since).toISOString(), staysSince: new Date(staysSince).toISOString(), trials: rows.length, preNetherMinutes: round(rows.reduce((n, r) => n + r.minutesMeasured, 0)), stays: stayRows.filter(r => r.kit?.has && r.stay).length, rungs: rungRecord(rows, stayRows) }, null, 1)); return; }
+    printRungRecord(rows, stayRows, `since ${new Date(staysSince).toISOString()}`);
+    if (has('--by-world')) printByWorld(rows);
+    return;
+  }
   if (asJson) { console.log(JSON.stringify({ since: new Date(since).toISOString(), byWorld: byWorld(rows), kitRecord: kitRecord(rows), trials: rows }, null, 2)); return; }
   if (has('--by-world')) { printByWorld(rows); return; }
 
@@ -668,5 +871,5 @@ function printByWorld(rows) {
   for (const b of kitRecord(rows)) console.log(`  ${b.label}: ${b.n} stays, ${b.died} ended in a death, ${b.anyRod} brought a rod, rods median ${b.rodsMedian ?? '-'}, stay median ${b.stayMedian ?? '-'} min`);
 }
 
-module.exports = { simulate, measureTrial, phaseOf, lavaFetch, workOf, workMinutes, heightTrips, strategyFlips, rungMinutes, entryKit, netherStay, byWorld, summarize, kitRecord, sourceOf, foodPoints };
+module.exports = { simulateLevels, readTrial, rungsPursued, rungRecord, hasRung, RUNG_FAMILIES, simulate, measureTrial, phaseOf, lavaFetch, workOf, workMinutes, heightTrips, strategyFlips, rungMinutes, entryKit, netherStay, byWorld, summarize, kitRecord, sourceOf, foodPoints };
 if (require.main === module) main();

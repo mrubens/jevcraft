@@ -226,7 +226,8 @@ function crossSays(bot, way) {
     whole.bridge && `${whole.bridge} of open air or lava to lay a block over (${whole.overLava} over lava)`].filter(Boolean);
   const end = whole.end, dy = Math.round(way.target.y - end.y);
   const ends = `it ends ${plural(Math.round(flat(end, way.target)), 'block')} across from it${Math.abs(dy) >= 2 ? `, ${Math.abs(dy)} ${dy > 0 ? 'below' : 'above'} it` : ''}${whole.stoppedBy ? `, where ${whole.stoppedBy} stops it` : ''}`;
-  const short = whole.bridge > carried ? ` ${plural(carried, 'block')} carried: ${now.cells ? `they take it ${plural(now.cells, 'cell')}, ${plural(Math.round(now.gain), 'block')} nearer, and it stops at the first cell needing another` : 'it stops at the first cell needing one'}.` : whole.bridge ? ` ${plural(carried, 'block')} carried, ${carried - whole.bridge} left after.` : '';
+  // Short of blocks said as what it is (note 751d, as note 751c for legs).
+  const short = whole.bridge > carried ? ` It needs ${plural(whole.bridge, 'block')} laid and ${carried} ${carried === 1 ? 'is' : 'are'} carried: it cannot be done with what is carried. ${plural(carried, 'block')} carried: ${now.cells ? `they take it ${plural(now.cells, 'cell')}, ${plural(Math.round(now.gain), 'block')} nearer, and it stops at the first cell needing another` : 'it stops at the first cell needing one'}.` : whole.bridge ? ` ${plural(carried, 'block')} carried, ${carried - whole.bridge} left after.` : '';
   return `Straight across at y ${y}, crouched: ${plural(whole.cells, 'cell')}, ${work.join(' and ') || 'all open ground'}, about ${travel.crossingSeconds(whole)} seconds; ${ends}.${short}`;
 }
 // Whether the crossing straight at a place reaches it, said, from what is
@@ -263,7 +264,7 @@ const wayKey = (bot, target, method) => { const h = bot.entity.position; return 
 const wayResting = (bot, goal, target, method) => isSetAside(goal, 'gather_way', wayKey(bot, target, method));
 // Why it rests, as its run said it: the reason goes with the rest.
 const wayRestWhy = (bot, goal, target, method) => { try { return String(require('./progress').attemptsFor(goal).why('gather_way', wayKey(bot, target, method)) || '').replace(/^The way [^:]*came no nearer: /, '').replace(/; it rests from here$/, '').slice(0, 160); } catch (_) { return ''; } };
-const WAY_SAYS = { walk: 'on foot', cross: 'straight across', floor: 'down to the floor and along it' };
+const WAY_SAYS = { walk: 'on foot', cross: 'straight across', floor: 'down to the floor and along it', climb: 'up by a pillar and across' };
 
 // A way that ends at the same place again. 25585 (mid-242-gf-fortress-1,
 // 21:02 to 21:36Z on 2026-09-29) asked this question about 60 times on one
@@ -301,6 +302,52 @@ const sameEndSays = (what, s) => `${what}: ended at the same place, ${at3(s.at)}
 // Ahead on a heading from here, within a leg's length and four blocks of its line.
 const aheadOn = (here, h, length) => e => { const along = (e.x - here.x) * h[0] + (e.z - here.z) * h[1], side = Math.abs((e.x - here.x) * h[1] - (e.z - here.z) * h[0]); return along >= -1 && along <= length + 8 && side <= SAME_END && Math.abs(e.y - here.y) < 4; };
 const wayEndKey = (target, method) => `${method}>${Math.round(target.x)},${Math.round(target.z)}`;
+
+// A place three or more blocks up (more than a jump), reached by a pillar
+// at a column clear of lava and water: under it where it is within twelve
+// blocks across, else where the bot stands, and from the top straight
+// across at its height. 25588 (mid-231-ad, 03:07-03:14Z on 2026-10-01) had
+// crimson stems 17 and 12 blocks up, each offered only as a crossing at its
+// own height that "ends 1 block across from it, 17 below it", and walked
+// seven minutes among them with no pickaxe made (note 751d). The blocks the
+// pillar and the crossing need are said against those carried.
+const CLIMB_UP = 3, CLIMB_UNDER = 12;
+function climbTo(bot, target) {
+  if (typeof bot.blockAt !== 'function') return null;
+  const here = bot.entity.position, up0 = Math.round(target.y - Math.floor(here.y));
+  if (up0 < CLIMB_UP) return null;
+  const pr = require('./pillar-recovery');
+  const carried = blocksCarried(bot);
+  if (!carried) return null;
+  let site = null;
+  try { site = flat(target, here) <= CLIMB_UNDER ? pr.pillarSite(bot, target.y, target, { radius: 5 }) : pr.pillarSite(bot, target.y, null, { radius: 2 }); } catch (_) { site = null; }
+  if (!site) return null;
+  const up = Math.max(0, Math.round(target.y - site.y)), top = site.offset(0, up, 0);
+  const there = Object.assign(Object.create(bot), { entity: { ...bot.entity, position: top.offset(0.5, 0, 0.5) } });
+  let cross = null;
+  try { cross = flat(target, top) > THERE ? surveyCrossing(there, target, { cells: CROSS_CELLS, blocks: 999 }) : null; } catch (_) { cross = null; }
+  const bridge = cross?.bridge || 0, need = up + bridge;
+  const walk = Math.round(site.offset(0.5, 0, 0.5).distanceTo(here));
+  const seconds = Math.round(walk / travel.WALK_SPEED + up * 1.2 + (cross ? travel.crossingSeconds(cross) : 0));
+  const across = !cross ? 'beside it at the top' : cross.cells ? `then straight across at y ${top.y}: ${plural(cross.cells, 'cell')}${cross.dig ? `, ${cross.dig} of rock to dig (${rockSays(bot)})` : ''}${bridge ? `, ${bridge} of open air or lava to lay a block over` : ''}, ending ${plural(Math.round(flat(cross.end, target)), 'block')} across from it${cross.stoppedBy ? `, where ${cross.stoppedBy} stops it` : ''}` : `then across at y ${top.y}: ${cross.stoppedBy || 'nothing to cross'} at the first cell`;
+  const blocks = need > carried ? `In all it needs ${plural(need, 'block')} laid (${up} for the pillar${bridge ? `, ${bridge} for the crossing` : ''}) and ${carried} ${carried === 1 ? 'is' : 'are'} carried: it cannot be done with what is carried, and stops where they run out${carried < up ? `, ${carried} up the pillar` : ''}.` : `In all it needs ${plural(need, 'block')} laid of the ${carried} carried, ${carried - need} left after.`;
+  return { site, up, top, cross, need, carried, says: `pillar straight up ${up} blocks (jump and lay a block under the feet) at ${at3(site)}, ${walk ? `${plural(walk, 'block')} from here` : 'where the bot stands'}, a column clear of lava and water; ${across}. ${blocks} About ${seconds} seconds.` };
+}
+async function climbThen(bot, task, goal, save, climb, target, what, navigate) {
+  const key = wayKey(bot, target, 'climb'), y0 = bot.entity.position.y, before = flat(target, bot.entity.position);
+  goal.step = { action: 'nether_gather', way: 'climb', what, target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) } }; save();
+  let why = null;
+  try {
+    const { goals: g } = require('mineflayer-pathfinder');
+    if (climb.site.distanceTo(bot.entity.position.floored()) >= 1) await navigate(bot, task, new g.GoalBlock(climb.site.x, climb.site.y, climb.site.z), { timeoutMs: 15000, stallMs: 4000 });
+    if (climb.site.distanceTo(bot.entity.position.floored()) < 1.5) await require('./pillar-recovery').pillarUp(bot, task, target.y, { dig: require('./work').dig });
+    if (climb.cross?.cells && bot.entity.position.y >= target.y - 1) await bridgeTo(bot, task, target, { maxBlocks: climb.cross.bridge, maxSteps: climb.cross.cells });
+  } catch (err) { task.check(); if (!retryable(err)) throw err; why = String(err.message || err).slice(0, 160); }
+  if (bot.entity.position.y - y0 >= 1 || before - flat(target, bot.entity.position) >= 1) return true;
+  const said = `The way up to ${what} came no nearer${why ? `: ${why}` : ''}; it rests from here`;
+  setAside(goal, 'gather_way', key, said.slice(0, 300), WAY_REST_MS); save();
+  throw new Error(said);
+}
 
 // Taken: the way chosen, and whether it came nearer. One that came no
 // nearer rests from here and is said as the step's failure.
@@ -490,6 +537,7 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
     const standSays = stood === null ? 'The bot has not stood within 32 blocks of it.' : `The bot has stood ${stood} blocks from it before.`;
     const says = `${whereSays}. ${walkSays(way, bot)} ${crossSays(bot, way)}${floorSays(way)} ${standSays}`;
     const offered = waysOffered(way);
+    if (way.cross.whole.bridge > way.cross.carried) require('./block-stock').noteBlocksShort(goal, way.cross.whole.bridge, way.cross.carried, `the crossing to ${where} at ${at3(place.at)}`);
     const keys = [];
     for (const method of ['walk', 'cross', 'floor']) {
       if (!offered[method]) continue;
@@ -503,9 +551,18 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
       const key = `${method}_to_${placeId}`;
       keys.push(key);
       const how = method === 'walk' ? (way.walk.found ? 'on foot, by the pathfinder\'s route' : `on foot as far as the pathfinder goes (${at3(way.walk.end)}, ${way.walk.nearer} blocks nearer), and the way on asked from there`)
-        : method === 'cross' ? `straight across at this height as far as the blocks carried take it (${way.cross.now.cells} cells, ${Math.round(way.cross.now.gain)} blocks nearer)`
+        : method === 'cross' ? `straight across at this height as far as the blocks carried take it (${way.cross.now.cells} cells, ${Math.round(way.cross.now.gain)} blocks nearer${way.cross.whole.bridge > way.cross.carried ? `; the whole crossing needs ${way.cross.whole.bridge} blocks laid and ${way.cross.carried} are carried, so it cannot be done with what is carried` : ''})`
           : 'down to the floor and along it toward them';
       options[key] = { description: `Go to ${where} ${how}. ${says}`, target: place.at, run: () => runWay(bot, task, goal, save, way, method, `${where} at ${at3(place.at)}`, navigate) };
+    }
+    // Up to it: stems overhead are climbed to, as a player pillars up to a
+    // forest's floor (note 751d).
+    const climb = mineAt && !way.walk?.found && !wayResting(bot, goal, place.at, 'climb') ? climbTo(bot, place.at) : null;
+    if (climb) {
+      require('./block-stock').noteBlocksShort(goal, climb.need, climb.carried, `the way up to ${where} at ${at3(place.at)}`);
+      const key = `climb_to_${placeId}`;
+      keys.push(key);
+      options[key] = { description: `Go up to ${where} at ${at3(place.at)}: ${climb.says}`, target: place.at, run: () => climbThen(bot, task, goal, save, climb, place.at, `${where} at ${at3(place.at)}`, navigate) };
     }
     placesSaid.push(`${says}${keys.length ? '' : ' No way from here makes ground toward it, so it is not offered.'}`);
   }
@@ -645,4 +702,4 @@ async function netherGather(bot, task, goal, save, resource, { navigate, returnO
   return true;
 }
 
-module.exports = { withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };
+module.exports = { climbTo, withoutOption, noteEnd, sameEnd, END_REST_MS, netherGather, reachSays, crossSays, gathers, resourceNames, knownPlaces, wayTo, woodInReach, isWood, STEM, PLACE_APART, WAY_REST_MS };

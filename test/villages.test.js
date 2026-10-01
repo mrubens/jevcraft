@@ -78,27 +78,31 @@ test('a village is remembered once, announced once, and a second look from the f
   assert.equal(villages.noticeVillage(bot, goal, save, { force: true }), null);
 });
 
+// The bed is optional before the Nether (note 776): chosen, it is the
+// ladder's rung, as these tests read it.
+const bedGoal = (bot, extra = {}) => ({ ...goalWith(bot, extra), rungOptIn: { bed: Date.now() } });
+
 test('the bed rung prefers a remembered village with beds within two hundred blocks over the sheep hunt', () => {
   const { bot } = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1]] });
   const near = { x: 100, y: LEVEL + 1, z: 0, dimension: 'overworld', seenAt: 1, bell: { x: 100, y: LEVEL + 1, z: 0 }, beds: 2, hay: 3 };
-  assert.deepEqual(preparationStage(bot, goalWith(bot)), { phase: 'bed', action: 'gather_wool', count: 3 }, 'no village: wool');
-  const rung = preparationStage(bot, goalWith(bot, { villages: [near] }));
+  assert.deepEqual(preparationStage(bot, bedGoal(bot)), { phase: 'bed', action: 'gather_wool', count: 3 }, 'no village: wool');
+  const rung = preparationStage(bot, bedGoal(bot, { villages: [near] }));
   assert.equal(rung.phase, 'bed'); assert.equal(rung.action, 'village_bed'); assert.equal(rung.village, near); assert.equal(rung.distance, 100);
-  assert.equal(preparationStage(bot, goalWith(bot, { villages: [{ ...near, beds: 0 }] })).action, 'gather_wool', 'a village with no beds left is no rung');
-  assert.equal(preparationStage(bot, goalWith(bot, { villages: [{ ...near, x: 300 }] })).action, 'gather_wool', 'three hundred blocks is a sheep, not a walk');
-  assert.equal(preparationStage(bot, goalWith(bot, { villages: [{ ...near, dimension: 'nether' }] })).action, 'gather_wool');
-  const cooling = goalWith(bot, { villages: [near] }); require('../src/progress').setAside(cooling, 'village_bed', 'any', 'not reached', 60000);
+  assert.equal(preparationStage(bot, bedGoal(bot, { villages: [{ ...near, beds: 0 }] })).action, 'gather_wool', 'a village with no beds left is no rung');
+  assert.equal(preparationStage(bot, bedGoal(bot, { villages: [{ ...near, x: 300 }] })).action, 'gather_wool', 'three hundred blocks is a sheep, not a walk');
+  assert.equal(preparationStage(bot, bedGoal(bot, { villages: [{ ...near, dimension: 'nether' }] })).action, 'gather_wool');
+  const cooling = bedGoal(bot, { villages: [near] }); require('../src/progress').setAside(cooling, 'village_bed', 'any', 'not reached', 60000);
   assert.equal(preparationStage(bot, cooling).action, 'gather_wool', 'an unreachable village waits out its cool-down');
   const woolly = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1], ['white_wool', 3]] }).bot;
-  assert.equal(preparationStage(woolly, goalWith(woolly, { villages: [near] })).item, 'white_bed', 'three wool in the pockets is a bed to craft, not a walk');
+  assert.equal(preparationStage(woolly, bedGoal(woolly, { villages: [near] })).item, 'white_bed', 'three wool in the pockets is a bed to craft, not a walk');
   const bedded = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1], ['white_bed', 1]] }).bot;
-  assert.equal(preparationStage(bedded, goalWith(bedded, { villages: [near] })).item, 'iron_pickaxe', 'a bed carried is the rung done');
+  assert.equal(preparationStage(bedded, bedGoal(bedded, { villages: [near] })).item, 'iron_pickaxe', 'a bed carried is the rung done');
 });
 
 test('the village bed is walked to, dug up, picked up and remembered as taken; a village with none left hands the rung back', async () => {
   const w = world({ items: [['stone_pickaxe', 1], ['stone_sword', 1]] }), { bot, actions } = w, task = new Task('bed'), save = () => {};
   const centre = village(w, { x: 40, beds: 1 });
-  const goal = goalWith(bot, { villages: [{ ...centre, dimension: 'overworld', seenAt: 1, bell: centre, beds: 1, hay: 3 }] });
+  const goal = bedGoal(bot, { villages: [{ ...centre, dimension: 'overworld', seenAt: 1, bell: centre, beds: 1, hay: 3 }] });
   // Digging a bed takes both halves, as the server does, and drops it where
   // it stood; walking over the drop picks it up.
   const dig = actions.dig;

@@ -184,6 +184,7 @@ test('the chest is opened beside the bed, moves are made against its real conten
 test('the ladder restocks from the stash ahead of its rungs, only within reach, and only while the chest has something to give', async () => {
   const w = await establishedHome({ items: [] });
   const { bot, goal, task, save, actions } = w;
+  goal.rungOptIn = { shield: Date.now() }; // optional before the Nether, chosen (note 776)
   const chest = chestAt(w, [['iron_pickaxe', 1], ['stone_sword', 1], ['white_bed', 1], ['oak_log', 8], ['cobblestone', 64], ['bread', 4], ['crafting_table', 1], ['furnace', 1]]);
   assert.equal(preparationStage(bot, goal).phase, 'stone_pickaxe', 'a chest not yet looked in is not counted on');
   goal.survival.home.stash.contents = chest.stored();
@@ -220,7 +221,9 @@ test('before the Nether the walk home with the valuables is the kit\'s to offer,
   const w = await establishedHome({ items: gear });
   const { bot, goal, save, actions } = w;
   const chest = chestAt(w, []);
-  // The crossing's kit rungs come first (note 673); gone without, the portal.
+  // The crossing's kit rungs come first (note 673) when chosen (optional
+  // before the Nether, note 776); gone without, the portal.
+  goal.rungOptIn = { nether_blocks: Date.now() };
   assert.equal(nextGameStage(bot, goal).phase, 'nether_blocks');
   for (const r of require('../src/crossing-kit').KIT_PHASES) require('../src/progress').setAside(goal, 'rung', r, 'Jev chose the Nether first', 1800000);
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
@@ -330,7 +333,9 @@ test('blaze rods, powder and pearls left in the stash are fetched before the por
   assert.equal(stage.phase, 'restock_supplies');
   assert.deepEqual(byItem(stage.home.items), { blaze_rod: 6, ender_pearl: 3 });
   w.goal.survival.home.stash.contents = {};
-  assert.equal(nextGameStage(w.bot, w.goal).phase, 'nether_blocks', 'with nothing in the chest the crossing\'s kit is next (note 673)');
+  assert.equal(nextGameStage(w.bot, w.goal).action, 'enter_nether', 'with nothing in the chest the portal: the crossing\'s kit is optional before the Nether (note 776)');
+  w.goal.rungOptIn = { nether_blocks: Date.now() };
+  assert.equal(nextGameStage(w.bot, w.goal).phase, 'nether_blocks', 'chosen, the crossing\'s kit is next (note 673)');
   for (const r of require('../src/crossing-kit').KIT_PHASES) require('../src/progress').setAside(w.goal, 'rung', r, 'Jev chose the Nether first', 1800000);
   assert.equal(nextGameStage(w.bot, w.goal).action, 'enter_nether', 'and gone without, the portal');
 });

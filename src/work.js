@@ -2788,7 +2788,7 @@ const WAIT_ORES = ['coal_ore', 'iron_ore', 'gold_ore', 'lapis_ore', 'redstone_or
 // nearby, dig the stone around, or stand by the furnace. Asked once a batch
 // of Jev; null (nothing to weigh, or held through an outage) stands by the
 // furnace, as smelt does.
-async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count, spent = [], leave = null, walks = null, sides = null, own = null, item = null, workOnOffer = null }) {
+async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTarget, what, count, spent = [], leave = null, walks = null, sides = null, own = null, item = null, workOnOffer = null, ownWhy = null }) {
   // From one item up: trial 46 stood by its furnace for a one-ingot batch,
   // crafted, and stood again for a two-ingot one, seventy-five seconds on
   // one spot, each batch under the twenty seconds this once needed.
@@ -2829,7 +2829,7 @@ async function whileCooking(bot, task, goal, save, { cooking, oreInReach, walkTa
   // them at 0.5 or more, and none of those had leave_cooking on offer; 692
   // waits stood by the furnace 30,050 seconds in all. Priced: the seconds
   // spent on other work instead of standing, against the walk back.
-  let ownState = null;
+  let ownState = ownWhy && !leave ? `not offered: ${ownWhy}` : null;
   if (own && !leave) {
     let work = workOnOffer || [];
     if (!workOnOffer) { try { work = await restWork(bot, task, goal, save); } catch (err) { task.check(); work = []; } }
@@ -3028,9 +3028,15 @@ async function smelt(bot, task, step, goal, save = () => {}) {
     // dream run retried an unreachable one-beef batch for good.
     // Twice, like any failure (persist leaves a rung that failed twice):
     // at three, trial 10's bucket rung was left first and the batch kept.
+    // Not given up with what is in it (note 771b: 19 "stayed out of reach;
+    // starting the batch again" from 02:16Z, the raw input in the furnace
+    // lost to the new batch): left where it is, its way said found wanting
+    // from here, and asked about at upkeep (fetch_batch, leave_batch, note 775).
     if (!block && (pending.unreachable = (pending.unreachable || 0) + 1) >= 2) {
-      goal.lostSmelting = { ...pending, at: new Date().toISOString() }; delete goal.smelting; save();
-      throw new Error('The furnace holding our saved batch stayed out of reach; starting the batch again');
+      const f = bot.entity.position.floored(), now = Date.now();
+      delete pending.unreachable;
+      pending.left = { at: now, doneAt: now, lapsed: now, away: true, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why: 'the furnace stayed out of reach from here, twice' } }; save();
+      throw new Blocked('The furnace holding our saved batch stayed out of reach; the batch is left there, asked about at upkeep');
     }
     if (!block) { save(); throw new Blocked("I can't reach the furnace holding our saved batch"); }
     delete pending.unreachable;
@@ -3265,9 +3271,16 @@ async function smelt(bot, task, step, goal, save = () => {}) {
       const walks = () => walked.trips ? `The walks so far this batch: ${walked.trips} out and back, ${walked.uses} pickaxe uses worn.` : null;
       // The batch's own work may be left to cook too (note 771): the step is
       // held off while it cooks, other work done from here meanwhile, and
-      // the bot comes back for it when it is done. Once a batch.
-      const own = !leave && goal?.smelting && !goal.smelting.leftOnce ? { at: block.position, rungsWant: goal.smelting.rungsWant || 0, forRungs: goal.smelting.forRungs || [] } : null;
-      const ask = spent => whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken, spent, leave, walks: walks(), sides, own: spent.includes('leave_cooking') ? null : own, item: step.item });
+      // the bot comes back for it when it is done. Offered at every asking
+      // while it is still of use (note 771b: 25584, in the Nether 03:11:34 to
+      // 03:14:21Z, was asked again with only dig_stone and wait_here, none
+      // good 0.74, and stood 180 seconds): not when the last leaving of this
+      // batch found no work to do and came straight back, and not inside
+      // another batch's hold (25590 at 03:14:25Z: the hold's earn_xp smelted
+      // copper and left that batch too, three batches in eighteen seconds).
+      let leaveCameBackEmpty = false;
+      const ownNow = () => !leave && goal?.smelting && !leaveCameBackEmpty && !(bot._cookHold?.until > Date.now()) ? { at: block.position, rungsWant: goal.smelting.rungsWant || 0, forRungs: goal.smelting.forRungs || [] } : null;
+      const ask = spent => whileCooking(bot, task, goal, save, { cooking: cooking(), oreInReach, walkTarget, what: String(step.from || step.item).replace(/_/g, ' '), count: needed - taken, spent: spent.filter(k => k !== 'leave_cooking'), leave, walks: walks(), sides, own: ownNow(), item: step.item, ...(leaveCameBackEmpty ? { ownWhy: 'left once this batch already, and the work on offer then ran out at once' } : {}) });
       let plan = await ask([]);
       const spent = [];
       const allow = key => !plan || plan === key;
@@ -3276,15 +3289,30 @@ async function smelt(bot, task, step, goal, save = () => {}) {
           // Its own batch: held off while it cooks, the work on offer from
           // here done meanwhile (holdForRest, as a rest's other work is),
           // and back to the furnace for it when it is done.
-          const until = Date.now() + cooking(), what = String(step.from || step.item).replace(/_/g, ' '), step0 = goal.step;
-          goal.smelting.leftOnce = { at: Date.now(), doneAt: until }; save();
+          const until = Date.now() + cooking(), what = String(step.from || step.item).replace(/_/g, ' '), step0 = goal.step, leftAt = Date.now();
           furnace.close();
           bot.chat?.(`Leaving the ${needed - taken} ${what} to cook, about ${Math.max(1, Math.round(cooking() / 1000))} seconds; working nearby meanwhile and coming back for them.`);
+          let worked = true;
+          bot._cookHold = { until, item: step.item };
           try {
-            await holdForRest(bot, task, goal, save, { client: task.opportunityClient, survival: null, reason: `smelt:${step.item}`, until, why: `${needed - taken} ${what} cooking in the furnace at (${block.position.x}, ${block.position.y}, ${block.position.z}), taken out when done`, idle: false });
-          } finally { goal.step = step0; save(); }
-          const back = await approachWorkstation(bot, task, 'furnace', [block.position]);
-          if (!back) throw new Blocked(`I can't get back to the furnace holding the ${what}; the batch stays saved there`);
+            worked = await holdForRest(bot, task, goal, save, { client: task.opportunityClient, survival: null, reason: `smelt:${step.item}`, until, why: `${needed - taken} ${what} cooking in the furnace at (${block.position.x}, ${block.position.y}, ${block.position.z}), taken out when done`, idle: false });
+          } finally { goal.step = step0; delete bot._cookHold; save(); }
+          if (worked === false && Date.now() - leftAt < 10000) leaveCameBackEmpty = true;
+          let back = null;
+          try { back = await approachWorkstation(bot, task, 'furnace', [block.position]); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; back = null; }
+          // No way back from where the work led: the batch is left where it
+          // is, asked about at upkeep (fetch_batch or leave_batch, note 775),
+          // not thrown as a failure the next step walks into again (25590,
+          // 25592, 25598, 25585 and 25588 from 02:16Z: "I can't get back to
+          // the furnace holding the raw iron", then "stayed out of reach;
+          // starting the batch again", the iron in it given up).
+          if (!back) {
+            const f = bot.entity.position.floored(), now = Date.now();
+            goal.smelting.left = { at: now, doneAt: until, lapsed: now, away: true, noRoute: { at: now, from: { x: f.x, y: f.y, z: f.z }, why: 'no way back to it from where the work meanwhile led' } }; save();
+            bot.chat?.(`I can't get back to the furnace with the ${what} from here; I'll leave it there for now.`);
+            left = true; break;
+          }
           furnace = await openWindow(bot, task, () => bot.openFurnace(block), { block, what: 'the furnace' });
           deadline = Math.max(deadline, Date.now() + (needed - taken) * 12000 + 20000);
           spent.push('leave_cooking');
@@ -6300,7 +6328,10 @@ function createRecoveryAdviser(bot, client) {
 // What the step makes, what it digs for, and what it will use: sand on
 // its way to glass or concrete powder is an ingredient, not surplus.
 function wantedItems(goal = {}) {
-  return new Set([goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.step?.drops, goal.smelting?.from,
+  // Blocks the binding limit of the ways on (block-stock.js blocksShortNow,
+  // note 751d): the crossing's material is not thrown for room.
+  const short = require('./block-stock').blocksShortNow(goal) ? ['netherrack', 'blackstone', 'basalt', 'cobblestone', 'cobbled_deepslate'] : [];
+  return new Set([...short, goal.item, goal.step?.item, goal.step?.from, goal.step?.block, goal.step?.drops, goal.smelting?.from,
     ...Object.keys(goal.step?.consumes || {}), ...Object.keys(goal.step?.requires || {}),
     ...(goal.tasks || []).map(t => t.item), ...(goal.blueprint?.blocks || []).map(b => b.material)].filter(Boolean));
 }
@@ -6409,9 +6440,14 @@ function idleOptions(bot, goal) {
   // and the raw ore is carried and stashed by the stack. Only while there is
   // gear to enchant and the level is under thirty, so it is never ground for
   // its own sake.
-  const RAW_ORE = { raw_iron: 'iron_ingot', raw_gold: 'gold_ingot', raw_copper: 'copper_ingot' };
+  // Not copper (note 771b): its ingots are nothing the run makes (the
+  // tidy drops them first), and 25590 smelted 13 at 03:14:25Z, 2026-10-01,
+  // inside another batch's hold. And no smelt for experience while a batch
+  // of the bot's own cooks and it was left to do other work: it took the
+  // furnaces the batch was in.
+  const RAW_ORE = { raw_iron: 'iron_ingot', raw_gold: 'gold_ingot' };
   const rawOre = Object.keys(RAW_ORE).map(name => [name, countOf(bot, name)]).filter(([, n]) => n >= 8).sort((a, b) => b[1] - a[1])[0];
-  if (rawOre && (bot.experience?.level ?? 0) < 30 && enchantable(bot).length) options.earn_xp = { description: `Earn experience for enchanting: smelt ${Math.min(rawOre[1], 32)} of the ${rawOre[1]} ${rawOre[0].replaceAll('_', ' ')} carried (level ${bot.experience?.level ?? 0} now; each level is a better enchant). The ingots are useful too.`,
+  if (rawOre && !(bot._cookHold?.until > Date.now()) && (bot.experience?.level ?? 0) < 30 && enchantable(bot).length) options.earn_xp = { description: `Earn experience for enchanting: smelt ${Math.min(rawOre[1], 32)} of the ${rawOre[1]} ${rawOre[0].replaceAll('_', ' ')} carried (level ${bot.experience?.level ?? 0} now; each level is a better enchant). The ingots are useful too.`,
     item: RAW_ORE[rawOre[0]], count: countOf(bot, RAW_ORE[rawOre[0]]) + Math.min(rawOre[1], 32) };
   if (sides.enchant) options.enchant = sides.enchant;
   if (stock.coal > 0 && (stock.torch || 0) < 8) options.torches = { description: `Craft torches from the ${stock.coal} coal being carried; light keeps mobs from spawning at home.${leaves([{ item: 'torch', count: 4 }])}`, item: 'torch', count: 4 };
@@ -6544,7 +6580,9 @@ function sideTrips(bot, goal, client) {
   // with what it takes and gives; any time of day, a furnace being shelter
   // enough for the minutes it takes.
   const rawIron = countOf(bot, 'raw_iron'), rawGold = countOf(bot, 'raw_gold'), raw = rawIron + rawGold;
-  const smeltFuel = raw >= 8 ? CARRIED_FUELS.find(n => isFuel(n) && countOf(bot, n) >= fuelUnits(n, raw)) : null;
+  // Not while a batch of the bot's own cooks and it was left to do other
+  // work meanwhile (note 771b: 25590's hold took a second and a third batch).
+  const smeltFuel = raw >= 8 && !(bot._cookHold?.until > Date.now()) ? CARRIED_FUELS.find(n => isFuel(n) && countOf(bot, n) >= fuelUnits(n, raw)) : null;
   if (smeltFuel) {
     const furnaces = raw >= 16 ? Math.min(3, Math.floor(raw / 8)) : 1;
     const minutes = Math.round(raw * 10 / furnaces / 6) / 10;
@@ -7420,6 +7458,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   if (pick.startsWith('take_up_')) {
     const key = pick.slice(8), phase = `nether_${key}`;
     require('./progress').attemptsFor(goal).clear('rung', phase);
+    // Optional before the Nether (note 776): taken up, it is chosen.
+    require('./game-progress').optIn(goal, phase);
     if (key === 'food' && goal.kitFood?.choice?.pick === 'go_without') delete goal.kitFood.choice;
     delete kit.choice; save();
     bot.chat?.(`The ${key} for the Nether is empty: taking it up again first.`);
@@ -7471,6 +7511,21 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
 // before then (game-progress.js preparationRung), and the crossing goes on.
 const KIT_FOOD_STALL_MS = 10 * 60000;
 const KIT_FOOD_ORDER = ['top_up_cook', 'top_up_food_near', 'top_up_food'];
+// The food dropped for room nearest by, still on the ground (items vanish
+// five minutes after they fall), in this dimension and within 96 blocks:
+// the walk back said with what it brings and the time it has left.
+function droppedFoodNear(bot, goal, now = Date.now()) {
+  const { DROP_LASTS_MS } = require('./inventory-tidy');
+  const here = bot.entity?.position, dim = String(bot.game?.dimension || 'overworld');
+  if (!here) return null;
+  const list = (goal?.droppedFood || []).filter(d => now - d.at < DROP_LASTS_MS - 20000 && d.dimension === dim)
+    .map(d => ({ d, distance: Math.round(Math.hypot(d.x + 0.5 - here.x, d.y - here.y, d.z + 0.5 - here.z)) })).filter(x => x.distance <= 96).sort((a, b) => a.distance - b.distance);
+  const near = list[0];
+  if (!near) return null;
+  const { d, distance } = near, left = Math.round((DROP_LASTS_MS - (now - d.at)) / 1000), walk = Math.round(distance / 4.3);
+  const room = (bot.inventory.emptySlotCount?.() ?? 1) > 0 ? '' : ' The pockets are full: picked up, it takes a slot, and what to drop for it is asked.';
+  return { drop: d, says: `Walk back for the ${d.count} ${d.item.replaceAll('_', ' ')} dropped for room at (${d.x}, ${d.y}, ${d.z}) ${Math.max(1, Math.round((now - d.at) / 60000))} minute${now - d.at < 90000 ? '' : 's'} ago: ${d.points} food points, ${distance} blocks off, about ${walk} seconds at a walk; it vanishes about ${left} seconds from now, five minutes after it fell.${room}` };
+}
 async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.opportunityClient, now = Date.now()) {
   const want = stage.wants || require('./crossing-kit').netherStay(bot, goal).points;
   const carried = foodSupply(bot);
@@ -7520,6 +7575,12 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
     const secs = cook.n * 10 + (cook.furnace ? 2 : 6);
     tree.top_up_cook = { description: `Cook the raw food carried first: ${cook.items.map(i => `${i.n} ${i.raw.replaceAll('_', ' ')}`).join(', ')}, ${cook.now} food points as carried, about ${cook.after} once cooked (a steak or a cooked porkchop is eight, cooked mutton six, raw beef three). ${cook.furnace ? `The ${cook.furnace} carried is` : `A furnace is made from eight of the ${cook.stone.replaceAll('_', ' ')} carried and`} put down here, fuelled with the ${cook.fuel.replaceAll('_', ' ')} carried: about ten seconds an item, about ${duration(secs)} in all, with no walk.${cookStandsSays(bot, cook, secs)}${soFar('food_cook')}${cookCovers}` };
   }
+  // Food just dropped for room, lying where it fell (note 771b: 25589's 18
+  // beef at 03:08:19Z, 2026-10-01; three minutes on its food rung said 8 of
+  // 80 and went after one sheep, about 13 minutes and an 89-block climb,
+  // the beef never offered).
+  const fallen = droppedFoodNear(bot, goal, now);
+  if (fallen) tree.pick_up_dropped = { description: fallen.says };
   const keys = Object.keys(tree).sort().join(',');
   let pick = kit.choice && kit.choice.keys === keys && now - kit.choice.at < KIT_HOLD_MS && tree[kit.choice.pick] ? kit.choice.pick : null;
   if (!pick) {
@@ -7535,6 +7596,17 @@ async function kitFoodStep(bot, task, goal, save, stage = {}, client = task.oppo
     delete goal.foodTrip;
     setAside(goal, 'rung', 'nether_food', 'Jev chose the Nether first, without more food', RUNG_WAIT_MS);
     unwatch(goal, 'rung', 'nether_food'); delete goal.kitFood; delete goal.preparingNether; delete goal.strategy; save();
+    return false;
+  }
+  if (pick === 'pick_up_dropped' && fallen) {
+    delete kit.choice;
+    goal.droppedFood = (goal.droppedFood || []).filter(d => d !== fallen.drop); save();
+    goal.step = { action: 'pick_up_dropped_food', item: fallen.drop.item, at: { x: fallen.drop.x, y: fallen.drop.y, z: fallen.drop.z } }; save();
+    const before = countOf(bot, fallen.drop.item);
+    await navigate(bot, task, new goals.GoalNear(fallen.drop.x, fallen.drop.y, fallen.drop.z, 1), { timeoutMs: 60000, stallMs: 8000 });
+    try { await collectNearbyDrops(bot, task, fallen.drop.item, { origin: bot.entity.position.clone(), radius: 4, timeoutMs: 5000, waitForSpawnMs: 500 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (countOf(bot, fallen.drop.item) <= before) throw new Blocked(`The ${fallen.drop.count} ${fallen.drop.item.replaceAll('_', ' ')} dropped at (${fallen.drop.x}, ${fallen.drop.y}, ${fallen.drop.z}) were not there to pick up`);
     return false;
   }
   const key = pick === 'top_up_food_near' ? 'food_near' : pick === 'top_up_cook' ? 'food_cook' : 'food';
@@ -8200,4 +8272,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk };
+module.exports = { wantedItems, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear };

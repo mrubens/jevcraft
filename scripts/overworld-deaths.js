@@ -16,7 +16,14 @@
 //
 //   node scripts/overworld-deaths.js [--since 2026-09-30T12:00Z] [--to ISO]
 //        [--split 2026-10-01T00:41:25Z] [--port N] [--json] [--verbose]
-//   node scripts/overworld-deaths.js --creepers [--since ...] [--to ...] [--json]
+//   node scripts/overworld-deaths.js --creepers [--cells] [--since ...] [--to ...] [--json]
+// --cells: by the creeper's distance band (within 1.5, 1.5 to 3) and
+// whether other mobs stood within four (note 778).
+//   node scripts/overworld-deaths.js --crowds [--since ...] [--to ...] [--json]
+//   node scripts/overworld-deaths.js --stance-crowds [--since ...] [--to ...] [--json]
+// --crowds: deaths and near-deaths (under 6) by mobs within four blocks,
+// the stance held, and the last question against the second mob closing
+// (note 778).
 // --split counts each shape before and after a deploy.
 // --creepers: every encounter_stance answered in the Overworld with a
 // creeper within three blocks in the question's own state (the nearest
@@ -214,13 +221,18 @@ async function creeperRecord() {
       const near = (st.threats || []).filter(x => x.name === 'creeper' && x.distance <= 3);
       if (!near.length) { open = null; continue; }
       const p = st.position || pos;
-      open = { t, stance: (d.path || [])[0] || '?', distance: Math.min(...near.map(x => x.distance)), p: p ? { x: p.x, z: p.z } : { x: 0, z: 0 }, health: st.health, shield: !!st.shield, offered: Object.keys(d.options || {}) };
+      // The cell (note 778): the creeper's distance band and the other mobs
+      // within four blocks besides it.
+      const cd = Math.min(...near.map(x => x.distance));
+      const others = (st.threats || []).filter(x => x.distance <= 4 && !(x.name === 'creeper' && x.distance === cd)).length;
+      open = { t, stance: (d.path || [])[0] || '?', distance: cd, band: cd <= 1.5 ? 'within 1.5' : '1.5 to 3', others: others ? 'with others within 4' : 'alone', p: p ? { x: p.x, z: p.z } : { x: 0, z: 0 }, health: st.health, shield: !!st.shield, offered: Object.keys(d.options || {}) };
       rows.push(open);
     }
   }
   const by = {};
+  const cells = argv.includes('--cells');
   for (const r of rows) {
-    const b = by[r.stance] ||= { answers: 0, blasted: 0, took: [], died: 0, blastSeconds: [], moved: [] };
+    const b = by[cells ? `${r.stance} | ${r.band} | ${r.others}` : r.stance] ||= { answers: 0, blasted: 0, took: [], died: 0, blastSeconds: [], moved: [] };
     b.answers++;
     if (r.blast) { b.blasted++; b.took.push(r.blast.took); b.blastSeconds.push(r.blast.seconds); }
     if (r.died) b.died++;
@@ -234,8 +246,160 @@ async function creeperRecord() {
   for (const o of out) console.log(`  ${o.stance}: ${o.answers} answered, ${o.blasted} caught by the blast within ${CREEPER_WINDOW_MS / 1000} s (median ${o.medianSecondsToBlast ?? '-'} s after, ${o.medianTakenWhenBlasted ?? '-'} health taken), ${o.died} died; mean taken per answer ${o.meanTakenPerAnswer}; moved ${o.medianMovedInOneSecond ?? '-'} blocks in the first second (median)`);
 }
 
+// Crowds (note 778): each Overworld death and near-death (health falling
+// under 6) by how many mobs stood within four blocks then, the stance held
+// (the survival action in force), and when the last encounter_stance was
+// asked relative to the second mob closing (the first frame of the episode
+// with two or more within four, after the last with fewer). Frames carry
+// the mob list only now and then (decisions, hurts, the survival step's
+// reports), so the close is read from the nearest frame that has one.
+const CROWD_WITHIN = 4, LOW = 6, CROWD_LOOKBACK_MS = 60000;
+const SHOOTER_KINDS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pillager', 'witch', 'blaze', 'ghast', 'breeze']);
+async function crowdRecord() {
+  const files = fs.readdirSync(DIR).filter(f => f.endsWith('.jsonl') && (!onlyPort || f.includes(`-${onlyPort}-Jev-`))).map(f => path.join(DIR, f)).filter(f => fs.statSync(f).mtimeMs >= since).sort();
+  const events = [];
+  for (const file of files) {
+    const port = path.basename(file).match(/-(\d{5})-Jev-/)?.[1] || '?';
+    const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+    let dim = null, health = null, lastLowAt = 0, armed = true, sa = null, deadAt = 0;
+    const mobFrames = [], asks = [];
+    for await (const line of rl) {
+      if (!line) continue;
+      let r; try { r = JSON.parse(line); } catch (_) { continue; }
+      const t = Date.parse(r.at);
+      if (!Number.isFinite(t) || t > to) continue;
+      const s = r.snapshot || {};
+      if (s.dimension) dim = String(s.dimension).replace(/^minecraft:/, '');
+      const a = s.goal?.survivalAction?.action || s.survivalAction?.action;
+      if (a) sa = { action: a, at: t };
+      if (Array.isArray(s.mobs)) {
+        const near = s.mobs.filter(m => m.d <= CROWD_WITHIN);
+        mobFrames.push({ t, n: near.length, health: s.health ?? health, biters: near.filter(m => !SHOOTER_KINDS.has(m.name) && m.name !== 'creeper').length, names: near.map(m => `${m.name}@${m.d}`) });
+        while (mobFrames.length && mobFrames[0].t < t - 2 * CROWD_LOOKBACK_MS) mobFrames.shift();
+      }
+      if (r.kind === 'decision' && s.decision?.id === 'encounter_stance') {
+        asks.push({ t, chosen: (s.decision.path || [])[0] || '?', health: s.decision.state?.health ?? s.health, n: (s.decision.state?.threats || []).filter(x => x.distance <= CROWD_WITHIN).length });
+        while (asks.length && asks[0].t < t - 2 * CROWD_LOOKBACK_MS) asks.shift();
+      }
+      if (s.health == null) continue;
+      const prev = health; health = s.health;
+      if (health >= 10) armed = true;
+      const died = (r.kind === 'danger' && health === 0);
+      const low = prev != null && prev >= LOW && health < LOW && health > 0 && armed && t - lastLowAt > CROWD_LOOKBACK_MS;
+      if (!(died || low) || t < since || dim !== 'overworld') continue;
+      if (died) { if (t - deadAt < 60000) continue; deadAt = t; }
+      if (low) { lastLowAt = t; armed = false; }
+      const at = mobFrames.filter(f => f.t <= t && f.t >= t - 3000).at(-1) || null;
+      const peak = mobFrames.filter(f => f.t <= t && f.t >= t - 10000).reduce((m, f) => Math.max(m, f.n), at?.n ?? 0);
+      // The second mob closing: the first frame with two or more within four
+      // after the last with fewer, within the minute before.
+      const win = mobFrames.filter(f => f.t <= t && f.t >= t - CROWD_LOOKBACK_MS);
+      // From the last frame with two or more in the ten seconds before.
+      let closed = null, i = win.length - 1;
+      while (i >= 0 && win[i].n < 2 && win[i].t >= t - 10000) i--;
+      for (; i >= 0 && win[i].n >= 2; i--) closed = win[i];
+      const lastAsk = asks.filter(q => q.t <= t && q.t >= t - CROWD_LOOKBACK_MS).at(-1) || null;
+      const askedAfterClose = closed ? asks.filter(q => q.t >= closed.t && q.t <= t) : [];
+      // Note 778's rule, read on the record: a held stance is asked again
+      // at the first frame after its answer with two or more within four
+      // and more than in the answer's own state.
+      const answerBefore = closed ? asks.filter(q => q.t < closed.t && q.t >= t - CROWD_LOOKBACK_MS).at(-1) : null;
+      const ruleFrame = answerBefore ? mobFrames.find(f => f.t > answerBefore.t && f.t <= t && f.n >= 2 && f.n > answerBefore.n) : null;
+      events.push({ port, file: path.basename(file), at: new Date(t).toISOString(), kind: died ? 'death' : 'low', health: Math.round(health * 10) / 10, within4: at?.n ?? null, peakWithin4: peak, biters4: at?.biters ?? null,
+        mobs: at?.names || [], stance: sa && t - sa.at < 20000 ? sa.action : null,
+        secondClosedSecondsBefore: closed ? round((t - closed.t) / 1000) : null,
+        lastAskSecondsBefore: lastAsk ? round((t - lastAsk.t) / 1000) : null, lastAsk: lastAsk && { chosen: lastAsk.chosen, health: round(lastAsk.health), within4: lastAsk.n },
+        asksAfterSecondClosed: askedAfterClose.length, firstAskAfterCloseHealth: askedAfterClose[0] ? round(askedAfterClose[0].health) : null,
+        firstAskAfterCloseSeconds: askedAfterClose[0] ? round((askedAfterClose[0].t - closed.t) / 1000) : null,
+        ruleAskSecondsBefore: ruleFrame ? round((t - ruleFrame.t) / 1000) : null, ruleAskHealth: ruleFrame ? round(ruleFrame.health) : null,
+        firstAskAfterCloseSecondsBefore: askedAfterClose[0] ? round((t - askedAfterClose[0].t) / 1000) : null });
+    }
+  }
+  const band = n => n == null ? '?' : n >= 3 ? '3+' : String(n);
+  const tally = (list, f) => Object.entries(list.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]);
+  const med = a => { const b = a.filter(x => x != null).sort((x, y) => x - y); return b.length ? b[b.length >> 1] : null; };
+  const crowd = events.filter(e => e.peakWithin4 >= 2);
+  const summary = {
+    since: new Date(since).toISOString(), files: files.length,
+    deaths: events.filter(e => e.kind === 'death').length, nearDeaths: events.filter(e => e.kind === 'low').length,
+    deathsByPeakWithin4: tally(events.filter(e => e.kind === 'death'), e => band(e.peakWithin4)),
+    nearDeathsByPeakWithin4: tally(events.filter(e => e.kind === 'low'), e => band(e.peakWithin4)),
+    crowdEvents: crowd.length,
+    crowdStance: tally(crowd, e => e.stance || '-'),
+    crowdNoAskAfterSecondClosed: crowd.filter(e => e.secondClosedSecondsBefore != null && !e.asksAfterSecondClosed).length,
+    crowdSecondClosedSecondsBeforeMedian: med(crowd.map(e => e.secondClosedSecondsBefore)),
+    crowdFirstAskAfterCloseSecondsMedian: med(crowd.map(e => e.firstAskAfterCloseSeconds)),
+    crowdFirstAskAfterCloseHealthMedian: med(crowd.map(e => e.firstAskAfterCloseHealth)),
+    crowdLastAskSecondsBeforeMedian: med(crowd.map(e => e.lastAskSecondsBefore)),
+    // Note 778's rule on the same records: where an answer stood before the
+    // close, how much sooner the crowd change would have asked, and at what
+    // health (Jev's own seconds to answer not counted).
+    ruleAsks: crowd.filter(e => e.ruleAskHealth != null).length,
+    ruleAskHealthMedian: med(crowd.map(e => e.ruleAskHealth)),
+    ruleAskSecondsBeforeMedian: med(crowd.map(e => e.ruleAskSecondsBefore)),
+    firstActualAskHealthWhereRuleAsks: med(crowd.filter(e => e.ruleAskHealth != null).map(e => e.firstAskAfterCloseHealth)),
+    firstActualAskSecondsBeforeWhereRuleAsks: med(crowd.filter(e => e.ruleAskHealth != null).map(e => e.firstAskAfterCloseSecondsBefore)),
+  };
+  if (asJson) { console.log(JSON.stringify({ summary, events }, null, 2)); return; }
+  for (const [k, v] of Object.entries(summary)) console.log(`${k}: ${Array.isArray(v) ? v.map(([a, n]) => `${a} ${n}`).join('; ') : v}`);
+  console.log('\nEach event with two or more within four:');
+  for (const e of crowd) console.log(`${e.at} ${e.port} ${e.kind} at ${e.health}: ${e.within4 ?? '?'} within 4 (peak ${e.peakWithin4}) ${e.mobs.join(',')}; stance ${e.stance || '-'}; second closed ${e.secondClosedSecondsBefore ?? '?'} s before; ${e.asksAfterSecondClosed} asks since${e.firstAskAfterCloseSeconds != null ? ` (first ${e.firstAskAfterCloseSeconds} s after, at ${e.firstAskAfterCloseHealth})` : ''}; last ask ${e.lastAskSecondsBefore ?? '-'} s before${e.lastAsk ? ` (${e.lastAsk.chosen} at ${e.lastAsk.health}, ${e.lastAsk.within4} within 4)` : ''}${e.ruleAskHealth != null ? `; the crowd rule asks ${e.ruleAskSecondsBefore} s before, at ${e.ruleAskHealth}` : ''}`);
+}
+
+// Stances against biters by the crowd (note 778): every encounter_stance
+// answered in the Overworld with a biter (not a shooter, not a creeper)
+// within eight blocks in the question's own state, by the way answered and
+// how many biters stood within four blocks then (1, 2, 3 or more; 0 where
+// the nearest was four to eight off): how many, the health lost in the ten
+// seconds after (the lowest reading against the health then), the share
+// that lost 6 or more, the deaths within ten seconds, and the damage the
+// chosen way was priced at for those ten seconds (its fifteen-second figure
+// pro rata), so the price is read against what happened.
+const SC_WINDOW_MS = 10000;
+async function stanceCrowdRecord() {
+  const files = fs.readdirSync(DIR).filter(f => f.endsWith('.jsonl')).map(f => path.join(DIR, f)).filter(f => fs.statSync(f).mtimeMs >= since).sort();
+  const rows = [];
+  for (const file of files) {
+    const rl = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity });
+    const open = [];
+    for await (const line of rl) {
+      if (!line) continue;
+      let r; try { r = JSON.parse(line); } catch (_) { continue; }
+      const t = Date.parse(r.at);
+      if (!(t >= since && t <= to + SC_WINDOW_MS)) continue;
+      const s = r.snapshot || {};
+      for (const o of open) if (t - o.t <= SC_WINDOW_MS) { if (s.health != null) o.low = Math.min(o.low, s.health); if (r.kind === 'danger' && s.health === 0) o.died = true; }
+      while (open.length && t - open[0].t > SC_WINDOW_MS) open.shift();
+      const d = s.decision;
+      if (r.kind !== 'decision' || d?.id !== 'encounter_stance' || t > to) continue;
+      const st = d.state || {};
+      if (String(st.dimension || '') !== 'overworld') continue;
+      const biters = (st.threats || []).filter(x => !x.shoots && x.name !== 'creeper' && x.distance <= 8);
+      if (!biters.length || st.health == null) continue;
+      const stance = (d.path || [])[0] || '?';
+      const exp = d.options?.[stance]?.expects;
+      const priced = exp && Number.isFinite(exp.damage) ? exp.damage * Math.min(1, SC_WINDOW_MS / 1000 / Math.max(1, exp.seconds || 15)) : null;
+      const row = { t, stance, within4: biters.filter(x => x.distance <= CROWD_WITHIN).length, health: st.health, low: st.health, died: false, priced, armour: (st.armour || []).length };
+      rows.push(row); open.push(row);
+    }
+  }
+  const band = n => n >= 3 ? '3+' : String(n);
+  const med = a => { const b = a.filter(x => x != null).sort((x, y) => x - y); return b.length ? round(b[b.length >> 1]) : null; };
+  const by = {};
+  for (const r of rows) (by[`${r.stance}|${band(r.within4)}`] ||= []).push(r);
+  const out = Object.entries(by).map(([k, list]) => { const [stance, crowd] = k.split('|'); return { stance, within4: crowd, answers: list.length,
+    medianLost: med(list.map(r => r.health - r.low)), meanLost: round(list.reduce((n, r) => n + (r.health - r.low), 0) / list.length),
+    lost6: list.filter(r => r.health - r.low >= 6).length, died: list.filter(r => r.died).length, medianHealth: med(list.map(r => r.health)), medianPriced: med(list.map(r => r.priced)), meanPriced: round(list.filter(r => r.priced != null).reduce((n, r) => n + r.priced, 0) / Math.max(1, list.filter(r => r.priced != null).length)) }; })
+    .sort((a, b) => a.stance < b.stance ? -1 : a.stance > b.stance ? 1 : a.within4 < b.within4 ? -1 : 1);
+  if (asJson) { console.log(JSON.stringify({ since: new Date(since).toISOString(), to: Number.isFinite(to) ? new Date(to).toISOString() : null, rows: out }, null, 2)); return; }
+  console.log(`encounter_stance answers with a biter within 8 blocks, Overworld, ${new Date(since).toISOString()} on: ${rows.length}`);
+  for (const o of out) console.log(`  ${o.stance} with ${o.within4} within 4: ${o.answers} answered; lost in ${SC_WINDOW_MS / 1000} s median ${o.medianLost}, mean ${o.meanLost}; 6 or more ${o.lost6}; died ${o.died}; from a median ${o.medianHealth} health; priced for those seconds median ${o.medianPriced ?? '-'}, mean ${o.meanPriced}`);
+}
+
 (async () => {
   if (argv.includes('--creepers')) return creeperRecord();
+  if (argv.includes('--stance-crowds')) return stanceCrowdRecord();
+  if (argv.includes('--crowds')) return crowdRecord();
   const { trialRecords } = require('./trials/progress-audit');
   const trials = trialRecords({ now: Date.now() });
   const files = fs.readdirSync(DIR).filter(f => f.endsWith('.jsonl') && (!onlyPort || f.includes(`-${onlyPort}-Jev-`)))

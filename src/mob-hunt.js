@@ -2268,6 +2268,7 @@ async function chooseLeg(bot, task, goal, save, actions, state, fortress = null)
       target: { x: s.x, y: s.y, z: s.z }, run: () => { state.goTo = { x: s.x, y: s.y, z: s.z, kind: 'blazes', key: spotKey, since: Date.now() }; save(); return 'goto'; } };
   }
   const short = surveys.some(s => Number.isInteger(s?.runsOut));
+  { const most = surveys.filter(s => Number.isInteger(s?.runsOut)).sort((a, b) => (b.lay || 0) - (a.lay || 0))[0]; if (most) require('./block-stock').noteBlocksShort(goal, most.lay, most.carried, 'the longest leg short of blocks'); }
   // With no pickaxe carried and none to be made from what is carried, rock
   // dug by hand drops nothing: no restock to offer, and each leg says so.
   // 25585 was offered "Dig 35 blocks ... about 78 seconds" with "none can

@@ -112,7 +112,7 @@ test('with blocks carried the ways there are offered and priced, and a way that 
     await assert.rejects(gather.netherGather(bot, task, goal, () => {}, 'crimson_stem', { navigate: digger(bot).navigate, mineAt: digger(bot).mineAt, client }),
       /^Error: The way straight across to the warped stems at \(-77, 65, 26\) came no nearer: Not bridging with a ghast 30 blocks off able to see me; it rests from here$/);
     const { options } = client.asked[0];
-    assert.match(options.cross_to_2, /^Go to the warped stems straight across at this height as far as the blocks carried take it \(64 cells, 48 blocks nearer\)\. \d+ warped stems known at \(-77, 65, 26\).*67 of open air or lava to lay a block over \(33 over lava\).*64 blocks carried: they take it 64 cells, 48 blocks nearer, and it stops at the first cell needing another\./);
+    assert.match(options.cross_to_2, /^Go to the warped stems straight across at this height as far as the blocks carried take it \(64 cells, 48 blocks nearer; the whole crossing needs 67 blocks laid and 64 are carried, so it cannot be done with what is carried\)\. \d+ warped stems known at \(-77, 65, 26\).*67 of open air or lava to lay a block over \(33 over lava\).*It needs 67 blocks laid and 64 are carried: it cannot be done with what is carried\. 64 blocks carried: they take it 64 cells, 48 blocks nearer, and it stops at the first cell needing another\./);
     assert.match(options.cross_to_3, /^Go to the crimson stems straight across at this height .*76 cells, 90 of rock to dig .*64 blocks carried, 17 left after\./);
     assert.deepEqual(laid, [{ target: '(-77, 65, 26)', maxBlocks: 64, maxSteps: 64 }]);
     // Asked again from the same spot, that way is not offered and is said resting.

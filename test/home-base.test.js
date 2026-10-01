@@ -192,6 +192,7 @@ test('the home base is a side trip beside the armour, not a rung ahead of it; ch
   const gear = [['white_bed', 1], ['stone_pickaxe', 1], ['iron_pickaxe', 1], ['iron_sword', 1], ['shield', 1], ['bucket', 1], ['oak_log', 16]];
   const { bot } = world({ ponds: [pond(20, 0)], items: gear });
   const goal = goalWith(bot);
+  goal.rungOptIn = { iron_armour: Date.now() }; // optional before the Nether, chosen (note 776)
   const stage = nextGameStage(bot, goal);
   assert.equal(stage.phase, 'iron_armour', 'the armour is the ladder\'s next; the base is not a rung');
   const offered = strategyOptions(bot, goal, stage);
@@ -211,6 +212,7 @@ test('the home base is a side trip beside the armour, not a rung ahead of it; ch
   // With the base standing, the ladder moves on and idle time has farm work in it.
   const w = await establishedHome();
   w.give('white_bed', 1); w.give('stone_pickaxe', 1); w.give('iron_pickaxe', 1); w.give('iron_sword', 1); w.give('shield', 1); w.give('bucket', 1);
+  w.goal.rungOptIn = { iron_armour: Date.now() }; // optional before the Nether, chosen (note 776)
   assert.equal(nextGameStage(w.bot, w.goal).phase, 'iron_armour');
   assert.equal(strategyOptions(w.bot, w.goal, nextGameStage(w.bot, w.goal))?.home_base, undefined, 'a finished base is not offered');
   for (const p of w.layout.plot) w.set(new Vec3(p.x, p.y + 1, p.z), 'wheat', { age: 7 });

@@ -60,10 +60,12 @@ test('an inaccessible saved furnace never switches to a different furnace or los
   await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), { name: 'Blocked', message: "I can't reach the furnace holding our saved batch" });
   const { unreachable, ...kept } = goal.smelting;
   assert.deepEqual({ smelting: kept }, saved); assert.equal(unreachable, 1);
-  // Out of reach twice running, the batch is let go rather than retried
-  // for good (twice, as a rung that fails twice is left).
-  await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), /stayed out of reach/);
-  assert.equal(goal.smelting, undefined); assert.equal(goal.lostSmelting.item, 'glass');
+  // Out of reach twice running, the batch is left where it is rather than
+  // retried for good, its no-route said, and asked about at upkeep
+  // (fetch_batch, leave_batch): not given up with what is in it (note 771b).
+  await assert.rejects(smelt(bot, new Task('resume furnace'), goal.smelting, goal), /stayed out of reach; the batch is left there/);
+  assert.equal(goal.smelting.item, 'glass'); assert.equal(goal.lostSmelting, undefined);
+  assert(goal.smelting.left?.away && goal.smelting.left.noRoute, 'left, its no-route said');
 });
 
 test('a saved batch whose furnace is empty, with none of its input carried, is let go', async () => {

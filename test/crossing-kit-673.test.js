@@ -33,7 +33,11 @@ test('a bot at the portal with no food: the food rung is open, last before the p
   const { openRungs, nextGameStage } = require('../src/game-progress');
   const { rungOption } = require('../src/strategy');
   const bot = atPortal({ ...FED, cooked_beef: 0 });
-  const goal = { kind: 'win' };
+  // Optional before the Nether (note 776): no benefit in the stays' record,
+  // so not the ladder's unless chosen; chosen, it is the rung it was.
+  assert.deepEqual(openRungs(bot, { kind: 'win' }), []);
+  assert.deepEqual(require('../src/game-progress').optionalRungs(bot, { kind: 'win' }).map(r => r.phase), ['nether_food']);
+  const goal = { kind: 'win', rungOptIn: { nether_food: Date.now() } };
   const rungs = openRungs(bot, goal);
   assert.deepEqual(rungs.map(r => r.phase), ['nether_food']);
   assert.equal(nextGameStage(bot, goal).phase, 'nether_food');
@@ -53,7 +57,7 @@ test('a bot at the portal with no food: the food rung is open, last before the p
 test('with no spare pickaxe the spare is a rung: iron when three ingots are carried, else stone', () => {
   const { openRungs } = require('../src/game-progress');
   const { rungOption } = require('../src/strategy');
-  const goal = { kind: 'win' };
+  const goal = { kind: 'win', rungOptIn: { nether_pickaxe: Date.now() } }; // chosen (note 776)
   const iron = atPortal({ ...FED, stone_pickaxe: 0, iron_ingot: 5 });
   const [rung] = openRungs(iron, goal);
   assert.deepEqual([rung.phase, rung.item, rung.count], ['nether_pickaxe', 'iron_pickaxe', 2], 'one more than the one carried');
@@ -71,7 +75,7 @@ test('with no spare pickaxe the spare is a rung: iron when three ingots are carr
 test('with 10 blocks the blocks rung mines to the two stacks, said with what they are for and what they wear', () => {
   const { openRungs } = require('../src/game-progress');
   const { rungOption } = require('../src/strategy');
-  const goal = { kind: 'win' };
+  const goal = { kind: 'win', rungOptIn: { nether_blocks: Date.now() } }; // chosen (note 776)
   const bot = atPortal({ ...FED, cobblestone: 10 });
   const rungs = openRungs(bot, goal);
   assert.deepEqual(rungs.map(r => [r.phase, r.item, r.count]), [['nether_blocks', 'cobblestone', 128]]);
@@ -85,7 +89,7 @@ test('all three short: each is open, in order, the Nether first beside them; tak
   const { openRungs, nextGameStage } = require('../src/game-progress');
   const { strategyOptions } = require('../src/strategy');
   const bot = atPortal({ cobblestone: 10 });
-  const goal = { kind: 'win' };
+  const goal = { kind: 'win', rungOptIn: { nether_pickaxe: Date.now(), nether_blocks: Date.now(), nether_food: Date.now() } }; // all chosen (note 776)
   const stage = nextGameStage(bot, goal);
   assert.deepEqual(openRungs(bot, goal).map(r => r.phase), ['nether_pickaxe', 'nether_blocks', 'nether_food']);
   const options = strategyOptions(bot, goal, stage);
@@ -104,7 +108,7 @@ test('a kit rung set aside for failing is not handed back when nothing else is l
   assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
   // Other rungs keep their rule: the shield set aside for failing comes back when it is all that is left.
   const shieldless = atPortal({ ...FED, shield: 0 });
-  const g2 = { kind: 'win' };
+  const g2 = { kind: 'win', rungOptIn: { shield: Date.now() } }; // optional before the Nether, chosen (note 776)
   setAside(g2, 'rung', 'shield', 'no iron', 1800000);
   assert.equal(preparationRung(shieldless, g2)?.phase, 'shield');
 });

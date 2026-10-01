@@ -97,7 +97,7 @@ test('25584: the win strategy answered holds while an option it was answered ove
   const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   let now = 1e12;
   await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now });
-  assert.deepEqual(asked[0], ['rung_golden_boots', 'rung_diamond_sword', 'nether_first']);
+  assert.deepEqual(asked[0], ['rung_golden_boots', 'nether_first', 'rung_diamond_sword'], 'the diamond sword optional, offered after the Nether now (note 776)');
   // The diamond sword made (an option gone, not the one chosen): held.
   items = GEAR.filter(i => i.name !== 'golden_boots');
   now += 4000;
@@ -108,7 +108,9 @@ test('25584: the win strategy answered holds while an option it was answered ove
   now += 4000;
   await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now });
   assert.equal(asked.length, 1, 'held as the option comes back');
-  // One not on offer at the answer asks again.
+  // One not on offer at the answer asks again: the armour, chosen (optional
+  // before the Nether, note 776), reopened by the boots gone.
+  goal.rungOptIn = { iron_armour: Date.now() };
   items = GEAR.filter(i => !['golden_boots', 'diamond_sword', 'iron_boots'].includes(i.name));
   now += 4000;
   await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now });

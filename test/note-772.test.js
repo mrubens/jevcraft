@@ -138,20 +138,33 @@ test('a slow world search is said by its caller', () => {
   assert.equal(lines.length, 2);
 });
 
-test('each way from within three blocks of a creeper says its record; a run priced below its record\'s mean is priced at it', () => {
+test('each way from within three blocks of a creeper says its record for its cell; a run priced below its cell\'s mean is priced at it (conditioned by note 778)', () => {
   const record = require('../src/creeper-record');
-  const options = {
+  const options = () => ({
     retreat: { description: 'Run.', expects: { damage: 0, seconds: 3 } },
     block_creeper: { description: 'Block.', expects: { damage: 0, seconds: 1 } },
     shield_the_blast: { description: 'Shield.', expects: { damage: 0, seconds: 1.5 } },
     pillar: { description: 'Pillar.' },
-  };
-  record.sayOn(options, { distance: 1.5 });
-  assert.match(options.retreat.description, /This way's record within 3 blocks of a creeper: answered 124 times, caught by its blast in 6 seconds 42 times, median 0\.7 seconds after, 3\.6 health; 5 of those died\./);
-  assert.equal(options.retreat.expects.damage, 2);
-  assert.match(options.block_creeper.description, /answered 329 times, caught by its blast in 6 seconds 13 times, median 0\.6 seconds after, 1 health; 0 of those died\./);
-  assert.match(options.shield_the_blast.description, /This way's record within 3 blocks of a creeper: answered 6 times, caught by its blast in 6 seconds none of those times\./);
-  assert.equal(options.pillar.description, 'Pillar.', 'four answers: no record said');
+  });
+  // 1.5 to 3 blocks, no other mob within four: the bulk of the answers.
+  const at2 = options();
+  record.sayOn(at2, { distance: 2.2 });
+  assert.match(at2.retreat.description, /This way's record from 1\.5 to 3 blocks of a creeper, no other mob within 4: answered 106 times, caught by its blast in 6 seconds 36 times \(a median 3\.6 health\), 3 died\./);
+  assert.equal(at2.retreat.expects.damage, 1.9);
+  assert.match(at2.block_creeper.description, /answered 298 times, caught by its blast in 6 seconds 12 times/);
+  assert.match(at2.shield_the_blast.description, /answered 11 times, caught by its blast in 6 seconds none of those times\./);
+  assert.equal(at2.pillar.description, 'Pillar.', 'three answers in its cell: no record said');
+  // Within 1.5, alone: only the retreat has six answers there.
+  const at1 = options();
+  record.sayOn(at1, { distance: 1.2 });
+  assert.match(at1.retreat.description, /record within 1\.5 blocks of a creeper, no other mob within 4: answered 9 times, caught by its blast in 6 seconds 5 times/);
+  assert.equal(at1.retreat.expects.damage, 4.3);
+  assert.equal(at1.block_creeper.description, 'Block.', 'three answers within 1.5: not said');
+  // With another mob within four: that cell's own answers, not the lone creeper's.
+  const crowd = options();
+  record.sayOn(crowd, { distance: 2.2, others: 1 });
+  assert.equal(crowd.retreat.description, 'Run.', 'three answers with others about: not said');
+  assert.match(crowd.block_creeper.description, /of a creeper, another mob within 4: answered 9 times/);
   // Past three blocks, nothing said.
   const far = { retreat: { description: 'Run.', expects: { damage: 0, seconds: 3 } } };
   record.sayOn(far, { distance: 4.2 });
@@ -175,11 +188,10 @@ test('the stance question with a creeper 1.5 blocks off says each way\'s record 
   const survival = new Survival(bot, { navigate: async () => {}, place: async () => {} }, { state: { shelters: [] } });
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, danger, false);
   assert(options.shield_the_blast, Object.keys(options).join(','));
-  assert.match(options.shield_the_blast.description, /record within 3 blocks of a creeper: answered 6 times/);
-  if (options.retreat) assert.match(options.retreat.description, /answered 124 times/);
-  if (options.block_creeper) assert.match(options.block_creeper.description, /answered 329 times/);
-  if (options.fight) assert.match(options.fight.description, /answered 28 times/);
+  // Within 1.5 of the creeper (1.5 blocks), alone: the run's cell (note 778).
+  if (options.retreat) assert.match(options.retreat.description, /within 1\.5 blocks of a creeper, no other mob within 4: answered 9 times/);
+  for (const k of ['shield_the_blast', 'block_creeper', 'fight']) if (options[k]) assert.doesNotMatch(options[k].description, /This way's record (within|from) [\d.]+ (to 3 )?blocks of a creeper/, `${k}: too few answers within 1.5`);
   // In the Nether, not said: the record is the Overworld's.
   bot.game.dimension = 'the_nether';
-  for (const o of Object.values(survival.stanceOptions(new Task('x'), {}, () => {}, danger, false))) assert.doesNotMatch(o.description, /record within 3 blocks of a creeper/);
+  for (const o of Object.values(survival.stanceOptions(new Task('x'), {}, () => {}, danger, false))) assert.doesNotMatch(o.description, /This way's record (within|from) [\d.]+ (to 3 )?blocks of a creeper/);
 });

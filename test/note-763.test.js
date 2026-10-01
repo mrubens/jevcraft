@@ -28,9 +28,13 @@ function deepBot(extra = {}) {
   };
 }
 
+// The diamond sword and the crossing's kit chosen: optional before the
+// Nether since note 776 (no benefit in the record), on the ladder once chosen.
+const chosen = () => ({ rungOptIn: Object.fromEntries(['diamond_sword', 'nether_food', 'nether_pickaxe', 'nether_blocks', 'nether_chest'].map(f => [f, Date.now()])) });
+
 test('what is owed at each level is said with the climb at the bot\'s own measured pace (mid-237-bc, 86 blocks down)', () => {
   const levels = require('../src/levels');
-  const bot = deepBot(), goal = {};
+  const bot = deepBot(), goal = chosen();
   assert.equal(levels.depthHere(bot), 86);
   const { up, down } = levels.owed(bot, goal);
   assert.match(up.join(' | '), /food for the Nether \(10 of 80 points carried, 20 more once the raw food carried is cooked; animals and crops are at the surface\)/);
@@ -59,46 +63,56 @@ test('the food trip from 86 blocks down is priced with the climb and the way bac
 
 test('win_strategy says each rung\'s level and record, and the Nether now prices each rung it leaves (mid-237-bc 14:53:53Z)', () => {
   const { strategyOptions } = require('../src/strategy');
-  const bot = deepBot(), goal = {};
-  const stage = { phase: 'diamond_sword', action: 'acquire', item: 'diamond_sword', count: 1 };
+  const bot = deepBot(), goal = chosen();
+  // Ordered by level (note 776): 86 blocks down with the lava below, the
+  // surface's rungs first (wood, food), the sword's diamonds with the lava.
+  const order = require('../src/game-progress').openRungs(bot, goal).map(r => r.phase);
+  assert.deepEqual(order, ['nether_pickaxe', 'nether_food', 'nether_chest', 'diamond_sword']);
+  const stage = require('../src/game-progress').openRungs(bot, goal)[0];
   const options = strategyOptions(bot, goal, stage, {});
   assert(options.rung_nether_food && options.nether_first, Object.keys(options).join(','));
   const food = options.rung_nether_food.description;
   assert.match(food, /Its gathering is at the surface: the bot is 86 blocks up to open sky: about 7 minutes/);
   assert.match(food, /Still owed at depth, a way back down after it: diamonds for the diamond sword/);
-  assert.match(food, /In the record: trials that chose it \(chosen under y 40, 2026-09-30 05:30Z to 19:30Z\) spent a median 4\.3 minutes on it until the next answer, 86 trials; first Nether stays by it \(138 fresh stays/);
-  assert.match(food, /80 points or more, 65 stays: 63% ended in a death, 35% got a blaze rod/);
+  // The record as note 776 measured it: minutes, finished, stays with and without.
+  assert.match(food, /In the record: fresh trials 2026-09-30 20:00Z to 2026-10-01 03:00Z: 79 of 107 worked on it before the Nether, a median 10\.7 minutes each/);
+  assert.match(food, /with it 48, 67% ended in a death, 35% got a blaze rod; without it 65, 55% and 34%\. No benefit in the record: optional before the Nether, made only if chosen/);
   // The sword's gathering is here: no climb said with it.
   assert.doesNotMatch(options.rung_diamond_sword.description, /Its gathering is at the surface/);
   const now = options.nether_first.description;
   assert.match(now, /go for the Nether now, with the kit carried now/);
   assert.match(now, /Without nether food for now: [^.]*\. Its gathering from here is at the surface: the bot is 86 blocks up/);
-  assert.match(now, /under 24 points, 20 stays: 45% ended in a death, 25% got a blaze rod/);
+  assert.match(now, /Its record: 79 of 107 trials worked on it before the Nether, a median 10\.7 minutes each, 20 of 79 had it by the Nether; first Nether stays with it 67% ended in a death and 35% got a rod \(48\), without it 55% and 34% \(65\); no benefit in the record\./);
 });
 
 test('win_strategy is not asked again mid-errand: a lava fetch held goes on through a rung its own dig opened (25583, 25590)', async () => {
   const { strategyStep, errandUnderWay } = require('../src/strategy');
-  const bot = deepBot({ iron_pickaxe: 1 }), goal = {};
+  const bot = deepBot({ iron_pickaxe: 1 }), goal = chosen();
   const now = 1e12;
   goal.strategy = { choice: 'stage_reach_nether', rungPhase: null, ladderNext: 'reach_nether', keys: 'stage_reach_nether', at: now - 60000, openPhases: [] };
   goal.lavaFetch = { way: 'deep', lava: { x: 110, y: -56, z: 40 }, dest: { x: 110, y: -56, z: 40 }, since: Date.now(), carried: 0, dimension: 'overworld', switches: 0 };
   assert.equal(errandUnderWay(bot, goal), 'the lava fetch under way');
   const asked = [];
-  const decide = async (id, args) => { asked.push(args); return { path: ['rung_diamond_sword'] }; };
-  const stage = { phase: 'diamond_sword', action: 'acquire', item: 'diamond_sword', count: 1 };
+  const decide = async (id, args) => { asked.push(args); return { path: ['rung_nether_pickaxe'] }; };
+  const stage = require('../src/game-progress').openRungs(bot, goal)[0];
   const held = await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now });
   assert.deepEqual(held, { stage: { phase: 'reach_nether', action: 'enter_nether' } }, 'the Nether goes on');
   assert.equal(asked.length, 0, 'not asked mid-errand');
-  // The bucket filled, the errand over: asked, with what opened.
+  // The bucket filled, the errand over: the diamond sword may wait, and going
+  // to the Nether holds through it (note 777: keyed to the Nether, not to
+  // what is carried); its time up, asked, with what opened.
   delete goal.lavaFetch;
-  const after = await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now });
+  const still = await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now });
+  assert.deepEqual(still, { stage: { phase: 'reach_nether', action: 'enter_nether' } }, 'still held');
+  assert.equal(asked.length, 0);
+  const after = await strategyStep(bot, new Task('win'), goal, () => {}, stage, { decide, now: () => now + require('../src/strategy').HOLD_MS });
   assert.equal(asked.length, 1);
   assert.equal(after, null, 'the rung chosen is the ladder\'s own stage');
 });
 
 test('the Nether now is held: not asked again at once as the ladder\'s reach-nether stage (with note 764)', async () => {
   const { strategyStep } = require('../src/strategy');
-  const bot = deepBot({ diamond_sword: 1 }), goal = {};
+  const bot = deepBot({ diamond_sword: 1 }), goal = chosen();
   let now = 1e12;
   const asked = [];
   const answers = ['nether_first', 'stage_reach_nether'];

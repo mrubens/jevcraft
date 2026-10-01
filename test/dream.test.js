@@ -49,6 +49,10 @@ test('Jev picks the next part and scores the village; an unoffered part is refus
   assert.equal(done.done, true); assert.equal(done.villageScore, 3);
 });
 
+// Every rung optional before the Nether chosen (note 776): the ladder's
+// order among them, as these tests read it.
+const chosen = (extra = {}) => ({ ...extra, rungOptIn: Object.fromEntries(['bed', 'iron_armour', 'bow', 'arrows', 'diamond_sword', 'shield', 'bucket', 'nether_pickaxe', 'nether_blocks', 'nether_food', 'nether_chest'].map(f => [f, Date.now()])) });
+
 test('beating the game is handed over as the win objective, and the ladder starts with tools you can see', async () => {
   const next = await nextDreamRequest({ systemOne: async () => assert.fail('no question needed') }, { dream: 'beat_the_game', setBy: 'Player' });
   assert.equal(next.kind, 'win'); assert.equal(next.dream, 'beat_the_game');
@@ -63,15 +67,17 @@ test('beating the game is handed over as the win objective, and the ladder start
   assert.equal(preparationStage(worn).item, 'iron_pickaxe', 'a pickaxe with ten uses left is a rung to redo before it breaks');
   assert.equal(preparationStage(worn).count, 2, 'the worn one is still carried, so the rung asks for one more');
   worn.inventory.items = () => [{ name: 'white_bed' }, { name: 'iron_pickaxe', durabilityUsed: 100 }, { name: 'iron_sword' }, { name: 'shield' }, { name: 'water_bucket' }];
-  assert.equal(preparationStage(worn).item, 'iron_helmet', 'a sound pickaxe counts');
+  assert.equal(preparationStage(worn, chosen()).item, 'iron_helmet', 'a sound pickaxe counts');
+  assert.equal(preparationStage(worn).item, 'golden_boots', 'the armour is optional before the Nether unless chosen (note 776)');
   assert.equal(preparationStage(bot([])).item, 'stone_pickaxe');
   assert.equal(preparationStage(bot(['stone_pickaxe'])).item, 'stone_sword');
-  assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword'])).phase, 'bed', 'a bed before the mine: nights slept, not walled in');
-  assert.equal(preparationStage({ inventory: { items: () => [{ name: 'stone_pickaxe' }, { name: 'stone_sword' }, { name: 'white_wool', count: 3 }], slots: {} } }).item, 'white_bed', 'three wool of a colour is a bed to craft');
+  assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword']), chosen()).phase, 'bed', 'chosen, a bed before the mine: nights slept, not walled in');
+  assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword'])).item, 'iron_pickaxe', 'the bed is optional before the Nether unless chosen (note 776)');
+  assert.equal(preparationStage({ inventory: { items: () => [{ name: 'stone_pickaxe' }, { name: 'stone_sword' }, { name: 'white_wool', count: 3 }], slots: {} } }, chosen()).item, 'white_bed', 'three wool of a colour is a bed to craft');
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword', 'white_bed'])).item, 'iron_pickaxe');
   assert.equal(preparationStage(bot(['stone_pickaxe', 'stone_sword']), { survival: { home: { bed: { claimedAt: 'now' } } } }).item, 'iron_pickaxe', 'the claimed bed at the base meets the rung');
-  assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket'])).item, 'iron_helmet', 'armour is four rungs of its own');
-  assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings'])).item, 'iron_boots');
+  assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket']), chosen()).item, 'iron_helmet', 'armour is four rungs of its own');
+  assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings']), chosen()).item, 'iron_boots');
   assert.equal(preparationStage(bot(['white_bed', 'diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'diamond_boots', 'golden_boots', ...armed])), null);
 });
 
@@ -79,17 +85,18 @@ test('a bow and a quiver of sixteen are the last rungs before the Nether, after 
   const registry = require('minecraft-data')('26.1');
   const kit = ['white_bed', 'diamond_pickaxe', 'iron_sword', 'diamond_sword', 'shield', 'water_bucket', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'golden_boots'];
   const bot = (items, timeOfDay = 14000) => ({ registry, time: { timeOfDay }, entities: {}, entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => items.map(item => typeof item === 'string' ? { name: item, count: 1, durabilityUsed: 0 } : item), slots: {} } });
-  assert.deepEqual(preparationStage(bot(kit)), { phase: 'bow', action: 'acquire', item: 'bow', count: 1 });
-  assert.equal(preparationStage(bot(kit, 6000)), null, 'by day, with the sword in hand and no spider about, the bow waits for dusk');
-  assert.equal(preparationStage(bot(kit.filter(n => n !== 'diamond_sword'), 6000)).item, 'diamond_sword', 'daylight is for the deep');
-  assert.equal(preparationStage(bot([...kit, { name: 'string', count: 3 }], 6000)).item, 'bow', 'string in hand is a bow to craft, whatever the hour');
+  assert.deepEqual(preparationStage(bot(kit), chosen()), { phase: 'bow', action: 'acquire', item: 'bow', count: 1 });
+  assert.equal(preparationStage(bot(kit)), null, 'the bow is optional before the Nether unless chosen (note 776)');
+  assert.equal(preparationStage(bot(kit, 6000), chosen()), null, 'by day, with the sword in hand and no spider about, the bow waits for dusk');
+  assert.equal(preparationStage(bot(kit.filter(n => n !== 'diamond_sword'), 6000), chosen()).item, 'diamond_sword', 'daylight is for the deep');
+  assert.equal(preparationStage(bot([...kit, { name: 'string', count: 3 }], 6000), chosen()).item, 'bow', 'string in hand is a bow to craft, whatever the hour');
   const spidered = bot(kit, 6000); spidered.entities = { 1: { name: 'spider', position: new Vec3(10, 64, 0) } };
-  assert.equal(preparationStage(spidered).item, 'bow', 'a spider in view is a hunt, whatever the hour');
-  assert.equal(preparationStage(bot(kit.filter(n => n !== 'golden_boots'))).item, 'golden_boots', 'gold before the bow');
-  assert.deepEqual(preparationStage(bot([...kit, 'bow'])), { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 });
-  assert.equal(preparationStage(bot([...kit, 'bow', { name: 'arrow', count: 9 }, { name: 'arrow', count: 6 }])).item, 'arrow', 'fifteen across two stacks is short');
-  assert.equal(preparationStage(bot([...kit, 'bow', { name: 'arrow', count: 16 }])), null);
-  const worn = preparationStage(bot([...kit, { name: 'bow', count: 1, durabilityUsed: registry.itemsByName.bow.maxDurability - 10 }, { name: 'arrow', count: 32 }]));
+  assert.equal(preparationStage(spidered, chosen()).item, 'bow', 'a spider in view is a hunt, whatever the hour');
+  assert.equal(preparationStage(bot(kit.filter(n => n !== 'golden_boots')), chosen()).item, 'golden_boots', 'gold before the bow');
+  assert.deepEqual(preparationStage(bot([...kit, 'bow']), chosen()), { phase: 'arrows', action: 'acquire', item: 'arrow', count: 16 });
+  assert.equal(preparationStage(bot([...kit, 'bow', { name: 'arrow', count: 9 }, { name: 'arrow', count: 6 }]), chosen()).item, 'arrow', 'fifteen across two stacks is short');
+  assert.equal(preparationStage(bot([...kit, 'bow', { name: 'arrow', count: 16 }]), chosen()), null);
+  const worn = preparationStage(bot([...kit, { name: 'bow', count: 1, durabilityUsed: registry.itemsByName.bow.maxDurability - 10 }, { name: 'arrow', count: 32 }]), chosen());
   assert.equal(worn.item, 'bow'); assert.equal(worn.count, 2, 'a bow about to break is redone while it still shoots');
 });
 
@@ -131,10 +138,10 @@ test('a question about the dream reaches the dream handler even when phrased as 
 test('armour is one rung planned as a set, and the set shrinks to the pieces still missing', () => {
   const registry = require('minecraft-data')('26.1');
   const bot = (names, slots = {}) => ({ registry, inventory: { items: () => names.map(name => ({ name, durabilityUsed: 0 })), slots } });
-  const bare = preparationStage(bot(['white_bed', 'iron_pickaxe', 'iron_sword', 'shield', 'water_bucket']));
+  const bare = preparationStage(bot(['white_bed', 'iron_pickaxe', 'iron_sword', 'shield', 'water_bucket']), chosen());
   assert.equal(bare.action, 'acquire_set'); assert.equal(bare.phase, 'iron_armour');
   assert.deepEqual(bare.items, ['iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots']);
-  const partly = preparationStage(bot(['white_bed', 'iron_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' } }));
+  const partly = preparationStage(bot(['white_bed', 'iron_pickaxe', 'iron_sword', 'shield', 'water_bucket'], { 5: { name: 'iron_helmet' } }), chosen());
   assert.deepEqual(partly.items, ['iron_chestplate', 'iron_leggings', 'iron_boots']); assert.equal(partly.phase, 'iron_chestplate');
 });
 

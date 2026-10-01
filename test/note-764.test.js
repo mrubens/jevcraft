@@ -224,7 +224,7 @@ test('win_strategy: going to the Nether holds past its set-asides and the ladder
   const { strategyStep, HOLD_MS } = require('../src/strategy');
   const { bot, items, goal, task } = strategyFixture(['golden_boots', 'diamond_sword']);
   const asked = [];
-  const decide = async (id, args) => { asked.push(Object.keys(args.tree)); return { path: [['stage_reach_nether', 'nether_first'].find(k => args.tree[k])] }; };
+  const decide = async (id, args) => { asked.push(Object.keys(args.tree)); return { path: [['stage_reach_nether', 'nether_first'].find(k => args.tree[k]) || Object.keys(args.tree).find(k => k !== 'none_good')] }; };
   let now = Date.now();
   const { nextGameStage } = require('../src/game-progress');
   assert.deepEqual(await strategyStep(bot, task, goal, () => {}, { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 }, { decide, now: () => now }), { replan: true });
@@ -234,12 +234,27 @@ test('win_strategy: going to the Nether holds past its set-asides and the ladder
   assert.equal(nextGameStage(bot, goal).phase, 'reach_nether');
   assert.equal(await strategyStep(bot, task, goal, () => {}, nextGameStage(bot, goal), { decide, now: () => now }), null);
   assert.equal(asked.length, 1, 'held');
-  // A rung neither open nor known then opens (the iron boots worn out, note 709's case): asked.
+  // A rung that may wait opens (the iron boots worn out): going to the Nether
+  // put those after it, and it holds (note 777, keyed to the Nether, not to
+  // what is carried).
+  // The armour chosen meanwhile (optional before the Nether, note 776), so its boots are a rung.
+  goal.rungOptIn = { iron_armour: Date.now() };
   items.splice(items.findIndex(i => i.name === 'iron_boots'), 1);
   now += 5000;
   await strategyStep(bot, task, goal, () => {}, nextGameStage(bot, goal), { decide, now: () => now });
+  assert.equal(asked.length, 1, 'a may-wait rung: held');
+  // A rung that may not wait opens (no pickaxe left to dig with): asked.
+  items.splice(items.findIndex(i => i.name === 'diamond_pickaxe'), 1);
+  now += 5000;
+  await strategyStep(bot, task, goal, () => {}, nextGameStage(bot, goal), { decide, now: () => now });
   assert.equal(asked.length, 2, 'a new rung');
-  assert.equal(goal.strategy.choice, 'nether_first');
+  items.push({ name: 'diamond_pickaxe', count: 1 });
+  // The pickaxe rung finished: asked, and going to the Nether chosen again
+  // (not counted, the case below begins from it).
+  now += 5000;
+  await strategyStep(bot, task, goal, () => {}, nextGameStage(bot, goal), { decide, now: () => now });
+  asked.pop();
+  assert.ok(/^(nether_first|stage_reach_nether)$/.test(goal.strategy.choice));
   now += 5000;
   await strategyStep(bot, task, goal, () => {}, nextGameStage(bot, goal), { decide, now: () => now });
   assert.equal(asked.length, 2, 'held again');
