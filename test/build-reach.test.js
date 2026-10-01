@@ -124,3 +124,15 @@ test('the stance question says why the piglins attack and what a gold piece woul
   assert.equal(piglinGoldSays(worn, [piglin]), null);
   assert.equal(piglinGoldSays(bare, []), null);
 });
+
+test('25594 (22:27Z): a creeper coming into sight while the pocket goes up ends the pass once it would go off before the cells left are laid (note 843)', async () => {
+  const creeper = mob(901, 'creeper', 0.5, 43, 14);
+  const bot = netherBot({ entities: { 901: creeper } });
+  const placed = [];
+  // Each block laid, the creeper walks two blocks nearer.
+  const survival = new Survival(bot, { navigate: async () => {}, place: async (b, task, p) => { placed.push(p); creeper.position = creeper.position.offset(0, 0, -2); } }, { state: { shelters: [] } });
+  const sealed = await survival.sealHere(new Task('t'), {}, () => {}, []);
+  assert.equal(sealed, false);
+  const all = pocketPlan(netherBot({ entities: {} }), bot.entity.position.floored(), []).cells.length;
+  assert(placed.length > 0 && placed.length < all, `${placed.length} of ${all} laid`);
+});

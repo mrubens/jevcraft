@@ -7348,9 +7348,19 @@ class Survival {
     // too (note 520).
     const { occupant } = require('./work');
     this.state.sealing = { origin: { ...origin }, at: Date.now() };
-    for (const p of cells) {
+    for (const [i, p] of cells.entries()) {
       task.check();
       if (Date.now() > passEnds) { this.sealFailedFact(goal, save, origin, 'twenty seconds and not sealed'); break; }
+      // The race with a creeper read again before each block, not only at
+      // the start (note 843): 25594 (2026-10-01 22:27:19 to 24Z) began a
+      // pocket with its creeper out of sight at 8.5, the race not run for
+      // it, and was blown up from 20 health with the creeper at 0.3 and no
+      // stance asked. Lost now, the pass ends and the encounter is asked.
+      if (creeperRace(bot, cells.length - i)) {
+        this.report(goal, save, { action: 'seal_cut_by_creeper', cells: cells.length - i, origin: { ...origin } });
+        console.log(`[seal] a creeper would go off before the ${cells.length - i} cells left are laid: the pass ends, the encounter is asked`);
+        return false;
+      }
       const name = material(); if (!name) break;
       if (occupant(bot, p) || danger.some(t => t.entity.position.floored().equals(p))) continue;
       try { await this.actions.place(bot, task, p, name, { stay }); failedInRow = 0; bot._sealPlaced = { at: Date.now(), cell: { x: p.x, y: p.y, z: p.z } }; }
