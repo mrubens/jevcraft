@@ -2667,7 +2667,10 @@ class Survival {
         // pocket in a fire a ghast's fireball lit, from eleven health to
         // none, the watchdog giving way to the seal (2026-09-27).
         const held = require('./danger').stanceHeld(bot, now);
-        const answering = held && held.choice !== 'keep_working' && !require('./vitals').inFire(bot);
+        // The way out of the fire or the lava running is the answer to the
+        // burns: stopped, its keys let go, the body stood in the flames (note
+        // 792: 24 watchdog stops with the run out of fire the last action).
+        const answering = (held && held.choice !== 'keep_working' && !require('./vitals').inFire(bot)) || !!require('./vitals').wayOutRunning(bot, now);
         if (bot._hurtTimes.filter(t => now - t < 4000).length >= (byMob ? 1 : 2) && !answering && !(bot._threatResponseAt > now - 3000) && !(bot._threatAbortAt > now - 5000) && (bot.health ?? 0) > 0) {
           bot._threatAbortAt = now; bot._threatAbort = true;
           const was = require('./turn').stopForTurn(bot);

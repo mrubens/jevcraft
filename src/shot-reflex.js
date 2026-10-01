@@ -422,8 +422,14 @@ function tick(bot, survival, now = Date.now()) {
   hold.last = now;
   lockBody(bot);
   // Only a charge's warnings: the shield up, the walk and its looks its own.
-  hold.free = !cover && guard.every(g => g.closing);
-  if (hold.free) { hold.why = guard[0].why; if (require('./combat').raiseShield(bot)) hold.raised = true; return; }
+  // So too while the body's way out of fire or lava runs: its route and keys
+  // were chosen for the flames, and a hold that let none of them down kept
+  // the body standing in the fire behind its shield (note 792: 25590 at
+  // 02:59Z on 10-01, five in-fire hurts in 2.5 seconds, 18 to 8.7, the run
+  // out of fire on and the shield up to a ghast 22 blocks off).
+  const wayOut = require('./vitals').wayOutRunning(bot, now);
+  hold.free = !!wayOut || (!cover && guard.every(g => g.closing));
+  if (hold.free) { hold.why = guard[0]?.why || hold.why; if (require('./combat').raiseShield(bot)) hold.raised = true; return; }
   const { set, look } = bot._shotRaw;
   for (const k of MOVE_KEYS) set(k, false);
   if (require('./terrain').onSpan?.(bot)) set('sneak', true);

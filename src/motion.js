@@ -40,8 +40,10 @@ const columnsAt = (x, z) => {
 };
 const at = (bot, x, y, z) => bot.blockAt(new Vec3(x, y, z));
 // A cell of the body, feet to head, in a column.
-function bodyCell(bot, x, z, feet, head) {
-  for (let y = head; y >= feet; y--) { const b = at(bot, x, y, z); if (BURNING.has(b?.name)) return { name: b.name, x, y, z }; }
+// `flames: false` reads only lava as burning (a run out of fire, below).
+const burns = (name, flames) => flames ? BURNING.has(name) : name === 'lava';
+function bodyCell(bot, x, z, feet, head, flames = true) {
+  for (let y = head; y >= feet; y--) { const b = at(bot, x, y, z); if (burns(b?.name, flames)) return { name: b.name, x, y, z }; }
   return null;
 }
 // The fall from under the feet to the first floor, in a column. Upright
@@ -50,7 +52,7 @@ function bodyCell(bot, x, z, feet, head) {
 // not, and on 25583 an unstuck step pressed against a wall slid off a ledge
 // seven blocks over the lava sea, on 25600 the stall's blind step ran on
 // off one thirty-eight (note 600).
-function dropCell(bot, x, z, below, { deep = false } = {}) {
+function dropCell(bot, x, z, below, { deep = false, flames = true } = {}) {
   if (deep) {
     const fall = require('./terrain').fallFrom(require('./terrain').atOf(bot), { x, y: below, z });
     if (fall.into === 'lava') return { name: 'lava', x, y: fall.landing ? fall.landing.y - 1 : below - fall.n, z, fall: fall.n };
@@ -64,7 +66,7 @@ function dropCell(bot, x, z, below, { deep = false } = {}) {
   for (let y = below; y >= below - 4; y--) {
     const b = at(bot, x, y, z);
     if (!b) return null;
-    if (BURNING.has(b.name)) return { name: b.name, x, y, z };
+    if (burns(b.name, flames)) return { name: b.name, x, y, z };
     if (b.boundingBox === 'block') return null;
   }
   return null;
@@ -155,7 +157,7 @@ function bodyBurning(bot) {
 // comes into, and, where nothing under the body holds it up there, the
 // drop below them. A floor still under part of the body is a floor: a
 // span over the lava sea is walked with the body's side over the lava.
-function burningAhead(bot, keys, { deep = false } = {}) {
+function burningAhead(bot, keys, { deep = false, flames = true } = {}) {
   const p = bot.entity?.position, yaw = bot.entity?.yaw;
   if (!p || typeof bot.blockAt !== 'function' || !Number.isFinite(yaw)) return null;
   // prismarine-physics: forward is (-sin yaw, -cos yaw), right (cos yaw, -sin yaw).
@@ -168,14 +170,14 @@ function burningAhead(bot, keys, { deep = false } = {}) {
   for (const reach of [0.5, 0.85]) {
     const cols = columnsAt(p.x + dx * reach, p.z + dz * reach);
     const fresh = cols.filter(c => !now.has(`${c}`));
-    for (const [x, z] of fresh) { const hit = bodyCell(bot, x, z, feet, head); if (hit) return hit; }
+    for (const [x, z] of fresh) { const hit = bodyCell(bot, x, z, feet, head, flames); if (hit) return hit; }
     if (cols.some(([x, z]) => at(bot, x, floor, z)?.boundingBox === 'block')) continue;
-    for (const [x, z] of fresh) { const hit = dropCell(bot, x, z, floor, { deep }); if (hit) return hit; }
+    for (const [x, z] of fresh) { const hit = dropCell(bot, x, z, floor, { deep, flames }); if (hit) return hit; }
   }
   return null;
 }
 
-async function move(bot, task, { label, keys = ['forward'], sneak = true, why, look, until = () => false, guard = () => {}, maxMs = 1500, tick = 25 } = {}) {
+async function move(bot, task, { label, keys = ['forward'], sneak = true, why, look, until = () => false, guard = () => {}, maxMs = 1500, tick = 25, throughFlames = false } = {}) {
   if (!label) throw new Error('A held-key move needs a name');
   for (const key of keys) if (!MOVEMENT.has(key)) throw new Error(`Not a movement key: ${key}`);
   if (!sneak && keys.some(key => HORIZONTAL.has(key)) && !why) throw new Error(`${label}: walking upright needs a reason`);
@@ -197,8 +199,17 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
   const controller = { name: label, keys: [...keys], sneak, why, since: Date.now() };
   bot._controller = controller;
   const escaping = !!bodyBurning(bot);
+  // A run out of fire walks the route its own search chose with the flames
+  // in view (vitals.js fireRoute: round them where it can, through one where
+  // they ring the body); the flames on it are not refused here, lava and a
+  // fall that kills still are. The rule above read only the cells the body's
+  // box stands in: a body alight beside a flame, or under one, was refused
+  // the route's first step every time. From 2026-09-30T06Z to 10-01T04:57Z,
+  // 397 steps of runs out of fire were refused so, and 48 of the 70 runs of
+  // a second or more never moved half a block (note 792).
+  const flames = !throughFlames;
   const refused = () => {
-    const hit = !escaping && burningAhead(bot, keys, { deep: !sneak });
+    const hit = !escaping && burningAhead(bot, keys, { deep: !sneak, flames });
     if (!hit) return false;
     // Said on the bot, for the caller to go another way and say why.
     bot._moveRefused = controller.refused = { label, ...hit, at: Date.now() };
@@ -225,6 +236,16 @@ async function move(bot, task, { label, keys = ['forward'], sneak = true, why, l
         for (const key of keys) if (HORIZONTAL.has(key)) bot.setControlState(key, false);
         await bot.look(aim.yaw, aim.pitch, true);
         for (const key of keys) if (HORIZONTAL.has(key)) bot.setControlState(key, true);
+      }
+      // Held for the move's whole length: a key let go by something else
+      // (the hurt watchdog's stop, the shield's hold) is pressed again, as
+      // the turn above is turned back. Each such run out of fire stood in
+      // the flames with its keys let go to the end of its time (note 792).
+      const dropped = touched.filter(key => !held(key));
+      if (dropped.length) {
+        controller.repressed = (controller.repressed || 0) + 1;
+        if (controller.repressed === 1) console.log(`[motion] ${label}: ${dropped.join(', ')} let go mid-move by something else; pressed again`);
+        for (const key of dropped) bot.setControlState(key, true);
       }
       await sleep(tick);
     }

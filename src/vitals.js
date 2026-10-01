@@ -525,6 +525,20 @@ function fireSteps(bot, route) {
 function fireRouteSeconds(bot, route) {
   return fireSteps(bot, route).reduce((s, step) => s + 1 / (step.crouched ? SNEAK : SPRINT), 0);
 }
+// The body's own way out of fire or lava in flight: a run out of fire
+// (outOfFire, whether body_way or the rule chose it, marked while it runs)
+// or a held-key move out of either. Nothing else takes its keys or its look
+// meanwhile: the shield's hold (shot-reflex.js) leaves them to it, and the
+// hurt watchdog (survival.js) counts it as the answer to the burns (note
+// 792: of the 48 runs of a second or more that never moved, the shield was
+// up through 30, and the watchdog stopped such a run at least 24 times).
+const WAY_OUT_MS = 3000;
+function wayOutRunning(bot, now = Date.now()) {
+  const r = bot?._bodyWayRunning;
+  if (r && now - r.at <= WAY_OUT_MS) return r.action;
+  const c = bot?._controller?.name;
+  return c === 'out_of_fire' || c === 'out_of_lava' ? c : null;
+}
 async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot)) {
   onAction({ action: 'out_of_fire', steps: route?.length ?? null, health: bot.health });
   if (!route) return false;
@@ -579,8 +593,8 @@ async function outOfFire(bot, task, onAction = () => {}, route = fireRoute(bot))
       const look = target.offset(0, 1.6, 0);
       try {
         await move(bot, task, crouched
-          ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there, guard }
-          : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there, guard });
+          ? { label: 'out_of_fire', keys: up ? ['forward', 'jump'] : ['forward'], sneak: true, look, maxMs: 2000, tick: 50, until: there, guard, throughFlames: true }
+          : { label: 'out_of_fire', keys: up ? ['forward', 'sprint', 'jump'] : ['forward', 'sprint'], sneak: false, why: 'running out of fire', look, maxMs: 1500, tick: 50, until: there, guard, throughFlames: true });
       } catch (err) {
         if (!/^Left the cells of/.test(err.message || '')) throw err;
         console.log(`[vitals] ${err.message}`);
@@ -1589,4 +1603,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
