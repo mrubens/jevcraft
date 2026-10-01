@@ -518,7 +518,29 @@ function shotOptions(bot, warned) {
   const heldSays = faced && faced.landed + faced.not > 0
     ? ` Held here (${held.choice.replaceAll('_', ' ')}) so far: ${faced.landed ? `${faced.landed} of ${faced.landed + faced.not} shots on the way have landed` : `none of ${faced.not} shot${faced.not === 1 ? '' : 's'} on the way has landed`}.`
     : '';
-  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.${heldSays}` };
+  // The biters at hand beside the shots, by when each can strike and where
+  // it stands from the way the shield would face (note 770: 25598 answered
+  // keep_on at 23:39:45Z with a zombie 4 blocks off, told only of the
+  // skeleton's arrow; the zombie's blow landed half a second later).
+  const bitersSay = (() => {
+    try {
+      const { blocksPerSecond } = require('./combat-estimate');
+      const { shooter } = require('./combat');
+      const near = require('./danger').threats(bot, 8).filter(t => t.entity?.position && !shooter(t.entity) && t.entity.name !== 'creeper' && MOBS[t.entity.name]?.hit > 0).slice(0, 2);
+      if (!near.length) return { keep: '', shield: '' };
+      const point = shieldCarried(bot) ? facingFor(bot, warned.map(e => ({ at: e.position, e, w: 1 }))).point : null;
+      const dir = p => Math.atan2(p.z - here.z, p.x - here.x);
+      const off = p => point ? Math.round(Math.abs(Math.atan2(Math.sin(dir(p) - dir(point)), Math.cos(dir(p) - dir(point)))) * 180 / Math.PI) : null;
+      const each = near.map(t => {
+        const secs = round(Math.max(0, t.distance - 1.5) / blocksPerSecond(t.entity.name));
+        return `the ${t.entity.name.replaceAll('_', ' ')} ${round(t.distance)} blocks off${t.visible === false ? ', out of sight,' : ''} ${secs <= 0.1 ? 'at arm\'s length now' : `at arm's length in about ${secs} seconds at its own speed`}, about ${round(afterArmour(MOBS[t.entity.name].hit, worn))} a blow`;
+      });
+      const faced = point ? near.map(t => { const d = off(t.entity.position); return `the ${t.entity.name.replaceAll('_', ' ')} ${d} degrees from that way, ${d <= 90 ? 'on the shield\'s side' : 'behind it: its blows land whole'}`; }) : [];
+      return { keep: ` Beside the shots, what bites: ${each.join('; ')}; with the shield down its blows land whole too.`, shield: faced.length ? ` Faced so, ${faced.join('; ')}.` : '' };
+    } catch (_) { return { keep: '', shield: '' }; }
+  })();
+  if (tree.shield_up && bitersSay.shield) tree.shield_up.description += bitersSay.shield;
+  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.${bitersSay.keep}${heldSays}` };
   // What has been hitting the bot, first on every answer, and a hit taken
   // with the shield up from a side it does not face (note 752b: 25594 took
   // two hits "(shield up)" and was offered shield_up and keep_on five times
@@ -729,6 +751,12 @@ function ask(bot, survival, warned) {
     console.log(`[shot] ${warned.map(e => `the ${e.name}`).join(', ')} warning: answered by the stance ${byStance.stance.replaceAll('_', ' ')} (${byStance.choice.replaceAll('_', ' ')})`);
     return;
   }
+  // The stance question out being asked again: its answer carries the
+  // answer to the volleys (above), and until it comes the shield is held
+  // toward the shooters as a holding stance holds it, not asked beside it
+  // (note 770: 25598's shot_answer at 23:39:45.1Z was asked while shield_guard
+  // was out again, answered keep_on, and the zombie's blow landed).
+  if (bot._asking?.id === 'encounter_stance') { const rule = shotRule(tree); if (rule) { record(rule, 'stance', { stance: 'encounter_stance (being asked)' }); return; } }
   // With JEV_ENCOUNTERS=0 (or no client): the shot's safety rule, the
   // shield; split round the bot, a cell out of their line. Jev not
   // reachable, decide() answers by the same rule (note 707).

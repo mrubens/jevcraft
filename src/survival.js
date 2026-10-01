@@ -202,7 +202,11 @@ function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runS
 // blast among them: 25594 (mid-242-he), asked about a creeper 6 blocks off
 // in sight, had every option lead with "The zombie 16 blocks off, out of
 // sight, hits for about 2.2", the creeper left out as no biter (note 685).
-function blowsSay(mobs, health) {
+function blowsSay(mobs, health) { return blowsLead(mobs, health).says; }
+// -> { says, mob, arrives }: the sentence, the mob it names and the seconds
+// until its first harm at its own speed (a creeper's to its lighting and
+// fuse).
+function blowsLead(mobs, health) {
   const { MOBS, LIGHTS_AT, FUSE } = require('./combat-estimate');
   const h = Math.round((health ?? 20) * 10) / 10;
   // A blanket "in sight or within eight blocks" cutoff (as 1d055eda's
@@ -221,30 +225,42 @@ function blowsSay(mobs, health) {
   // note for what was tried and why it was backed out).
   const biters = (mobs || []).filter(m => !m.apart && !m.shoots && m.name !== 'creeper' && m.hitsBot > 0 && !m.bornOf);
   const creepers = (mobs || []).filter(m => !m.apart && m.name === 'creeper' && m.hitsBot > 0);
-  if (!biters.length && !creepers.length) return '';
+  if (!biters.length && !creepers.length) return { says: '', mob: null, arrives: Infinity };
   const endsIn = m => {
     const v = blocksPerSecond(m.name);
     if (m.name === 'creeper') return m.hitsBot >= h ? Math.max(0, (m.distance || 0) - LIGHTS_AT) / v + FUSE : Infinity;
     const blows = Math.max(1, Math.ceil(h / m.hitsBot));
     return Math.max(0, (m.distance || 0) - (m.reach || 1.5)) / v + (blows - 1) * (MOBS[m.name]?.blowEvery || 1);
   };
-  const hardestBiter = biters.slice().sort((a, b) => b.hitsBot - a.hitsBot || a.distance - b.distance)[0];
-  const creeper = creepers.slice().sort((a, b) => endsIn(a) - endsIn(b) || a.distance - b.distance)[0];
-  // Or, its blast not the bot's end, the harder of the two that comes first.
   const arrives = m => Math.max(0, (m.distance || 0) - (m.name === 'creeper' ? LIGHTS_AT : m.reach || 1.5)) / blocksPerSecond(m.name) + (m.name === 'creeper' ? FUSE : 0);
-  if (creeper && (!hardestBiter || endsIn(creeper) < endsIn(hardestBiter) || (arrives(creeper) < arrives(hardestBiter) && creeper.hitsBot > hardestBiter.hitsBot))) {
+  const hardestOf = biters.slice().sort((a, b) => b.hitsBot - a.hitsBot || a.distance - b.distance)[0];
+  // The hardest hitter, unless another biter's first blow comes more than
+  // a second sooner: then that one, the first harm (note 770).
+  const soonestOf = biters.slice().sort((a, b) => arrives(a) - arrives(b) || b.hitsBot - a.hitsBot)[0];
+  const hardestBiter = hardestOf && soonestOf && arrives(hardestOf) - arrives(soonestOf) > 1 ? soonestOf : hardestOf;
+  const creeper = creepers.slice().sort((a, b) => arrives(a) - arrives(b) || a.distance - b.distance)[0];
+  // The one that harms first leads: its blast or blow soonest, not the
+  // worst it could do (note 770: a creeper 23.8 blocks off, its blast "as
+  // much as the 20 health", led every option over the zombie nearer). A
+  // creeper whose blast ends the bot leads a biter that could reach it
+  // first only while it comes within a second of it.
+  const creeperFirst = creeper && (!hardestBiter || arrives(creeper) <= arrives(hardestBiter)
+    || (endsIn(creeper) < endsIn(hardestBiter) && arrives(creeper) - arrives(hardestBiter) <= 1));
+  if (creeperFirst) {
     const v = blocksPerSecond('creeper'), soon = Math.round(Math.max(0, (creeper.distance || 0) - LIGHTS_AT) / v * 10) / 10;
     const unseen = creeper.visible === false ? ', out of sight,' : '';
     const ends = creeper.hitsBot >= h ? `as much as the ${h} health the bot has` : `not all of the ${h} health the bot has`;
     const when = soon <= 0.1 ? `it is within ${LIGHTS_AT} blocks now` : `at its walk (about ${Math.round(v * 10) / 10} blocks a second) it can be within ${LIGHTS_AT} blocks in about ${soon} second${soon === 1 ? '' : 's'}`;
-    return `The creeper ${Math.round((creeper.distance || 0) * 10) / 10} blocks off${unseen} goes off ${FUSE} seconds after it lights, within ${LIGHTS_AT} blocks in sight of the bot: about ${creeper.hitsBot} through the armour worn two blocks off, ${ends}, and ${when}.`;
+    // Far off, its time first: what it could do is seconds of walking away.
+    if (soon >= 5) return { says: `The creeper ${Math.round((creeper.distance || 0) * 10) / 10} blocks off${unseen} is about ${soon} seconds of walking from lighting beside the bot (within ${LIGHTS_AT} blocks, at about ${Math.round(v * 10) / 10} blocks a second); ${FUSE} seconds after it lights it goes off: about ${creeper.hitsBot} through the armour worn two blocks off, ${ends}.`, mob: creeper, arrives: arrives(creeper) };
+    return { says: `The creeper ${Math.round((creeper.distance || 0) * 10) / 10} blocks off${unseen} goes off ${FUSE} seconds after it lights, within ${LIGHTS_AT} blocks in sight of the bot: about ${creeper.hitsBot} through the armour worn two blocks off, ${ends}, and ${when}.`, mob: creeper, arrives: arrives(creeper) };
   }
   const m = hardestBiter;
   const blows = Math.max(1, Math.ceil(h / m.hitsBot));
   const bare = m.bornOf ? null : MOBS[m.name]?.hit;
   const v = blocksPerSecond(m.name), soon = Math.round(Math.max(0, (m.distance || 0) - (m.reach || 1.5)) / v * 10) / 10;
   const name = m.name.replaceAll('_', ' ');
-  const hardest = biters.length > 1 ? 'the hardest hitter of the ' + biters.length + ' here that can get to the bot' : '';
+  const hardest = biters.length > 1 ? (m === hardestOf ? 'the hardest hitter of the ' + biters.length + ' here that can get to the bot' : 'the first of the ' + biters.length + ' here that can get to the bot') : '';
   const when = soon <= 0.1 ? 'it is at arm\'s length now' : `at its own speed (about ${Math.round(v * 10) / 10} blocks a second) it can be at arm's length in about ${soon} second${soon === 1 ? '' : 's'}`;
   // One out of sight is said so: its blow is the same round the rock (note
   // 581). Joined with `hardest` by a single comma each, never two in a row
@@ -262,7 +278,40 @@ function blowsSay(mobs, health) {
   const size = most ? `${m.hitsBotLeast} to ${most} a blow through the armour worn, about ${m.hitsBot} on the average (${MOBS[m.name].least} to ${MOBS[m.name].most} before it)` : `about ${m.hitsBot} a blow through the armour worn${bare && bare !== m.hitsBot ? ` (${bare} before it)` : ''}`;
   const pace = every === 1 ? 'a blow a second at arm\'s length' : `a blow every ${every} seconds at arm's length`;
   const ends = most && fewest < blows ? `${fewest === 1 ? 'one blow at its hardest ends' : `${fewest} blows at their hardest end`} the bot from ${h} health (${blows} on the average)` : `${blows === 1 ? 'one blow ends' : `${blows} blows end`} the bot from ${h} health`;
-  return `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen} hits for ${size}, ${pace}: ${ends}, and ${when}.`;
+  return { says: `The ${name} ${Math.round(m.distance || 0)} blocks off${unseen} hits for ${size}, ${pace}: ${ends}, and ${when}.`, mob: m, arrives: arrives(m) };
+}
+// The mobs past their follow range (combat-estimate FOLLOW_RANGE, from the
+// jar's follow_range attribute: 16 for a creeper, a skeleton or a spider,
+// 35 for a zombie): the game's targeting looks no farther, and a mob
+// already after the bot gives it up past it (TargetGoal canContinueToUse).
+// Not one that hit the bot in the last 20 seconds, a creeper lit or with
+// its alert up, or one the stance holds against (note 770).
+// Kinds whose targeting reaches past what FOLLOW_RANGE holds for them (a
+// ghast's 100, a phantom's sweep) or that the table leaves out: never left
+// out of the figures this way.
+const OWN_TARGETING = new Set(['ghast', 'phantom', 'ender_dragon', 'wither', 'shulker', 'guardian', 'elder_guardian']);
+function pastFollowOf(bot, list = []) {
+  const { followRange } = require('./combat-estimate');
+  let hit = new Set();
+  try { hit = new Set(require('./hit-log').recent(bot).map(h => h.id).filter(id => id != null)); } catch (_) { hit = new Set(); }
+  const danger = require('./danger');
+  return list.filter(t => t?.entity && Number.isFinite(t.distance) && !OWN_TARGETING.has(t.entity.name) && t.distance > followRange(t.entity.name)
+    && !hit.has(t.entity.id) && !(t.entity.name === 'creeper' && (danger.creeperMarked?.(bot, t) || Number.isFinite(creeperLitFor(bot, t.entity)))));
+}
+// Said on every stance where such a mob was left out of the figures: its
+// follow range, and how soon it could be at the bot should it come on.
+function pastFollowSays(list = []) {
+  if (!list.length) return '';
+  const { followRange, LIGHTS_AT } = require('./combat-estimate');
+  const r1 = v => Math.round(v * 10) / 10;
+  const each = list.slice(0, 3).map(t => {
+    const n = t.entity.name, name = n.replaceAll('_', ' ');
+    const at = n === 'creeper' ? LIGHTS_AT : shooter(t.entity) ? (RANGE[n] || 15) : 1.5;
+    const secs = r1(Math.max(0, t.distance - at) / blocksPerSecond(n));
+    const to = n === 'creeper' ? `within ${LIGHTS_AT} blocks, where it lights,` : shooter(t.entity) ? 'in its reach' : 'at arm\'s length';
+    return `the ${name} ${r1(t.distance)} blocks off, past the ${followRange(n)} blocks a ${name} sets on a player from (should it come on, ${to} in about ${secs} seconds at its own speed)`;
+  });
+  return ` Not counted in these figures, not after the bot from there: ${each.join('; ')}.`;
 }
 // A retreat's footing is found when it runs, not before (runAway): said, so
 // the run is not read as a known safe place (the decision audit, 2026-09-25).
@@ -382,6 +431,12 @@ const GROUND_SHOOTERS = new Set(['skeleton', 'stray', 'bogged', 'parched', 'pill
 // eating: a shield raised at each arrow stops them.
 // The most a route drops the bot (movement.js).
 const ROUTE_DROP = 3;
+// The hits that landed in the quarter second a raised shield takes to
+// block, of all the hits by a mob or its shot on the bots (scripts/
+// stance-pricing.js over the flight records, note 770).
+const RISING_RECORD = { rising: 506, hits: 2100, since: '06:00Z on 2026-09-30 to about midnight' };
+// The stances that hide from shooters, by a line cut or height (note 770).
+const LINE_HIDES = new Set(['out_of_sight', 'take_cover', 'nook', 'bunker', 'pillar', 'dig_in']);
 const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
@@ -1469,8 +1524,21 @@ async function guardFacing(bot) {
 // guards against is at arm's length (its blade reaches, or within two
 // blocks); the bot is neither alight nor in lava (note 683).
 function keepShieldForStance(bot) {
-  if (!bot._shieldRaised || !SHIELD_STANCES.has(bot._stance?.choice) || !bot.entity?.position) return false;
+  const choice = bot._stance?.choice;
+  // And a stance that holds the shield toward the mobs (shot-reflex.js
+  // STANCE_SHOTS.holding: take cover, out of sight, a nook, a pillar, the
+  // rest) while a shooter it holds against has the bot in its reach and in
+  // sight: note 743 kept the shield up at such a stance's entry, but each
+  // pass of the step lowered it here and the stance raised it again, a
+  // quarter second with no block each time; from 06:00Z on 2026-09-30, 54
+  // hits landed "shield rising" under a holding stance, 68 more within a
+  // second of a stance answer (note 770, scripts/stance-pricing.js).
+  const holding = !SHIELD_STANCES.has(choice) && require('./shot-reflex').STANCE_SHOTS.holding.has(choice);
+  if (!bot._shieldRaised || !(SHIELD_STANCES.has(choice) || holding) || !bot.entity?.position) return false;
   if ((bot.entity.metadata?.[0] & 1) || inLava(bot)) return false;
+  if (holding) {
+    try { return threats(bot, 16).some(t => shooter(t.entity) && t.visible && t.distance <= (RANGE[t.entity.name] || 15)); } catch (_) { return false; }
+  }
   const wg = require('./wither-guard');
   // Any biter the guard faces within five (about two seconds' walk at a
   // zombie's pace), not only one at its reach: lowered
@@ -3172,7 +3240,19 @@ class Survival {
     // second that could not climb to it, and the skeleton was the death
     // (note 525).
     const apart = this.lastApart = walkersApart(bot, danger);
-    const coming = apart.ids.size ? danger.filter(t => !apart.ids.has(t.entity.id)) : danger;
+    let coming = apart.ids.size ? danger.filter(t => !apart.ids.has(t.entity.id)) : danger;
+    // Past its follow range (the jar's follow_range attribute: a creeper
+    // or a skeleton 16, a zombie 35) a mob does not set on the bot, and one
+    // already after it gives it up there: not counted in any stance's
+    // figures while something nearer is, and said once on each with how
+    // soon it could be at the bot should it come on (pastFollowSays). 25585
+    // (mid-241-bi, 23:39:22Z) had every option priced with a creeper 23.8
+    // blocks off going off beside it, the fight at 12.7 damage for a skeleton
+    // 2.5 blocks off its own hunt put at 1.3 (note 770). Not one that hit the
+    // bot lately or a creeper whose alert is up.
+    const pastFollow = this.lastPastFollow = pastFollowOf(bot, coming);
+    if (pastFollow.length && pastFollow.length < coming.length) { const ids = new Set(pastFollow.map(t => t.entity.id)); coming = coming.filter(t => !ids.has(t.entity.id)); }
+    else pastFollow.length = 0;
     const nearest = coming[0] || danger[0];
     const armed = /_(sword|axe)$|^trident$/.test(defenseWeapon(bot)?.name || '');
     const inReach = t => t.distance <= 3.2 || canStrike(bot, t.entity);
@@ -3950,8 +4030,8 @@ class Survival {
     // bot would stand (bunker.js seenFrom), and priced as the rest are: the
     // walk or the digging under fire, then what still reaches it, the biters
     // that come round fought at arm's length a few at a time.
-    const shooting = danger.filter(t => shooter(t.entity)).map(t => t.entity);
-    const biting = danger.filter(t => !shooter(t.entity)).map(t => t.entity);
+    const shooting = coming.filter(t => shooter(t.entity)).map(t => t.entity);
+    const biting = coming.filter(t => !shooter(t.entity)).map(t => t.entity);
     const seenHere = shooting.length ? require('./bunker').seenFrom(bot, shooting, feet) : [];
     const shooterNames = list => mobList([...new Set(list.map(e => e.name))], list.map(e => ({ name: e.name })));
     const heldHidden = this.state.stance?.choice === 'out_of_sight' || this.state.stance?.choice === 'nook';
@@ -4013,7 +4093,7 @@ class Survival {
       // not: 25597's out_of_sight (13:21:06Z) spoke of "the skeleton" 20
       // blocks off while the creeper 7.3 blocks off was what held the turn
       // (note 752b).
-      const bitersNamed = danger.filter(t => !shooter(t.entity)).slice(0, 3).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ');
+      const bitersNamed = coming.filter(t => !shooter(t.entity)).slice(0, 3).map(t => `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off`).join(', ');
       const biters = biting.length ? ` It answers the shooters only: what does not shoot (${bitersNamed}) comes round to it${biting.some(e => e.name === 'creeper') ? ', a creeper to go off beside it,' : ''} and is fought at arm's length, at most ${atOnce} at once there.` : '';
       options.out_of_sight = { expects: { damage: hiddenCost.damage, seconds: hiddenCost.seconds, oneHit }, quick: { seconds: secs, says: cover.steps ? `out of sight, a ${plural(cover.steps, 'block')} walk of about ${secs} seconds` : 'out of sight where it stands' },
         description: (cover.steps
@@ -4163,7 +4243,7 @@ class Survival {
       // At its own speed: a spider twelve blocks off is at the top in under
       // three seconds, a zombie in four and a half (combat-estimate).
       const walkIn = t => Math.max(0, t.distance - 1.5) / blocksPerSecond(t.entity.name);
-      const firstBiter = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && !apart.ids.has(t.entity.id)).sort((a, b) => walkIn(a) - walkIn(b))[0];
+      const firstBiter = coming.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper').sort((a, b) => walkIn(a) - walkIn(b))[0];
       const biterAt = firstBiter ? Math.round(walkIn(firstBiter)) : null;
       const digRace = firstBiter && biterAt < setup ? ` The ${firstBiter.entity.name.replaceAll('_', ' ')} ${Math.round(firstBiter.distance)} blocks off can be at the shaft's top in about ${biterAt} second${biterAt === 1 ? '' : 's'}, before the lid: a biter within three stops the dig (it follows down an open shaft), and the bot is left at the foot of an open shaft that mobs drop into, onto it.` : '';
       options.dig_down = { expects: { damage: digCost.damage, seconds: digCost.seconds, oneHit }, description: `Dig straight down ${plural(depth, 'block')} where the bot stands, put a block over its head and wait inside for the mobs to lose interest; no fighting. Walled in the ground on every side; about ${setup} seconds of digging and the one block.` + digRace + buildCost + creeperNote + costSays(digCost, bot.health, mobs, { doing: 'digging down', done: 'Shut in below' }) + nightLong,
@@ -4560,19 +4640,50 @@ class Survival {
       // seconds of swimming, and the drowned's trident took 4.5 every two
       // seconds, more than its 15.5 health in that time (note 501).
       const banks = require('./shore').landingsAbout(bot, shooting, { reach: 64 });
+      // The landing against what comes to it, by the same model as every
+      // stance: each mob's distance to the landing, the swim as the setup
+      // (the shield down for it), then the fifteen seconds there. A creeper
+      // is said by where the landing lies from it and its walk and fuse
+      // against the swim (note 770: 25583, mid-237-au, 00:02:09Z, chose
+      // get_out_of_water at 0.42 over shield_the_blast with a creeper 6.9
+      // blocks off, was told "about 0 damage over the swim", swam toward it
+      // and was killed by its blast climbing out).
+      let landingCost = null;
+      const landingSays = (land, secs) => {
+        if (!land) return '';
+        const ceL = require('./combat-estimate');
+        const spot = new Vec3(land.x + 0.5, land.y, land.z + 0.5), here = bot.entity.position;
+        // No way to the bot in the water is not none to the landing: walk-
+        // reach's "apart" is of where the bot is now.
+        const there = mobs.map(m => { const e = m.id != null ? bot.entities?.[m.id] : null; return e?.position ? Object.defineProperty({ ...m, distance: e.position.distanceTo(spot), apart: undefined }, 'id', { value: m.id }) : m; });
+        landingCost = stanceCost({ mobs: there, setup: secs, fight: { lead: true }, health: bot.health });
+        const r1 = v => Math.round(v * 10) / 10;
+        const creeperT = coming.filter(t => t.entity.name === 'creeper' && t.entity.position).sort((a, b) => a.distance - b.distance)[0];
+        const creeperWords = (() => {
+          if (!creeperT) return '';
+          const toLand = creeperT.entity.position.distanceTo(spot), toBot = creeperT.distance;
+          const lit = Math.max(0, toLand - ceL.LIGHTS_AT) / ceL.APPROACH, off = lit + ceL.FUSE;
+          const blast = Math.round(ceL.afterArmour(ceL.creeperBlast(2), worn));
+          const when = off <= secs ? `before the swim is done (${secs} seconds): it can be waiting at the landing and go off as the bot climbs out` : off <= secs + 2 ? `within ${r1(off - secs)} seconds of the bot landing` : `${r1(off - secs)} seconds after the bot lands`;
+          return ` The landing is ${r1(toLand)} blocks from the creeper, ${toLand < toBot - 0.5 ? `nearer to it than the bot is now (${r1(toBot)})` : toLand > toBot + 0.5 ? `farther from it than the bot is now (${r1(toBot)})` : `about as far from it as the bot is now`}: at its walk it can be within ${ceL.LIGHTS_AT} blocks of the landing in about ${r1(lit)} seconds and go off ${ceL.FUSE} seconds after, ${when}; about ${blast} two blocks off after the armour worn${blast >= (bot.health ?? 20) ? ', more than the bot has' : ''}.`;
+        })();
+        const shieldWords = bot.inventory?.slots?.[45]?.name === 'shield' || bot.inventory.items().some(i => i.name === 'shield')
+          ? ' The shield is down for the swim (the stance lowers it to move); raised in water it blocks a blow or a blast from the side it faces as on land, but the bot then only swims at a crouch\'s pace.' : '';
+        return `${creeperWords}${shieldWords} At the landing, by the same figures as the other stances: about ${landingCost.damage} damage in the fifteen seconds from now, the swim included, from ${r1(bot.health ?? 20)} health${landingCost.damage >= (bot.health ?? 20) ? ' (more than the bot has)' : ''}.`;
+      };
       const swimFor = shooting.length && banks.hidden ? banks.hidden : banks.nearest;
       const swimSays = (() => {
         if (!swimFor) return '';
         const secs = Math.round(swimFor.distance / SWIM * 10) / 10, here = bot.entity.position, s = shooting[0];
         const toward = s && (swimFor.x - here.x) * (s.position.x - here.x) + (swimFor.z - here.z) * (s.position.z - here.z) > 0;
         const way = s ? `, ${toward ? 'toward' : 'away from'} the ${s.name.replaceAll('_', ' ')}` : '';
-        return ` The swim to it is about ${secs} seconds at the surface (about ${SWIM} blocks a second)${way}.` + costSays(stanceCost({ mobs, setup: secs, seconds: secs }), bot.health, mobs, { over: 'over the swim' });
+        return ` The swim to it is about ${secs} seconds at the surface (about ${SWIM} blocks a second)${way}.` + costSays(stanceCost({ mobs, setup: secs, seconds: secs }), bot.health, mobs, { over: 'over the swim' }) + landingSays(swimFor, secs);
       })();
       const bankSays = !banks.nearest ? ' No dry landing near the water\'s level is in view within sixty-four blocks: nothing to swim for, and the bot climbs or digs out only where a bank or the floor is within a few blocks.'
         : shooting.length ? (banks.hidden ? ` The nearest bank out of the ${shooting.length === 1 ? 'shooter\'s' : 'shooters\''} sight is ${banks.hidden.distance} blocks off${banks.hidden.distance > banks.nearest.distance ? ` (the nearest bank of all, ${banks.nearest.distance} off, is in their sight)` : ''}; it is swum for first, shot at on the way, and behind it they cannot hit the bot.`
           : ` Every dry landing in view within sixty-four blocks is in the shooters\' sight; the nearest is ${banks.nearest.distance} blocks off.`)
         : ` The nearest dry landing is ${banks.nearest.distance} blocks off.`;
-      options.get_out_of_water = { description: `Swim for the nearest dry ground with air over it, out of the shooters' sight where a bank hides the bot, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}${bankSays}${swimSays}`,
+      options.get_out_of_water = { ...(landingCost ? { expects: { damage: landingCost.damage, seconds: 15, oneHit } } : {}), description: `Swim for the nearest dry ground with air over it, out of the shooters' sight where a bank hides the bot, digging a step into the bank if that is the way out, and deal with the mobs from there.${wet}${bankSays}${swimSays}`,
         run: async () => { this.report(goal, save, { action: 'out_of_water', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, air: bot.oxygenLevel, hiddenBank: banks.hidden });
           return !!await reachShore(bot, task, goal, save, { move: this.actions.navigate, client: this.client, dig: this.actions.dig, fight: danger }); } };
     }
@@ -4678,7 +4789,7 @@ class Survival {
       const secs = Math.max(0, (creeperNear.distance - ceS.LIGHTS_AT) / ceS.APPROACH) + ceS.FUSE;
       const others = danger.filter(t => t !== creeperNear && !shooter(t.entity) && t.distance <= 4).length;
       options.shield_the_blast = { expects: { damage: 0, seconds: Math.round(secs * 10) / 10, oneHit },
-        description: `Face the creeper ${Math.round(creeperNear.distance * 10) / 10} blocks off${creeperNear.visible ? '' : ' (out of sight)'} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and hold it until it goes off or is gone: a blast from the side the shield faces does no damage once the shield has been up a quarter second (the game's explosion damage is not one a shield lets through), the knockback still throws the bot. From here it can be at its lighting distance and go off in about ${Math.round(secs * 10) / 10} seconds.${others ? ` ${others} other biter${others === 1 ? '' : 's'} within four blocks strike${others === 1 ? 's' : ''} from wherever the shield does not face.` : ''}${edge || ''}`,
+        description: `Face the creeper ${Math.round(creeperNear.distance * 10) / 10} blocks off${creeperNear.visible ? '' : ' (out of sight)'} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and hold it until it goes off or is gone: a blast from the side the shield faces does no damage once the shield has been up a quarter second (the game's explosion damage is not one a shield lets through), the knockback still throws the bot. From here it can be at its lighting distance and go off in about ${Math.round(secs * 10) / 10} seconds.${inWater(bot) ? ` In water the shield blocks a blast as on land; the bot holds where it is${bot.entity?.onGround ? ', on the floor,' : ', sinking unless it swims,'} and does not swim meanwhile (air ${bot.oxygenLevel ?? 20} of 20).` : ''}${others ? ` ${others} other biter${others === 1 ? '' : 's'} within four blocks strike${others === 1 ? 's' : ''} from wherever the shield does not face.` : ''}${edge || ''}`,
         run: async () => {
           this.report(goal, save, { action: 'shield_the_blast', target: 'creeper', threats: ['creeper'], health: bot.health, stance: true });
           if (!shielded) { const sh = bot.inventory.items().find(i => i.name === 'shield'); if (sh) await bot.equip(sh, 'off-hand'); }
@@ -4813,7 +4924,7 @@ class Survival {
     // The hardest blow that can get to the bot, first on every stance
     // (blowsSay, note 576): each says after it whether that mob still
     // reaches the bot its way.
-    const blows = blowsSay(mobs, bot.health);
+    const blowsL = blowsLead(mobs, bot.health), blows = blowsL.says;
     // What is hitting the bot now, by the hits themselves, before any mob
     // ranked by its blow (hit-log.js, note 752b): 25594 at 4 health was told
     // of "the spider 18 blocks off, the hardest hitter" while a skeleton six
@@ -4832,8 +4943,33 @@ class Survival {
     const nearestShooter = danger.filter(t => shooter(t.entity) && (t.visible || bot._shootersSeen?.has(t.entity.id))).sort((a, b) => a.distance - b.distance)[0];
     const biterNearer = danger.some(t => !shooter(t.entity) && t.entity.name !== 'creeper' && t.visible && nearestShooter && t.distance <= nearestShooter.distance);
     const shootSays = shootersNow.length && blows && nearestShooter && !biterNearer ? `Shooting at the bot from here: ${shootersNow.join('; ')}.` : '';
-    const lead = [hitSays, shootSays, blows].filter(Boolean).join(' ');
+    // Behind what is hitting or shooting the bot now, a mob by its blow
+    // whose first harm is seconds off is said as farther off with those
+    // seconds first (note 770: 25585's options named the skeleton 2.5 blocks
+    // off and then a creeper 23.8 off "as much as the 20 health").
+    const nowLeads = !!(hitSays || shootSays);
+    const r1L = v => Math.round(v * 10) / 10;
+    const blowsFramed = blows && nowLeads && blowsL.arrives >= 2 && !/seconds of walking from lighting/.test(blows)
+      ? `Farther off, its first ${blowsL.mob?.name === 'creeper' ? 'blast' : 'blow'} about ${r1L(blowsL.arrives)} seconds away at its own speed: ${blows.replace(/^The /, 'the ')}`
+      : blows;
+    const lead = [hitSays, shootSays, blowsFramed].filter(Boolean).join(' ');
     if (lead) for (const o of Object.values(options)) o.description = `${lead} ${o.description}`;
+    // The mobs past their follow range, left out of the figures (note 770).
+    const pastSays = pastFollowSays(pastFollow);
+    if (pastSays) for (const o of Object.values(options)) o.description += pastSays;
+    // A shooter within the sword's reach: every way that hides from it says
+    // a swing reaches it now and what hiding from it buys at this range,
+    // beside the fight's own figures for these mobs (note 770: 25585 chose
+    // out_of_sight from a skeleton 2.5 and then 1 block off, and a pillar at
+    // 1.8, and never swung).
+    const meleeShooters = coming.filter(t => shooter(t.entity) && t.visible && t.entity.name !== 'ghast' && inReach(t));
+    if (meleeShooters.length && armed) {
+      const ms = meleeShooters[0], msName = ms.entity.name.replaceAll('_', ' ');
+      const own = (estimate.mobs || []).find(m => m.id === ms.entity.id) || (estimate.mobs || []).find(m => m.name === ms.entity.name);
+      const fightSays = cost ? ` The fight here, by the same figures: about ${cost.seconds} seconds and ${cost.damageTaken} damage for ${(estimate.mobs || []).filter(m => !m.apart).length === 1 ? `the ${msName}` : 'the mobs counted'}${own?.swingsToKill ? `, the ${msName} itself about ${own.swingsToKill} swing${own.swingsToKill === 1 ? '' : 's'} that land` : ''}.` : '';
+      const says = ` The ${msName} ${r1L(ms.distance)} blocks off is within the sword's reach now: a swing reaches it from where the bot stands. At this range hiding from it gains nothing but the seconds it takes to walk back into a line (said above for this way, none where it keeps one), and it shoots on from there; a kill ends its shots.${fightSays}`;
+      for (const [k, o] of Object.entries(options)) if (LINE_HIDES.has(k) && typeof o.description === 'string') o.description += says;
+    }
     // Every mob here with a fact worth telling (combat-estimate.js MOBS'
     // own `note`: an enderman's 2.9 blocks and the two-high pocket that
     // keeps it out, a spider's poison, a wither skeleton's wither, a wolf's
@@ -4920,6 +5056,18 @@ class Survival {
     // about and a shield is carried.
     if (bot.inventory?.slots?.[45]?.name === 'shield' && danger.some(t => shooter(t.entity))) for (const [k, o] of Object.entries(options)) {
       if (MOVING_STANCES.has(k) && !SHIELD_STANCES.has(k) && !/^(eat|drink)/.test(k) && typeof o.description === 'string') o.description += ' The shield is lowered while it moves: a shot that lands on the way lands whole, whatever the shield was answered to the shots.';
+    }
+    // A stance that swings lowers the shield for each swing, and a switch
+    // from one that holds it up drops it: raised again it blocks only a
+    // quarter second after (combat.js SHIELD_BLOCKS_AFTER_MS), and the record
+    // says how often a hit lands in that gap (note 770: 25598's fight after
+    // shield_guard took an arrow "shield rising" a second in).
+    const upNow = !!bot._shieldRaised;
+    const strikers = coming.filter(t => (shooter(t.entity) && t.visible) || (!shooter(t.entity) && t.distance <= 5));
+    if (bot.inventory?.slots?.[45]?.name === 'shield' && strikers.length) {
+      const { STANCE_SHOTS } = require('./shot-reflex');
+      const gap = ` The shield comes down for each swing and blocks again only a quarter second after it goes up: a blow or a shot in that moment lands whole (${RISING_RECORD.rising} of the ${RISING_RECORD.hits} hits on the bots from ${RISING_RECORD.since} landed so).${upNow ? ' The shield up now comes down at its first swing.' : ''}`;
+      for (const [k, o] of Object.entries(options)) if (STANCE_SHOTS.closing.has(k) && !SHIELD_STANCES.has(k) && typeof o.description === 'string') o.description += gap;
     }
     return options;
   }
@@ -7105,12 +7253,29 @@ class Survival {
     // or behind is not blocked".
     let hitsBy = new Map();
     try { hitsBy = new Map(require('./hit-log').hitters(bot, coming).filter(h => h.id != null).map(h => [h.id, h])); } catch (_) { hitsBy = new Map(); }
-    const behind = coming.filter(t => t.entity !== e && !shooter(t.entity) && t.distance <= 4 && t.entity.position && off(t.entity.position) > SHIELD_COVER)
-      .map(t => { const h = hitsBy.get(t.entity.id); return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off, ${Math.round(off(t.entity.position))} degrees from the way the shield faces${h ? `, which has landed ${h.hits} hit${h.hits === 1 ? '' : 's'} in the last 20 seconds` : ''}`; });
+    // And those out of sight within four (unseenBiters): 25598's second
+    // zombie, 2.5 blocks off at 154 degrees and unseen when the guard was
+    // chosen facing another, landed its blow with the shield up (23:39:45Z,
+    // note 770).
+    const hiddenIn = (this.lastHidden || []).filter(t => t.entity !== e && !coming.includes(t) && t.distance <= 4);
+    const behind = [...coming, ...hiddenIn].filter(t => t.entity !== e && !shooter(t.entity) && t.distance <= 4 && t.entity.position && off(t.entity.position) > SHIELD_COVER)
+      .map(t => { const h = hitsBy.get(t.entity.id); return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off${t.visible === false || hiddenIn.includes(t) ? ', out of sight' : ''}, ${Math.round(off(t.entity.position))} degrees from the way the shield faces${h ? `, which has landed ${h.hits} hit${h.hits === 1 ? '' : 's'} in the last 20 seconds` : ''}`; });
     const behindSays = behind.length ? ` Outside the shield's cover as it faces the ${name}: ${behind.join('; ')}; its blows land whole.` : '';
+    // Every shooter in sight and every mob that hit the bot lately, by where
+    // it stands from the way the shield would face now: inside its cover or
+    // not (note 770: 25598 guarded a zombie while the skeleton's hit was said
+    // only as "from behind", the side as the bot faced when it landed).
+    const flankIds = new Set(flanking.map(m => m.id));
+    const shotBy = coming.filter(t => t.entity !== e && t.entity.position && !flankIds.has(t.entity.id) && (shooter(t.entity) ? t.visible : hitsBy.has(t.entity.id)) && !behind.some(b => b.startsWith(`the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} `)))
+      .slice(0, 3).map(t => {
+        const d = Math.round(off(t.entity.position)), h = hitsBy.get(t.entity.id), inside = d <= SHIELD_COVER;
+        const what = shooter(t.entity) ? `its ${shotWord(t.entity.name)}s` : 'its blows';
+        return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance * 10) / 10} blocks off is ${d} degrees from that way, ${inside ? `inside the cover: ${what} are blocked once the shield has been up a quarter second` : `outside the cover: ${what} land whole`}${h ? ` (it hit the bot ${Math.max(0, Math.round((Date.now() - h.last) / 1000))} seconds ago${h.sides?.size ? `, from ${[...h.sides].join(' and ')} as the bot faced then` : ''})` : ''}`;
+      });
+    const coverSays = shotBy.length ? ` As the shield faces the ${name}: ${shotBy.join('; ')}.` : '';
     const faceSays = biters.length > 1 ? `the nearest of the ${biters.length} that bite (the ${name} ${Math.round(faced.distance)} blocks off)` : `the ${name} ${Math.round(faced.distance)} blocks off`;
     return { expects: { damage: price.damage, seconds: 15, oneHit },
-      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${behindSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
+      description: `Face ${faceSays} with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and let it come; strike it with ${weapon ? `the ${weapon.name.replaceAll('_', ' ')}` : 'bare hands'} right after each of its blows lands on the shield, or while it is within the sword's reach (three blocks from the eye) and out of its own (about a block and a half), and raise the shield again at once; a raised shield blocks only after a quarter second, so a blow landing in that moment lands whole. The shield stays up while this is asked again. Nothing is walked to or charged, and there is no jump for a critical. From the game's own rules: a blow the shield takes whole does no harm, it comes about once a second at its reach with a swing of the arm the bot sees, a sword does not disable a shield, and a blocked blow knocks the mob back half a block.${wither}${kill}${flank}${behindSays}${coverSays}${e.name === 'wither_skeleton' ? wg.measuredSays('guard', biters.filter(t => t.entity.name === e.name).length, { also: ['fight'] }) : ''}${wg.recordSays(e.name)}` + costSays(price, bot.health, others),
       run: async () => {
         this.report(goal, save, { action: 'shield_guard', target: e.name, threats: biters.map(t => t.entity.name), health: bot.health, stance: true });
         if (!shielded) { const s = bot.inventory.items().find(i => i.name === 'shield'); if (s) await bot.equip(s, 'off-hand'); }
@@ -10425,4 +10590,4 @@ function claim(bot, goal = {}, survival = null) {
       ...(wait ? { waitSealedMinutes: wait.minutes, ...(wait.day ? { waitSealedDayNow: true } : {}) } : {}) });
 }
 
-module.exports = { sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

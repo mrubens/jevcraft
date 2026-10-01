@@ -2777,7 +2777,10 @@ test('in a crowd every stance says what the mobs cost it over the same fifteen s
   assert.match(options.pillar.description, priced);
   assert.match(options.pillar.description, /the 1\.5 seconds of going up included, from 13 health \(more than the bot has\)/);
   assert.match(options.pillar.description, /The creeper 6 blocks off can go off beside the bot in about 2\.6 seconds, after the going up is done: about 21 two blocks off after the armour worn, more than the bot has/);
-  assert.match(options.pillar.description, /Two up, the creeper, 3 skeletons and the spider still reach it/);
+  // The skeleton 20 blocks off is past the 16 a skeleton sets on a player
+  // from: left out of the figures and said so (note 770).
+  assert.match(options.pillar.description, /Two up, the creeper, 2 skeletons and the spider still reach it/);
+  assert.match(options.pillar.description, /Not counted in these figures, not after the bot from there: the skeleton 20 blocks off, past the 16 blocks a skeleton sets on a player from/);
   assert.match(options.seal.description, priced);
   assert.match(options.seal.description, /seconds of building not done within them/, 'thirty blocks of pocket are not shut in fifteen seconds');
   assert.match(options.fight.description, /about [\d.]+ of it in the first fifteen seconds/);

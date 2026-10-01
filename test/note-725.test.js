@@ -52,7 +52,9 @@ test('the stance\'s "hardest hitter" lead-in joins "out of sight" and "the harde
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, danger, false);
   const lead = options.fight?.description || options.charge_nearest?.description;
   assert.ok(lead, Object.keys(options).join(','));
-  assert.match(lead, /out of sight, the hardest hitter of the 2 here that can get to the bot,/, 'both clauses present, joined by one comma');
+  // The zombie's first blow comes more than a second before the cube's,
+  // so it leads as the first (note 770); the clauses join the same way.
+  assert.match(lead, /out of sight, the (?:hardest hitter|first) of the 2 here that can get to the bot,/, 'both clauses present, joined by one comma');
   assert.doesNotMatch(lead, /,,/, 'no double comma');
 });
 

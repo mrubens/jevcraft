@@ -77,6 +77,15 @@ function lowerShield(bot) {
   const meal = require('./meal').mealOn(bot);
   if ((meal && !meal.cut) || require('./shot-reflex').mainHandBusy(bot)) { bot._shieldRaised = false; return; }
   bot.deactivateItem(); bot._shieldRaised = false;
+  bot._shieldLowered = { at: Date.now(), by: lowererOf(new Error().stack) };
+}
+// Who lowered the shield last, by the first frame outside this file (note
+// 770: 506 of 2,100 hits from 06:00Z on 2026-09-30 landed with the shield rising, and the
+// record could say only what was in force, not what took it down).
+function lowererOf(stack = '') {
+  const frame = String(stack).split('\n').slice(1).find(l => !/combat\.js/.test(l)) || '';
+  const m = /at (?:async )?([\w.$<>]+)? ?\(?(?:.*[\\/])?([\w.-]+\.js):(\d+)/.exec(frame);
+  return m ? `${m[1] ? `${m[1]} ` : ''}${m[2]}:${m[3]}` : 'unknown';
 }
 
 // One arrow: bow in hand, aim with lead and drop, draw about a second,

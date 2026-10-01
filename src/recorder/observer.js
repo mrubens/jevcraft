@@ -72,6 +72,9 @@ function observeBot(trace, bot, { getGoal = () => ({}), getLedger = () => null, 
       keys: bot.controlState ? [...Object.keys(bot.controlState).filter(k => bot.controlState[k]), ...(shieldUp(bot) ? ['shield', ...(shieldRising(bot) ? ['shield_rising'] : [])] : [])] : undefined,
       // Held behind the shield for a shot on its way (shot-reflex.js), and
       // why; or why a hold was refused a moment ago.
+      // What lowered the shield last, within the two seconds before (note
+      // 770): read with a hurt that landed with the shield rising.
+      ...(bot._shieldLowered && now - bot._shieldLowered.at < 2000 ? { shieldLowered: { by: bot._shieldLowered.by, msAgo: now - bot._shieldLowered.at } } : {}),
       ...(bot._shotHold ? { shotHold: bot._shotHold.why } : bot._shotRefused && Date.now() - bot._shotRefused.at < 1000 ? { shotRefused: bot._shotRefused.why } : {}),
       inventory: Object.fromEntries([...new Set(items.map(i => i.name))].map(n => [n, items.filter(i => i.name === n).reduce((a, i) => a + i.count, 0)])),
       tools: items.filter(i => bot.registry?.itemsByName?.[i.name]?.maxDurability).map(i => ({ name: i.name,

@@ -1131,7 +1131,16 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
       // killed inside its fuse, or gone off where the bot has backed to.
       // While the bot builds or digs it goes off beside it, two blocks off.
       const foughtHere = !!fight && !!m.fought && (!fight.only || fight.only(m)) && at > setup;
-      if (foughtHere) {
+      // Lit while the setup ran (a swim, a climb, building), its fuse has
+      // run meanwhile: the swings begun at the setup's end kill it inside
+      // what is left of the fuse, or it goes off beside the bot (note 770:
+      // 25583 swam to a landing the creeper was lit beside, priced at 0).
+      const litInSetup = !m.fought?.litNowFuseLeft && arrives(m) < setup;
+      // Nor is there time to back out of its blast in what is left.
+      const lateSwings = foughtHere && litInSetup && !(m.fought.diesBeforeItGoesOff && (m.fought.secondsToKillIt ?? Infinity) <= at - setup);
+      if (lateSwings) {
+        if (at <= seconds) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot, at: 2 }); damage += m.hitsBot; }
+      } else if (foughtHere) {
         if (at <= seconds && m.fought.blast > 0) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.fought.blast, at: m.fought.goesOffAt }); damage += m.fought.blast; }
       } else if (at <= setup || (at <= seconds && reaches(m))) { blasts.push({ name: m.name, distance: m.distance, seconds: round(at), hitsBot: m.hitsBot, at: 2 }); damage += m.hitsBot; }
       if (reaches(m)) stillReach(m);
