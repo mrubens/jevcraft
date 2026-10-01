@@ -52,6 +52,13 @@ test('25589 at 03:08:19Z: the beef is not offered for the gold ingot while other
     for (const [k, q] of Object.entries(questions)) { offered.push(q.criteria); const keys = Object.keys(q.criteria).filter(x => x !== 'none_good'); answers[k] = { choice: keys.includes('drop') ? 'drop' : keys[0], confidence: 0.8 }; }
     return { answers };
   } };
+  // The three eggs are the tidy's (note 780: nothing on the way to the
+  // dragon takes them), dropped with no question; a stick picked up after, the
+  // pockets are full again and the next room is asked for.
+  await makeRoom(b, { opportunityClient: client, check() {} }, 'gold_ingot', { goal: winGoal() });
+  assert.deepEqual(b.tossed, ['egg']);
+  assert.equal(offered.length, 0, 'no question while the tidy\'s rule makes the room');
+  items.push(it('stick', 1));
   await makeRoom(b, { opportunityClient: client, check() {} }, 'gold_ingot', { goal: winGoal() });
   const stacksOffered = offered.flatMap(c => Object.keys(c)).filter(k => k.startsWith('drop_'));
   assert(stacksOffered.length, 'asked');

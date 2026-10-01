@@ -75,10 +75,15 @@ test('with every stack under its cap, room for food is made from the cheapest st
     toss: async () => { throw new Error('whole stacks only'); },
     tossStack: async item => { tossed.push(`${item.count} ${item.name}`); stacks.splice(stacks.indexOf(item), 1); free++; } };
   assert.equal(await makeRoom(b, null, 'mutton'), true);
-  assert.deepEqual(tossed, ['62 cobblestone'], 'in the Nether, cobblestone past its one stack, the smaller stack, nothing more');
+  // 193 blocks are one budget of 128 (note 780): the tidy's rule goes first,
+  // the netherrack past it, the whole stack of 3, nothing more.
+  assert.deepEqual(tossed, ['3 netherrack'], 'the building budget keeps cobblestone before netherrack, and drops only a whole stack past it');
+  free = 0;
+  assert.equal(await makeRoom(b, null, 'mutton'), true);
+  assert.deepEqual(tossed, ['3 netherrack', '62 cobblestone'], 'no whole stack past the budget left: the order\'s floor, cobblestone past its one stack in the Nether');
   free = 0;
   assert.equal(await makeRoom(b, null, 'mutton'), false, 'every stack at its floor now: past them it is Jev\'s choice, not the order\'s');
-  assert.deepEqual(tossed, ['62 cobblestone']);
+  assert.deepEqual(tossed, ['3 netherrack', '62 cobblestone']);
   assert(stacks.some(s => s.name === 'coal') && stacks.some(s => s.name === 'raw_iron'));
 });
 
@@ -107,7 +112,9 @@ test('the second day audit pockets: nether wart, an egg and Overworld netherrack
   const b = { registry, game: { dimension: 'overworld' }, inventory: { items: () => stacks, emptySlotCount: () => free, slots: {} },
     tossStack: async item => { tossed.push(item.name); stacks.splice(stacks.indexOf(item), 1); free++; } };
   for (let i = 0; i < 3; i++) { free = 0; assert.equal(await makeRoom(b, null, 'gold_ingot'), true); }
-  assert.deepEqual(tossed, ['nether_wart', 'egg', 'netherrack']);
+  // The egg goes first, by the tidy's own rule (note 780: nothing on the way
+  // to the dragon takes it); then the order's nether wart and netherrack.
+  assert.deepEqual(tossed, ['egg', 'nether_wart', 'netherrack']);
   b.game.dimension = 'the_nether';
   stacks.push({ name: 'netherrack', count: 40 });
   free = 0; await makeRoom(b, null, 'gold_ingot');
@@ -294,15 +301,22 @@ test('making room asks whether to drop anything apart from which stack, so junk 
   add('dripstone_block', 17); add('pointed_dripstone', 5); add('red_mushroom', 1);
   while (items.length < 36) add('white_wool', 1);
   let asked;
-  const client = { systemOne: async ({ questions }) => { asked = questions; return { answers: { branch_0: { choice: 'drop', confidence: 0.87 }, branch_1: { choice: 'drop_pointed_dripstone', confidence: 0.3 } } }; } };
-  const tossed = [];
+  const client = { systemOne: async ({ questions }) => { asked = questions; return { answers: { branch_0: { choice: 'drop', confidence: 0.87 }, branch_1: { choice: Object.keys(questions.branch_1.criteria)[0], confidence: 0.3 } } }; } };
+  let tossed = [];
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [] }, entity: { position: new (require('vec3').Vec3)(0, 64, 0) }, game: { dimension: 'overworld' }, lookAt: async () => {},
     tossStack: async st => { tossed.push(st.name); items = items.filter(i => i !== st); } };
+  // What has no use is the tidy's to drop, with no question (note 780).
+  assert.equal(await makeRoom(bot, { check() {}, opportunityClient: client }, 'stone_pickaxe'), true);
+  assert.equal(asked, undefined, 'no question: the tidy\'s rule made the room');
+  assert.deepEqual(tossed.sort(), ['dripstone_block', 'pointed_dripstone', 'red_mushroom']);
+  // With nothing past a cap, the question is asked as two: whether, and which.
+  items = []; tossed = [];
+  add('oak_fence', 15); add('lapis_lazuli', 9); add('stick', 3);
+  while (items.length < 36) add('white_wool', 1);
   assert.equal(await makeRoom(bot, { check() {}, opportunityClient: client }, 'stone_pickaxe'), true);
   assert.deepEqual(Object.keys(asked.branch_0.criteria).sort(), ['drop', 'none']);
-  assert.match(asked.branch_0.criteria.drop, /3 of them with no use on the way to the dragon/);
+  assert.match(asked.branch_0.criteria.drop, /none of them without a use/);
   assert.equal(tossed.length, 1);
-  assert(/dripstone|mushroom/.test(tossed[0]), `a junk stack went: ${tossed[0]}`);
 });
 
 test('with the portal frame to be cast, the water bucket is said to be what turns its blocks to obsidian', async () => {
@@ -410,6 +424,8 @@ test('a golden apple is not offered for a stick while junk sits over its cap; dr
   assert.doesNotMatch(offeredText, /golden apple/, 'the golden apple is not offered while cobblestone and dirt sit over their caps');
   assert.match(offeredText, /cobblestone.*more than the \d+ worth keeping/);
   assert.match(offeredText, /dirt.*more than the \d+ worth keeping/);
+  // One budget (note 780): 165 blocks against 128, dirt kept last.
+  assert.match(offeredText, /Drop 34 dirt[^\n]*165 carried \(131 cobblestone, 34 dirt\), more than the 128 worth keeping in all, kept cobblestone first and dirt last; 34 of these are past it/);
 
   // With no junk left, the golden apple is offered, and said for what it is.
   items = [];
@@ -428,7 +444,9 @@ test('food is not offered for a stick when nothing is junk; each unflagged stack
   const { makeRoom } = require('../src/inventory-tidy');
   const items = [];
   const add = (name, count) => { const it = registry.itemsByName[name]; items.push({ name, count, type: it.id, stackSize: it.stackSize }); };
-  add('oak_fence', 15); add('raw_copper', 16); add('lapis_lazuli', 9); add('blue_egg', 2); add('spider_eye', 1); add('wooden_hoe', 1); add('mutton', 7);
+  // The blue eggs and the spider eye 25597 carried are the tidy's now, dropped
+  // with no question (note 780); the rest is what the question sees.
+  add('oak_fence', 15); add('raw_copper', 16); add('lapis_lazuli', 9); add('wooden_hoe', 1); add('mutton', 7);
   let offered;
   const client = { systemOne: async ({ questions }) => {
     offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria };

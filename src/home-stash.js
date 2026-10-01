@@ -548,7 +548,7 @@ async function restockFromStash(bot, task, goal, save, home, actions, wants = []
   const planned = goal.step.items || [];
   const { makeRoom } = require('./inventory-tidy');
   const keep = new Set(planned.map(m => m.item));
-  for (const move of planned) { task.check(); await makeRoom(bot, task, move.item, { keep, away: pos(home.stash.position) }); }
+  for (const move of planned) { task.check(); await makeRoom(bot, task, move.item, { keep, goal, away: pos(home.stash.position) }); }
   try {
     const taken = await withChest(bot, task, goal, save, home, actions, async window => {
       step();

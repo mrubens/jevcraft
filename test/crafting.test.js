@@ -109,7 +109,7 @@ function fullPockets(registry, { cursor = null, choices = [] } = {}) {
   const slots = Array(46).fill(null);
   const set = (i, name, count) => { const it = registry.itemsByName[name]; slots[i] = { name, count, type: it.id, stackSize: it.stackSize, slot: i }; };
   set(9, 'acacia_log', 7); set(10, 'dirt', 20); set(11, 'flint_and_steel', 1);
-  for (let i = 12; i < 45; i++) set(i, 'white_terracotta', 64);
+  for (let i = 12; i < 45; i++) set(i, 'mud', 64);
   const invalid = () => { const err = new Error('invalid operation'); err.name = 'AssertionError'; throw err; };
   const free = () => slots.findIndex((s, n) => n >= 9 && n < 45 && !s);
   const asked = [], tossed = [];
@@ -152,7 +152,7 @@ test('a craft with the pockets full and sticks on the cursor makes room as Jev c
   const asked = [];
   const client = { systemOne: async ({ questions }) => {
     const offered = { ...questions.branch_0.criteria, ...questions.branch_1.criteria }; asked.push(offered);
-    const pick = dropOf(offered, 'dirt') || dropOf(offered, 'white terracotta');
+    const pick = dropOf(offered, 'dirt') || dropOf(offered, 'mud');
     return { answers: { branch_0: { choice: 'drop', confidence: 0.7 }, branch_1: { choice: pick, confidence: 0.7 } } };
   } };
   const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
@@ -160,9 +160,9 @@ test('a craft with the pockets full and sticks on the cursor makes room as Jev c
   assert.equal(bot.inventory.selectedItem, null, 'the sticks are off the cursor');
   assert(slots.some(s => s?.name === 'stick' && s.count === 4), 'the sticks are in the pockets');
   assert(slots.some(s => s?.name === 'acacia_planks' && s.count === 4), 'the planks were made');
-  // Terracotta by the stack is dug again in seconds, offered before the
+  // Mud by the stack is dug again in seconds, offered before the
   // dirt that is the block reserve (note 754b).
-  assert.deepEqual(tossed, ['white_terracotta', 'white_terracotta']);
+  assert.deepEqual(tossed, ['mud', 'mud']);
   assert.match(asked[1].drop, /make room for the 4 acacia planks/);
 });
 
@@ -182,7 +182,7 @@ test('a craft with no free slot asks for room even where its ingredient stack wo
   // 0 free slots, 1,129 of them "have 0 of 4": the slot a last log would
   // free was not room the server gave the output.
   const registry = require('minecraft-data')('26.1');
-  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_white_terracotta'] });
+  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_mud'] });
   slots[9].count = 1;
   const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;
   await acquireStep(bot, task, 'acacia_planks', 4, {}, () => {});
@@ -196,7 +196,7 @@ test('a craft resting for want of a free slot goes to the drop question, not the
   // slots" thirty-six times running, the drop question never asked.
   const registry = require('minecraft-data')('26.1');
   const { noteCraftFailure, craftRest } = require('../src/craft-failures');
-  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_white_terracotta'] });
+  const { bot, client, asked, tossed, slots } = fullPockets(registry, { choices: ['drop_mud'] });
   for (let n = 0; n < 2; n++) noteCraftFailure(bot, 'acacia_planks', 'no output: acacia planks after crafting, twice (have 0 of 4, 0 free slots)');
   assert(craftRest(bot, 'acacia_planks'), 'the craft rests');
   const task = new Task('craft', 'acacia planks'); task.opportunityClient = client;

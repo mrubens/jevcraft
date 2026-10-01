@@ -14,7 +14,10 @@ const stack = (name, count = 1, extra = {}) => ({ name, count, type: registry.it
 
 test('with no junk, stacks dug again in seconds are offered alone before golden apples and the lighter (25584)', async () => {
   const { makeRoom } = require('../src/inventory-tidy');
-  let items = [stack('golden_apple', 2), stack('flint_and_steel'), stack('coal', 64), stack('raw_iron', 14), stack('cobblestone', 64), stack('smooth_basalt', 32), stack('dirt', 32), stack('bucket', 8), stack('iron_pickaxe')];
+  // 25584 carried 32 smooth basalt too: in the Overworld that is the tidy's
+  // now, dropped with no question (note 780), so mud stands in for a stack
+  // dug again in seconds that no cap or budget holds.
+  let items = [stack('golden_apple', 2), stack('flint_and_steel'), stack('coal', 64), stack('raw_iron', 14), stack('cobblestone', 64), stack('mud', 32), stack('dirt', 32), stack('bucket', 8), stack('iron_pickaxe')];
   const bot = { registry, inventory: { items: () => items, emptySlotCount: () => 0 }, entity: { position: new Vec3(0, 64, 0) }, tossStack: async s => { items = items.filter(i => i !== s); } };
   let offered;
   const task = { check() {}, opportunityClient: { systemOne: async ({ questions }) => {
@@ -25,7 +28,7 @@ test('with no junk, stacks dug again in seconds are offered alone before golden 
   await makeRoom(bot, task, 'lava_bucket', { room: () => items.length < 9 });
   const drops = Object.keys(offered).filter(k => /^drop_/.test(k));
   assert(drops.length, 'something is offered');
-  for (const k of drops) assert.match(k, /^drop_(cobblestone|smooth_basalt|dirt)$/, `only what is dug again in seconds: ${drops}`);
+  for (const k of drops) assert.match(k, /^drop_(cobblestone|mud|dirt)$/, `only what is dug again in seconds: ${drops}`);
   assert(items.some(i => i.name === 'golden_apple') && items.some(i => i.name === 'flint_and_steel'));
 });
 

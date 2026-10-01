@@ -6427,17 +6427,33 @@ async function keepRoom(bot, task, goal) {
     if (crowded(bot)) await clearCreativeInventory(bot, task, wantedItems(goal));
     return;
   }
+  if (!crowded(bot) || !tidyMoment(bot)) return;
   const heading = goal.step?.destination || goal.step?.target || goal.tunnel?.target;
-  const wanted = [...wantedItems(goal)];
-  const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null, keep: new Set(wanted) });
+  // What the ladder's next rung takes is kept too, as the room question
+  // keeps it (note 780): a budget or a no-rung cap never drops it.
+  const tidy = require('./inventory-tidy');
+  const wanted = [...wantedItems(goal), ...tidy.rungNeeds(bot, goal)];
+  const ctx = tidy.tidyContext(bot, goal);
+  const dropped = await tidyInventory(bot, task, { away: heading && Number.isFinite(heading.x) ? heading : null, keep: new Set(wanted), ctx });
   if (dropped.length) {
     // Tunnelling refills the stone every few minutes; say so now and then,
     // not at every stack.
     const quiet = goal.tidied && Date.now() - Date.parse(goal.tidied.at) < 600000;
     goal.tidied = { at: new Date().toISOString(), dropped };
-    if (!quiet) bot.chat?.(`My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}`).join(', ')} here.`);
+    if (!quiet) bot.chat?.(`My pockets are full, so I'm leaving ${dropped.map(d => `${d.count} ${d.name.replaceAll('_', ' ')}${d.why ? ` (${d.why})` : ''}`).join(', ')} here.`);
   }
 }
+
+// A safe moment to tidy (note 780): standing, out of water and lava, with no
+// threat in sight within eight blocks. A toss faces away and throws; mid-fall
+// or mid-fight that is time the body's own answers want.
+function tidyMoment(bot) {
+  const e = bot.entity;
+  if (!e) return true;
+  if (e.onGround === false || e.isInWater || e.isInLava) return false;
+  try { return !require('./danger').threats(bot, 8).some(t => t.visible); } catch (_) { return true; }
+}
+
 
 // An escalation to a question a step asks (a way's, a plan's): the step's
 // own pass asks it, with the failure below said (tried.js escalationsFor).
@@ -8356,4 +8372,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { wantedItems, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear };
+module.exports = { wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, flagFarLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalDue, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear };

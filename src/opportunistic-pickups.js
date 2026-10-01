@@ -5,7 +5,7 @@ const { dryStanding } = require('./mining-access');
 const { immediateThreat, safeFromHostiles } = require('./danger');
 const { collectNearbyDrops, pickupPositions } = require('./drop-collection');
 const { isolated, canBegin, huntObserved } = require('./mob-hunt');
-const { SURPLUS, crowded } = require('./inventory-tidy');
+const { atKeep, crowded } = require('./inventory-tidy');
 const { isKeepsake, isKitMaterial } = require('./home-stash');
 
 // The surface twin of the ore check: what lies on the ground and what
@@ -51,7 +51,8 @@ function dropCandidates(bot, goal = {}) {
     if (full && !PRECIOUS.test(item)) continue;
     if (entity.position.distanceTo(here) > LIMITS.dropRadius) continue;
     if (!(isKeepsake(item) || isKitMaterial(bot, item) || PRECIOUS.test(item))) continue;
-    if (item in SURPLUS && countOf(bot, item) >= SURPLUS[item]) continue;
+    // Past its cap or its budget (note 780): picked up, the tidy drops it again.
+    if (atKeep(bot, item, { keep: new Set([goal.item, goal.step?.item].filter(Boolean)) })) continue;
     if (skippedRecently(goal, `drop:${item}`)) continue;
     if (!safeFromHostiles(bot, entity.position) || !pickupPositions(bot, entity).length) continue;
     seen.add(item);

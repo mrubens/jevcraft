@@ -11,8 +11,11 @@ const SURPLUS = Object.freeze({
   // Two stacks: the Nether crossing waits for 128 blocks (work.js), and a
   // tidy that dropped all past one would send it back for more, round and
   // round.
+  // Tuff, diorite, andesite, granite, terracotta and sandstone lay as well
+  // as cobblestone: they are counted in the building budget below (note
+  // 780), kept after the crossing kit's kinds and dropped before them.
   cobblestone: 128, cobbled_deepslate: 64, dirt: 32, gravel: 16, sand: 0, red_sand: 0,
-  diorite: 0, andesite: 0, granite: 0, tuff: 0, calcite: 0, netherrack: 128,
+  calcite: 0, netherrack: 128,
   // A soul sand valley's staircase: mid-92-o carried 105 soul soil and 104
   // soul sand out of one, four slots of nothing it builds with (soul sand
   // slows the walk it would bridge with).
@@ -87,16 +90,211 @@ function roomFor(bot, name, count = 1) {
 
 // `keep` is what the work in hand is for: "get me 64 sand" with full
 // pockets mined the sand, dropped it as surplus, and mined it again.
-function surplus(bot, keep = new Set()) {
-  const counts = {};
-  for (const item of bot.inventory.items()) counts[item.name] = (counts[item.name] || 0) + item.count;
-  return Object.entries(counts).filter(([name, count]) => name in SURPLUS && !keep.has(name) && count > SURPLUS[name])
-    .map(([name, count]) => ({ name, count: count - SURPLUS[name] }));
+// Everything over a cap: each kind's own (capOf) and each budget's (BUDGETS).
+function surplus(bot, keep = new Set(), ctx = {}) {
+  return overCaps(countsOf(bot), { dimension: bot.game?.dimension, keep, ...ctx }).map(({ name, count }) => ({ name, count }));
+}
+const countsOf = bot => { const counts = {}; for (const item of bot.inventory.items()) counts[item.name] = (counts[item.name] || 0) + item.count; return counts; };
+
+// Kept by budget, not kind by kind (note 780). The bots ran with 34 or more
+// of 36 slots in use 52% of the time in the records from 2026-09-30 12Z,
+// and the tidy, which drops only what is over a cap, found nothing over one
+// in half the minutes it was crowded: cobblestone, cobbled deepslate, dirt
+// and netherrack each sat under a cap of its own (128, 64, 32, 128: six
+// slots of blocks that all do the same job), beside terracotta of five
+// colors, moss, saplings, eggs, rail and spider eyes that had no cap at
+// all. The room question was asked 2.9 times a bot-hour, and full
+// pockets were where most pickaxes were thrown (note 779). A budget holds
+// kinds that do one job as one count, kept in the order given (the first
+// kept first; the last goes first): building blocks are one budget of 128,
+// the crossing kit's own two stacks (crossing-kit.js NETHER_BLOCKS), the
+// ghast-proof stone kept before tuff, the granites, terracotta and
+// sandstone, and those before netherrack and dirt. In the Nether its
+// basalt and bricks count too. Boats are one: a boat crosses water, and
+// five kinds of boat are five slots.
+const BUILDING_KEEP_ORDER = ['cobblestone', 'cobbled_deepslate', 'blackstone', 'stone', 'deepslate', 'nether_bricks', 'basalt', 'smooth_basalt',
+  'tuff', 'andesite', 'diorite', 'granite', /^(\w+_)?terracotta$/, /^(red_)?sandstone$/, 'netherrack', 'dirt', 'coarse_dirt'];
+const orderMatch = (o, n) => typeof o === 'string' ? o === n : o.test(n);
+const NETHER_ONLY_BLOCKS = /^(nether_bricks|basalt|smooth_basalt)$/;
+const BUILDING_BUDGET = 128;
+const BUDGETS = [
+  { label: 'building blocks', says: 'one budget across kinds for bridging and pillaring',
+    test: (n, dim) => BUILDING_KEEP_ORDER.some(o => orderMatch(o, n)) && (!NETHER_ONLY_BLOCKS.test(n) || /nether/.test(String(dim || ''))),
+    order: BUILDING_KEEP_ORDER, budget: ctx => Math.max(BUILDING_BUDGET, ctx.kitWants || 0), off: ctx => !!ctx.blocksShort },
+  { label: 'boats', says: 'a boat crosses water; one of any wood is all a crossing uses', test: n => /_(boat|raft)$/.test(n) && !/chest_/.test(n), budget: () => 1 },
+];
+const budgetOf = (name, dim) => BUDGETS.find(b => b.test(name, dim)) || null;
+// Kinds no rung on the way to the dragon wants (note 780), kept to none
+// when the pockets are crowded: mob drops no recipe the run makes takes
+// (rotten flesh, spider eyes, scutes, hides, membranes, ink, eggs), ores and
+// metal no rung spends (redstone), what no way lays (rail, nether brick
+// fences, and outside the Nether basalt and bricks), and finds with no use
+// (NO_USE). What the work
+// in hand is for, and what the ladder's next rung takes, is kept all the
+// same (`keep`). The keepsakes (home-stash.js: wool, string, feathers,
+// bones, leather, gunpowder, flint, coal, seeds) are not among them: a rung
+// or the home's chest spends each. With a home chest known, these are the
+// chest's keepers (home-stash.js stashes oddities), not dropped.
+// (ctx.homeChest).
+const NO_RUNG = /^(rotten_flesh|spider_eye|armadillo_scute|rabbit_hide|rabbit_foot|phantom_membrane|magma_cream|ink_sac|glow_ink_sac|slime_ball|egg|brown_egg|blue_egg|redstone|glowstone_dust|rail|wither_skeleton_skull|ominous_bottle|cocoa_beans|snowball|clay_ball|nether_brick_fence|nether_brick_stairs|cobweb|hay_block|.*_sapling)$/;
+const capFor = (name, dim, ctx = {}) => {
+  const own = capOf(name);
+  if (own !== undefined) return own;
+  if (NO_USE.test(name) || (NO_RUNG.test(name) && !ctx.homeChest)) return 0;
+  if (/^(basalt|smooth_basalt|nether_bricks)$/.test(name) && !/nether/.test(String(dim || ''))) return 0;
+  return undefined;
+};
+// Why a kind is past what is kept, said on the tidy's own line and on the
+// room question.
+function capWhy(name, dim) {
+  const b = budgetOf(name, dim);
+  if (b) return `${b.label} past the ${b.label === 'building blocks' ? BUILDING_BUDGET : b.budget({})} kept in all`;
+  if (NO_USE.test(name)) return 'no use on the way to the dragon';
+  if (NO_RUNG.test(name) || (capFor(name, dim) === 0)) return 'nothing on the way to the dragon takes it';
+  return `past the ${capFor(name, dim)} worth keeping`;
+}
+
+// What is over a cap, kind by kind and budget by budget: [{ name, count,
+// why }]. A budget counts what `keep` holds but never drops it; what goes is
+// taken from the end of the budget's keep order (dirt before netherrack
+// before cobblestone), and with blocks short for a way on (note 751d) the
+// building budget is off.
+function overCaps(counts, ctx = {}) {
+  const keep = ctx.keep || new Set(), dim = ctx.dimension;
+  const out = [];
+  const inBudget = new Set();
+  for (const b of BUDGETS) {
+    const names = Object.keys(counts).filter(n => b.test(n, dim));
+    names.forEach(n => inBudget.add(n));
+    if (!names.length || b.off?.(ctx)) continue;
+    const rank = n => { const i = (b.order || []).findIndex(o => orderMatch(o, n)); return i < 0 ? 999 : i; };
+    // Kept first: what `keep` holds, then the budget's order, then the most carried.
+    const order = names.sort((x, y) => (keep.has(y) - keep.has(x)) || (rank(x) - rank(y)) || (counts[y] - counts[x]));
+    let left = b.budget(ctx);
+    order.forEach((n, pos) => {
+      const own = capOf(n);
+      const keeps = keep.has(n) ? counts[n] : Math.min(counts[n], Math.max(0, left), own ?? Infinity);
+      left -= keeps;
+      // `goes`: the budget's last kept goes first (dirt before cobblestone).
+      if (counts[n] > keeps) out.push({ name: n, count: counts[n] - keeps, tier: 1, goes: -pos, why: own !== undefined && keeps === own && left > 0 ? `past the ${own} worth keeping` : capWhy(n, dim) });
+    });
+  }
+  for (const [name, count] of Object.entries(counts)) {
+    if (inBudget.has(name) || keep.has(name)) continue;
+    // Coal is never the tidy's to throw (it smelts and lights); past two
+    // stacks it is only said, on the room question (ctx.sayCoal).
+    if (/^(coal|charcoal)$/.test(name) && !ctx.sayCoal) continue;
+    const cap = capFor(name, dim, ctx);
+    if (cap !== undefined && count > cap) out.push({ name, count: count - cap, tier: cap === 0 ? 0 : 2, goes: 0, why: capWhy(name, dim) });
+  }
+  return out;
+}
+
+// The tidy's plan for pockets as counted (name -> count): what to drop, in
+// order, to bring the free slots back to FREE_SLOTS (the headroom a pick-up,
+// a craft's output and a furnace's take each want). Only drops that free a
+// slot are made (a part of a stack frees none), the most slots first.
+// Pure, so the flight records' pockets can be tidied on paper
+// (scripts/pocket-pressure.js).
+function tidyPlan(counts, { free, dimension, keep = new Set(), blocksShort = false, kitWants = 0, homeChest = false, stackOf = () => 64, headroom = FREE_SLOTS } = {}) {
+  if (!(free < headroom)) return [];
+  const slots = (n, c) => Math.ceil(c / Math.max(1, stackOf(n)));
+  const plan = overCaps(counts, { dimension, keep, blocksShort, kitWants, homeChest })
+    .map(d => ({ ...d, slots: slots(d.name, counts[d.name]) - slots(d.name, counts[d.name] - d.count) }))
+    .filter(d => d.slots > 0)
+    // The most slots first; at one slot each, a kind kept to none before a
+    // budget's last kind before a stack past its own cap.
+    .sort((a, b) => (b.slots - a.slots) || (a.tier - b.tier) || (a.goes - b.goes) || (b.count - a.count));
+  const out = [];
+  for (const d of plan) {
+    if (free >= headroom) break;
+    out.push(d); free += d.slots;
+  }
+  return out;
+}
+
+// What the budgets read from the goal: blocks short for a way on (note
+// 751d: the building budget is off) and the blocks the crossing's kit counts.
+function tidyContext(bot, goal) {
+  let blocksShort = false, kitWants = 0;
+  const homeChest = !!goal?.survival?.home?.stash;
+  try { blocksShort = !!require('./block-stock').blocksShortNow(goal); } catch (_) { blocksShort = false; }
+  try { kitWants = require('./crossing-kit').kitBlocksWanted(bot, goal || {}); } catch (_) { kitWants = 0; }
+  return { blocksShort, kitWants, homeChest };
+}
+
+// The items the ladder's next rung takes or uses (its catalog plan's
+// consumes and requires), kept by the tidy as the room question keeps them;
+// read again at most every 30 s.
+const rungSeen = new WeakMap();
+function rungNeeds(bot, goal) {
+  if (goal?.kind !== 'win') return [];
+  const seen = rungSeen.get(goal);
+  if (seen && Date.now() - seen.at < 30000) return seen.names;
+  const names = new Set();
+  try {
+    const stage = require('./game-progress').nextGameStage(bot, goal);
+    if (stage?.item) {
+      names.add(stage.item);
+      const { catalogPlan, planningInventory } = require('./work');
+      for (const st of catalogPlan(bot, stage.item, stage.count || 1, planningInventory(bot), goal) || []) for (const k of Object.keys({ ...st.consumes, ...st.requires })) names.add(k);
+    }
+  } catch (_) { /* no stage read: nothing more kept */ }
+  rungSeen.set(goal, { at: Date.now(), names: [...names] });
+  return [...names];
 }
 
 function crowded(bot) {
   const free = bot.inventory.emptySlotCount?.();
   return Number.isInteger(free) ? free < FREE_SLOTS : false;
+}
+
+// Part stacks of one kind merged (note 780): two part stacks of cobblestone
+// are two slots where one would do, and the drops below go a stack at a
+// time. Only with no window open (a click there is the window's).
+async function consolidate(bot, task) {
+  if (bot.currentWindow || typeof bot.moveSlotItem !== 'function') return 0;
+  let merged = 0;
+  const byName = {};
+  for (const i of bot.inventory.items()) if ((i.stackSize || 64) > 1 && i.slot !== undefined) (byName[i.name] ||= []).push(i);
+  for (const list of Object.values(byName)) {
+    if (list.length < 2) continue;
+    const size = list[0].stackSize || 64, total = list.reduce((n, i) => n + i.count, 0);
+    if (Math.ceil(total / size) >= list.length) continue;
+    list.sort((a, b) => b.count - a.count);
+    for (let src = list.length - 1; src > 0; src--) {
+      const dst = list.findIndex((i, k) => k < src && i.count < size);
+      if (dst < 0) break;
+      task?.check?.();
+      try { await bot.moveSlotItem(list[src].slot, list[dst].slot); merged++; }
+      catch (_) { break; }
+      const moved = Math.min(size - list[dst].count, list[src].count);
+      list[dst].count += moved; list[src].count -= moved;
+      if (list[src].count > 0) break;
+    }
+  }
+  return merged;
+}
+
+// Whole stacks of a kind, the smallest first, until `count` are gone or the
+// next stack is bigger than what is left to drop.
+async function dropCount(bot, task, name, count) {
+  let left = count, gone = 0;
+  const stacks = bot.inventory.items().filter(i => i.name === name).sort((a, b) => a.count - b.count);
+  for (const stack of stacks) {
+    if (stack.count > left) break;
+    task?.check?.();
+    if (bot.tossStack) await bot.tossStack(stack);
+    else await bot.toss(stack.type ?? bot.registry?.itemsByName?.[name]?.id, null, stack.count);
+    left -= stack.count; gone += stack.count;
+  }
+  // A bot with no stack list to toss from (or one stack over what goes):
+  // the count itself, the first stacks found.
+  if (!gone && left > 0 && !bot.tossStack) {
+    const type = bot.registry?.itemsByName?.[name]?.id;
+    if (type !== undefined) { await bot.toss(type, null, left); gone = left; }
+  }
+  return gone;
 }
 
 // Drop what is over the cap, biggest surplus first, until the pockets have
@@ -136,21 +334,36 @@ async function faceAway(bot, away) {
   try { await bot.lookAt(here.offset(d.x / norm * 4, 2.2, d.z / norm * 4), true); } catch (_) {}
 }
 
-async function tidyInventory(bot, task, { force = false, away = null, keep } = {}) {
+// The tidy, at the work loop's turn between steps (work.js keepRoom): part
+// stacks merged, then what is over a cap or a budget dropped until
+// FREE_SLOTS are free again (or, forced, all of it), then spare gear.
+// `ctx` carries what the budgets read: blocks short for a way on (note
+// 751d) and what the crossing's kit counts.
+async function tidyInventory(bot, task, { force = false, away = null, keep = new Set(), ctx = {} } = {}) {
   if (!force && !crowded(bot)) return [];
-  await faceAway(bot, away);
+  if (!force) { await consolidate(bot, task); if (!crowded(bot)) return []; }
+  // Rotten flesh is kept to none only beside other food: where it is the
+  // only food carried, it is the next meal.
+  const foods = bot.registry?.foodsByName || {};
+  if (!bot.inventory.items().some(i => foods[i.name] && i.name !== 'rotten_flesh')) keep = new Set([...keep, 'rotten_flesh']);
+  const stackOf = n => bot.registry?.itemsByName?.[n]?.stackSize || 64;
+  const free = bot.inventory.emptySlotCount?.() ?? 0;
+  const plan = force ? overCaps(countsOf(bot), { dimension: bot.game?.dimension, keep, ...ctx }).sort((a, b) => b.count - a.count)
+    : tidyPlan(countsOf(bot), { free, dimension: bot.game?.dimension, keep, stackOf, ...ctx });
   const dropped = [];
-  for (const { name, count } of surplus(bot, keep).sort((a, b) => b.count - a.count)) {
+  if (plan.length) await faceAway(bot, away);
+  for (const { name, count, why } of plan) {
     task?.check?.();
-    const type = bot.registry?.itemsByName?.[name]?.id;
-    if (type === undefined) continue;
-    try { await bot.toss(type, null, count); dropped.push({ name, count }); }
+    if (bot.registry?.itemsByName?.[name]?.id === undefined) continue;
+    let gone = 0;
+    try { gone = await dropCount(bot, task, name, count); }
     catch (err) { task?.check?.(); break; }
+    if (gone) dropped.push({ name, count: gone, why });
     if (!force && !crowded(bot)) break;
   }
   if (crowded(bot)) for (const item of spares(bot, keep)) {
     task?.check?.();
-    try { await (bot.tossStack ? bot.tossStack(item) : bot.toss(item.type, null, item.count)); dropped.push({ name: item.name, count: item.count }); }
+    try { await (bot.tossStack ? bot.tossStack(item) : bot.toss(item.type, null, item.count)); dropped.push({ name: item.name, count: item.count, why: 'spare gear' }); }
     catch (err) { task?.check?.(); break; }
     if (!crowded(bot)) break;
   }
@@ -192,7 +405,7 @@ const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name
 // stacks a time.
 // Decorative finds with no use on the way to the dragon, said as such.
 const LIGHTER = /^(flint_and_steel|fire_charge)$/;
-const NO_USE = /^(pink_petals|.*_tulip|dandelion|poppy|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|lily_pad|sunflower|lilac|rose_bush|peony|.*_mushroom|pointed_dripstone|dripstone_block|leaf_litter|short_grass|fern|dead_bush|sugar_cane|bamboo|cactus|.*_carpet|.*_dye)$/;
+const NO_USE = /^(pink_petals|.*_tulip|dandelion|poppy|allium|azure_bluet|oxeye_daisy|cornflower|lily_of_the_valley|lily_pad|sunflower|lilac|rose_bush|peony|.*_mushroom|pointed_dripstone|dripstone_block|leaf_litter|short_grass|fern|dead_bush|sugar_cane|bamboo|cactus|.*_carpet|.*_dye|wildflowers|moss_block|pale_moss_block|azalea|flowering_azalea|big_dripleaf|small_dripleaf|.*_roots|glow_lichen|vine|spore_blossom|amethyst_block|nether_wart_block|warped_wart_block|music_disc_.*)$/;
 async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, room = () => roomFor(bot, name), count = 1) {
   const client = task?.opportunityClient;
   if (!client) return null;
@@ -236,7 +449,13 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     // Coal is never tossed by the tidy (kit), but past two stacks it is said:
     // mid-83-a carried four, and two smelt a hundred and twenty-eight things.
     const cap = capOf;
-    const over = n => cap(n) !== undefined && counts[n] > cap(n);
+    // Over a cap of its own, past its budget (building blocks are one count
+    // across kinds), or a kind no rung takes (note 780): the same reckoning
+    // the tidy drops by, with what the room is for and the step's own kept.
+    const shortGoal = require('./block-stock').blocksShortNow(goal);
+    const overList = overCaps(counts, { dimension: bot.game?.dimension, keep: new Set([...keep, name]), sayCoal: true, ...tidyContext(bot, goal) });
+    const overBy = Object.fromEntries(overList.map(d => [d.name, d]));
+    const over = n => !!overBy[n];
     const junk = n => NO_USE.test(n) || over(n);
     // Never offered (note 754d): the tool the step in hand needs (its tool,
     // what it requires) and the last pickaxe carried. 25593 (mid-237-bf,
@@ -350,7 +569,7 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
       if (needed.has(stack.name)) notes.push('needed by the step in hand');
       else if (needed.has(`rung:${stack.name}`)) notes.push(`needed by the ladder's next step (${nextRung.replaceAll('_', ' ')})`);
       if (NO_USE.test(stack.name)) notes.push('no use on the way to the dragon');
-      if (over(stack.name)) notes.push(`more than the ${cap(stack.name)} worth keeping`);
+      if (over(stack.name)) notes.push(overSays(bot, counts, stack.name, overBy[stack.name]));
       // Nothing flagged is not nothing lost: with no junk to offer, 25597
       // was shown its oak fence and raw copper with no word of what either
       // costs, next to its mutton with none either, and picked the mutton
@@ -378,7 +597,8 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
     try {
       decision = await decide('inventory_drop', { client, bot, task, tree: asked,
         state: { roomFor: name, carriedKinds: Object.keys(counts).length, freeSlots: bot.inventory.emptySlotCount?.() ?? 0, keeping: [...keep],
-          ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}), ...(foodKept ? { foodNotListed: `The food carried is kept: ${foodKept}.` } : {}) } });
+          ...(goal?.step ? { stepInHand: goal.step } : {}), ...(unlisted ? { stacksNotListed: unlisted } : {}), ...(foodKept ? { foodNotListed: `The food carried is kept: ${foodKept}.` } : {}),
+          keptByTheTidy: keptSaysAll(bot, counts, { blocksShort: shortGoal, keep }) } });
     } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return null; }
     if (decision.stale) continue;
     const pick = decision.path.at(-1);
@@ -400,6 +620,45 @@ async function jevMakesRoom(bot, task, name, keep, purpose = null, goal = null, 
   // tidy's own order, not "no room". mid-79-a's diamond was refused four
   // times, half a second a time, nothing thrown (2026-09-25).
   return room() || null;
+}
+
+// A stack over what is kept, said with the budget it is counted in: the
+// kinds counted, how many are kept in all and in what order they go.
+function overSays(bot, counts, name, d) {
+  const dim = bot.game?.dimension, b = budgetOf(name, dim);
+  if (!b) return capFor(name, dim) === 0 ? `${d.why}: the tidy keeps none` : `more than the ${capFor(name, dim)} worth keeping (${d.count} of the ${counts[name]} carried past it)`;
+  const names = Object.keys(counts).filter(n => b.test(n, dim));
+  const total = names.reduce((n, k) => n + counts[k], 0), kept = b.label === 'building blocks' ? BUILDING_BUDGET : b.budget({});
+  const rank = n => b.order.findIndex(o => orderMatch(o, n));
+  const order = b.order ? names.slice().sort((x, y) => rank(x) - rank(y)) : [];
+  return `${b.label}, ${b.says}: ${total} carried (${names.map(n => `${counts[n]} ${n.replaceAll('_', ' ')}`).join(', ')}), more than the ${kept} worth keeping in all${order.length > 1 ? `, kept ${order[0].replaceAll('_', ' ')} first and ${order.at(-1).replaceAll('_', ' ')} last` : ''}; ${d.count} of these are past it`;
+}
+// What the tidy keeps and why, said on the room question (note 780): the
+// budgets that apply to what is carried, and what keeps the rest.
+function keptSaysAll(bot, counts, { blocksShort = null, keep = new Set() } = {}) {
+  const dim = bot.game?.dimension;
+  const parts = [];
+  for (const b of BUDGETS) {
+    const names = Object.keys(counts).filter(n => b.test(n, dim));
+    if (!names.length) continue;
+    const total = names.reduce((n, k) => n + counts[k], 0);
+    const kept = b.label === 'building blocks' ? BUILDING_BUDGET : b.budget({});
+    parts.push(b.label === 'building blocks' && blocksShort
+      ? `building blocks: all ${total} kept, a way on is short of blocks (${blocksShort.what} needs ${blocksShort.need})`
+      : `${b.label}: ${total} carried, ${kept} kept in all (${b.says})`);
+  }
+  const kept = [...keep].filter(n => counts[n]);
+  if (kept.length) parts.push(`kept whatever the count, for the work in hand: ${kept.map(n => n.replaceAll('_', ' ')).join(', ')}`);
+  parts.push(`the tidy drops what is past these, and kinds no rung takes, by itself when fewer than ${FREE_SLOTS} slots are free`);
+  return `${parts.join('; ')}.`;
+}
+
+// Whether one more of `name` is past what is kept (its cap or its budget):
+// a pick-up of it only makes the tidy's work (opportunistic-pickups.js).
+function atKeep(bot, name, ctx = {}) {
+  const counts = countsOf(bot);
+  counts[name] = (counts[name] || 0) + 1;
+  return overCaps(counts, { dimension: bot.game?.dimension, ...ctx }).some(d => d.name === name);
 }
 
 // The crossing's food, where the bot is on the way to the Nether in the
@@ -437,6 +696,20 @@ function noteDroppedFood(bot, goal, stack) {
 // test when the thing is not in the pockets yet (on the cursor, say).
 async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpose = null, goal = null, count = 1, room = () => roomFor(bot, name, count) } = {}) {
   if (room()) return true;
+  // The tidy's own rule first (note 780): part stacks merged, and what is
+  // past its cap or its budget, or a kind no rung takes, dropped until the
+  // headroom is back. Of 646 room questions answered from 2026-09-30 12Z,
+  // all 642 matched to their pockets were asked with such a stack carried (redstone, rail,
+  // saplings, terracotta, rotten flesh, blocks past 128), and Jev dropped a
+  // crafting table, gravel or coal, or went without, beside them. Only what
+  // the rule leaves no room for is asked.
+  goal ||= bot._goal || null;
+  try {
+    const kept = new Set([...keep, name, ...rungNeeds(bot, goal)]);
+    const dropped = await tidyInventory(bot, task, { away, keep: kept, ctx: tidyContext(bot, goal) });
+    if (dropped.length) console.log(`[room] for ${name}: the tidy dropped ${dropped.map(d => `${d.count} ${d.name} (${d.why})`).join(', ')}`);
+  } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  if (room()) return true;
   await faceAway(bot, away);
   const chosen = await jevMakesRoom(bot, task, name, keep, purpose, goal, room, count);
   if (chosen !== null) return chosen;
@@ -457,11 +730,11 @@ async function makeRoom(bot, task, name, { keep = new Set(), away = null, purpos
       catch (err) { task?.check?.(); break; }
     }
   }
-  if (!room()) await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away });
+  if (!room()) await tidyInventory(bot, task, { force: true, keep: new Set([...keep, name]), away, ctx: tidyContext(bot, goal) });
   return room();
 }
 
 // How many of an item are worth keeping, where there is a cap: past it the
 // tidy drops them first (coal is never tossed, but past two stacks it is said).
 function capOf(name) { return SURPLUS[name] ?? (name === 'coal' ? 128 : undefined); }
-module.exports = { crossingFood, crossingDropSays, noteDroppedFood, DROP_LASTS_MS, NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };
+module.exports = { tidyContext, rungNeeds, tidyPlan, overCaps, consolidate, dropCount, capFor, capWhy, atKeep, keptSaysAll, BUDGETS, BUILDING_BUDGET, BUDGET_BLOCKS: /^(cobblestone|cobbled_deepslate|netherrack|blackstone|stone|deepslate|dirt|coarse_dirt)$/, NO_RUNG, crossingFood, crossingDropSays, noteDroppedFood, DROP_LASTS_MS, NO_USE, capOf, openDirection, makeRoom, tidyInventory, surplus, spares, roomFor, crowded, faceAway, blockStock, BLOCK_RESERVE, SURPLUS, FREE_SLOTS };

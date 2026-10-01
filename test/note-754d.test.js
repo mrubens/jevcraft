@@ -49,7 +49,10 @@ test('the cauldron says what its iron would buy in buckets and trips to lava (25
 test('blocks the crossing kit counts are not offered as cheap, and are said as mined again for it (25593)', async () => {
   const { makeRoom } = require('../src/inventory-tidy');
   const ck = require('../src/crossing-kit');
-  const items = [stack('cobblestone', 64), stack('cobblestone', 64), stack('dirt', 32), stack('gravel', 14), stack('iron_pickaxe'), stack('raw_iron', 10)];
+  // Mud for the dirt 25593 carried beside the kit's 128: 160 blocks are past
+  // the building budget, and the tidy would drop the dirt with no question
+  // (note 780).
+  const items = [stack('cobblestone', 64), stack('cobblestone', 64), stack('mud', 32), stack('gravel', 14), stack('iron_pickaxe'), stack('raw_iron', 10)];
   const goal = { kind: 'win' };
   const { bot, task, offered } = asking(items, goal);
   if (!ck.kitBlocksWanted(bot, goal)) return; // the kit is not counted for this bot: nothing to check
