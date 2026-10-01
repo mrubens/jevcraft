@@ -149,6 +149,35 @@ function woodReserveShort(bot) {
   if (units >= reserve) return null;
   return `wood toward the ${reserve} logs' worth kept for spare pickaxes and a crafting table (${Math.floor(units * 10) / 10} carried; trees grow at the surface): taken while up there, or each spare pickaxe made below is a climb for its sticks`;
 }
+// The wood the ladder still wants before the Nether, in logs' worth (note
+// 787): the planks and sticks of each open rung's craft, a crafting table
+// where none is carried, and the reserve kept for spare pickaxes and a
+// table (work.js WOOD_RESERVE, upkeep's wood_reserve). A climb for wood had
+// brought back what the step asked for: on the fresh trials cut without
+// the Nether (2026-09-30 12Z to 2026-10-01 05Z, scripts/wood-trips.js), 232
+// climbs for wood, 443 minutes, a median 2 logs' worth carried at the most
+// before going back down, and 139 of them after another climb for wood in
+// the same trial (264 minutes).
+const WOOD_FOR = { stone_pickaxe: 1, iron_pickaxe: 1, nether_pickaxe: 1, diamond_pickaxe: 1, stone_sword: 0.5, iron_sword: 0.5, diamond_sword: 0.5, shield: 6, bed: 3, home_bed: 3, carry_bed: 3, nether_chest: 8 };
+const WOOD_CLIMBS = { window: '2026-09-30 12Z to 2026-10-01 05Z', trials: 107, climbs: 232, minutes: 443, mostMedian: 2, after: 139, afterMinutes: 264, trunkSeconds: 10.4 };
+const woodUnits = bot => count(bot, /_log$|_stem$|_hyphae$|_wood$/) + count(bot, /_planks$/) / 4 + count(bot, /^stick$/) / 8;
+function woodOwed(bot, goal = {}) {
+  let reserve = 6;
+  try { reserve = require('./work').WOOD_RESERVE || 6; } catch (_) { reserve = 6; }
+  let rungs = [];
+  try { rungs = require('./game-progress').openRungs(bot, goal, Date.now(), { ordered: false }); } catch (_) { rungs = []; }
+  const parts = [];
+  let planks = 0;
+  for (const r of rungs) if (WOOD_FOR[r.phase]) { planks += WOOD_FOR[r.phase]; parts.push(`the ${words(r.phase)} ${WOOD_FOR[r.phase]} plank${WOOD_FOR[r.phase] === 1 ? '' : 's'}`); }
+  if (!count(bot, /^crafting_table$/)) { planks += 4; parts.push('a crafting table 4 planks'); }
+  const logs = Math.ceil(planks / 4 + reserve);
+  const carried = Math.floor(woodUnits(bot) * 10) / 10;
+  const short = Math.max(0, Math.ceil(logs - woodUnits(bot)));
+  const says = `the wood owed before the Nether is ${logs} logs' worth (${parts.length ? `${parts.join(', ')}; ` : ''}and the ${reserve} logs' worth kept for spare pickaxes and a table), ${carried} carried${short ? `, ${short} short` : ''}`;
+  return { logs, carried, short, reserve, planks, parts, says };
+}
+const woodClimbsSays = () => `In the record (${WOOD_CLIMBS.window}, the ${WOOD_CLIMBS.trials} fresh trials cut without the Nether), ${WOOD_CLIMBS.climbs} climbs to open sky were for wood, ${WOOD_CLIMBS.minutes} minutes; each came back with a median ${WOOD_CLIMBS.mostMedian} logs' worth at the most, and ${WOOD_CLIMBS.after} came after another climb for wood in the same trial (${WOOD_CLIMBS.afterMinutes} minutes)`;
+
 // The cast's water: a water bucket carried, or an empty bucket and water to
 // fill it, at whichever level the lava is. Null when nothing is owed.
 function castWater(bot, goal, lava) {
@@ -270,4 +299,4 @@ function rungLevelSays(bot, goal, phase) {
   return '';
 }
 
-module.exports = { levelPlan, rungNeed, castWater, woodReserveShort, IRON_FOR, pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };
+module.exports = { woodOwed, woodUnits, woodClimbsSays, WOOD_CLIMBS, WOOD_FOR, levelPlan, rungNeed, castWater, woodReserveShort, IRON_FOR, pickSays, walkSeconds, walkPaceSays, rungLevelSays,  LEVEL_RECORD, UNDER, depthHere, upSeconds, downSeconds, climbSays, owed, portalLava, levelsSays, surfaceLeg, woodShort };

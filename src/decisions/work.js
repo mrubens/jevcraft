@@ -323,6 +323,21 @@ define({
   instructions: workInstructions('A mining step has what it asked for, and more of the same trunk, vein or stone face is within reach. Choose whether to keep taking it now or go on; the options say what is carried and the cap.'),
 });
 
+// The wood owed, cut while up top (note 787): a climb for wood had come
+// back with the log or two its step asked for, and climbed again.
+define({
+  overworldOnly: true,
+  id: 'wood_while_up', area: 'resources', parent: 'rung_progress', kind: 'source', primitive: 'choice', stakes: 'low', tree: true,
+  question: 'A log is cut at the surface for the ladder\'s step and the wood the ladder still wants before the Nether is short: cut the logs within reach toward it now, or go on with the step?',
+  trigger: 'On the way to beating the game, in the Overworld under open sky (fewer than eight blocks of cover overhead), right after the ladder\'s own log step cut a log, with the wood owed before the Nether (levels.js woodOwed: the open rungs\' planks and sticks, a crafting table where none is carried, and the reserve of six logs\' worth for spare pickaxes and a table) more than is carried and a log within sixteen blocks; asked once a visit up top, held ten minutes and within 48 blocks of where it was answered (src/work.js woodWhileUp, note 787).',
+  source: 'src/work.js (woodWhileUp), src/levels.js (woodOwed)',
+  options: [
+    { key: 'take_owed', label: 'cut the logs within sixteen blocks now toward the wood owed', when: 'always; said with the logs in view, the wood owed and carried, the seconds a log within a trunk at the bot\'s own pace, the climb just made, and what ends it (the wood owed carried, no log within sixteen blocks to be had, the bot under cover again, ten minutes or 48 blocks)', level: 'root' },
+    { key: 'go_on', label: 'go on with the step with the wood carried', when: 'always; said with the rest of the wood owed and the record of climbs for wood that came back with a log or two (scripts/wood-trips.js)', level: 'root' },
+  ],
+  instructions: workInstructions('A log has been cut at the surface for the ladder\'s step, and the ladder still wants more wood before the Nether than is carried. Choose whether to cut the logs within reach toward it now, while the trees are at hand, or go on with the step and fetch the rest when a craft wants it; the options say the wood owed, the pace, the climb and what ends the cutting.'),
+});
+
 // Where the home base goes.
 define({
   overworldOnly: true,

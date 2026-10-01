@@ -2152,8 +2152,81 @@ async function mine(bot, task, step, goal, save, selected) {
     // The pickup pass runs whether or not the dig's own collection worked:
     // that is exactly when a raw iron is lying a block away uncollected.
     await opportunisticPickups(bot, task, goal, save, step, { navigate });
+    // A log cut up top on the ladder's own step: the wood owed is offered
+    // while the trees are at hand (note 787). A source Jev chose finishes
+    // its own trunk (workSource).
+    if (!selected && LOG.test(step.block || '') && countOf(bot, step.drops) > before) await woodWhileUp(bot, task, goal, save);
   }
   finally { surface?.restore(); }
+}
+
+// Up top for wood, the wood owed (note 787). The ladder's log step cut what
+// its craft asked for, a log or two, and went back down: on the fresh
+// trials cut without the Nether (2026-09-30 12Z to 2026-10-01 05Z,
+// scripts/wood-trips.js) 232 climbs to open sky were for wood, 443
+// minutes, each coming back with a median 2 logs' worth at the most, and
+// 139 of them came after another climb for wood in the same trial. Each
+// climb is the height up and back; a log within a trunk is about ten
+// seconds. So once a log is cut at the surface on the ladder with the wood
+// the ladder still wants before the Nether short (levels.js woodOwed: the
+// open rungs' planks and sticks, a table where none is carried, and the
+// reserve for spare pickaxes), Jev is asked once a visit whether to cut
+// the logs within 16 blocks toward it now. Chosen, it holds until the wood
+// owed is carried, no log within 16 blocks can be had (three tries gain
+// nothing, or none is left), the bot is under cover again, or ten minutes
+// or 48 blocks from where it was chosen: each said with the option.
+const WOOD_UP = { radius: 16, visitMs: 10 * 60 * 1000, visitBlocks: 48, rounds: 24, misses: 3 };
+async function woodWhileUp(bot, task, goal, save, { cut = mineAtSource } = {}) {
+  if (goal?.kind !== 'win' || bot.game?.gameMode === 'creative' || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return;
+  const L = require('./levels');
+  const depth = L.depthHere(bot);
+  if (depth === null || depth >= L.UNDER) return;
+  const owed = L.woodOwed(bot, goal);
+  if (!owed.short) return;
+  const names = Object.keys(bot.registry?.blocksByName || {}).filter(n => LOG.test(n));
+  const logsNear = () => find(bot, names, WOOD_UP.radius, 32).filter(p => !isSetAside(goal, 'reach', p));
+  const near = logsNear();
+  if (!near.length) return;
+  const here = bot.entity.position;
+  const held = goal.woodUp;
+  const sameVisit = !!held && Date.now() - held.at < WOOD_UP.visitMs && Math.hypot(here.x - held.x, here.z - held.z) <= WOOD_UP.visitBlocks;
+  let pick = sameVisit ? held.pick : null;
+  if (!pick) {
+    const nearest = Math.round(near[0].distanceTo(here));
+    const climb = Number.isFinite(goal.surfaceTrip?.up) && goal.surfaceTrip.up >= L.UNDER ? goal.surfaceTrip.up : null;
+    const back = climb ? ` The climb up here rose ${climb} blocks: ${L.climbSays(climb)}; another climb for wood from that depth is that again.` : '';
+    const ends = `It ends with the wood owed carried, when no log within ${WOOD_UP.radius} blocks can be had (none left, or ${WOOD_UP.misses} tries running gain nothing), when the bot is under cover again, or after ten minutes or ${WOOD_UP.visitBlocks} blocks from here; the question is asked once a visit up top on those same terms.`;
+    const tree = {
+      take_owed: { description: `Cut the logs within ${WOOD_UP.radius} blocks now toward the wood owed: ${near.length} log blocks in view within ${WOOD_UP.radius}, the nearest ${nearest} blocks off; ${owed.says}. About ${L.WOOD_CLIMBS.trunkSeconds} seconds a log within a trunk at the bot's own pace (the median between logs cut under half a minute apart), and the walk to each further tree.${back} ${ends}` },
+      go_on: { description: `Go on with the step with ${owed.carried} logs' worth carried: ${owed.short} more of the wood owed is fetched when a craft wants it, from wherever the bot is then. ${L.woodClimbsSays()}.` },
+    };
+    let decision;
+    try {
+      decision = await decide('wood_while_up', { client: task.opportunityClient, bot, task, goal, save, tree,
+        state: { woodOwed: owed.logs, woodCarried: owed.carried, woodShort: owed.short, logsInReach: near.length, nearestLog: nearest, ...(climb ? { climbRose: climb } : {}), owedParts: owed.parts } });
+    }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return; }
+    if (decision.stale) return;
+    pick = decision.path.at(-1);
+    goal.woodUp = { pick, at: Date.now(), x: Math.round(here.x), z: Math.round(here.z), want: owed.logs }; save();
+    if (pick === 'take_owed') bot.chat?.(`I'll take the wood the ladder still wants while I'm up here: ${owed.short} more logs' worth.`);
+  }
+  if (pick !== 'take_owed') return;
+  const want = Math.max(owed.logs, goal.woodUp?.want || 0);
+  let misses = 0;
+  for (let round = 0; round < WOOD_UP.rounds && L.woodUnits(bot) < want && misses < WOOD_UP.misses; round++) {
+    task.check();
+    if ((L.depthHere(bot) ?? 0) >= L.UNDER) break;
+    const p = logsNear()[0];
+    if (!p) break;
+    const name = bot.blockAt(p)?.name;
+    if (!name || !roomFor(bot, name)) break;
+    goal.step = { action: 'wood_while_up', item: name, want, target: { x: p.x, y: p.y, z: p.z } }; save();
+    const before = L.woodUnits(bot);
+    try { await cut(bot, task, { action: 'mine', block: name, drops: name, count: 1 }, goal, save, p); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; setAside(goal, 'reach', p, err.message, 120000); save(); }
+    if (L.woodUnits(bot) > before) misses = 0; else misses++;
+  }
 }
 
 async function surfaceStep(bot, task, goal, save) {
@@ -2329,6 +2402,12 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
       const known = require('./water').waterKnown(bot);
       tree.climb.description += ` Water known from here: ${known.says}${known.kind === 'source' ? '; no dry place beside it to fill from was reached by a route searched from here, nor was the bucket filled wading into it where it is shallow' : ''}.`;
     } catch (_) { /* said without it */ }
+  }
+  // For wood: the wood owed before the Nether, taken up there in the same
+  // climb when Jev chooses (note 787, woodWhileUp), and the record of
+  // climbs for wood that came back with a log or two.
+  if (LOG_NEED.test(need) && goal.kind === 'win') {
+    try { const L = require('./levels'), o = L.woodOwed(bot, goal); tree.climb.description += ` Up there, ${o.says}: once a log is cut, the logs within ${WOOD_UP.radius} blocks are offered toward it at about ${L.WOOD_CLIMBS.trunkSeconds} seconds a log within a trunk. ${L.woodClimbsSays()}.`; } catch (_) { /* said without it */ }
   }
   // What is still owed up there and down here, and the climb at the bot's
   // own measured pace (note 763): mid-237-bc climbed 86 blocks for sheep
@@ -8358,4 +8437,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };

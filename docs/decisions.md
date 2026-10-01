@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-99 questions: 49 decision trees and 50 batched questions.
+100 questions: 50 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -819,6 +819,23 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | --- | --- | --- | --- |
 | `take_more` | root | keep taking it while it is at hand, up to the cap | always |
 | `enough` | root | stop at what the step asked for | always |
+
+### `wood_while_up`
+
+**A log is cut at the surface for the ladder's step and the wood the ladder still wants before the Nether is short: cut the logs within reach toward it now, or go on with the step?**
+
+- When: On the way to beating the game, in the Overworld under open sky (fewer than eight blocks of cover overhead), right after the ladder's own log step cut a log, with the wood owed before the Nether (levels.js woodOwed: the open rungs' planks and sticks, a crafting table where none is carried, and the reserve of six logs' worth for spare pickaxes and a table) more than is carried and a log within sixteen blocks; asked once a visit up top, held ten minutes and within 48 blocks of where it was answered (src/work.js woodWhileUp, note 787).
+- Decision tree, choice; stakes low; ledger kind `source`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/work.js (woodWhileUp), src/levels.js (woodOwed)
+- Asked only on the Overworld (its words speak of the day, the night, beds or the surface; asked elsewhere, the tests fail: note 677)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `take_owed` | root | cut the logs within sixteen blocks now toward the wood owed | always; said with the logs in view, the wood owed and carried, the seconds a log within a trunk at the bot's own pace, the climb just made, and what ends it (the wood owed carried, no log within sixteen blocks to be had, the bot under cover again, ten minutes or 48 blocks) |
+| `go_on` | root | go on with the step with the wood carried | always; said with the rest of the wood owed and the record of climbs for wood that came back with a log or two (scripts/wood-trips.js) |
 
 ### `inventory_drop`
 

@@ -103,6 +103,8 @@ const OLD_ORDER = {
   fortress_leg: legFallback,
   fortress_visit: children => children.go_in ? 'go_in' : Object.keys(children)[0],
   gather_more: () => 'take_more',
+  // Note 787's question had no fallback: the step went on with what it cut.
+  wood_while_up: () => 'go_on',
   home_site: firstOption,
   house_build_step: firstOption,
   hunt_target: firstOption,
