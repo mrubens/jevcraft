@@ -478,10 +478,8 @@ const GUARD_CREEPER_REACH = 5;
 // found yet: 2 of 24 spots ... tried" in their last minute, and a way found
 // is chosen 29% of the time against 2.6% (note 793).
 const SCOUT_FAR_MS = 1200, SCOUT_CLOSE = 4, SCOUT_CREEPER_CLOSE = 7;
-<<<<<<< HEAD
 // From a shield answer to the shield raised, the median measured (note 829).
 const SHIELD_ANSWER_RAISE_S = 0.5;
-=======
 // The threat a pocket sealed against waits on, by the rule the work's own
 // claim uses (note 830): a mob in sight within 24, or one within the clear
 // distance that has not stood off (danger.js standsOff: a minute and more
@@ -494,7 +492,6 @@ function sealThreatNear(bot, within = 16) {
   const { standsOff } = require('./danger');
   return threats(bot, within).some(t => t.visible || !standsOff(bot, t)) || threats(bot, 24).some(t => t.visible);
 }
->>>>>>> note-830
 function scoutBudget(danger = []) {
   const { shooter } = require('./mob-policy');
   // A creeper out of sight lights only once it sees the bot: close within
