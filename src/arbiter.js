@@ -400,6 +400,9 @@ const optionOf = (c, held = null, now = Date.now()) => {
 //   fortress", taken (none good 0.75, the work the best listed), and it
 //   walked into their fire and died 34 seconds later.
 const STOPS_MS = 10000, STOP_SAID_MS = 30000;
+// Work chosen over survival's answer to the mobs about leaves them be this
+// long, as keep_working does (note 840).
+const KEEP_ON_MS = 15000;
 function stopped(state, layer, why, now = Date.now()) {
   const was = state.stopped;
   const again = was?.layer === layer && now - was.at < STOPS_MS;
@@ -411,7 +414,7 @@ function stoppedSays(bot, state, layer, now = Date.now()) {
   let threat = null; try { threat = probe.threatNow(bot); } catch (_) { threat = null; }
   const span = Math.max(1, Math.round((now - s.first) / 1000));
   const found = threat ? `the ${String(threat.entity?.name || 'mob').replaceAll('_', ' ')} ${Math.round(threat.distance)} blocks off${threat.visible === false ? ' (out of sight)' : ''}${threat.stance ? `, one the ${String(threat.stance).replaceAll('_', ' ')} stance was chosen against` : ''}` : null;
-  return `${s.count === 1 ? 'Its last turn was' : `Its last ${s.count} turns, in the last ${span} second${span === 1 ? '' : 's'}, were each`} stopped at once by the threat check its run is given: ${s.why}. ${found ? `That check still finds one now: ${found}; given the turn again, it is stopped again at once.` : 'That check finds nothing now.'}`;
+  return `${s.count === 1 ? 'Its last turn was' : `Its last ${s.count} turns, in the last ${span} second${span === 1 ? '' : 's'}, were each`} stopped at once by the threat check its run is given: ${s.why}. ${found ? `That check still finds one now: ${found}; ${layer === 'work' ? `given the turn over survival's answer to it, the work leaves the mobs about be for ${KEEP_ON_MS / 1000} seconds as keep_working does, unless one comes within three blocks, a creeper within its walk to its fuse, or a hit lands.` : 'given the turn again, it is stopped again at once.'}` : 'That check finds nothing now.'}`;
 }
 // What a mob about would do to a bot going on with the work: a shooter
 // fires from its own reach at what it sees, a biter comes at the bot once
@@ -630,6 +633,9 @@ async function arbitrate(bot, claims, ctx = {}) {
     const held = state.holder || null;
     const mobsNow = ctx.mobs || (() => { try { return probe.mobs(bot, 16); } catch (_) { return []; } })();
     const tree = Object.fromEntries(live.map(c => withUnkept(bot, state, c, now)).map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
+    // What choosing the work over survival's answer does (note 840), said on it.
+    if (tree.work && typeof tree.work.description?.does === 'string' && live.some(c => c.layer === 'survival' && c.action === 'escape_threat') && mobsNow.length)
+      tree.work.description.does += ` Chosen over survival's answer to the mobs about, they are left be for ${KEEP_ON_MS / 1000} seconds as the encounter's keep_working leaves them: the work's own threat check passes them over unless one comes within three blocks, a creeper within its walk to its fuse, or a hit lands.`;
     let setAside = false;
     const askedAt = Date.now();
     // The alerts this question is out about (watchOnce leaves them be).
@@ -678,6 +684,20 @@ async function arbitrate(bot, claims, ctx = {}) {
     for (const c of live) if (typeof c.answered === 'function') { try { c.answered(winner.layer); } catch (err) { console.log(`[arbiter] ${c.layer} answered: ${err?.message || err}`); } }
     // Jev's answer to this scene, given again to it for a while (sameScene).
     if (decision?.path && !decision.standIn && result.pending.scene) answeredScene(state, result.pending.scene, winner.layer, seen.health, now);
+    // Work chosen over survival's answer to the mobs about: they are left be
+    // as the encounter's keep_working leaves them (danger.js threatScan's
+    // leftBe: unless one comes within three, a creeper within its walk to its
+    // fuse, or a hit lands), for KEEP_ON_MS (note 840). Given the turn, the
+    // work's run was stopped at once by its own threat check, and survival
+    // was Jev's only real answer: 25595 (21:50:26Z) at 20 health, one
+    // skeleton 15.9 blocks off, told "given the turn again, it is stopped
+    // again at once"; 71% of one-mob askings at 18 health or more went to
+    // survival after note 838, 79% before.
+    const threatClaim = live.find(c => c.layer === 'survival' && c.action === 'escape_threat');
+    if (winner.layer === 'work' && threatClaim && bot) {
+      const ids = mobsNow.map(m => m.id ?? m.entity?.id).filter(id => id != null);
+      if (ids.length) bot._wavedOff = { ids, until: now + KEEP_ON_MS, byTurn: true };
+    }
     Object.assign(result, { winner, by: decision.standIn ? 'stand-in' : 'jev', ruling: state.ruling });
     delete result.pending;
   }
