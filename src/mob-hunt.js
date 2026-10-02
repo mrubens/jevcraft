@@ -1120,8 +1120,14 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // 16.6 health and 15 hunger, 14 of each wanted, through nine stalls, and
   // was cut as a loop 25 minutes in (note 877).
   const f0 = handler.passive ? null : fitness(bot);
-  const foodOnly = !!f0 && !f0.fit && dimension(bot) === 'overworld' && f0.health >= HUNT_FLOOR && f0.food >= HUNT_FLOOR && !f0.foodCarried && !(f0.burning && f0.health < 10);
-  if (foodOnly && !goal.stockFood) { goal.stockFood = true; save(); }
+  // The same in the Nether once Jev has chosen to go on there without the
+  // trip back for food (keep_on, the set-aside read below): the wait
+  // recovers nothing there either. 25598 (mid-242-db-nether-1, 2026-10-02
+  // 14:11Z), hunting endermen at 19 health with nothing to eat, was cut on
+  // "No measurable progress on recover_before_combat", four times (note 893).
+  const wentOn = dimension(bot) !== 'overworld' && isSetAside(goal, 'nether_return', 'food');
+  const foodOnly = !!f0 && !f0.fit && (dimension(bot) === 'overworld' || wentOn) && f0.health >= HUNT_FLOOR && f0.food >= HUNT_FLOOR && !f0.foodCarried && !(f0.burning && f0.health < 10);
+  if (foodOnly && dimension(bot) === 'overworld' && !goal.stockFood) { goal.stockFood = true; save(); }
   if (!handler.passive && !f0.fit && !foodOnly) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
     // recovery never comes. Off the Overworld that is a trip back for food.

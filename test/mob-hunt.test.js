@@ -1525,6 +1525,17 @@ test('in the Overworld, short only by food (nothing carried, hunger under eighte
   assert.equal(goal.step.action, 'recover_before_combat');
 });
 
+test('in the Nether with the trip back for food set aside by Jev (keep on), short only by food: the hunt moves on (note 893)', async () => {
+  const { bot, goal, task } = fixture('enderman');
+  bot.game.dimension = 'the_nether'; bot.game.minY = 0; bot.game.height = 256;
+  bot.inventory.slots[36] = { name: 'iron_sword', slot: 36, count: 1, durabilityUsed: 0 };
+  for (const [slot, name] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'iron_boots'], [45, 'shield']]) bot.inventory.slots[slot] = { name, slot, count: 1, durabilityUsed: 0 };
+  bot.health = 19.1; bot.food = 16;
+  require('../src/progress').setAside(goal, 'nether_return', 'food', 'Jev chose to go on', 20 * 60000);
+  await prepareMobHunt(bot, task, { entity: 'enderman', item: 'ender_pearl', count: 1 }, goal, () => {}, { acquireStep: async () => {}, explore: async () => {}, returnOverworld: async () => { throw new Error('went back'); } });
+  assert.notEqual(goal.step?.action, 'recover_before_combat', '25598 was cut for four stalls of it');
+});
+
 test('fit to fight is one test: the claim on a quarry and the hunt agree, and rotten flesh counts as something to eat', () => {
   const { fitToFight } = require('../src/mob-policy');
   const { claimed } = require('../src/danger');
