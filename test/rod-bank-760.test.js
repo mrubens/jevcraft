@@ -229,6 +229,11 @@ test('out of the Nether with rods for another reason, the bank begins on arrival
   assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), false);
   goal.rodBank.endedAt = Date.now();
   assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), false, 'not again within half an hour');
+  // The stage set aside before the arrival (a stall on the walk out) does not stop the store (note 897); one made after it does.
+  const before = arrived(); require('../src/progress').attemptsFor(before).fail('rung', 'bank_rods', "Jev set it aside at the rung's question", { restMs: 600000, now: Date.now() - 60000 });
+  assert.equal(rb.bankOnArrival(bot, before, 'overworld'), true);
+  const after = arrived(); require('../src/progress').setAside(after, 'rung', 'bank_rods', 'no chest and no wood for one', 600000);
+  assert.equal(rb.bankOnArrival(bot, after, 'overworld'), false);
   // In the Nether, or with no rod carried: nothing.
   assert.equal(rb.bankOnArrival(frameBot({ inventory: { ...BARE, blaze_rod: 2 } }), huntGoal(), 'nether'), false);
   assert.equal(rb.bankOnArrival(frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0 }, dimension: 'overworld' }), arrived(), 'overworld'), false);

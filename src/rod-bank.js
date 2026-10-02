@@ -19,7 +19,7 @@
 // game-progress.js nextGameStage), the store on the Overworld side (bank),
 // and the take-out there (collectHere). The chests are rod-stash.js's
 // goal.rodStashes, with dimension 'overworld'; eye-need.js counts them held.
-const { setAside, isSetAside } = require('./progress');
+const { setAside, isSetAside, attemptsFor } = require('./progress');
 
 // The Nether leg held at most this long (the walk out measured 17 to 30
 // blocks a minute, game-progress.js NETHER_TRIPS): past it the bank is
@@ -137,6 +137,15 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
   const here = goal?.gameProgress?.here;
   if (!(here?.dimension === 'overworld' && here.at)) return false;
   const rods = rs().rodsEquivalent(bot);
+  // A set-aside of the bank's stage from before this arrival was about the
+  // walk out (a stall on the way, Jev's rung answer there), and the walk is
+  // done: cleared, it does not stop the store. 25592 (2026-10-02 14:36Z)
+  // came out with its rod after eight minutes beside a portal gone out,
+  // where the stall's question had set the stage aside, and went after an
+  // iron pickaxe with the rod in its pack (note 897). One made on this side
+  // (the store's own failure) stands.
+  const aside = attemptsFor(goal).of('rung', now).bank_rods;
+  if (aside && aside.at < here.at) attemptsFor(goal).clear('rung', 'bank_rods');
   if (!(rods >= 1) || isSetAside(goal, 'rod_bank', 'arrival', now) || isSetAside(goal, 'rung', 'bank_rods', now)) return false;
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
   if (!n?.rodsLeft) return false;
