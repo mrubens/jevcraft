@@ -275,3 +275,18 @@ test('the walks\' rests do not close the bank while the tunnel home is open; wit
     assert.equal(rb.bankOffer(frameBot(), g2), null, 'not offered with every way out resting');
   } finally { mh.tripHomeClosed = was; }
 });
+
+test('rods carried on the fortress search: rods_now is asked there too, and out now ends the search\'s pass (note 928)', async () => {
+  const { findFortressStep } = require('../src/mob-hunt');
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 5 } });
+  const goal = huntGoal();
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(Object.keys(questions.branch_0.criteria)); return { answers: { branch_0: { choice: 'bank_now', confidence: 0.9 } } }; } };
+  let walked = 0, legs = 0;
+  const actions = { client, returnOverworld: async () => { walked++; }, navigate: async () => { legs++; }, tunnel: async () => { legs++; } };
+  await findFortressStep(bot, task, goal, () => {}, actions);
+  assert.ok(asked.length >= 1 && asked[0].includes('bank_now') && asked[0].includes('stay_for_more'), JSON.stringify(asked));
+  assert.equal(goal.rodBank.rods, 5);
+  assert.equal(walked, 1, 'the walk out begun');
+  assert.equal(legs, 0, 'no leg of the search walked on this pass');
+});

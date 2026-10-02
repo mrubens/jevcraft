@@ -4151,6 +4151,18 @@ async function goToWay(bot, task, goal, save, actions, state) {
 async function findFortressStep(bot, task, goal, save, actions) {
   const state = goal.fortressSearch ||= { axis: Math.round(bot.entity.position.x) % 2 === 0 ? 1 : -1, legs: 0 };
   if (await stayKit(bot, task, goal, save, actions)) return;
+  // The rods carried are asked about on the search too (rod-bank.js askBank,
+  // note 928): rods_now was asked only at a cage, in a blaze's hunt and at
+  // the pearl order. 25593 (mid-239-ac-fortress-4, 2026-10-02 18:05 to
+  // 18:38Z) searched its fortress thirty minutes with five blaze rods in its
+  // pack, two more wanted, its portal known, and was never asked. Its own
+  // pacing holds (once for each count of rods, again after ten minutes).
+  {
+    let banked = null;
+    try { banked = await require('./rod-bank').askBank(bot, task, goal, save, actions, actions.client || task.opportunityClient); }
+    catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+    if (banked === 'banked') return;
+  }
   // At a live spawner's cage with the rods wanted, the bot is where the
   // search is for: no fortress visit, approach or leg is asked from there
   // (cage-hold.js, note 700). 25589 (mid-242-hd-fortress-2) was asked
