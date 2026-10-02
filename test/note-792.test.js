@@ -185,6 +185,15 @@ test('a shield hold from an earlier answer leaves the run out of fire its keys a
   const looked = calls.looked; bot.look(1, 0);
   assert.equal(calls.looked, looked + 1, 'and its look');
   assert.ok(calls.raised >= 1, 'the shield still up to the blaze');
+  // A held-key move under way (note 930): its keys too, the shield up beside it.
+  delete bot._bodyWayRunning; bot.controlState = {};
+  bot._shotLookAt = 0; reflex.tick(bot, survival, t0 + 6000);
+  assert.ok(bot._shotHold && !bot._shotHold.free, 'held again with nothing running');
+  bot._controller = { name: 'pillar_up', keys: ['jump'], since: t0 + 6000 };
+  bot._shotLookAt = 0; reflex.tick(bot, survival, t0 + 6100);
+  assert.equal(bot._shotHold?.free, true, 'the pillar\'s jump keeps its keys');
+  bot.setControlState('jump', true);
+  assert.equal(bot.controlState.jump, true);
 });
 
 test('the hurt watchdog: two burns while the run out of fire runs do not stop it; with nothing running they do', () => {

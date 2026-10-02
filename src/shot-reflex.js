@@ -486,7 +486,17 @@ function tick(bot, survival, now = Date.now()) {
   // 02:59Z on 10-01, five in-fire hurts in 2.5 seconds, 18 to 8.7, the run
   // out of fire on and the shield up to a ghast 22 blocks off).
   const wayOut = require('./vitals').wayOutRunning(bot, now);
-  hold.free = !!wayOut || (!cover && guard.every(g => g.closing));
+  // A held-key move under way (motion.js move: a pillar's jump, a span's or
+  // a stair's step, a fight's jump, a step into a cauldron) keeps its keys
+  // and its look, the shield raised beside it (note 930). Locked, the move
+  // re-pressed its keys every tick against the lock and ran out its time
+  // having gone nowhere, and its step failed: "pillar_up: jump let go
+  // mid-move by something else", "bridge_step: forward ...", "crit_jump",
+  // "bunker_step": about 190 such moves logged in the seven hours to 18:10Z on
+  // 2026-10-02, 52 of them runs out of fire and cauldron steps (notes 792, 923).
+  // The hold's own stop is for the walk between them (the pathfinder's).
+  const moving = !!bot._controller && !bot._controller.failed;
+  hold.free = !!wayOut || moving || (!cover && guard.every(g => g.closing));
   if (hold.free) { hold.why = guard[0]?.why || hold.why; if (require('./combat').raiseShield(bot)) hold.raised = true; return; }
   const { set, look } = bot._shotRaw;
   for (const k of MOVE_KEYS) set(k, false);
@@ -547,7 +557,7 @@ function shotOptions(bot, warned) {
     const { left, point } = facingFor(bot, points);
     const secs = Math.max(...warned.map(e => e._shotWarn?.kind === 'blaze' ? require('./blaze-stand').DUE_SECONDS : e._shotWarn?.kind === 'ghast' ? 2 : 1.5));
     const behind = behindSays(bot, point, warned);
-    tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after. The shield blocks only the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}.${behind.says} ${blockedSays(bot, warned)}`,
+    tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after (a step, a jump or a block being laid already under way goes on with the shield up beside it). The shield blocks only the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}.${behind.says} ${blockedSays(bot, warned)}`,
       // Split: a warned shooter, or a blaze in sight, outside the half faced.
       split: left.length > 0 || behind.seeing > 0 };
     // A ghast's fireball is struck too as it comes into reach (strikeFireball).

@@ -175,14 +175,18 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   const opt = option(bot, task, goal, save, actions, offer);
   let staying = ''; try { staying = require('./rod-risk').recordSays(offer.rods); } catch (_) { staying = ''; }
   const today = `On ${TODAY.day}, ${TODAY.lives} lives carried 2 or more rods at a fortress: ${TODAY.died} stayed and died with them (${TODAY.lost.join(', ')} rods lost), ${TODAY.out} left and carried its ${TODAY.outRods} out.`;
+  // The chest here (note 931): the rods kept in the Nether, the hunt on.
+  let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
   const tree = {
     bank_now: { description: `${opt.description} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
+    ...(keep ? { keep_here: { description: keep.description, run: keep.run } } : {}),
     stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here. ${staying} ${today} Asked again when another rod is carried, or in ten minutes.` },
   };
   let decision;
   try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] not asked: ${String(err.message || err).slice(0, 900)}`); return null; }
   if (decision.stale) return null;
+  if (decision.path?.at(-1) === 'keep_here') { await tree.keep_here.run(); return 'kept'; }
   if (decision.path?.at(-1) !== 'bank_now') return 'stay';
   await tree.bank_now.run();
   return 'banked';

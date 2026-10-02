@@ -96,9 +96,9 @@ test('in the lull with 4 rods and a chest carried: a chest cell in reach, out of
   assert.equal(oldOrder('empty_spawner')(tree), 'stash_rods');
 });
 
-test('not offered: one rod, a blaze with a line to the bot, no chest and no wood, the rods done, or outside the Nether', () => {
+test('not offered: a blaze with a line to the bot, no chest and no wood, the rods done, or outside the Nether; one rod is offered (note 931)', () => {
   const goal = huntGoal();
-  assert.equal(rs.stashOffer(frameBot({ inventory: { ...rec.inventory, blaze_rod: 1, chest: 1 } }), goal), null);
+  assert.ok(rs.stashOffer(frameBot({ inventory: { ...rec.inventory, blaze_rod: 1, chest: 1 } }), goal), 'one rod kept is a rod kept');
   const seen = frameBot({ blazes: [...rec.blazes, { id: 9, position: { x: -151.5, y: 81, z: 162.5 } }] });
   assert.equal(rs.stashOffer(seen, goal), null, 'a blaze sees the bot');
   const bare = { ...rec.inventory, blaze_rod: 4 }; delete bare.oak_log; delete bare.crafting_table;
@@ -264,4 +264,18 @@ test('the stance in the lull offers stash_rods with the record\'s row; with a bl
   assert.ok(seen.stash_rods.expects.damage > 0 && seen.stash_rods.expects.oneHit > 0, JSON.stringify(seen.stash_rods.expects));
   // The lull's own question still asks it only with no line (empty_spawner).
   assert.equal(rs.stashOffer(frameBot({ blazes: [...rec.blazes, { id: 9, position: { x: -151.5, y: 81, z: 162.5 } }] }), huntGoal()), null);
+});
+
+test('the chest here as an answer of its own: said with the health and what a ghast does to a chest, run stores the rods then the walk after (note 931)', async () => {
+  const goal = huntGoal();
+  const bot = frameBot({ inventory: { ...rec.inventory, blaze_rod: 3, chest: 1 } });
+  bot.health = 5; bot.food = 9;
+  let after = 0;
+  const keep = rs.keepOption(bot, { check() {} }, goal, () => {}, {}, { then: async () => { after++; }, thenSays: 'Then back for food.' });
+  assert.ok(keep, 'offered');
+  assert.match(keep.description, /^Keep the 3 blaze rods/);
+  assert.match(keep.description, /taken out on the way out once every rod wanted is got; a death meanwhile .* drops none of them/);
+  assert.match(keep.description, /A ghast's fireball breaks a chest only where it lands beside it/);
+  assert.match(keep.description, /Now: health 5, and at hunger 9 it does not come back/);
+  assert.match(keep.description, /Then back for food\.$/);
 });

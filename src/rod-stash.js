@@ -21,7 +21,9 @@ const { setAside, isSetAside } = require('./progress');
 
 // What goes in: the rods and what the eyes are made of.
 const KEPT = Object.freeze(['blaze_rod', 'blaze_powder', 'ender_pearl', 'ender_eye']);
-const ROD_MIN = 2;
+// From the first rod (note 931), as the bank (rod-bank.js BANK_MIN, note
+// 874): a rod kept is a rod kept, whatever the count.
+const ROD_MIN = 1;
 const REACH = 4.3, NEAR_STASH = 12, LAVA_NEAR = 2;
 const REST_MS = 5 * 60000, TAKE_REST_MS = 10 * 60000, TAKE_TRIES = 3;
 // Seconds, measured on a scratch server (scripts/rod-stash-probe.js, note
@@ -254,6 +256,33 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
   }
 }
 
+// The chest here as an answer of its own beside the walk out and the trip
+// back for food (rods_now, leave_nether; note 931). The stash was offered
+// only in a cage's lull and at the stance, 16 times in 30 hours to 19:00Z on
+// 2026-10-02 and never taken; a rod carrier at low health with nothing to
+// eat was asked only to carry them out, stay, or go back for food with them
+// in the pack. Here: the rods in a chest where the bot stands, then the walk
+// `then` names (the trip back for food) or the hunt on, the way back in
+// passing them. -> { description, run } or null
+function keepOption(bot, task, goal, save, actions, { then = null, thenSays = '' } = {}) {
+  const offer = stashOffer(bot, goal);
+  if (!offer) return null;
+  const acts = { ...actions,
+    place: actions?.place || require('./work').place,
+    acquireStep: actions?.acquireStep || require('./work').acquireStep,
+    navigate: actions?.navigate || require('./skills').navigate };
+  const h = Math.round((bot.health ?? 20) * 10) / 10, food = bot.food ?? 20;
+  const eats = (bot.inventory?.items?.() || []).some(i => bot.registry?.foodsByName?.[i.name]);
+  const body = food >= 18 ? `health ${h}, coming back at hunger ${food}` : `health ${h}, and at hunger ${food} it does not come back${eats ? ' until the bot has eaten' : ' (nothing to eat carried)'}`;
+  const description = `${offerSays(offer, { riskInState: false })} The chest stays here: it is counted as rods held, and taken out on the way out once every rod wanted is got; a death meanwhile (the bot comes back to life in the Overworld) drops none of them. A ghast's fireball breaks a chest only where it lands beside it (the chest's blast resistance 2.5); a blaze's does not. Now: ${body}.${thenSays ? ` ${thenSays}` : ''}`;
+  return { description, offer,
+    run: async () => {
+      const kept = await stashRods(bot, task, goal, save, acts, offer);
+      if (kept && then) await then();
+      return kept;
+    } };
+}
+
 // The lid opened, the contents read before and after, the lid shut.
 async function withStash(bot, task, entry, save, work) {
   const block = bot.blockAt(V(entry.position));
@@ -321,4 +350,4 @@ async function collect(bot, task, goal, save, actions = {}) {
   }
 }
 
-module.exports = { nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };
+module.exports = { keepOption, nearStash, stashes, withContents, listed, dimOf, countOf, KEPT, HELD, ROD_MIN, stashed, stashSays, heldSays, carriedSays, chestCell, chestMaking, stashOffer, offerSays, stashRods, collectStage, collect, withStash, rodsEquivalent };

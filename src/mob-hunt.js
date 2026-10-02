@@ -1099,11 +1099,16 @@ async function foodLeave(bot, task, goal, save, actions) {
   let restock = null;
   try { restock = require('./nether-food').restockFoodOption(bot, task, goal, save, { actions: foodActions(bot, task, goal, save, actions), client: actions.client || task.opportunityClient }); } catch (_) { restock = null; }
   if (restock) tree.restock_food = { description: restock.description };
+  // The rods put in a chest here first, then the trip (note 931): a death on
+  // the way out and back drops nothing kept, and the way back in passes them.
+  let keep = null;
+  try { keep = require('./rod-stash').keepOption(bot, task, goal, save, actions, { thenSays: `Then back to the Overworld for food as go back says, with the rods left here.` }); } catch (_) { keep = null; }
+  if (keep) tree.keep_then_go_back = { description: keep.description };
   // The trip home whose walk cannot begin from here, and going on without
   // food where one hit ends the bot and health cannot come back, are said,
   // not offered (note 706); going on stays only where nothing else is.
   let closed = null; try { closed = tripHomeClosed(bot, goal); } catch (_) { closed = null; }
-  if (closed) delete tree.go_back;
+  if (closed) { delete tree.go_back; delete tree.keep_then_go_back; }
   const lastHit = require('./last-hit').lastHit(bot);
   if (lastHit && Object.keys(tree).length > 1) delete tree.keep_on;
   const decision = await decide('leave_nether', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree,
@@ -1111,6 +1116,12 @@ async function foodLeave(bot, task, goal, save, actions) {
   if (decision.stale) return null;
   const pick = decision.path.at(-1);
   if (pick === 'restock_food') { await restock.run(); save(); return null; }
+  // Kept, then the trip as go_back; not kept, asked again.
+  if (pick === 'keep_then_go_back') {
+    if (!await keep.run()) return null;
+    goal.leaveNether = { reason: 'food', pick: 'go_back', until: 0, at: Date.now() }; save();
+    return 'go_back';
+  }
   goal.leaveNether = { reason: 'food', pick, until: 0, at: Date.now() };
   if (pick === 'keep_on') { setAside(goal, 'nether_return', 'food', require('./nether-travel').keepOnWhy(bot), 20 * 60000); delete goal.stockFood; }
   save();

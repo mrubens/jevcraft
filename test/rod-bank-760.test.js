@@ -290,3 +290,14 @@ test('rods carried on the fortress search: rods_now is asked there too, and out 
   assert.equal(walked, 1, 'the walk out begun');
   assert.equal(legs, 0, 'no leg of the search walked on this pass');
 });
+
+test('a chest carried: rods_now offers keeping them here beside out now and stay (note 931)', async () => {
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 2, chest: 1 } });
+  const goal = huntGoal();
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'stay_for_more', confidence: 0.9 } } }; } };
+  assert.equal(await rb.askBank(bot, task, goal, () => {}, { returnOverworld: async () => {} }, client), 'stay');
+  const keys = Object.keys(asked[0]).filter(k => k !== 'none_good').sort();
+  assert.deepEqual(keys, ['bank_now', 'keep_here', 'stay_for_more']);
+  assert.match(asked[0].keep_here, /^Keep the 2 blaze rods .* Then the hunt goes on here for the 5 rods still needed with nothing in the pack to lose/);
+});
