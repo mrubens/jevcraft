@@ -243,15 +243,17 @@ test('defer says this cage\'s own record, not only an arena row from elsewhere (
   bot.clearControlStates = () => {}; bot.lookAt = async () => {}; bot.activateItem = () => {}; bot.deactivateItem = () => {};
   bot.equip = async () => {}; bot.attack = () => {};
   const goal = rodsGoal();
-  // Held at this cage 32 minutes already, nothing gained: cage-yield's own
-  // record, seeded as it would be by that long a stay.
-  goal.cageYield = { cage: { x: -204, y: 57, z: -150 }, since: Date.now() - 32 * 60000, lastAt: Date.now() - 1000,
-    kills: 0, rods: 0, lost: 0, spent: 0, health: 20, yieldAt: Date.now() - 32 * 60000, lastKills: 0, lastRods: 0 };
+  // Held at this cage 8 minutes already, nothing gained: cage-yield's own
+  // record, seeded as it would be by that long a stay. (Past ten minutes the
+  // holds, defer among them, rest where a way that acts is on offer: notes
+  // 884 and 891; the coordinator's 32 minutes would now be that case.)
+  goal.cageYield = { cage: { x: -204, y: 57, z: -150 }, since: Date.now() - 8 * 60000, lastAt: Date.now() - 1000,
+    kills: 0, rods: 0, lost: 0, spent: 0, health: 20, yieldAt: Date.now() - 8 * 60000, lastKills: 0, lastRods: 0 };
   let asked = null;
   const client = { systemOne: async req => { asked = req.questions.branch_0.criteria; return { answers: { branch_0: { choice: 'defer', confidence: 0.9 } } }; } };
   await huntObserved(bot, { check() {} }, goal, () => {}, { navigate: async () => {} }, client);
   assert(asked, 'asked');
-  assert.match(asked.defer, /At this cage 32 minutes so far: 0 blazes killed, 0 rods, 0 health lost\./);
+  assert.match(asked.defer, /At this cage 8 minutes so far: 0 blazes killed, 0 rods, 0 health lost\./);
 });
 
 test('open_slit inside the spawner\'s own spawn range says a blaze can spawn already at the wall behind it (note 740)', () => {

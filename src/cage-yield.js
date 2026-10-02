@@ -27,7 +27,7 @@ const HOLDS = new Set(['box_here', 'box_at_spawner', 'take_cover', 'stand_by_spa
 const STRIKES = ['close_in', 'charge_nearest'];
 // A hold's rest (note 884), and what must be on offer beside it: a strike or a way out.
 const HOLD_REST_MS = 10 * 60000, HOLD_REST_HEALTH = 12;
-const ACTS = ['close_in', 'charge_nearest', 'fight', 'hunt_on', 'break_spawner', 'step_out', 'wait_far_off', 'go_back', 'leave_and_heal', 'retreat', 'bank_rods', 'pull_back'];
+const ACTS = ['close_in', 'charge_nearest', 'fight', 'hunt_on', 'break_spawner', 'open_the_wall', 'step_out', 'wait_far_off', 'go_back', 'leave_and_heal', 'retreat', 'bank_rods', 'pull_back'];
 const r1 = n => Math.round(n * 10) / 10;
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const minutes = ms => Math.max(1, Math.round(ms / 60000));

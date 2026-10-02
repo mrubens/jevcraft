@@ -820,6 +820,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // The rods got so far out through the portal to a chest on the Overworld
   // side, and back for the rest (rod-bank.js, note 760).
   if (state.entity === 'blaze') { const bank = require('./rod-bank').bankOffer(bot, goal); if (bank) tree.bank_rods = require('./rod-bank').option(bot, task, goal, save, actions, bank); }
+  // Walled in by its own blocks with no blaze a walk reaches: the wall
+  // opened toward the nearest is a way of its own (note 891). The walk the
+  // attacks are counted by digs nothing (note 774), so from inside a box no
+  // fight was offered, only the holds and defer: of 21 blaze hunts asked on
+  // 2026-10-02 from 13:00Z, 14 offered no strike, 11 of them answered
+  // defer, and 25590 held its cage 25 minutes without a kill.
+  if (state.entity === 'blaze' && unreached.length) { const open = openWallOption(bot, task, goal, save, candidates[0]); if (open) tree.open_the_wall = open; }
   if (!Object.keys(tree).length) return false;
   // The bot's fitness, on every option and in the state: what the code
   // once refused a fight for, as facts for Jev's choice (fitness, above).
@@ -904,6 +911,40 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   else { delete goal.lastHuntDefer; delete goal.huntDeferStreak; }
   await decision.action.run();
   return decision.path[0] !== 'defer';
+}
+
+// The wall opened toward a mob (note 891): the bot's own blocks on the side
+// nearest it, at the feet and the head, dug away. -> a tree entry or null
+function openWallOption(bot, task, goal, save, target) {
+  if (!target?.position || !bot?.entity?.position) return null;
+  let u, view, w;
+  try { u = require('./unstuck'); view = u.liveView(bot); w = u.walledOf(view, bot.entity.position.floored()); } catch (_) { return null; }
+  if (!w || !w.own.length) return null;
+  const feet = bot.entity.position.floored();
+  const to = target.position.minus(bot.entity.position);
+  const own = c => w.own.some(o => o.equals(c));
+  const solidAt = c => { const b = bot.blockAt(c); return !!b && b.boundingBox === 'block'; };
+  // The side nearest the mob whose closed cells are all the bot's own.
+  const sides = [new Vec3(0, 0, -1), new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(-1, 0, 0)]
+    .map(d => ({ d, cells: [feet.plus(d), feet.plus(d).offset(0, 1, 0)].filter(solidAt), toward: d.x * to.x + d.z * to.z }))
+    .filter(sd => sd.cells.length && sd.cells.every(own)).sort((a, b) => b.toward - a.toward);
+  const side = sides[0];
+  if (!side) return null;
+  const name = bot.blockAt(side.cells[0])?.name || 'block';
+  let secs = null; try { secs = u.digSeconds(name, view, false, side.cells[0]); } catch (_) { secs = null; }
+  const n = side.cells.length, d = Math.round(target.position.distanceTo(bot.entity.position));
+  return { secs: Math.max(1, Math.round((secs || 1) * n)),
+    description: `Open the wall: dig the ${n === 1 ? 'block' : `${n} blocks`} of its own ${name.replaceAll('_', ' ')} on the side toward the ${target.name.replaceAll('_', ' ')} ${d} blocks off${secs ? `, about ${Math.max(1, Math.round(secs * n))} second${Math.max(1, Math.round(secs * n)) === 1 ? '' : 's'}` : ''}, and be asked again from the opening. Walled in by its own blocks, no walk reaches a blaze and no fight with one is offered from in here; with the side open the walks are counted again, and the strikes the ground allows are offered. Open, the blazes with a line to the gap shoot through it. In the trials the box holds that ended killed no blaze.`,
+    run: async () => {
+      goal.step = { action: 'open_the_wall', toward: { x: Math.floor(target.position.x), y: Math.floor(target.position.y), z: Math.floor(target.position.z) }, blocks: n }; save?.();
+      for (const c of side.cells.slice().reverse()) {
+        task?.check?.();
+        const b = bot.blockAt(c);
+        if (!b || b.boundingBox !== 'block') continue;
+        try { await bot.dig(b, true); } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+      }
+      return true;
+    } };
 }
 
 // A fight the hunt offers, as a sentence: the mob and where, how it is
@@ -4624,4 +4665,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
