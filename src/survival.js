@@ -1699,6 +1699,8 @@ function keepShieldForStance(bot) {
   try { return threats(bot, 6).some(t => wg.guardable(t) && (wg.bladeReaches(t.entity, bot.entity.position) || t.distance <= 5)); } catch (_) { return false; }
 }
 // Seconds between a biter's blows at its reach (a hoglin two, most one).
+// The share of a covered biter's blows that land on a shield guard, in the moments the shield is down for a swing (note 870).
+const GUARD_OPEN = 0.3;
 // How long escapeFootings' search holds for one cell (note 859).
 const FOOTING_MEMO_MS = 3000;
 const ce_blowEvery = name => require('./combat-estimate').MOBS[name]?.blowEvery || 1;
@@ -7827,6 +7829,18 @@ class Survival {
     // guard at 20 health and was dead in under four seconds of blows.
     const facedFor = fm?.swingsToKill ? fm.swingsToKill * ce_blowEvery(e.name) : 0;
     const price = stanceCost({ mobs: others, ...(rest.length ? { fight: { lead: true, after: facedFor } } : {}), shield: true, health: bot.health, reaches: creeperOut });
+    // The biters inside the shield's cover are blocked only while it is up:
+    // it comes down for each swing at the one faced and blocks again a
+    // quarter second after it goes up, and what they land in those moments
+    // is counted (note 870). Left out whole, the guard read "0 damage" at
+    // 15 and at 9 health with three wither skeletons two to four blocks off
+    // in front of 25593 (mid-239-ac-fortress-2, 2026-10-02 12:02:57 and
+    // 12:03:00Z, a rod carried); five of their blows landed in nine seconds,
+    // 20 to none. GUARD_OPEN is that record's share: about three in ten of
+    // the covered biters' blows.
+    const coveredMobs = others.filter(m => m.covered);
+    const openDamage = coveredMobs.reduce((n, m) => n + (m.hitsBot || 0) * GUARD_OPEN / ce_blowEvery(m.name), 0) * 15;
+    if (openDamage > 0) price.damage = Math.round((price.damage + openDamage) * 10) / 10;
     const blastSays = others.filter(creeperOut).map(m => `the creeper ${Math.round(m.distance * 10) / 10} blocks off is ${Math.round(off(bot.entities[m.id]?.position || bot.entity.position))} degrees from the way the shield faces, outside its cover: it walks in and its blast lands whole, about ${Math.round((m.hitsBot || 0) * 10) / 10}`);
     const blastSay = blastSays.length ? ` As the shield faces the ${name}: ${blastSays.join('; ')}.` : '';
     const weapon = defenseWeapon(bot);
@@ -7838,7 +7852,7 @@ class Survival {
     const crowd = rest.filter(m => !m.shoots).length, covered = others.filter(m => m.covered).length;
     const kinds = [...new Set(flanking.map(m => m.name.replaceAll('_', ' ')))];
     const sideFire = flanking.length ? ` The shield faces the ${name}: ${flanking.length === 1 ? `the ${kinds[0]}` : `${flanking.length} ${kinds.length === 1 ? `${kinds[0]}s` : 'shooters'}`} here ${flanking.length === 1 ? 'is' : 'are'} more than ${SHIELD_COVER} degrees off that way, so ${flanking.length === 1 ? 'its shots land' : 'their shots land'} as if it were down${kinds.includes('blaze') ? ', each fireball with five seconds alight' : ''}, counted below.` : '';
-    const coverSaysN = covered ? ` ${covered === 1 ? 'Another biter stands' : `${covered} other biters stand`} within four blocks and within ${SHIELD_COVER} degrees of the way it faces: ${covered === 1 ? 'its blows go' : 'their blows go'} into the shield too, and ${covered === 1 ? 'is' : 'are'} left out of the figure below while ${covered === 1 ? 'it stays' : 'they stay'} there.` : '';
+    const coverSaysN = covered ? ` ${covered === 1 ? 'Another biter stands' : `${covered} other biters stand`} within four blocks and within ${SHIELD_COVER} degrees of the way it faces: ${covered === 1 ? 'its blows go' : 'their blows go'} into the shield while it is up; it comes down for each swing at the one faced and blocks again a quarter second after, and what ${covered === 1 ? 'it lands' : 'they land'} then (about three in ten of ${covered === 1 ? 'its' : 'their'} blows, as three wither skeletons landed on a guard in a trial) is counted below.` : '';
     const flank = sideFire + coverSaysN + (crowd ? ` The shield faces one way: a blow from the side or behind is not blocked, so with ${crowd === 1 ? 'another biter' : `${crowd} other biters`} here${covered ? ' outside its cover' : ''} the swing waits until each at its reach has just struck, and their blows are counted below as in the fight.` : '');
     // Each other biter at hand outside the shield's cover as it faces this
     // one, by name, with what it has landed lately (hit-log.js, note 752d):

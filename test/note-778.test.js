@@ -38,7 +38,9 @@ test('the shield covers the biters within its cover of the way it faces, by wher
   const sf = new Survival(front.bot, { navigate: async () => {} }, { state: { shelters: [] } });
   const a = sf.stanceOptions(new Task('x'), {}, () => {}, front.danger(), false);
   assert(a.shield_guard, Object.keys(a).join(','));
-  assert.match(a.shield_guard.description, /Another biter stands within four blocks and within 60 degrees of the way it faces: its blows go into the shield too/);
+  assert.match(a.shield_guard.description, /Another biter stands within four blocks and within 60 degrees of the way it faces: its blows go into the shield while it is up; it comes down for each swing at the one faced and blocks again a quarter second after, and what it lands then \(about three in ten of its blows/);
+  // Note 870: what the covered one lands while the shield is down is in the price, not nothing.
+  assert(a.shield_guard.expects.damage >= 4, `priced ${a.shield_guard.expects.damage}`);
   assert.match(a.shield_guard.description, /Standing here: .*the zombie the shield faces and 1 more within its cover of that way blocked|its blows on the shield|their blows on the shield/);
   // One east, one west: the one behind lands, counted.
   const split = crowdBot([[2.3, 0.5], [-1.3, 0.5]]);
