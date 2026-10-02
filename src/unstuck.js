@@ -1168,6 +1168,27 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
       require('./decisions').escalate(bot, goal, 'unstuck_move', says);
     }
     const failedHere = key => record.moves.filter(r => r.move === key && r.from === `${feet}` && !r.reached).length;
+    // A move the body's own rule refused from this cell is not offered from
+    // it again (note 938): 25598 (mid-242-gh-nether-1, 2026-10-02 20:02 to
+    // 20:10Z) stood eight minutes between two lava pools, offered step south
+    // and step north again and again, each refused at once ("lava ... ahead;
+    // not walked into"), with "the only way offered" twice, until it was in
+    // the lava; it died there.
+    // Within a block and a half of where it was refused, not its cell alone:
+    // at a lava pool's edge the body bobs between two cells.
+    const refusedHere = record.moves.filter(r => r.refused && Math.hypot(r.refused.x - feet.x, r.refused.y - feet.y, r.refused.z - feet.z) <= 1.5);
+    if (refusedHere.length) {
+      const gone = new Set(refusedHere.map(r => r.move));
+      for (let i = moves.length - 1; i >= 0; i--) if (gone.has(moves[i].key)) moves.splice(i, 1);
+      here.refusedHere = refusedHere.slice(-4).map(r => `${r.move.replaceAll('_', ' ')}: ${String(r.result || '').replace(/^failed: /, '')}`).join('; ');
+      if (!moves.length) {
+        const says = `working free (${aim.aim}): ${spellSays}; every move left here was refused by the body's own rule (${here.refusedHere})`;
+        record.escalated = { at: Date.now(), where: { x: feet.x, y: feet.y, z: feet.z }, says };
+        save();
+        require('./decisions').escalate(bot, goal, 'unstuck_move', says);
+        return false;
+      }
+    }
     // A shooter whose blast can push the bot over a drop that kills (a
     // ghast in sight): where it does so here, and at each move's end, said
     // on the move. mid-243-af-fortress-5 stepped north off the one cell of
@@ -1215,9 +1236,14 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     checkThreats(bot);
     const previousInterrupt = task.interruptCheck;
     task.interruptCheck = () => { previousInterrupt?.(); checkThreats(bot); };
+    const movedAt = Date.now();
     try { await perform(bot, task, m, { dig }); }
     catch (err) { task.check(); if (fatal(err)) throw err; failure = err.message; }
     finally { task.interruptCheck = previousInterrupt; }
+    // Refused by the body's own rule (motion.js: lava or fire ahead): said
+    // so, kept, and not offered from this cell again in this spell (note 938).
+    const refusedNow = bot._moveRefused && bot._moveRefused.at >= movedAt && /^unstuck_/.test(bot._moveRefused.label || '') ? bot._moveRefused : null;
+    if (refusedNow && !failure) failure = `refused: ${String(refusedNow.name || 'lava').replaceAll('_', ' ')} at (${refusedNow.x}, ${refusedNow.y}, ${refusedNow.z}) ahead, not walked into`;
     const after = bot.entity.position.floored();
     const changed = before.distanceTo(bot.entity.position) >= 0.5 || (m.cell && bot.blockAt(m.cell)?.name !== blocks) || (m.kind === 'resync' && m.result?.corrected?.length > 0);
     still = changed ? 0 : still + 1;
@@ -1232,7 +1258,7 @@ async function workFree(bot, task, goal, save, { client, dig, maxMoves = 24, aim
     const changed1 = m.kind === 'pillar' ? { cell: `${feet}`, kind: 'pillar' } : m.cell ? { cell: `${m.cell}`, kind: m.kind } : {};
     const fresh = !record.visits[`${after}`];
     const measure = measureOf(aim, after);
-    record.moves.push({ move: m.key, from: `${feet}`, ...changed1, at: Date.now(), ...(measure != null ? { measure } : {}), ...(fresh ? { fresh: true } : {}), reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
+    record.moves.push({ move: m.key, from: `${feet}`, ...changed1, ...(refusedNow ? { refused: { x: feet.x, y: feet.y, z: feet.z } } : {}), at: Date.now(), ...(measure != null ? { measure } : {}), ...(fresh ? { fresh: true } : {}), reached, result: failure ? `failed: ${failure}` : `${changed ? '' : 'nothing changed; '}now at ${after.x},${after.y},${after.z}` });
     save();
     if (still >= 4) return false;
   }
