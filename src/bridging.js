@@ -416,7 +416,9 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {
     if ([...body, n.offset(0, 2, 0)].some(c => molten(bot.blockAt(c)))) throw new Error(`lava in the way at ${n}`);
     if (molten(bot.blockAt(floor)) && dy !== 0) throw new Error(`lava under the step at ${n}`);
     if (dy !== 0 && !solid(bot.blockAt(floor))) throw new Error(`no floor for a step ${dy < 0 ? 'down' : 'up'} at ${n}`);
-    for (const c of body) await clear(bot, task, c);
+    // A fortress's bricks and fences in the line are dug too (clear's wall): a
+    // tunnel begun inside one stopped at its first wall (note 864).
+    for (const c of body) await clear(bot, task, c, { wall: true });
     let laidHere = false;
     if (!solid(bot.blockAt(floor))) {
       const refused = spanRefused(bot);
@@ -441,7 +443,13 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {
   };
   while (steps < maxSteps) {
     task.check();
-    const here = bot.entity.position.floored();
+    // From the cell over the block the body rests on (terrain.js restingCell):
+    // at an edge the feet's own cell has air under it (note 864).
+    let here = bot.entity.position.floored();
+    if (!solid(bot.blockAt(here.offset(0, -1, 0)))) {
+      let rest = null; try { rest = require('./terrain').restingCell(bot); } catch (_) { rest = null; }
+      if (rest && solid(bot.blockAt(rest.offset(0, -1, 0)))) { here = rest; await creepTo(bot, task, here, 1200); }
+    }
     if (flatTo(here.offset(0.5, 0, 0.5)) <= near) return { steps, laid, arrived: true };
     const d = stepToward(here, target);
     if (!d) return { steps, laid, arrived: true };
