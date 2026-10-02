@@ -506,3 +506,16 @@ test('no block laid to climb from a top whose four sides fall more than three, o
   ground.walkGoalY = 65;
   assert(rises(ground, { x: 0, y: 65, z: 0, remainingBlocks: 64 }).length > 0);
 });
+
+test('a cell with fire beside it costs a route more than one without (note 848: 25589 burned walking past a ghast\'s fire on the next cell)', () => {
+  const bot = botFixture(), Block = require('prismarine-block')(bot.registry);
+  bot.blockAt = point => {
+    const p = point.floored(), blockName = p.y < 70 ? 'netherrack' : p.y === 70 && p.x === 2 && p.z === 0 ? 'fire' : 'air';
+    const block = Block.fromStateId(bot.registry.blocksByName[blockName].defaultState); block.position = p; return block;
+  };
+  const movement = configureMovements(bot); movement.canDig = false;
+  const neighbors = movement.getNeighbors({ x: 0, y: 70, z: 0, remainingBlocks: 0 });
+  const beside = neighbors.find(p => p.x === 1 && p.z === 0 && p.y === 70), clear = neighbors.find(p => p.x === -1 && p.z === 0 && p.y === 70);
+  assert(beside && clear, neighbors.map(n => `${n.x},${n.y},${n.z}`).join(' '));
+  assert(beside.cost >= clear.cost + 5, `${beside.cost} against ${clear.cost}`);
+});

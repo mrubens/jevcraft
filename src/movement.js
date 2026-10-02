@@ -21,6 +21,8 @@ const LAVA_EDGE_COST = 4;
 const AROUND = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
 const DROP_DEEPEST = 48;
 const BURNS = /lava|fire|magma_block|campfire/;
+// What a cell with fire beside it costs a route (note 848).
+const FIRE_SIDE_COST = 6;
 // A cell with lava round it costs this much more than open ground, so a
 // route takes as few as the ground allows (note 660).
 const LAVA_SIDE_COST = 6;
@@ -271,6 +273,12 @@ class SurvivalMovements extends Movements {
       // And in the Nether each cell with lava round it, so the route takes
       // as few as the ground allows (note 660).
       if (nether && lavaOf(next).cells.length) next.cost += LAVA_SIDE_COST;
+      // A cell with fire beside it at the feet or the head (note 848): the
+      // body, 0.6 wide, walked off the cell's middle touches the fire on the
+      // next one and burns. 25589 (2026-10-01 18:48:07 to 52Z) went back and
+      // forth past a ghast's fire on the netherrack at (158, 78, 34), each
+      // walk "in fire" from the cell beside it, 17.7 to none.
+      if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => [0, 1].some(dy => /^(soul_)?fire$/.test(this.getBlock(next, dx, dy, dz)?.name || '')))) next.cost += FIRE_SIDE_COST;
       // With rods carried, a cell beside lava or a deadly drop off the way
       // the bot came in costs more by each rod: a misstep there loses them
       // all, and the way in was walked alive (note 762).
