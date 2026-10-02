@@ -126,7 +126,17 @@ function guardFloor(bot, changed, what) {
 // side. 25591 stood in the basalt between two corridors whose walls stood
 // between every crossing and their floors (note 694).
 const WALL = /^(nether_bricks|nether_brick_fence|cracked_nether_bricks)$/;
-const diggableHere = (block, wall) => block.diggable && (NATURAL.test(block.name) || (wall && WALL.test(block.name)));
+// And a block the bot laid itself (own-blocks.js laidAt, note 953): its own
+// span's fence or wool is its own to dig through, as working free has dug
+// them since note 615. 25594 (mid-242-xa-fortress-5, 2026-10-02 22:42Z),
+// its rod on the bank's walk, had dig_across end at "oak fence in the way"
+// 22 blocks from its portal again and again; 25598 (21:03Z) had its tunnel
+// home stop at "The span is blocked by white_wool".
+// In the Nether the Overworld's woods and wool are always the bot's own,
+// past what laidAt keeps (its last 128).
+const NOT_NETHER = /^((oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|pale_oak)_(fence|planks|log)|\w+_wool)$/;
+const ownHere = (bot, block) => !!bot && (!!require('./own-blocks').laidAt(bot, block.position) || (/nether/.test(String(bot.game?.dimension || '')) && NOT_NETHER.test(block.name)));
+const diggableHere = (block, wall, bot = null) => block.diggable && (NATURAL.test(block.name) || (wall && WALL.test(block.name)) || ownHere(bot, block));
 // A cell dug with gravel or sand over it is dug again as the column comes
 // down into it, until it stays open: the crossing does not step its head
 // into a cell the column fills. 25588 (mid-243-hf, 00:26Z on 2026-09-30)
@@ -140,7 +150,7 @@ async function clear(bot, task, p, { wall = false } = {}) {
     const block = bot.blockAt(p);
     if (block && BURNS.test(block.name)) throw new Error(`Lava in the way at ${p}`);
     if (passable(block)) return;
-    if (!diggableHere(block, wall)) throw new Error(`The span is blocked by ${block.name}`);
+    if (!diggableHere(block, wall, bot)) throw new Error(`The span is blocked by ${block.name}`);
     if (!require('./tunneling').safeExcavation(bot, p)) throw new Error(`Lava or water behind the ${block.name.replaceAll('_', ' ')} at ${p}`);
     guardFloor(bot, p, 'dug');
     const column = FALLS.test(bot.blockAt(p.offset(0, 1, 0))?.name || '');
@@ -187,7 +197,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = n
       if (!b) { why = 'unloaded ground ahead'; break; }
       if (BURNS.test(b.name)) { why = 'lava in the way'; break; }
       if (passable(b)) continue;
-      if (!diggableHere(b, wall)) { why = `${b.name.replaceAll('_', ' ')} in the way`; break; }
+      if (!diggableHere(b, wall, bot)) { why = `${b.name.replaceAll('_', ' ')} in the way`; break; }
       if (WALL.test(b.name)) walls++;
       if (!require('./tunneling').safeExcavation(bot, p)) { why = `lava or water behind the ${b.name.replaceAll('_', ' ')}`; break; }
       const drops = floorDropsAt(bot, p, here.offset(0, -1, 0));

@@ -86,6 +86,7 @@ const BODY = [1.6, 0.9, 0.15];
 const eyeOf = e => e.position.offset(0, (e.height || 1.8) * 0.85, 0);
 // The blazes with a line to a cell, `walls` counted as built.
 const seeing = (bot, blazes, cell, walls = new Set()) => blazes.filter(e => e.position && BODY.some(dy => lineThrough(bot, eyeOf(e), cell.offset(0.5, dy, 0.5), walls)));
+const seesAny = (bot, blazes, cell, walls = new Set()) => blazes.some(e => e.position && BODY.some(dy => lineThrough(bot, eyeOf(e), cell.offset(0.5, dy, 0.5), walls)));
 
 // The cells a walk reaches within `steps`, nearest first; `ok` picks.
 // A cell the bot's own walk does not take is not one (blaze-stand.js
@@ -832,13 +833,19 @@ function healSite(bot, blazes, { steps = 14, avoid = [] } = {}) {
   // (cell) ... and stay until the health is full" as if it would arrive.
   const { siteFailedNear } = require('./blaze-stand');
   let best = null;
+  // The rays last (note 957): a cell too near or no better than the best
+  // found is passed over before any line is cast, and the first blaze with
+  // a line ends the look at a cell. 25591 (mid-242-zh-fortress-5, 2026-10-02
+  // 23:03:29 to 23:03:43Z), 27 blazes about, held its event loop 2.4 to 4.6
+  // seconds four times in leave_and_heal and was hit with no answer.
   for (const { cell, steps: n } of walkCells(bot, { steps, avoid })) {
     if (siteFailedNear(bot, cell)) continue;
-    if (seeing(bot, blazes, cell).length) continue;
     const near = Math.min(...blazes.map(e => e.position.distanceTo(cell.offset(0.5, 1, 0.5))));
     if (near < 4) continue;
     const score = n - Math.min(near, 12) * 0.4;
-    if (!best || score < best.score) best = { cell, steps: n, score, nearest: round(near) };
+    if (best && score >= best.score) continue;
+    if (seesAny(bot, blazes, cell)) continue;
+    best = { cell, steps: n, score, nearest: round(near) };
   }
   return best || walledHeal(bot, blazes);
 }

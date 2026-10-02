@@ -454,6 +454,8 @@ const RISING_RECORD = { rising: 506, hits: 2100, since: '06:00Z on 2026-09-30 to
 const LINE_HIDES = new Set(['out_of_sight', 'take_cover', 'nook', 'bunker', 'pillar', 'dig_in']);
 // A stance's answer is thrown away for a blow landed while it was out once, not twice within this (note 926).
 const STALE_ONCE_MS = 3000;
+// A stance's options built in more than this are said with what they hold (note 954).
+const SLOW_OPTIONS_MS = 250;
 const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
@@ -3466,7 +3468,28 @@ class Survival {
   // against an arrow in flight while the stance stands its ground.
   // Every stance says what the mobs here cost the bot over the fifteen
   // seconds, worked out the same way (stanceCost).
+  // Timed (note 954): a stance asked among many shooters held the event loop
+  // for seconds. 25591 (mid-242-xh-fortress-5, 2026-10-02 22:50:07 to
+  // 22:50:17Z), 21 blazes in sight, logged "[lag] event loop held 4.6s" with
+  // take_cover in hand, and was hit with no answer for 5.2 seconds, 12.4 to
+  // 3; nothing said what the time went on. Past SLOW_OPTIONS_MS the build
+  // is said with the mobs and the line-of-sight work in it.
   stanceOptions(task, goal, save, danger, swung) {
+    const t0 = Date.now(), timed = {};
+    const wrap = (M, name) => { const f = M[name]; timed[name] = { n: 0, ms: 0, f, M }; M[name] = (...a) => { const t = Date.now(); try { return f(...a); } finally { timed[name].n++; timed[name].ms += Date.now() - t; } }; };
+    const mods = [[require('./bunker'), ['lineRegained', 'seenFrom', 'coverWithin', 'nookSite', 'wayTo']], [require('./blaze-stand'), ['blazeStands']], [require('./blaze-tactics'), ['healSite']]];
+    for (const [M, names] of mods) for (const name of names) if (typeof M[name] === 'function') wrap(M, name);
+    try { return this.stanceOptionsBuilt(task, goal, save, danger, swung); }
+    finally {
+      for (const [name, v] of Object.entries(timed)) v.M[name] = v.f;
+      const ms = Date.now() - t0;
+      if (ms >= SLOW_OPTIONS_MS) {
+        const shooters = danger.filter(t => shooter(t.entity)).length;
+        console.log(`[slow] stanceOptions ${ms} ms: ${danger.length} mobs (${shooters} shooters); ${Object.entries(timed).map(([n, v]) => `${n} ${v.n} calls ${v.ms} ms`).join(', ')}`);
+      }
+    }
+  }
+  stanceOptionsBuilt(task, goal, save, danger, swung) {
     const bot = this.bot, options = {};
     // The fight stance itself, kept where the stances that end in it can
     // reach it after `options.fight` is left out (a stance that ended here

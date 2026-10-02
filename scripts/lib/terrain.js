@@ -402,6 +402,22 @@ const TERRAIN = Object.freeze([
     target: [5801, 71, 5800],
   },
   {
+    name: 'tunnel_home_through_own_fence',
+    why: 'Note 953: an oak fence and a white wool, the bot\'s own kinds in the Nether, stand in the tunnel\'s line (25594\'s dig_across ended at "oak fence in the way", 25598\'s tunnel at its own white wool).',
+    dimension: 'the_nether', seconds: 120,
+    start: [5900.5, 81, 5900.5],
+    kit: [['iron_pickaxe', 1], ['netherrack', 16]],
+    build: [
+      'forceload add 5890 5890 5930 5910',
+      'fill 5895 75 5895 5925 90 5905 minecraft:netherrack',
+      'fill 5900 81 5900 5901 82 5900 minecraft:air',
+      'setblock 5905 81 5900 minecraft:oak_fence',
+      'setblock 5909 82 5900 minecraft:white_wool',
+      'fill 5918 81 5900 5920 83 5900 minecraft:air',
+    ],
+    target: [5919, 81, 5900],
+  },
+  {
     name: 'tunnel_home_from_span',
     why: 'Note 920: the tunnel begins on a block in open air ten over its target and three across (25595 on its own span over its portal): it comes down on laid steps and ends on the floor, no fall.',
     dimension: 'the_nether', seconds: 150,

@@ -164,6 +164,13 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
 // rods carried, and again after ten minutes; with the way out closed or
 // resting it is not asked.
 const TODAY = Object.freeze({ day: '2026-10-02 (11:45Z to 13:00Z)', lives: 5, died: 4, lost: [4, 3, 2, 2], out: 1, outRods: 2 });
+// The bank walks themselves (scripts/rod-bank-walks.js, note 955): what each
+// walk begun with rods came to, said on both answers. The walk's own price
+// had only 2026-09-28's walks back to a portal (22 of 181 came out), from
+// before the bank; on 2026-10-02 rods_now was answered bank_now 61 times and
+// stay_for_more none.
+const BANK_WALKS = Object.freeze({ day: '2026-10-02 (13:37Z to 22:55Z)', walks: 47, banked: 27, died: 13, other: 4, open: 3 });
+const bankWalksSays = () => `On ${BANK_WALKS.day}, ${BANK_WALKS.walks} bank walks were begun with rods: ${BANK_WALKS.banked} put them in a chest (${Math.round(BANK_WALKS.banked / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.died} died within the hour it was begun (${Math.round(BANK_WALKS.died / BANK_WALKS.walks * 100)}%), ${BANK_WALKS.other} ended another way, ${BANK_WALKS.open} were still under way.`;
 const ASK_AGAIN_MS = 10 * 60000;
 async function askBank(bot, task, goal, save, actions, client, { now = Date.now() } = {}) {
   if (!client) return null;
@@ -178,9 +185,9 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   // The chest here (note 931): the rods kept in the Nether, the hunt on.
   let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
   const tree = {
-    bank_now: { description: `${opt.description} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
+    bank_now: { description: `${opt.description} ${bankWalksSays()} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
     ...(keep ? { keep_here: { description: keep.description, run: keep.run } } : {}),
-    stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here. ${staying} ${today} Asked again when another rod is carried, or in ten minutes.` },
+    stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here. ${staying} ${today} ${bankWalksSays()} Asked again when another rod is carried, or in ten minutes.` },
   };
   let decision;
   try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food } }); }

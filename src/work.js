@@ -478,7 +478,16 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // were set aside 3.2 minutes into a trial from a fortress save with
   // fortress_leg's legs, floors, heights and restock never tried, and waited
   // thirty minutes (note 605). Its ten minutes running out still offers it.
-  const untriedBelow = byEscalation && worked?.openBelow?.length ? worked.openBelow : null;
+  // Not past twenty minutes on the rung (note 956): then setting it aside is
+  // offered with the ways below said. 25597 (mid-242-kd-nether-1, 2026-10-02
+  // 22:12 to 23:00Z) hunted endermen 48 minutes with no fortress sighted, no
+  // rod and no pearl, "getting nowhere", and was never offered the pearls set
+  // aside for the fortress: a nether_gather or hunt_target way below was
+  // always untried from wherever it stood.
+  const longOnRung = Number.isFinite(worked?.ms) && worked.ms >= LONG_ON_RUNG_MS;
+  const untriedBelow = byEscalation && worked?.openBelow?.length && !longOnRung ? worked.openBelow : null;
+  const untriedAfterLong = byEscalation && worked?.openBelow?.length && longOnRung
+    ? ` Ways below it not yet tried from here: ${worked.openBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ')}; ${Math.round(worked.ms / 60000)} minutes have gone on it.` : '';
   const untriedSays = untriedBelow ? untriedBelow.map(o => `${o.q.replaceAll('_', ' ')} (${o.keys.map(k => k.replaceAll('_', ' ')).join(', ')})`).join('; ') : '';
   const setAsideNotOffered = untriedBelow ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: it was brought here by a failure below, and ways below it have not been tried from here: ${untriedSays}`
     : nothingElseToRunWith ? `setting the ${rung.replaceAll('_', ' ')} aside is not offered: every other rung is already resting, so there is nothing else for the ladder to go on with; it would come straight back` : null;
@@ -488,7 +497,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // critic 05:44Z, 06:04Z: `set_aside_rung` taken while standing at the
   // cage with blazes about, note 725).
   const atLiveSpawnerForRods = rung === 'obtain_blaze_rods' && cage;
-  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion) && !setAsideNotOffered && !atLiveSpawnerForRods) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${instead ? ` ${instead}` : ''}`,
+  if (rung && !rungAside && (DEFERRABLE.has(rung) || rungQuestion) && !setAsideNotOffered && !atLiveSpawnerForRods) answers.set_aside_rung = { description: `Leave the ${rung.replaceAll('_', ' ')} for thirty minutes and go on with the next thing the game needs; it comes back afterwards.${rungWhy ? ` It is for this: ${rungWhy}.` : ''}${WITHOUT[piece] ? ` For those thirty minutes, ${WITHOUT[piece]}.` : ''}${needed}${worked ? ` Worked on this rung ${worked.says}.` : ''}${untriedAfterLong}${instead ? ` ${instead}` : ''}`,
     run: async () => {
       setAside(goal, 'rung', rung, `Jev set it aside at the rung's question${worked ? `, worked on ${worked.says}` : `, stalled ${stall.strikes} times`}`.slice(0, 300), RUNG_WAIT_MS); delete goal.rungTime;
       // What it was set aside for, from where, and until when that stands:
@@ -986,6 +995,8 @@ async function blockSourceSaid(bot, task, goal, item) {
 // blocks a night or a climb needs. Whether now is the time is Jev's: it is
 // asked when one falls short, with what is carried, and "carry on" holds
 // for five minutes.
+// Past this on one rung, setting it aside is offered though ways below are untried (note 956).
+const LONG_ON_RUNG_MS = 20 * 60000;
 const UPKEEP_HOLD_MS = 5 * 60 * 1000;
 // The base's bed is offered to take along within a short walk; food before
 // dark within the last few minutes of day.

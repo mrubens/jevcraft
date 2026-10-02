@@ -250,6 +250,8 @@ test('two rods at the cage: asked on its own, out now or stay; once for each cou
   assert.deepEqual(Object.keys(asked[0]).filter(k => k !== 'none_good').sort(), ['bank_now', 'stay_for_more']);
   assert.match(asked[0].bank_now, /^Bank the rods got so far: walk back to the portal .*4 stayed and died with them \(4, 3, 2, 2 rods lost\), 1 left and carried its 2 out\./);
   assert.match(asked[0].stay_for_more, /^Stay and hunt on for the 5 rods still needed with the 2 rods in the pack: .*every rod carried is lost with a death here/);
+  // Today's bank walks said on both (note 955).
+  for (const k of ['bank_now', 'stay_for_more']) assert.match(asked[0][k], /On 2026-10-02 \(13:37Z to 22:55Z\), 47 bank walks were begun with rods: 27 put them in a chest \(57%\), 13 died within the hour it was begun \(28%\), 4 ended another way, 3 were still under way\./);
   // The same two rods: not asked again.
   assert.equal(await rb.askBank(bot, task, goal, () => {}, actions, client), null);
   assert.equal(asked.length, 1);
