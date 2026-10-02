@@ -25,6 +25,9 @@ const REACH = 5;       // blazes this near: a step and a swing
 const HOLDS = new Set(['box_here', 'box_at_spawner', 'take_cover', 'stand_by_spawner', 'fight_at_spawner', 'seal', 'dig_down',
   'dig_in_at_spawner', 'dig_in_and_fight', 'stay_and_fight', 'open_slit', 'keep_at_it', 'back_to_wall', 'out_of_sight', 'nook', 'defer', 'hold_box']);
 const STRIKES = ['close_in', 'charge_nearest'];
+// A hold's rest (note 884), and what must be on offer beside it: a strike or a way out.
+const HOLD_REST_MS = 10 * 60000, HOLD_REST_HEALTH = 12;
+const ACTS = ['close_in', 'charge_nearest', 'fight', 'hunt_on', 'break_spawner', 'step_out', 'wait_far_off', 'go_back', 'leave_and_heal', 'retreat', 'bank_rods', 'pull_back'];
 const r1 = n => Math.round(n * 10) / 10;
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const minutes = ms => Math.max(1, Math.round(ms / 60000));
@@ -96,6 +99,22 @@ function annotate(bot, goal, options, now = Date.now()) {
     if (!HOLDS.has(k) || !o || typeof o.description !== 'string') continue;
     o.description += s.says;
   }
+  // A hold that has brought nothing rests (note 884), as any answer that
+  // came to nothing does (tried.js): ten minutes at this cage with no kill
+  // and no rod, blazes within sixteen, the bot at twelve health or more, and
+  // a strike or a way out on offer: the holds are withheld until a kill or
+  // a rod, or the stay ends, and said so. 25590 (mid-242-we-fortress-3,
+  // 2026-10-02 13:17 to 13:42Z) held boxes, bunkers and cover at its cage
+  // for 25 minutes, the words "25 minutes so far: 0 blazes killed" on each,
+  // while eleven blazes gathered, and died there; the trials' box holds
+  // have killed no blaze. Under twelve health a hold is shelter, and stays.
+  const idle = now - u.rec.yieldAt;
+  if (idle >= HOLD_REST_MS && s.about.all > 0 && (bot.health ?? 20) >= HOLD_REST_HEALTH && ACTS.some(k => options[k])) {
+    const rested = Object.keys(options).filter(k => HOLDS.has(k) && options[k]);
+    for (const k of rested) delete options[k];
+    if (rested.length) s.facts.holdsResting = `The holds here (${rested.map(k => k.replaceAll('_', ' ')).join(', ')}) rest: ${plural(minutes(idle), 'minute')} at this cage brought no kill and no rod. They are offered again after a kill or a rod, or under ${HOLD_REST_HEALTH} health.`;
+    return s.facts;
+  }
   // Cover at full health, a strike on offer: what it gives up.
   const strike = STRIKES.find(k => options[k]);
   if (options.take_cover && typeof options.take_cover.description === 'string' && (bot.health ?? 0) >= 20 && strike && s.about.nearest != null) {
@@ -104,4 +123,4 @@ function annotate(bot, goal, options, now = Date.now()) {
   return s.facts;
 }
 
-module.exports = { annotate, update, said, blazesAbout, watchHealth, HOLDS, NO_YIELD_MS, AWAY_MS, REACH };
+module.exports = { annotate, update, said, blazesAbout, watchHealth, HOLDS, NO_YIELD_MS, AWAY_MS, REACH, HOLD_REST_MS, HOLD_REST_HEALTH };

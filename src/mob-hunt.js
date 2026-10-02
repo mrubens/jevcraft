@@ -861,8 +861,9 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // actually been (note 740, the coordinator's 25585: 16 blazes in sword
   // reach, defer answered twice against a row of "1 killed, 21 damage" with
   // nothing said of this cage's own 32 minutes of nothing).
-  if (state.entity === 'blaze') { try { require('./cage-yield').annotate(bot, goal, tree); } catch (_) { /* no cage */ } }
-  const snapshot = { request: goal.request, resource: state.item, need: huntTarget(bot, goal) - countOf(bot, state.item),
+  let cageSoFar = null;
+  if (state.entity === 'blaze') { try { cageSoFar = require('./cage-yield').annotate(bot, goal, tree); } catch (_) { /* no cage */ } }
+  const snapshot = { request: goal.request, ...(cageSoFar?.holdsResting ? { holdsResting: cageSoFar.holdsResting } : {}), resource: state.item, need: huntTarget(bot, goal) - countOf(bot, state.item),
     ...(state.entity === 'blaze' && ladderRods(goal) ? { rodsTheGoalWants: require('./eye-need').says(bot, goal) } : {}),
     ...(state.entity === 'blaze' ? { blazes: blazesSays(bot, goal, state), playedRecord: require('./blaze-record').says(bot), playedAnswers: require('./blaze-record').answersSay(bot), blazeCounts: (() => { try { return require('./blaze-record').entryFacts(bot, { cage: require('./blaze-stand').spawnerAt(bot) }).says; } catch (_) { return undefined; } })() } : {}),
     // What followed the trials' rods (after-rod.js, note 659) is no longer

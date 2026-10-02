@@ -125,14 +125,29 @@ test('a hold at a live cage says its minutes, kills, rods and health lost; three
   const f8 = cy.annotate(bot, goal, o, t0 + 8 * 60000);
   assert.equal(f8.healthLost, 4);
   assert.match(o.box_here.description, /At this cage 8 minutes so far: 0 blazes killed, 0 rods, 4 health lost\. Nothing has come of it for 8 minutes while 2 blazes were within 5 blocks \(2 out of sight\): held like this, they stay out of its line\.$/);
+  // Eleven minutes with no kill and no rod at full health, strikes on offer: the holds rest (note 884).
+  for (let m = 9; m < 11; m++) cy.annotate(bot, goal, fresh(), t0 + m * 60000);
+  o = fresh();
+  const f11 = cy.annotate(bot, goal, o, t0 + 11 * 60000 - 30000);
+  assert.deepEqual(Object.keys(o), ['close_in', 'fight']);
+  assert.match(f11.holdsResting, /^The holds here \(box here, take cover\) rest: 1[01] minutes at this cage brought no kill and no rod\./);
+  // Under twelve health a hold is shelter: offered.
+  bot.health = 10; o = fresh();
+  cy.annotate(bot, goal, o, t0 + 11 * 60000 - 20000);
+  assert.ok(o.box_here && o.take_cover);
+  bot.health = 20;
+  // No strike or way out beside them: offered.
+  o = { box_here: { description: 'Box.' }, take_cover: { description: 'Cover.' } };
+  cy.annotate(bot, goal, o, t0 + 11 * 60000 - 10000);
+  assert.ok(o.box_here && o.take_cover);
   // A kill and a rod: yield, and the plain line goes.
   bot._kills = { blaze: 1 }; bot.inventory.items().find(i => i.name === 'blaze_rod').count = 2;
   o = fresh();
-  cy.annotate(bot, goal, o, t0 + 9 * 60000);
-  assert.match(o.box_here.description, /1 blaze killed, 1 rod, 4 health lost\.$/);
+  cy.annotate(bot, goal, o, t0 + 11 * 60000);
+  assert.match(o.box_here.description, /1 blaze killed, 1 rod, \d+ health lost\.$/);
   // Away from the cage five minutes: a new stay.
   o = fresh();
-  cy.annotate(bot, goal, o, t0 + 15 * 60000);
+  cy.annotate(bot, goal, o, t0 + 17 * 60000);
   assert.match(o.box_here.description, /At this cage 1 minute so far: 0 blazes killed/);
   // No cage known: nothing said.
   o = fresh();
