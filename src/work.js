@@ -4804,7 +4804,7 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
     const flatNow = () => Math.hypot(p.x - bot.entity.position.x, p.z - bot.entity.position.z), before = flatNow();
     goal.step = { action: 'tunnel_home', target: { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }, held: true }; save();
     let r = null, why = null;
-    try { r = await require('./bridging').tunnelStraight(bot, task, pos(p), { maxSteps: 96 }); }
+    try { r = await require('./bridging').tunnelStraight(bot, task, pos(p), { maxSteps: 96, navigate }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
     if (r?.arrived) { delete goal.tunnelHome; save(); }
     else if (before - flatNow() >= 4) { goal.tunnelHome = { ...th, at: Date.now() }; save(); return true; }
@@ -5097,7 +5097,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   if (pick === 'tunnel_home') {
     goal.step = { action: 'tunnel_home', target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) } }; save();
     let why = null;
-    try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96 }); }
+    try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96, navigate }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
     cameTo(why);
     // Held while it makes ground (walkToKnownPortal goes on with it, note 866).

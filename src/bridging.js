@@ -8,7 +8,8 @@ const { move } = require('./motion');
 const { Vec3 } = require('vec3');
 const { equipBestTool } = require('./skills');
 
-const MATERIALS = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'stone', 'dirt', 'andesite', 'diorite', 'granite', 'blackstone', 'basalt'];
+// nether_bricks (note 906): what a fortress's walls drop, laid like the rest.
+const MATERIALS = ['netherrack', 'cobblestone', 'cobbled_deepslate', 'stone', 'dirt', 'andesite', 'diorite', 'granite', 'blackstone', 'basalt', 'nether_bricks'];
 // The Nether's ores are its rock: gold and quartz lie through the
 // netherrack, and a crossing or a leg that stopped at them ("nether gold ore
 // in the way") stopped in plain rock. mid-242-ab-nether-4's legs east and
@@ -41,7 +42,7 @@ const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', ...NETHER_
 // a ghast 57 off; at the third fireball it was off the span and in the lava,
 // 20 health to none in four seconds (the blast, or its push); 25597 went the same way at 14:48Z and
 // 25595 was "doomed to fall by Ghast" at 12:35Z.
-const BLAST_PROOF = ['cobblestone', 'cobbled_deepslate', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite'];
+const BLAST_PROOF = ['cobblestone', 'cobbled_deepslate', 'blackstone', 'basalt', 'nether_bricks', 'stone', 'andesite', 'diorite', 'granite'];
 const laidOrder = bot => /nether/.test(String(bot?.game?.dimension || '')) ? [...BLAST_PROOF, ...LAID.filter(n => !BLAST_PROOF.includes(n))] : LAID;
 const material = bot => laidOrder(bot).map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
 // A biter or a hopper that can push the bot off the span within its charge
@@ -412,7 +413,8 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
 // trial ended there, the best rod run of the record. Ends within `near`
 // blocks of the target across, after maxSteps, or where no way on is safe.
 // -> { steps, laid, arrived }
-async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {}) {
+const QUARRY_WANT = 24, QUARRY_BACK = 12;
+async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navigate = null } = {}) {
   let steps = 0, laid = 0, sideRun = 0, lastSide = null;
   const flatTo = p => Math.hypot(target.x - p.x, target.z - p.z);
   const molten = b => BURNS.test(b?.name || '') || /water/.test(b?.name || '');
@@ -435,7 +437,14 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {
       if (refused) throw new Error(`open air ahead, and a floor is not laid there: ${refused.says}`);
       const support = bot.blockAt(here.offset(0, -1, 0));
       if (!solid(support)) throw new Error('nothing solid underfoot to lay the tunnel\'s floor from');
-      const item = material(bot);
+      // None carried: one dug from the tunnel's own wall (note 906), its
+      // drop picked up where it falls beside the feet. 25591
+      // (mid-242-wb-fortress-3, 2026-10-02 14:51 to 15:03Z), a rod on its
+      // bank's walk with two pickaxes and no block in its pack, had its
+      // tunnel stop three times at the first open cell, 114 and 88 blocks
+      // from its portal: "no blocks carried to lay the tunnel's floor".
+      let item = material(bot);
+      if (!item) { await quarry(here, d); item = material(bot); }
       if (!item) throw new Error('no blocks carried to lay the tunnel\'s floor over open air');
       const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
       if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
@@ -450,6 +459,40 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {
     const ok = await creepTo(bot, task, n, 3000, dy > 0 ? ['forward', 'jump'] : ['forward'], { sneak, why: 'a step along a tunnel dug two high through rock, its floor solid under the cell stepped to' });
     if (!ok) throw new Error(`could not step ${dy > 0 ? 'up ' : dy < 0 ? 'down ' : ''}to ${n}`);
     if (bot.entity.position.y < n.y - 0.6) throw new Error('fell from the tunnel\'s floor');
+  };
+  // Blocks for the floor from the tunnel's own walls (note 906): the cells
+  // beside the feet and the head and the roof, where it stands and back
+  // along the way it came (up to twelve cells, each stood in so its drops
+  // are picked up), nothing molten against any, never the floor; then back
+  // to where it stood. Up to QUARRY_WANT blocks.
+  const quarry = async (here, d) => {
+    const sides = [new Vec3(d.z, 0, d.x), new Vec3(-d.z, 0, -d.x)];
+    const around = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1), new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
+    const digAround = async c => {
+      for (const q of [...sides.map(v => c.plus(v)), ...sides.map(v => c.plus(v).offset(0, 1, 0)), c.offset(0, 2, 0)]) {
+        task.check();
+        if (blocksCarried(bot) >= QUARRY_WANT) return;
+        const b = bot.blockAt(q);
+        if (!solid(b) || !LAID.includes(DROP_OF[b.name] || b.name)) continue;
+        if (around.some(v => molten(bot.blockAt(q.plus(v))))) continue;
+        const had = blocksCarried(bot);
+        try { await clear(bot, task, q, { wall: true }); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+        for (let i = 0; i < 12 && blocksCarried(bot) <= had; i++) { await sleep(100); task.check(); }
+      }
+    };
+    await digAround(here);
+    const trail = [];
+    for (let k = 1; k <= QUARRY_BACK && blocksCarried(bot) < QUARRY_WANT; k++) {
+      const c = here.minus(d.scaled(k));
+      // Only along a floor that stands, through cells open two high: the tunnel it dug.
+      if (!solid(bot.blockAt(c.offset(0, -1, 0))) || solid(bot.blockAt(c)) || solid(bot.blockAt(c.offset(0, 1, 0)))) break;
+      if (!await creepTo(bot, task, c, 2500)) break;
+      trail.push(c);
+      await digAround(c);
+    }
+    // Back to where the floor is wanted, cell by cell along its own way.
+    for (const c of [...trail.slice(0, -1).reverse(), here]) { if (trail.length) await creepTo(bot, task, c, 2500); }
+    return blocksCarried(bot) > 0;
   };
   while (steps < maxSteps) {
     task.check();

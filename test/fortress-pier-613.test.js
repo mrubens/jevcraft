@@ -201,7 +201,7 @@ test('off the fortress\'s floors with every way into it from here come to nothin
 
 test('a pillar that tops out blocks off the floor says what lies between at that height (15:07:23, note 613)', async () => {
   // Offered as recorded: "Pillar straight up 2 blocks ... from a column 1 blocks from here ... the floor at (-79, 46, 127) is then
-  // 6 blocks across", with nothing said of the six, and no block carried that a span is laid with.
+  // 6 blocks across", with nothing said of the six; its nine nether bricks were not counted as a span's blocks then (they are since note 906).
   const mh = require('../src/mob-hunt');
   const bot = pierBot();
   const target = new Vec3(-79, 45, 127);
@@ -209,5 +209,5 @@ test('a pillar that tops out blocks off the floor says what lies between at that
   const client = jevStub(['keep_searching']);
   await mh.approachFortress(bot, new Task('hunt'), { fortressSearch: state }, () => {}, { client, navigate: async () => {}, tunnel: async () => {}, dig: async () => {} }, state, target, [target]);
   const pillar = client.asked[0].options.pillar_up;
-  assert.match(pillar, /is then (\d+) blocks across, with \1 of open air with no floor between the top and it at that height \(a span, 0 blocks carried that a span is laid with\)/);
+  assert.match(pillar, /is then (\d+) blocks across, with \1 of open air with no floor between the top and it at that height \(a span, 9 blocks carried that a span is laid with\)/); // the nine nether bricks carried are laid as the rest are (note 906)
 });

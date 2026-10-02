@@ -4587,7 +4587,7 @@ async function findFortressStep(bot, task, goal, save, actions) {
   // here rests" was the most repeated line (80 of the last half hour's).
   // The bricks are found by what is loaded about the bot, in rock as in air.
   if (!seeking) {
-    try { await require('./bridging').tunnelStraight(bot, task, new Vec3(leg.x, Math.floor(bot.entity.position.y), leg.z), { maxSteps: 64, near: 6 }); }
+    try { await require('./bridging').tunnelStraight(bot, task, new Vec3(leg.x, Math.floor(bot.entity.position.y), leg.z), { maxSteps: 64, near: 6, navigate: actions.navigate }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; state.lastLegError = err.message; }
     if (gained()) { state.legFails = 0; return; }
   }
