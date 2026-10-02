@@ -1699,6 +1699,8 @@ function keepShieldForStance(bot) {
   try { return threats(bot, 6).some(t => wg.guardable(t) && (wg.bladeReaches(t.entity, bot.entity.position) || t.distance <= 5)); } catch (_) { return false; }
 }
 // Seconds between a biter's blows at its reach (a hoglin two, most one).
+// A swarm of blazes at arm's length, and the break out of it (note 872).
+const SWARM_WITHIN = 2.5, SWARM_COUNT = 3, SWARM_CLEAR = 6, SWARM_AGAIN_MS = 8000;
 // The share of a covered biter's blows that land on a shield guard, in the moments the shield is down for a swing (note 870).
 const GUARD_OPEN = 0.3;
 // How long escapeFootings' search holds for one cell (note 859).
@@ -5544,6 +5546,20 @@ class Survival {
     // are a block high and every stance's cells with them (mid-239-b's
     // pillar, offered and then refused by its own headroom check).
     for (let n = 0; n < 8 && bot.entity.onGround === false && !bot.entity.isInWater; n++) { task.check(); await sleep(100); }
+    // A swarm of blazes at arm's length (physical safety, note 872): three or
+    // more within two and a half blocks swing a blow a second each, about
+    // seven to thirteen health a second through iron, and no stance held
+    // there outlasts it. The body breaks out to footing six blocks clear of
+    // them at once, no question asked, as it leaves lava; the stance is
+    // asked from there. 25590 (2026-10-02 12:49:08Z, a rod carried) and 25595
+    // (12:50:52Z, three carried) were each asked their stance among three
+    // and four at arm's length, and each was dead within five seconds of it.
+    const swarm = danger.filter(t => t.entity.name === 'blaze' && t.distance <= SWARM_WITHIN);
+    if (swarm.length >= SWARM_COUNT && !(this.state.swarmBreak?.at > Date.now() - SWARM_AGAIN_MS)) {
+      this.state.swarmBreak = { at: Date.now(), blazes: swarm.length };
+      console.log(`[swarm] ${swarm.length} blazes within ${SWARM_WITHIN} blocks at ${Math.round((bot.health ?? 20) * 10) / 10} health: breaking out to footing clear of them by the body's safety rule, no question asked`);
+      if (await this.breakFromSwarm(task, goal, save, danger, swarm)) return true;
+    }
     const kinds = [...new Set(danger.map(t => t.entity.name))].sort().join(',');
     const feet = feetCell(bot);
     const held = this.state.stance;
@@ -6436,6 +6452,32 @@ class Survival {
       try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 10000, stallMs: 3000 }); delete this.state.trappedSince; return true; }
       catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; setAside(this, 'escape', p, err, 60000); save(); return ranFrom(this, from, p, err); }
     } finally { Object.assign(movements, previous); unsteer(); bot.clearControlStates(); }
+  }
+
+  // Out of a swarm of blazes at arm's length (stanceStep, note 872): the
+  // nearest footing six blocks or more from every one of them that a walk
+  // reaches, sprinted to; the walk may pass them (there is no way that does
+  // not). -> whether the body got three blocks or more away from where it stood.
+  async breakFromSwarm(task, goal, save, danger, swarm) {
+    const bot = this.bot, movements = bot.pathfinder.movements;
+    const previous = { canDig: movements.canDig, allow1by1towers: movements.allow1by1towers, allowSprinting: movements.allowSprinting };
+    Object.assign(movements, { canDig: false, allow1by1towers: false, allowSprinting: true });
+    try {
+      const { footing } = this.escapeFootings(danger, { gain: 3, only: true });
+      const here = bot.entity.position.clone();
+      const off = p => Math.min(...swarm.map(t => t.entity.position.distanceTo(p)));
+      const spots = footing.filter(p => off(p) >= SWARM_CLEAR && p.distanceTo(here) <= 16).sort((a, b) => a.distanceTo(here) - b.distanceTo(here)).slice(0, 6);
+      for (const p of spots) {
+        task.check();
+        const route = await surveyRoute(bot, task, movements, new goals.GoalBlock(p.x, p.y, p.z), 120);
+        if (route.status !== 'success') continue;
+        this.report(goal, save, { action: 'break_from_swarm', destination: { x: p.x, y: p.y, z: p.z }, blazes: swarm.length, health: bot.health });
+        try { await this.actions.navigate(bot, task, new goals.GoalBlock(p.x, p.y, p.z), { timeoutMs: 4000, stallMs: 1500 }); }
+        catch (err) { task.check(); if (err.name === 'NeedsAir') throw err; }
+        if (bot.entity.position.distanceTo(here) >= 3) return true;
+      }
+      return false;
+    } finally { Object.assign(movements, previous); bot.clearControlStates?.(); }
   }
 
   async runAway(task, goal, save, danger, { gain = 4, only = false } = {}) {
