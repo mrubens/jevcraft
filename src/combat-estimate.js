@@ -1196,12 +1196,18 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
     // fight a second and a half later (mid-242-aa, note 559).
     const first = order[0];
     const lead = fight.lead && first?.secondsASwing > 0 && !first.inCell ? leadFor(first.distance) : null;
+    // `fight.after`: the sword is on another first for that long (the one a
+    // shield guard faces, note 850), and those fought here strike at their
+    // own pace meanwhile, the shield not facing them; their fight begins
+    // after it.
+    const after = fight.after > 0 ? fight.after : 0, start = setup + after;
+    if (after) for (const m of order) hurts(m, Math.max(setup, m.shoots ? inRange(m) : arrives(m)), Math.min(seconds, start), false);
     // The fought ones' wither and poison join the rest's: one effect each,
     // however many give it.
-    for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach), lead, since: setup })) {
-      if (p.effect === 'burn') pieces.push({ ...p, from: p.from + setup, to: p.to + setup });
-      else if (p.effect) (p.effect === 'poison' ? poisoning : withering).push([p.from + setup, p.to + setup]);
-      else if (p.from < seconds - setup) pieces.push({ ...p, from: p.from + setup, to: Math.min(seconds, p.to + setup) });
+    if (start < seconds) for (const p of fightTimeline(order, { shield, atOnce: Math.max(fight.atOnce ?? Infinity, reach), lead: after ? null : lead, since: start })) {
+      if (p.effect === 'burn') pieces.push({ ...p, from: p.from + start, to: p.to + start });
+      else if (p.effect) (p.effect === 'poison' ? poisoning : withering).push([p.from + start, p.to + start]);
+      else if (p.from < seconds - start) pieces.push({ ...p, from: p.from + start, to: Math.min(seconds, p.to + start) });
     }
     for (const m of order) if (!m.shoots || m.visible) stillReach(m);
   }

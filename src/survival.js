@@ -7809,7 +7809,14 @@ class Survival {
     // 0 damage" facing a zombie with a creeper 4.6 blocks off 116 degrees
     // from that way, chose the guard at 0.64, and the blast took 13.4.
     const creeperOut = m => m.name === 'creeper' && !(bot.entities?.[m.id]?.position && off(bot.entities[m.id].position) <= SHIELD_COVER);
-    const price = stanceCost({ mobs: others, ...(rest.length ? { fight: { lead: true } } : {}), shield: true, health: bot.health, reaches: creeperOut });
+    // The sword is on the one faced until it is dead, a swing after each of
+    // its blows (note 850): the rest strike at their pace till then, and are
+    // fought after. Priced as fought from the start, 25591 (mid-239-ck,
+    // 2026-10-02 00:31:59Z) read "about 14.4 damage" in a hole with four
+    // zombies and no armour, two outside the shield's cover, chose the
+    // guard at 20 health and was dead in under four seconds of blows.
+    const facedFor = fm?.swingsToKill ? fm.swingsToKill * ce_blowEvery(e.name) : 0;
+    const price = stanceCost({ mobs: others, ...(rest.length ? { fight: { lead: true, after: facedFor } } : {}), shield: true, health: bot.health, reaches: creeperOut });
     const blastSays = others.filter(creeperOut).map(m => `the creeper ${Math.round(m.distance * 10) / 10} blocks off is ${Math.round(off(bot.entities[m.id]?.position || bot.entity.position))} degrees from the way the shield faces, outside its cover: it walks in and its blast lands whole, about ${Math.round((m.hitsBot || 0) * 10) / 10}`);
     const blastSay = blastSays.length ? ` As the shield faces the ${name}: ${blastSays.join('; ')}.` : '';
     const weapon = defenseWeapon(bot);
