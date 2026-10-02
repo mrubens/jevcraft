@@ -69,7 +69,11 @@ test('25585\'s span: one wide, open north and south over the lava 17 down, the h
 test('the rule does not fire on footing two wide, with nothing that pushes about, or with the hoglin past its charge', () => {
   const wide = madeBot({ floor: (x, z) => x >= 4 && x <= 5 && z >= 4 && z <= 5, at: new Vec3(4.5, 49, 4.5), mobs: [{ id: 1, name: 'hoglin', at: new Vec3(5.5, 49, 5.5), height: 1.4, width: 1.4 }] });
   assert.equal(NF.footingAt(wide, new Vec3(4, 49, 4)).width, 2);
-  assert.equal(NF.planAt(wide, new Vec3(4, 49, 4), threats(wide, 24), { carried: 10 }), null, 'two by two');
+  // Two by two over lava with a hoglin about: the knock into the lava all
+  // the same (note 847), and no footing clear of a drop within reach of
+  // it: the sides walled.
+  const island = NF.planAt(wide, new Vec3(4, 49, 4), threats(wide, 24), { carried: 10 });
+  assert.equal(island?.choice, 'walls', JSON.stringify(island?.choice));
   assert.equal(NF.planAt(spanBot({ hoglin: null }), new Vec3(135, 49, 80), threats(spanBot({ hoglin: null }), 24), { carried: 7 }), null, 'nothing about');
   const far = spanBot({ hoglin: new Vec3(124.5, 49, 80.5) });
   assert.equal(NF.planAt(far, new Vec3(135, 49, 80), threats(far, 24), { carried: 7 }), null, 'a hoglin 11 blocks off is past its charge');
@@ -179,4 +183,15 @@ test('stanceStep runs the rule before a stance that stands still, and not before
     await Promise.race([survival.stanceStep(new Task('x'), { step: { action: 'cross_toward' } }, () => {}, threats(bot, 24), false).catch(() => {}), new Promise(r => setTimeout(r, 3000))]);
     assert.equal(called.length, expected, `${choice}: ${called.join(',')}`);
   }
+});
+
+test('25593 (19:22Z): at the edge of a wide floor over lava with a magma cube about, the step back is to footing with no side over a drop (note 847)', () => {
+  const ground = (x, z) => x >= 2 && x <= 14 && z >= 2 && z <= 10;
+  const bot = madeBot({ floor: ground, at: new Vec3(14.5, 49, 6.5), mobs: [{ id: 1, name: 'magma_cube', at: new Vec3(11.5, 49, 6.5), height: 1, width: 1 }] });
+  const plan = NF.planAt(bot, new Vec3(14, 49, 6), threats(bot, 24), { carried: 0 });
+  assert(plan, 'the rule fires at a wide floor\'s edge over lava');
+  assert.equal(plan.choice, 'back');
+  assert.equal(NF.footingAt(bot, plan.back.cell).deadly.length, 0, 'to footing with no side over the drop');
+  // Away from the edge on the same floor: nothing to do.
+  assert.equal(NF.planAt(bot, new Vec3(8, 49, 6), threats(bot, 24), { carried: 0 }), null);
 });

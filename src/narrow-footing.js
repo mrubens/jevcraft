@@ -125,7 +125,7 @@ function pushersAt(about, { bot = null } = {}) {
 // head room, a step down), within BACK_STEPS, no nearer any biter than the
 // bot is now, no lava beside it at the feet or the floor; one with no drop
 // that kills beside it first. { cell, way, steps, seconds, beside } or null.
-function wideFooting(bot, feet, pushers, { health = bot.health ?? 20, steps = BACK_STEPS } = {}) {
+function wideFooting(bot, feet, pushers, { health = bot.health ?? 20, steps = BACK_STEPS, clear = false } = {}) {
   const biters = (pushers || []).filter(p => p.how === 'blow');
   const d0 = c => Math.min(Infinity, ...biters.map(p => Math.hypot(c.x + 0.5 - p.position.x, c.z + 0.5 - p.position.z)));
   const now = d0(feet);
@@ -142,7 +142,7 @@ function wideFooting(bot, feet, pushers, { health = bot.health ?? 20, steps = BA
       if (!standable(bot, to) || lavaNext(to) || d0(to) < now - 0.5) continue;
       from.set(k, c); next.push(to);
     }
-    found = next.map(c => ({ c, f: footingAt(bot, c, { health }) })).filter(x => x.f.width >= 2);
+    found = next.map(c => ({ c, f: footingAt(bot, c, { health }) })).filter(x => x.f.width >= 2 && (!clear || !x.f.deadly.length));
     ring = next;
   }
   if (!found.length) return null;
@@ -166,10 +166,16 @@ function wallsAt(bot, feet, f, carried) {
 function planAt(bot, feet, about, { health = bot.health ?? 20, carried = 0 } = {}) {
   if (!feet || typeof bot?.blockAt !== 'function') return null;
   const f = footingAt(bot, feet, { health });
-  if (!f.narrow) return null;
+  // Wider footing with a side open over lava is the same knock into it
+  // (note 847): 25593 (2026-10-01 19:22:16 to 31Z) held shield_guard at an
+  // edge a block from a drop of nine into lava, two wide, magma cubes about,
+  // and a blow's knock put it in, 16.6 to none. There the step back is to
+  // footing with no side open over a drop that kills.
+  const lavaEdge = !f.narrow && f.deadly.some(d => d.into === 'lava');
+  if (!f.narrow && !lavaEdge) return null;
   const pushers = pushersAt(about, { bot });
   if (!pushers.length) return null;
-  const back = wideFooting(bot, feet, pushers, { health });
+  const back = wideFooting(bot, feet, pushers, { health, clear: lavaEdge });
   const walls = wallsAt(bot, feet, f, carried);
   // The quicker of the two; the walls where no footing is in reach, the
   // step back where the blocks are short.
