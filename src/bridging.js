@@ -33,7 +33,17 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // into planks for cover. The oak family burns beside lava and is left out.
 const { NETHER_WOOD } = require('./shelter');
 const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', ...NETHER_WOOD];
-const material = bot => LAID.map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
+// In the Nether the kinds a ghast's fireball does not break go down first
+// (note 904): its blast takes netherrack (blast resistance 0.4) and dirt
+// out from under the bot and leaves cobblestone, the stones, blackstone (6)
+// and basalt (4.2) standing. 25598 (mid-242-df-nether-1, 2026-10-02
+// 14:55:32Z) stood on its netherrack span twelve blocks over the lava sea,
+// a ghast 57 off; at the third fireball it was off the span and in the lava,
+// 20 health to none in four seconds (the blast, or its push); 25597 went the same way at 14:48Z and
+// 25595 was "doomed to fall by Ghast" at 12:35Z.
+const BLAST_PROOF = ['cobblestone', 'cobbled_deepslate', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite'];
+const laidOrder = bot => /nether/.test(String(bot?.game?.dimension || '')) ? [...BLAST_PROOF, ...LAID.filter(n => !BLAST_PROOF.includes(n))] : LAID;
+const material = bot => laidOrder(bot).map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
 // A biter or a hopper that can push the bot off the span within its charge
 // (narrow-footing.js, note 769): the span is walled on both sides as it is
 // laid while one is about. Shooters stop the span outright (underFire).
@@ -714,4 +724,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
