@@ -285,6 +285,24 @@ const RUNS = {
     const IN_FIRE = 21;
     return { pass: before === 'fire' && inFire.some(h => h.t < punchedAt && h.type === IN_FIRE) && !after.some(h => h.type === IN_FIRE), detail: { before, localAfter, hurtBefore: byType(inFire.filter(h => h.t < punchedAt)), hurtAfterPunch: byType(after), health: bot.health, error } };
   },
+  async stairs_down_to_lava(d, bounded) {
+    const { tunnelStep } = require('../src/tunneling');
+    const goal = { kind: 'win', request: 'terrain drill' };
+    const target = vec(d.target), started = Date.now();
+    const hurts = []; let lastHp = bot.health;
+    const onHp = () => { if (bot.health < lastHp) hurts.push(Math.round(bot.health * 10) / 10); lastHp = bot.health; };
+    bot.on('health', onHp);
+    let calls = 0, error = null, best = Infinity, errors = {};
+    while (Date.now() - started < (d.seconds - 20) * 1000) {
+      const p = bot.entity.position; best = Math.min(best, p.distanceTo(target));
+      if (p.distanceTo(target) <= 6) break;
+      calls++;
+      try { await tunnelStep(bot, bounded, goal, () => {}, target, { dig, navigate }); } catch (err) { error = err.message; errors[err.message.replace(/-?\d+/g, 'N').slice(0, 90)] = (errors[err.message.replace(/-?\d+/g, 'N').slice(0, 90)] || 0) + 1; if (/Cancelled/.test(err.name || '')) break; if (/rest/.test(err.message)) break; }
+    }
+    bot.removeListener('health', onHp);
+    const p = bot.entity.position;
+    return { pass: !watch.died && p.distanceTo(target) <= 6 && !hurts.length, detail: { calls, seconds: Math.round((Date.now() - started) / 1000), at: [Math.round(p.x), Math.round(p.y), Math.round(p.z)], away: Math.round(p.distanceTo(target)), best: Math.round(best), hurts, blocked: goal.tunnel?.lastBlocked, errors, error: error && error.slice(0, 200) } };
+  },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async climb_out_under_gravel(d, bounded) { return RUNS.climb_out_staircase(d, bounded); },
   async tunnel_to_pool_below(d, bounded) { return RUNS.tunnel_home(d, bounded); },

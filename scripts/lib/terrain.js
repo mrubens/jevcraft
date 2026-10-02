@@ -464,6 +464,23 @@ const TERRAIN = Object.freeze([
     fireAt: [6200, 80, 6200],
   },
   {
+    name: 'stairs_down_to_lava',
+    why: 'Note 940: the staircase toward the lava for a portal, from y 60 to a pool at y 22 twenty across, through stone with a band of gravel at y 40 to 43: it comes down to the pool without pacing.',
+    dimension: 'overworld', seconds: 240,
+    start: [6400.5, 60, 6400.5],
+    kit: [['iron_pickaxe', 2], ['cobblestone', 32], ['bucket', 1]],
+    build: [
+      'forceload add 6380 6380 6440 6420',
+      'fill 6385 15 6390 6430 39 6410 minecraft:stone',
+      'fill 6385 40 6390 6430 43 6410 minecraft:gravel',
+      'fill 6385 44 6390 6430 62 6410 minecraft:stone',
+      'fill 6399 60 6399 6401 62 6401 minecraft:air',
+      'fill 6420 22 6398 6424 22 6402 minecraft:lava',
+      'fill 6420 23 6398 6424 25 6402 minecraft:air',
+    ],
+    target: [6422, 22, 6400],
+  },
+  {
     name: 'tunnel_home_few_blocks',
     why: 'Note 915: the cavern drill with ten blocks and no pickaxe (25595 fell ten blocks onto its portal\'s floor with ten netherrack carried): the tunnel stops where its blocks run out, on its span, and does not go off it.',
     dimension: 'the_nether', seconds: 150,
