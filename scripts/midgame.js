@@ -61,6 +61,14 @@ function counts(inventory = {}) {
   const n = k => Number(inventory[k] || 0);
   return { rods: n('blaze_rod') + n('blaze_powder') / 2 + n('ender_eye') / 2, pearls: n('ender_pearl') + n('ender_eye') };
 }
+// The blaze rods in the last inventory the frames show.
+function rodsCarriedNow(frames) {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const inv = frames[i].snapshot?.inventory;
+    if (inv && typeof inv === 'object') return Number(inv.blaze_rod || 0);
+  }
+  return 0;
+}
 function reached(frames) {
   const at = {}, best = { rods: 0, pearls: 0 };
   const mark = (k, t) => { if (!(k in at)) at[k] = t; };
@@ -125,8 +133,16 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // went inside a spell; a flip that began inside one.
   const SLACK = 30000;
   const outage = (p, v) => INFRA.test(p) || (within(spells, v.first ?? 0, SLACK) && within(spells, v.last ?? v.first ?? 0, SLACK));
-  const loops = [...Object.entries(a.problems).filter(([p, v]) => v.count >= 3 && (v.first ?? 0) <= until && !outage(p, v)).map(([p, v]) => `${v.count}× ${p.slice(0, 120)}`),
+  const loopsSeen = [...Object.entries(a.problems).filter(([p, v]) => v.count >= 3 && (v.first ?? 0) <= until && !outage(p, v)).map(([p, v]) => `${v.count}× ${p.slice(0, 120)}`),
     ...a.flips.filter(f => (f.from ?? 0) <= until && !within(spells, f.from ?? 0, SLACK)).map(f => `flipping ${f.between}`)];
+  // Not a trial's end while blaze rods are carried (note 861): a loop there
+  // is the way out not found yet, and ending the trial ends the only rods
+  // there are. mid-220-ar (25592, 2026-10-01 22:04Z) was cut as "loop: 3×
+  // The nether portal ... cannot be reached from here" with six rods carried
+  // at full health, the most of any life on record. Its three hours still
+  // end it, and a death or being stranded.
+  const rodsNow = rodsCarriedNow(a.frames);
+  const loops = rodsNow >= 1 ? [] : loopsSeen;
   const minute = t => Math.round((t - from) / 60000);
   const windowMs = to - from;
   // Time with no bot running (quit for a restart and not started again, a
@@ -152,6 +168,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
     ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)]))))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
+    ...(rodsNow >= 1 && loopsSeen.length ? { loopsWithRodsCarried: { rods: rodsNow, loops: loopsSeen } } : {}),
     playedMinutes: Math.round(playedMs / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
     absences: gone.map(g => ({ atMinute: minute(g.from), minutes: Math.round((g.to - g.from) / 60000) })),
     // Said apart, never a reason: the spells, and whether Jev is down now
