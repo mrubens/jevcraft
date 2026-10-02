@@ -202,6 +202,7 @@ const RUNS = {
   },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_few_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_home_over_cave(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_to_pool(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_no_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async rise_and_swim_lake(d, bounded) {

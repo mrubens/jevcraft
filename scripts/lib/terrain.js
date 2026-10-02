@@ -308,6 +308,20 @@ const TERRAIN = Object.freeze([
     target: [5334, 69, 5200],
   },
   {
+    name: 'tunnel_home_over_cave',
+    why: 'Note 916: the tunnel runs through rock over a cave, its target twelve below on the cave\'s floor; near it the step down on laid blocks is taken from inside the rock (the cell over the one stepped through dug too), and it comes down to the floor.',
+    dimension: 'the_nether', seconds: 180,
+    start: [5300.5, 81, 5200.5],
+    kit: [['cobblestone', 64], ['iron_pickaxe', 1]],
+    build: [
+      'forceload add 5290 5190 5350 5210',
+      'fill 5295 60 5192 5345 90 5208 minecraft:netherrack',
+      'fill 5302 70 5192 5345 79 5208 minecraft:air',
+      'fill 5299 81 5199 5301 83 5201 minecraft:air',
+    ],
+    target: [5334, 69, 5200],
+  },
+  {
     name: 'tunnel_home_few_blocks',
     why: 'Note 915: the cavern drill with ten blocks and no pickaxe (25595 fell ten blocks onto its portal\'s floor with ten netherrack carried): the tunnel stops where its blocks run out, on its span, and does not go off it.',
     dimension: 'the_nether', seconds: 150,

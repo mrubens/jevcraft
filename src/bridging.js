@@ -76,10 +76,11 @@ const wallBlocksOf = walls => walls.reduce((n, w) => n + (w.floor ? 2 : 1), 0);
 
 // Sneak to the middle of the next cell: a walk at full speed overshoots a
 // one-block span. The sneak itself is held by bridgeTo for the whole span.
-async function creepTo(bot, task, cell, ms = 2500, keys = ['forward'], { sneak = true, why = null } = {}) {
+// `falling`: arrived once over the cell's middle while still coming down to it.
+async function creepTo(bot, task, cell, ms = 2500, keys = ['forward'], { sneak = true, why = null, falling = false } = {}) {
   const centre = cell.offset(0.5, 0, 0.5);
   return move(bot, task, { label: 'bridge_step', keys, sneak, ...(why ? { why } : {}), look: centre.offset(0, 1.6, 0), maxMs: ms, tick: 40,
-    until: () => { const p = bot.entity.position; return Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + 0.6 && p.y > cell.y - 0.6; } });
+    until: () => { const p = bot.entity.position; return Math.hypot(p.x - centre.x, p.z - centre.z) < 0.35 && p.y < cell.y + (falling ? 1.3 : 0.6) && p.y > cell.y - 0.6; } });
 }
 
 // Never into lava: a body cell that is lava or fire is not walked into,
@@ -364,8 +365,15 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
     const support = bot.blockAt(here.offset(0, -1, 0));
     if (!solid(support)) throw new Error('Nothing solid underfoot to lay the stairs down from');
     const head = here.plus(d), a = head.offset(0, -1, 0), b = head.offset(0, -2, 0);
-    if ([head, a, b].some(c => molten(bot.blockAt(c)))) throw new Error(`Lava or water in the way of the stairs down at ${head}`);
-    await clear(bot, task, head);
+    // The cell over the one stepped through too (note 916): the step is
+    // taken upright, and in a tunnel that cell is rock. 25585 and 25583
+    // (2026-10-02 16:20Z on), their tunnels toward lava over a cave, had
+    // every laid step down end at the lip ("not reached", ten in a row a
+    // block on each time) and went on level.
+    const over = head.offset(0, 1, 0);
+    if ([over, head, a, b].some(c => molten(bot.blockAt(c)))) throw new Error(`Lava or water in the way of the stairs down at ${head}`);
+    await clear(bot, task, over, { wall: true });
+    await clear(bot, task, head, { wall: true });
     if (!solid(bot.blockAt(b))) {
       const item = material(bot);
       if (!item) throw new Error('No blocks to lay the stairs down with');
@@ -480,7 +488,26 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
     }
     // Crouched where the floor was laid or ends beyond: a crouched body does not go over an edge.
     const sneak = dy === 0 && (laidHere || !solid(bot.blockAt(floor.plus(d))));
-    const ok = await creepTo(bot, task, n, 3000, dy > 0 ? ['forward', 'jump'] : ['forward'], { sneak, why: 'a step along a tunnel dug two high through rock, its floor solid under the cell stepped to' });
+    // A step down with nothing standing beyond it (note 916): upright from
+    // a walk the body crosses the cell stepped to before it has fallen into
+    // it, is not seen to arrive, and walks on for the rest of the three
+    // seconds (twelve blocks along a cave's floor in the arena's drill; off
+    // whatever edge lies that way anywhere else). So: crouched to the lip,
+    // which a crouched body does not go over, then upright from rest, the
+    // keys let go as it comes over the cell whatever its height, and the
+    // landing waited for.
+    const runsOn = dy < 0 && !solid(bot.blockAt(n.plus(d))) ;
+    let ok;
+    if (runsOn) {
+      await creepTo(bot, task, n, 900, ['forward'], { sneak: true });
+      bot.clearControlStates?.();
+      await sleep(120);
+      ok = await creepTo(bot, task, n, 1500, ['forward'], { sneak: false, falling: true, why: 'a step a block down in a tunnel onto a floor that stands, taken from rest at its lip' });
+      bot.clearControlStates?.();
+      for (let t = 0; t < 20 && !bot.entity.onGround; t++) { task.check(); await sleep(50); }
+      const p = bot.entity.position;
+      ok = ok && Math.hypot(p.x - (n.x + 0.5), p.z - (n.z + 0.5)) < 0.8;
+    } else ok = await creepTo(bot, task, n, 3000, dy > 0 ? ['forward', 'jump'] : ['forward'], { sneak, why: 'a step along a tunnel dug two high through rock, its floor solid under the cell stepped to' });
     if (!ok) throw new Error(`could not step ${dy > 0 ? 'up ' : dy < 0 ? 'down ' : ''}to ${n}`);
     if (bot.entity.position.y < n.y - 0.6) throw new Error('fell from the tunnel\'s floor');
   };
