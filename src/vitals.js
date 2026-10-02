@@ -319,14 +319,26 @@ async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } 
 // at the game's time with the best tool from where the bot stands, a step
 // a cell. mid-244-y sank under a lid twelve blocks of stone thick and dug at
 // it by hand, afloat, until it drowned (note 477).
+// The columns the body stands in: its width reaches into a neighbour's when
+// it floats off the centre of its cell (note 950). 25588 (mid-236-ca,
+// 2026-10-02 22:27:08Z), at 3.2 health under a pond's overhanging bank,
+// floated at z 429.7: its own column was water to the air, the one at z 430
+// had dirt at the waterline. Straight up was priced at two seconds with no
+// dig, the rise met the dirt over the head's edge, the bot sank three blocks
+// in the eight seconds and drowned.
+function bodyColumns(bot) {
+  const p = bot.entity.position, w = (bot.entity.width ?? 0.6) / 2 - 0.001, out = [];
+  for (const x of new Set([Math.floor(p.x - w), Math.floor(p.x + w)])) for (const z of new Set([Math.floor(p.z - w), Math.floor(p.z + w)])) out.push([x, z]);
+  return out;
+}
 function secondsUp(bot) {
-  const feet = bot.entity.position.floored();
+  const feet = bot.entity.position.floored(), cols = bodyColumns(bot);
   let seconds = 0;
   for (let y = 2; y <= 40; y++) {
-    const b = bot.blockAt(feet.offset(0, y, 0));
-    if (!b) return null;
-    if (b.boundingBox === 'block') { const t = digSeconds(bot, b, feet.offset(0, y - 2, 0)); if (t == null) return null; seconds += t; }
-    else if (!swimmableWater(b)) return seconds + STEP_S;
+    const level = cols.map(([x, z]) => bot.blockAt(new Vec3(x, feet.y + y, z)));
+    if (level.some(b => !b)) return null;
+    for (const b of level) if (b.boundingBox === 'block') { const t = digSeconds(bot, b, feet.offset(0, y - 2, 0)); if (t == null) return null; seconds += t; }
+    if (level.every(b => b.boundingBox !== 'block' && !swimmableWater(b))) return seconds + STEP_S;
     seconds += STEP_S;
   }
   return null;
@@ -342,8 +354,10 @@ async function straightUp(bot, task, { maxMs = 8000 } = {}) {
     while ((bot.oxygenLevel ?? 20) < 20 || headSubmerged(bot)) {
       task.check();
       if (Date.now() >= deadline) throw new Error('No way up to breathable air found: dug and swam straight up for eight seconds');
-      const above = bot.blockAt(bot.entity.position.offset(0, 2, 0).floored());
-      if (above && above.boundingBox === 'block' && above.diggable && !/bedrock/.test(above.name)) {
+      // Over every column the body is in, not the centre's alone (note 950).
+      const headY = Math.floor(bot.entity.position.y + 2);
+      const above = bodyColumns(bot).map(([x, z]) => bot.blockAt(new Vec3(x, headY, z))).find(b => b && b.boundingBox === 'block' && b.diggable && !/bedrock/.test(b.name));
+      if (above) {
         bot.clearControlStates();
         try { await require('./skills').equipBestTool(bot, above); } catch (_) { /* the hand, then */ }
         await bot.lookAt(above.position.offset(0.5, 0.5, 0.5), true);
@@ -1696,4 +1710,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };

@@ -5076,6 +5076,18 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       if (seeing.length) inLine = ` Where it begins, before the rock: ${seeing.map(t => { const hit = bot._hurtBy?.[t.entity.name]; return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off has a line to the bot${hit && now - hit < 30000 ? ` (its kind hit it ${Math.max(1, Math.round((now - hit) / 1000))} seconds ago)` : ''}`; }).join('; ')}: the first blocks are dug in that line, about ${per} seconds a block.`;
     } catch (_) { inLine = ''; }
     const blocksLaid = require('./bridging').blocksCarried(bot);
+    // The open air on its line against the blocks carried (note 949): in
+    // the rock it digs its floor's blocks from its own walls (note 906);
+    // over open air there is no wall. 25594 (mid-242-xa-fortress-5,
+    // 2026-10-02 22:10 to 22:20Z), its rods on the bank's walk, its portal
+    // on an island 21 blocks off across open air and no block carried, took
+    // the tunnel at 0.86 and stopped at the gap each time, and the held
+    // tunnel kept blocks_then_cross off the question.
+    let gapSays = '';
+    try {
+      const line = require('./bridging').surveyCrossing(bot, target, { cells: stretch, blocks: 999 });
+      if (line?.bridge) gapSays = ` Its line at this height crosses about ${line.bridge} cell${line.bridge === 1 ? '' : 's'} of open air to floor in the next ${line.cells}, against ${blocksLaid} block${blocksLaid === 1 ? '' : 's'} carried; inside the rock it digs the blocks for its floor from its own walls, over open air there is no wall to dig${line.bridge > blocksLaid ? `: it stops at the gap where the blocks carried run out` : ''}.`;
+    } catch (_) { gapSays = ''; }
     // The pickaxe uses it takes against those left (note 943): two cells dug
     // for each block across (more on the steps), each a use while a pickaxe
     // lasts. On 2026-10-02 the share of Nether time with no pickaxe carried
@@ -5088,7 +5100,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       const want = stretch * 2 + Math.abs(dy);
       if (picks.length) usesSays = ` This go digs about ${want} blocks, a pickaxe use each while one lasts; the pickaxes carried have ${left} uses left (${picks.map(q => `${q.name.replaceAll('_', ' ')} ${q.usesLeft}`).join(', ')})${want >= left ? `: the last of them wears out on the way, the rest of the tunnel is dug by hand, and after it nothing in the Nether is mined until another pickaxe is made, from wood its forests have and nowhere else` : ''}.`;
     } catch (_) { usesSays = ''; }
-    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(Math.max(stretch, Math.abs(dy)) * per)} seconds for ${stretch} blocks of the ${across} to the portal${Math.abs(dy) > stretch ? ` and the ${Math.abs(dy)} ${dy < 0 ? 'down' : 'up'}` : ''}, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${usesSays}${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
+    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(Math.max(stretch, Math.abs(dy)) * per)} seconds for ${stretch} blocks of the ${across} to the portal${Math.abs(dy) > stretch ? ` and the ${Math.abs(dy)} ${dy < 0 ? 'down' : 'up'}` : ''}, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${usesSays}${gapSays}${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
   }
   if (pickaxeWanted) {
     let fetch = null;
@@ -5168,6 +5180,12 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96, navigate, down: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
     cameTo(why);
+    // Stopped at a gap for want of blocks: the answer failed here, and the
+    // tunnel held no longer keeps the blocks first off the question (note 949).
+    if (/no blocks carried/.test(why || '')) {
+      const tried = require('./tried'), e = tried.latestOf(goal, 'portal_way');
+      if (e && String(e.method).split('/').at(-1) === 'tunnel_home') { tried.markBlocked(e, `the tunnel stopped at open air with no block carried: ${String(why).slice(0, 120)}`); save(); }
+    }
     // Held while it makes ground (walkToKnownPortal goes on with it, note 866).
     const at = bot.entity.position, made = (startOff - Math.hypot(p.x - at.x, p.z - at.z)) + Math.max(0, startUp - Math.max(0, at.y - p.y));
     if (made >= 4) goal.tunnelHome = { x: p.x, y: p.y, z: p.z, at: Date.now() }; else delete goal.tunnelHome;
