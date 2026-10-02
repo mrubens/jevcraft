@@ -143,6 +143,21 @@ const TERRAIN = Object.freeze([
     build: CAVE.lines,
   },
   {
+    name: 'overhang_pond',
+    why: 'Note 945: 25588 (mid-236-by, 2026-10-02 21:10 to 21:40Z) swam in a pond whose dirt banks stood three over the water and overhung it all round, no step at the waterline anywhere, and turned between surface and dig_to_shore for thirty minutes.',
+    dimension: 'overworld', seconds: 200,
+    start: [3605.5, 62.2, 3605.5],
+    kit: [['cooked_beef', 8], ['dirt', 16]],
+    build: [
+      'forceload add 3590 3590 3620 3620',
+      'fill 3592 52 3592 3618 70 3618 minecraft:air',
+      'fill 3592 52 3592 3618 64 3618 minecraft:dirt',
+      'fill 3592 65 3592 3618 65 3618 minecraft:grass_block',
+      'fill 3600 57 3600 3610 62 3610 minecraft:water',
+      'fill 3602 63 3602 3608 65 3608 minecraft:air',
+    ],
+  },
+  {
     name: 'flooded_ore',
     why: 'Death twelve and the hour of pacing: the night mine chose a copper in the wall of a flooded cave, could never reach it, and drowned there.',
     dimension: 'overworld', seconds: 90, night: true,
@@ -370,6 +385,21 @@ const TERRAIN = Object.freeze([
       'fill 5697 71 5697 5705 75 5705 minecraft:air',
     ],
     target: [5701, 71, 5700],
+  },
+  {
+    name: 'tunnel_home_down_through_cavern',
+    why: 'Note 947: 25590 (mid-242-ua-fortress-5, 2026-10-02 21:48 to 22:12Z) stood in a pocket 36 blocks over its portal, one across, a cavern three high under it; the walk found only a drop and tunnel_home was not offered within six across.',
+    dimension: 'the_nether', seconds: 200,
+    start: [5800.5, 97, 5800.5],
+    kit: [['cobblestone', 10], ['iron_pickaxe', 1]],
+    build: [
+      'forceload add 5790 5790 5812 5812',
+      'fill 5790 62 5790 5810 100 5810 minecraft:netherrack',
+      'fill 5800 97 5800 5801 99 5800 minecraft:air',
+      'fill 5792 93 5792 5808 95 5808 minecraft:air',
+      'fill 5797 71 5797 5805 74 5805 minecraft:air',
+    ],
+    target: [5801, 71, 5800],
   },
   {
     name: 'tunnel_home_from_span',

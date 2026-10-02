@@ -305,7 +305,11 @@ async function clearHeadroom(bot, task) {
   return bot.blockAt(feet.offset(0, 2, 0))?.boundingBox !== 'block';
 }
 
-const NOTCH_DIG_MS = 4000;
+// A block a bare hand digs from the water in under five seconds: dirt 3.75,
+// a grass block 4.5 (the game's times, off the ground). Stone by hand (37.5)
+// or a wooden pickaxe (5.6) is not (note 945; until then the limit was four
+// seconds for the two blocks together, and a grass-topped bank never passed).
+const NOTCH_DIG_MS = 5000;
 // A pool whose banks stand too high to climb from the water: a step cut
 // into the bank at the waterline, the two blocks over it dug out, and the
 // bot climbs onto it. The live run swam in a one-wide pool with its banks
@@ -326,15 +330,25 @@ async function notchOut(bot, task, goal, save) {
     const from = water.offset(dx, 0, dz);
     if (!/water/.test(bot.blockAt(from)?.name || '') || !bot.blockAt(from.offset(0, 1, 0)) || bot.blockAt(from.offset(0, 1, 0)).boundingBox === 'block') continue;
     for (const d of dirs) {
-      const step = from.plus(d), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
-      if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head) || targetHot(bot, body, { path: false })) continue;
-      // Only a quick dig: in water and off the ground a block takes about
-      // twenty-five times as long, and two of stone drowned the live bot
-      // sinking while it dug. The game's own dig time says how long.
-      const toDig = [body, head].map(c => bot.blockAt(c)).filter(b => b?.boundingBox === 'block');
-      const ms = toDig.reduce((n, b) => n + (typeof bot.digTime === 'function' ? bot.digTime(b) : 500), 0);
-      if (ms > NOTCH_DIG_MS) continue;
-      options.push({ from, step, body, head, cost: Math.abs(dx) + Math.abs(dz) + toDig.length });
+      // The step at the waterline, or, where the bank overhangs the water
+      // (water under its edge at the waterline), the lip a block up, climbed
+      // onto from the surface as a player does with room over the head
+      // (note 945). 25588 (mid-236-by, 2026-10-02 21:10 to 21:40Z) swam in
+      // a pond whose dirt banks stood three over the water and overhung it
+      // all round: no step at the waterline anywhere, thirty minutes of
+      // surface and dig_to_shore turns, 41 turn_priority answers.
+      for (const up of [0, 1]) {
+        if (up && (solid(bot.blockAt(from.plus(d))) || bot.blockAt(from.offset(0, 2, 0))?.boundingBox !== 'empty' || /water|lava/.test(bot.blockAt(from.offset(0, 2, 0))?.name || ''))) continue;
+        const step = from.plus(d).offset(0, up, 0), body = step.offset(0, 1, 0), head = step.offset(0, 2, 0);
+        if (!solid(bot.blockAt(step)) || !soft(bot.blockAt(body)) || !soft(bot.blockAt(head)) || lavaNear(body) || lavaNear(head) || targetHot(bot, body, { path: false })) continue;
+        // Only a quick dig a block: in water and off the ground a block
+        // takes about twenty-five times as long, and two of stone drowned
+        // the live bot sinking while it dug. The game's own dig time says
+        // how long; each block is dug at the surface with the air guarded.
+        const toDig = [body, head].map(c => bot.blockAt(c)).filter(b => b?.boundingBox === 'block');
+        if (toDig.some(b => (typeof bot.digTime === 'function' ? bot.digTime(b) : 500) > NOTCH_DIG_MS)) continue;
+        options.push({ from, step, body, head, up, cost: Math.abs(dx) + Math.abs(dz) + toDig.length + up });
+      }
     }
   }
   options.sort((a, b) => a.cost - b.cost);
@@ -347,7 +361,7 @@ async function notchOut(bot, task, goal, save) {
     for (let i = 0; i <= n; i++) if (!/water/.test(bot.blockAt(new Vec3(a.x + (b.x - a.x) * i / n, water.y, a.z + (b.z - a.z) * i / n).floored())?.name || '')) return false;
     return true;
   };
-  for (const { from, step, body, head } of options.filter(o => o.from.equals(water) || alongWater(o.from)).slice(0, 3)) {
+  for (const { from, step, body, head, up } of options.filter(o => o.from.equals(water) || alongWater(o.from)).slice(0, 3)) {
     if (!from.equals(water)) {
       await motion(bot, task, { label: 'swim_to_bank', keys: ['forward', 'jump'], sneak: false, why: 'swimming to the bank a step can be cut into',
         look: from.offset(0.5, 0.8, 0.5), maxMs: 4000, tick: 50, until: () => bot.entity.position.floored().x === from.x && bot.entity.position.floored().z === from.z });
@@ -368,6 +382,16 @@ async function notchOut(bot, task, goal, save) {
       try { await digWithAirGuard(bot, task, b); }
       catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return false; }
       finally { bot.setControlState?.('jump', false); }
+    }
+    // Onto a lip: the water under it filled first, or forward swims in
+    // under the lip instead of up (the arena's pond, note 945); the dug
+    // blocks are in the pockets for it.
+    if (up) {
+      const under = step.offset(0, -1, 0), item = typeof bot.placeBlock === 'function' && require('./shelter').buildingItem(bot);
+      if (!item) continue;
+      try { await bot.equip(item, 'hand'); await bot.placeBlock(bot.blockAt(step), new Vec3(0, -1, 0)); }
+      catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+      if (bot.blockAt(under)?.boundingBox !== 'block') continue;
     }
     await clearHeadroom(bot, task);
     await motion(bot, task, { label: 'climb_out_of_water', keys: ['forward', 'jump'], sneak: false, why: 'onto the step cut into the bank',

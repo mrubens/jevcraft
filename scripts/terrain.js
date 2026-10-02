@@ -136,6 +136,7 @@ const RUNS = {
     } catch (err) { if (err.name !== 'OutOfTime') throw err; }
     return { pass: out() && !watch.died, detail: { out: out(), y: Math.round(bot.entity.position.y * 10) / 10, actions: actions.slice(0, 10), errors, dig: goal.shoreRecovery?.dig } };
   },
+  async overhang_pond(d, bounded) { return RUNS.flooded_cave(d, bounded); },
   async flooded_ore(d, bounded) {
     const survival = createSurvival(bot, { state: {} });
     const targets = [];
@@ -314,6 +315,7 @@ const RUNS = {
   async tunnel_to_pool(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_no_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_soul_sand(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_home_down_through_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async rise_and_swim_lake(d, bounded) {
     const u = require('../src/unstuck');
     const plan = u.risePlan(u.liveView(bot), bot.entity.position.floored());

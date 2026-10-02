@@ -992,13 +992,17 @@ const UPKEEP_HOLD_MS = 5 * 60 * 1000;
 const NEAR_BED = 64, FOOD_BEFORE_DUSK_S = 180;
 async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const { options, budget } = await upkeepOffers(bot, task, goal, save);
-  // On the bank's walk out with rods (rod-bank.js) the stems are not gone
-  // for: the walk is the step, the stair and the tunnel dig by hand (notes
-  // 885, 860), and wood is on the far side of the portal. 25594
+  // On the bank's walk out with rods (rod-bank.js) the stems are offered
+  // with the way home against them (note 946): the portal's distance, and
+  // the tunnel there by hand against with a pickaxe. 25594
   // (mid-242-xa-fortress-3, 2026-10-02 14:40:50Z), two rods carried and
   // seventeen blocks from its portal, answered fetch_stems at 0.74 and set
-  // off across the Nether for a forest (note 899).
-  if (options.fetch_stems && inNetherNow(bot) && require('./rod-bank').pending(goal)) delete options.fetch_stems;
+  // off across the Nether for a forest (note 899), and the stems were taken
+  // away on the bank's walk; then 25595 (mid-243-ia-fortress-5, 21:51 and
+  // 21:58Z), two rods, no pickaxe, 151 to 363 blocks from its portal and
+  // crimson stems a block off, was offered only the portal for wood or
+  // carry on, and dug home by hand at about five seconds a block.
+  const bankWalk = options.fetch_stems && inNetherNow(bot) && require('./rod-bank').pending(goal);
   const due = Object.keys(options);
   if (!due.length) return false;
   // Falling short of the step and the way home is asked anew, whatever
@@ -1009,6 +1013,14 @@ async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   if (goal.upkeepHold?.keys === keys && goal.upkeepHold.until > Date.now()) return false;
   // The route to the stems surveyed only for a question asked.
   if (options.fetch_stems?.describe) options.fetch_stems.description = await options.fetch_stems.describe();
+  if (bankWalk && options.fetch_stems) {
+    const here = bot.entity.position, portal = (goal.portals || []).filter(q => q.dimension === 'nether').sort((x, y) => Math.hypot(x.x - here.x, x.z - here.z) - Math.hypot(y.x - here.x, y.z - here.z))[0];
+    const rods = require('./walk-out').rodsCarried(bot), picked = bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+    const d = portal && Math.round(Math.hypot(portal.x - here.x, portal.z - here.z));
+    const mins = sec => { const m = Math.max(1, Math.round(sec / 60)); return `${m} minute${m === 1 ? '' : 's'}`; };
+    const home = portal ? `the portal is ${d} blocks off${picked ? '' : `; no pickaxe is carried: the tunnel home through the rock is about ${mins(d * TUNNEL_SECONDS.hand)} by hand against about ${mins(d * TUNNEL_SECONDS.pickaxe)} with one (the live tunnels' paces)`}` : 'no portal on this side is known';
+    options.fetch_stems.description += ` This is on the bank's walk out with ${rods} rod${rods === 1 ? '' : 's'} carried: ${home}; the walk home is asked again from the stems.`;
+  }
   // With no pickaxe, what going on leaves the bot unable to do for the
   // hold's five minutes, and that the hold ends at the first way that fails
   // for want of one; and how the last carry-on ended, where it did so
@@ -5040,7 +5052,13 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   // most of all. Offered wherever the bot is in the Nether and more than a
   // few blocks from the portal across; by hand where no pickaxe is carried,
   // said with its pace.
-  if (where === 'nether' && Math.hypot(target.x - here.x, target.z - here.z) > 6 && !isSetAside(goal, 'tunnel_home', 'nether')) {
+  // And where the portal is close across but far below (note 947): the
+  // tunnel steps down beside it (note 920). 25590 (mid-242-ua-fortress-5,
+  // 2026-10-02 21:48 to 22:12Z) stood in a pocket 36 over its portal, one
+  // across, a cavern under it; the walk found only a drop, the staircase
+  // rested, and portal_way offered going round or waiting. In the arena
+  // the tunnel came 26 down through a cavern to its portal in 47 seconds.
+  if (where === 'nether' && (Math.hypot(target.x - here.x, target.z - here.z) > 6 || target.y - here.y <= -8) && !isSetAside(goal, 'tunnel_home', 'nether')) {
     const across = Math.round(Math.hypot(target.x - here.x, target.z - here.z)), dy = Math.round(target.y - here.y);
     // The pace as measured live (note 936): the tunnels home of 2026-10-02
     // made about 40 blocks a minute with a pickaxe (174 minutes of them) and
@@ -5070,7 +5088,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       const want = stretch * 2 + Math.abs(dy);
       if (picks.length) usesSays = ` This go digs about ${want} blocks, a pickaxe use each while one lasts; the pickaxes carried have ${left} uses left (${picks.map(q => `${q.name.replaceAll('_', ' ')} ${q.usesLeft}`).join(', ')})${want >= left ? `: the last of them wears out on the way, the rest of the tunnel is dug by hand, and after it nothing in the Nether is mined until another pickaxe is made, from wood its forests have and nowhere else` : ''}.`;
     } catch (_) { usesSays = ''; }
-    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(stretch * per)} seconds for ${stretch} blocks of the ${across} to the portal, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${usesSays}${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
+    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(Math.max(stretch, Math.abs(dy)) * per)} seconds for ${stretch} blocks of the ${across} to the portal${Math.abs(dy) > stretch ? ` and the ${Math.abs(dy)} ${dy < 0 ? 'down' : 'up'}` : ''}, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${usesSays}${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
   }
   if (pickaxeWanted) {
     let fetch = null;
@@ -7686,6 +7704,19 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     if (held) {
       context.foodPlan = `The food plan stands: ${fp.says(held, now)}.`;
       for (const [k, node] of Object.entries(tree)) if (!/^(restock_food|return_for_food|go_for_food|hoglin_\w+|cook_food|eat\w*)$/.test(k) && typeof node.description === 'string') node.description += ` ${context.foodPlan}`;
+      // The plan's own way on, where it is the trip back through the portal
+      // (note 948): 25583 (mid-237-cq, 2026-10-02 21:49:44Z), at 1.2 health
+      // with nothing to eat, its return_for_food chosen two minutes before,
+      // was asked the rods' stall with another iron patch or the gold ore by
+      // it, told the plan stood and offered no way to go on with it; it took
+      // the iron, and went 14 minutes at 1 health.
+      if (fp.sourceKind(held.key) === 'portal' && inNetherNow(bot) && !tree.return_for_food && !/return_to_portal|return_for_food/.test(reason)) {
+        tree.return_for_food = { description: `Go on with the food plan now: back through the portal to the Overworld for food. ${require('./game-progress').portalTrip(bot, goal)} The work here waits for it.`,
+          run: async () => {
+            goal.step = { action: 'return_for_food', health: bot.health, food: bot.food }; goal.stockFood = true; goal.foodTripChosen = Date.now(); save();
+            await returnFromNether(bot, task, goal, save);
+          } };
+      }
     }
   }
   try {

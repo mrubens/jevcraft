@@ -196,6 +196,28 @@ test('the swim to a bank crosses only water: not the corner of a cell over lava 
   assert.equal(dug.size, 0);
 });
 
+test('a bank that overhangs the water is climbed at its lip: the two over it dug, the water under it filled, then up (note 945)', async () => {
+  // 25588 (mid-236-by, 2026-10-02 21:10 to 21:40Z): a pond whose dirt banks stood three over the water and overhung it all
+  // round, water under every edge at the waterline, and thirty minutes of surface and dig_to_shore.
+  const { notchOut } = require('../src/shore');
+  const { bot, dug, placed } = pool({ items: [{ name: 'dirt', count: 2 }] });
+  const inner = bot.blockAt;
+  // Water a ring out at the waterline and under; open over the bot's own cell only.
+  bot.blockAt = p => { const f = p.floored(), k = `${f.x},${f.y},${f.z}`; if (placed.has(k) || dug.has(k)) return inner(p);
+    if (Math.abs(f.x) <= 1 && Math.abs(f.z) <= 1 && f.y >= 59 && f.y <= 62) return { position: f, name: 'water', boundingBox: 'empty' };
+    if (f.x === 0 && f.z === 0 && f.y >= 63) return { position: f, name: 'air', boundingBox: 'empty' };
+    if (f.y >= 66) return { position: f, name: 'air', boundingBox: 'empty' };
+    return { position: f, name: f.y === 65 ? 'grass_block' : 'dirt', boundingBox: 'block', diggable: true }; };
+  bot.digTime = b => b.name === 'grass_block' ? 4500 : 3750;
+  const goal = {};
+  assert.equal(await notchOut(bot, new Task('pond'), goal, () => {}), true);
+  const lip = ['1,63,0', '-1,63,0', '0,63,1', '0,63,-1'].find(k => { const [x, , z] = k.split(',').map(Number); return dug.has(`${x},64,${z}`) && dug.has(`${x},65,${z}`); });
+  assert.ok(lip, `the two over a lip dug: ${[...dug]}`);
+  const [x, , z] = lip.split(',').map(Number);
+  assert.ok(placed.has(`${x},62,${z}`), 'the water under the lip filled');
+  assert.equal(goal.survivalAction.action, 'notch_out_of_water');
+});
+
 test('a bank of stone that would take long to dig from the water is not cut: that drowned the live bot', async () => {
   const { notchOut } = require('../src/shore');
   const { bot } = pool({ waterBeside: false });
