@@ -7425,8 +7425,28 @@ async function detourWork(bot, task, goal, save, { survival = null, bounded = ta
   if (withheld.length) out.withheld = feasibility.withheldSays(walled || feasibility.walledIn(bot), [...new Set(withheld)].map(key => ({ key })));
   return out;
 }
+const STALL_PACE_ASKS = 3, STALL_PACE_MS = 10000, STALL_PACE_WAIT_MS = 10000;
 async function breakStillness(bot, task, goal, save, { client, survival, onStep = () => {}, reason = 'step:none', now = Date.now(), answers = {}, stalled = null, until = 0, holding = null, id = 'stillness_detour', above = undefined } = {}) {
   const ms = STALL_MS;
+  // The stall's question paced (note 912): asked three times within ten
+  // seconds, each answer over at once, the fourth waits ten seconds where
+  // the bot stands (the task's check each quarter second, so a threat or
+  // the air still takes the turn). With every way resting an answer comes
+  // back in a fraction of a second and the question was asked again at
+  // once: mid-236-br (25588, 2026-10-02 15:48:58 to 15:49:03Z) was asked
+  // seventeen times in five seconds, "until rest ends" eleven of them, and
+  // was cut three minutes in as "flipping mine <-> detour"; mid-231-bc was
+  // asked ten times in a minute the same way (note 878).
+  {
+    const t = Date.now(), asks = (bot._stallAsks ||= []);
+    while (asks.length && t - asks[0] > STALL_PACE_MS) asks.shift();
+    if (asks.length >= STALL_PACE_ASKS) {
+      console.log(`[still] the stall was asked ${asks.length} times in ${Math.round(STALL_PACE_MS / 1000)} seconds, each answer over at once: ${Math.round(STALL_PACE_WAIT_MS / 1000)} seconds' wait here before it is asked again`);
+      asks.length = 0;
+      for (const end = Date.now() + STALL_PACE_WAIT_MS; Date.now() < end;) { await sleep(Math.min(250, end - Date.now())); task.check(); checkThreats(bot); checkAir(bot); }
+    }
+    asks.push(Date.now());
+  }
   // Held until a rest ends (holdForRest), the work has that long.
   const deadline = until > now ? until : now + DETOUR_MS;
   const bounded = Object.create(task);

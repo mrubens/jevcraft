@@ -887,3 +887,20 @@ test('while the bot waits for Jev, no stall is raised and the rung\'s question i
     assert(bot._stalls.stall, 'Jev back, the same stillness is a stall again');
   } finally { unwatchStalls(bot); }
 });
+
+test('the stall asked three times in ten seconds, each over at once: the fourth waits before it is asked (note 912)', async () => {
+  const { breakStillness } = require('../src/work');
+  const bot = { _stallAsks: [Date.now() - 3000, Date.now() - 2000, Date.now() - 1000], entity: { position: { x: 0, y: 64, z: 0, floored() { return this; }, distanceTo: () => 0 } }, entities: {}, health: 20, food: 20, oxygenLevel: 20,
+    game: { dimension: 'overworld', gameMode: 'survival' }, inventory: { items: () => [], slots: [] }, registry: require('minecraft-data')('26.1'), blockAt: () => null, findBlocks: () => [] };
+  const lines = []; const log = console.log; console.log = (...a) => lines.push(a.join(' '));
+  let checks = 0;
+  const task = { check() { checks++; if (checks > 3) throw Object.assign(new Error('stopped'), { name: 'Cancelled' }); } };
+  try { await breakStillness(bot, task, { survival: {} }, () => {}, { reason: 'step:birch_log' }).catch(() => {}); } finally { console.log = log; }
+  assert.match(lines.join('\n'), /\[still\] the stall was asked 3 times in 10 seconds, each answer over at once: 10 seconds' wait here before it is asked again/);
+  assert.ok(checks >= 1, 'the task is checked in the wait');
+  // Two askings in ten seconds: asked at once, no wait.
+  const quick = { ...bot, _stallAsks: [Date.now() - 2000, Date.now() - 1000] };
+  const lines2 = []; console.log = (...a) => lines2.push(a.join(' '));
+  try { await breakStillness(quick, { check() {} }, { survival: {} }, () => {}, { reason: 'step:birch_log' }).catch(() => {}); } finally { console.log = log; }
+  assert.doesNotMatch(lines2.join('\n'), /the stall was asked/);
+});
