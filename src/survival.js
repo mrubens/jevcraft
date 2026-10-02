@@ -4703,6 +4703,22 @@ class Survival {
       run: async () => {
         bot._wavedOff = { ids: danger.map(t => t.entity.id), until: Date.now() + 15000 };
         this.report(goal, save, { action: 'keep_working', threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+        // Kept at the work, off the edge first (note 845, physical safety):
+        // a fireball's push off a fall into lava, or one that takes half the
+        // health or more, is not a thing to weigh. 25597 (2026-10-01
+        // 21:26:10 to 18Z) took keep_working at a basalt ledge fifty over the
+        // lava sea with a ghast about, dug netherrack at its edge, and the
+        // ghast's fireball threw it off, 20 to none.
+        const pusher = danger.some(t => /^(ghast|blaze)$/.test(t.entity.name) && t.visible !== false);
+        const drop = pusher ? require('./terrain').dropNear(bot, feetCell(bot), 2) : null;
+        if (drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2)) {
+          const cell = firmGround(bot, 8, { margin: 3 });
+          if (cell && !cell.equals(feetCell(bot))) {
+            this.report(goal, save, { action: 'off_the_edge_to_work', to: { ...cell }, drop: drop.into || drop.damage });
+            try { await this.actions.navigate(bot, task, new goals.GoalBlock(cell.x, cell.y, cell.z), { timeoutMs: 6000, stallMs: 2000 }); }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; }
+          }
+        }
         return true;
       } };
     // A golden apple carried is what a fight at low health is kept for:
