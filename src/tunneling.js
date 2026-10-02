@@ -32,6 +32,46 @@ const natural = /^(packed_ice|blue_ice|stone|deepslate|granite|diorite|andesite|
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
 
+// Sand or gravel at `p` held up: the column under it ends on a block that
+// does not fall, within a few blocks (note 933).
+function restsOnSolid(bot, p) {
+  for (let d = 1; d <= 6; d++) {
+    const b = bot.blockAt(p.offset(0, -d, 0));
+    if (!b || dangerous(b) || b.boundingBox !== 'block') return false;
+    if (!falling(b)) return true;
+  }
+  return false;
+}
+// The sand and gravel standing over a cell, counted up from the cell above
+// it until the first block that does not fall (note 933).
+const DRAIN_MAX = 12;
+function fallingOver(bot, p) {
+  let n = 0;
+  for (let h = 1; h <= DRAIN_MAX + 1; h++) { if (!falling(bot.blockAt(p.offset(0, h, 0)))) break; n++; }
+  return n;
+}
+// The column over a step's cell emptied from beside: what falls into its
+// two cells is dug again until nothing is falling there and no sand or
+// gravel stands over the head (note 933). The bot stays in the column it
+// stands in; nothing falls onto it.
+async function drainColumn(bot, task, cell, dig, top = 1) {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const inFall = () => Object.values(bot.entities || {}).some(e => e?.name === 'falling_block' && e.position && Math.abs(e.position.x - (cell.x + 0.5)) < 1 && Math.abs(e.position.z - (cell.z + 0.5)) < 1 && e.position.y >= cell.y - 0.5);
+  for (let n = 0; n < 2 * DRAIN_MAX + 4; n++) {
+    task.check();
+    for (let t = 0; t < 40 && inFall(); t++) { await sleep(50); task.check(); }
+    await sleep(150);
+    const full = Array.from({ length: top + 1 }, (_, i) => cell.offset(0, top - i, 0)).filter(c => !passable(bot.blockAt(c)));
+    if (!full.length && !falling(bot.blockAt(cell.offset(0, top + 1, 0))) && !inFall()) return;
+    if (!full.length) continue;
+    for (const c of full) {
+      if (dangerous(bot.blockAt(c)) || !safeExcavation(bot, c)) throw new Error('Staircase excavation exposed a liquid or unstable wet ceiling');
+      await dig(bot, task, c, { requireDrops: false });
+    }
+  }
+  throw new Error(`Sand or gravel kept falling into the stair at ${cell}`);
+}
+
 function safeExcavation(bot, p) {
   if (faces.some(f => dangerous(bot.blockAt(p.plus(f))))) return false;
   // Removing a support can drop an entire sand/gravel column and release
@@ -159,7 +199,11 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     // steps on ground and digs rock, and a gap is a span's or a pillar's,
     // laid from blocks carried (mob-hunt.js fortressApproaches, work.js
     // portalWay). Said as such: "no floor 6" read as a count of nothing.
-    if (dangerous(floor) || falling(floor) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : 'no floor to step onto (a gap, for a span or a pillar)'); continue; }
+    // Sand or gravel underfoot is a floor where it rests on solid ground
+    // (note 933): refused, every step up a beach, a desert or a gravel layer
+    // had "no floor to step onto", and the climb's stairs could not rise
+    // through the layer they had drained the way into.
+    if (dangerous(floor) || (falling(floor) && !restsOnSolid(bot, floor.position)) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : falling(floor) ? 'sand or gravel underfoot over a gap' : 'no floor to step onto (a gap, for a span or a pillar)'); continue; }
     // Nor onto a lip beside a deadly drop: a step down carries on past its
     // cell, and a stop mid-step leaves the body going. mid-244-q stepped two
     // down onto a one-block ledge over a ravine, a skeleton's alert stopped
@@ -199,7 +243,33 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     // it falls into the head cell as the bot steps in. mid-242-n tunnelled
     // under a gravel column at y 36 and suffocated in its own stair, twenty
     // to none (2026-09-27).
-    if (falling(bot.blockAt(destination.offset(0, 2, 0)))) { block(destination, 'gravel or sand over the way'); continue; }
+    // Drained from beside first where it can be (note 933): the cells dug
+    // while the bot stands in the column beside, what falls into them dug
+    // again until nothing more comes down, and only then stepped into, under
+    // an emptied column. Refused, every step up under a layer of sand or
+    // gravel left the stair stepping level: 25588 (mid-236-bu, 2026-10-02
+    // 16:58Z) paced (205..210, 34, 423) under its climb's target, the climb
+    // said "4 of these stairs have sand or gravel over the head", and the
+    // trial was cut five minutes in for flipping between mine and detour.
+    let drain = 0;
+    if (falling(bot.blockAt(destination.offset(0, 2, 0)))) {
+      drain = fallingOver(bot, destination.offset(0, 1, 0));
+      if (!drain || drain > DRAIN_MAX || !safeExcavation(bot, destination.offset(0, 1, 0))) { block(destination, 'gravel or sand over the way'); continue; }
+    }
+    // A level step on the way up, where its column has sand or gravel over
+    // the cell a stair up from it needs dug (two over its floor): that cell
+    // dug too and the column drained from here, so the step up from there
+    // is under an emptied column (note 933). Under a layer the bot's own
+    // headroom is refused (nothing is dropped onto its head), every stair
+    // up from here is, and the level step was taken with nothing done about
+    // the next: level back and forth under the layer.
+    let opens = 0;
+    if (height === 0 && dy > 0 && !drain && falling(bot.blockAt(destination.offset(0, 3, 0))) && !passable(bot.blockAt(destination.offset(0, 2, 0)))) {
+      const top = destination.offset(0, 2, 0), cell = bot.blockAt(top);
+      opens = fallingOver(bot, top);
+      if (opens && opens <= DRAIN_MAX && natural.test(cell?.name || '') && cell.diggable && safeExcavation(bot, top)) clear.push(top);
+      else opens = 0;
+    }
     for (let y = Math.max(feet.y + 1, destination.y + 1); y >= destination.y; y--) clear.push(new Vec3(destination.x, y, destination.z));
     let why = null;
     const safe = clear.every(p => {
@@ -229,10 +299,10 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     // 19, 20, 21, 19, 20, 21 for an hour six blocks from its blazes. Closer
     // is the only score that means anything for an approach.
     const score = approach ? destination.distanceTo(target) + (dy > 0 && height === 0 ? 0.5 : 0)
-      : destination.distanceTo(target) + visits * 16 + (dy > 0 && height === 0 ? 4 : 0);
+      : destination.distanceTo(target) + visits * 16 + (dy > 0 && height === 0 ? (opens ? 1 : 4) : 0);
     // A drop lands below the cell it steps into; scored where it lands.
     if (dropTo) choices.push({ destination: dropTo, clear, score: score - (destination.distanceTo(target) - dropTo.distanceTo(target)), drop: destination.y - dropTo.y });
-    else choices.push({ destination, clear, score });
+    else choices.push({ destination, clear, score, ...(drain ? { drain, top: 1 } : opens ? { drain: opens, top: 2 } : {}) });
   }
   const sorted = choices.sort((a, b) => a.score - b.score);
   sorted.blocked = blocked;
@@ -619,6 +689,7 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
       }
     }
   }
+  if (choice.drain) await drainColumn(bot, task, destination, dig, choice.top || 1);
   const floor = bot.blockAt(destination.offset(0, -1, 0));
   if (dangerous(floor) || floor.boundingBox !== 'block') throw new Error('Staircase footing changed during excavation');
   // One block away: walked in seconds or not at all. At the default fifteen
@@ -769,4 +840,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };

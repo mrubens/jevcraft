@@ -868,8 +868,16 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     const distance = drop.position.distanceTo(bot.entity.position), p = drop.position.floored();
     const nearLava = require('./blaze-stand').lavaWithin(bot, p, 2);
     const reachable = require('./drop-collection').pickupPositions(bot, drop).length > 0;
+    // The blazes by it, said (note 932): the rod lies where its blaze died,
+    // under the rest of them. 25595 (mid-242-xh-fortress-4, 2026-10-02
+    // 17:28:49Z) chose fetch_rod at full health, told only where the rod lay;
+    // two blazes 1.2 and 1.9 blocks off it struck twice in a second, 20 to
+    // 10.4, and it burned to death 22 seconds later. Blaze blows at arm's
+    // length were a third or more of the last forty seconds' damage in 7 of
+    // the day's 26 blaze and fire deaths.
+    const blazesSay = rodBlazesSays(bot, drop.position);
     tree[`fetch_rod_${drop.id}`] = { description: `Fetch the ${state.item.replaceAll('_', ' ')} lying on the ground ${Math.round(distance)} blocks off at (${p.x}, ${p.y}, ${p.z}), from an earlier kill.` +
-      `${nearLava ? ' Lava is within two blocks of it: the walk there stands that close.' : ''}${reachable ? '' : ' No standing spot near it reads as dry and safe right now; the walk there may fail and find nothing changed.'}`,
+      `${nearLava ? ' Lava is within two blocks of it: the walk there stands that close.' : ''}${reachable ? '' : ' No standing spot near it reads as dry and safe right now; the walk there may fail and find nothing changed.'}${blazesSay}`,
       run: () => collectNearbyDrops(bot, task, state.item, { radius: 10, origin: drop.position.clone(), timeoutMs: 6000, move: actions.navigate }) };
   }
   // The rods got so far out through the portal to a chest on the Overworld
@@ -1128,6 +1136,20 @@ async function foodLeave(bot, task, goal, save, actions) {
   return pick;
 }
 
+// A blaze's own blow (its attack damage on Normal), and how near it strikes
+// (BlazeAttackGoal: within two blocks of its target, a body's width more).
+// Measured live: 20 to 15.2 to 10.4 through an iron helmet and chestplate
+// (25595, 2026-10-02 17:28:58Z).
+const BLAZE_BLOW = 6, BLAZE_ARM = 2.5;
+function rodBlazesSays(bot, at) {
+  const byIt = Object.values(bot.entities || {}).filter(e => e.name === 'blaze' && e.isValid !== false && e.position && e.position.distanceTo(at) <= 8)
+    .map(e => ({ d: Math.round(e.position.distanceTo(at) * 10) / 10 })).sort((x, y) => x.d - y.d);
+  if (!byIt.length) return '';
+  let blow = null;
+  try { const ce = require('./combat-estimate'); blow = Math.round(ce.afterArmour(BLAZE_BLOW, ce.armourOf([5, 6, 7, 8].map(sl => bot.inventory?.slots?.[sl]?.name).filter(Boolean))) * 10) / 10; } catch (_) { blow = null; }
+  const close = byIt.filter(x => x.d <= BLAZE_ARM);
+  return ` Blazes by it now: ${byIt.slice(0, 4).map(x => `one ${x.d} blocks from it`).join(', ')}.${close.length ? ` ${close.length === 1 ? 'That one is' : `${close.length} of them are`} within a blaze's arm's length of where the rod lies: a blaze strikes there${blow ? ` for about ${blow} a blow through the armour worn` : ''}, a blow a second while it stays, beside its fireballs.` : ''}`;
+}
 async function prepareMobHunt(bot, task, step, goal, save, actions) {
   const handler = handlers[step.entity];
   if (!handler || handler.item !== step.item) throw blocked(`Unsupported mob source ${step.entity} for ${step.item}`);
@@ -4754,4 +4776,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

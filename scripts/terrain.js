@@ -241,7 +241,29 @@ const RUNS = {
     const f = bot._fireballStrikes || { struck: 0, landed: 0 };
     return { pass: !watch.died && !hurts.length && f.struck >= 1 && f.landed === 0, detail: { came, struck: f.struck, landed: f.landed, ghastKilled: seenGhast && !ghastAlive(), moved: Math.round(bot.entity.position.distanceTo(from) * 10) / 10, seconds: Math.round((Date.now() - started) / 1000), health: bot.health, hurts } };
   },
+  async climb_out_staircase(d, bounded) {
+    const { returnToSurface } = require('../src/surface');
+    const tools = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(p => p.name).sort().join(',') || 'hand';
+    const goal = { kind: 'win', request: 'terrain drill', surfaceReturn: { attempts: 0, visited: {},
+      climb: { method: 'staircase', tools, offered: ['staircase', 'straight_up', 'walk_then_up', 'bridge', 'wood_first', 'pickaxe_first', 'mine_first'], estimate: 600, fromY: 40, best: { y: 40, at: Date.now() }, at: new Date().toISOString() } } };
+    const started = Date.now(), fromY = bot.entity.position.y;
+    let calls = 0, error = null, top = fromY;
+    while (Date.now() - started < (d.seconds - 20) * 1000 && bot.entity.position.y < 70.5) {
+      calls++;
+      if (Math.hypot(bot.entity.position.x - d.start[0], bot.entity.position.z - d.start[2]) > 40) { error = 'off the drill'; break; }
+      await sleep(20);
+      try { await returnToSurface(bot, bounded, goal, () => {}, { dig, navigate }); } catch (err) { error = err.message; console.log(`[drill] ${err.message.slice(0, 200)}`); if (/Cancelled/.test(err.name || '')) break; }
+      top = Math.max(top, bot.entity.position.y);
+      if (!goal.surfaceReturn && bot.entity.position.y >= 68) break;
+    }
+    const p = bot.entity.position;
+    const out = !goal.surfaceReturn && require('../src/surface').surfaceObserver(bot)(bot.entity.position);
+    const f = p.floored(), col = [1, 2, 3, 4].map(h => bot.blockAt(f.offset(0, h, 0))?.name).join(',');
+    const sr = goal.surfaceReturn || {};
+    return { pass: !watch.died && out && p.y >= 68, detail: { out, col, blocked: sr.ascent?.lastBlocked, climbErr: sr.lastError || goal.lastError, staircase: goal.staircaseStalled?.why?.slice(0, 200), calls, seconds: Math.round((Date.now() - started) / 1000), y: Math.round(p.y * 10) / 10, top: Math.round(top * 10) / 10, across: Math.round(Math.hypot(p.x - d.start[0], p.z - d.start[2])), health: bot.health, error: error && error.slice(0, 160) } };
+  },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async climb_out_under_gravel(d, bounded) { return RUNS.climb_out_staircase(d, bounded); },
   async tunnel_to_pool_below(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_from_above(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_from_ledge_no_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
