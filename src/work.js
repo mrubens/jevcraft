@@ -7882,11 +7882,13 @@ function cookStandsSays(bot, cook, secs) {
   const unfed = health < 20 && food < 18 ? ` The meat is in the furnace, not eaten, while it cooks: health ${Math.round(health * 10) / 10} does not come back at hunger ${food} meanwhile; eaten raw now, the ${cook.now} points bring hunger to ${eaten}${eaten >= 18 ? ', where it does' : ''}.` : '';
   return `${unfed}${among ? ` ${among.says} The cook is stopped when one of them comes within eight blocks in sight or lands a hit, and the batch stays in the furnace to be collected.` : ''}`;
 }
-function healWaitSays(bot, item) {
+function healWaitSays(bot, item, meal = null) {
   const health = bot.health ?? 20, food = bot.food ?? 20, heals = food >= 18;
   const secs = heals ? Math.max(4, Math.ceil((item.wants - health) * 4)) : 60;
   const among = require('./risk').standingAmong(bot, secs, { what: 'here' });
-  return among ? ` ${heals ? `About ${secs} seconds, a point each four.` : `At hunger ${food} health does not come back, so this wait has no end of its own: a minute of it is counted.`} ${among.says}` : '';
+  // With a meal first (note 927) the wait has its end once hunger is at eighteen.
+  const hungry = meal ? `At hunger ${food} health does not come back until the meal is eaten: a minute of the meal and the wait is counted.` : `At hunger ${food} health does not come back, so this wait has no end of its own: a minute of it is counted.`;
+  return among ? ` ${heals ? `About ${secs} seconds, a point each four.` : hungry} ${among.says}` : '';
 }
 // The known food whose trip, there and on to the frame, is shortest.
 const foodNearFrame =(bot, goal, pending, short) => foodTrips(bot, goal, pending, short).filter(t => t.at && t.gives > 0).sort((a, b) => a.seconds - b.seconds)[0] || null;
@@ -8000,7 +8002,20 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   }
   if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
   if (chest) tree.top_up_chest = { description: `Make a chest from the wood carried first and carry it in (8 planks${countOf(bot, 'crafting_table') ? ' at the crafting table carried' : ', and a crafting table of 4 more'}, a few seconds, one slot).${chest.says.replace(/^Chest: none carried\./, '')}` };
-  for (const i of short) tree[`top_up_${i.key}`] = { description: `${TOP_UP[i.key]}${i.key === 'health' ? healWaitSays(bot, i) : ''} ${i.says}${soFar(i)}` };
+  // The wait for health at hunger under eighteen (note 927): health does not
+  // come back there, so the wait is a meal first where one is carried, said
+  // as that, and is not offered where nothing is: a wait with no end. 25584
+  // (mid-241-dj, 2026-10-02 18:12Z) stood at its frame at 10 health and
+  // hunger 11, "wait here and heal" taken pass after pass, and the trial was
+  // cut there at 54 minutes ("No measurable progress on recover before
+  // nether", health 10, needed 16, food 11).
+  const hungryWait = (bot.food ?? 20) < 18;
+  const waitMeal = hungryWait ? (() => { try { return require('./low-health').mealOf(bot); } catch (_) { return null; } })() : null;
+  for (const i of short) {
+    if (i.key === 'health' && hungryWait && !waitMeal) { tree.cross_now.description += ` Waiting here to heal is not offered: at hunger ${bot.food} health does not come back, and nothing to eat is carried.`; continue; }
+    const lead = i.key === 'health' && hungryWait ? `Eat the ${waitMeal.item.name.replaceAll('_', ' ')} first (hunger ${bot.food}${waitMeal.after ? ` to ${waitMeal.after}` : ''}; health comes back from eighteen), then wait here and heal, to sixteen.` : TOP_UP[i.key];
+    tree[`top_up_${i.key}`] = { description: `${lead}${i.key === 'health' ? healWaitSays(bot, i, waitMeal) : ''} ${i.says}${soFar(i)}` };
+  }
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
   const keys = Object.keys(tree).sort().join(',');
@@ -8057,7 +8072,13 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     }
     else if (item.key === 'health') {
       goal.step = { action: 'recover_before_nether', health: Math.round(bot.health), needed: item.wants, food: bot.food }; save();
-      for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
+      // Under eighteen hunger the wait is the meal (note 927).
+      let meal = null;
+      if ((bot.food ?? 20) < 18) { try { meal = require('./low-health').mealOf(bot); } catch (_) { meal = null; } }
+      if (meal) {
+        const before = { food: bot.food, count: meal.item.count };
+        await require('./meal').eatThrough(bot, task, meal.item, { eaten: () => (bot.food ?? 0) > before.food || (bot.inventory.items().find(i => i.name === meal.item.name)?.count ?? 0) < before.count });
+      } else for (let i = 0; i < 10; i++) { task.check(); await sleep(100); }
     } else if (item.key === 'gold') {
       goal.step = { action: 'gold_for_nether', needed: 'golden_boots' }; save();
       await acquireStep(bot, task, 'golden_boots', countOf(bot, 'golden_boots') + 1, goal, save);

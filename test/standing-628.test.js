@@ -70,7 +70,17 @@ test('the cook is offered with what standing at the furnace costs here, and that
   assert.match(cook, /The cook is stopped when one of them comes within eight blocks in sight or lands a hit, and the batch stays in the furnace to be collected\./);
   // Waiting to heal (the crossing's) says the same, and that at hunger 17 the wait has no end of its own.
   assert.equal(await crossingKitReady(bot, new Task('win'), {}, () => {}, answering('cross_now', log)), true);
-  assert.match(log.offered.top_up_health, /At hunger 17 health does not come back, so this wait has no end of its own: a minute of it is counted\. Standing here for those 60 seconds with 3 hostile mobs/);
+  // With food carried the wait is a meal first (note 927): health comes back from hunger eighteen.
+  assert.match(log.offered.top_up_health, /^Eat the mutton first \(hunger 17/);
+  assert.match(log.offered.top_up_health, /At hunger 17 health does not come back until the meal is eaten: a minute of the meal and the wait is counted\. Standing here for those 60 seconds with 3 hostile mobs/);
+  // With nothing to eat it is not offered: a wait with no end. The crossing says why.
+  const none = scene({ mobs: [{ name: 'zombie', at: 10 }] });
+  const items = none.inventory.items().filter(i => !/mutton|beef|pork|chicken|bread|apple|potato|carrot|stew|cod|salmon/.test(i.name));
+  none.inventory.items = () => items;
+  const bare = {};
+  assert.equal(await crossingKitReady(none, new Task('win'), {}, () => {}, answering('cross_now', bare)), true);
+  assert.equal(bare.offered.top_up_health, undefined);
+  assert.match(bare.offered.cross_now, /Waiting here to heal is not offered: at hunger 17 health does not come back, and nothing to eat is carried\./);
 });
 
 test('with no mob about the cook says nothing of them; at full hunger and health it says nothing of the meat', async () => {
