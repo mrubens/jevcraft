@@ -313,9 +313,9 @@ function risePlan(view, feet, { reach = 48 } = {}) {
   for (let y = feet.y + 1; y <= feet.y + reach; y++) {
     const c = new Vec3(feet.x, y, feet.z), n = view.name(c);
     if (n == null) { blocked = 'the rest of the column is not loaded'; break; }
-    if (isLava(n) || isWater(n)) { blocked = `${n} in the column at y ${y}`; if (isWater(n) && rock.length && rock[rock.length - 1].y === y - 1) waterAt = y; break; }
+    if (isLava(n) || isWater(n)) { blocked = `${n} in the column at y ${y}`; if (isWater(n)) waterAt = y; break; }
     const wet = Object.values(DIRS).map(d => c.plus(d)).find(q => isLava(view.name(q)) || isWater(view.name(q)));
-    if (wet) { blocked = `${view.name(wet).replaceAll('_', ' ')} beside the column at (${wet.x}, ${wet.y}, ${wet.z})`; break; }
+    if (wet) { blocked = `${view.name(wet).replaceAll('_', ' ')} beside the column at (${wet.x}, ${wet.y}, ${wet.z})`; if (isWater(view.name(wet))) waterAt = y; break; }
     if (open(n)) {
       const next = view.name(c.plus(UP));
       if (rock.length && next != null && open(next) && !isWater(next) && !isLava(next)) { top = y; break; }
@@ -333,8 +333,9 @@ function risePlan(view, feet, { reach = 48 } = {}) {
   // its roof two blocks of stone under 25 of water; every way up was
   // refused for the water, and 25597 (mid-236-bc, -be, -bg) stood 60
   // minutes there twice.
-  if (blocked && waterAt != null && rock.length) {
-    const swim = swimUp(view, feet.x, waterAt, feet.z, reach);
+  if (blocked && waterAt != null) {
+    const top = Math.max(feet.y, waterAt - 2);
+    const swim = swimUp(view, feet.x, top + 2, feet.z, reach);
     if (swim) return risePlanSwim(view, feet, rock, firstRock, waterAt, swim, blocked);
   }
   if (blocked) return { blocked: `rise straight up through the rock over the head: ${blocked}` };
@@ -370,29 +371,41 @@ function risePlan(view, feet, { reach = 48 } = {}) {
 // for the head over it, no lava in it; null where it does not end in air
 // within `reach`.
 const SWIM_S = 0.4, FULL_BREATH_S = 15;
+// From where the water comes in (in the column, or beside it): rock in the
+// way is dug as the swim goes (vitals straightUp digs what is over the head),
+// each block its dig time; the water reached, the first open air over it with
+// room for the head ends it.
 function swimUp(view, x, y, z, reach) {
-  let cells = 0;
+  const { DIGGABLE_ABOVE } = require('./pillar-recovery');
+  let cells = 0, water = 0, seconds = 0;
   for (let yy = y; yy <= y + reach; yy++) {
-    const n = view.name(new Vec3(x, yy, z));
+    const c = new Vec3(x, yy, z), n = view.name(c);
     if (n == null || isLava(n)) return null;
-    if (isWater(n) || /kelp|seagrass|bubble_column/.test(n)) { cells++; continue; }
-    if (open(n)) return cells ? { cells, air: yy, seconds: Math.round(cells * SWIM_S * 10) / 10 } : null;
-    return null;
+    if (Object.values(DIRS).some(d => isLava(view.name(c.plus(d))))) return null;
+    if (isWater(n)) { cells++; water++; seconds += SWIM_S; continue; }
+    if (open(n)) {
+      if (water && open(view.name(c.plus(UP)) || 'stone') && !isWater(view.name(c.plus(UP)))) return { cells, water, air: yy, seconds: Math.round(seconds * 10) / 10 };
+      cells++; seconds += SWIM_S; continue;
+    }
+    if (!DIGGABLE_ABOVE.test(n) || falls(n)) return null;
+    cells++; seconds += SWIM_S + (digSeconds(n, view, false) ?? 1.2);
   }
   return null;
 }
-function risePlanSwim(view, feet, rock, firstRock, waterAt, swim, blocked) {
-  const top = waterAt - 2, rise = top - feet.y;
-  if (rise < 1) return { blocked: `rise straight up through the rock over the head: ${blocked}` };
+function risePlanSwim(view, feet, rockAll, firstRock, waterAt, swim, blocked) {
+  let rock = rockAll;
+  const top = Math.max(feet.y, waterAt - 2), rise = top - feet.y;
+  rock = rock.filter(r => r.y <= top + 1);
+  if (firstRock == null || firstRock > top + 1) firstRock = top + 2;
   const before = Math.max(0, firstRock - feet.y - 2);
   const blocks = pillarBlocks();
   const have = blocks.reduce((a, n) => a + (view.carried?.[n] || 0), 0);
-  const kinds = [...new Set(rock.map(r => r.name.replaceAll('_', ' ')))].slice(0, 3).join(', ');
+  const kinds = [...new Set(rock.map(r => r.name.replaceAll('_', ' ')))].slice(0, 3).join(', ') || 'none';
   if (have < Math.max(before, rise - rock.length)) return { blocked: `rise straight up through the rock over the head and swim up the water over it: ${rise} blocks to lay, ${have} carried` };
   let seconds = rise;
   for (const r of rock) seconds += digSeconds(r.name, view, false) ?? 1.2;
   const short = swim.seconds > FULL_BREATH_S;
-  const does = `Rise straight up through the rock over the head (${rock.length} of ${kinds}, ${rise} up, a block under the feet at each step), dig the last of it into the water over it, and swim straight up ${swim.cells} blocks of water to open air at y ${swim.air}: about ${Math.round(seconds)} seconds of rising, then about ${swim.seconds} seconds of swimming against ${FULL_BREATH_S} seconds of a full breath${short ? ' (past the breath, into the drowning: two health a second)' : ''}. The water pours down the shaft as the rock opens; nothing lies in the column but water.`;
+  const does = `${rise ? `Rise straight up through the rock over the head (${rock.length} of ${kinds}, ${rise} up, a block under the feet at each step), then dig` : 'Dig'} up into the water (${swim.water} blocks of it, ${swim.cells - swim.water} more of rock or air dug or passed on the way) and swim straight up to open air at y ${swim.air}: ${rise ? `about ${Math.round(seconds)} seconds of rising, then ` : ''}about ${swim.seconds} seconds of digging and swimming against ${FULL_BREATH_S} seconds of a full breath${short ? ' (past the breath, into the drowning: two health a second)' : ''}. The water pours down the shaft as the rock opens${swim.cells > swim.water ? '; the rock in it is dug from below as the swim goes, the shield down meanwhile' : ''}.`;
   return { move: { key: 'rise_and_swim', does, kind: 'rise_swim', top, rise, blocks, swim, seconds: Math.round(seconds + swim.seconds), effects: [] } };
 }
 
@@ -1053,8 +1066,10 @@ async function perform(bot, task, m, { dig }) {
     if (!placed) throw new Error('The pillar would not rise');
   }
   if (m.kind === 'rise_swim') {
-    const placed = await require('./pillar-recovery').pillarUp(bot, task, m.top, { dig, maxBlocks: m.rise + 4, blocks: m.blocks });
-    if (!placed) throw new Error('The pillar would not rise');
+    if (m.rise > 0) {
+      const placed = await require('./pillar-recovery').pillarUp(bot, task, m.top, { dig, maxBlocks: m.rise + 4, blocks: m.blocks });
+      if (!placed) throw new Error('The pillar would not rise');
+    }
     const over = bot.blockAt(bot.entity.position.floored().offset(0, 2, 0));
     if (over?.boundingBox === 'block') { try { await require('./skills').equipBestTool(bot, over); } catch (_) { /* the hand */ } await bot.dig(over, true); }
     await require('./vitals').straightUp(bot, task, { maxMs: Math.round(m.swim.seconds * 1000) + 6000 });
