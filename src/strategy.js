@@ -733,6 +733,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // it, and took the pickaxe rung and a furnace job, the cast left.
     const underWay = errand || errandUnderWay(bot, goal, now());
     const errandSays = underWay ? { errandUnderWay: `${underWay} is under way${held ? `, begun under ${label(held.choice)} ${agoWords(now() - held.at)} ago` : ''}; another answer leaves it where it stands until it is taken up again${(() => { const f = goal.portalFrame; if (!f?.blocks || !f.cast) return ''; const n = f.blocks.filter(p => bot.blockAt?.(new Vec3(p.x, p.y, p.z))?.name === 'obsidian').length; return ` (${n || f.placedSeen || 0} of ten cast)`; })()}` } : {};
+    const askedAt = Date.now();
     const decision = await decide('win_strategy', { client, bot, task, goal, save, tree, state: strategyState(bot, goal, stage, { ...(last ? { lastStrategy: last.says } : {}), ...errandSays }) });
     // Held through an outage (note 707): nothing is done this step; the
     // next asks it fresh.
@@ -757,6 +758,13 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     goal.strategy = { choice, rungPhase, ladderNext: stage.phase, keys, at: now(), source: decision.standIn ? 'stand-in' : 'jev',
       ...(rungPhase || TO_THE_NETHER.test(choice) ? { openPhases: openRungs(bot, goal, now()).map(r => r.phase) } : {}),
       ...(TO_THE_NETHER.test(choice) ? { dimension: String(bot.game?.dimension || '').replace(/^minecraft:/, '') } : {}) };
+    // The work in hand left for another rung or a side trip (note 854): its
+    // answers under way are cut short, not tries that came to nothing.
+    // 25584 (mid-218-au, 2026-10-02 01:11:59Z) took a side trip to smelt a
+    // second into digging its portal site; the dig was then offered as
+    // "chosen 3 minutes ago ... and it came to nothing: nothing gained on
+    // the rung", and the climb of 29 blocks to the surface was taken.
+    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) require('./tried').cut(goal, `left for ${label(choice)} (win_strategy)`, Date.now(), { before: askedAt });
     save();
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].chat ? options[choice].chat : options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
   }

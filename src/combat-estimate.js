@@ -62,7 +62,7 @@ function poisonSays(bot, now = Date.now()) {
   if (!(left?.seconds > 0)) return null;
   const health = bot?.health ?? 20, pace = 1 / POISON.perSecond * (left.amplifier ? 0.5 : 1);
   const after = Math.max(POISON.floor, health - left.seconds / pace);
-  return `poisoned, about ${round(left.seconds)} seconds left: one health every ${round(pace)} seconds that armour does not stop, down to ${POISON.floor} and no lower, ${after <= POISON.floor + 0.5 ? `so health is at ${POISON.floor} before it ends` : `so health is about ${round(after)} when it ends`}; healing at hunger 18 or 19 (one each four seconds) is slower than it, and a milk bucket ends it. At ${POISON.floor} health any hit or potion kills.`;
+  return `poisoned, about ${Math.round(left.seconds)} seconds left: one health every ${round(pace)} seconds that armour does not stop, down to ${POISON.floor} and no lower, ${after <= POISON.floor + 0.5 ? `so health is at ${POISON.floor} before it ends` : `so health is about ${round(after)} when it ends`}; healing at hunger 18 or 19 (one each four seconds) is slower than it, and a milk bucket ends it. At ${POISON.floor} health any hit or potion kills.`;
 }
 function effectLeft(bot, name, now = Date.now()) {
   const effects = bot?.entity?.effects || {};

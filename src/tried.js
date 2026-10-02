@@ -295,8 +295,10 @@ function settle(bot, goal, { q = null, error = null, now = Date.now(), passEnd =
 // The answers under way when the survival layer took the turn or the work
 // was cancelled: said as cut short when next settled, not as tries that
 // came to nothing (note 583).
-function cut(goal, why, now = Date.now()) {
-  for (const e of goal?.tried?.entries || []) if (e.outcome === 'pending' && !e.waiting && now - e.at < WINDOW_MS) e.cut = String(why).slice(0, 120);
+// `before`: only those answered before then (a turn of the strategy cuts
+// the work it leaves, not its own answer, note 854).
+function cut(goal, why, now = Date.now(), { before = Infinity } = {}) {
+  for (const e of goal?.tried?.entries || []) if (e.outcome === 'pending' && !e.waiting && now - e.at < WINDOW_MS && e.at < before) e.cut = String(why).slice(0, 120);
 }
 
 // The entries that bear on an option now: the same question and answer,
@@ -619,7 +621,7 @@ function summary(goal, { work = null, now = Date.now(), withinMs = 2 * WINDOW_MS
     groups.set(k, g);
   }
   return [...groups.values()].sort((a, b) => b.last - a.last).slice(0, 12).map(g =>
-    `${label(g.q)}: ${label(g.method)}${g.target ? ` toward (${Math.round(g.target.x)}, ${Math.round(g.target.y)}, ${Math.round(g.target.z)})` : ''}, ${plural(g.n, 'time')}${g.progressed ? `, ${g.progressed} of them getting somewhere` : ''}${g.blocked ? `, ${g.blocked} coming to nothing${g.why ? ` (last: ${g.why})` : ''}` : ''}${g.cut ? `, ${g.cut} cut short by the survival layer` : ''}, last ${ago(now - g.last)} ago`);
+    `${label(g.q)}: ${label(g.method)}${g.target ? ` toward (${Math.round(g.target.x)}, ${Math.round(g.target.y)}, ${Math.round(g.target.z)})` : ''}, ${plural(g.n, 'time')}${g.progressed ? `, ${g.progressed} of them getting somewhere` : ''}${g.blocked ? `, ${g.blocked} coming to nothing${g.why ? ` (last: ${g.why})` : ''}` : ''}${g.cut ? `, ${g.cut} cut short (the survival layer taking the turn, or the strategy turning to other work)` : ''}, last ${ago(now - g.last)} ago`);
 }
 
 // How much the rung has had, in words, for the rung's question and its
@@ -666,7 +668,7 @@ function workedOn(goal, { work = null, here = null, now = Date.now(), escalated 
   const long = ms === null ? 'in the last ten minutes' : `in ${ms < 600000 ? minutes(ms) : Math.round(ms / 60000)} minutes on it${before}`;
   const different = answers.length ? ` to ${plural(ways.size, 'different way')}${offered.size > ways.size ? ` of the ${offered.size} its questions offered` : ''}` : '';
   const early = escalated && ms !== null && ms < RUNG_MS ? `; brought to this question by a failure below ${minutes(ms)} minutes into the rung's ten, not by its ten minutes running out` : '';
-  const says = `${long}: ${plural(answers.length, 'answer')} given${different}, ${n('blocked')} coming to nothing, ${n('progressed')} getting somewhere${n('waited') ? `, ${n('waited')} counted as waits` : ''}${n('cut') ? `, ${n('cut')} cut short by the survival layer` : ''}${n('pending') ? `, ${n('pending')} still under way` : ''}; the step failed ${plural(steps, 'time')}` +
+  const says = `${long}: ${plural(answers.length, 'answer')} given${different}, ${n('blocked')} coming to nothing, ${n('progressed')} getting somewhere${n('waited') ? `, ${n('waited')} counted as waits` : ''}${n('cut') ? `, ${n('cut')} cut short (the survival layer taking the turn, or the strategy turning to other work)` : ''}${n('pending') ? `, ${n('pending')} still under way` : ''}; the step failed ${plural(steps, 'time')}` +
     `${open.length ? `; not yet tried from here: ${open.map(o => `${label(o.q)} (asked ${ago(now - o.at)} ago): ${o.keys.map(label).join(', ')}`).join('; ')}` : ''}${early}`;
   return { ms, answers: answers.length, ways: ways.size, offered: offered.size, cameToNothing: n('blocked'), progressed: n('progressed'), steps, open, openBelow, says };
 }
