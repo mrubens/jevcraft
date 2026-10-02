@@ -434,6 +434,7 @@ function fireNear(bot, p, r, { from = -1, to = 2 } = {}) {
 }
 // The flames that make the body "in fire" (inFire): those its box stands in
 // and those beside it at its feet and head, each a punch away.
+const PUNCH_REST_MS = 8000;
 function flamesAbout(bot) {
   const feet = bot.entity?.position?.floored();
   if (!feet || typeof bot.blockAt !== 'function') return [];
@@ -1276,9 +1277,19 @@ function fireWays(bot, task, onAction = () => {}) {
     // and never asked, and it burned from 8.5 to none in ten seconds with
     // the flame a punch away (note 602).
     const flames = flamesAbout(bot);
-    if (flames.length && typeof bot.dig === 'function') ways.put_out_flames = { description: `Punch out the flame${flames.length === 1 ? '' : 's'} the body stands in or beside (${flames.length}), where it stands: a hit puts fire out at once, about a quarter second a flame, no step taken; then burning on up to eight seconds, and another fireball that misses can light the cell again.${lineAtEnd(bot, shot, bot.entity.position.floored())}`,
+    // Punched a moment ago and the body is in fire still: the punch came to
+    // nothing here (more flames than it reaches, or a cell it does not see),
+    // and it rests while another way out is on offer. 25588 (mid-236-bn,
+    // 2026-10-02 13:52:31 to 13:52:45Z), in the fires of one ghast's
+    // fireball, answered put_out_flames three times in seven seconds at 0.46,
+    // 0.42 and 0.38, hurt in fire after each, and burned from 13.9 to none
+    // within a block of where it began (note 886).
+    const punched = bot._punchedFlames;
+    const punchRests = punched && Date.now() - punched.at < PUNCH_REST_MS && (ways.out_of_fire || ways.crouch_out_of_fire || ways.rise_on_block);
+    if (flames.length && typeof bot.dig === 'function' && !punchRests) ways.put_out_flames = { description: `Punch out the flame${flames.length === 1 ? '' : 's'} the body stands in or beside (${flames.length}), where it stands: a hit puts fire out at once, about a quarter second a flame, no step taken; then burning on up to eight seconds, and another fireball that misses can light the cell again.${lineAtEnd(bot, shot, bot.entity.position.floored())}`,
       run: async () => {
         onAction({ action: 'out_of_fire', way: 'put_out_flames', flames: flames.length, health: bot.health });
+        bot._punchedFlames = { at: Date.now() };
         bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
         for (const b of flamesAbout(bot)) { try { await bot.dig(b, true); } catch (err) { if (err.name === 'Cancelled') throw err; } task?.check?.(); }
         // Out, the hurt from before the punch says nothing of the cell now (inFire).

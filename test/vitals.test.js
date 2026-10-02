@@ -965,6 +965,29 @@ test('in a flame on a risen column with nowhere to walk and no block to rise on,
   assert.match(ways.put_out_flames.description, /^Punch out the flame the body stands in or beside \(1\), where it stands: a hit puts fire out at once/);
   assert.equal(await ways.put_out_flames.run(), true, 'out of the fire once the flame is punched');
   assert.deepEqual(dug, ['(-197, 44, -152)']);
+  // With no other way out the punch stays on offer, punched a moment ago or not (note 886).
+  assert.ok(bot._punchedFlames?.at);
+  const again = risenColumnInFire(); again.bot._punchedFlames = { at: Date.now() - 2000 };
+  assert.deepEqual(Object.keys(vitals.fireWays(again.bot, new Task('t'))), ['put_out_flames']);
+});
+
+test('punched a moment ago and in fire still, with a run out on offer: the punch rests (25588, note 886)', () => {
+  const vitals = require('../src/vitals');
+  // A floor of netherrack, the body's cell and the one east of it alight, clear ground beyond.
+  const feet = new Vec3(158, 66, 175);
+  const lit = new Set([`${feet}`, `${feet.offset(1, 0, 0)}`]);
+  const make = () => ({ health: 12.9, food: 20, oxygenLevel: 20, game: { dimension: 'the_nether' }, _inFireAt: Date.now(),
+    entity: { position: new Vec3(158.6, 66, 175.8), metadata: [1], onGround: true, eyeHeight: 1.62, yaw: 0, pitch: 0 },
+    entities: {}, inventory: { items: () => [], slots: {} }, heldItem: null, dig: async () => {},
+    blockAt: p => { const q = p.floored ? p.floored() : p; const n = lit.has(`${q}`) ? 'fire' : q.y < 66 ? 'netherrack' : 'air'; return { name: n, position: q, boundingBox: n === 'netherrack' ? 'block' : 'empty' }; },
+    setControlState() {}, getControlState() { return false; }, clearControlStates() {}, lookAt: async () => {}, look: async () => {} });
+  const fresh = vitals.fireWays(make(), new Task('t'));
+  assert.ok(fresh.put_out_flames && fresh.out_of_fire, Object.keys(fresh).join(','));
+  const bot = make(); bot._punchedFlames = { at: Date.now() - 3000 };
+  const after = vitals.fireWays(bot, new Task('t'));
+  assert.ok(after.out_of_fire && !after.put_out_flames, Object.keys(after).join(','));
+  bot._punchedFlames = { at: Date.now() - 9000 };
+  assert.ok(vitals.fireWays(bot, new Task('t')).put_out_flames, 'offered again after eight seconds');
 });
 
 test('the step aside from under gravel walks on until the head is clear of the block, not to the edge of the cell beside (note 680)', async () => {
