@@ -2884,6 +2884,8 @@ test('the run\'s way is found before the stance is asked, said on the retreat, a
   assert.deepEqual(went, [[0, 64, 14]]);
   // Nowhere to go: said, so the run is not chosen blind.
   bot.findBlocks = () => [];
+  // A later moment: the footing search is kept three seconds (note 859).
+  survival._footingMemo = null;
   await survival.scoutRetreat(new Task('dusk'), danger);
   assert.match(survival.stanceOptions(new Task('dusk'), {}, () => {}, danger, false).retreat.description, /Nowhere to run to: no footing within 20 blocks is four blocks further than here from every mob about/);
 });

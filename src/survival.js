@@ -1699,6 +1699,8 @@ function keepShieldForStance(bot) {
   try { return threats(bot, 6).some(t => wg.guardable(t) && (wg.bladeReaches(t.entity, bot.entity.position) || t.distance <= 5)); } catch (_) { return false; }
 }
 // Seconds between a biter's blows at its reach (a hoglin two, most one).
+// How long escapeFootings' search holds for one cell (note 859).
+const FOOTING_MEMO_MS = 3000;
 const ce_blowEvery = name => require('./combat-estimate').MOBS[name]?.blowEvery || 1;
 // Walked to the middle of a cell, a few ticks at most: where a stance is
 // judged from the middle (a ceiling that keeps a tall walker a block and a
@@ -6333,9 +6335,17 @@ class Survival {
     // past its follow range, or the same creeper interrupts all morning.
     const persistent = danger.some(t => PERSISTENT_THREATS.has(t.entity.name));
     const radius = persistent ? 40 : 20;
-    const footing = bot.findBlocks({ matching: ids, maxDistance: radius, count: 512,
-      useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
-    }).map(p => p.offset(0, 1, 0)).filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p));
+    // The search kept three seconds for the same cell and radius (note
+    // 859): 512 cells within 20 (40 from a creeper) took 650 ms a call, made
+    // at every stance asked, and 25589 (mid-226-az, 2026-10-02 02:47:47 to
+    // 02:48:07Z) stood frozen 2.3, 4.3 and 2.4 seconds in it while a
+    // skeleton at half a block shot it from 16.5 to dead.
+    const feetKey = `${feetCell(bot)}|${radius}`, kept = this._footingMemo;
+    const raw = kept && kept.key === feetKey && Date.now() - kept.at < FOOTING_MEMO_MS ? kept.cells
+      : (this._footingMemo = { key: feetKey, at: Date.now(), cells: bot.findBlocks({ matching: ids, maxDistance: radius, count: 512,
+        useExtraInfo: b => shelter.solid(b) && shelter.replaceable(bot.blockAt(b.position.offset(0, 1, 0))) && shelter.replaceable(bot.blockAt(b.position.offset(0, 2, 0))),
+      }) }).cells;
+    const footing = raw.map(p => p.offset(0, 1, 0)).filter(p => !isSetAside(this, 'escape', p) && !lavaBeside(bot, p));
     // Out of a sculk sensor's hearing where any footing is: mid-230-n ran
     // from a creeper into the deep dark and worked beside a shrieker that
     // called a warden (note 414). Within it only when nothing else is.
