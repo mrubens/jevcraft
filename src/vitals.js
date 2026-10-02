@@ -236,10 +236,10 @@ function breathShort(bot, path) {
   return null;
 }
 
-async function surfaceForAir(bot, task, onAction = () => {}) {
-  onAction({ action: 'surface', oxygen: bot.oxygenLevel });
+async function surfaceForAir(bot, task, onAction = () => {}, { keepOff = null } = {}) {
+  onAction({ action: 'surface', oxygen: bot.oxygenLevel, ...(keepOff ? { keepOff: keepOff.why } : {}) });
   bot.pathfinder.setGoal(null); bot.stopDigging(); bot.clearControlStates();
-  const closed = new Set();
+  const closed = new Set(keepOff?.cells || []);
   // The shortest way within the breath left; with none, within the breath
   // and the drowning after it, the last seconds there are.
   const find = () => airRoute(bot, closed, { budgetS: breathSeconds(bot) }) || airRoute(bot, closed, { budgetS: breathSeconds(bot) + drowningSeconds(bot) });
@@ -1438,14 +1438,51 @@ function headWays(bot, task, onAction = () => {}) {
     run: async () => true };
   return ways;
 }
+// The cells a way to air keeps off with a creeper about (note 851): those
+// nearer it than six blocks, or than the bot is now where that is less, so
+// the way can still leave from where the bot is.
+function creeperKeepOff(bot, creepers) {
+  const here = bot.entity.position, cells = new Set();
+  for (const t of creepers) {
+    const c = t.entity.position, r = Math.max(1.5, Math.min(6, t.distance - 0.5)), f = c.floored(), n = Math.ceil(r);
+    for (let dx = -n; dx <= n; dx++) for (let dy = -n; dy <= n; dy++) for (let dz = -n; dz <= n; dz++) {
+      const q = f.offset(dx, dy, dz);
+      if (q.offset(0.5, 0.5, 0.5).distanceTo(c) < r && !q.equals(here.floored())) cells.add(`${q}`);
+    }
+  }
+  return cells;
+}
 function airWays(bot, task, onAction = () => {}) {
   const ways = {};
   const breath = breathSeconds(bot), left = breath + drowningSeconds(bot);
   const route = airRoute(bot, new Set(), { budgetS: breath }) || airRoute(bot, new Set(), { budgetS: left });
+  // A creeper about (note 851): where each way ends from it, and a way to
+  // air that keeps off it. 25583 (mid-230-bj, 2026-10-02 00:36:36Z), its
+  // head under at 20 health, was offered only the shortest way ("2 cells:
+  // about 0.8 seconds") with a creeper 9.2 off unsaid; the swim ran six
+  // seconds toward it and the blast took it to 5.5, the next to none.
+  let creepers = [];
+  try { creepers = require('./danger').threats(bot, 16).filter(t => t.entity.name === 'creeper'); } catch (_) { creepers = []; }
+  const fromCreeper = r => {
+    if (!creepers.length || !r?.length) return '';
+    const end = r[r.length - 1].offset(0.5, 0, 0.5);
+    return ` It ends ${creepers.map(t => `${round(end.distanceTo(t.entity.position))} blocks from the creeper now ${round(t.distance)} off`).join(' and ')}, which walks at the bot meanwhile.`;
+  };
   if (route) {
     const digs = route.reduce((n, c) => n + (c.digs?.length || 0), 0);
-    ways.swim_to_air = { description: `Swim the shortest way to air, ${route.length} cell${route.length === 1 ? '' : 's'}${digs ? `, digging ${digs} block${digs === 1 ? '' : 's'} on the way` : ''}: about ${round(route.seconds ?? route.length * STEP_S)} seconds, against ${round(breath)} seconds of breath${route.seconds > breath ? ' (past the breath, into the drowning)' : ''}.`,
+    ways.swim_to_air = { description: `Swim the shortest way to air, ${route.length} cell${route.length === 1 ? '' : 's'}${digs ? `, digging ${digs} block${digs === 1 ? '' : 's'} on the way` : ''}: about ${round(route.seconds ?? route.length * STEP_S)} seconds, against ${round(breath)} seconds of breath${route.seconds > breath ? ' (past the breath, into the drowning)' : ''}.${fromCreeper(route)}`,
       run: () => surfaceForAir(bot, task, onAction) };
+  }
+  if (creepers.length) {
+    const cells = creeperKeepOff(bot, creepers);
+    const away = airRoute(bot, new Set(cells), { budgetS: breath }) || airRoute(bot, new Set(cells), { budgetS: left });
+    const end = r => r?.length ? `${r[r.length - 1]}` : null;
+    if (away && end(away) !== end(route)) {
+      const digs = away.reduce((n, c) => n + (c.digs?.length || 0), 0);
+      const why = `keeping off the creeper${creepers.length === 1 ? '' : 's'}`;
+      ways.swim_from_creeper = { description: `Swim to air by a way that comes no nearer the creeper${creepers.length === 1 ? '' : 's'} than six blocks (or than now, where nearer), ${away.length} cell${away.length === 1 ? '' : 's'}${digs ? `, digging ${digs} block${digs === 1 ? '' : 's'} on the way` : ''}: about ${round(away.seconds ?? away.length * STEP_S)} seconds, against ${round(breath)} seconds of breath${away.seconds > breath ? ' (past the breath, into the drowning)' : ''}.${fromCreeper(away)}`,
+        run: () => surfaceForAir(bot, task, onAction, { keepOff: { cells, why } }) };
+    }
   }
   const up = secondsUp(bot);
   if (up != null && up <= left) ways.straight_up = { description: `Swim and dig straight up to air: about ${round(up)} seconds, against ${round(breath)} seconds of breath${up > breath ? ' (past the breath, into the drowning)' : ''}.`,

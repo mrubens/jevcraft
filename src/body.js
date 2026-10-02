@@ -177,6 +177,24 @@ function held(bot, key, now = Date.now()) {
 // from the builders named above. -> { key, by: 'jev'|'rule'|'only', acted }
 // A way whose run returns false did not get the body out; the step goes on
 // as it did when the old rule's way failed.
+// The creepers within sixteen while the body is asked (note 851): when each
+// can be within its three blocks at its own speed, its fuse after that, and
+// its blast beside the bot through the armour worn. Nothing the body's ways
+// do answers a creeper; the encounter is asked after the way is done. 25583
+// (mid-230-bj, 2026-10-02 00:36:36Z), its head under water at 20 health,
+// chose swim_to_air ("2 cells: about 0.8 seconds") told nothing of a creeper
+// 9.2 blocks off; the swim ran six seconds and the blast took it to 5.5.
+function creepersNear(bot) {
+  const ce = require('./combat-estimate');
+  const near = require('./danger').threats(bot, 16).filter(t => t.entity.name === 'creeper');
+  if (!near.length) return null;
+  const worn = ce.armourOf([5, 6, 7, 8].map(s => bot.inventory?.slots?.[s]?.name).filter(Boolean));
+  const blast = Math.round(ce.afterArmour(ce.creeperBlast(2), worn) * 10) / 10;
+  return near.sort((a, b) => a.distance - b.distance).slice(0, 3).map(t => {
+    const lights = Math.max(0, (t.distance - ce.LIGHTS_AT) / ce.blocksPerSecond('creeper'));
+    return `a creeper ${round(t.distance)} blocks off${t.visible === false ? ', out of sight' : ''}: walking at the bot it is within its ${ce.LIGHTS_AT} blocks in about ${round(lights)} seconds and goes off ${ce.FUSE} seconds after, about ${blast} through the armour worn beside the bot`;
+  }).join('; ') + '. None of these ways answers a creeper: the encounter is asked once the way is done.';
+}
 async function answer(bot, task, key, ways, { client = null, goal = null, save = () => {}, facts = {}, context = {}, log = console.log, decide = null } = {}) {
   const keys = Object.keys(ways || {});
   if (!keys.length) return { key: null, by: 'none', acted: false };
@@ -194,6 +212,8 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
   // faces; and a way chosen a moment ago that a blow stopped.
   let blows = null;
   try { blows = require('./vitals').blowsAtBody(bot); } catch (_) { blows = null; }
+  let creepers = null;
+  try { creepers = creepersNear(bot); } catch (_) { creepers = null; }
   const stopped = bot?._bodyWayStopped && t0 - bot._bodyWayStopped.at < STOPPED_SAID_MS ? bot._bodyWayStopped : null;
   let decision, by = 'jev';
   try {
@@ -201,6 +221,7 @@ async function answer(bot, task, key, ways, { client = null, goal = null, save =
       context: { ...context, default: keys[0] },
       state: { condition: key, says: conditionSays(bot, key, facts), health: bot.health, ...lasts(bot, key, facts), ...facts,
         ...(blows ? { atArmsLength: blows.says } : {}),
+        ...(creepers ? { creepersNear: creepers } : {}),
         ...(stopped ? { lastWay: `${stopped.way.replaceAll('_', ' ')} was chosen ${round((t0 - stopped.at) / 1000 + stopped.after)} seconds ago and stopped ${stopped.after} seconds in: ${stopped.why}.` } : {}) },
       interrupt: () => { if (Date.now() - t0 >= ASK_MS) throw Object.assign(new Error(`body_way: no answer in ${ASK_MS / 1000} seconds`), { name: 'CutShort' }); } });
   } catch (err) {

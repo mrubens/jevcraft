@@ -275,6 +275,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `step_aside` | root | step out from under the block into the open cell beside the feet | the head in a block and an open cell beside with a floor and nothing that falls over it |
 | `dig_out` | root | dig the block the head is in, and what falls after it | the head in a block; said with the block and the seconds with the best tool carried |
 | `swim_to_air` | root | swim the shortest way to air, digging what is in the way | under water with a way to air found within the breath and the drowning after it; said with its seconds and digs |
+| `swim_from_creeper` | root | swim to air by a way that keeps off the creeper | under water with a creeper within sixteen and a way to air found that comes no nearer it than six blocks (or than now, where nearer), ending elsewhere than the shortest way; each way said with where it ends from the creeper (src/vitals.js airWays, note 851) |
 | `straight_up` | root | swim and dig straight up to air | under water with the column overhead diggable to air within the breath and the drowning after it; said with its seconds |
 
 ### `turn_priority`
