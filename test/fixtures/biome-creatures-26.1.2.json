@@ -1,0 +1,277 @@
+{
+"badlands": [
+"armadillo",
+"chicken",
+"cow",
+"pig",
+"sheep"
+],
+"bamboo_jungle": [
+"chicken",
+"cow",
+"panda",
+"parrot",
+"pig",
+"sheep"
+],
+"basalt_deltas": [
+"strider"
+],
+"beach": [
+"turtle"
+],
+"birch_forest": [
+"chicken",
+"cow",
+"pig",
+"sheep"
+],
+"cherry_grove": [
+"pig",
+"rabbit",
+"sheep"
+],
+"cold_ocean": [],
+"crimson_forest": [
+"strider"
+],
+"dark_forest": [
+"chicken",
+"cow",
+"pig",
+"sheep"
+],
+"deep_cold_ocean": [],
+"deep_dark": [],
+"deep_frozen_ocean": [
+"polar_bear"
+],
+"deep_lukewarm_ocean": [],
+"deep_ocean": [],
+"desert": [
+"camel",
+"rabbit"
+],
+"dripstone_caves": [],
+"end_barrens": [],
+"end_highlands": [],
+"end_midlands": [],
+"eroded_badlands": [
+"armadillo",
+"chicken",
+"cow",
+"pig",
+"sheep"
+],
+"flower_forest": [
+"chicken",
+"cow",
+"pig",
+"rabbit",
+"sheep"
+],
+"forest": [
+"chicken",
+"cow",
+"pig",
+"sheep",
+"wolf"
+],
+"frozen_ocean": [
+"polar_bear"
+],
+"frozen_peaks": [
+"goat"
+],
+"frozen_river": [],
+"grove": [
+"fox",
+"rabbit",
+"wolf"
+],
+"ice_spikes": [
+"polar_bear",
+"rabbit"
+],
+"jagged_peaks": [
+"goat"
+],
+"jungle": [
+"chicken",
+"cow",
+"panda",
+"parrot",
+"pig",
+"sheep"
+],
+"lukewarm_ocean": [],
+"lush_caves": [],
+"mangrove_swamp": [
+"frog"
+],
+"meadow": [
+"donkey",
+"rabbit",
+"sheep"
+],
+"mushroom_fields": [
+"mooshroom"
+],
+"nether_wastes": [
+"strider"
+],
+"ocean": [],
+"old_growth_birch_forest": [
+"chicken",
+"cow",
+"pig",
+"sheep"
+],
+"old_growth_pine_taiga": [
+"chicken",
+"cow",
+"fox",
+"pig",
+"rabbit",
+"sheep",
+"wolf"
+],
+"old_growth_spruce_taiga": [
+"chicken",
+"cow",
+"fox",
+"pig",
+"rabbit",
+"sheep",
+"wolf"
+],
+"pale_garden": [],
+"plains": [
+"chicken",
+"cow",
+"donkey",
+"horse",
+"pig",
+"sheep"
+],
+"river": [],
+"savanna": [
+"armadillo",
+"chicken",
+"cow",
+"donkey",
+"horse",
+"pig",
+"sheep"
+],
+"savanna_plateau": [
+"armadillo",
+"chicken",
+"cow",
+"donkey",
+"horse",
+"llama",
+"pig",
+"sheep",
+"wolf"
+],
+"small_end_islands": [],
+"snowy_beach": [],
+"snowy_plains": [
+"polar_bear",
+"rabbit"
+],
+"snowy_slopes": [
+"goat",
+"rabbit"
+],
+"snowy_taiga": [
+"chicken",
+"cow",
+"fox",
+"pig",
+"rabbit",
+"sheep",
+"wolf"
+],
+"soul_sand_valley": [
+"strider"
+],
+"sparse_jungle": [
+"chicken",
+"cow",
+"pig",
+"sheep",
+"wolf"
+],
+"stony_peaks": [],
+"stony_shore": [],
+"sunflower_plains": [
+"chicken",
+"cow",
+"donkey",
+"horse",
+"pig",
+"sheep"
+],
+"swamp": [
+"chicken",
+"cow",
+"frog",
+"pig",
+"sheep"
+],
+"taiga": [
+"chicken",
+"cow",
+"fox",
+"pig",
+"rabbit",
+"sheep",
+"wolf"
+],
+"the_end": [],
+"the_void": [],
+"warm_ocean": [],
+"warped_forest": [
+"strider"
+],
+"windswept_forest": [
+"chicken",
+"cow",
+"llama",
+"pig",
+"sheep"
+],
+"windswept_gravelly_hills": [
+"chicken",
+"cow",
+"llama",
+"pig",
+"sheep"
+],
+"windswept_hills": [
+"chicken",
+"cow",
+"llama",
+"pig",
+"sheep"
+],
+"windswept_savanna": [
+"armadillo",
+"chicken",
+"cow",
+"donkey",
+"horse",
+"pig",
+"sheep"
+],
+"wooded_badlands": [
+"armadillo",
+"chicken",
+"cow",
+"pig",
+"sheep",
+"wolf"
+]
+}
