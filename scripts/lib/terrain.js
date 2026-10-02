@@ -308,6 +308,21 @@ const TERRAIN = Object.freeze([
     target: [5334, 69, 5200],
   },
   {
+    name: 'tunnel_home_few_blocks',
+    why: 'Note 915: the cavern drill with ten blocks and no pickaxe (25595 fell ten blocks onto its portal\'s floor with ten netherrack carried): the tunnel stops where its blocks run out, on its span, and does not go off it.',
+    dimension: 'the_nether', seconds: 150,
+    start: [5300.5, 81, 5200.5],
+    kit: [['cobblestone', 10]],
+    build: [
+      'forceload add 5290 5190 5350 5210',
+      'fill 5295 60 5192 5303 90 5208 minecraft:netherrack',
+      'fill 5304 60 5192 5345 90 5208 minecraft:air',
+      'fill 5304 60 5192 5345 68 5208 minecraft:netherrack',
+      'fill 5299 81 5199 5301 83 5201 minecraft:air',
+    ],
+    target: [5334, 69, 5200],
+  },
+  {
     name: 'tunnel_home_no_blocks',
     why: 'Note 906: the tunnel begins six cells inside the rock with a pickaxe and no block in the pack, and comes out over a cavern with its target sixteen across and six below; the blocks its own digging dropped run out, and it goes back along its tunnel for more from the walls.',
     dimension: 'the_nether', seconds: 150,

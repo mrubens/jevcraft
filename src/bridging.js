@@ -413,7 +413,11 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
     bot.clearControlStates?.();
     await sleep(120);
     const okStep = await creepTo(bot, task, a, 1500, ['forward'], { sneak: false, why: 'a step a block down onto the stairs laid, the cell beyond it walled by nothing but stopped at its centre' });
-    if (process.env.TUNNEL_DEBUG) console.log(`[stairs-debug] here ${here} stepped ${okStep} pos ${bot.entity.position}`);
+    // Said in the log each time (note 915): 25595 (2026-10-02 16:12:48Z),
+    // three rods carried, fell ten blocks from its span onto its portal's
+    // floor a second into this step, and nothing recorded what stood under
+    // it; the arena's drills do not show it.
+    { const q = bot.entity.position; console.log(`[stairs] laid step down from ${here} to ${a}: ${okStep ? 'stepped' : 'not reached'}; at (${q.x.toFixed(1)}, ${q.y.toFixed(1)}, ${q.z.toFixed(1)}), under the step ${bot.blockAt(b)?.name}, beyond it ${bot.blockAt(guard)?.name}, health ${Math.round((bot.health ?? 0) * 10) / 10}`); }
     if (!okStep) throw new Error('Could not step down onto the stairs');
     if (bot.entity.position.y < a.y - 0.5) throw new Error('Fell off the stairs down');
     steps++;

@@ -201,6 +201,7 @@ const RUNS = {
     return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2 && !hurts.length, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, hurts, error } };
   },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_home_few_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_to_pool(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_no_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async rise_and_swim_lake(d, bounded) {
