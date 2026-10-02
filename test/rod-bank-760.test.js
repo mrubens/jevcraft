@@ -254,3 +254,19 @@ test('two rods at the cage: asked on its own, out now or stay; once for each cou
   assert.equal(walked, 1);
   assert.equal(goal.rodBank.rods, 3);
 });
+
+test('the walks\' rests do not close the bank while the tunnel home is open; with the tunnel resting too the bank waits, not ended (note 892)', () => {
+  const { nextGameStage } = require('../src/game-progress');
+  const mh = require('../src/mob-hunt'), was = mh.tripHomeClosed;
+  mh.tripHomeClosed = () => ({ says: 'The way back to the portal cannot be reached from here: the staircase toward it rests.' });
+  try {
+    const bot = frameBot(), goal = { ...huntGoal(), rodBank: { at: Date.now() - 60000, rods: 3 } };
+    assert.ok(rb.bankOffer(frameBot(), huntGoal()), 'offered: the tunnel is a way out');
+    assert.deepEqual([nextGameStage(bot, goal).phase, nextGameStage(bot, goal).action], ['bank_rods', 'return_overworld']);
+    require('../src/progress').setAside(goal, 'tunnel_home', 'nether', 'it made no ground', 5 * 60000);
+    assert.notEqual(nextGameStage(bot, goal).phase, 'bank_rods');
+    assert.ok(!goal.rodBank.endedAt, 'the bank waits');
+    const g2 = huntGoal(); require('../src/progress').setAside(g2, 'tunnel_home', 'nether', 'it made no ground', 5 * 60000);
+    assert.equal(rb.bankOffer(frameBot(), g2), null, 'not offered with every way out resting');
+  } finally { mh.tripHomeClosed = was; }
+});

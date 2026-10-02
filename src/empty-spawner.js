@@ -175,7 +175,8 @@ function options(bot, task, goal, save, actions, known, { now = Date.now() } = {
       run: () => { goal.emptySpawner = { ...es, pick: 'heal_first', at: now, cage: P(cage) }; save?.(); } };
   }
   let tripClosed = null; try { tripClosed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { tripClosed = null; }
-  if (actions?.returnOverworld && !f.healable && !tripClosed) {
+  // The trip back is open by the tunnel where the walks rest (note 892).
+  if (actions?.returnOverworld && !f.healable && (!tripClosed || require('./rod-bank').tunnelOpen(goal))) {
     const gp = require('./game-progress');
     const d = gp.portalDistance(bot, goal);
     const t = gp.NETHER_TRIPS;

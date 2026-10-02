@@ -43,6 +43,9 @@ const carriedKept = bot => rs().KEPT.filter(n => rs().countOf(bot, n) > 0).map(n
 const banks = goal => rs().stashes(goal).filter(s => s.dimension === 'overworld' && rs().withContents(s));
 const pending = goal => { const b = goal?.rodBank; return b && !b.doneAt && !b.endedAt ? b : null; };
 
+// The tunnel home (work.js portal_way tunnel_home) is open unless it was set aside for making no ground.
+const tunnelOpen = (goal, now = Date.now()) => !isSetAside(goal, 'tunnel_home', 'nether', now);
+
 function end(goal, why, save) {
   const b = pending(goal);
   if (!b) return;
@@ -77,7 +80,7 @@ function bankOffer(bot, goal, { now = Date.now() } = {}) {
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
   if (!n?.rodsLeft) return null;
   let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
-  if (closed) return null;
+  if (closed && !tunnelOpen(goal, now)) return null;
   const gp = require('./game-progress');
   const d = gp.portalDistance(bot, goal);
   if (d == null) return null;
@@ -196,8 +199,15 @@ function bankStage(bot, goal, dim, now = Date.now()) {
     if (Number.isFinite(d) && (!Number.isFinite(b.best) || d <= b.best - OUT_GAIN)) { b.best = d; b.bestAt = now; }
     if (now - (b.bestAt || b.at) > OUT_MS) { end(goal, `the walk out came no nearer its portal for twenty minutes${Number.isFinite(b.best) ? ` (${b.best} blocks off at its nearest)` : ''}`); return null; }
     if (now - b.at > OUT_MAX_MS) { end(goal, 'the walk out ran past an hour'); return null; }
+    // The walks' rests (a leg, a crossing, the staircase) do not close the
+    // tunnel dug straight at the portal (portal_way's tunnel_home, note
+    // 860): with it open the walk out goes on and the way is asked there;
+    // with it resting too the bank waits, and ends only by its own clock.
+    // 25590 (2026-10-02 14:20Z), three rods carried, had its bank ended "the
+    // way out closed ... the staircase toward it rests", the tunnel not
+    // tried (note 892).
     let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
-    if (closed) { end(goal, `the way out closed: ${closed.says}`); return null; }
+    if (closed && !tunnelOpen(goal, now)) return null;
     return { phase: 'bank_rods', action: 'return_overworld', rods: rs().rodsEquivalent(bot) };
   }
   if (dim !== 'overworld') return null;
@@ -252,4 +262,4 @@ function collectHere(bot, goal) {
   return rs().collectStage(bot, goal);
 }
 
-module.exports = { OUT_MS, OUT_MAX_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };
+module.exports = { tunnelOpen, OUT_MS, OUT_MAX_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };
