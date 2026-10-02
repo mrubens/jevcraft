@@ -230,13 +230,21 @@ const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => LAID.i
 // cannot walk off an edge. Nor is a span laid under fire: with a shooter
 // that can see it, the bot stops rather than stand in the open on one
 // block, and the approach finds another way.
-const SHOOTER_RANGE = 24;
+const SHOOTER_RANGE = 24, FIRE_LANDS = 0.02;
 // Each shooter within its own reach: a ghast's is forty, and mid-230-j laid
 // a span toward its portal with one in sight thirty-nine blocks off, was hit
 // by its fireball and thrown sixteen blocks down (2026-09-27).
 function underFire(bot) {
-  const { threats } = require('./danger'), { shooter } = require('./mob-policy'), { RANGE } = require('./combat-estimate');
-  return threats(bot, 64).find(t => t.visible && shooter(t.entity) && t.distance <= Math.max(SHOOTER_RANGE, RANGE[t.entity.name] || 0));
+  const { threats } = require('./danger'), { shooter } = require('./mob-policy'), ce = require('./combat-estimate'), { RANGE } = ce;
+  // Not one whose shots, by the record's own measure at its distance, land
+  // under one in fifty (note 913): a crossbow piglin eight blocks off and
+  // more (3 bolts landed in 3,143 seconds from 8 to 12 blocks, none in
+  // 13,000 beyond). 25595 (mid-242-rb-fortress-4, 2026-10-02 15:58Z), three
+  // rods carried, had its tunnel home stop at the first open cell, "a piglin
+  // 23 blocks off can see the bot", and stood five minutes with the tunnel
+  // set aside. A shooter with no measure is counted as before.
+  const lands = t => { try { const m = ce.shotModel(t.entity.name, t.distance); return m && Number.isFinite(m.lands) ? m.lands : null; } catch (_) { return null; } };
+  return threats(bot, 64).find(t => t.visible && shooter(t.entity) && t.distance <= Math.max(SHOOTER_RANGE, RANGE[t.entity.name] || 0) && !(lands(t) !== null && lands(t) < FIRE_LANDS));
 }
 // The span's own check, the one it runs before each cell: offered by the
 // same words it would stop with. 25591 (mid-242-jb, 22:19:52Z on

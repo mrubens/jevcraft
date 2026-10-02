@@ -25,13 +25,21 @@ function jevStub(picks) {
   const asked = [];
   return { asked, systemOne: async ({ state, questions }) => { asked.push({ state, options: questions.branch_0.criteria }); const p = picks.find(k => questions.branch_0.criteria[k]) || Object.keys(questions.branch_0.criteria)[0]; return { answers: { branch_0: { choice: p, confidence: 0.9 } } }; } };
 }
-// A piglin in sight 17 blocks off, as 25591 had at 22:19:52Z.
-function piglinInSight(t) {
+// A shooter in sight 17 blocks off. 25591 had a crossbow piglin there at
+// 22:19:52Z; since note 913 a piglin that far is not counted (its bolts
+// landed 3 times in 3,143 seconds from 8 to 12 blocks and never beyond), so
+// the refusal is shown with a skeleton, whose arrows land at seventeen.
+function piglinInSight(t, name = 'skeleton') {
   const danger = require('../src/danger');
   const threats = danger.threats;
-  danger.threats = () => [{ entity: { name: 'piglin', type: 'hostile', heldItem: { name: 'crossbow' }, position: new Vec3(-12, 72, 48) }, distance: 17, visible: true }];
+  danger.threats = () => [{ entity: { name, type: 'hostile', heldItem: { name: name === 'piglin' ? 'crossbow' : 'bow' }, position: new Vec3(-12, 72, 48) }, distance: 17, visible: true }];
   t.after(() => { danger.threats = threats; });
 }
+
+test('a crossbow piglin 17 blocks off in sight does not refuse the span: its bolts hardly land from there (note 913)', t => {
+  piglinInSight(t, 'piglin');
+  assert.equal(require('../src/bridging').spanRefused(spanBot()), null);
+});
 
 test('with a piglin in sight the crossings are not offered: the span refuses its first cell, and the question says so (25591, note 695)', async t => {
   piglinInSight(t);
@@ -39,13 +47,13 @@ test('with a piglin in sight the crossings are not offered: the span refuses its
   const bot = spanBot(), goal = goalOf();
   const client = jevStub(['leg_west', 'walk_to_1']);
   const bridging = require('../src/bridging');
-  assert.match(bridging.spanRefused(bot).says, /^a piglin 17 blocks off can see the bot, and no span is laid while something that shoots can$/);
+  assert.match(bridging.spanRefused(bot).says, /^a skeleton 17 blocks off can see the bot, and no span is laid while something that shoots can$/);
   await netherGather(bot, new Task('work'), goal, () => {}, 'crimson_stem', { navigate: async () => {}, client }).catch(() => {});
   const { options, state } = client.asked[0];
   assert.deepEqual(Object.keys(options).filter(k => /^cross_to/.test(k)), [], 'no crossing offered');
-  assert(state.waysResting.some(w => /^straight across to the .* at \(.*\): not now, a piglin 17 blocks off can see the bot/.test(w)), state.waysResting.join('\n'));
+  assert(state.waysResting.some(w => /^straight across to the .* at \(.*\): not now, a skeleton 17 blocks off can see the bot/.test(w)), state.waysResting.join('\n'));
   // The span itself stops with the same check, in its first cell.
-  await assert.rejects(bridging.bridgeTo(Object.assign(bot, { setControlState() {} }), new Task('work'), new Vec3(-77, 72, 26), { maxBlocks: 4 }), /^Error: Not bridging with a piglin 17 blocks off able to see me$/);
+  await assert.rejects(bridging.bridgeTo(Object.assign(bot, { setControlState() {} }), new Task('work'), new Vec3(-77, 72, 26), { maxBlocks: 4 }), /^Error: Not bridging with a skeleton 17 blocks off able to see me$/);
 });
 
 test('going on without is said, not offered, when no other step of the game is open (25591, note 695)', async () => {
@@ -80,10 +88,10 @@ test('an answer that ends in its first second rests from where it was chosen, an
   const client = jevStub(['cross_to_1', 'floor_to_1']);
   await decide('nether_gather', { client, bot, goal, tree: tree(), state: {} });
   // The crossing ends at once: the work loop notes the failure (work.js noteError).
-  goal.lastFailure = { why: 'Not bridging with a piglin 17 blocks off able to see me', at: Date.now(), by: require('../src/tried').answerNow(goal) };
+  goal.lastFailure = { why: 'Not bridging with a skeleton 17 blocks off able to see me', at: Date.now(), by: require('../src/tried').answerNow(goal) };
   const d = await decide('leave_nether', { client: jevStub(['search_on']), bot, goal, tree: { search_on: opt('Search on.'), wait_here: opt('Wait here.') }, state: {} });
   assert.equal(d.path[0], 'search_on');
-  assert.match(goal.decisions.at(-1).state.failedAtOnce, /^cross to 1 \(nether gather\), chosen [\d.]+ seconds ago, ended [\d.]+ seconds after: Not bridging with a piglin 17 blocks off able to see me; it rests from where it was chosen for 5 minutes$/);
+  assert.match(goal.decisions.at(-1).state.failedAtOnce, /^cross to 1 \(nether gather\), chosen [\d.]+ seconds ago, ended [\d.]+ seconds after: Not bridging with a skeleton 17 blocks off able to see me; it rests from where it was chosen for 5 minutes$/);
   // Asked again, the crossing rests and the others are offered.
   const again = jevStub(['floor_to_1']);
   await decide('nether_gather', { client: again, bot, goal, tree: tree(), state: {} });
@@ -114,14 +122,14 @@ test('the trip home is not offered where it cannot begin, and is said for what i
   const mh = require('../src/mob-hunt');
   const bot = spanBot({ items: [['netherrack', 146], ['iron_sword', 1]] }), goal = goalOf();
   const homeBy = { portal: { x: 150, y: 64, z: 217 }, says: 'the one it came through, not seen since, worked out from its Overworld side as near (150, 217), 247 blocks off' };
-  // A leg toward it made no ground a moment ago, and a piglin can see the bot.
+  // A leg toward it made no ground a moment ago, and a shooter can see the bot (a skeleton: a piglin that far is not counted since note 913).
   require('../src/progress').setAside(goal, 'portal_leg', new Vec3(150, 64, 217), 'a walk toward it made no ground', 120000);
   const danger = require('../src/danger'), threats = danger.threats;
-  danger.threats = () => [{ entity: { name: 'piglin', type: 'hostile', heldItem: { name: 'crossbow' } }, distance: 17, visible: true }];
+  danger.threats = () => [{ entity: { name: 'skeleton', type: 'hostile', heldItem: { name: 'bow' } }, distance: 17, visible: true }];
   try {
     const start = mh.portalTripStart(bot, goal, homeBy);
     assert.equal(start.ok, false);
-    assert.match(start.why, new RegExp(`^the way back to it cannot begin from here: a leg of 32 blocks on foot toward it made no ground a moment ago \\(resting\\); no crossing now: a piglin 17 blocks off can see the bot.*; no stair to it by hand from here \\((more than ${require('../src/tunneling').STAIR_ACROSS} blocks across|no step toward it gains)\\), and no pickaxe is carried or can be made from what is carried$`));
+    assert.match(start.why, new RegExp(`^the way back to it cannot begin from here: a leg of 32 blocks on foot toward it made no ground a moment ago \\(resting\\); no crossing now: a skeleton 17 blocks off can see the bot.*; no stair to it by hand from here \\((more than ${require('../src/tunneling').STAIR_ACROSS} blocks across|no step toward it gains)\\), and no pickaxe is carried or can be made from what is carried$`));
   } finally { danger.threats = threats; }
   // With the leg not resting the trip can begin.
   assert.equal(mh.portalTripStart(bot, goalOf(), homeBy).ok, true);
