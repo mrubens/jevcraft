@@ -53,7 +53,7 @@ function chestThere(bot, goal) {
   if (rs().countOf(bot, 'chest')) return { how: 'carried', seconds: 1, says: 'the chest carried, set down by the Overworld portal (about a second)' };
   const m = rs().chestMaking(bot);
   if (m) return { how: 'wood', seconds: 8, says: `a chest made there from the wood carried (8 planks${m.table ? ' at the crafting table carried' : ', and a crafting table of 4 more'}, about 8 seconds)` };
-  return { how: 'tree', says: 'a chest made there from a tree\'s wood (2 logs for the chest and 1 for a crafting table; no chest or wood is carried, and where the nearest tree stands on that side is not known from here)' };
+  return { how: 'tree', says: 'a chest made on the Overworld side from a tree\'s wood there (2 logs for the chest and 1 for a crafting table; no chest or wood is carried, and where the nearest tree on the Overworld side stands is not known from here)' };
 }
 
 // Whether bank_rods is on offer here, and what it is: in the Nether in
@@ -84,7 +84,7 @@ function offerSays(offer) {
   const walk = offer.paceSays ? offer.paceSays.trim() : `About ${Math.max(1, offer.seconds)} seconds at a walk.`;
   const minutes = Math.max(1, Math.round((2 * offer.seconds + (offer.chest.seconds || 0)) / 60));
   let staying = ''; try { staying = ` Staying with them: ${require('./rod-risk').recordSays(offer.rods)}`; } catch (_) { staying = ''; }
-  return `Bank the rods got so far: walk back to the portal ${offer.d} blocks off with the ${what}, go through, put them in ${offer.chest.says}, and come back through for the ${plural(offer.left, 'rod')} still needed. ${walk} There and back is about ${minutes} minute${minutes === 1 ? '' : 's'}${offer.chest.how === 'tree' ? ' and the tree\'s time' : ''}, no rod meanwhile. The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out once the rods carried and banked together are what the goal wants, so a death after loses only the rods got since.${staying}`;
+  return `Bank the rods got so far: walk back to the portal ${offer.d} blocks off with the ${what}, go through the portal, put them in ${offer.chest.says}, and come back through for the ${plural(offer.left, 'rod')} still needed. ${walk} There and back is about ${minutes} minute${minutes === 1 ? '' : 's'}${offer.chest.how === 'tree' ? ' and the time the wood takes on the Overworld side' : ''}, no rod meanwhile. The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out once the rods carried and banked together are what the goal wants, so a death after loses only the rods got since.${staying}`;
 }
 
 // The option as a tree entry: taken, the intention is kept (bankStage) and
@@ -121,6 +121,39 @@ function bankOnArrival(bot, goal, dim, now = Date.now()) {
   setAside(goal, 'rod_bank', 'arrival', 'banked on coming out with rods', 30 * 60000);
   bot.chat?.(`Out with ${plural(rods, 'blaze rod')}: into a chest here first, ${n.rodsLeft} more to get.`);
   return true;
+}
+
+// The rods carried, asked on their own (rods_now, note 871): take them out
+// now, or stay for more. bank_rods was one of up to fifteen answers at the
+// cage (empty_spawner, hunt_target) and was taken at 0.17 where a box was at
+// 0.33; on 2026-10-02, of five lives that carried two or more rods, four
+// died with them (4, 3, 2 and 2 rods) and the one that left carried its two
+// out by a tunnel dug to its portal (note 860). Asked once for each count of
+// rods carried, and again after ten minutes; with the way out closed or
+// resting it is not asked.
+const TODAY = Object.freeze({ day: '2026-10-02 (11:45Z to 13:00Z)', lives: 5, died: 4, lost: [4, 3, 2, 2], out: 1, outRods: 2 });
+const ASK_AGAIN_MS = 10 * 60000;
+async function askBank(bot, task, goal, save, actions, client, { now = Date.now() } = {}) {
+  if (!client) return null;
+  const offer = bankOffer(bot, goal, { now });
+  if (!offer) return null;
+  const a = goal.rodsNowAsked;
+  if (a && a.rods >= offer.rods && now - a.at < ASK_AGAIN_MS) return null;
+  goal.rodsNowAsked = { rods: offer.rods, at: now }; save?.();
+  const opt = option(bot, task, goal, save, actions, offer);
+  let staying = ''; try { staying = require('./rod-risk').recordSays(offer.rods); } catch (_) { staying = ''; }
+  const today = `On ${TODAY.day}, ${TODAY.lives} lives carried 2 or more rods at a fortress: ${TODAY.died} stayed and died with them (${TODAY.lost.join(', ')} rods lost), ${TODAY.out} left and carried its ${TODAY.outRods} out.`;
+  const tree = {
+    bank_now: { description: `${opt.description} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
+    stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here. ${staying} ${today} Asked again when another rod is carried, or in ten minutes.` },
+  };
+  let decision;
+  try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food } }); }
+  catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] not asked: ${String(err.message || err).slice(0, 900)}`); return null; }
+  if (decision.stale) return null;
+  if (decision.path?.at(-1) !== 'bank_now') return 'stay';
+  await tree.bank_now.run();
+  return 'banked';
 }
 
 // The bank under way, for the ladder: through the portal in the Nether, the
@@ -186,4 +219,4 @@ function collectHere(bot, goal) {
   return rs().collectStage(bot, goal);
 }
 
-module.exports = { OUT_MS, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };
+module.exports = { OUT_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };

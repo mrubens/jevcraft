@@ -883,6 +883,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // With Jev unreachable the nearest candidate is fought: it passed the
     // same checks, and standing in a blaze's sight waiting for an answer is
     // the worse choice.
+    // The rods carried asked on their own first (rod-bank.js askBank, note 871).
+    if (state.entity === 'blaze' && await require('./rod-bank').askBank(bot, task, goal, save, actions, client) === 'banked') return true;
     const interrupt = () => { if (!canBegin(bot, handler)) throw Object.assign(new Error('Combat decision interrupted'), { name: 'CombatInterrupted' }); };
     try { decision = await decide('hunt_target', { client, bot, task, goal, save, tree, state: snapshot, interrupt,
       isFresh: () => canBegin(bot, handler) && bot.health >= snapshot.health - 4 && candidates.every(e => !positions.has(e.id) ||

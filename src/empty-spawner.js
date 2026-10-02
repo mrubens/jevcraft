@@ -456,6 +456,8 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   if (tree.stash_rods) state.rodsCarried = tree.stash_rods.rodsCarried;
   // The trip home not offered for its walk cannot begin from here (note 706).
   if (!tree.go_back && (bot.food ?? 20) < 18) { try { const c = require('./mob-hunt').tripHomeClosed(bot, goal); if (c) state.tripHome = c.says; } catch (_) { /* none */ } }
+  // The rods carried asked on their own first (rod-bank.js askBank, note 871).
+  if (await require('./rod-bank').askBank(bot, task, goal, save, actions, client, { now }) === 'banked') return true;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
   const decision = await require('./decisions').decide('empty_spawner', { client, bot, task, goal, save, tree, state, target: P(known.cage) });
   if (decision.stale) return true;

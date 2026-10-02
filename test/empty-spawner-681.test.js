@@ -42,6 +42,8 @@ test('the recorded frame: beside the cage at 3.8 health, hunger 15, nothing to e
   const asked = [];
   const client = { model: 'x', systemOne: async req => { asked.push(req); const q = Object.values(req.questions)[0]; return { answers: { branch_0: { choice: 'go_back', confidence: 0.8 } }, q }; } };
   let back = 0, waited = 0;
+  // The rods carried were asked about already (rods_now, note 871): this is the cage's own question.
+  goal.rodsNowAsked = { rods: 99, at: Date.now() };
   const done = await es.atSpawner(bot, task(), goal, () => {}, { client, returnOverworld: async () => { back++; }, waitAtSpawner: async () => { waited++; } });
   assert.equal(done, true);
   assert.equal(asked.length, 1);

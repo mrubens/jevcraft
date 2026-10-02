@@ -8,7 +8,7 @@ One rule holds for every question about playing the game (`src/decisions/unchang
 
 Three more rules from note 749 (`src/decisions/loops.js`, `src/decisions/keys.js`, `src/intention.js`). A key names its thing: every dynamic option says what its key names (`names`: by name, by where it is, by entity id), never its place in the list, so what came of an option is said on the same thing at the next asking. A question asked round and round goes up: its askings each within a minute of the one before are its spell, said from the third (`spellSoFar`: how many, what was answered, how far the bot walked and how far it is from where they began, whether anything new is carried, how often none of the options was good); when none good was Jev's likeliest at three of its last five askings, or six askings over ninety seconds or more have left the bot within 48 blocks of where they began with nothing new carried, the answers it gave rest from there and the question above is asked with that said (not the stance, the body's way, the shield or the routing, which are said only). And a trip holds: an answer to a question about the plan whose option walks to a target, or whose catalogue entry says where it goes (`trip`), is the intention until it arrives, is done, fails, the dimension changes, health falls a blow's worth, a walk brings nothing for three minutes or ten minutes pass; its own question asked again offers only it. A rung set aside holds the same way (`src/decisions/asides.js`): an option that would take it back (`takeBack` on its node) is not offered for five minutes unless the bot is 16 blocks from where it was set aside, carries a new kind of thing or its health band changes (`asideHolds`). An answer thrown away as stale that keeps on with what is under way is kept, and from the second stale answer in a row within 30 seconds a question is watched a second first and not sent while its facts are still changing.
 
-101 questions: 51 decision trees and 50 batched questions.
+102 questions: 52 decision trees and 50 batched questions.
 
 ## Batches
 
@@ -742,6 +742,22 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `hunt_enderman` (trip: the enderman in reach) | root | hunt the enderman in reach now for its pearl, the rods after | an enderman within 24 blocks, in the Nether or the Overworld; said with its distance, how many are within 24, the fight priced from the game's numbers at the health and kit carried as the hunt fights it (struck first while calm, the shield raised between swings at the arena's measured rate), that about half drop a pearl, the arena's record of one at a time, that none was ever struck in the trials, and this run's record of the way |
 | `warped_forest` (trip: the warped forest) | root | go to the warped forest known and hunt its endermen, the rods after | a warped forest known within 512 blocks, its walk and its hunt not resting; said with its distance, its distance from the fortress known, the measured Nether pace, the arena's forest drills, the trials' forest hunts, and this run's record of the way |
 | `barter_gold` | root | barter the gold carried with the piglins in reach, the rods after | gold to throw once a gold piece is worn, and a piglin within 32 (barterReady); said with the gold, the pearls it makes at the measured nine ingots a pearl, the rounds, the trials' one barter, and this run's record of the way |
+
+### `rods_now`
+
+**Two or more blaze rods are carried in the Nether and more are needed: take them out through the portal to a chest now and come back for the rest, or stay and hunt on with them in the pack?**
+
+- When: At a spawner or with blazes to hunt (before empty_spawner and hunt_target), two or more rods carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).
+- Decision tree, choice; stakes medium; ledger kind `strategy`
+- Bar: none
+- Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
+- Options built in: src/rod-bank.js (askBank, bankOffer, option), src/rod-risk.js (recordSays)
+- Nothing left to try: asks `rung_progress` next up, with this one's failure said
+
+| Option | Level | What it is | Offered when |
+| --- | --- | --- | --- |
+| `bank_now` (trip: the portal) | root | out through the portal with the rods to a chest on the Overworld side, then back for the rest | always here; said with the walk and its record, the chest, the round trip, and the day's record of lives that stayed and that left |
+| `stay_for_more` | root | stay and hunt on with the rods in the pack | always here; said with what a death takes and the record of lives that carried as many |
 
 ## work
 

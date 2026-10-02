@@ -78,8 +78,8 @@ test('bank_rods in the rods stage: offered with 2 or more rods carried, rods sti
   assert.ok(offer, 'offered');
   assert.deepEqual([offer.rods, offer.left, offer.d, offer.chest.how], [4, 3, 40, 'tree']);
   const said = rb.offerSays(offer);
-  assert.match(said, /^Bank the rods got so far: walk back to the portal 40 blocks off with the 4 blaze rods, go through, put them in a chest made there from a tree's wood \(2 logs for the chest and 1 for a crafting table; no chest or wood is carried/);
-  assert.match(said, /come back through for the 3 rods still needed\. About 9 seconds at a walk\. There and back is about 1 minute and the tree's time, no rod meanwhile\./);
+  assert.match(said, /^Bank the rods got so far: walk back to the portal 40 blocks off with the 4 blaze rods, go through the portal, put them in a chest made on the Overworld side from a tree's wood there \(2 logs for the chest and 1 for a crafting table; no chest or wood is carried/);
+  assert.match(said, /come back through for the 3 rods still needed\. About 9 seconds at a walk\. There and back is about 1 minute and the time the wood takes on the Overworld side, no rod meanwhile\./);
   assert.match(said, /once in the chest they are kept through any death after, counted as held, and taken out once the rods carried and banked together are what the goal wants, so a death after loses only the rods got since\. Staying with them: In the trials of 2026-09-29T23:00Z to 2026-09-30T17:00Z, 19 lives carried 4 or more rods in the Nether: 17 died with them, none carried them out \(2 ended with the trial\)\.$/);
   // The chest carried, or the wood for one, is said so.
   assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 4, chest: 1 } }), huntGoal()).chest.how, 'carried');
@@ -210,4 +210,25 @@ test('out of the Nether with rods for another reason, the bank begins on arrival
   // In the Nether, or with no rod carried: nothing.
   assert.equal(rb.bankOnArrival(frameBot({ inventory: { ...BARE, blaze_rod: 2 } }), huntGoal(), 'nether'), false);
   assert.equal(rb.bankOnArrival(frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0 }, dimension: 'overworld' }), arrived(), 'overworld'), false);
+});
+
+test('two rods at the cage: asked on its own, out now or stay; once for each count of rods (rods_now, note 871)', async () => {
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 2 } });
+  const goal = huntGoal();
+  const asked = [], answers = ['stay_for_more', 'bank_now'];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: answers.shift(), confidence: 0.9 } } }; } };
+  let walked = 0;
+  const actions = { returnOverworld: async () => { walked++; } };
+  assert.equal(await rb.askBank(bot, task, goal, () => {}, actions, client), 'stay');
+  assert.deepEqual(Object.keys(asked[0]).filter(k => k !== 'none_good').sort(), ['bank_now', 'stay_for_more']);
+  assert.match(asked[0].bank_now, /^Bank the rods got so far: walk back to the portal .*4 stayed and died with them \(4, 3, 2, 2 rods lost\), 1 left and carried its 2 out\./);
+  assert.match(asked[0].stay_for_more, /^Stay and hunt on for the 5 rods still needed with the 2 rods in the pack: .*every rod carried is lost with a death here/);
+  // The same two rods: not asked again.
+  assert.equal(await rb.askBank(bot, task, goal, () => {}, actions, client), null);
+  assert.equal(asked.length, 1);
+  // A third rod: asked again; out now begins the bank and the walk.
+  const three = frameBot({ inventory: { ...BARE, blaze_rod: 3 } });
+  assert.equal(await rb.askBank(three, task, goal, () => {}, actions, client), 'banked');
+  assert.equal(walked, 1);
+  assert.equal(goal.rodBank.rods, 3);
 });

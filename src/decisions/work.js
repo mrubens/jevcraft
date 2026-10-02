@@ -486,6 +486,19 @@ define({
   instructions: workInstructions('The bot is in the Nether on the way to the dragon and needs both blaze rods and ender pearls; the ladder\'s order takes the rods first. Choose whether to go on with the rods or to take a way to the pearls that is real from here first. Each way says what it shares with the rods\' trip (the fortress, the forest, the gold carried) and its record: the trials\' (what the bot did there, not a promise), the arena\'s drills, the measured barter, and this run\'s own. A way with no record in the trials is untried there, not good or bad.'),
 });
 
+// The rods carried at a fortress: out now, or stay for more (note 871).
+define({
+  id: 'rods_now', area: 'strategy', parent: 'rung_progress', kind: 'strategy', primitive: 'choice', stakes: 'medium', tree: true,
+  question: 'Two or more blaze rods are carried in the Nether and more are needed: take them out through the portal to a chest now and come back for the rest, or stay and hunt on with them in the pack?',
+  trigger: 'At a spawner or with blazes to hunt (before empty_spawner and hunt_target), two or more rods carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).',
+  source: 'src/rod-bank.js (askBank, bankOffer, option), src/rod-risk.js (recordSays)',
+  options: [
+    { key: 'bank_now', trip: 'the portal', label: 'out through the portal with the rods to a chest on the Overworld side, then back for the rest', when: 'always here; said with the walk and its record, the chest, the round trip, and the day\'s record of lives that stayed and that left', level: 'root' },
+    { key: 'stay_for_more', label: 'stay and hunt on with the rods in the pack', when: 'always here; said with what a death takes and the record of lives that carried as many', level: 'root' },
+  ],
+  instructions: workInstructions('The bot carries blaze rods at a fortress and needs more. A death drops every rod carried; a chest past the portal keeps them. Choose whether to take them out now or stay. Each option says its record.'),
+});
+
 // Upkeep between steps: a spare pickaxe, a wood reserve, a block reserve.
 define({
   id: 'upkeep', area: 'resources', parent: null, kind: 'upkeep', primitive: 'choice', stakes: 'low', tree: true,
