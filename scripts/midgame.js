@@ -141,8 +141,15 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // The nether portal ... cannot be reached from here" with six rods carried
   // at full health, the most of any life on record. Its three hours still
   // end it, and a death or being stranded.
+  // Nor once a rod has been got in the trial at all (note 901): banked, the
+  // rods are in a chest and none is carried, and the trial that put them
+  // there is the one that goes back for more. mid-243-kc-fortress-3 (25594,
+  // 2026-10-02 14:44:31Z) banked two blaze rods past its portal and was cut
+  // fifty seconds later as "loop: flipping collect_nearby_resource <->
+  // tunnel", gathering wood by its chest.
   const rodsNow = rodsCarriedNow(a.frames);
-  const loops = rodsNow >= 1 ? [] : loopsSeen;
+  const rodsGot = Math.max(rodsNow, Number(best?.rods) || 0);
+  const loops = rodsGot >= 1 ? [] : loopsSeen;
   const minute = t => Math.round((t - from) / 60000);
   const windowMs = to - from;
   // Time with no bot running (quit for a restart and not started again, a
@@ -168,7 +175,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
     ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)]))))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
-    ...(rodsNow >= 1 && loopsSeen.length ? { loopsWithRodsCarried: { rods: rodsNow, loops: loopsSeen } } : {}),
+    ...(rodsGot >= 1 && loopsSeen.length ? { loopsWithRodsCarried: { rods: rodsNow, got: rodsGot, loops: loopsSeen } } : {}),
     playedMinutes: Math.round(playedMs / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
     absences: gone.map(g => ({ atMinute: minute(g.from), minutes: Math.round((g.to - g.from) / 60000) })),
     // Said apart, never a reason: the spells, and whether Jev is down now
