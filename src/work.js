@@ -6207,7 +6207,7 @@ async function portalStep(bot, task, goal, save, client) {
           goal.step = { action: 'tunnel', target: { ...near }, toward: 'lava_for_portal', distance: Math.round(d), straight: true }; save();
           const before = bot.entity.position.distanceTo(at);
           let why = null;
-          try { await require('./bridging').tunnelStraight(bot, task, at, { maxSteps: 64, near: 4, navigate }); }
+          try { await require('./bridging').tunnelStraight(bot, task, at, { maxSteps: 64, near: 4, navigate, down: true }); }
           catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 160); }
           const made = before - bot.entity.position.distanceTo(at);
           if (made >= 4) { tries.best = Math.min(tries.best, bot.entity.position.distanceTo(at)); tries.stale = 0; save(); return false; }

@@ -386,6 +386,22 @@ const TERRAIN = Object.freeze([
     target: [5743, 71, 5700],
   },
   {
+    name: 'tunnel_to_pool_below',
+    why: 'Note 922: in the Overworld, a lava pool in a pocket of its own eighteen blocks straight under the bot, two across, with a water pocket beside the way down: the tunnel comes down a stair turned on itself and stops on rock over the pool, no lava or water opened and none touched.',
+    dimension: 'overworld', seconds: 180,
+    start: [5500.5, 68, 5500.5],
+    kit: [['cobblestone', 16], ['iron_pickaxe', 1], ['bucket', 1]],
+    build: [
+      'forceload add 5488 5488 5514 5514',
+      'fill 5490 40 5490 5512 76 5512 minecraft:stone',
+      'fill 5499 68 5499 5501 70 5501 minecraft:air',
+      'fill 5496 58 5499 5497 61 5501 minecraft:water',
+      'fill 5500 50 5498 5504 50 5502 minecraft:lava',
+      'fill 5500 51 5498 5504 53 5502 minecraft:air',
+    ],
+    target: [5502, 50, 5500], yWithin: 3,
+  },
+  {
     name: 'tunnel_home_few_blocks',
     why: 'Note 915: the cavern drill with ten blocks and no pickaxe (25595 fell ten blocks onto its portal\'s floor with ten netherrack carried): the tunnel stops where its blocks run out, on its span, and does not go off it.',
     dimension: 'the_nether', seconds: 150,

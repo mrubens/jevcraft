@@ -198,7 +198,7 @@ const RUNS = {
     try { r = await require('../src/bridging').tunnelStraight(bot, bounded, vec(d.target), { maxSteps: 120, navigate, down: d.down !== false }); } catch (err) { error = err.message; }
     const p = bot.entity.position, across = Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5);
     clearInterval(iv); bot.removeListener('health', onHp);
-    return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2 && !hurts.length, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, hurts, error } };
+    return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= (d.yWithin || 2) && !hurts.length, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, hurts, error } };
   },
   async ghast_fireball(d, bounded) {
     const ghast = require('../src/ghast');
@@ -242,6 +242,7 @@ const RUNS = {
     return { pass: !watch.died && !hurts.length && f.struck >= 1 && f.landed === 0, detail: { came, struck: f.struck, landed: f.landed, ghastKilled: seenGhast && !ghastAlive(), moved: Math.round(bot.entity.position.distanceTo(from) * 10) / 10, seconds: Math.round((Date.now() - started) / 1000), health: bot.health, hurts } };
   },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_to_pool_below(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_from_above(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_from_span(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_few_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
