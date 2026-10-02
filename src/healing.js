@@ -77,6 +77,21 @@ function foodSources(bot, goal) {
       if (s) found.push({ kind: 'herd', animal: kind, count: s.count, points: (s.count || 1) * (MEAT_POINTS[kind] || 6), distance: s.distance, at: { x: s.x, y: s.y, z: s.z }, sighting: s, says: s.says });
     }
   });
+  // Food left cooking in a furnace (note 857): the batch the smelt step
+  // keeps (goal.smelting), in this dimension. 25583 (2026-10-02 01:29 to
+  // 01:33Z) left 4 mutton cooking at (44, 84, 124), walked on to a fortress
+  // a hundred blocks off, and at 9.1 health and hunger 17 was told "nothing
+  // to eat" and of hoglins 190 blocks off, never of the mutton.
+  guard(() => {
+    const sm = goal?.smelting;
+    const food = sm?.item && bot.registry?.foodsByName?.[sm.item];
+    const dim = v => String(v || 'overworld').replace(/^minecraft:/, '');
+    if (!food || !sm.position || !here || dim(sm.dimension) !== dim(bot.game?.dimension)) return;
+    const at = sm.position, d = Math.round(here.distanceTo(new (require('vec3').Vec3)(at.x + 0.5, at.y, at.z + 0.5)));
+    const count = sm.count || 1, done = sm.startedAt && Date.now() - sm.startedAt >= count * 10000;
+    found.push({ kind: 'furnace', distance: d, at: { x: at.x, y: at.y, z: at.z }, points: count * food.foodPoints,
+      says: `${count} ${words(sm.item)} ${done ? 'cooked and waiting' : 'cooking'} in the furnace the bot left at (${at.x}, ${at.y}, ${at.z}), ${d} blocks off (${count * food.foodPoints} hunger)` });
+  });
   if (goal && overworld) {
     guard(() => {
       const v = require('./villages').villageFood(bot, goal);
