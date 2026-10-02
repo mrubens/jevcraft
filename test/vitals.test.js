@@ -147,6 +147,20 @@ test('eating uses safe food and verifies restored hunger', async () => {
   assert.equal(await maintainVitals(bot, new Task('test', 'full')), false);
 });
 
+test('a bite the server never finished is a meal cut, said and not thrown (note 909)', async () => {
+  const bot = { food: 12, health: 18, entity: {}, heldItem: { name: 'apple' }, registry: { foodsByName: { apple: { effectiveQuality: 6.4 } } },
+    inventory: { items: () => [{ name: 'apple', count: 1 }] },
+    equip: async () => {}, consume: async () => { throw new Error('Promise timed out.'); }, deactivateItem: () => {}, };
+  const lines = []; const log = console.log; console.log = (...a) => lines.push(a.join(' '));
+  let out;
+  try { out = await maintainVitals(bot, new Task('test', 'cut bite')); } finally { console.log = log; }
+  assert.equal(out, false);
+  assert.match(lines.join('\n'), /\[vitals\] the bite of apple was cut before it finished \(hunger 12\): nothing eaten/);
+  // Another failure of the bite is still thrown.
+  bot.consume = async () => { throw new Error('Food is full'); };
+  await assert.rejects(maintainVitals(bot, new Task('test', 'other')), /Food is full/);
+});
+
 // Note 717: this routine eat did not mark bot._meal, so the shot reflex's
 // shield raise or its release-on-lower (combat.js, note 701) could collide
 // with the bite mid-consume and the food never rose ("Eating did not

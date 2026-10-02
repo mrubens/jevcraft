@@ -1646,7 +1646,20 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     // The hand can empty between the equip and the bite (a slot resync);
     // mineflayer's consume reads the held item's name without looking.
     if (bot.heldItem === null) throw new Error('The food was not in hand to eat');
-    await Promise.race([bot.consume(), cancelled]);
+    // A bite the server never finished (the hand was taken by something else
+    // mid-bite: a shield raised by the stance that came after, a hit's
+    // knock) comes back from the library as "Promise timed out" after two
+    // and a half seconds: the meal was cut, nothing eaten, and it is said
+    // as that, not thrown as the work's error. Thrown, three of them read
+    // as a loop: mid-242-ng-fortress-4 (25595, 2026-10-02 15:17Z) was ended
+    // "loop: 3× Promise timed out." six minutes in, and mid-242-dc-nether-1
+    // logged it 159 times (note 909).
+    try { await Promise.race([bot.consume(), cancelled]); }
+    catch (err) {
+      if (!/Promise timed out/.test(String(err?.message || ''))) throw err;
+      console.log(`[vitals] the bite of ${food.name} was cut before it finished (hunger ${bot.food}): nothing eaten`);
+      return false;
+    }
     await until(task, () => bot.food > before, 3000, 'Eating did not restore hunger');
   } finally { clearInterval(watcher); bot.deactivateItem(); if (bot._meal === meal) bot._meal = null; }
   return true;
