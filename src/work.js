@@ -4883,6 +4883,14 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
 async function stairsOrWay(bot, task, goal, save, p, where, walk) {
   const { restingWay } = require('./tunneling');
   if (restingWay(goal, pos(p), bot.entity.position)) return portalWay(bot, task, goal, save, p, where, { walk });
+  // With rods carried in the Nether and the tunnel home open, the way is
+  // asked at once, the tunnel among its answers, not after the staircase
+  // has run its rounds: 25591 (mid-242-wb-fortress-3, 2026-10-02 14:40 to
+  // 14:51Z), a rod on its bank's walk, made three blocks in two minutes by
+  // the staircase ("return to mine", "tunnel", a block a round), stalled ten
+  // minutes on it, and only then was asked and took tunnel_home at 0.61
+  // (note 902). In the arena the tunnel made 41 blocks in 26 seconds.
+  if (where === 'nether' && require('./walk-out').rodsCarried(bot) && !isSetAside(goal, 'tunnel_home', 'nether')) return portalWay(bot, task, goal, save, p, where, { walk });
   // In the Nether, a staircase that first wants a pickaxe from wood not
   // carried is a gathering's search away from the portal: the ways toward
   // the portal itself are asked beside it (portal_way's dig_across and

@@ -200,6 +200,19 @@ test('with rods and the way in stopped, portal_way is asked with what a death co
   for (const k of ['around_left', 'around_right']) assert.match(options[k], /Fresh ground, not the way the bot came in: with 7 blaze rods carried, a fall or lava on it loses every one\.$/);
 });
 
+test('with rods and the walks failed, the way is asked at once, the tunnel home among its answers, before any staircase (note 902)', async () => {
+  const { returnFromNether } = require('../src/work');
+  const { bot, goal } = walkBackBot({ fail: true });
+  // The way in rests from a stop before: the legs on foot are what fail now.
+  require('../src/progress').setAside(goal, 'way_in', { x: 0, y: 70, z: 0 }, 'the way back along it stopped', 120000);
+  const task = new Task('back'), asked = [];
+  task.opportunityClient = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'around_left', confidence: 0.9 } } }; } };
+  await returnFromNether(bot, task, goal, () => {}).catch(() => {});
+  assert.equal(asked.length, 1, 'portal_way asked');
+  assert.ok(asked[0].tunnel_home, Object.keys(asked[0]).join(','));
+  assert.notEqual(goal.step?.action, 'tunnel', 'no staircase round first');
+});
+
 test('without rods the walk to the portal is as before: no way in walked (note 762)', async () => {
   const { returnFromNether } = require('../src/work');
   const { bot, goal, legs } = walkBackBot({ rods: 0 });
