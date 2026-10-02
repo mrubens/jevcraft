@@ -410,10 +410,10 @@ function biteCost(bot, danger, seconds) {
   const biters = danger.filter(t => t.entity.name !== 'blaze' && !shooter(t.entity));
   if (!biters.length || !(seconds > 0)) return { damage: 0, biters: [] };
   const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
-  const mobs = ce.fightEstimate({ threats: biters.map(t => ({ name: t.entity.name, distance: t.distance, shoots: false, visible: t.visible !== false, id: t.entity.id })),
+  const mobs = ce.fightEstimate({ threats: biters.map(t => ({ name: t.entity.name, distance: t.distance, shoots: false, visible: !!t.nearStrike || t.visible !== false, id: t.entity.id })),
     armour: worn, weapon: defenseWeapon(bot)?.name || null, health: bot.health ?? 20, shield: shieldCarried(bot) }).mobs;
   const cost = ce.stanceCost({ mobs, seconds, fight: { atOnce: 1 }, reaches: () => true, effectsTo: bot.health ?? 20 });
-  return { damage: round(cost.damage), biters: biters.map(t => ({ name: t.entity.name, distance: round(t.distance) })), seconds };
+  return { damage: round(cost.damage), biters: biters.map(t => ({ name: t.entity.name, distance: round(t.distance), ...(t.nearStrike ? { nearStrike: true } : {}) })), seconds };
 }
 // `upTo` kills and the run ends there, asked again (charge_nearest). With
 // no shield there is nothing to stop behind for a volley: the walk goes on
@@ -564,7 +564,7 @@ function closeInSays(c, hp, { breaking = false } = {}) {
   // Fire resistance on the body (note 656), counted in the sum.
   if (c.fireproofFor > 0) parts.push(` Fire resistance is on the body, about ${Math.round(c.fireproofFor)} seconds left: until it ends a fireball that lands does nothing (no hurt, no push, no fire), and only the swing of a blaze within two blocks hurts; ${c.fireproofFor >= c.seconds ? 'it outlasts this run' : `the rest of the run after it is counted as without it`}.`);
   const reach = c.reachable < c.blazes ? ` (${c.reachable} of the ${c.blazes} over ground the sword reaches from; the rest shoot on throughout)` : '';
-  if (c.bite?.damage > 0) parts.push(` ${c.bite.biters.map(b => `The ${words(b.name)} ${b.distance} blocks off`).join('; ')} ${c.bite.biters.length === 1 ? 'gets' : 'get'} to the bot meanwhile and ${c.bite.biters.length === 1 ? 'strikes' : 'strike'} until the sword, turning to ${c.bite.biters.length === 1 ? 'it' : 'each'} first, has killed ${c.bite.biters.length === 1 ? 'it' : 'them'}: about ${c.bite.damage} of the damage below, the wither and the like counted.`);
+  if (c.bite?.damage > 0) parts.push(` ${c.bite.biters.map(b => `The ${words(b.name)} ${b.distance} blocks ${b.nearStrike ? 'from where the walk goes' : 'off'}`).join('; ')} ${c.bite.biters.length === 1 ? 'gets' : 'get'} to the bot meanwhile and ${c.bite.biters.length === 1 ? 'strikes' : 'strike'} until the sword, turning to ${c.bite.biters.length === 1 ? 'it' : 'each'} first, has killed ${c.bite.biters.length === 1 ? 'it' : 'them'}: about ${c.bite.damage} of the damage below, the wither and the like counted.`);
   parts.push(c.deathAt != null
     ? ` About ${c.damage} damage by then, from ${round(hp)} health: the health runs out at about ${c.deathAt} seconds in, after about ${c.kills} of them killed${reach}.`
     : c.upTo === 1 && c.kills === 1 ? ` About ${c.damage} damage over the ${c.seconds} seconds to that one killed, from ${round(hp)} health, ${round(Math.max(0, hp - c.damage))} after.`
@@ -1412,11 +1412,21 @@ function behindAtStrike(bot, target, others) {
 }
 // With `at`, the cell a charge strikes from: the blazes within sixteen of
 // it as well, out to the forty-eight a blaze fires from (note 849).
+// And the biters within sixteen of that cell (note 856), each priced from
+// where the fight goes: its distance the nearer of the bot's and the
+// cell's. 25583 (mid-230, 2026-10-02 01:33:49Z), a rod carried, took
+// close_in at 9.1 on "about 0 damage" with only a blaze 16.4 off in its
+// list; the wither skeleton by the fortress's blazes, 17.8 off when last in
+// a list, met the walk, and two blows ended it.
 function withinSixteen(bot, danger, { at = null } = {}) {
   try {
     const stand = at ? at.offset(0.5, 0, 0.5) : null;
-    const more = require('./danger').threats(bot, stand ? 48 : 16).filter(t => t.entity.name === 'blaze' && (t.distance <= 16 || t.entity.position.distanceTo(stand) <= 16));
-    return [...danger, ...more.filter(t => !danger.some(d => d.entity?.id === t.entity.id))];
+    const { shooter } = require('./combat');
+    const near = t => t.distance <= 16 || (stand && t.entity.position.distanceTo(stand) <= 16);
+    const more = require('./danger').threats(bot, stand ? 48 : 16)
+      .filter(t => !danger.some(d => d.entity?.id === t.entity.id) && near(t) && (t.entity.name === 'blaze' || (stand && !shooter(t.entity) && t.entity.name !== 'creeper')))
+      .map(t => t.entity.name === 'blaze' || !stand ? t : { ...t, distance: Math.min(t.distance, t.entity.position.distanceTo(stand)), nearStrike: true });
+    return [...danger, ...more];
   } catch (_) { return danger; }
 }
 function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, holds = [], need = 0, of = '', goal = null } = {}) {
@@ -1530,7 +1540,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     // Priced with every blaze within sixteen, seen or not, as the hunt's
     // is: the stance's own list has only those in sight, and the walk in
     // puts the bot in the others' sight (note 606's rule, closeInCost into).
-    const priced = withinSixteen(bot, danger);
+    const priced = withinSixteen(bot, danger, { at: strikeCells(bot, first.entity)[0] || null });
     const sum = closeInCost(bot, priced);
     const how = shield
       ? `walk in on the nearest blaze ground reaches (${round(first.distance)} blocks off, about ${seconds(walk)} of walking) while their volleys rest, stop and face each volley behind the shield as it comes, strike each in reach, and pick up the rods between volleys`
