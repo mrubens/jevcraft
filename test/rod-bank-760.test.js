@@ -188,3 +188,26 @@ test('at the crossing, no chest carried and the wood for one: top_up_chest asks 
   assert.equal(await crossingKitReady(atPortal({ chest: 1 }), new Task('win'), { kind: 'win' }, () => {}, client), true);
   assert.equal(asked, null);
 });
+
+test('out of the Nether with rods for another reason, the bank begins on arrival; once a trip (note 868)', () => {
+  const gp = require('../src/game-progress');
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 2 }, dimension: 'overworld' });
+  const said = []; bot.chat = m => said.push(m);
+  const arrived = () => { const g = huntGoal(); g.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 }; return g; };
+  // Long in the Overworld with rods (no arrival on record): nothing begun.
+  assert.equal(rb.bankOnArrival(bot, huntGoal(), 'overworld'), false);
+  const goal = arrived();
+  assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), true);
+  assert.equal(goal.rodBank.rods, 2);
+  assert.equal(goal.rodBank.onArrival, true);
+  assert.match(said[0], /^Out with 2 blaze rods: into a chest here first, 5 more to get\.$/);
+  // The ladder's next stage is the bank's: the chest made, or the store.
+  assert.equal(gp.nextGameStage(bot, goal).phase, 'bank_rods');
+  // Under way already, or begun once this trip: not begun again.
+  assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), false);
+  goal.rodBank.endedAt = Date.now();
+  assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), false, 'not again within half an hour');
+  // In the Nether, or with no rod carried: nothing.
+  assert.equal(rb.bankOnArrival(frameBot({ inventory: { ...BARE, blaze_rod: 2 } }), huntGoal(), 'nether'), false);
+  assert.equal(rb.bankOnArrival(frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0 }, dimension: 'overworld' }), arrived(), 'overworld'), false);
+});

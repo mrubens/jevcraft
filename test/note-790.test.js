@@ -119,6 +119,8 @@ test('on the way to the Nether an enderman in reach is a way to the pearls asked
     const goal = { kind: 'win', request: 'beat the game', from: 'TestPlayer', survival: {}, landmarks: [], portals: [{ x: 0, y: 70, z: 0, dimension: 'overworld' }, { x: 2, y: 64, z: 2, dimension: 'nether' }] };
     observeProgress(bot, goal);
     goal.gameProgress.milestones.nether_entered = { at: Date.now() - 1e6, dimension: 'nether' };
+    // Long back in the Overworld: its rods were not just carried out (note 868's bank is for an arrival).
+    goal.gameProgress.here.at = Date.now() - 1e6;
     return { bot, goal };
   };
   const quiet = make({});

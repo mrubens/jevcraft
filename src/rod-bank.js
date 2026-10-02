@@ -99,6 +99,30 @@ function option(bot, task, goal, save, actions, offer) {
     } };
 }
 
+// Out of the Nether with rods carried for another reason (food, a rung
+// turned to), and rods still wanted: they are banked on arrival, as if
+// bank_rods had been chosen (note 868). 25597 (mid-241-cc-nether-1,
+// 2026-10-02 12:37Z) came out for food with two rods, the first out in a
+// day, and went after gold, a bed and oak logs at 9 health with both in its
+// pack: a death there loses them, and the chest is seconds beside the
+// portal. Once a trip out: a bank that fails is not begun again for half an
+// hour. With every rod the goal wants carried or banked, nothing is banked.
+const ARRIVAL_MS = 5 * 60000;
+function bankOnArrival(bot, goal, dim, now = Date.now()) {
+  if (dim !== 'overworld' || !bot?.entity || bot.game?.gameMode !== 'survival' || pending(goal)) return false;
+  // On arrival: the dimension became the Overworld within the last few minutes (game-progress.js here).
+  const here = goal?.gameProgress?.here;
+  if (!(here?.dimension === 'overworld' && now - here.at < ARRIVAL_MS)) return false;
+  const rods = rs().rodsEquivalent(bot);
+  if (!(rods >= 1) || isSetAside(goal, 'rod_bank', 'arrival', now) || isSetAside(goal, 'rung', 'bank_rods', now)) return false;
+  let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
+  if (!n?.rodsLeft) return false;
+  goal.rodBank = { at: now, rods, from: P(bot.entity.position), chest: chestThere(bot, goal).how, onArrival: true };
+  setAside(goal, 'rod_bank', 'arrival', 'banked on coming out with rods', 30 * 60000);
+  bot.chat?.(`Out with ${plural(rods, 'blaze rod')}: into a chest here first, ${n.rodsLeft} more to get.`);
+  return true;
+}
+
 // The bank under way, for the ladder: through the portal in the Nether, the
 // chest's making or the store on the Overworld side. Ended (and said in the
 // record) when there is nothing left to bank, the walk out has run past
@@ -162,4 +186,4 @@ function collectHere(bot, goal) {
   return rs().collectStage(bot, goal);
 }
 
-module.exports = { OUT_MS, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };
+module.exports = { OUT_MS, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };

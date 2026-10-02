@@ -878,6 +878,7 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // Rods banked (rod-bank.js, note 760): out through the portal and into a
   // chest on the Overworld side while that is under way; taken out there once
   // the rods carried and banked are what the goal wants.
+  require('./rod-bank').bankOnArrival(bot, goal, where);
   const bank = require('./rod-bank').bankStage(bot, goal, where);
   if (bank) return bank;
   const banked = require('./rod-bank').collectHere(bot, goal);
