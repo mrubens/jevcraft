@@ -229,6 +229,14 @@ test('portal_way offers the_way_in with its cells, spans and edges said, where r
   assert.match(says, /^Back the way it came in: 61 cells it stood on before, from the nearest, 0 blocks off, to the portal it came in by, about 60 blocks, walked by the pathfinder in legs of 12 cells along them\. 0 of them have lava round them and 61 are beside a drop into lava or of four or more; walked before, crouched on the edges\.$/);
 });
 
+test('a way kept that does not reach the portal says where it ends against it: away from it is said (note 942)', () => {
+  const portal = { x: 3, y: 42, z: 8 };
+  assert.equal(walkOut.endSays({ reaches: true, start: { x: 0, y: 0, z: 0 } }, portal, { x: 0, y: 0, z: 400 }), '');
+  assert.equal(walkOut.endSays({ reaches: false, start: { x: -183, y: 57, z: 519 } }, portal, { x: -170, y: 56, z: 450 }),
+    ' Where it ends is 544 blocks from the portal, against 475 from here: the walk goes away from the portal, and the rest of the way home is asked from there.');
+  assert.equal(walkOut.endSays({ reaches: false, start: { x: 0, y: 57, z: 100 } }, portal, { x: -170, y: 56, z: 450 }), ' Where it ends is 92 blocks from the portal, against 475 from here.');
+});
+
 test('with rods the portal made for is the one the way in began at, where remembered: 25588 made for one 114 blocks off with its way in from another (note 762)', async () => {
   const { returnFromNether } = require('../src/work');
   const { bot, goal, legs } = walkBackBot();

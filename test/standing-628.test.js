@@ -132,3 +132,15 @@ test('the unstuck move that bridges a gap in the floor is a move its question de
   const d = await decide('unstuck_move', { client, bot: null, goal: {}, tree });
   assert.deepEqual(d.path, ['bridge_north']);
 });
+
+test('one pickaxe carried and the pockets make another: a spare is offered at the crossing, said with the uses left (note 943)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const one = scene({ carried: { stone_pickaxe: 0 } });
+  const log = {};
+  await crossingKitReady(one, new Task('win'), {}, () => {}, answering('cross_now', log));
+  assert.match(log.offered.top_up_spare_pickaxe, /^Make a spare pickaxe first, from what is carried: \w+ pickaxe, a few seconds at a table\. The one carried, iron pickaxe, has 250 uses left; a tunnel through netherrack digs about two blocks a block across/);
+  // Two carried: no spare offered.
+  const two = {};
+  await crossingKitReady(scene(), new Task('win'), {}, () => {}, answering('cross_now', two));
+  assert.equal(two.offered?.top_up_spare_pickaxe, undefined);
+});

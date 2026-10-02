@@ -119,12 +119,13 @@ test('the crossing question no longer offers the food, blocks or pickaxe: it say
   let asked = null;
   const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'cross_now', confidence: 0.7 } } }; } };
   assert.equal(await crossingKitReady(bot, new Task('win'), { kind: 'win' }, () => {}, client), true);
-  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_gold']);
+  // A spare made from the pockets in seconds is offered beside them (note 943).
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_gold', 'top_up_spare_pickaxe']);
   assert.match(asked.cross_now, /Left from the ladder's kit steps: food 0 of 80, blocks 10 of 128, pickaxe 1 of 2\./);
-  // Only the rungs' items short: not asked at all.
+  // Only the rungs' items short: asked only for the spare the pockets make (note 943).
   asked = null;
   assert.equal(await crossingKitReady(atPortal({ cobblestone: 10 }), new Task('win'), { kind: 'win' }, () => {}, client), true);
-  assert.equal(asked, null);
+  assert.deepEqual(Object.keys(asked).sort(), ['cross_now', 'top_up_spare_pickaxe']);
 });
 
 test('cross_now weighs the hunger crossed at against the food carried, not just a bare count left from the rungs', async () => {

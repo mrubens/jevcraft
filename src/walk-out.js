@@ -192,6 +192,13 @@ function rodsSays(bot) {
     `While rods are carried the walk takes no drop of more than ${ROD_DROP_MAX}, no cell with lava beside the feet or the head, and off the way in no cell beside a drop into lava or at the lava's edge.`;
 }
 // The way back said, for portal_way's the_way_in.
+// Where a way kept that does not reach the portal ends, against the portal
+// (note 942). -> words, or '' where it reaches the portal.
+function endSays(way, portal, here) {
+  if (way?.reaches || !way?.start || !portal || !here) return '';
+  const endOff = Math.round(Math.hypot(way.start.x - portal.x, way.start.z - portal.z)), nowOff = Math.round(Math.hypot(here.x - portal.x, here.z - portal.z));
+  return endOff >= nowOff ? ` Where it ends is ${endOff} blocks from the portal, against ${nowOff} from here: the walk goes away from the portal, and the rest of the way home is asked from there.` : ` Where it ends is ${endOff} blocks from the portal, against ${nowOff} from here.`;
+}
 function wayBackSays(bot, way, facts) {
   const where = way.reaches ? 'to the portal it came in by' : `to where the way kept begins, (${way.start.x}, ${way.start.y}, ${way.start.z})`;
   return `Back the way it came in: ${facts.cells} cells it stood on before${facts.spans ? `, ${facts.spans} of them on its own laid blocks` : ''}, from the nearest, ${way.off} block${way.off === 1 ? '' : 's'} off, ${where}, about ${facts.blocks} blocks, walked by the pathfinder in legs of ${LEG_CELLS} cells along them. ` +
@@ -227,4 +234,4 @@ async function walkBack(bot, task, goal, portal, navigate) {
   return { tried: true, ok: true, walked, reached: way.reaches };
 }
 
-module.exports = { rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };
+module.exports = { endSays, rodsCarried, noteCell, noteWayIn, wayInPlugin, wayInOf, onWayIn, backTrail, wayFacts, rodsSays, wayBackSays, walkBack, feetOf, ROD_DROP_MAX, ROD_COST, LEG_CELLS, WAY_NEAR, WAY_IN_MOST };

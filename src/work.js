@@ -4894,7 +4894,16 @@ async function stairsOrWay(bot, task, goal, save, p, where, walk) {
   // the staircase ("return to mine", "tunnel", a block a round), stalled ten
   // minutes on it, and only then was asked and took tunnel_home at 0.61
   // (note 902). In the arena the tunnel made 41 blocks in 26 seconds.
-  if (where === 'nether' && require('./walk-out').rodsCarried(bot) && !isSetAside(goal, 'tunnel_home', 'nether')) return portalWay(bot, task, goal, save, p, where, { walk });
+  // With no pickaxe carried, the pickaxe first is a way of its own beside the
+  // tunnel by hand (note 941): 25595 (mid-243-ia-fortress-5, 2026-10-02
+  // 20:41 to 21:12Z), two rods carried 543 blocks from its portal with no
+  // pickaxe, was offered the tunnel at about 5 seconds a block by hand (45
+  // minutes of it) and the walks round, and never the pickaxe; thirty
+  // minutes into the bank it was no nearer than 195.
+  if (where === 'nether' && require('./walk-out').rodsCarried(bot) && !isSetAside(goal, 'tunnel_home', 'nether')) {
+    const pw = !(goal.portalPickaxeChosen?.at > Date.now() - PORTAL_PICKAXE_HOLD_MS) ? stairPickaxeWanted(bot, goal, pos(p)) : null;
+    return portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted: pw?.gather ? pw : null });
+  }
   // In the Nether, a staircase that first wants a pickaxe from wood not
   // carried is a gathering's search away from the portal: the ways toward
   // the portal itself are asked beside it (portal_way's dig_across and
@@ -5049,13 +5058,27 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
       if (seeing.length) inLine = ` Where it begins, before the rock: ${seeing.map(t => { const hit = bot._hurtBy?.[t.entity.name]; return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off has a line to the bot${hit && now - hit < 30000 ? ` (its kind hit it ${Math.max(1, Math.round((now - hit) / 1000))} seconds ago)` : ''}`; }).join('; ')}: the first blocks are dug in that line, about ${per} seconds a block.`;
     } catch (_) { inLine = ''; }
     const blocksLaid = require('./bridging').blocksCarried(bot);
-    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(stretch * per)} seconds for ${stretch} blocks of the ${across} to the portal, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
+    // The pickaxe uses it takes against those left (note 943): two cells dug
+    // for each block across (more on the steps), each a use while a pickaxe
+    // lasts. On 2026-10-02 the share of Nether time with no pickaxe carried
+    // rose from 4% (12Z) to 23% (19Z) and 31% (21Z, part hour) as the
+    // tunnels home and their quarries came in; 25595, 25597 and 25598 were
+    // in the Nether with none at 21:15Z, two of them carrying rods.
+    let usesSays = '';
+    try {
+      const picks = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name)).map(i => ({ name: i.name, usesLeft: Math.max(0, (bot.registry?.itemsByName?.[i.name]?.maxDurability ?? 0) - (i.durabilityUsed || 0)) })), left = picks.reduce((n, q) => n + q.usesLeft, 0);
+      const want = stretch * 2 + Math.abs(dy);
+      if (picks.length) usesSays = ` This go digs about ${want} blocks, a pickaxe use each while one lasts; the pickaxes carried have ${left} uses left (${picks.map(q => `${q.name.replaceAll('_', ' ')} ${q.usesLeft}`).join(', ')})${want >= left ? `: the last of them wears out on the way, the rest of the tunnel is dug by hand, and after it nothing in the Nether is mined until another pickaxe is made, from wood its forests have and nowhere else` : ''}.`;
+    } catch (_) { usesSays = ''; }
+    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(stretch * per)} seconds for ${stretch} blocks of the ${across} to the portal, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${usesSays}${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
   }
   if (pickaxeWanted) {
     let fetch = null;
     try { fetch = await require('./nether-wood').fetchStemsOffer(bot, task, goal); } catch (_) { fetch = null; }
     const wood = fetch ? await fetch.describe() : 'No stem is known and none is on offer to fetch: the wood is looked for by the gathering\'s legs.';
-    tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the staircase to the portal, from wood not carried, then the staircase: the gathering goes where the wood is, not toward the portal. ${wood}` };
+    // Against the tunnel by hand, said with both paces (note 941).
+    const handMin = Math.round(Math.hypot(target.x - here.x, target.z - here.z) * TUNNEL_SECONDS.hand / 60), pickMin = Math.max(1, Math.round(Math.hypot(target.x - here.x, target.z - here.z) * TUNNEL_SECONDS.pickaxe / 60));
+    tree.pickaxe_first = { description: `Get ${pickaxeWanted.item.replaceAll('_', ' ')} first for the way to the portal, from wood not carried, then the way on: the gathering goes where the wood is, not toward the portal. ${wood} With it the tunnel home is about ${pickMin} minute${pickMin === 1 ? '' : 's'} for the ${Math.round(Math.hypot(target.x - here.x, target.z - here.z))} blocks across, against about ${handMin} by hand (the live tunnels' paces).` };
   }
   // With blaze rods carried (note 762): back the way it came in, where a way
   // is kept from near here. Every other way is fresh ground, said with what
@@ -5063,7 +5086,15 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   const walkOut = require('./walk-out'), rods = where === 'nether' ? walkOut.rodsCarried(bot) : 0;
   if (rods) {
     const way = walkOut.backTrail(walkOut.wayInOf(bot, goal), here, p);
-    if (way?.cells.length > 1 && !isSetAside(goal, 'way_in', target)) tree.the_way_in = { description: walkOut.wayBackSays(bot, way, walkOut.wayFacts(bot, way)) };
+    if (way?.cells.length > 1 && !isSetAside(goal, 'way_in', target)) {
+      // Where it ends against the portal (note 942): a way kept that does not
+      // reach the portal ends where the trail began, which may be farther
+      // from it than here. 25595 (mid-243-ia-fortress-5, 2026-10-02 21:06Z),
+      // two rods carried, took the way in "to where the way kept begins,
+      // (-183, 57, 519)", 543 blocks from its portal against 476 from where
+      // it stood, and walked away from home.
+      tree.the_way_in = { description: walkOut.wayBackSays(bot, way, walkOut.wayFacts(bot, way)) + walkOut.endSays(way, target, here) };
+    }
     const fresh = ` Fresh ground, not the way the bot came in: with ${rods} blaze rod${rods === 1 ? '' : 's'} carried, a fall or lava on it loses ${rods === 1 ? 'it' : 'every one'}.`;
     for (const k of ['climb_here', 'around_left', 'around_right', 'floor_way', 'blocks_then_cross', 'dig_across']) if (tree[k]) tree[k].description += fresh;
   }
@@ -7944,6 +7975,13 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // nothing, and 25589 (about 21:20Z) crossed into the Nether with no
   // pickaxe. Said on cross_now and offered as its own top-up.
   const noPickaxe = !bot.inventory.items().some(i => /_pickaxe$/.test(i.name));
+  // A spare beside the one carried, where the pockets make it (note 943):
+  // the tunnels home dig two blocks a block across, and on 2026-10-02 the
+  // share of Nether time with no pickaxe carried rose to 23% (19Z) and 31%
+  // (21Z part hour), bots with rods among them.
+  const picksNow = bot.inventory.items().filter(i => /_pickaxe$/.test(i.name));
+  let spareMade = null;
+  if (picksNow.reduce((n, i) => n + (i.count || 1), 0) === 1) { try { const pf = require('./mob-hunt').bestMakeable(bot); spareMade = pf && !pf.none ? pf.item : null; } catch (_) { spareMade = null; } }
   // A kit item left to the ladder's step that is now empty is counted here,
   // and its step offered back (note 767c): 25589 (2026-10-01 01:19-01:25Z)
   // answered cross_now seven times while "food 6 of 80" became "0 of 80",
@@ -7970,7 +8008,7 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   // make the question worth asking, as the cauldron and the chest do.
   let entry = [];
   try { entry = require('./entry-kit').offers(bot); } catch (_) { entry = []; }
-  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !empty.length && !entry.length) { delete goal.preparingNether; return true; }
+  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !spareMade && !empty.length && !entry.length) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -8015,6 +8053,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     let budget = null; try { budget = require('./pickaxe-budget').pickaxeBudget(bot, goal); } catch (_) { budget = null; }
     tree.cross_now.description += ` No pickaxe is carried: in the Nether nothing can be mined, netherrack for a bridge or a pillar included, and a pickaxe is made there only from wood and stone carried or the Nether's stems.`;
     tree.top_up_pickaxe = { description: `Make a pickaxe first (none carried): ${pickMade.replaceAll('_', ' ')}, from what is carried${budget?.says ? `. ${budget.says}` : ''}.` };
+  }
+  if (spareMade) {
+    const one = picksNow[0], uses = Math.max(0, (bot.registry?.itemsByName?.[one.name]?.maxDurability ?? 0) - (one.durabilityUsed || 0));
+    tree.top_up_spare_pickaxe = { description: `Make a spare pickaxe first, from what is carried: ${spareMade.replaceAll('_', ' ')}, a few seconds at a table. The one carried, ${one.name.replaceAll('_', ' ')}, has ${uses} uses left; a tunnel through netherrack digs about two blocks a block across, a use each, and in the Nether a pickaxe is made again only from wood its forests have. On 2026-10-02 the bots in the Nether carried no pickaxe for 12% of their time there, 23% from 19Z.` };
   }
   if (cauldron) tree.top_up_cauldron = { description: `Make the cauldron set for the Nether's fire first: ${countOf(bot, 'cauldron') ? '' : `craft a cauldron (7 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, at a crafting table${countOf(bot, 'crafting_table') ? ' carried' : ' made first'})`}${!countOf(bot, 'cauldron') && !countOf(bot, 'water_bucket') ? ' and ' : ''}${countOf(bot, 'water_bucket') ? '' : 'fill a bucket with water (an empty bucket carried, water to be found)'}. ${cauldron.says}` };
   if (chest) tree.top_up_chest = { description: `Make a chest from the wood carried first and carry it in (8 planks${countOf(bot, 'crafting_table') ? ' at the crafting table carried' : ', and a crafting table of 4 more'}, a few seconds, one slot).${chest.says.replace(/^Chest: none carried\./, '')}` };
@@ -8070,6 +8112,10 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     else if (pick === 'top_up_pickaxe') {
       goal.step = { action: 'pickaxe_for_nether', item: pickMade }; save();
       await acquireStep(bot, task, pickMade, countOf(bot, pickMade) + 1, goal, save);
+    }
+    else if (pick === 'top_up_spare_pickaxe') {
+      goal.step = { action: 'pickaxe_for_nether', item: spareMade, spare: true }; save();
+      await acquireStep(bot, task, spareMade, countOf(bot, spareMade) + 1, goal, save);
     }
     else if (offer) {
       // One piece a pass; the next asks again with what is carried then.

@@ -1098,8 +1098,8 @@ test('the food rung says where food lies against the frame begun, and offers foo
   const { Task } = require('../src/skills');
   // The ways to food are the food rung's question now, before the portal (work.js kitFoodStep, note 673).
   const { crossingKitReady, kitFoodStep } = require('../src/work');
-  // A spare shield and the armour carried: nothing else on offer at the crossing (note 791).
-  const { bot, w } = castingBot({ cobblestone: 130, iron_pickaxe: 1, golden_boots: 1, oak_log: 8, crafting_table: 1, chest: 1, shield: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1 });
+  // A spare shield and the armour carried, and a spare pickaxe (note 943): nothing else on offer at the crossing (note 791).
+  const { bot, w } = castingBot({ cobblestone: 130, iron_pickaxe: 2, golden_boots: 1, oak_log: 8, crafting_table: 1, chest: 1, shield: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1 });
   bot.findBlocks = () => []; bot.health = 20; bot.food = 6;
   bot.game.difficulty = 'normal';
   const frame = newFrame('x', new Vec3(8, 64, 23));

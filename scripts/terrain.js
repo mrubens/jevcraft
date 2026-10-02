@@ -313,6 +313,7 @@ const RUNS = {
   async tunnel_home_over_cave(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_to_pool(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_no_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_home_soul_sand(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async rise_and_swim_lake(d, bounded) {
     const u = require('../src/unstuck');
     const plan = u.risePlan(u.liveView(bot), bot.entity.position.floored());

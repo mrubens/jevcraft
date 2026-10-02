@@ -54,7 +54,7 @@ test('the way back with no pickaxe asks toward the portal beside the wood: dig_a
   const o = asked[0];
   assert(o, 'asked');
   assert.match(o.dig_across, /^Straight at the portal now at this height, the rock in the way dug by hand \(no pickaxe carried\)/);
-  assert.match(o.pickaxe_first, /^Get stone pickaxe first for the staircase to the portal, from wood not carried, then the staircase: the gathering goes where the wood is, not toward the portal\./);
+  assert.match(o.pickaxe_first, /^Get stone pickaxe first for the way to the portal, from wood not carried, then the way on: the gathering goes where the wood is, not toward the portal\..* With it the tunnel home is about \d+ minutes? for the \d+ blocks across, against about \d+ by hand/);
 });
 
 test('portal_way asked on the trip home carries the trip on: its ways toward the portal are offered, not all withheld (25584\'s return_for_wood)', async () => {

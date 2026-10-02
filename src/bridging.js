@@ -18,6 +18,14 @@ const NATURAL = /^(netherrack|nether_gold_ore|nether_quartz_ore|crimson_nylium|w
 const passable = b => !b || b.boundingBox === 'empty';
 const solid = b => b?.boundingBox === 'block';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// The cell the feet stand in. Soul sand is two pixels short of a block: a
+// bot on it stands at y 74.875 over the soul sand at 74, and its position
+// floored is the soul sand's own cell (note 944). The tunnel laid with soul
+// sand took that for its cell and went round 120 steps at the cavern's lip.
+const standing = bot => {
+  const p = bot.entity.position;
+  return new Vec3(Math.floor(p.x), Math.floor(p.y + (bot.entity.onGround !== false ? 0.2 : 0)), Math.floor(p.z));
+};
 // What a span is laid with from the pack: the rock kinds first, then the
 // nether and warped wart blocks, full blocks that hold where they are put
 // and do not burn (shelter.js counts them for walls and cover since note
@@ -33,7 +41,14 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // "0 blocks carried" by every price of the way back, and crafted its stems
 // into planks for cover. The oak family burns beside lava and is left out.
 const { NETHER_WOOD } = require('./shelter');
-const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', ...NETHER_WOOD];
+// Soul soil and soul sand too, after the wart blocks (note 944): full blocks
+// a bare hand digs and that do not burn, laid by the pillars already
+// (pillar-recovery.js SCAFFOLD) and gathered as blocks (block-stock.js
+// HAND_BLOCKS). 25598 (mid-242-jc-nether-1, 2026-10-02 20:20 to 21:15Z)
+// carried 83 soul sand and no pickaxe; its tunnel home stopped five times
+// at the first open cell, "no blocks carried to lay the tunnel's floor",
+// 338 to 421 blocks from its portal, and it went back to the search.
+const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', 'soul_soil', 'soul_sand', ...NETHER_WOOD];
 // In the Nether the kinds a ghast's fireball does not break go down first
 // (note 904): its blast takes netherrack (blast resistance 0.4) and dirt
 // out from under the bot and leaves cobblestone, the stones, blackstone (6)
@@ -101,7 +116,7 @@ function floorDropsAt(bot, changed, from) {
   return floorDropDeadly(h, bot.health ?? 20) ? h : null;
 }
 function guardFloor(bot, changed, what) {
-  const feet = require('./terrain').restingCell(bot) || bot.entity.position.floored();
+  const feet = require('./terrain').restingCell(bot) || standing(bot);
   const from = feet.offset(0, -1, 0);
   const h = floorDropsAt(bot, changed, from);
   if (h) throw new Error(`Not ${what} at ${changed}: ${require('./terrain').floorDropSays(h, from)}`);
@@ -157,7 +172,7 @@ function surveyCrossing(bot, target, { cells = 32, blocks = null, tool, from = n
   const carried = blocks ?? blocksCarried(bot);
   // From the block the bot rests on, where the span begins (stepOntoFooting),
   // or `from`, the feet's cell it will stand in (a pillar's top, note 694).
-  const start = from || require('./terrain').restingCell(bot) || bot.entity.position.floored();
+  const start = from || require('./terrain').restingCell(bot) || standing(bot);
   const flat = p => Math.hypot(target.x - p.x, target.z - p.z);
   const pusher = spanPusher(bot);
   const out = { cells: 0, dig: 0, bridge: 0, overLava: 0, wallBlocks: 0, walledFor: pusher ? { name: pusher.name, distance: Math.round(pusher.distance) } : null, carried, noPickaxe: !require('./block-stock').pickaxeCarried(bot) && !tool, stoppedBy: null, from: flat(start), end: start, gain: 0, digSeconds: 0 };
@@ -286,7 +301,7 @@ async function span(bot, task, target, maxBlocks, maxSteps, { wall = false } = {
     task.check();
     const refused = spanRefused(bot);
     if (refused) throw new Error(`Not bridging with a ${refused.fire.entity.name} ${Math.round(refused.fire.distance)} blocks off able to see me`);
-    const here = bot.entity.position.floored();
+    const here = standing(bot);
     const step = stepToward(here, target);
     if (!step) return placed;
     const next = here.plus(step);
@@ -356,7 +371,7 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
   const molten = b => /lava|water|fire/.test(b?.name || '');
   while (steps < maxSteps) {
     task.check();
-    const here = bot.entity.position.floored();
+    const here = standing(bot);
     if (here.y - 1 <= target.y) return steps;
     const dx = target.x - here.x, dz = target.z - here.z;
     // One way the whole flight: turned back, it would step into its own dug cells.
@@ -551,7 +566,7 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
     task.check();
     // From the cell over the block the body rests on (terrain.js restingCell):
     // at an edge the feet's own cell has air under it (note 864).
-    let here = bot.entity.position.floored();
+    let here = standing(bot);
     if (!solid(bot.blockAt(here.offset(0, -1, 0)))) {
       let rest = null; try { rest = require('./terrain').restingCell(bot); } catch (_) { rest = null; }
       if (rest && solid(bot.blockAt(rest.offset(0, -1, 0)))) { here = rest; await creepTo(bot, task, here, 1200); }
@@ -575,7 +590,7 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
       for (const { v } of dirs) {
         for (const how of ['dug', 'laid']) {
           try {
-            const before = Math.floor(bot.entity.position.y);
+            const before = standing(bot).y;
             if (how === 'dug') await step(here, v, -1);
             // Short of the blocks the laid steps left will take (two a
             // step: the one under it and the guard beyond), they are dug
@@ -583,14 +598,14 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
             // in rock (notes 906, 924): on the laid steps in open air there
             // is no wall to dig.
             else { if (blocksCarried(bot) < Math.min(QUARRY_WANT, 2 * high + 2)) await quarry(here, v); await stairsDown(bot, task, new Vec3(here.x + v.x * 16, here.y - 2, here.z + v.z * 16), { maxSteps: 1 }); laid += 2; }
-            if (Math.floor(bot.entity.position.y) >= before) throw new Error('the step did not go down');
-            went = true; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] over the target, ${high} up: ${here} ${how} down -> ${bot.entity.position.floored()} hp ${bot.health}`);
+            if (standing(bot).y >= before) throw new Error('the step did not go down');
+            went = true; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] over the target, ${high} up: ${here} ${how} down -> ${standing(bot)} hp ${bot.health}`);
             break;
           } catch (err) {
             task.check();
             if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
             whys.push(`${how} down ${v.x ? (v.x > 0 ? 'east' : 'west') : (v.z > 0 ? 'south' : 'north')}: ${String(err.message).slice(0, 60)}`);
-            if (!bot.entity.position.floored().equals(here)) { went = true; break; }
+            if (!standing(bot).equals(here)) { went = true; break; }
           }
         }
         if (went) break;
@@ -618,24 +633,24 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
     for (const t of tries) {
       try {
         if (t.laid) {
-          const before = Math.floor(bot.entity.position.y);
+          const before = standing(bot).y;
           await stairsDown(bot, task, new Vec3(here.x + t.v.x * 16, here.y - 2, here.z + t.v.z * 16), { maxSteps: 1 });
-          if (Math.floor(bot.entity.position.y) >= before) throw new Error('the laid step down did not go down');
+          if (standing(bot).y >= before) throw new Error('the laid step down did not go down');
           laid += 2;
         } else await step(here, t.v, t.y);
-        went = t; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] ${here} ${t.laid ? 'laid-down' : t.side ? 'aside' : t.y} -> ${bot.entity.position.floored()} hp ${bot.health}`); break;
+        went = t; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] ${here} ${t.laid ? 'laid-down' : t.side ? 'aside' : t.y} -> ${standing(bot)} hp ${bot.health}`); break;
       }
       catch (err) {
         task.check();
         if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
-        if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] ${here} ${t.laid ? 'laid-down' : t.side ? 'aside' : t.y} FAILED ${err.message} at ${bot.entity.position.floored()} hp ${bot.health}`);
+        if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] ${here} ${t.laid ? 'laid-down' : t.side ? 'aside' : t.y} FAILED ${err.message} at ${standing(bot)} hp ${bot.health}`);
         whys.push(`${t.laid ? 'down on laid blocks' : t.side ? 'aside' : t.y > 0 ? 'up' : t.y < 0 ? 'down' : 'level'}: ${String(err.message).slice(0, 80)}`);
         // Moved off the cell by a step that failed part way: read again from where it is.
-        if (!bot.entity.position.floored().equals(here)) break;
+        if (!standing(bot).equals(here)) break;
       }
     }
     if (!went) {
-      if (!bot.entity.position.floored().equals(here) && steps < maxSteps) { steps++; continue; }
+      if (!standing(bot).equals(here) && steps < maxSteps) { steps++; continue; }
       throw Object.assign(new Error(`The tunnel stopped ${Math.round(flatTo(here))} blocks from its target after ${steps} blocks: ${whys.join('; ')}`), { steps, laid });
     }
     steps++;
@@ -658,10 +673,10 @@ async function crossAlong(bot, task, crossing, { navigate = null, scoop = false 
   const { goals } = require('mineflayer-pathfinder');
   const [fx, fs, fz] = crossing.from;
   const start = new Vec3(fx, fs, fz);
-  if (bot.entity.position.floored().distanceTo(start) >= 1 && navigate) {
+  if (standing(bot).distanceTo(start) >= 1 && navigate) {
     await navigate(bot, task, new goals.GoalBlock(fx, fs, fz), { timeoutMs: 30000, stallMs: 6000, onFoot: true });
   }
-  if (bot.entity.position.floored().distanceTo(start) >= 1.5) throw new Error(`Not at the start of the crossing at (${fx}, ${fs}, ${fz})`);
+  if (standing(bot).distanceTo(start) >= 1.5) throw new Error(`Not at the start of the crossing at (${fx}, ${fs}, ${fz})`);
   const done = { laid: 0, dug: 0, scooped: 0 };
   const spanning = { target: { x: crossing.to[0], y: crossing.to[1], z: crossing.to[2] }, since: Date.now() };
   bot._spanning = spanning;
@@ -681,7 +696,7 @@ async function crossAlong(bot, task, crossing, { navigate = null, scoop = false 
       task.check();
       const refused = spanRefused(bot);
       if (refused) throw new Error(`Not crossing with a ${refused.fire.entity.name} ${Math.round(refused.fire.distance)} blocks off able to see me`);
-      const here = bot.entity.position.floored(), cell = new Vec3(q.x, q.y, q.z), bed = cell.offset(0, -1, 0);
+      const here = standing(bot), cell = new Vec3(q.x, q.y, q.z), bed = cell.offset(0, -1, 0);
       const step = cell.minus(here);
       if (Math.abs(step.x) + Math.abs(step.z) !== 1 || Math.abs(step.y) > 1) throw new Error(`Off the crossing at ${here}, the next cell ${cell}`);
       // Lava lying where the feet go down: scooped where it is a source and
@@ -839,7 +854,7 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
     tried.add(`${s.p}`); onBlock(s);
     const before = carried(bot);
     try {
-      const feet = bot.entity.position.floored();
+      const feet = standing(bot);
       // A walk back along a span to the rock it came from is longer than
       // one within the near reach: timed by its cells. Skipped where the
       // block is already in reach from right here, even when the source's

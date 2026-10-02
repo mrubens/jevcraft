@@ -511,6 +511,21 @@ const TERRAIN = Object.freeze([
     target: [5320, 69, 5200],
   },
   {
+    name: 'tunnel_home_soul_sand',
+    why: 'Note 944: the tunnel begins inside the rock with no pickaxe and soul sand its only block (25598 carried 83 and was told "no blocks carried"), and comes out over a cavern with its target sixteen across and six below.',
+    dimension: 'the_nether', seconds: 150,
+    start: [5297.5, 81, 5200.5],
+    kit: [['soul_sand', 32]],
+    build: [
+      'forceload add 5290 5190 5350 5210',
+      'fill 5295 60 5192 5303 90 5208 minecraft:netherrack',
+      'fill 5304 60 5192 5345 90 5208 minecraft:air',
+      'fill 5304 60 5192 5345 68 5208 minecraft:netherrack',
+      'fill 5296 81 5200 5297 82 5200 minecraft:air',
+    ],
+    target: [5320, 69, 5200],
+  },
+  {
     name: 'rise_and_swim_lake',
     why: 'first-days-236: a cave under a lake, its stone roof under the water; the rise and swim (note 855) rose and then never swam (855c, 855d).',
     dimension: 'overworld', seconds: 60,

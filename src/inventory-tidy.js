@@ -16,10 +16,8 @@ const SURPLUS = Object.freeze({
   // 780), kept after the crossing kit's kinds and dropped before them.
   cobblestone: 128, cobbled_deepslate: 64, dirt: 32, gravel: 16, sand: 0, red_sand: 0,
   calcite: 0, netherrack: 128,
-  // A soul sand valley's staircase: mid-92-o carried 105 soul soil and 104
-  // soul sand out of one, four slots of nothing it builds with (soul sand
-  // slows the walk it would bridge with).
-  soul_sand: 0, soul_soil: 0,
+  // Soul sand and soil are kept in the Nether's building budget, last
+  // (note 944: the spans and tunnels lay them); out of it, none.
   leaf_litter: 32, short_grass: 0, seagrass: 0, kelp: 0, wheat_seeds: 32, raw_copper: 16, copper_ingot: 16,
   furnace: 2, crafting_table: 2, snowball: 0, ice: 0, clay_ball: 0, flint: 8,
 });
@@ -113,9 +111,9 @@ const countsOf = bot => { const counts = {}; for (const item of bot.inventory.it
 // basalt and bricks count too. Boats are one: a boat crosses water, and
 // five kinds of boat are five slots.
 const BUILDING_KEEP_ORDER = ['cobblestone', 'cobbled_deepslate', 'blackstone', 'stone', 'deepslate', 'nether_bricks', 'basalt', 'smooth_basalt',
-  'tuff', 'andesite', 'diorite', 'granite', /^(\w+_)?terracotta$/, /^(red_)?sandstone$/, 'netherrack', 'dirt', 'coarse_dirt'];
+  'tuff', 'andesite', 'diorite', 'granite', /^(\w+_)?terracotta$/, /^(red_)?sandstone$/, 'netherrack', 'dirt', 'coarse_dirt', 'soul_soil', 'soul_sand'];
 const orderMatch = (o, n) => typeof o === 'string' ? o === n : o.test(n);
-const NETHER_ONLY_BLOCKS = /^(nether_bricks|basalt|smooth_basalt)$/;
+const NETHER_ONLY_BLOCKS = /^(nether_bricks|basalt|smooth_basalt|soul_soil|soul_sand)$/;
 const BUILDING_BUDGET = 128;
 const BUDGETS = [
   { label: 'building blocks', says: 'one budget across kinds for bridging and pillaring',
@@ -141,7 +139,7 @@ const capFor = (name, dim, ctx = {}) => {
   const own = capOf(name);
   if (own !== undefined) return own;
   if (NO_USE.test(name) || (NO_RUNG.test(name) && !ctx.homeChest)) return 0;
-  if (/^(basalt|smooth_basalt|nether_bricks)$/.test(name) && !/nether/.test(String(dim || ''))) return 0;
+  if (NETHER_ONLY_BLOCKS.test(name) && !/nether/.test(String(dim || ''))) return 0;
   return undefined;
 };
 // Why a kind is past what is kept, said on the tidy's own line and on the
@@ -386,7 +384,7 @@ const nether = bot => /nether/.test(String(bot.game?.dimension || ''));
 const EXPENDABLE = [
   ['dirt', 0], ['gravel', 0], [/_sapling$/, 0], ['nether_brick_fence', 0], ['leaf_litter', 16], ['short_grass', 0],
   ['nether_wart', 0], ['egg', 0], ['poisonous_potato', 0], ['spider_eye', 0],
-  ['netherrack', bot => nether(bot) ? 96 : 0], ['cobbled_deepslate', 0], ['cobblestone', bot => nether(bot) ? 64 : 128], ['soul_sand', 0], ['nether_bricks', 0],
+  ['netherrack', bot => nether(bot) ? 96 : 0], ['cobbled_deepslate', 0], ['cobblestone', bot => nether(bot) ? 64 : 128], [/^soul_(sand|soil)$/, bot => nether(bot) ? 32 : 0], ['nether_bricks', 0],
   ['wheat_seeds', 8], ['raw_copper', 0], ['copper_ingot', 0], ['rotten_flesh', 0], ['wheat_seeds', 0],
 ];
 // A reserve of building blocks is never thrown away: sixteen are a step out
@@ -396,7 +394,7 @@ const BLOCK_RESERVE = 16;
 // Cobblestone is kept to two stacks: the Nether is crossed with them
 // (work.js NETHER_BLOCKS), and one kept lost to the tidy is gathered again.
 // In the Nether, where netherrack is the blocks, one.
-const BUILDING = /^(dirt|cobblestone|cobbled_deepslate|stone|andesite|diorite|granite|tuff|deepslate|netherrack|nether_bricks|blackstone|basalt|end_stone)$|_planks$/;
+const BUILDING = /^(dirt|cobblestone|cobbled_deepslate|stone|andesite|diorite|granite|tuff|deepslate|netherrack|nether_bricks|blackstone|basalt|end_stone|soul_soil|soul_sand)$|_planks$/;
 const blockStock = bot => bot.inventory.items().filter(i => BUILDING.test(i.name)).reduce((n, i) => n + i.count, 0);
 
 // What goes when the pockets are full is Jev's: every stack, with what it is
