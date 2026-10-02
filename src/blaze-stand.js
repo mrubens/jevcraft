@@ -440,7 +440,11 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   // walls, counted as seeing a one-block step to a blaze at four, priced
   // the charge over the fight beside it by half again).
   const strikeAt = upTo === 1 ? (() => { const n = seen.filter(t => strikeCells(bot, t.entity).length).sort((a, b) => a.distance - b.distance)[0]; return n ? strikeCells(bot, n.entity)[0] : null; })() : null;
-  const into = blazes.filter(t => !t.visible && t.distance <= 16 && (!strikeAt || bunker.seenFrom(bot, [t.entity], strikeAt).length));
+  // Within sixteen of the bot, or of the cell the sword strikes from (note
+  // 849): the charge goes there, and those about it are in its fight.
+  const strikeStand = strikeAt ? strikeAt.offset(0.5, 0, 0.5) : null;
+  const near = t => t.distance <= 16 || (strikeStand && t.entity.position.distanceTo(strikeStand) <= 16);
+  const into = blazes.filter(t => !t.visible && near(t) && (!strikeAt || bunker.seenFrom(bot, [t.entity], strikeAt).length));
   const arc = shieldArc(bot, [...seen, ...into].map(t => t.entity));
   // Each blaze as the sum sees it: where it is, whether it sees the bot,
   // whether the shield faced at their middle covers it, and ground under
@@ -474,6 +478,13 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   };
   const order = () => alive.filter(b => b.reach).sort((a, b) => a.at.distanceTo(from) - b.at.distanceTo(from));
   let firstWalk = null;
+  // Each blaze as seen from a cell: its distance from there, and the
+  // shield's cover as faced from there.
+  const standingAt = p => {
+    if (!p) return alive;
+    const arcThere = shieldArc(bot, alive.filter(b => b.sees).map(b => ({ id: b.id, position: b.at })), p);
+    return alive.map(b => ({ ...b, d: b.at.distanceTo(p), covered: arcThere.covered.has(b.id) }));
+  };
   // The spawner broken first (break_spawner): the walk to its cage in the
   // lulls, the digging with the shield down, and no more come after.
   // Priced where it is done: the digging from the cell by the cage, each
@@ -488,11 +499,6 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
     const seeing = alive.filter(b => b.sees).length;
     const cell = breakFirst.at || null, there = cell ? cell.offset(0.5, 0, 0.5) : null;
     const half = there ? here.plus(there).scaled(0.5) : null;
-    const standingAt = p => {
-      if (!p) return alive;
-      const arcThere = shieldArc(bot, alive.filter(b => b.sees).map(b => ({ id: b.id, position: b.at })), p);
-      return alive.map(b => ({ ...b, d: b.at.distanceTo(p), covered: arcThere.covered.has(b.id) }));
-    };
     const walking = standingAt(half), digging = standingAt(there);
     const wall = breakFirst.steps / WALK / (shield ? lull(seeing) : 1);
     firstWalk = { walk: round(breakFirst.steps / WALK), wall: round(wall), seeing };
@@ -511,8 +517,15 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
     const seeing = alive.filter(b => b.sees).length + Math.round(extra);
     const wall = walk / (shield ? lull(seeing) : 1);
     firstWalk ??= { walk: round(walk), wall: round(wall), seeing };
-    spend(wall, rate(alive, { shieldUp: true, extra, extraAt: spawnAt ?? 8 }), 'walk');
-    spend(strikeSeconds, rate(alive, { shieldUp: false, extra, extraAt: spawnAt ?? 8 }), 'strike');
+    // The charge alone (note 849): the walk priced from halfway to the
+    // cell the sword strikes from, the strike from that cell. Priced from
+    // where the bot stood, 25584 (2026-10-01 22:53:52Z) read "about 1.3
+    // damage ... 18.7 after" for a charge at a blaze 17.7 off, with two
+    // more ten and thirteen from the strike cell, behind it, and went from
+    // 20 to dead in 25 seconds there.
+    const at = strikeStand && kills === 0 ? { walk: standingAt(here.plus(strikeStand).scaled(0.5)), strike: standingAt(strikeStand) } : { walk: alive, strike: alive };
+    spend(wall, rate(at.walk, { shieldUp: true, extra, extraAt: spawnAt ?? 8 }), 'walk');
+    spend(strikeSeconds, rate(at.strike, { shieldUp: false, extra, extraAt: spawnAt ?? 8 }), 'strike');
     if (deathAt != null || t >= horizon) break;
     kills++; from = target.at; alive = alive.filter(b => b !== target);
     // The spawner's newcomers are fought as they come, where it puts them.
@@ -1397,8 +1410,14 @@ function behindAtStrike(bot, target, others) {
   if (behind.length) parts.push(` Where the bot strikes that one from, ${at(cell)}, facing it: ${behind.map(k => `the blaze now at ${at(k.e.position)}, ${k.d} blocks from that cell, is behind the bot (${k.off} degrees from where it faces)`).join('; ')}; ${behind.length === 1 ? 'its' : 'their'} fireballs come at the back, where a shield raised toward the one struck does not face.`);
   return parts.join('');
 }
-function withinSixteen(bot, danger) {
-  try { return [...danger, ...require('./danger').threats(bot, 16).filter(t => t.entity.name === 'blaze' && !danger.some(d => d.entity?.id === t.entity.id))]; } catch (_) { return danger; }
+// With `at`, the cell a charge strikes from: the blazes within sixteen of
+// it as well, out to the forty-eight a blaze fires from (note 849).
+function withinSixteen(bot, danger, { at = null } = {}) {
+  try {
+    const stand = at ? at.offset(0.5, 0, 0.5) : null;
+    const more = require('./danger').threats(bot, stand ? 48 : 16).filter(t => t.entity.name === 'blaze' && (t.distance <= 16 || t.entity.position.distanceTo(stand) <= 16));
+    return [...danger, ...more.filter(t => !danger.some(d => d.entity?.id === t.entity.id))];
+  } catch (_) { return danger; }
 }
 function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, holds = [], need = 0, of = '', goal = null } = {}) {
   const blazes = danger.filter(t => t.entity.name === 'blaze');
@@ -1525,7 +1544,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
     // is priced over all of them, and a player takes the one at hand and
     // looks again. Priced by the same sum, up to its one kill (upTo).
     if (aboutAll.length > 1) {
-      const one = closeInCost(bot, priced, { upTo: 1 });
+      const one = closeInCost(bot, withinSixteen(bot, danger, { at: strikeCells(bot, first.entity)[0] || null }), { upTo: 1 });
       options.charge_nearest = { kind: 'charge', site: { target: first.entity.id }, expects: { damage: one.damage, seconds: Math.max(1, one.seconds), oneHit: oneHit(standCost(bot, danger, {}).mobs) }, cost: one,
         description: `Charge the nearest blaze alone: ${round(first.distance)} blocks off, over ground the bot can stand on within a sword's reach of it; ${shield ? 'walk in on it while the volleys rest, behind the shield for each as it comes' : 'no shield carried: walk straight in on it'}, strike it until it dies, pick up its rod if it drops one, and be asked again then with what is left; the other ${aboutAll.length - 1} about are not gone at.${backSays}` +
           closeInSays(one, hp) + ` It ends at the kill, after ${runs} seconds, or once six health is gone.` };
