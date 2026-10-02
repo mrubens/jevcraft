@@ -147,5 +147,5 @@ test('taken back, the rest is cut short and said in chat (note 694)', async () =
   assert.equal(asked.length, 1);
   assert.equal(isSetAside(goal, 'rung', 'reach_nether'), false);
   assert.equal(goal.rungAside, undefined);
-  assert.match(said.join('\n'), /^Back to the reach nether after all: I set it aside 65 seconds ago\.$/m);
+  assert.match(said.join('\n'), /^Back to the way to the Nether after all: I set it aside 65 seconds ago\.$/m);
 });

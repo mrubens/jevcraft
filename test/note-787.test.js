@@ -69,7 +69,7 @@ test('a log cut up top with the wood owed short: Jev is asked once a visit, the 
   assert.equal(f.cuts.length, 4);
   assert.equal(f.inv.find(i => i.name === 'oak_log').count, 5);
   assert.equal(f.goal.woodUp.pick, 'take_owed');
-  assert.match(f.bot.said[0], /^I'll take the wood the ladder still wants while I'm up here: \d+ more logs' worth\.$/);
+  assert.match(f.bot.said[0], /^I'll take the wood I still need while I'm up here: \d+ more logs' worth\.$/);
   // Back at the step in the same visit with a new tree in reach: the answer holds, not asked again.
   f.world.set(new Vec3(6, 64, 6).toString(), 'oak_log');
   await work.woodWhileUp(f.bot, f.task, f.goal, () => {}, { cut: f.cut });

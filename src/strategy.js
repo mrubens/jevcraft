@@ -38,6 +38,7 @@ const HOLD_MS = 10 * 60 * 1000, SIDE_REST_MS = 10 * 60 * 1000, SIDE_FAIL_MS = 30
 const TO_THE_NETHER = /^(nether_first|stage_reach_nether)$/;
 const fatal = err => ['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err?.name);
 const label = phase => phase.replaceAll('_', ' ');
+const { spoken, Spoken } = require('./spoken');
 
 const RUNG_WHY = {
   // What a night costs without one, said where the bed is weighed: nights
@@ -774,7 +775,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     // the rung", and the climb of 29 blocks to the surface was taken.
     if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) require('./tried').cut(goal, `left for ${label(choice)} (win_strategy)`, Date.now(), { before: askedAt });
     save();
-    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].chat ? options[choice].chat : options[choice].side || options[choice].says ? `Before the ${label(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `The ${label(options[choice].rung.phase)} first, then the ${label(stage.phase)}.`);
+    if (choice !== `rung_${stage.phase}` && choice !== `stage_${stage.phase}`) bot.chat?.(options[choice].chat ? options[choice].chat : options[choice].side || options[choice].says ? `Before ${spoken(stage.phase)}, ${options[choice].says || choice.replaceAll('_', ' ')}.` : `${Spoken(options[choice].rung.phase)} first, then ${spoken(stage.phase)}.`);
   }
   const option = heldOption || options[choice];
   // A rung set aside, taken back: its rest cut short and said (note 694).
@@ -782,7 +783,7 @@ async function strategyStep(bot, task, goal, save, stage, { client, decide, side
     const gp = require('./game-progress');
     const entry = attemptsFor(goal).of('rung')[option.takeBack];
     gp.takeBackRung(goal, option.takeBack); save();
-    bot.chat?.(`Back to the ${label(option.takeBack)} after all${entry ? `: I set it aside ${gp.agoSays(Date.now() - entry.at)} ago` : ''}.`);
+    bot.chat?.(`Back to ${spoken(option.takeBack)} after all${entry ? `: I set it aside ${gp.agoSays(Date.now() - entry.at)} ago` : ''}.`);
   }
   if (option.stage) return null;
   // A step set aside to go without, taken up again now.

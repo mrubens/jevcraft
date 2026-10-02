@@ -211,6 +211,7 @@ const walksFailed = (...errors) => /navigation timed out|without reaching new gr
 // function" out of the stall's question).
 // A key with no thing named in it ("rung:none") is the work in hand: said
 // "Keep at the none" to 25591 on its islet (critic 11:36Z item 1, note 751).
+const { spoken } = require('./spoken');
 const thingOf = key => { if (typeof key !== 'string') return 'work in hand'; const t = key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ').trim(); return !t || /^none\b/.test(t) ? 'work in hand' : t; };
 // The rung's own question (note 571): its budget ran ten minutes with no
 // new best (tried.js watchRung), or a way below had nothing left to try and
@@ -365,7 +366,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       try { await moveOnFromResource(bot, task, goal, save); }
       finally { if (goal.step === mine) goal.step = step; }
     } else {
-      bot.chat?.(`I'm getting nowhere with the ${thing}. Trying another way.`);
+      bot.chat?.(`I'm getting nowhere with ${spoken(thing)}. Trying another way.`);
       // Another way starts from somewhere else: the same spot is the same
       // attempt. Trial 24 answered a stalled plot by turning a search it
       // was not using, and stood by the same cell until the audit failed it.
@@ -496,7 +497,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       const at = bot.entity.position;
       goal.rungAside = { phase: rung, at: now, where: { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) }, until: restUntil || now + tried.REST_MS,
         why: String(stall.escalated?.says || stall.rung?.says || stall.error || `stalled ${stall.strikes} times`).slice(0, 300) };
-      bot.chat?.(`I keep getting stuck on the ${rung.replaceAll('_', ' ')}. I'll come back to it.`);
+      bot.chat?.(`I keep getting stuck on ${spoken(rung)}. I'll come back to it.`);
     } };
   // A rung set aside earlier is offered back whenever the work in hand
   // stalls, said with why and when it was left, what its rest has left,
@@ -523,7 +524,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     answers[`take_up_${back.phase}`] = { takeBack: back.phase, description: `Take up the ${words(back.phase)} again now, its rest cut short: set aside ${agoSays(now - back.at)} ago${from} (${back.why})${aside?.why ? `, for this: ${aside.why}` : ''}; it would come back on its own in ${Math.max(1, Math.ceil((back.until - now) / 60000))} minutes.${rung ? ` The ${words(rung)} in hand waits meanwhile.` : ''}${clock?.activeMs ? ` Worked on it ${Math.max(1, Math.round(clock.activeMs / 60000))} minutes in all so far.` : ''}${place ? ` ${place.says}` : ''}${survey}${lately ? ` Tried for it lately: ${lately.slice(0, 3).join('; ')}.` : ''}`,
       run: async () => {
         require('./game-progress').takeBackRung(goal, back.phase); save();
-        bot.chat?.(`Back to the ${words(back.phase)}.`);
+        bot.chat?.(`Back to ${spoken(back.phase)}.`);
       } };
   }
   // Every way to the pearls from here, while they are the rung in hand
@@ -2226,7 +2227,7 @@ async function woodWhileUp(bot, task, goal, save, { cut = mineAtSource } = {}) {
     if (decision.stale) return;
     pick = decision.path.at(-1);
     goal.woodUp = { pick, at: Date.now(), x: Math.round(here.x), z: Math.round(here.z), want: owed.logs }; save();
-    if (pick === 'take_owed') bot.chat?.(`I'll take the wood the ladder still wants while I'm up here: ${owed.short} more logs' worth.`);
+    if (pick === 'take_owed') bot.chat?.(`I'll take the wood I still need while I'm up here: ${owed.short} more logs' worth.`);
   }
   if (pick !== 'take_owed') return;
   const want = Math.max(owed.logs, goal.woodUp?.want || 0);
