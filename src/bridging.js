@@ -394,7 +394,19 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
     await clear(bot, task, a);
     if (solid(bot.blockAt(a))) throw new Error(`The way onto the step at ${a} would not clear`);
     // Upright: a crouched step does not go over the edge a block down.
-    if (!await creepTo(bot, task, a, 2500, ['forward'], { sneak: false, why: 'a step a block down onto the stairs laid, the cell beyond it walled by nothing but stopped at its centre' })) throw new Error('Could not step down onto the stairs');
+    // To the lip crouched first (note 907): from a standing start a block
+    // back the upright body crossed the one-block hole before it had
+    // fallen a step's height, came up onto the guard's top (level with the
+    // floor it left) and walked on off the stairs: in the arena's cavern
+    // drill five runs of eight ended nine blocks down on the cavern floor
+    // for five or six health. Crouched it stops at the lip; from there the
+    // upright step starts at rest and goes down into the cell.
+    await creepTo(bot, task, a, 900, ['forward'], { sneak: true });
+    bot.clearControlStates?.();
+    await sleep(120);
+    const okStep = await creepTo(bot, task, a, 1500, ['forward'], { sneak: false, why: 'a step a block down onto the stairs laid, the cell beyond it walled by nothing but stopped at its centre' });
+    if (process.env.TUNNEL_DEBUG) console.log(`[stairs-debug] here ${here} stepped ${okStep} pos ${bot.entity.position}`);
+    if (!okStep) throw new Error('Could not step down onto the stairs');
     if (bot.entity.position.y < a.y - 0.5) throw new Error('Fell off the stairs down');
     steps++;
   }
