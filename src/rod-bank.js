@@ -97,6 +97,12 @@ function option(bot, task, goal, save, actions, offer) {
   return { description: offerSays(offer), trip: 'the portal', secs: 2 * offer.seconds,
     run: async () => {
       goal.rodBank = { at: Date.now(), rods: offer.rods, from: P(bot.entity.position), chest: offer.chest.how };
+      // Chosen now: a set-aside of the stage from before (a step for the
+      // wrong dimension met on the last walk out, note 885) is not its
+      // answer. 25594 chose bank_now at 0.83 with four rods at 13:58:17Z, the
+      // set-aside of 13:53Z still standing; the bank ended the moment it
+      // began and the bot went on into the fortress (note 887).
+      require('./progress').attemptsFor(goal).clear('rung', 'bank_rods');
       save?.();
       bot.chat?.(`Taking the ${plural(offer.rods, 'blaze rod')} out to a chest past the portal, then back for the rest.`);
       if (actions?.returnOverworld) await actions.returnOverworld(bot, task, goal, save);

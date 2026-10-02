@@ -105,8 +105,11 @@ test('banked: the walk out held through the portal, the chest set down on the Ov
   let walked = 0;
   const said = [];
   bot.chat = m => said.push(m);
+  // A set-aside of the stage from an earlier walk out does not end the bank chosen now (note 887).
+  require('../src/progress').setAside(goal, 'rung', 'bank_rods', 'No oak log in the nether: it is only found in the overworld', 600000);
   await rb.option(bot, task, goal, () => {}, { returnOverworld: async () => { walked++; } }, offer).run();
   assert.equal(walked, 1, 'the walk begins at once');
+  assert.equal(require('../src/progress').isSetAside(goal, 'rung', 'bank_rods'), false);
   assert.match(said[0], /^Taking the 4 blaze rods out to a chest past the portal, then back for the rest\.$/);
   // Held: the ladder walks out, not the hunt.
   assert.deepEqual([nextGameStage(bot, goal).phase, nextGameStage(bot, goal).action], ['bank_rods', 'return_overworld']);
