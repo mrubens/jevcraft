@@ -28,8 +28,17 @@ const buildingMaterials = new Set(['dirt', 'cobblestone', 'cobbled_deepslate', .
   'netherrack', 'nether_bricks', 'blackstone', 'basalt', 'tuff', 'deepslate', 'end_stone', ...LAST_MATERIALS]);
 // The stack a block is put from: one of `need` or more, the wool and the
 // wart blocks only when nothing else is.
+// In the Nether what a ghast's blast does not break goes first (note 905,
+// as the span's does, note 904): cover, a pocket's walls and a block put in
+// a fireball's way were laid from whichever stack came first in the pack,
+// netherrack most often, which the blast takes out. 25592
+// (mid-242-ef-nether-1, 2026-10-02 14:59:11 to 14:59:25Z) sealed itself on
+// its crossing four blocks over the lava sea with a ghast 45 to 60 off, and
+// two fireballs later was in the lava.
+const BLAST_PROOF = new Set(['cobblestone', 'cobbled_deepslate', 'blackstone', 'basalt', 'stone', 'andesite', 'diorite', 'granite', 'nether_bricks', 'deepslate', 'tuff', 'end_stone']);
 function buildingItem(bot, need = 1) {
   const items = bot.inventory.items().filter(i => buildingMaterials.has(i.name) && i.count >= need);
+  if (/nether/.test(String(bot.game?.dimension || ''))) { const proof = items.find(i => BLAST_PROOF.has(i.name)); if (proof) return proof; }
   return items.find(i => !LAST_MATERIALS.has(i.name)) || items[0] || null;
 }
 const air = b => b && ['air', 'cave_air', 'void_air'].includes(b.name);
