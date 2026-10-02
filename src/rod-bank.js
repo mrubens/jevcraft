@@ -107,12 +107,16 @@ function option(bot, task, goal, save, actions, offer) {
 // pack: a death there loses them, and the chest is seconds beside the
 // portal. Once a trip out: a bank that fails is not begun again for half an
 // hour. With every rod the goal wants carried or banked, nothing is banked.
-const ARRIVAL_MS = 5 * 60000;
 function bankOnArrival(bot, goal, dim, now = Date.now()) {
   if (dim !== 'overworld' || !bot?.entity || bot.game?.gameMode !== 'survival' || pending(goal)) return false;
-  // On arrival: the dimension became the Overworld within the last few minutes (game-progress.js here).
+  // Through this stay in the Overworld (game-progress.js here), not only its
+  // first minutes (note 873): rods carried out before this rule, or past a
+  // bank set aside and since run out, would otherwise go back into the Nether
+  // in the pack. A stay the bot began with a play of this kind already made
+  // (the fixture of a stage test, a world joined in the Overworld) has no
+  // arrival and is left alone.
   const here = goal?.gameProgress?.here;
-  if (!(here?.dimension === 'overworld' && now - here.at < ARRIVAL_MS)) return false;
+  if (!(here?.dimension === 'overworld' && here.at)) return false;
   const rods = rs().rodsEquivalent(bot);
   if (!(rods >= 1) || isSetAside(goal, 'rod_bank', 'arrival', now) || isSetAside(goal, 'rung', 'bank_rods', now)) return false;
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }

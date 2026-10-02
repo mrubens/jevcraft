@@ -194,8 +194,11 @@ test('out of the Nether with rods for another reason, the bank begins on arrival
   const bot = frameBot({ inventory: { ...BARE, blaze_rod: 2 }, dimension: 'overworld' });
   const said = []; bot.chat = m => said.push(m);
   const arrived = () => { const g = huntGoal(); g.gameProgress.here = { dimension: 'overworld', at: Date.now() - 20000 }; return g; };
-  // Long in the Overworld with rods (no arrival on record): nothing begun.
+  // No stay on record (a goal that never looked at where it is): nothing begun.
   assert.equal(rb.bankOnArrival(bot, huntGoal(), 'overworld'), false);
+  // Long out with the rods still carried (25597, out before note 868 ran): begun all the same (note 873).
+  const long = huntGoal(); long.gameProgress.here = { dimension: 'overworld', at: Date.now() - 40 * 60000 };
+  assert.equal(rb.bankOnArrival(bot, long, 'overworld'), true);
   const goal = arrived();
   assert.equal(rb.bankOnArrival(bot, goal, 'overworld'), true);
   assert.equal(goal.rodBank.rods, 2);
