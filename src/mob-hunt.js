@@ -4495,6 +4495,20 @@ async function findFortressStep(bot, task, goal, save, actions) {
   const crossed = seeking ? { tried: false } : await crossToward(bot, task, goal, save, leg, { what: 'the fortress search\'s leg' });
   if (crossed.tried && gained()) { state.legFails = 0; return; }
   if (crossed.survey?.stoppedBy) state.lastCrossStop = crossed.survey.stoppedBy;
+  // Straight on at this height by the tunnel (bridging.js tunnelStraight,
+  // note 862), where the walk and the crossing made no ground: through the
+  // rock two high, a floor laid over open air, over, under or round lava.
+  // On mid-239-cb-nether-1 (25598, 2026-10-02 11:48Z) every leg chosen
+  // ended within a second ("no route"), six plan answers in nine seconds
+  // took no time, and the search rested on its own rules with the bot
+  // standing; across the live trials "fortress leg: every way it had from
+  // here rests" was the most repeated line (80 of the last half hour's).
+  // The bricks are found by what is loaded about the bot, in rock as in air.
+  if (!seeking) {
+    try { await require('./bridging').tunnelStraight(bot, task, new Vec3(leg.x, Math.floor(bot.entity.position.y), leg.z), { maxSteps: 64, near: 6 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; state.lastLegError = err.message; }
+    if (gained()) { state.legFails = 0; return; }
+  }
   if (!seeking) {
     try { await actions.tunnel(bot, task, goal, save, leg, 'fortress'); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; state.lastLegError = err.message; }
