@@ -51,6 +51,9 @@ test('any chest seen, but not the stash and not one near home', async () => {
   assert.deepEqual(lootableChests(bot, { landmarks: [portal], survival: { home: { origin: { x: 25, z: 25 } } } }).map(p => p.toString()), ['(60, 64, 60)'], 'a chest at home is not loot');
   assert.deepEqual(lootableChests(bot, { landmarks: [portal], survival: { home: { stash: { position: { x: 22, y: 64, z: 21 } } } } }).map(p => p.toString()), ['(60, 64, 60)'], 'nor the stash');
   assert.deepEqual(lootableChests(bot, {}).map(p => p.toString()), ['(22, 64, 21)', '(60, 64, 60)'], 'no landmark needed: any chest seen is opened');
+  // The rods' own chests, stash or bank, are not loot (note 879).
+  assert.deepEqual(lootableChests(bot, { rodStashes: [{ position: { x: 22, y: 64, z: 21 }, contents: { blaze_rod: 2 } }] }).map(p => p.toString()), ['(60, 64, 60)']);
+  assert.deepEqual(lootableChests(bot, { rodBank: { chestAt: { x: 60, y: 64, z: 60 } } }).map(p => p.toString()), ['(22, 64, 21)']);
 });
 
 test('a chest with TNT beneath is a desert temple trap and is left, and nothing is opened in the Nether', () => {

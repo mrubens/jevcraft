@@ -95,6 +95,14 @@ function ownChest(goal, p) {
   // Field caches and any chest the bot placed are its own too: with every
   // other chest now open to it, those must never look like loot.
   if ((goal.caches || []).some(c => c.position && key(c.position) === key(p))) return true;
+  // The rods' own chests, stash or bank (rod-stash.js rodStashes; rod-bank.js
+  // chestAt): 25597 (mid-241-cc-nether-1, 2026-10-02 13:27:16Z) banked its
+  // two blaze rods in a chest past the portal and in the same second
+  // "Opened the chest's chest: 2 blaze rod", took them back, and carried
+  // them into the Nether again, the record still saying two were held (note
+  // 879).
+  if ((goal.rodStashes || []).some(c => c.position && key(c.position) === key(p))) return true;
+  if (goal.rodBank?.chestAt && key(goal.rodBank.chestAt) === key(p)) return true;
   if ((goal.placedWorkstations || []).some(w => /^chest:/.test(w) && w.replace(/\s/g, '').endsWith(`(${p.x},${p.y},${p.z})`))) return true;
   return [goal.pendingChestDelivery?.position, ...(goal.deliveryEvidence || []).map(e => e.position)].some(q => q && key(q) === key(p));
 }
