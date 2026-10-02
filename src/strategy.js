@@ -606,6 +606,14 @@ function strategyState(bot, goal, stage, extra = {}) {
 }
 
 async function strategyStep(bot, task, goal, save, stage, { client, decide, sides = {}, planFor = null, now = Date.now } = {}) {
+  // The rods' bank under way is the step (rod-bank.js bankStage), not a
+  // rung among the others: it was chosen at the cage (rods_now, bank_rods)
+  // or begun on coming out with rods (note 868), and a held answer does not
+  // go on over it. 25597 (mid-241-cc-nether-1, 2026-10-02 13:23:59Z) said
+  // "Out with 2 blaze rods: into a chest here first", and the going to the
+  // Nether held from five minutes before walked it through its portal with
+  // both rods in the pack (note 875).
+  if (stage?.phase === 'bank_rods') return null;
   const options = strategyOptions(bot, goal, stage, sides, planFor);
   if (!options) { delete goal.strategy; return null; }
   const tree = strategyTree(options);

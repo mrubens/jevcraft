@@ -523,3 +523,18 @@ test('the way to the wool is said for the wool hunt alone: not for another rung,
   assert.doesNotMatch(rungOption({ phase: 'bed', action: 'acquire', item: 'white_bed', count: 1 }, true, bot, {}).description, /The way to the wool/);
   assert.equal(woolTrip({ ...bot, game: { dimension: 'the_nether' } }, {}, { action: 'gather_wool' }), '');
 });
+
+test('the rods\' bank under way is the step: a held answer does not go on over it, and nothing is asked (note 875)', async () => {
+  const { bot, goal, task } = fixture(['golden_boots', 'diamond_sword']);
+  bot.chat = () => {};
+  const { asked, decide } = picking('rung_diamond_sword');
+  const now = 1e12;
+  const stage = { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
+  assert.equal((await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => now })).stage.phase, 'diamond_sword');
+  // A minute on the bank begins: the ladder's stage is its, and the held diamond sword does not take the step.
+  assert.equal(await strategyStep(bot, task, goal, () => {}, { phase: 'bank_rods', action: 'bank_rods' }, { decide, now: () => now + 60000 }), null);
+  assert.equal(asked.length, 1);
+  // The bank done, the held answer goes on as before.
+  assert.equal((await strategyStep(bot, task, goal, () => {}, stage, { decide, now: () => now + 120000 })).stage.phase, 'diamond_sword');
+  assert.equal(asked.length, 1);
+});
