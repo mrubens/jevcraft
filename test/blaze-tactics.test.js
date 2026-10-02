@@ -197,6 +197,18 @@ test('the corner: behind rock a blaze has no line past, the cell beside it in th
   assert.match(o.description, /a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering/);
 });
 
+test('the corner says and is priced by what has landed at it while the bot stood there (note 939)', () => {
+  const open = floorWorld({ spawner: null, solid: p => p.y <= 63, at: new Vec3(0.5, 64, 0.5) });
+  blazeAt(open, 1, 9.5, 64.5, 0.5);
+  const quiet = stand.blazeStands(open, near(open)).corner_ambush;
+  assert.doesNotMatch(quiet.description, /At this corner the bot has stood/);
+  const cell = quiet.site.cell, now = Date.now();
+  open._dropLog = [12, 9, 6].map((t, i) => ({ at: now - 9000 + i * 3000, from: t + 3, to: t, pos: { x: cell.x + 0.5, y: cell.y, z: cell.z + 0.5 } }));
+  const hit = stand.blazeStands(open, near(open)).corner_ambush;
+  assert.match(hit.description, /At this corner the bot has stood and lost health 3 times in the last 20 seconds, 15 to 6: what the corner has let through/);
+  assert.ok(hit.expects.damage >= 9, `priced at the pace that landed: ${hit.expects.damage}`);
+});
+
 test('away to heal: offered hurt with food, the walk out of every line and the healing\'s pace said; not at full health', () => {
   const pillar = p => p.y <= 63 || (p.y <= 65 && p.z === 0 && p.x >= 2 && p.x <= 4);
   const bot = floorWorld({ spawner: null, solid: pillar, at: new Vec3(6.5, 64, 0.5), health: 9, food: 17 });

@@ -73,12 +73,18 @@ function install(bot) {
 }
 function noteDrop(bot, from, to, now = Date.now()) {
   const state = shieldAt(bot, now);
-  bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: state === 'up', ...(state === 'rising' ? { rising: true } : {}) }];
+  const p = bot.entity?.position;
+  bot._dropLog = [...(bot._dropLog || []).filter(d => now - d.at < KEEP_MS), { at: now, from, to, shield: state === 'up', ...(state === 'rising' ? { rising: true } : {}), ...(p ? { pos: { x: p.x, y: p.y, z: p.z } } : {}) }];
 }
 function drops(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
   return (bot?._dropLog || []).filter(d => now - d.at <= ms);
 }
 
+// The falls of health while the body stood within `near` of `at` (note 939):
+// what a place has let land, not what it was said it would.
+function dropsAt(bot, at, { now = Date.now(), ms = RECENT_MS, near = 1.5 } = {}) {
+  return drops(bot, { now, ms }).filter(d => d.pos && Math.hypot(d.pos.x - (at.x + 0.5), d.pos.z - (at.z + 0.5)) <= near && Math.abs(d.pos.y - at.y) <= 1.5);
+}
 function recent(bot, { now = Date.now(), ms = RECENT_MS } = {}) {
   return (bot?._hitLog || []).filter(h => now - h.at <= ms);
 }
@@ -124,4 +130,4 @@ function says(bot, list = [], { now = Date.now(), ms = RECENT_MS } = {}) {
   return `Hitting the bot now: ${each.join('; ')}.${fell}${second}`;
 }
 
-module.exports = { install, note, noteDrop, drops, recent, hitters, says, sideOf, shieldAt, RECENT_MS };
+module.exports = { install, note, noteDrop, drops, dropsAt, recent, hitters, says, sideOf, shieldAt, RECENT_MS };

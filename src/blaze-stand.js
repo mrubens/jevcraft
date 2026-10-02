@@ -1798,8 +1798,19 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const built = corner.build?.length || 0;
     const setup = underFire(corner.steps / WALK + built * PLACE_SECONDS);
     const m = measuredSays('corner', bot);
-    options.corner_ambush = { kind: 'corner', site: corner, expects: { damage: round(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof))), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
+    // What has landed at this corner while the bot stood at it (note 939):
+    // 25593 (mid-239-ac-fortress-4, 2026-10-02 18:45:05 to 18:45:35Z) was
+    // told at it "none of the 13 blazes about has a line to the bot ... about
+    // 0 damage", chose it at 11.2 and at 4.7 health, having fallen 16.7 to
+    // 4.7 there in twelve seconds (fireballs from a blaze 3 to 5 blocks off
+    // and their fire), and died. Said, and priced at that pace.
+    const fell = require('./hit-log').dropsAt(bot, corner.cell);
+    const lostHere = fell.reduce((n, d) => n + Math.max(0, d.from - d.to), 0);
+    const hereSays = fell.length && lostHere >= 1 ? ` At this corner the bot has stood and lost health ${n(fell.length, 'time')} in the last 20 seconds, ${round(fell[0].from)} to ${round(fell.at(-1).to)}: what the corner has let through, the reckoning of lines aside.` : '';
+    const herePace = fell.length && lostHere >= 1 ? lostHere / Math.max(5, (Date.now() - fell[0].at) / 1000) * ce.HOLD_SECONDS : 0;
+    options.corner_ambush = { kind: 'corner', site: corner, expects: { damage: round(Math.max(setup.damage + Math.max(0, burning - Math.max(setup.wall, proof)), herePace)), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
       description: `${built ? `No rock to go round within ten blocks of walking: make a corner where the bot stands, a wall two high and three wide a step toward the blazes' middle (${n(built, 'block')} of the ${T.blocksCarried(bot)} carried, about ${setup.time} in their fire), and wait behind it` : corner.steps ? `Walk ${n(corner.steps, 'block')} (about ${setup.time} in their fire) round` : 'Stay at'}${built ? ` at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})` : ` the corner at (${corner.cell.x}, ${corner.cell.y}, ${corner.cell.z})`}, where none of the ${n(about.length, 'blaze')} about has a line to the bot and the cell beside it has one, and wait there facing the corner${shield ? ', the shield up' : ''}, striking what comes within reach: the nearest is ${corner.nearest} blocks from it. What comes: a blaze that loses sight of the bot flies toward it for a quarter of a second and then hovers where it is; it gives the bot up after three seconds unseen and wanders after that, and comes round the corner only by wandering. Out of their sight the bot takes nothing from them (about ${setup.hurt} ${built ? 'while building' : 'on the way'}, the burning on the body burning on).${spawnSays} Held up to ${Math.min(30, runs)} seconds${again ? ' at a time, and asked again then' : ''}, or until a rod is carried or six health is gone.` + m.says };
+    if (hereSays) options.corner_ambush.description += hereSays;
   }
 
   // Away to heal. Offered whenever a blaze fight is on and a cell out of
