@@ -47,3 +47,19 @@ test('water beside the column, rock over the head: no rise, the rock dug up into
   assert.match(r.move.does, /^Dig up into the water \(24 blocks of it, 3 more of rock or air dug or passed on the way\) and swim straight up to open air at y 63/);
   assert.match(r.move.does, /the rock in it is dug from below as the swim goes/);
 });
+
+test('the rise and swim runs: the pillar to its top, then the swim; risen already, only the swim (note 855c: straightUp was not exported)', async t => {
+  const { perform } = require('../src/unstuck');
+  const vitals = require('../src/vitals');
+  const pr = require('../src/pillar-recovery');
+  const calls = [];
+  t.mock.method(pr, 'pillarUp', async (bot, task, top) => { calls.push(['pillar', top]); bot.entity.position = new Vec3(206.5, top, 419.5); return true; });
+  t.mock.method(vitals, 'straightUp', async (bot, task, { maxMs }) => { calls.push(['swim', maxMs]); });
+  const bot = { entity: { position: new Vec3(206.5, 34, 419.5) }, blockAt: p => ({ name: 'water', boundingBox: 'empty', position: p }) };
+  const m = { key: 'rise_and_swim', kind: 'rise_swim', top: 38, rise: 4, blocks: ['cobblestone'], swim: { cells: 23, water: 21, air: 63, seconds: 10.4 } };
+  await perform(bot, { check() {} }, m, { dig: true });
+  assert.deepEqual(calls, [['pillar', 38], ['swim', 16400]]);
+  calls.length = 0;
+  await perform(bot, { check() {} }, m, { dig: true });
+  assert.deepEqual(calls, [['swim', 16400]]);
+});

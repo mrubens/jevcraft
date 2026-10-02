@@ -1066,7 +1066,8 @@ async function perform(bot, task, m, { dig }) {
     if (!placed) throw new Error('The pillar would not rise');
   }
   if (m.kind === 'rise_swim') {
-    if (m.rise > 0) {
+    // Risen already (a run cut off after the pillar): the swim is what is left.
+    if (m.rise > 0 && Math.floor(bot.entity.position.y) < m.top) {
       const placed = await require('./pillar-recovery').pillarUp(bot, task, m.top, { dig, maxBlocks: m.rise + 4, blocks: m.blocks });
       if (!placed) throw new Error('The pillar would not rise');
     }
