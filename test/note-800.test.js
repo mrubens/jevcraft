@@ -27,7 +27,11 @@ async function offered(rest) {
     return c; };
   await pass();
   assert.match(goal.portalMethod?.key || '', /^here_pool_/, 'the pool chosen first');
-  if (rest) {
+  if (rest === 'toward') {
+    // The staircase toward the pool's own block, set aside by its area (note 878).
+    const t = new Vec3(40, 63, 0), area = { x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 };
+    require('../src/progress').setAside(goal, 'staircase', area, '3 rounds without getting closer than 48 blocks', T.STAIRCASE_REST_MS);
+  } else if (rest) {
     const t = T.lavaWay(new Vec3(40, 63, 0)), area = { x: Math.floor(t.x / 8) * 8, y: Math.floor(t.y / 8) * 8, z: Math.floor(t.z / 8) * 8 };
     require('../src/progress').setAside(goal, 'staircase', area, 'paced the same few cells', T.STAIRCASE_REST_MS);
     assert.ok(T.lavaResting(goal, new Vec3(40, 63, 0)), 'the way rests');
@@ -44,4 +48,13 @@ test('a pool whose way rests: its route counts the rest and says it (note 800)',
   assert.ok(k && resting[k], `${Object.keys(open)} / ${Object.keys(resting || {})}`);
   assert.doesNotMatch(open[k], /rest is waited out/);
   assert.match(resting[k], /First its way's rest is waited out: the staircase toward it is set aside \(paced the same few cells\) for \d+ more minutes?, counted in the price\./);
+});
+
+test('a pool whose staircase toward its own block rests: counted and said the same (note 878)', async () => {
+  const open = await offered(false), resting = await offered('toward');
+  const k = Object.keys(open).find(x => /^here_pool_/.test(x));
+  assert.ok(k && resting[k]);
+  assert.match(resting[k], /First its way's rest is waited out: the staircase toward it is set aside \(3 rounds without getting closer than 48 blocks\) for \d+ more minutes?, counted in the price\./);
+  const priced = d => Number((d.match(/Priced end to end, about (\d+) minutes?/) || [])[1]);
+  assert.ok(priced(resting[k]) > priced(open[k]), `${priced(resting[k])} > ${priced(open[k])}`);
 });

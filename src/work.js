@@ -5502,7 +5502,15 @@ function planRoutes(bot, goal, { method, frame, placed, sources, here, ingots, r
     // was kept as the cheapest, the rung then resting under it: 25597
     // (mid-230-ax and -ay, 2026-10-01 10:32-11:18Z) asked for other work
     // "until the rest ends" again and again, none good at 0.41 and 0.51.
-    const rest = v.kind === 'pool' ? T.restingWay(goal, T.lavaWay(v.at)) : null;
+    // The rest read as the walk meets it (nearRest, note 505: toward the
+    // pool's own block or into it, by the area or by the landing from here),
+    // not by the way in alone: mid-231-bc (2026-10-02 13:02Z) held
+    // beside_pool_1 with the staircase toward its pool set aside ten
+    // minutes, the route priced "about 14 minutes" with no wait in it
+    // against 7 for an open pool, kept it twice in eighteen seconds at 0.47
+    // and 0.45, each ending at once on the rest, and was cut as a loop
+    // (note 878).
+    const rest = v.kind === 'pool' ? nearRest(goal, v.at, here) : null;
     const wait = rest ? Math.max(0, (rest.until - Date.now()) / 1000) : 0;
     const sf = bySurface(v);
     // At night, a route that puts the bot on the surface says the night's
