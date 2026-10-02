@@ -326,7 +326,8 @@ test('the rods set aside in the Nether for a stall: leaving is Jev\'s, with why 
   const asked = [], left = [];
   const picks = ['wait_here', 'go_back'];
   const states = [];
-  const client = { systemOne: async ({ state, questions }) => { states.push(state); asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
+  // The rods carried are asked about first (rods_now, note 929): stayed with here.
+  const client = { systemOne: async ({ state, questions }) => { if (questions.branch_0.criteria.bank_now) return { answers: { branch_0: { choice: 'stay_for_more', confidence: 0.9 } } }; states.push(state); asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: picks.shift(), confidence: 0.9 } } }; } };
   const holds = [];
   const actions = { client, return_overworld: async () => left.push('portal'), acquireStep: async () => assert.fail('the rods wait'), hold_for_rest: async (b, t, g, sv, opts) => holds.push(opts) };
   // Other work here till the rest ends: the stage's own work (note 605), and not asked again for the same rest.

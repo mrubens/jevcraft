@@ -1077,6 +1077,19 @@ async function gameStep(bot, task, goal, save, actions) {
   await require('./mob-policy').wearBestArmour(bot);
   // Gold for the piglins before the stage in hand, where the pack makes it (mob-hunt.js goldForPiglins, note 908).
   if (await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions)) return false;
+  // The rods carried are asked about at the ladder's own step in the Nether,
+  // whatever the rung in hand (rod-bank.js askBank, note 929), by the
+  // question's own pacing (once for each count of rods, again after ten
+  // minutes). It was asked at a cage, in a blaze's hunt, at the pearl order
+  // and on the fortress search (note 928); 25593 (mid-239-ac-fortress-4,
+  // 2026-10-02 18:40 to 18:45Z) came back on the search for a warped forest
+  // with five rods in its pack, was not asked, and burned with them.
+  if (dimension(bot) === 'nether') {
+    let banked = null;
+    try { banked = await require('./rod-bank').askBank(bot, task, goal, save, actions, actions?.client || task.opportunityClient); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; }
+    if (banked === 'banked') return false;
+  }
   // Out of the Nether on a food trip (note 763): kept until the food rung
   // is met or set aside by choice, or thirty minutes pass.
   // The trip back for food chosen in the Nether is kept to arrival
