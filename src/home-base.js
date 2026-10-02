@@ -983,6 +983,11 @@ async function searchForSheep(bot, task, goal, save, actions) {
   if (underground) tree.climb_first = { description: `Climb to the surface first, ${climb != null ? `about ${climb} blocks up, roughly ${climbMinutes(climb)} minutes` : 'how far up is not known'}, and look for sheep from there: the biomes and the long walks are asked again from the surface, where a walk to them can arrive.${nightSays}${require('./levels').levelsSays(bot, goal, { going: 'up' })}` };
   else tree.explore_here = { description: `Keep exploring on from the ${String(view?.biome || 'area').replaceAll('_', ' ')} here${view?.biomeHas ? ` (${view.biomeHas})` : ''}, a new heading each leg.${view?.biome ? noSheep(view.biome) : ''}${tod >= DAY.DARK && tod < DAY.DAWN ? ' It is dark: mobs spawn along the way.' : ''}${belowSays}` };
   if (nightNow) tree.until_day = { description: `Leave the sheep until day, about ${toDawn} real minutes to dawn: the bed's search rests until then and the ladder's other work goes on meanwhile${underground ? ' down here, where the dark is the same at any hour (a night mine chosen from a pocket holds until dawn)' : ''}; taken up again at dawn.` };
+  // Going on without the bed (note 853): 25591 (mid-239-cn, 2026-10-02
+  // 00:54:50 to 00:56:21Z), five minutes into the search with one wool and
+  // dawn come, answered none good twelve times in a row; only where to look,
+  // or leaving the sheep for a night already over, was on offer.
+  tree.without_bed = { description: `Go on without the bed for now: the wool search is set aside half an hour and the ladder's other work goes on (to the crossing if nothing else is left), then looked for again. ${woolCarried(bot).total} of 3 wool carried, ${minutes} minutes searched so far. Without a bed the nights are waited out, not slept through (phantoms come after three nights without sleep), and a death respawns at the world spawn, not by the bed.` };
   if (webs.length >= 2 && stringWanted) {
     const nearWeb = [...webs].sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position))[0];
     const webDy = Math.round(nearWeb.y - bot.entity.position.y);
@@ -1013,6 +1018,11 @@ async function searchForSheep(bot, task, goal, save, actions) {
   if (pick === 'craft_from_string') {
     bot.chat?.(`Making wool from string.`);
     await actions.acquireStep(bot, task, 'white_wool', countOf(bot, 'white_wool') + fromString, goal, save);
+    return;
+  }
+  if (pick === 'without_bed') {
+    setAside(goal, 'bed_search', 'wool', 'gone on without the bed for now (Jev chose without_bed)', 30 * 60000); save();
+    bot.chat?.('No bed for now. On with the rest.');
     return;
   }
   if (pick === 'until_day') {

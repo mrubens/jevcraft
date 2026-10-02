@@ -402,7 +402,7 @@ define({
 define({
   overworldOnly: true,
   id: 'sheep_search', area: 'resources', parent: 'rung_progress', kind: 'explore', primitive: 'choice', stakes: 'low', tree: true,
-  question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, or craft wool from string carried?',
+  question: 'No sheep in view for the bed\'s wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, craft wool from string carried, or go on without the bed for now?',
   trigger: 'Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.',
   source: 'src/home-base.js (searchForSheep), src/exploration.js (biomeView)',
   options: [
@@ -411,6 +411,7 @@ define({
     { pattern: 'far_(east|south|west|north)', names: 'the heading', label: 'walk far one way, leg after leg, looking all the way', when: 'on the surface, not underwater: one for each of the four ways, 128 blocks a leg and up to three legs, said with the biomes and water that way and how often this search went far that way; not asked again until the walk ends or sheep are seen (note 749)', level: 'root', dynamic: true },
     { key: 'explore_here', label: 'explore on from here', when: 'on the surface (underground, climb_first in its place)', level: 'root' },
     { key: 'climb_first', label: 'climb to the surface first, then look from there', when: 'below the surface: said with how far up and how long (note 749), and at night with the minutes to dawn (note 755b)', level: 'root' },
+    { key: 'without_bed', label: 'go on without the bed for now', when: 'always: the wool search is set aside half an hour and the ladder goes on, said with the wool carried, the minutes searched and what going without a bed costs (note 853)', level: 'root' },
     { key: 'until_day', label: 'leave the sheep until day', when: 'at night: the bed\'s search rests until dawn and the ladder\'s other work goes on (note 755b)', level: 'root' },
     { key: 'craft_from_string', label: 'craft wool from the string carried', when: 'four or more string carried and wool still wanted', level: 'root' },
     { key: 'cut_cobwebs', label: 'cut the cobwebs in view with the sword for string', when: 'a sword carried, two or more cobwebs within thirty-two blocks, and string still wanted for the bed', level: 'root' },

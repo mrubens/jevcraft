@@ -918,7 +918,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `sheep_search`
 
-**No sheep in view for the bed's wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, or craft wool from string carried?**
+**No sheep in view for the bed's wool: which nearby biome to look in, back to sheep seen earlier, explore on from here, craft wool from string carried, or go on without the bed for now?**
 
 - When: Gathering wool with no sheep in view and another biome within the loaded area; the pick holds until the bot is there or the walk fails.
 - Decision tree, choice; stakes low; ledger kind `explore`
@@ -935,6 +935,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `far_(east\|south\|west\|north)` (pattern: names the heading) | root | walk far one way, leg after leg, looking all the way | on the surface, not underwater: one for each of the four ways, 128 blocks a leg and up to three legs, said with the biomes and water that way and how often this search went far that way; not asked again until the walk ends or sheep are seen (note 749) |
 | `explore_here` | root | explore on from here | on the surface (underground, climb_first in its place) |
 | `climb_first` | root | climb to the surface first, then look from there | below the surface: said with how far up and how long (note 749), and at night with the minutes to dawn (note 755b) |
+| `without_bed` | root | go on without the bed for now | always: the wool search is set aside half an hour and the ladder goes on, said with the wool carried, the minutes searched and what going without a bed costs (note 853) |
 | `until_day` | root | leave the sheep until day | at night: the bed's search rests until dawn and the ladder's other work goes on (note 755b) |
 | `craft_from_string` | root | craft wool from the string carried | four or more string carried and wool still wanted |
 | `cut_cobwebs` | root | cut the cobwebs in view with the sword for string | a sword carried, two or more cobwebs within thirty-two blocks, and string still wanted for the bed |
