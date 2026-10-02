@@ -242,6 +242,31 @@ test('25594 at 01:26:39Z: the room made for a craft, filled again by what lay on
   assert(items.some(x => x.name === 'oak_planks'));
 });
 
+test('what is thrown for the room comes back at the feet each time (a pocket of rock): the second room is clicked into at once (note 890)', { timeout: 20000 }, async () => {
+  const { craft } = require('../src/work');
+  const it = name => { const r = registry.itemsByName[name]; return { name, count: name === 'sand' ? 10 : 1, type: r.id, stackSize: r.stackSize }; };
+  const items = [it('sand'), it('oak_log')];
+  while (items.length < 36) items.push(it('white_wool'));
+  const tossed = [], entities = {};
+  let n = 100;
+  const bot = { registry, game: { gameMode: 'survival' }, entity: { position: new Vec3(0, 64, 0) }, entities,
+    inventory: { items: () => items, emptySlotCount: () => 36 - items.length, slots: [], selectedItem: null },
+    getControlState: () => false, currentWindow: null, closeWindow() {}, lookAt: async () => {},
+    toss: async (type) => {
+      const i = items.findIndex(x => x.type === type);
+      if (i < 0) return;
+      const thrown = items[i]; tossed.push(thrown.name); items.splice(i, 1);
+      // It lands at the feet and comes back when its pickup delay is up, if a slot is free then.
+      const id = ++n; entities[id] = { id, name: 'item', isValid: true, position: new Vec3(0.5, 64, 0) };
+      setTimeout(() => { delete entities[id]; if (36 - items.length > 0) items.push(thrown); }, 2000);
+    } };
+  let clicks = 0;
+  bot.craft = async () => { clicks++; setTimeout(() => { if (36 - items.length > 0) items.push({ ...it('oak_planks'), count: 4 }); }, 300); };
+  await craft(bot, new (require('../src/skills').Task)('craft'), { action: 'craft', item: 'oak_planks', count: 4, needs_table: false, recipe: { count: 4, ingredients: ['oak_log'] }, consumes: { oak_log: 1 } }, {});
+  assert.equal(clicks, 1);
+  assert(items.some(x => x.name === 'oak_planks'), `crafted with the pockets full: tossed ${tossed}`);
+});
+
 test('25588 at ~01:20Z: a biome where sheep do not spawn says so on the sheep search', () => {
   const { noSheepSays } = require('../src/home-base');
   assert.equal(noSheepSays('snowy_plains'), ' No sheep spawn in the snowy plains: a flock there would have wandered in from next door.');

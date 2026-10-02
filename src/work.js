@@ -2737,6 +2737,16 @@ async function craft(bot, task, step, goal) {
         task.check();
         if (!fits()) break;
         if (!looseNear()) return;
+        // Filled again once already: what lies about now is what was thrown
+        // for the room (in a pocket of rock a throw lands at the feet), and
+        // it comes back when its pickup delay is up, two seconds. The click
+        // goes in now, inside that delay, and the output takes the slot.
+        // Waited out each time, the room was made and filled three times and
+        // the craft failed "the inventory is full (the room made was filled
+        // again by raw copper picked up off the floor)": 134 times for sticks
+        // in mid-205-aa, 64 for a stone pickaxe and a sword in mid-239-cs,
+        // 65 in mid-241-cc-nether-1 (2026-10-02, note 890).
+        if (i >= 1) return;
         // The pickup delay of what lies about (two seconds), then looked at again.
         await sleep(2500); task.check();
         for (const it of bot.inventory.items()) if (!had.has(it.name)) refilled.push(it.name.replaceAll('_', ' '));
