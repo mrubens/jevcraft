@@ -5546,7 +5546,7 @@ function routeSays(bot, goal, r, { frame, placed, frameAt, here, diamondPickaxe,
   const record = v.kind === 'pool' ? lavaRecord(goal, v.l, here) : '';
   const failed = PP.failuresSays(goal, { lava: v.kind === 'deep' ? { deep: true } : { x: at.x, y: at.y, z: at.z } });
   const leaving = r.site === 'new_site' ? newSiteSays : '';
-  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}. ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${leaving}`;
+  return `${site}; cast from ${lava}. Buckets: ${bucketsSay}. Water: ${water}. ${PP.priceSays(p, { tripWhat: r.site === 'beside' ? 'a scoop and a few blocks\' walk' : 'there and back' })}${measured} Pickaxe: ${digs}. Risk: ${risk}.${record}${failed || (record ? '' : ' No failures known for this route.')}${PP.planRecordSays(r.site, v.kind)}${leaving}`;
 }
 
 async function portalMethod(bot, task, goal, save, client = task.opportunityClient) {

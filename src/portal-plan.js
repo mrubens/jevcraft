@@ -47,6 +47,20 @@ const SAME_LAVA = 8;
 // block, walls, pour, water and scoop back); a lava bucket scooped beside
 // its pool 46.4 minutes over 607 (about 5 seconds).
 const CAST_RECORD = { secondsABlock: 12, scoopSeconds: 5, window: 'fresh trials 2026-09-30T17:00Z to 2026-10-01T04:58Z' };
+// What the plans came to (scripts/plan-outcomes.py, the fresh trials of
+// 2026-09-30T12:00Z to 2026-10-02T03:00Z that made a portal plan, 242 of
+// them, by the plan each ended on, note 865): the trials and how many
+// reached the Nether. Said on each route by its kind.
+const PLAN_RECORD = { window: 'the fresh trials of 2026-09-30T12:00Z to 2026-10-02T03:00Z',
+  beside_pool: [95, 31], here_pool: [87, 39], beside_deep: [27, 0], here_deep: [3, 0], beside_sight: [17, 8], here_sight: [3, 1], new_site_pool: [6, 1] };
+function planRecordSays(site, kind) {
+  const r = PLAN_RECORD[`${site}_${kind}`];
+  if (!r) return '';
+  const deep = kind === 'deep' ? [PLAN_RECORD.beside_deep[0] + PLAN_RECORD.here_deep[0], PLAN_RECORD.beside_deep[1] + PLAN_RECORD.here_deep[1]] : null;
+  const [n, ok] = deep || r;
+  const others = kind === 'deep' ? `; of those that ended on a known pool, ${PLAN_RECORD.beside_pool[1] + PLAN_RECORD.here_pool[1]} of ${PLAN_RECORD.beside_pool[0] + PLAN_RECORD.here_pool[0]} did` : '';
+  return ` In ${PLAN_RECORD.window}, ${n} trial${n === 1 ? '' : 's'} ended on ${kind === 'deep' ? 'a plan cast from the deep lava layer' : 'this kind of plan'}: ${ok ? `${ok} reached the Nether (${Math.round(100 * ok / n)}%)` : 'none reached the Nether'}${others}.`;
+}
 // A frame cast beside its lava stands within a few blocks of it (work.js
 // selectPortalSite near the lava): each trip there and back is that walk.
 const BESIDE_BLOCKS = 6;
@@ -209,4 +223,4 @@ function askedAgainSays(due) {
   return due && due.kind !== 'none' ? ` Asked again because ${due.why}.` : '';
 }
 
-module.exports = { priceCast, priceSays, planFailed, planFacts, planDue, askedAgainSays, failuresFor, failuresSays, parse, standingOf, carriersOf, CAST_RECORD, BESIDE_BLOCKS, PLAN_MIN_MS, ROUTE, KEYS, sameLava };
+module.exports = { planRecordSays, PLAN_RECORD, priceCast, priceSays, planFailed, planFacts, planDue, askedAgainSays, failuresFor, failuresSays, parse, standingOf, carriersOf, CAST_RECORD, BESIDE_BLOCKS, PLAN_MIN_MS, ROUTE, KEYS, sameLava };
