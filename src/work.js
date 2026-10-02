@@ -5203,8 +5203,12 @@ async function portalHere(bot, task, goal, save) {
 // and the stair not short enough to dig by hand (tunnelToward). `gather` is
 // whether it must be got from outside the pockets (wood gathered), which in
 // the Nether is the gathering's own search.
+const STAIR_PICKAXE_REST_MS = 10 * 60000;
 function stairPickaxeWanted(bot, goal, target) {
   if (pickaxeTier(bot) >= 1 || bot.game?.gameMode === 'creative') return null;
+  // Its making found to want what this dimension has none of (pickaxeForStair,
+  // note 885): by hand until the rest is out.
+  if (goal?.stairPickaxeRest?.until > Date.now()) return null;
   const tunneling = require('./tunneling');
   let made = null; try { const p = require('./mob-hunt').pickaxeFirst(bot); made = p.none ? null : p.item; } catch (_) { made = null; }
   if (!made && Math.hypot(target.x - bot.entity.position.x, target.z - bot.entity.position.z) <= tunneling.STAIR_ACROSS && tunneling.stairFromHere(bot, goal, target)?.gains) return null;
@@ -5214,7 +5218,20 @@ async function pickaxeForStair(bot, task, goal, save, target, key, item) {
   const before = bot._wantedFor;
   bot._wantedFor = { item, what: /^portal_/.test(key) ? 'the stair to the portal' : `the stair to the ${String(key).replaceAll('_', ' ')}`, target: { x: target.x, y: target.y, z: target.z } };
   const have = bot.inventory.items().filter(i => i.name === item).reduce((n, i) => n + i.count, 0);
-  try { await acquireStep(bot, task, item, have + 1, goal, save); } finally { bot._wantedFor = before; }
+  // A making that wants a block this dimension has none of (oak logs in the
+  // Nether, the planner's wood once the stems carried are spent) is no step
+  // toward the stair: it rests ten minutes and the stair goes on by hand,
+  // slower and dropping nothing. 25594 (mid-242-xa-fortress-3, 2026-10-02
+  // 13:52 to 13:53Z), four blaze rods carried out by its tunnel after
+  // bank_now, wore out its wooden pickaxe, was sent for oak logs three times
+  // in a minute, and the loop's own rule for that (note 458) set the bank
+  // aside: it turned and went back into the fortress with the rods (note 885).
+  try { await acquireStep(bot, task, item, have + 1, goal, save); }
+  catch (err) {
+    if (err.name !== 'WrongDimension') throw err;
+    goal.stairPickaxeRest = { at: Date.now(), until: Date.now() + STAIR_PICKAXE_REST_MS, why: String(err.message || err).slice(0, 160) }; save();
+    console.log(`[stair] no pickaxe to be made here (${goal.stairPickaxeRest.why}): the stair goes on by hand, the making rested ten minutes`);
+  } finally { bot._wantedFor = before; }
 }
 
 // A staircase needs a pickaxe; the planner offers no stone stair without
@@ -8706,4 +8723,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
