@@ -248,6 +248,21 @@ const TERRAIN = Object.freeze([
     target: [4400, 60, 4396],
   },
   {
+    name: 'rise_and_swim_lake',
+    why: 'first-days-236: a cave under a lake, its stone roof under the water; the rise and swim (note 855) rose and then never swam (855c, 855d).',
+    dimension: 'overworld', seconds: 60,
+    start: [5000.5, 61, 5000.5],
+    kit: [['cobblestone', 32], ['iron_pickaxe', 1]],
+    build: [
+      'forceload add 4990 4990 5010 5010',
+      'fill 4994 58 4994 5006 86 5006 minecraft:stone',
+      'fill 4994 81 4994 5006 86 5006 minecraft:air',
+      'fill 4997 65 4997 5003 79 5003 minecraft:water',
+      'fill 5000 61 5000 5000 63 5000 minecraft:air',
+      'fill 4998 80 4998 5002 80 5002 minecraft:air',
+    ],
+  },
+  {
     name: 'portal_platform',
     why: 'Death ten: holding forward for eight seconds, the bot walked through its portal and off the platform beyond it.',
     dimension: 'the_nether', seconds: 45, edge: true,

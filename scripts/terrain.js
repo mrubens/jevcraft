@@ -189,6 +189,15 @@ const RUNS = {
     const under = bot.blockAt(new Vec3(Math.floor(p.x), d.target[1], Math.floor(p.z)))?.name;
     return { pass: level && !watch.died && under === 'nether_bricks', detail: { under, cells, steps, on, y: Math.round(p.y * 10) / 10, across: Math.round(Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5) * 10) / 10, minY: Math.round(watch.minY * 10) / 10, error } };
   },
+  async rise_and_swim_lake(d, bounded) {
+    const u = require('../src/unstuck');
+    const plan = u.risePlan(u.liveView(bot), bot.entity.position.floored());
+    if (!plan?.move) return { pass: false, detail: { plan } };
+    let error = null;
+    try { await u.perform(bot, bounded, plan.move, { dig: true }); } catch (err) { error = err.message; }
+    const p = bot.entity.position;
+    return { pass: !watch.died && p.y >= 79 && !require('../src/vitals').headSubmerged(bot), detail: { y: Math.round(p.y * 10) / 10, health: bot.health, oxygen: bot.oxygenLevel, does: plan.move.does.slice(0, 160), error } };
+  },
   async portal_platform(d, bounded) {
     const arrived = () => !String(bot.game.dimension).includes('nether');
     try { await enterPortal(bot, bounded, vec(d.portal), arrived); } catch (err) { if (!arrived()) return { pass: false, detail: { error: err.message } }; }

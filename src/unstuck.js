@@ -1071,9 +1071,30 @@ async function perform(bot, task, m, { dig }) {
       const placed = await require('./pillar-recovery').pillarUp(bot, task, m.top, { dig, maxBlocks: m.rise + 4, blocks: m.blocks });
       if (!placed) throw new Error('The pillar would not rise');
     }
-    const over = bot.blockAt(bot.entity.position.floored().offset(0, 2, 0));
-    if (over?.boundingBox === 'block') { try { await require('./skills').equipBestTool(bot, over); } catch (_) { /* the hand */ } await bot.dig(over, true); }
-    await require('./vitals').straightUp(bot, task, { maxMs: Math.round(m.swim.seconds * 1000) + 6000 });
+    // Up to the water: the rock over the head dug, any air risen into a
+    // block at a time, until the cell over the head is the water; then it
+    // pours in and the swim begins. straightUp swims only with the head
+    // under: run from the pillar's top in dry air under the rock it did
+    // nothing (25597, mid-236-bj, note 855d).
+    const vitals = require('./vitals');
+    const until = Date.now() + 20000;
+    for (;;) {
+      task.check?.();
+      if (vitals.headSubmerged(bot)) break;
+      if (Date.now() > until) throw new Error('The water over the rock was not reached');
+      const feetNow = bot.entity.position.floored(), over = bot.blockAt(feetNow.offset(0, 2, 0));
+      if (!over) throw new Error('The column over the head is not loaded');
+      if (over.boundingBox === 'block') {
+        try { await require('./skills').equipBestTool(bot, over); } catch (_) { /* the hand */ }
+        await bot.dig(over, true);
+        continue;
+      }
+      // The water over the opened cell, or in it, pours down: waited for.
+      if (isWater(over.name) || isWater(bot.blockAt(feetNow.offset(0, 3, 0))?.name) || isWater(bot.blockAt(feetNow.offset(0, 1, 0))?.name)) { await new Promise(r => setTimeout(r, 250)); continue; }
+      const placed = await require('./pillar-recovery').pillarUp(bot, task, feetNow.y + 1, { dig, maxBlocks: 2, blocks: m.blocks });
+      if (!placed) throw new Error('The pillar would not rise to the water');
+    }
+    await vitals.straightUp(bot, task, { maxMs: Math.round(m.swim.seconds * 1000) + 6000 });
   }
 }
 
