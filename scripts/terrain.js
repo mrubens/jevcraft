@@ -262,6 +262,29 @@ const RUNS = {
     const sr = goal.surfaceReturn || {};
     return { pass: !watch.died && out && p.y >= 68, detail: { out, col, blocked: sr.ascent?.lastBlocked, climbErr: sr.lastError || goal.lastError, staircase: goal.staircaseStalled?.why?.slice(0, 200), calls, seconds: Math.round((Date.now() - started) / 1000), y: Math.round(p.y * 10) / 10, top: Math.round(top * 10) / 10, across: Math.round(Math.hypot(p.x - d.start[0], p.z - d.start[2])), health: bot.health, error: error && error.slice(0, 160) } };
   },
+  async punch_fire(d, bounded) {
+    const inFire = [];
+    const onDamage = p => { if (p.entityId === bot.entity.id) inFire.push({ t: Date.now(), type: p.sourceTypeId }); };
+    bot._client.on('damage_event', onDamage);
+    await command(`execute in minecraft:the_nether run setblock ${d.fireAt.join(' ')} minecraft:fire`);
+    await sleep(1200);
+    const cell = vec(d.fireAt);
+    const before = bot.blockAt(cell)?.name;
+    const hurtBefore = inFire.length;
+    let error = null;
+    const punchedAt = Date.now();
+    try { await bot.dig(bot.blockAt(cell), true); } catch (err) { error = err.message; }
+    const localAfter = bot.blockAt(cell)?.name;
+    await sleep(4000);
+    bot._client.removeListener('damage_event', onDamage);
+    const after = inFire.filter(h => h.t > punchedAt + 1000);
+    const types = [...new Set(inFire.map(h => h.type))];
+    const name = id => { try { return bot.registry.damageTypes?.[id]?.name || bot._client?.registry?.damage_type?.[id] || id; } catch (_) { return id; } };
+    const byType = list => Object.entries(list.reduce((o, h) => (o[h.type] = (o[h.type] || 0) + 1, o), {})).map(([k, n]) => `${k}:${n}`).join(' ');
+    // The game's in_fire is the hurt of standing in a flame (21 on this server's registry); on_fire (31) is the burning after it.
+    const IN_FIRE = 21;
+    return { pass: before === 'fire' && inFire.some(h => h.t < punchedAt && h.type === IN_FIRE) && !after.some(h => h.type === IN_FIRE), detail: { before, localAfter, hurtBefore: byType(inFire.filter(h => h.t < punchedAt)), hurtAfterPunch: byType(after), health: bot.health, error } };
+  },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async climb_out_under_gravel(d, bounded) { return RUNS.climb_out_staircase(d, bounded); },
   async tunnel_to_pool_below(d, bounded) { return RUNS.tunnel_home(d, bounded); },

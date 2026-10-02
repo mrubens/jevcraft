@@ -450,6 +450,20 @@ const TERRAIN = Object.freeze([
     target: [5900, 71, 5900],
   },
   {
+    name: 'punch_fire',
+    why: 'Note 934: a flame lit in the cell the bot stands in, on netherrack in the Nether: the punch puts it out on the server, and the bot is hurt in fire no more after it.',
+    dimension: 'the_nether', seconds: 40,
+    start: [6200.5, 80, 6200.5],
+    kit: [['iron_sword', 1]],
+    armor: { head: 'iron_helmet', chest: 'iron_chestplate' },
+    build: [
+      'forceload add 6190 6190 6210 6210',
+      'fill 6190 70 6190 6210 79 6210 minecraft:netherrack',
+      'fill 6190 80 6190 6210 90 6210 minecraft:air',
+    ],
+    fireAt: [6200, 80, 6200],
+  },
+  {
     name: 'tunnel_home_few_blocks',
     why: 'Note 915: the cavern drill with ten blocks and no pickaxe (25595 fell ten blocks onto its portal\'s floor with ten netherrack carried): the tunnel stops where its blocks run out, on its span, and does not go off it.',
     dimension: 'the_nether', seconds: 150,
