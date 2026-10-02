@@ -189,6 +189,12 @@ const RUNS = {
     const under = bot.blockAt(new Vec3(Math.floor(p.x), d.target[1], Math.floor(p.z)))?.name;
     return { pass: level && !watch.died && under === 'nether_bricks', detail: { under, cells, steps, on, y: Math.round(p.y * 10) / 10, across: Math.round(Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5) * 10) / 10, minY: Math.round(watch.minY * 10) / 10, error } };
   },
+  async tunnel_home(d, bounded) {
+    let error = null, r = null;
+    try { r = await require('../src/bridging').tunnelStraight(bot, bounded, vec(d.target), { maxSteps: 120 }); } catch (err) { error = err.message; }
+    const p = bot.entity.position, across = Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5);
+    return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, error } };
+  },
   async rise_and_swim_lake(d, bounded) {
     const u = require('../src/unstuck');
     const plan = u.risePlan(u.liveView(bot), bot.entity.position.floored());

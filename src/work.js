@@ -4961,6 +4961,17 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     const best = approachBest(goal, p);
     if (across?.cells && across.gain >= 1 && !(Number.isFinite(best) && Math.hypot(target.x - across.end.x, target.z - across.end.z) >= best - 1)) tree.dig_across = { description: `Straight at the portal now at this height, ${pickaxeTier(bot) < 1 ? 'the rock in the way dug by hand (no pickaxe carried)' : 'the rock in the way dug with the pickaxe carried'} and a block laid over open air, ${across.cells} cells of the way; then the way on asked again from where it ends. ${nt.crossingSays(across, 'the portal')}` };
   }
+  // A tunnel dug straight at it through the rock (bridging.js tunnelStraight,
+  // note 860): the way a player takes home through netherrack, with rods
+  // most of all. Offered wherever the bot is in the Nether and more than a
+  // few blocks from the portal across; by hand where no pickaxe is carried,
+  // said with its pace.
+  if (where === 'nether' && Math.hypot(target.x - here.x, target.z - here.z) > 6 && !isSetAside(goal, 'tunnel_home', 'nether')) {
+    const across = Math.round(Math.hypot(target.x - here.x, target.z - here.z)), dy = Math.round(target.y - here.y);
+    const pick = pickaxeTier(bot) >= 1, per = pick ? 0.65 : 2.5, stretch = Math.min(96, across);
+    const blocksLaid = require('./bridging').blocksCarried(bot);
+    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(stretch * per)} seconds for ${stretch} blocks of the ${across} to the portal, then asked again from where it ends. Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
+  }
   if (pickaxeWanted) {
     let fetch = null;
     try { fetch = await require('./nether-wood').fetchStemsOffer(bot, task, goal); } catch (_) { fetch = null; }
@@ -5022,6 +5033,14 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     cameTo(crossed.tried ? goal.lastCrossError : 'no crossing to make after the gather');
     return true;
   }
+  if (pick === 'tunnel_home') {
+    goal.step = { action: 'tunnel_home', target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) } }; save();
+    let why = null;
+    try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
+    cameTo(why);
+    return true;
+  }
   if (pick === 'dig_across') {
     const crossed = await nt.crossToward(bot, task, goal, save, target, { what: 'the portal back' });
     cameTo(crossed.tried ? goal.lastCrossError : crossed.madeAlready || 'no crossing to make');
@@ -5048,6 +5067,11 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   const leg = await sideLeg(bot, task, p, pick === 'around_left' ? 'left' : 'right');
   cameTo(leg.why);
   return true;
+}
+// With rods carried, what the tunnel is to them (note 860).
+function rodsHere(bot) {
+  let rods = 0; try { rods = require('./walk-out').rodsCarried(bot); } catch (_) { rods = 0; }
+  return rods ? ` With ${rods} blaze rod${rods === 1 ? '' : 's'} carried: the rock keeps them from a fall and from every shooter, and lava is met only as a cell read before it is dug.` : '';
 }
 // How long pickaxe_first, chosen, is carried out before the ways are asked again.
 const PORTAL_PICKAXE_HOLD_MS = 10 * 60000;

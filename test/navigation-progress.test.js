@@ -179,7 +179,8 @@ test('the portal back in view, the walk in failed and the staircase resting: the
   await assert.rejects(returnFromNether(bot, task, goal, () => {}), err => err.name === 'WaysResting' && /Jev chose other work until then/.test(err.message));
   assert.equal(asked.length, 1, 'the way is asked, not the staircase\'s rest thrown to the stall');
   const { options, state } = asked[0];
-  assert.deepEqual(Object.keys(options).sort(), ['around_left', 'around_right', 'climb_here', 'wait_rest']);
+  assert.deepEqual(Object.keys(options).sort(), ['around_left', 'around_right', 'climb_here', 'tunnel_home', 'wait_rest']);
+  assert.match(options.tunnel_home, /^Dig a tunnel straight at the portal through the rock, two high and one wide: a step up with each block until level with it \(\d+ above\), then level; a block laid where the floor is missing/);
   assert.match(options.climb_here, /^Pillar straight up 38 blocks to the portal's height \(jump and lay a block under the feet, 64 carried that can be laid, 26 left after\), from where the bot stands, with no lava or water in or beside it; the portal is then 37 blocks across at that height/);
   assert.match(options.climb_here, /On top a push is a fall of 41 blocks into lava\./);
   assert.equal(state.portalAbove, 38);
@@ -213,6 +214,8 @@ test('a way to the portal back chosen from a place that came to nothing is not o
   const goal = { survival: {} };
   setAside(goal, 'staircase', { x: 8, y: 72, z: -16 }, 'no safe step toward it from (-15, 35, 14) (no floor to step onto (a gap, for a span or a pillar): 6 of the steps nearer)', 600000);
   setAside(goal, 'crossing', '-2,1>10,-13', 'it laid nothing nearer', 300000);
+  // The tunnel resting too (note 860), so the legs round are what is left.
+  setAside(goal, 'tunnel_home', 'nether', 'lava on every side of its next cell', 300000);
   await returnFromNether(bot, task, goal, () => {});
   assert.deepEqual(Object.keys(asked[0].options).sort(), ['around_left', 'around_right', 'wait_rest']);
   // The leg round to the right found no path and moved nothing: from here it is not offered again, and it is said.

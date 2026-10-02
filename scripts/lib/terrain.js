@@ -248,6 +248,27 @@ const TERRAIN = Object.freeze([
     target: [4400, 60, 4396],
   },
   {
+    name: 'tunnel_home',
+    why: '25592 (mid-220-ar, 2026-10-01 22:04Z): six rods carried, 255 blocks of solid netherrack between it and its portal, every walk and staircase failed and no tunnel was offered (note 860). Forty blocks of rock, ten down, a lava pocket in the line and a gap of open air.',
+    dimension: 'the_nether', seconds: 150,
+    start: [5200.5, 81, 5200.5],
+    kit: [['cobblestone', 32], ['iron_pickaxe', 1]],
+    build: [
+      'forceload add 5190 5190 5260 5210',
+      'fill 5195 60 5192 5225 90 5208 minecraft:netherrack',
+      'fill 5226 60 5192 5250 90 5208 minecraft:netherrack',
+      // The start's pocket.
+      'fill 5199 81 5199 5201 83 5201 minecraft:air',
+      // A lava pocket in the line, six along.
+      'fill 5208 73 5199 5210 79 5201 minecraft:lava',
+      // Open air across the line, four wide, over a floor far below.
+      'fill 5222 62 5194 5225 88 5206 minecraft:air',
+      // Where it ends: a room at the target.
+      'fill 5238 71 5198 5242 74 5202 minecraft:air',
+    ],
+    target: [5240, 71, 5200],
+  },
+  {
     name: 'rise_and_swim_lake',
     why: 'first-days-236: a cave under a lake, its stone roof under the water; the rise and swim (note 855) rose and then never swam (855c, 855d).',
     dimension: 'overworld', seconds: 60,

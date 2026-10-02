@@ -390,6 +390,88 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
   return steps;
 }
 
+// A tunnel dug straight at `target` through the rock (note 860): two high
+// and one wide, a step down or up with each block until level with the
+// target, a block laid where the floor is missing, and over, under or round
+// any lava met (no cell is dug with lava or water behind it, clear's rule).
+// In the rock no ghast or blaze has a line to the bot and there is no drop
+// beside it. 25592 (mid-220-ar, 2026-10-01 21:50 to 22:04Z), six blaze rods
+// carried at full health and 255 blocks from its portal with the straight
+// line to it "96 of 96 on ground", was offered a leg round to the left, one
+// to the right and a wait; every walk and staircase had failed, and the
+// trial ended there, the best rod run of the record. Ends within `near`
+// blocks of the target across, after maxSteps, or where no way on is safe.
+// -> { steps, laid, arrived }
+async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {}) {
+  let steps = 0, laid = 0, sideRun = 0, lastSide = null;
+  const flatTo = p => Math.hypot(target.x - p.x, target.z - p.z);
+  const molten = b => BURNS.test(b?.name || '') || /water/.test(b?.name || '');
+  const step = async (here, d, dy) => {
+    const n = here.plus(d).offset(0, dy, 0), floor = n.offset(0, -1, 0);
+    // The cells the body passes through, top first.
+    const body = dy === 0 ? [n.offset(0, 1, 0), n]
+      : dy < 0 ? [here.plus(d).offset(0, 1, 0), here.plus(d), n]
+        : [here.offset(0, 2, 0), n.offset(0, 1, 0), n];
+    // Read before anything is dug: no lava in the way, under the step, or over the head.
+    if ([...body, n.offset(0, 2, 0)].some(c => molten(bot.blockAt(c)))) throw new Error(`lava in the way at ${n}`);
+    if (molten(bot.blockAt(floor)) && dy !== 0) throw new Error(`lava under the step at ${n}`);
+    if (dy !== 0 && !solid(bot.blockAt(floor))) throw new Error(`no floor for a step ${dy < 0 ? 'down' : 'up'} at ${n}`);
+    for (const c of body) await clear(bot, task, c);
+    let laidHere = false;
+    if (!solid(bot.blockAt(floor))) {
+      const refused = spanRefused(bot);
+      if (refused) throw new Error(`open air ahead, and a floor is not laid there: ${refused.says}`);
+      const support = bot.blockAt(here.offset(0, -1, 0));
+      if (!solid(support)) throw new Error('nothing solid underfoot to lay the tunnel\'s floor from');
+      const item = material(bot);
+      if (!item) throw new Error('no blocks carried to lay the tunnel\'s floor over open air');
+      const centre = here.offset(0.5, 0, 0.5), p = bot.entity.position;
+      if (Math.hypot(p.x - centre.x, p.z - centre.z) > 0.3) await creepTo(bot, task, here, 1200);
+      await bot.equip(item, 'hand'); task.check();
+      await bot.lookAt(support.position.offset(0.5 + d.x * 0.5, 0.5, 0.5 + d.z * 0.5), true);
+      await bot.placeBlock(support, d);
+      if (!solid(bot.blockAt(floor))) throw new Error(`the floor block at ${floor} did not land`);
+      laid++; laidHere = true;
+    }
+    // Crouched where the floor was laid or ends beyond: a crouched body does not go over an edge.
+    const sneak = dy === 0 && (laidHere || !solid(bot.blockAt(floor.plus(d))));
+    const ok = await creepTo(bot, task, n, 3000, dy > 0 ? ['forward', 'jump'] : ['forward'], { sneak, why: 'a step along a tunnel dug two high through rock, its floor solid under the cell stepped to' });
+    if (!ok) throw new Error(`could not step ${dy > 0 ? 'up ' : dy < 0 ? 'down ' : ''}to ${n}`);
+    if (bot.entity.position.y < n.y - 0.6) throw new Error('fell from the tunnel\'s floor');
+  };
+  while (steps < maxSteps) {
+    task.check();
+    const here = bot.entity.position.floored();
+    if (flatTo(here.offset(0.5, 0, 0.5)) <= near) return { steps, laid, arrived: true };
+    const d = stepToward(here, target);
+    if (!d) return { steps, laid, arrived: true };
+    const want = here.y > target.y ? -1 : here.y < target.y ? 1 : 0;
+    const sides = [new Vec3(d.z, 0, d.x), new Vec3(-d.z, 0, -d.x)].filter(v => !lastSide || !(v.x === -lastSide.x && v.z === -lastSide.z));
+    if (lastSide) sides.sort((a, b) => (b.x === lastSide.x && b.z === lastSide.z) - (a.x === lastSide.x && a.z === lastSide.z));
+    const tries = [[d, want], [d, 0], [d, 1], [d, -1]].filter(([, y], i, all) => all.findIndex(([, q]) => q === y) === i).map(([v, y]) => ({ v, y, side: false }));
+    if (sideRun < 6) for (const v of sides) tries.push({ v, y: 0, side: true });
+    const whys = [];
+    let went = null;
+    for (const t of tries) {
+      try { await step(here, t.v, t.y); went = t; break; }
+      catch (err) {
+        task.check();
+        if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
+        whys.push(`${t.side ? 'aside' : t.y > 0 ? 'up' : t.y < 0 ? 'down' : 'level'}: ${String(err.message).slice(0, 80)}`);
+        // Moved off the cell by a step that failed part way: read again from where it is.
+        if (!bot.entity.position.floored().equals(here)) break;
+      }
+    }
+    if (!went) {
+      if (!bot.entity.position.floored().equals(here) && steps < maxSteps) { steps++; continue; }
+      throw Object.assign(new Error(`The tunnel stopped ${Math.round(flatTo(here))} blocks from its target after ${steps} blocks: ${whys.join('; ')}`), { steps, laid });
+    }
+    steps++;
+    if (went.side) { sideRun++; lastSide = went.v; } else { sideRun = 0; }
+  }
+  return { steps, laid, arrived: false };
+}
+
 // A way across along the ground, as fortress-map.js crossing found it,
 // walked cell by cell, crouched: lava lying on the floor covered (a block
 // laid into it from the floor under it takes its place, and the way goes on
@@ -609,4 +691,4 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
   return { gained: carried(bot) - start, why: carried(bot) >= want ? null : why };
 }
 
-module.exports = { stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
