@@ -405,7 +405,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // the stall's answer is a choice of local moves, and on a span over the lava
   // sea none of the single blocks led anywhere.
   const rising = terrain ? (() => { try { const u = require('./unstuck'); return u.risePlan(u.liveView(bot), bot.entity.position.floored()); } catch (_) { return null; } })() : null;
-  const risingSays = rising?.move ? ` One of its moves is a rise straight up through the rock over the head, ${rising.move.rise} blocks to open space at y ${rising.move.top}, about ${rising.move.seconds} seconds, with the blocks it lays taken from the pack and then the rock dug on the way.` : '';
+  const risingSays = rising?.move?.kind === 'rise_swim' ? ` One of its moves is a rise straight up through the rock over the head, ${rising.move.rise} blocks, then a swim up ${rising.move.swim.cells} blocks of water to open air at y ${rising.move.swim.air}, about ${rising.move.seconds} seconds in all (the swim ${rising.move.swim.seconds} of them, against 15 seconds of a full breath).` : rising?.move ? ` One of its moves is a rise straight up through the rock over the head, ${rising.move.rise} blocks to open space at y ${rising.move.top}, about ${rising.move.seconds} seconds, with the blocks it lays taken from the pack and then the rock dug on the way.` : '';
   const spellSays = terrain ? (() => { try { const r = require('./unstuck').spellRests(goal, bot.entity.position.floored()); return r ? ` The last: ${r}.` : ''; } catch (_) { return ''; } })() : '';
   // At the cage with the rods in hand (cage-hold.js, note 700): the fight
   // there is the plan. Working free is said as leading away from it, and a
