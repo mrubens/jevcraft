@@ -1075,6 +1075,8 @@ async function gameStep(bot, task, goal, save, actions) {
   if (bot.game.gameMode !== 'survival') throw Object.assign(new Error('The game-completion task requires Survival mode'), { name: 'Blocked' });
   const progress = observeProgress(bot, goal);
   await require('./mob-policy').wearBestArmour(bot);
+  // Gold for the piglins before the stage in hand, where the pack makes it (mob-hunt.js goldForPiglins, note 908).
+  if (await require('./mob-hunt').goldForPiglins(bot, task, goal, save, actions)) return false;
   // Out of the Nether on a food trip (note 763): kept until the food rung
   // is met or set aside by choice, or thirty minutes pass.
   // The trip back for food chosen in the Nether is kept to arrival

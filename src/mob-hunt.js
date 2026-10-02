@@ -94,6 +94,45 @@ function kitPieces(bot, missing) {
   const iron = s => (s || []).filter(st => st.action === 'craft').reduce((n, st) => n + (st.consumes?.iron_ingot || 0), 0);
   return { here: hereSteps ? here : [], away, unplanned: hereSteps ? [] : here, hereSteps, hereIron: iron(hereSteps), awayIron: iron(steps) - iron(hereSteps), awayWhere };
 }
+// Gold for the piglins (note 908; physical safety): in the Nether with no
+// gold piece worn or carried and golden boots to be made from the pack by
+// crafts alone (four ingots, or thirty-six nuggets, at a table carried or
+// made from planks carried), they are made and worn before the stage in
+// hand. A piglin goes for a player in no gold on sight and leaves one in any
+// gold piece alone. The kit's question offered the same two crafts fifteen
+// times on 2026-10-02 (its words on piglins added by note 900 for the last
+// four) and was answered fight_with_carried fifteen times, its question
+// being the blaze's fight; that afternoon piglins ended three trials in
+// forty minutes ("shot by Piglin", "slain by Piglin" twice) and struck the
+// rod carriers on their walks out. -> true when a step was taken.
+const GOLD_PIECES = ['golden_helmet', 'golden_chestplate', 'golden_leggings', 'golden_boots'];
+async function goldForPiglins(bot, task, goal, save, actions = {}) {
+  if (dimension(bot) !== 'nether' || bot.game?.gameMode !== 'survival' || typeof actions.acquireStep !== 'function') return false;
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name);
+  if (worn.some(n => GOLD_PIECES.includes(n))) return false;
+  if (isSetAside(goal, 'gold_for_piglins', 'nether')) return false;
+  // Boots carried are put on by wearBestArmour (golden boots first on the feet in the Nether): nothing to make.
+  if (countOf(bot, 'golden_boots')) return false;
+  {
+    const inventory = {};
+    for (const i of bot.inventory.items()) inventory[i.name] = (inventory[i.name] || 0) + i.count;
+    let steps = null;
+    try { steps = require('./knowledge').planOutputs(bot.registry, [{ item: 'golden_boots', count: 1 }], inventory, { dimension: bot.game?.dimension, equipment: carriedEquipment(bot).map(i => i.name), reserveOutputs: false }).steps; }
+    catch (_) { steps = null; }
+    if (!steps?.length || steps.some(st => st.action !== 'craft')) return false;
+    goal.step = { action: 'gold_for_piglins', item: 'golden_boots', crafts: steps.length }; save?.();
+    bot.chat?.('Gold in my pack and none on me: golden boots first, so the piglins leave me be.');
+    try { for (let n = 0; n < steps.length + 1 && !countOf(bot, 'golden_boots'); n++) { task?.check?.(); await actions.acquireStep(bot, task, 'golden_boots', 1, goal, save); } }
+    catch (err) {
+      task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+      setAside(goal, 'gold_for_piglins', 'nether', String(err.message || err).slice(0, 160), 10 * 60000); save?.();
+      return false;
+    }
+    if (!countOf(bot, 'golden_boots')) { setAside(goal, 'gold_for_piglins', 'nether', 'the boots were not made', 10 * 60000); save?.(); return false; }
+  }
+  try { await require('./mob-policy').wearBestArmour(bot); } catch (err) { task?.check?.(); }
+  return true;
+}
 const words = s => String(s || '').replaceAll('_', ' ');
 const Dimension = d => d ? `${d[0].toUpperCase()}${d.slice(1)}` : d;
 const listed = items => items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0] || '';
@@ -4692,4 +4731,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
