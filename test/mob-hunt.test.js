@@ -292,6 +292,9 @@ test('in the Nether with a stone sword and no armour, the kit is Jev\'s choice w
   assert.deepEqual(Object.keys(options).sort(), ['fight_with_carried', 'make_kit_here', 'return_for_kit']);
   assert.match(options.fight_with_carried, /a stone sword, no armour worn \(0 armour points\), no shield\. One blaze fought so: about \d+ seconds/);
   assert.match(options.make_kit_here, /golden boots/, 'gold is in the Nether');
+  // What the boots are for, and what going without has been, said on both (note 900).
+  assert.match(options.make_kit_here, /Golden boots: a piglin leaves a player wearing any one gold armour piece alone in the Nether/);
+  assert.match(options.fight_with_carried, /Without golden boots: every piglin in the Nether goes for the bot on sight \(141 piglin hits/);
   assert.match(options.return_for_kit, /iron sword, iron helmet, iron chestplate, iron leggings and shield: 23 iron ingots, from 23 iron ore mined there/);
   assert.match(options.return_for_kit, /40 blocks off/);
   assert.deepEqual(back, ['portal']);

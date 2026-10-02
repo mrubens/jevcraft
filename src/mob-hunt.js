@@ -137,6 +137,22 @@ async function kitChoice(bot, task, goal, save, actions, missing, { client, mob,
       fight_with_carried: { description: `Go on with what is carried: ${carriedFightSays(bot, mob)} Without ${listed(all)} for now; the pieces are left for half an hour, then offered again.` },
     };
     if (here.length) tree.make_kit_here = { description: `Make ${listed(here.map(p => words(p.item)))} here first${k.hereIron ? `: ${k.hereIron} iron ingots, ${carriedIron} carried` : ''}. It takes: ${k.hereSteps.map(s => `${words(s.action)} ${s.count || 1} ${words(s.item || s.block || s.entity)}`).join(', ')}.${away.length ? ` The rest (${listed(away.map(p => words(p.item)))}) cannot be made in the ${Dimension(dimension(bot))}.` : ''}` };
+    // Golden boots among the pieces in the Nether: what they are for, and
+    // what going without has been (strategy.js RUNG_WHY and WITHOUT, the
+    // record of note 773), with the piglins about now (note 900). On
+    // 2026-10-02 the Nether's kit question offered "Make golden boots here
+    // first. It takes: craft 4 gold ingot, craft 1 golden boots" nine times
+    // and was answered fight_with_carried nine times, nothing said of
+    // piglins; 25594 was struck by them 20 to 8 and 20 to 6.6 on its walks
+    // out with rods, 25597 "speared by Piglin", none with gold worn.
+    const goldHere = here.some(p => p.item === 'golden_boots'), goldAll = [...here, ...away, ...k.unplanned].some(p => p.item === 'golden_boots');
+    if (dimension(bot) === 'nether' && goldAll) {
+      let st = null; try { st = require('./strategy'); } catch (_) { st = null; }
+      let near = 0; try { near = Object.values(bot.entities || {}).filter(e => e?.name === 'piglin' && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= 32).length; } catch (_) { near = 0; }
+      const nearSays = near ? ` ${near} piglin${near === 1 ? ' is' : 's are'} within 32 blocks now.` : '';
+      if (goldHere && tree.make_kit_here && st?.RUNG_WHY?.golden_boots) tree.make_kit_here.description += ` Golden boots: ${st.RUNG_WHY.golden_boots}.${nearSays}`;
+      if (st?.WITHOUT?.golden_boots) tree.fight_with_carried.description += ` Without golden boots: ${st.WITHOUT.golden_boots}.${nearSays}`;
+    }
     if (away.length && k.awayWhere?.dimension === 'overworld' && dimension(bot) !== 'overworld' && actions.returnOverworld) {
       const ores = Object.entries(k.awayWhere.mines).map(([block, n]) => `${n} ${words(block)}`);
       tree.return_for_kit = { description: `Go back to the Overworld for ${listed(away.map(p => words(p.item)))}: ${k.awayIron} iron ingots${carriedIron ? ` (${carriedIron} carried)` : ''}, from ${listed(ores)} mined there, smelted and crafted; there is none in the ${Dimension(dimension(bot))}. ${require('./game-progress').portalTrip(bot, goal)} The hunt waits until the kit is made and the bot is back.` };
