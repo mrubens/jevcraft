@@ -181,6 +181,9 @@ test('the portal back in view, the walk in failed and the staircase resting: the
   const { options, state } = asked[0];
   assert.deepEqual(Object.keys(options).sort(), ['around_left', 'around_right', 'climb_here', 'tunnel_home', 'wait_rest']);
   assert.match(options.tunnel_home, /^Dig a tunnel straight at the portal through the rock, two high and one wide: a step up with each block until level with it \(\d+ above\), then level; a block laid where the floor is missing/);
+  // Priced by the live pace (note 936).
+  assert.match(options.tunnel_home, /about (1\.5|5) seconds a block (with the pickaxe carried|by hand \(no pickaxe carried\))/);
+  assert.match(options.tunnel_home, /the pace is the live tunnels' of 2026-10-02: about 40 blocks a minute with a pickaxe, 12 by hand/);
   assert.match(options.climb_here, /^Pillar straight up 38 blocks to the portal's height \(jump and lay a block under the feet, 64 carried that can be laid, 26 left after\), from where the bot stands, with no lava or water in or beside it; the portal is then 37 blocks across at that height/);
   assert.match(options.climb_here, /On top a push is a fall of 41 blocks into lava\./);
   assert.equal(state.portalAbove, 38);

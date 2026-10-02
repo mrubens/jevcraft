@@ -4765,6 +4765,8 @@ function rememberPortal(goal, save, portal, where) {
   if (goal.portals.some(p => p.dimension === where && Math.hypot(p.x - portal.x, p.z - portal.z) < 4)) return;
   goal.portals.push({ x: portal.x, y: portal.y, z: portal.z, dimension: where }); save();
 }
+// Seconds a block of the tunnel home, as measured live (note 936).
+const TUNNEL_SECONDS = { pickaxe: 1.5, hand: 5 };
 async function walkToKnownPortal(bot, task, goal, save, where) {
   const here = bot.entity.position;
   // One Jev chose to pass over for a portal made here (portal_way) is not
@@ -5031,9 +5033,23 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   // said with its pace.
   if (where === 'nether' && Math.hypot(target.x - here.x, target.z - here.z) > 6 && !isSetAside(goal, 'tunnel_home', 'nether')) {
     const across = Math.round(Math.hypot(target.x - here.x, target.z - here.z)), dy = Math.round(target.y - here.y);
-    const pick = pickaxeTier(bot) >= 1, per = pick ? 0.65 : 2.5, stretch = Math.min(96, across);
+    // The pace as measured live (note 936): the tunnels home of 2026-10-02
+    // made about 40 blocks a minute with a pickaxe (174 minutes of them) and
+    // 12 by hand (357 minutes, half the stretches 7 or fewer). It had said
+    // 0.65 and 2.5 seconds a block, the arena's pickaxe and netherrack's dig
+    // time: 25595 (mid-242-rb-fortress-5, 20:35 to 20:37Z), three rods, no
+    // pickaxe, was told about 240 seconds for 96 blocks, made a block about
+    // every 14 seconds in a blaze's fire, and burned with the rods.
+    const pick = pickaxeTier(bot) >= 1, per = pick ? TUNNEL_SECONDS.pickaxe : TUNNEL_SECONDS.hand, stretch = Math.min(96, across);
+    // Where it begins, before any rock: the shooters with a line to the bot now.
+    let inLine = '';
+    try {
+      const { threats } = require('./danger'), { shooter } = require('./mob-policy');
+      const now = Date.now(), seeing = threats(bot, 48).filter(t => t.visible && shooter(t.entity)).slice(0, 3);
+      if (seeing.length) inLine = ` Where it begins, before the rock: ${seeing.map(t => { const hit = bot._hurtBy?.[t.entity.name]; return `the ${t.entity.name.replaceAll('_', ' ')} ${Math.round(t.distance)} blocks off has a line to the bot${hit && now - hit < 30000 ? ` (its kind hit it ${Math.max(1, Math.round((now - hit) / 1000))} seconds ago)` : ''}`; }).join('; ')}: the first blocks are dug in that line, about ${per} seconds a block.`;
+    } catch (_) { inLine = ''; }
     const blocksLaid = require('./bridging').blocksCarried(bot);
-    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(stretch * per)} seconds for ${stretch} blocks of the ${across} to the portal, then asked again from where it ends. Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
+    tree.tunnel_home = { description: `Dig a tunnel straight at the portal through the rock, two high and one wide: ${dy ? `a step ${dy < 0 ? 'down' : 'up'} with each block until level with it (${Math.abs(dy)} ${dy < 0 ? 'below' : 'above'}), then level; ` : ''}a block laid where the floor is missing (${blocksLaid} carried), and over, under or round any lava met (no block is dug with lava or water behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(stretch * per)} seconds for ${stretch} blocks of the ${across} to the portal, then asked again from where it ends (the pace is the live tunnels' of 2026-10-02: about ${Math.round(60 / TUNNEL_SECONDS.pickaxe)} blocks a minute with a pickaxe, ${Math.round(60 / TUNNEL_SECONDS.hand)} by hand).${inLine} Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and stops there if something that pushes is in sight. It stops at lava it cannot pass. Measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.${rodsHere(bot)}` };
   }
   if (pickaxeWanted) {
     let fetch = null;

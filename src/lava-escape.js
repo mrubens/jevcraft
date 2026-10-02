@@ -29,6 +29,8 @@ const HOT_BODY = /^(lava|flowing_lava|fire|soul_fire)$/;
 const LAVA = /^(flowing_)?lava$/;
 const round = n => Math.round(n * 10) / 10;
 const cellOf = p => ({ x: p.x, y: p.y, z: p.z });
+// A way out of lava that failed this recently and this near is passed over (note 937).
+const FAILED_MS = 15000, FAILED_NEAR = 3;
 
 // In lava with no fire resistance lasting (body.js fireResistant): the
 // body is burning down at about two health a half second through iron.
@@ -134,7 +136,17 @@ function surroundings(bot) {
 async function escape(survival, task, goal, save, { log = console.log, why = 'in lava' } = {}) {
   const bot = survival.bot, t0 = Date.now();
   const ways = survival.lavaWays(task, goal, save);
-  const keys = Object.keys(ways), took = keys[0] || null;
+  // A way that left the body in the lava a moment ago from about here is
+  // passed over for the next in the order (note 937): 25598 (mid-242-gh-
+  // nether-1, 2026-10-02 20:10:13 to 20:10:19Z) took back_the_way_came three
+  // times, its first step refused ("lava ahead; not walked into"), the
+  // second "still in the lava after 0 s", and died in the lava at 0 with
+  // swim_up on offer every time. Taken again only when every way has so failed.
+  const here = bot.entity.position;
+  const failedHere = k => (survival.state.lavaEscapes || []).some(e => e.took === k && e.out === false && Date.now() - Date.parse(e.at) < FAILED_MS
+    && e.position && Math.hypot(e.position.x - here.x, e.position.y - here.y, e.position.z - here.z) <= FAILED_NEAR);
+  const all = Object.keys(ways), fresh = all.filter(k => !failedHere(k));
+  const keys = fresh.length ? [...fresh, ...all.filter(k => !fresh.includes(k))] : all, took = keys[0] || null;
   const facts = { ...surroundings(bot), why, took, offered: keys, workedOutMs: Date.now() - t0 };
   if (took) facts.says = String(ways[took].description || '').slice(0, 400);
   log(`[lava-escape] ${why} at (${facts.position.x}, ${facts.position.y}, ${facts.position.z}), ${facts.health} health: ${took ? `took ${took} by the body's safety rule, no question asked` : 'no way out found'} (worked out in ${facts.workedOutMs} ms; ${keys.length} way${keys.length === 1 ? '' : 's'} on offer: ${keys.join(', ') || 'none'})`);
