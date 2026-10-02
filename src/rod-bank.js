@@ -57,13 +57,17 @@ function chestThere(bot, goal) {
 }
 
 // Whether bank_rods is on offer here, and what it is: in the Nether in
-// Survival, 2 or more rods carried (powder a half each) and rods still
+// Survival, a rod or more carried (powder a half each) and rods still
 // wanted, the walk to the portal open and its distance known, not resting
 // after a failure and not already under way.
+// From the first rod (note 874): a stash wants two (rod-stash.js ROD_MIN, a
+// chest's worth), but the way out is a rod kept whatever its count, and on
+// 2026-10-02 most lives that got a rod got one and died with it, never asked.
+const BANK_MIN = 1;
 function bankOffer(bot, goal, { now = Date.now() } = {}) {
   if (!bot?.entity || where(bot) !== 'nether' || bot.game?.gameMode !== 'survival') return null;
   const rods = rs().rodsEquivalent(bot);
-  if (rods < rs().ROD_MIN || pending(goal) || isSetAside(goal, 'rod_bank', 'out', now)) return null;
+  if (rods < BANK_MIN || pending(goal) || isSetAside(goal, 'rod_bank', 'out', now)) return null;
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
   if (!n?.rodsLeft) return null;
   let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }

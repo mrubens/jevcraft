@@ -84,8 +84,9 @@ test('bank_rods in the rods stage: offered with 2 or more rods carried, rods sti
   // The chest carried, or the wood for one, is said so.
   assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 4, chest: 1 } }), huntGoal()).chest.how, 'carried');
   assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 4, oak_log: 3 } }), huntGoal()).chest.how, 'wood');
-  // Not offered: one rod, the rods done, no portal known, under way already.
-  assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 1 } }), huntGoal()), null);
+  // Offered from the first rod (note 874). Not offered: no rod, the rods done, no portal known, under way already.
+  assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 1 } }), huntGoal()).rods, 1);
+  assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0 } }), huntGoal()), null);
   assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 7 } }), huntGoal()), null);
   assert.equal(rb.bankOffer(bot, { ...huntGoal(), portals: [] }), null);
   assert.equal(rb.bankOffer(bot, { ...huntGoal(), rodBank: { at: Date.now() } }), null);
