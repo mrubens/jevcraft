@@ -94,9 +94,18 @@ function reached(frames) {
 // 108 endings since 2026-09-30 10Z were missing from the loop and death
 // rates. -> the reasons, none when neither cut applies.
 const CUT_MINUTES = 60;
-function cutReasons(world, playedMinutes, reachedAtMinute = {}) {
+// A fresh world casting its portal's frame at the hour is given until ninety
+// minutes (note 903): of the five cut at sixty minutes from 13:20Z to 14:30Z
+// on 2026-10-02, four had a frame begun (two with 2 and 3 of ten cast). The harness's rule, not the bot's: an arrival after minute
+// sixty is said as that (netherAfterTheHour on the verdict).
+const CUT_CASTING_MINUTES = 90, CASTING_WITHIN_MS = 10 * 60000;
+function castingLately(frames, to) {
+  return (frames || []).some(f => f.t >= to - CASTING_WITHIN_MS && ((f.snapshot?.step || f.snapshot?.goal?.step)?.action === 'cast_portal'));
+}
+function cutReasons(world, playedMinutes, reachedAtMinute = {}, { casting = false } = {}) {
   const out = [];
-  if (!/fortress|nether/.test(world || '') && playedMinutes >= CUT_MINUTES && reachedAtMinute.nether == null) out.push(`cut: no Nether in ${CUT_MINUTES} minutes played`);
+  const limit = casting ? CUT_CASTING_MINUTES : CUT_MINUTES;
+  if (!/fortress|nether/.test(world || '') && playedMinutes >= limit && reachedAtMinute.nether == null) out.push(`cut: no Nether in ${limit} minutes played${casting ? ' (a portal frame being cast at the hour)' : ''}`);
   if (!/fortress/.test(world || '') && reachedAtMinute.nether != null && reachedAtMinute.fortress == null && playedMinutes - reachedAtMinute.nether >= CUT_MINUTES) out.push(`cut: no fortress in ${CUT_MINUTES} minutes after the Nether`);
   return out;
 }
@@ -172,9 +181,10 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const stranded = strandedSeen && overlapMs(spells, to - strandedSeen.minutes * 60000, to) < STRANDED_DOWN_SHARE * strandedSeen.minutes * 60000 ? strandedSeen : null;
   const reasons = [...(deaths.length ? [`${deaths.length} death(s)${deaths.some(t => within(spells, t, SLACK)) ? `, ${deaths.filter(t => within(spells, t, SLACK)).length} while Jev was down` : ''}`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
-    ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)]))))];
+    ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)])), { casting: castingLately(a.frames, to) }))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
     pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
+    ...(!/fortress|nether/.test(trial.world || '') && at.nether != null && playedBy(at.nether) > CUT_MINUTES * 60000 ? { netherAfterTheHour: Math.round(playedBy(at.nether) / 60000) } : {}),
     ...(rodsGot >= 1 && loopsSeen.length ? { loopsWithRodsCarried: { rods: rodsNow, got: rodsGot, loops: loopsSeen } } : {}),
     playedMinutes: Math.round(playedMs / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
     absences: gone.map(g => ({ atMinute: minute(g.from), minutes: Math.round((g.to - g.from) / 60000) })),

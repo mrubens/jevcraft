@@ -196,6 +196,9 @@ test('the watcher\'s hour is a reason in the verdict, not an empty list', () => 
   const { cutReasons } = require('../scripts/midgame');
   assert.deepEqual(cutReasons('mid-244-hf', 61, {}), ['cut: no Nether in 60 minutes played']);
   assert.deepEqual(cutReasons('mid-244-hf', 59, {}), []);
+  // Casting its frame at the hour: until ninety minutes (note 903).
+  assert.deepEqual(cutReasons('mid-244-hf', 61, {}, { casting: true }), []);
+  assert.deepEqual(cutReasons('mid-244-hf', 91, {}, { casting: true }), ['cut: no Nether in 90 minutes played (a portal frame being cast at the hour)']);
   assert.deepEqual(cutReasons('mid-242-zz', 95, { nether: 30 }), ['cut: no fortress in 60 minutes after the Nether']);
   assert.deepEqual(cutReasons('mid-242-zz', 95, { nether: 30, fortress: 50 }), []);
   assert.deepEqual(cutReasons('mid-242-zz-fortress-1', 200, {}), []);
