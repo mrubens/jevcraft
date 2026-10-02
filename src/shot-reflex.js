@@ -496,7 +496,18 @@ function tick(bot, survival, now = Date.now()) {
   // 2026-10-02, 52 of them runs out of fire and cauldron steps (notes 792, 923).
   // The hold's own stop is for the walk between them (the pathfinder's).
   const moving = !!bot._controller && !bot._controller.failed;
-  hold.free = !!wayOut || moving || (!cover && guard.every(g => g.closing));
+  // A stance in force that walks off (STANCE_SHOTS.walking: retreat, leave
+  // and heal, step out and eat, ...) goes on with the shield up beside it,
+  // as it says, whatever answer a warning had before it (note 935). 25591
+  // (mid-242-qb-fortress-5, 2026-10-02 19:58:50 to 19:58:58Z) at 1 health
+  // chose leave_and_heal among blazes and stood eight seconds on the same
+  // block under "answer: shield up to the blaze", given before it, its walk
+  // without a key; it died there. Of the day's 45 deaths by fire, a blaze,
+  // a ghast or lava, 24 stood within a block and a half of one spot for 30
+  // seconds or more of their last 90, against 8 of 31 other deaths.
+  let walkingStance = false;
+  try { const st = require('./danger').stanceHeld(bot, now); walkingStance = !!st && STANCE_SHOTS.walking.has(st.choice); } catch (_) { walkingStance = false; }
+  hold.free = !!wayOut || moving || walkingStance || (!cover && guard.every(g => g.closing));
   if (hold.free) { hold.why = guard[0]?.why || hold.why; if (require('./combat').raiseShield(bot)) hold.raised = true; return; }
   const { set, look } = bot._shotRaw;
   for (const k of MOVE_KEYS) set(k, false);

@@ -194,6 +194,15 @@ test('a shield hold from an earlier answer leaves the run out of fire its keys a
   assert.equal(bot._shotHold?.free, true, 'the pillar\'s jump keeps its keys');
   bot.setControlState('jump', true);
   assert.equal(bot.controlState.jump, true);
+  // A stance in force that walks off (note 935): its walk too, whatever the answer before it.
+  delete bot._controller; bot.controlState = {};
+  bot._shotLookAt = 0; reflex.tick(bot, survival, t0 + 9000);
+  assert.ok(bot._shotHold && !bot._shotHold.free, 'held again with nothing running');
+  bot._stance = { choice: 'leave_and_heal', at: Date.now(), ranAt: Date.now(), running: true, health: bot.health };
+  bot._shotLookAt = 0; reflex.tick(bot, survival, t0 + 9100);
+  assert.equal(bot._shotHold?.free, true, 'leave and heal walks with the shield up beside it');
+  bot.setControlState('forward', true);
+  assert.equal(bot.controlState.forward, true);
 });
 
 test('the hurt watchdog: two burns while the run out of fire runs do not stop it; with nothing running they do', () => {
