@@ -208,7 +208,11 @@ async function bank(bot, task, goal, save, actions = {}) {
   }
   const stored = await rs().stashRods(bot, task, goal, save, actions, offer, { step: 'bank_rods', rest: ['rod_bank', 'store'],
     chat: (list, place) => `Banked ${list} in a chest at ${place}. Back to the Nether for the rest.` });
-  if (stored) { b.doneAt = Date.now(); b.chestAt = offer.existing ? offer.existing.position : P(offer.site.cell); save?.(); return true; }
+  // Stored: the next coming out with rods banks again at once. The half
+  // hour's rest (bankOnArrival) is for a bank that failed; kept after one
+  // that stored, 25597 came out again fourteen minutes later with two rods
+  // and nothing was begun (note 881).
+  if (stored) { b.doneAt = Date.now(); b.chestAt = offer.existing ? offer.existing.position : P(offer.site.cell); require('./progress').attemptsFor(goal).clear('rod_bank', 'arrival'); save?.(); return true; }
   b.fails = (b.fails || 0) + 1; b.lastError = goal.rodStashFailed?.why || 'not stored'; save?.();
   return false;
 }

@@ -115,7 +115,10 @@ test('banked: the walk out held through the portal, the chest set down on the Ov
   const stage = nextGameStage(bot, goal);
   assert.deepEqual([stage.phase, stage.action], ['bank_rods', 'bank_rods']);
   const { place } = chestWorld(bot);
+  // A rest from a bank begun on arrival is lifted by the store (note 881): the next coming out banks again.
+  require('../src/progress').setAside(goal, 'rod_bank', 'arrival', 'banked on coming out with rods', 30 * 60000);
   assert.equal(await rb.bank(bot, task, goal, () => {}, { place, navigate: async () => {} }), true);
+  assert.equal(require('../src/progress').isSetAside(goal, 'rod_bank', 'arrival'), false);
   assert.equal(rodsOf(bot), 0);
   assert.equal(goal.rodStashes[0].dimension, 'overworld');
   assert.equal(goal.rodStashes[0].contents.blaze_rod, 4);
