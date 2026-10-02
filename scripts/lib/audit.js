@@ -179,7 +179,20 @@ function analyse({ identity, from, to, dir = path.join(__dirname, '..', '..', '.
     const left = c => { const st = c.s?.step || c.s?.goal?.step; return Number.isFinite(st?.count) ? `${st.action}:${st.drops || st.item}:${st.count}` : null; };
     const counts = win.map(left).filter(Boolean).map(k => ({ key: k.slice(0, k.lastIndexOf(':')), n: Number(k.slice(k.lastIndexOf(':') + 1)) }));
     const countedDown = counts.some((c, j) => counts.slice(j + 1).some(d => d.key === c.key && d.n < c.n));
-    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !movedOn && !countedDown && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
+    // Nor when the step itself moved on: a step that names its own phase (a
+    // portal's cast: to_stand, clear_blocker, wall, pour) and ends the window
+    // in a phase or at a block it had not named before in it has not come
+    // back to where it was. mid-227-bm (25583, 2026-10-02 13:25:02 to
+    // 13:25:18Z) walked to its cast's stand, asked portal_plan, cleared one
+    // blocker and then another, the label of the crossing between each, and
+    // was failed as "flipping cast_portal <-> enter_nether (asking)" on those
+    // sixteen seconds, thirty-four minutes in with the frame's first wall
+    // going up at the next site twenty seconds later (note 876). A cycle
+    // comes back to a phase and block it named before, and is still a flip.
+    const phased = c => { const st = c.s?.step || c.s?.goal?.step; return st?.phase && st.action === c.a ? `${st.action}:${st.phase}:${JSON.stringify(st.at || st.slot || null)}` : null; };
+    const phases = win.map(phased).filter(Boolean);
+    const phaseOn = phases.length >= 2 && !phases.slice(0, -1).includes(phases.at(-1));
+    if (names.size === 2 && win[6].t - win[0].t <= 60000 && covered < 5 && !movedOn && !countedDown && !phaseOn && !gained(win[0].t, win[6].t)) { flips.push({ from: win[0].t, to: win[6].t, between: [...names].join(' <-> '), at: pos(win[0].s) }); i += 6; }
   }
 
   // Retry loops: "persist" steps and repeated problems, by problem text.
