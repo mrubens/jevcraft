@@ -157,6 +157,36 @@ function watchShots(bot) {
     setTimeout(() => settle(bot, s), 150);
   });
 }
+// A ghast's fireball on a line to the bot, struck as it comes into reach
+// (note 917). Struck with anything it flies back the way the bot looks, and
+// does not land: no hurt, no fire, no push (ghast.js; the shield stops the
+// hurt and not the push). Five deaths on 2026-10-02 were a fireball's push
+// off a span into the lava sea with the shield up to it (25597 14:47:57Z,
+// 25598 14:55:36Z, 25592 14:59Z and 16:50:21Z, 25595 15:30:03Z); the stance's
+// own strike (return_fireball) was taken at 0.07 to 0.25, told a record of
+// none sent back from before the strike was timed. In the arena
+// (scripts/terrain.js ghast_fireball) the timed strike sent back 7 of 9 and
+// none landed. Only with the look on it (within sixty degrees): struck
+// with the look elsewhere it flies where the look goes, down into the floor
+// stood on with the look on a block being laid. Flown between the server's
+// updates (one each half second) by ghast.js's tracker.
+const STRIKE_LOOK = 0.5;
+function strikeFireball(bot, s, now = Date.now()) {
+  if (s.name !== 'fireball' || !bot.entity?.position) return false;
+  const G = require('./ghast');
+  const tr = bot._fireballTrack, ball = tr?.balls.get(s.id), e = bot.entities?.[s.id];
+  if (!ball || !e || e.isValid === false) return false;
+  const here = G.inStrikeReach(bot, tr, ball, now);
+  if (!here) return false;
+  const to = here.position.offset(0, 0.5, 0).minus(bot.entity.position.offset(0, 1.62, 0)), n = to.norm() || 1;
+  const yaw = bot.entity.yaw || 0, pitch = bot.entity.pitch || 0;
+  const look = new Vec3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
+  if (look.dot(to) / n < STRIKE_LOOK) return false;
+  try { bot.attack(e); } catch (_) { return false; }
+  if (!s.struck) console.log(`[fireball] struck at ${round(n)} blocks off as it came into reach`);
+  s.struck = (s.struck || 0) + 1;
+  return true;
+}
 // Up, by the server's word, and risen: raised a quarter second or more ago.
 function shieldHeld(bot, now = Date.now()) {
   const active = shieldActive(bot);
@@ -168,6 +198,12 @@ function shieldHeld(bot, now = Date.now()) {
 // that did not land with it up was blocked or went wide.
 function settle(bot, s) {
   bot._shots.delete(s.id);
+  try { bot._fireballTrack?.balls.delete(s.id); } catch (_) { /* no tracker */ }
+  if (s.struck) {
+    const f = bot._fireballStrikes ||= { struck: 0, landed: 0 };
+    f.struck++; if (s.landed) f.landed++;
+    console.log(`[fireball] struck ${s.struck} time${s.struck === 1 ? '' : 's'}: ${s.landed ? 'it landed all the same' : 'it did not land'} (${f.struck - f.landed} of ${f.struck} struck so far did not)`);
+  }
   if (!s.hitting) return;
   const tally = bot._shotTally ||= { up: { landed: 0, not: 0 }, down: { landed: 0, not: 0 } };
   const up = shieldHeld(bot);
@@ -370,7 +406,11 @@ function tick(bot, survival, now = Date.now()) {
     const fresh = warned.filter(e => !bot._shotAsked?.has(e._shotWarn.key));
     if (fresh.length && carried && !bot._shotAsking && survival) ask(bot, survival, fresh);
   }
-  if (!carried) return release(bot);
+  // With no shield the strike is still the body's: a fireball the look is on.
+  if (!carried) {
+    for (const s of bot._shots?.values?.() || []) if (s.name === 'fireball' && hitting(bot, s, now) && !answeredOtherwise(bot, s.owner, now)) strikeFireball(bot, s, now);
+    return release(bot);
+  }
   const guard = [];
   // A meal the bot chose, on (meal.js, note 701): the raise ends it, so no
   // warning's answer raises the shield while it is eaten; a shot already on
@@ -411,6 +451,7 @@ function tick(bot, survival, now = Date.now()) {
       eating = false;
     }
     s.by = answered ? 'answer' : 'reflex';
+    strikeFireball(bot, s, now);
     guard.push({ at: h.at, why: answered ? 'answer: shield up' : a ? `reflex: a ${s.name.replaceAll('_', ' ')} on its way, the stance ${String(a.stance || '').replaceAll('_', ' ')} walking on` : `reflex: a ${s.name.replaceAll('_', ' ')} on its way, no answer about it`, shot: s, w: SHOT_W });
   }
   // Behind the block chosen: walked to while the warning is due or on.
@@ -492,6 +533,11 @@ function shotOptions(bot, warned) {
     tree.shield_up = { description: `Face ${who} and hold the shield up while the shots come: ${doing} stops for about ${round(secs)} seconds and goes on after. The shield blocks only the half the bot faces${left.length ? `; the shooters are split, and ${left.map(p => `the ${p.e.name}`).join(', ')} would be behind it` : ''}.${behind.says} ${blockedSays(bot, warned)}`,
       // Split: a warned shooter, or a blaze in sight, outside the half faced.
       split: left.length > 0 || behind.seeing > 0 };
+    // A ghast's fireball is struck too as it comes into reach (strikeFireball).
+    if (warned.some(e => e.name === 'ghast')) {
+      const G = require('./ghast'), f = bot._fireballStrikes;
+      tree.shield_up.description += ` Facing it, the ghast's fireball is also struck as it comes within reach: struck with anything, a fireball flies back the way the bot looks and does not land (no hurt, no fire, no push; the shield alone stops the hurt, not the push). In the arena (a ghast 13 to 30 blocks off, the bot standing with its shield up, ${G.REFLEX_ARENA.runs} runs), ${G.REFLEX_ARENA.struck} of ${G.REFLEX_ARENA.came} fireballs that came were struck so, ${G.REFLEX_ARENA.landed || 'none'} landed, no health was lost, and ${G.REFLEX_ARENA.killed} of the ghasts were killed by a fireball sent back; with the shield up and no strike, the bot died in both of two runs.${f?.struck ? ` By this bot since: ${f.struck} struck, ${f.landed} of them landed all the same.` : ''}`;
+    }
   }
   const cover = coverCell(bot, warned);
   if (cover) tree.behind_cover = { description: `Step ${cover.steps} block${cover.steps === 1 ? '' : 's'} to (${cover.cell.x}, ${cover.cell.y}, ${cover.cell.z}), out of the line of ${who}, and stay there while the shots come (until about ${round(Math.max(...warned.map(e => WARNS[e._shotWarn.kind].most - (Date.now() - e._shotWarn.at) / 1000)))} seconds from now); ${doing} goes on after.`, cell: cover.cell };
@@ -818,6 +864,7 @@ function install(bot, survival) {
   bot._shotReflex = true;
   try { require('./blaze-stand').volleyWatch(bot); } catch (_) { /* no blazes */ }
   watchShots(bot);
+  try { bot._fireballTrack = require('./ghast').fireballTracker(bot); } catch (_) { /* no packets to watch */ }
   bot._shotSurvival = survival;
   bot.on('physicsTick', () => { try { tick(bot, bot._shotSurvival); } catch (err) { if (!bot._shotErrAt || Date.now() - bot._shotErrAt > 10000) { bot._shotErrAt = Date.now(); console.log(`[shot] ${err.message}`); } } });
 }
@@ -826,4 +873,4 @@ function install(bot, survival) {
 // shooter's line, strike it first or take its shots.
 const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up' && a.choice !== 'reflex'; };
 
-module.exports = { STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS, ask, farHeld, FAR, FAR_HOLD_MS, FAR_NEARER_BY, shotWord };
+module.exports = { strikeFireball, STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS, ask, farHeld, FAR, FAR_HOLD_MS, FAR_NEARER_BY, shotWord };

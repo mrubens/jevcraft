@@ -200,6 +200,47 @@ const RUNS = {
     clearInterval(iv); bot.removeListener('health', onHp);
     return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2 && !hurts.length, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, hurts, error } };
   },
+  async ghast_fireball(d, bounded) {
+    const ghast = require('../src/ghast');
+    const total = { watches: 0, came: 0, struck: 0, strikes: 0, sentBack: 0, landed: 0, killed: 0 };
+    const hurts = []; let lastHp = bot.health, error = null;
+    const onHp = () => { if (bot.health < lastHp) hurts.push(Math.round(bot.health * 10) / 10); lastHp = bot.health; };
+    bot.on('health', onHp);
+    const started = Date.now();
+    try {
+      while (Date.now() - started < (d.seconds - 15) * 1000) {
+        const g = Object.values(bot.entities).filter(e => e.name === 'ghast' && e.isValid !== false).sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
+        if (!g) { if (total.watches) total.ghastGone = true; break; }
+        const r = await ghast.returnFireball(bot, bounded, g, { seconds: 5 });
+        total.watches++;
+        for (const k of ['came', 'struck', 'strikes', 'sentBack', 'landed', 'killed']) total[k] += r[k] || 0;
+        total.ghastAt = Math.round(g.position.distanceTo(bot.entity.position));
+        if (r.killed || r.ghastGone) { total.ghastGone = true; break; }
+      }
+    } catch (err) { error = err.message; }
+    bot.removeListener('health', onHp);
+    return { pass: !watch.died && total.killed >= 1 && total.landed === 0, detail: { ...total, seconds: Math.round((Date.now() - started) / 1000), health: bot.health, hurts, error } };
+  },
+  async ghast_fireball_reflex(d, bounded) {
+    const reflex = require('../src/shot-reflex');
+    reflex.install(bot, null);
+    delete bot._fireballStrikes;
+    const hurts = []; let lastHp = bot.health;
+    const onHp = () => { if (bot.health < lastHp) hurts.push(Math.round(bot.health * 10) / 10); lastHp = bot.health; };
+    bot.on('health', onHp);
+    const started = Date.now(), from = bot.entity.position.clone();
+    const ghastAlive = () => Object.values(bot.entities).some(e => e.name === 'ghast' && e.isValid !== false);
+    let seenGhast = false, came = 0; const ids = new Set();
+    while (Date.now() - started < (d.seconds - 15) * 1000) {
+      bounded.check();
+      if (ghastAlive()) seenGhast = true; else if (seenGhast) break;
+      for (const s of bot._shots?.values?.() || []) if (s.name === 'fireball' && s.hitting && !ids.has(s.id)) { ids.add(s.id); came++; }
+      await sleep(100);
+    }
+    bot.removeListener('health', onHp);
+    const f = bot._fireballStrikes || { struck: 0, landed: 0 };
+    return { pass: !watch.died && !hurts.length && f.struck >= 1 && f.landed === 0, detail: { came, struck: f.struck, landed: f.landed, ghastKilled: seenGhast && !ghastAlive(), moved: Math.round(bot.entity.position.distanceTo(from) * 10) / 10, seconds: Math.round((Date.now() - started) / 1000), health: bot.health, hurts } };
+  },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_few_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_over_cave(d, bounded) { return RUNS.tunnel_home(d, bounded); },

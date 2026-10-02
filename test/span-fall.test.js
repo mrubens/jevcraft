@@ -134,7 +134,7 @@ test('on the span over the lava sea with a ghast in sight, return_fireball is pr
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
   assert.ok(options.return_fireball, Object.keys(options).join(','));
   const back = options.return_fireball.description;
-  assert.match(back, /Priced by that record \(0 of the 6 fireballs that came to the bot sent back\): both of the next 2 fireballs landing, and here the first that lands is the push over the drop below: the price is that fall, the bot's death, and everything carried lost with it, not its 3\.4 damage\./);
+  assert.match(back, /Priced by that record \(7 of the 9 fireballs that came to the bot sent back, none landed\): about 0\.4 of the next 2 fireballs landing, and here the first that lands is the push over the drop below: the price is that fall, the bot's death, and everything carried lost with it, not its 3\.4 damage\./);
   assert.doesNotMatch(back, /Priced by that record[^.]*about [\d.]+ damage in about/);
   assert.match(back, /Open here to the ghast 43 blocks off \(in sight\): one fireball that lands pushes the bot off its feet/);
 });

@@ -177,13 +177,28 @@ function ghastNote(danger, hit) {
 // runs died of them, two thrown into lava. Since, the bot's own count, kept
 // with the goal (goal.fireballReturns).
 const LIVE_BEFORE = { chosen: 11, struck: 4, sentBack: 0, killed: 0, landed: 6, died: 3, intoLava: 2 };
+// The strike as it is now, timed by the fireball's flight, measured in the
+// arena (scripts/terrain.js ghast_fireball, 2026-10-02, note 917): a ghast
+// 13 to 45 blocks off across open air, three runs. The price is this and
+// the bot's own count since; the record before the timing is of a strike
+// that is no longer made, and is said, not priced.
+const ARENA = { runs: 3, came: 9, struck: 8, sentBack: 7, landed: 0, killed: 2 };
+// The body's own strike under its shield (shot-reflex.js strikeFireball),
+// the same day (ghast_fireball_reflex, four runs): no health lost and the
+// bot not moved off its block; without the strike, the shield up, two runs
+// of two died within 38 seconds.
+const REFLEX_ARENA = { runs: 4, came: 9, struck: 8, landed: 0, killed: 3 };
 function measured(since) {
   const s = since || {};
-  const sentBack = LIVE_BEFORE.sentBack + (s.sentBack || 0), landed = LIVE_BEFORE.landed + (s.landed || 0);
+  const sentBack = ARENA.sentBack + (s.sentBack || 0), landed = ARENA.landed + (s.landed || 0);
   const b = LIVE_BEFORE;
   const before = `Measured live so far: before its strike was timed by the fireball's flight, it was chosen ${b.chosen} times in trials, a strike was sent at ${b.struck} fireballs, none was seen to go back and no ghast was killed; ${b.landed} fireballs landed during those watches, and ${b.died} of those runs died of them, ${b.intoLava} thrown into lava.`;
-  const after = s.watches ? ` Since then, by this bot: ${s.watches} watch${s.watches === 1 ? '' : 'es'}, ${s.came || 0} fireball${s.came === 1 ? '' : 's'} came, ${s.struck || 0} struck at, ${s.sentBack || 0} seen to go back, ${s.killed || 0} ghast${s.killed === 1 ? '' : 's'} killed, ${s.landed || 0} landed.` : ' Since then it has not been tried.';
-  return { says: before + after, sentBack, landed, rate: sentBack + landed ? sentBack / (sentBack + landed) : 0 };
+  const arena = ` In the arena since (the strike timed by the fireball's flight; a ghast 13 to 45 blocks off across open air, ${ARENA.runs} runs): ${ARENA.came} fireballs came, ${ARENA.struck} were struck at, ${ARENA.sentBack} seen to go back, ${ARENA.landed ? ARENA.landed : 'none'} landed, and the ghast was killed by its own fireball in ${ARENA.killed} of the ${ARENA.runs}.`;
+  const after = s.watches ? ` Since then, by this bot: ${s.watches} watch${s.watches === 1 ? '' : 'es'}, ${s.came || 0} fireball${s.came === 1 ? '' : 's'} came, ${s.struck || 0} struck at, ${s.sentBack || 0} seen to go back, ${s.killed || 0} ghast${s.killed === 1 ? '' : 's'} killed, ${s.landed || 0} landed.` : ' In the trials since, this bot has not tried it.';
+  // Of those that came, the share seen to go back: one neither seen back
+  // nor landed is not counted as sent back.
+  const came = ARENA.came + Math.max(s.came || 0, (s.sentBack || 0) + (s.landed || 0));
+  return { says: before + arena + after, sentBack, landed, came, rate: came ? Math.min(1, sentBack / came) : 0 };
 }
 
 // Sending its fireball back: offered with a ghast in the bot's sight within
@@ -203,7 +218,7 @@ function returnOption(bot, danger, { hit = 0, others = null, since = null, over 
   const seconds = Math.min(15, Math.round((GHAST.firstShot + out + GHAST.every + out) * 10) / 10);
   const landing = 2 * (1 - record.rate);
   const damage = Math.round((hit * landing + (others?.damage || 0)) * 10) / 10;
-  const share = `${record.sentBack} of the ${record.sentBack + record.landed} fireballs that came to the bot sent back`;
+  const share = `${record.sentBack} of the ${record.came} fireballs that came to the bot sent back, ${record.landed || 'none'} landed`;
   const priced = over
     ? `Priced by that record (${share}): ${record.rate ? `about ${Math.round(landing * 10) / 10} of the next 2 fireballs landing` : 'both of the next 2 fireballs landing'}, and here the first that lands is the push over the drop below: the price is that fall, ${over.deadly ? 'the bot\'s death, and everything carried lost with it' : 'the fall and what it costs'}, not its ${hit} damage${others?.damage ? `, with ${Math.round(others.damage * 10) / 10} from the other mobs here while the bot stands in the open` : ''}.`
     : `Priced by that record (${share}): ${record.rate ? `about ${Math.round(landing * 10) / 10} of the next 2 fireballs landing` : 'both of the next 2 fireballs landing'}, about ${damage} damage in about ${seconds} seconds${others?.damage ? `, ${Math.round(others.damage * 10) / 10} of it from the other mobs here while the bot stands in the open` : ''}.`;
@@ -218,13 +233,22 @@ function returnOption(bot, danger, { hit = 0, others = null, since = null, over 
 // eyes now or a tick on). What came of each is counted: sent back (its
 // next update goes away from the bot), landed (gone within reach of the
 // eyes, not sent back), and the ghast killed.
+// The distance from the eyes to the fireball's box (1 x 1), as the server
+// measures a strike.
+const boxDistance = (p, c) => Math.hypot(Math.max(0, Math.abs(p.x - c.x) - 0.5), Math.max(0, Math.abs(p.y - (c.y + 0.5)) - 0.5), Math.max(0, Math.abs(p.z - c.z) - 0.5));
+// Where a tracked fireball is at `t` if a strike sent now is taken (its box
+// within reach of the eyes now or a tick on), else null.
+function inStrikeReach(bot, tracker, ball, t = Date.now()) {
+  const here = tracker.at(ball, t);
+  if (!here) return null;
+  const e = bot.entity.position.offset(0, 1.62, 0);
+  const next = tracker.at(ball, t + TICK_MS)?.position || here.position;
+  return Math.min(boxDistance(e, here.position), boxDistance(e, next)) <= STRIKE_REACH - 0.25 ? here : null;
+}
 async function returnFireball(bot, task, ghast, { seconds = 4, now = Date.now } = {}) {
   const until = now() + seconds * 1000;
   const centre = e => e.position.offset(0, (e.height || 4) / 2, 0);
   const eye = () => bot.entity.position.offset(0, 1.62, 0);
-  // The distance from the eyes to the fireball's box (1 x 1), as the server
-  // measures a strike.
-  const boxDistance = (p, c) => Math.hypot(Math.max(0, Math.abs(p.x - c.x) - 0.5), Math.max(0, Math.abs(p.y - (c.y + 0.5)) - 0.5), Math.max(0, Math.abs(p.z - c.z) - 0.5));
   const tracker = fireballTracker(bot, { now });
   const seen = new Map();
   const r = { done: true, strikes: 0, came: 0, struck: 0, sentBack: 0, landed: 0, killed: 0 };
@@ -289,4 +313,4 @@ function bowSays(t, arrowsCarried) {
   return `Shoot the ghast ${Math.round(t.distance)} blocks off with the bow from here, each arrow about a second to draw, standing still in its line: an arrow takes about ${a.seconds} seconds to get there and lands for at least ${a.damage}, so about ${a.arrows} that land bring down its ${GHAST.health} health (${arrowsCarried} carried). It drifts while the arrow flies, and no trial has yet measured how often one lands from this far.`;
 }
 
-module.exports = { GHAST, STRIKE_REACH, HOLDS_AT, LIVE_BEFORE, flightSeconds, outSeconds, backSeconds, flyTicks, fireballTracker, carriedAgainstBlast, blastProofMaterial, coverSays, ghastNote, measured, returnOption, returnFireball, arrowAt, bowSays };
+module.exports = { ARENA, REFLEX_ARENA, boxDistance, inStrikeReach, GHAST, STRIKE_REACH, HOLDS_AT, LIVE_BEFORE, flightSeconds, outSeconds, backSeconds, flyTicks, fireballTracker, carriedAgainstBlast, blastProofMaterial, coverSays, ghastNote, measured, returnOption, returnFireball, arrowAt, bowSays };

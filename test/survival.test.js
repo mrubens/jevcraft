@@ -5926,15 +5926,15 @@ test('a ghast in sight: its fireball can be struck back, and it can be shot past
   assert.match(back, /an arrow does not send it back/);
   // Note 574: what it has done live, and priced by it.
   assert.match(back, /The server takes the strike only while the fireball is within 6 blocks of the bot's eyes, the last three or four ticks before it lands/);
-  assert.match(back, /Measured live so far: before its strike was timed by the fireball's flight, it was chosen 11 times in trials, a strike was sent at 4 fireballs, none was seen to go back and no ghast was killed; 6 fireballs landed during those watches, and 3 of those runs died of them, 2 thrown into lava\. Since then it has not been tried\./);
-  assert.match(back, /Priced by that record \(0 of the 6 fireballs that came to the bot sent back\): both of the next 2 fireballs landing, about 12 damage in about 6\.8 seconds\./);
+  assert.match(back, /Measured live so far: before its strike was timed by the fireball's flight, it was chosen 11 times in trials, a strike was sent at 4 fireballs, none was seen to go back and no ghast was killed; 6 fireballs landed during those watches, and 3 of those runs died of them, 2 thrown into lava\. In the arena since \(the strike timed by the fireball's flight; a ghast 13 to 45 blocks off across open air, 3 runs\): 9 fireballs came, 8 were struck at, 7 seen to go back, none landed, and the ghast was killed by its own fireball in 2 of the 3\. In the trials since, this bot has not tried it\./);
+  assert.match(back, /Priced by that record \(7 of the 9 fireballs that came to the bot sent back, none landed\): about 0\.4 of the next 2 fireballs landing, about 2\.7 damage in about 6\.8 seconds\./);
   assert.doesNotMatch(back, /no trial has yet measured|Priced with one fireball missed/);
-  assert.equal(options.return_fireball.expects.damage, 12, 'two fireballs, none measured sent back, no armour: 6 each on Normal');
+  assert.equal(options.return_fireball.expects.damage, 2.7, 'two fireballs, 7 of 9 measured sent back (note 917), no armour: 6 each on Normal');
   // This bot's own count since, kept with the goal, says and prices.
   const since = survival.stanceOptions(new Task('x'), { fireballReturns: { watches: 3, came: 2, struck: 2, sentBack: 2, killed: 1, landed: 0 } }, () => {}, [threat(bot, ghast)], false).return_fireball;
   assert.match(since.description, /Since then, by this bot: 3 watches, 2 fireballs came, 2 struck at, 2 seen to go back, 1 ghast killed, 0 landed\./);
-  assert.match(since.description, /Priced by that record \(2 of the 8 fireballs that came to the bot sent back\): about 1\.5 of the next 2 fireballs landing, about 9 damage/);
-  assert.equal(since.expects.damage, 9);
+  assert.match(since.description, /Priced by that record \(9 of the 11 fireballs that came to the bot sent back, none landed\): about 0\.4 of the next 2 fireballs landing, about 2\.2 damage/);
+  assert.equal(since.expects.damage, 2.2);
   const shot = options.shoot_21;
   assert(shot, Object.keys(options).join(','));
   assert.match(shot.description, /^Shoot the ghast 30 blocks off with the bow from here/);
