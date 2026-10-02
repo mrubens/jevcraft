@@ -680,10 +680,19 @@ const shooting = (m, shield) => m.visible ? (m.hitsBot * landsPerSecond(m) + (m.
 // effect ends. `since`: the seconds from now the timeline starts at (a
 // fight after a stance's setup).
 const FIRE_SHOTS = new Set(['blaze']);
-const shotPieces = (m, shield, from, to, since = 0) => {
+const shotPieces = (m, shield, from, to, since = 0, { struck = false } = {}) => {
   if (FIRE_SHOTS.has(m.name) && m.fireproofFor > 0) from = Math.max(from, m.fireproofFor - since);
   if (!m.visible || !(to > from)) return [];
   const f = shield && m.name !== 'witch' ? 0.5 : 1;
+  // A blaze at arm's length swings, a blow a second, and does not shoot
+  // (the game's BlazeAttackGoal; note 869). Priced as a shooter there, four
+  // blazes within two blocks of 25590 (mid-215-aa, 2026-10-02 12:49:08Z, a
+  // rod carried) read "eat: 4.2 damage in 1.6 seconds", the least of
+  // fourteen ways; the meal was chosen and the blows took 6.7 in it, and
+  // the bot two seconds later. The half second a hurt body is safe (within)
+  // caps what several land.
+  // The one being struck swings a third as often, as a biter struck does (its knockback takes it out of reach).
+  if (m.name === 'blaze' && m.meleeHit > 0 && (m.distance || 0) <= FIREBALL.meleeReach) return [{ from, to, perSecond: m.meleeHit * f * (struck ? 1 / 3 : 1), hit: m.meleeHit }];
   return [{ from, to, perSecond: m.hitsBot * landsPerSecond(m) * f, hit: m.hitsBot }, ...(m.burns ? burnRamp(f * landsPerSecond(m), from, to) : [])];
 };
 // A body that has just been hurt cannot be hurt again for half a second
@@ -791,7 +800,7 @@ function fightTimeline(order, { shield = false, guarded = false, atOnce = Infini
       // reckoned for the one fought (note 535).
       const from = Math.max(t, m.shoots ? inRange(m) : 0);
       if (m.shoots) {
-        pieces.push(...shotPieces(m, shield && !m.unshielded, from, end, since));
+        pieces.push(...shotPieces(m, shield && !m.unshielded, from, end, since, { struck: j === 0 }));
         if (m.poisons && m.visible && end > from && !poisoning.has(m)) poisoning.set(m, from);
         return;
       }
@@ -991,6 +1000,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
       ...(fought ? { fought: { swings: fought.swings, secondsToKillIt: fought.killSeconds, ...(fought.health < MOBS.creeper.health ? { healthLeft: fought.health } : {}), ...(fought.fuseLeft != null ? { litNowFuseLeft: fought.fuseLeft } : {}), ...(fought.diesFirst ? { diesBeforeItGoesOff: true } : { goesOffAt: fought.goesOffAt, blast: fought.hitsBot }), ...(fought.room != null ? { roomBehind: round(fought.room) } : {}) } } : {}),
       // A drowned's thrown trident is eight, where its hand is three.
       hitsBot: round(m.ignoresArmour ? m.hit : afterArmour(t.name === 'drowned' && shoots ? 8 : m.hit, worn)),
+      // A blaze within two blocks swings instead of shooting (note 869): its blow through the armour worn.
+      ...(t.name === 'blaze' ? { meleeHit: round(afterArmour(FIREBALL.melee, worn)) } : {}),
       // A blow that varies (a hoglin's three to eight): its least and its
       // hardest through the armour worn, and how often it comes (note 587).
       ...(m.most && !spear ? { hitsBotLeast: round(afterArmour(m.least, worn)), hitsBotMost: round(afterArmour(m.most, worn)) } : {}), ...(m.blowEvery && !spear ? { blowEvery: m.blowEvery } : {}),
