@@ -203,7 +203,7 @@ function correctionFixture({ safe = true } = {}) {
   let attempts = 0, corrections;
   Object.assign(bot, {
     entity: { position: new Vec3(0.5, 64, 0.7), onGround: false },
-    blockAt: p => ({ name: p.y === 63 ? 'stone' : 'air',
+    blockAt: p => ({ name: p.y === 63 ? 'stone' : 'air', boundingBox: p.y === 63 ? 'block' : 'empty',
       shapes: p.y === 63 && safe ? [[0, 0, 0, 1, 1, 1]] : [] }),
     clearControlStates: () => { for (const k of Object.keys(controls)) controls[k] = false; },
     setControlState: (key, value) => { controls[key] = value; },

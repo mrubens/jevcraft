@@ -901,9 +901,27 @@ async function navigateAttempt(bot, task, goal, { timeoutMs, stallMs, stopWhen, 
     bot.removeListener?.('forcedMove', corrected);
     bot.removeListener?.('path_update', observedRoute);
     bot.removeListener?.('physicsTick', crouchOnEdge);
-    if (edgeCrouch) bot.setControlState?.('sneak', false);
+    // Stopped beside a deadly fall, the body is held crouched a moment while
+    // its pace dies (note 846): the keys cleared, a body still moving goes
+    // on over the edge. 25597 (2026-10-01 18:08:14.5Z) had its walk end on a
+    // partial route at a ledge fifty over the lava sea, the crouch let go
+    // with the keys, and it was falling half a second later, 20 to none.
+    let held = false;
+    try {
+      if (bot.entity?.position && bot.entity.onGround !== false) {
+        const at = bot.entity.position, feet = new Vec3(Math.floor(at.x), Math.ceil(at.y - 1e-4), Math.floor(at.z));
+        const drop = require('./terrain').dropNear(bot, feet, 1);
+        held = !!drop && (drop.into === 'lava' || drop.damage >= (bot.health ?? 20) / 2);
+      }
+    } catch (_) { held = false; }
+    if (held) {
+      bot.setControlState?.('sneak', true);
+      setTimeout(() => { try { if (!bot._controller?.sneak) bot.setControlState?.('sneak', false); } catch (_) { /* gone */ } }, EDGE_STOP_MS);
+    } else if (edgeCrouch) bot.setControlState?.('sneak', false);
   }
 }
+// How long a stop beside a deadly fall holds the crouch (note 846).
+const EDGE_STOP_MS = 400;
 
 /** Equip whichever carried item mines this block fastest. */
 // The cheapest tool that does the job, not the best one carried. The dream
