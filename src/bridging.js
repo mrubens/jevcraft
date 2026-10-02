@@ -446,7 +446,9 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
 // blocks of the target across, after maxSteps, or where no way on is safe.
 // -> { steps, laid, arrived }
 const QUARRY_WANT = 24, QUARRY_BACK = 12;
-async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navigate = null } = {}) {
+// Arrived across and more than this over the target: the tunnel comes down (note 920).
+const OVER = 1;
+async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navigate = null, down = false } = {}) {
   let steps = 0, laid = 0, sideRun = 0, lastSide = null;
   const flatTo = p => Math.hypot(target.x - p.x, target.z - p.z);
   const molten = b => BURNS.test(b?.name || '') || /water/.test(b?.name || '');
@@ -553,6 +555,44 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
     if (!solid(bot.blockAt(here.offset(0, -1, 0)))) {
       let rest = null; try { rest = require('./terrain').restingCell(bot); } catch (_) { rest = null; }
       if (rest && solid(bot.blockAt(rest.offset(0, -1, 0)))) { here = rest; await creepTo(bot, task, here, 1200); }
+    }
+    // Arrived across but still over its target (note 920): down from here,
+    // a step a block, each to the cell that keeps nearest the target (toward
+    // it, beside it, back under where it stood: a stair turned on itself),
+    // dug where rock stands under the step and laid where it is open air.
+    // "Arrived" at any height left 25592 (mid-242-gd-nether-1, 2026-10-02
+    // 17:11 to 17:20Z) twelve blocks straight over its portal, one across:
+    // its tunnel home ended as it began, the walk in had no route past the
+    // drop, the legs round went thirty-two blocks off and back; and 25595
+    // (16:12Z, three rods carried) ten over its portal on its own span.
+    // Where the caller asks for it (`down`: the tunnel home to a portal).
+    const high = here.y - target.y;
+    if (down && flatTo(here.offset(0.5, 0, 0.5)) <= near && high > OVER) {
+      const dirs = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)]
+        .map(v => ({ v, far: flatTo(here.plus(v).offset(0.5, 0, 0.5)) })).filter(x => x.far <= near + 2).sort((p, q) => p.far - q.far);
+      const whys = [];
+      let went = false;
+      for (const { v } of dirs) {
+        for (const how of ['dug', 'laid']) {
+          try {
+            const before = Math.floor(bot.entity.position.y);
+            if (how === 'dug') await step(here, v, -1);
+            else { await stairsDown(bot, task, new Vec3(here.x + v.x * 16, here.y - 2, here.z + v.z * 16), { maxSteps: 1 }); laid += 2; }
+            if (Math.floor(bot.entity.position.y) >= before) throw new Error('the step did not go down');
+            went = true; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] over the target, ${high} up: ${here} ${how} down -> ${bot.entity.position.floored()} hp ${bot.health}`);
+            break;
+          } catch (err) {
+            task.check();
+            if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
+            whys.push(`${how} down ${v.x ? (v.x > 0 ? 'east' : 'west') : (v.z > 0 ? 'south' : 'north')}: ${String(err.message).slice(0, 60)}`);
+            if (!bot.entity.position.floored().equals(here)) { went = true; break; }
+          }
+        }
+        if (went) break;
+      }
+      if (!went) throw Object.assign(new Error(`The tunnel stopped ${high} blocks over its target, ${Math.round(flatTo(here))} across, after ${steps} blocks: ${whys.join('; ')}`), { steps, laid });
+      steps++;
+      continue;
     }
     if (flatTo(here.offset(0.5, 0, 0.5)) <= near) return { steps, laid, arrived: true };
     const d = stepToward(here, target);

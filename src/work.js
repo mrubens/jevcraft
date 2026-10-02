@@ -4802,10 +4802,11 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // pass with none made; a threat's turn between does not end it.
   const th = goal.tunnelHome;
   if (where === 'nether' && th && Math.hypot(th.x - p.x, th.z - p.z) <= 6 && Date.now() - th.at < TUNNEL_HOME_HOLD_MS) {
-    const flatNow = () => Math.hypot(p.x - bot.entity.position.x, p.z - bot.entity.position.z), before = flatNow();
+    // Ground made across, or down toward it once over it (note 920).
+    const flatNow = () => Math.hypot(p.x - bot.entity.position.x, p.z - bot.entity.position.z) + Math.max(0, bot.entity.position.y - p.y), before = flatNow();
     goal.step = { action: 'tunnel_home', target: { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }, held: true }; save();
     let r = null, why = null;
-    try { r = await require('./bridging').tunnelStraight(bot, task, pos(p), { maxSteps: 96, navigate }); }
+    try { r = await require('./bridging').tunnelStraight(bot, task, pos(p), { maxSteps: 96, navigate, down: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
     if (r?.arrived) { delete goal.tunnelHome; save(); }
     else if (before - flatNow() >= 4) { goal.tunnelHome = { ...th, at: Date.now() }; save(); return true; }
@@ -5066,6 +5067,7 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   goal.portalWay = { key, until, from, pick, at: now, tried }; save();
   // What the way chosen came to, kept for the next asking from here.
   const start = bot.entity.position.clone(), startOff = Math.hypot(p.x - start.x, p.z - start.z);
+  const startUp = Math.max(0, start.y - p.y);
   const cameTo = why => {
     const at = bot.entity.position, moved = Math.round(Math.hypot(at.x - start.x, at.y - start.y, at.z - start.z));
     if (moved >= 4 || startOff - Math.hypot(p.x - at.x, p.z - at.z) >= 1) return;
@@ -5098,11 +5100,11 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   if (pick === 'tunnel_home') {
     goal.step = { action: 'tunnel_home', target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) } }; save();
     let why = null;
-    try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96, navigate }); }
+    try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96, navigate, down: true }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
     cameTo(why);
     // Held while it makes ground (walkToKnownPortal goes on with it, note 866).
-    const at = bot.entity.position, made = startOff - Math.hypot(p.x - at.x, p.z - at.z);
+    const at = bot.entity.position, made = (startOff - Math.hypot(p.x - at.x, p.z - at.z)) + Math.max(0, startUp - Math.max(0, at.y - p.y));
     if (made >= 4) goal.tunnelHome = { x: p.x, y: p.y, z: p.z, at: Date.now() }; else delete goal.tunnelHome;
     save();
     return true;

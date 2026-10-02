@@ -195,7 +195,7 @@ const RUNS = {
     const onHp = () => { if (bot.health < lastHp) { const p = bot.entity.position; hurts.push({ hp: Math.round(bot.health * 10) / 10, at: [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, Math.round(p.z * 10) / 10], fromY: Math.round(lastY * 10) / 10 }); } lastHp = bot.health; };
     const iv = setInterval(() => { if (bot.entity.onGround) lastY = bot.entity.position.y; }, 50);
     bot.on('health', onHp);
-    try { r = await require('../src/bridging').tunnelStraight(bot, bounded, vec(d.target), { maxSteps: 120, navigate }); } catch (err) { error = err.message; }
+    try { r = await require('../src/bridging').tunnelStraight(bot, bounded, vec(d.target), { maxSteps: 120, navigate, down: d.down !== false }); } catch (err) { error = err.message; }
     const p = bot.entity.position, across = Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5);
     clearInterval(iv); bot.removeListener('health', onHp);
     return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2 && !hurts.length, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, hurts, error } };
@@ -242,6 +242,8 @@ const RUNS = {
     return { pass: !watch.died && !hurts.length && f.struck >= 1 && f.landed === 0, detail: { came, struck: f.struck, landed: f.landed, ghastKilled: seenGhast && !ghastAlive(), moved: Math.round(bot.entity.position.distanceTo(from) * 10) / 10, seconds: Math.round((Date.now() - started) / 1000), health: bot.health, hurts } };
   },
   async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_home_from_above(d, bounded) { return RUNS.tunnel_home(d, bounded); },
+  async tunnel_home_from_span(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_few_blocks(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_home_over_cave(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async tunnel_to_pool(d, bounded) { return RUNS.tunnel_home(d, bounded); },
