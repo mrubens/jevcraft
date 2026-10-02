@@ -1069,7 +1069,18 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // lands on dry ground. With nothing in view to fight (huntObserved runs
   // first, and asks Jev with the fitness as facts), a bot short of the
   // fitness recovers here: food, cover from the shooters, health.
-  if (!handler.passive && !fitness(bot).fit) {
+  // In the Overworld, short of the fitness only by food (health and hunger
+  // at the floor or over, nothing carried to eat, hunger under eighteen):
+  // waiting brings nothing back, so the hunt moves on as it does for a
+  // footing, the stock asked of the survival layer (stockFood), and a fight
+  // in view is Jev's with the fitness said ("nothing is carried to eat").
+  // mid-211-aa (2026-10-02 12:00 to 12:06Z) held recover_before_combat at
+  // 16.6 health and 15 hunger, 14 of each wanted, through nine stalls, and
+  // was cut as a loop 25 minutes in (note 877).
+  const f0 = handler.passive ? null : fitness(bot);
+  const foodOnly = !!f0 && !f0.fit && dimension(bot) === 'overworld' && f0.health >= HUNT_FLOOR && f0.food >= HUNT_FLOOR && !f0.foodCarried && !(f0.burning && f0.health < 10);
+  if (foodOnly && !goal.stockFood) { goal.stockFood = true; save(); }
+  if (!handler.passive && !f0.fit && !foodOnly) {
     // Nothing to eat and hunger under eighteen means no regeneration: the
     // recovery never comes. Off the Overworld that is a trip back for food.
     // Unless Jev chose to go on in the Nether without going back (nether-

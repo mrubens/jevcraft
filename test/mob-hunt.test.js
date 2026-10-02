@@ -1510,6 +1510,21 @@ test('fit in every way but its footing, the hunt moves on rather than waiting to
   assert.equal(goal.step.action, 'recover_before_combat', 'hurt is still a reason to recover');
 });
 
+test('in the Overworld, short only by food (nothing carried, hunger under eighteen), the hunt moves on and the stock is asked for (note 877)', async () => {
+  const { bot, goal, task } = fixture('spider');
+  bot.game.dimension = 'overworld'; bot.game.minY = 0; bot.game.height = 256;
+  bot.inventory.slots[36] = { name: 'iron_sword', slot: 36, count: 1, durabilityUsed: 0 };
+  for (const [slot, name] of [[5, 'iron_helmet'], [6, 'iron_chestplate'], [7, 'iron_leggings'], [8, 'iron_boots'], [45, 'shield']]) bot.inventory.slots[slot] = { name, slot, count: 1, durabilityUsed: 0 };
+  bot.health = 16.6; bot.food = 15;
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, { acquireStep: async () => {}, explore: async () => {} });
+  assert.equal(goal.step.action, 'stalk_mob', 'mid-211-aa waited here through nine stalls');
+  assert.equal(goal.stockFood, true);
+  // Under the floor it recovers as before.
+  bot.health = 12;
+  await prepareMobHunt(bot, task, { entity: 'spider', item: 'string', count: 3 }, goal, () => {}, { acquireStep: async () => {}, explore: async () => {} });
+  assert.equal(goal.step.action, 'recover_before_combat');
+});
+
 test('fit to fight is one test: the claim on a quarry and the hunt agree, and rotten flesh counts as something to eat', () => {
   const { fitToFight } = require('../src/mob-policy');
   const { claimed } = require('../src/danger');
