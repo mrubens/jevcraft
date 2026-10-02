@@ -4819,6 +4819,8 @@ class Survival {
         footing = ` No way found yet: ${scout.tried} of ${plural(scout.candidates, 'spot')} further from every mob tried and none has a route passing none of them; the rest are tried before it moves, ${Number.isFinite(budget) && budget / 1000 < rest ? `for at most about ${Math.round(stands * 10) / 10} seconds standing still, until the creeper would be within three blocks, and the run then fails and this is asked again unless one is found` : `up to about ${rest} seconds standing still`}.${scout.backWhy ? ` Back the way it came is no way: ${scout.backWhy}.` : ''}${c.says}`;
       }
     }
+    // The run's route along a deadly edge, where it has no other (note 951).
+    if (scouted?.destination && scouted.edge) footing += ` It runs ${plural(scouted.edge, 'cell')} beside a drop that kills (lava or a fall), the only way found: a blow from a mob on the way can put the bot over it.`;
     if (!scouted && !onPillar && runCreepers.length) {
       const stands = Math.min(3.6, searchBudget(bot, runCreepers) / 1000);
       const c = creeperRunSays(standingAgainstCreepers(bot, runCreepers, stands), { worn: runWorn, health: bot.health, standing: true });
@@ -6583,10 +6585,10 @@ class Survival {
   // is walked in time against its fuse (wayAgainstCreepers): the first on
   // which none goes off is the way; with none such, the one whose blast is
   // least, said with it (note 604).
-  async wayAway(task, movements, { about, heavy, creepers = [] }, candidates, { budgetMs = Infinity } = {}) {
+  async wayAway(task, movements, { about, heavy, creepers = [], pushing = false }, candidates, { budgetMs = Infinity } = {}) {
     const bot = this.bot;
     const end = Date.now() + budgetMs;
-    let tried = 0, least = null;
+    let tried = 0, least = null, edgy = null;
     // The search is the bot standing still, up to two seconds and more: with
     // a biter at its reach, behind the shield facing it. mid-242-ah-fortress-
     // 1's retreat stood 2.7 seconds searching with a wither skeleton at arm's
@@ -6601,12 +6603,22 @@ class Survival {
         if (route.status !== 'success') continue;
         // Do not run through another hostile to escape the closest one.
         if (route.path.some(point => about.some(e => e.position.distanceTo(pos(point)) < Math.min(4, e.position.distanceTo(bot.entity.position) - 1)))) continue;
-        if (heavy && route.path.some(point => besideDrop(bot, pos(point).floored()))) continue;
+        const edge = route.path.filter(point => besideDrop(bot, pos(point).floored())).length;
+        if (heavy && edge) continue;
+        // With a mob about that can knock the bot back (any blow does), a
+        // route off the edges first; one beside a deadly drop only where
+        // there is no other, and said (note 951). 25592 (mid-242-ka-nether-1,
+        // 2026-10-02 22:26:32Z) ran from an enderman along a ledge over lava,
+        // was told nothing of it, took one blow and went four down into the
+        // lava from 14.3 health.
         const creeper = require('./creeper-run').wayAgainstCreepers(bot, route.path, creepers);
+        // An edge with no blast on it before a creeper going off on the way.
+        if (pushing && edge) { if (!edgy || (edgy.creeper?.worst.goesOff && !creeper?.worst.goesOff)) edgy = { p, route, edge, ...(creeper ? { creeper } : {}) }; continue; }
         if (!creeper?.worst.goesOff) return { p, route, tried, ...(creeper ? { creeper } : {}) };
         if (!least || creeper.worst.blast < least.creeper.worst.blast) least = { p, route, creeper };
       }
-      return least ? { ...least, tried } : { p: null, tried };
+      const best = edgy && !edgy.creeper?.worst.goesOff ? edgy : least || edgy;
+      return best ? { ...best, tried } : { p: null, tried };
     } finally { if (guarded) lowerShield(bot); }
   }
 
@@ -6666,7 +6678,9 @@ class Survival {
             back: { cells: back.cells.map(c => ({ x: c.x, y: c.y, z: c.z })), end: { ...back.end }, blocks: back.blocks, gain: back.gain, secondsAgo: back.secondsAgo, nearest: back.nearest } };
         }
       }
-      const way = candidates.length ? await this.wayAway(task, movements, { about, heavy, creepers }, candidates, { budgetMs }) : { p: null, tried: 0 };
+      let pushing = false;
+      try { pushing = require('./danger').pushersAbout(bot).some(t => !t.projectile && !shooter(t.entity)); } catch (_) { pushing = false; }
+      const way = candidates.length ? await this.wayAway(task, movements, { about, heavy, creepers, pushing }, candidates, { budgetMs }) : { p: null, tried: 0 };
       const from = bot.entity.position;
       // With no way that passes every mob, a way past the reach of what
       // bites, the shooters' fire taken on it (reachFootings, note 576).
@@ -6680,7 +6694,7 @@ class Survival {
       }
       return this.state.retreatScout = { at: Date.now(), feet, radius, spots: far.length + near.length, tried: way.tried, candidates: candidates.length, ...(pastReach ? { pastReach } : {}), ...(backWhy && !way.p ? { backWhy } : {}),
         ...(way.p ? { destination: { x: way.p.x, y: way.p.y, z: way.p.z }, blocks: Math.round(way.route.path.length || way.p.distanceTo(from)),
-          gain: Math.round(Math.min(...about.map(e => e.position.distanceTo(way.p))) - Math.min(...about.map(e => e.position.distanceTo(from)))), ...(way.creeper ? { creeper: way.creeper } : {}) } : {}) };
+          gain: Math.round(Math.min(...about.map(e => e.position.distanceTo(way.p))) - Math.min(...about.map(e => e.position.distanceTo(from)))), ...(way.creeper ? { creeper: way.creeper } : {}), ...(way.edge ? { edge: way.edge } : {}) } : {}) };
     } catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; return null; }
     finally { Object.assign(movements, previous); unsteer(); }
   }
