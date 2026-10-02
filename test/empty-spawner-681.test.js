@@ -48,8 +48,12 @@ test('the recorded frame: beside the cage at 3.8 health, hunger 15, nothing to e
   assert.equal(done, true);
   assert.equal(asked.length, 1);
   const q = Object.values(asked[0].questions)[0];
-  // The ways: the stand, the trip back; no heal (nothing comes back at 15 with nothing to eat), no search.
-  assert.ok(q.criteria.stand_by_spawner && q.criteria.go_back);
+  // The ways: the trip back; no heal (nothing comes back at 15 with nothing to eat), no search; and at
+  // 3.8 health with no way to heal, no stand at the cage (physical safety, note 883), said as not offered.
+  assert.ok(q.criteria.go_back);
+  assert.equal(q.criteria.stand_by_spawner, undefined);
+  assert.ok(Object.keys(q.criteria).every(k => ['go_back', 'get_food_here', 'step_out', 'pull_back', 'bank_rods', 'none_good'].includes(k)), Object.keys(q.criteria).join(','));
+  assert.match(JSON.stringify(asked[0]), /are not offered under 8 health with no way to heal/);
   assert.equal(q.criteria.heal_first, undefined);
   assert.ok(!Object.keys(q.criteria).some(k => /search|fortress|leg/.test(k)));
   assert.equal(back, 1); assert.equal(waited, 0);

@@ -72,6 +72,7 @@ function fireHit(bot) {
 }
 
 // The facts the question is asked with.
+const LOW_STAY = 8, OUT_WAYS = ['go_back', 'get_food_here', 'step_out', 'pull_back', 'bank_rods'];
 function facts(bot, goal, { cage, off }) {
   const f = require('./fortress-visit').fitness(bot);
   let need = null; try { need = require('./blaze-stand').rodsNeeded(bot, goal); } catch (_) { need = null; }
@@ -456,6 +457,25 @@ async function atSpawner(bot, task, goal, save, actions = {}, now = Date.now()) 
   if (tree.stash_rods) state.rodsCarried = tree.stash_rods.rodsCarried;
   // The trip home not offered for its walk cannot begin from here (note 706).
   if (!tree.go_back && (bot.food ?? 20) < 18) { try { const c = require('./mob-hunt').tripHomeClosed(bot, goal); if (c) state.tripHome = c.says; } catch (_) { /* none */ } }
+  // Physical safety (note 883): under eight health with no way to heal
+  // (hunger under eighteen, nothing that heals carried), the stands at a
+  // live cage are not offered where a way out is: back for food, food got
+  // here, out past sixteen, the bank's walk. Two fireballs that land end
+  // it there, and no hold brings health back. 25590 (mid-242-we-fortress-3,
+  // 2026-10-02 13:41:54Z), 25 minutes at its cage with no blaze killed, 7.1
+  // health, no food and no shield, eleven blazes about, was offered the box
+  // beside the trip back, took the box at 0.73 (go_back 0.08) and burned
+  // seven seconds later. Of the trials' open fights at a live spawner begun
+  // under eight health, 73% died and 13% brought a rod.
+  {
+    const fit = require('./fortress-visit').fitness(bot);
+    const out = OUT_WAYS.filter(k => tree[k]);
+    if (fit.health < LOW_STAY && !fit.healable && out.length) {
+      const held = Object.keys(tree).filter(k => !OUT_WAYS.includes(k));
+      for (const k of held) delete tree[k];
+      if (held.length) state.notOffered = `Health ${Math.round(fit.health * 10) / 10} and not coming back (hunger ${fit.hunger}, nothing that heals carried): the stands at the cage (${held.map(k => k.replaceAll('_', ' ')).join(', ')}) are not offered under ${LOW_STAY} health with no way to heal, where two fireballs that land are the end; the ways out are.`;
+    }
+  }
   // The rods carried asked on their own first (rod-bank.js askBank, note 871).
   if (await require('./rod-bank').askBank(bot, task, goal, save, actions, client, { now }) === 'banked') return true;
   goal.step = { action: 'at_spawner', target: P(known.cage), off: known.off, health: bot.health, food: bot.food }; save?.();
