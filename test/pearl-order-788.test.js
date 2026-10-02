@@ -25,6 +25,8 @@ function nether({ items = ITEMS, entities = {}, landmarks = [], dimension = 'the
     landmarks: [{ kind: 'nether_fortress', x: 200, y: 60, z: 0, dimension: 'nether' }, ...landmarks],
     portals: [{ x: 0, y: 70, z: 0, dimension: 'overworld' }, { x: 2, y: 64, z: 2, dimension: 'nether' }] };
   observeProgress(bot, goal);
+  // The rods carried were asked about already (rods_now, notes 871 and 894): these are the order's own askings.
+  goal.rodsNowAsked = { rods: 99, at: Date.now() };
   return { bot, goal };
 }
 const enderman = (id, x, z = 0) => ({ id, name: 'enderman', position: new Vec3(x, 64, z), isValid: true });
@@ -118,4 +120,20 @@ test('this run\'s record: a way held is settled at the next asking, its minutes,
   const at = Date.now() - 12 * 60000;
   record.settle(goal, { pick: 'hunt_enderman', at, until: at + 30 * 60000, pearlsAt: 0 }, { pearls: 3, deaths: 0, now: Date.now() });
   assert.match(record.runSays(goal, 'hunt_enderman'), /chosen 1 time, held 12 minutes, 3 pearls brought \(4 minutes a pearl\), 0 deaths/);
+});
+
+test('rods carried in the Nether are asked on their own before the order (note 894): bank_now walks out and the order is not asked; stay, and it is', async () => {
+  const mk = () => { const x = nether({ entities: { 9: enderman(9, 12) } }); delete x.goal.rodsNowAsked; return x; };
+  const a = mk(); const askedA = []; let back = 0;
+  const pickA = await order.ask(a.bot, task, a.goal, () => {}, { client: client('bank_now', askedA), returnOverworld: async () => { back++; } });
+  assert.equal(pickA, null);
+  assert.ok(askedA[0].options.bank_now && askedA[0].options.stay_for_more);
+  assert.equal(askedA.length, 1, 'the order is not asked: the bank\'s walk is the step');
+  assert.equal(back, 1);
+  assert.ok(a.goal.rodBank);
+  const b = mk(); const askedB = [];
+  const pickB = await order.ask(b.bot, task, b.goal, () => {}, { client: client('stay_for_more', askedB), returnOverworld: async () => { throw new Error('walked'); } });
+  assert.equal(askedB.length, 2);
+  assert.ok(askedB[1].options.rods_first, 'then the order');
+  assert.ok(pickB);
 });

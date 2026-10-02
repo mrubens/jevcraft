@@ -770,6 +770,23 @@ function strikeCells(bot, blaze, { footingOnly = false } = {}) {
   return out.sort((a, b) => a.distanceTo(bot.entity.position) - b.distanceTo(bot.entity.position));
 }
 
+// What the arena's four-blaze spawner drill came to on 2026-10-02 (note
+// 895; scripts/arena.js blaze_spawner_four_near, four blazes four to six
+// blocks off at a live spawner): charge_nearest taken at every asking
+// (ARENA_PREFER) against the question answered by Jev as it came. Said on
+// charge_nearest and on the hunt's defer at a live spawner with three or
+// more blazes within sixteen. What followed, not what a way caused; the
+// runs answered as they came are of the builds of that day.
+const FOUR_NEAR = Object.freeze({ day: '2026-10-02', charged: { runs: 3, rods: 3, deaths: 0, healthARod: 17, unfinished: 1 }, asItCame: { runs: 13, rods: 3, deaths: 4 } });
+function fourNearSays(bot, goal, blazes) {
+  if (!(blazes >= 3)) return '';
+  let off = null;
+  try { off = require('./empty-spawner').knownSpawner(bot, goal)?.off ?? null; } catch (_) { off = null; }
+  if (!(off != null && off <= 16)) return '';
+  const c = FOUR_NEAR.charged, a = FOUR_NEAR.asItCame;
+  return ` In the arena on ${FOUR_NEAR.day} (four blazes at a live spawner four to six blocks off): the nearest charged at every asking, ${c.runs} runs, ${c.rods} rods carried away and no death, about ${c.healthARod} health lost a rod (a fourth run was stopped unfinished at 3.4 health among eight blazes); the same answered as it came, holds and defers between the strikes, ${a.runs} runs, ${a.rods} rods and ${a.deaths} deaths: held off, the spawner's blazes gather.`;
+}
+
 // strikeCells above is only the geometry at the far end (a cell near the
 // blaze a push lands on ground from); it says nothing about the ground
 // between here and there. fight (survival.js) reads that with its own
@@ -1566,7 +1583,7 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
       const one = closeInCost(bot, withinSixteen(bot, danger, { at: strikeCells(bot, first.entity)[0] || null }), { upTo: 1 });
       options.charge_nearest = { kind: 'charge', site: { target: first.entity.id }, expects: { damage: one.damage, seconds: Math.max(1, one.seconds), oneHit: oneHit(standCost(bot, danger, {}).mobs) }, cost: one,
         description: `Charge the nearest blaze alone: ${round(first.distance)} blocks off, over ground the bot can stand on within a sword's reach of it; ${shield ? 'walk in on it while the volleys rest, behind the shield for each as it comes' : 'no shield carried: walk straight in on it'}, strike it until it dies, pick up its rod if it drops one, and be asked again then with what is left; the other ${aboutAll.length - 1} about are not gone at.${backSays}` +
-          closeInSays(one, hp) + ` It ends at the kill, after ${runs} seconds, or once six health is gone.` };
+          closeInSays(one, hp) + ` It ends at the kill, after ${runs} seconds, or once six health is gone.` + fourNearSays(bot, goal, aboutAll.length) };
     }
   }
   // A blaze in sight that no walk reaches (note 774): 25584 at (136, 59,
@@ -2218,4 +2235,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };

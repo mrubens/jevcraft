@@ -187,6 +187,17 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   if (prev) record.settle(goal, prev, { pearls: count(bot, 'ender_pearl'), deaths: deathsSince(goal, prev.at, now), now });
   const state = { dimension: dimensionOf(bot), askedBecause: because || 'not asked before', ...shared, health: Math.round((bot.health ?? 20) * 10) / 10, hunger: bot.food ?? 20,
     holds: 'the answer holds half an hour; a pearl way is the step while it stays real from here, the rods again after; asked again when a way not on offer now becomes real, after a death, or when the half hour is out' };
+  // The rods carried asked on their own first (rod-bank.js askBank, note
+  // 871), here too (note 894): a pearl way holds half an hour, and 25593
+  // (mid-243-mc-fortress-2, 2026-10-02 12:08 to 14:25Z) stalked endermen
+  // through three such holds with one and then two rods in its pack, never
+  // asked, and died walking home with them at 5 health.
+  if (/nether/.test(String(bot.game?.dimension || ''))) {
+    let banked = null;
+    try { banked = await require('./rod-bank').askBank(bot, task, goal, save, actions, actions.client || task.opportunityClient, { now }); }
+    catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; banked = null; }
+    if (banked === 'banked') return null;
+  }
   const decision = await require('./decisions').decide('pearl_order', { client: actions.client || task.opportunityClient, bot, task, goal, save, tree: options, state,
     target: options.warped_forest?.target || options.hunt_enderman?.target || null });
   if (decision.stale) return null;

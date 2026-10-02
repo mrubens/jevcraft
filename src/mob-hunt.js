@@ -855,7 +855,12 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // search, without this ever being said or chosen.
   const deferNext = liveCage ? ` Left, the work stays at this spawner: it is still owed and known, so the next turn asks it again, not a search for another.`
     : rodsNeed ? ` Left, the work goes to find another blaze or a fortress to make one: none is known this close.` : '';
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${deferNext} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  // The arena's four-blaze drill, charged at every asking against answered
+  // as it came (blaze-stand.js fourNearSays, note 895), at a live spawner
+  // with three or more blazes within sixteen.
+  let fourNear = '';
+  if (state.entity === 'blaze') { try { fourNear = require('./blaze-stand').fourNearSays(bot, goal, threats(bot, 16).filter(t => t.entity?.name === 'blaze').length); } catch (_) { fourNear = ''; } }
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();

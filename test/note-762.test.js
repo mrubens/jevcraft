@@ -163,7 +163,8 @@ function walkBackBot({ rods = 7, fail = false } = {}) {
   const bot = Object.assign(new EventEmitter(), { registry, entity: { position: new Vec3(60.5, 70, 0.5), isInWater: false, onGround: true }, game: { dimension: 'the_nether', gameMode: 'survival' }, oxygenLevel: 20,
     health: 20, food: 20, entities: {}, world: { raycast: () => null },
     inventory: { items: () => items },
-    findBlocks: () => [],
+    // The portal's sheet, seen once the walk is within sixteen of it (a portal with no sheet is lit again: note 896).
+    findBlocks: () => (bot.entity.position.x <= 16 ? [new Vec3(0, 70, 0)] : []),
     blockAt: p => { const name = p.y <= 31 ? 'lava' : p.y === 69 && p.z === 0 && p.x >= 0 && p.x <= 60 ? 'netherrack' : 'air'; return { name, boundingBox: name === 'netherrack' ? 'block' : 'empty', diggable: true, position: p }; },
     clearControlStates() {}, getControlState() { return false; }, setControlState() {}, stopDigging() {} });
   bot.pathfinder = { movements: {}, setGoal() {}, isMoving: () => false,

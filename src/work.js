@@ -6572,11 +6572,58 @@ function createSurvival(bot, options) {
   return new Survival(bot, { acquireStep, dig, place, navigate, explore, returnOverworld: returnFromNether, surfaceStep, planFor, stashTrip, cacheHere, tunnel: tunnelToward }, options);
 }
 
+// The known portal nearest, within eight blocks and with no sheet: its
+// frame's bottom (obsidian, three cells of air or fire over it, obsidian
+// over those) lit with the flint and steel or fire charge carried. Throws,
+// said, where the frame is not found or nothing to light it is carried.
+// -> true when a sheet stands after.
+async function relightPortalAt(bot, task, goal, save) {
+  const here = bot.entity.position, where = 'nether';
+  const p = (goal.portals || []).filter(q => q.dimension === where).sort((a, b) => Math.hypot(a.x - here.x, a.z - here.z) - Math.hypot(b.x - here.x, b.z - here.z))[0];
+  if (!p || Math.hypot(p.x - here.x, p.y - here.y, p.z - here.z) > 8) return false;
+  const at = new Vec3(p.x, p.y, p.z);
+  const open = b => !!b && (b.name === 'air' || /fire/.test(b.name));
+  const id = bot.registry.blocksByName.obsidian?.id;
+  const bottoms = (id === undefined ? [] : bot.findBlocks({ matching: id, point: at, maxDistance: 6, count: 48 }))
+    .filter(b => [1, 2, 3].every(h => open(bot.blockAt(b.offset(0, h, 0)))) && bot.blockAt(b.offset(0, 4, 0))?.name === 'obsidian')
+    .sort((a, b) => a.distanceTo(here) - b.distanceTo(here));
+  const lighter = bot.inventory.items().find(i => i.name === 'flint_and_steel') || bot.inventory.items().find(i => i.name === 'fire_charge');
+  const says = `The portal at (${p.x}, ${p.y}, ${p.z}) is out: no sheet stands in its frame (a ghast's fireball puts one out)`;
+  if (!bottoms.length) throw new Blocked(`${says}, and no whole frame of it is found within six blocks to light again`);
+  if (!lighter) throw new Blocked(`${says}, and neither flint and steel nor a fire charge is carried to light it again`);
+  goal.step = { action: 'relight_portal', portal: { x: p.x, y: p.y, z: p.z }, with: lighter.name }; save();
+  bot.chat?.('My portal is out. Lighting it again.');
+  for (const bottom of bottoms.slice(0, 3)) {
+    task.check();
+    try { await navigate(bot, task, new goals.GoalNear(bottom.x, bottom.y, bottom.z, 2), { timeoutMs: 15000, stallMs: 4000 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+    if (bot.entity.position.distanceTo(bottom.offset(0.5, 1, 0.5)) > 4.5) continue;
+    await bot.equip(lighter, 'hand');
+    task.check();
+    try { await bot.activateBlock(bot.blockAt(bottom), new Vec3(0, 1, 0)); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; continue; }
+    try { await waitFor(task, () => bot.blockAt(bottom.offset(0, 1, 0))?.name === 'nether_portal', 3000); return true; }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+  }
+  throw new Blocked(`${says}; lit at its frame's bottom with the ${lighter.name.replaceAll('_', ' ')}, no sheet came: the frame is not whole or its inside not empty`);
+}
+
 async function returnFromNether(bot, task, goal, save) {
   if (dimension(bot) === 'overworld') return;
   const portal = lowestPortalBlock(bot);
   if (!portal) {
-    if (await walkToKnownPortal(bot, task, goal, save, 'nether')) return;
+    if (await walkToKnownPortal(bot, task, goal, save, 'nether')) {
+      // At the portal's place and no sheet in its frame: it is out (a
+      // ghast's fireball puts a portal out, and the frame stands), and it is
+      // lit again with what is carried, or said. 25592 (mid-242-dc-nether-1,
+      // 2026-10-02 14:23 to 14:31Z), a rod carried out by its tunnel, took
+      // cover from a ghast three blocks from its portal and then stood
+      // there eight minutes, "return to portal" at every pass with no walk
+      // and no error: the walk arrived, no sheet was found, and the step
+      // returned (note 896).
+      if (!lowestPortalBlock(bot)) await relightPortalAt(bot, task, goal, save);
+      return;
+    }
     throw new Blocked('No loaded return portal observed in the Nether; saved progress retained');
   }
   rememberPortal(goal, save, portal, 'nether');
@@ -8733,4 +8780,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
