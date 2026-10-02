@@ -62,6 +62,8 @@ const secs = ms => { const s = Math.round(ms / 1000); return s < 90 ? `${s} seco
 
 // The hold as chosen: `mobs` in danger.js threats' shape, `offered` the
 // option keys on offer.
+// The health a stance with no price may cost before it is asked again (note 952).
+const UNPRICED_LOSS = 4;
 function begin({ choice, at = Date.now(), health, expects = null, mobs = [], offered = [] }) {
   return { choice, at, health, ...(expects ? { expects } : {}), offered: offered.filter(k => k !== 'none_good'),
     against: mobs.filter(t => t?.entity).slice(0, 6).map(t => ({ id: t.entity.id, name: t.entity.name, distance: Math.round(t.distance * 10) / 10, visible: !!t.visible })),
@@ -82,6 +84,13 @@ function diverged(hold, { now = Date.now(), health, mobs = [], offered = [], sho
   if (e && Number.isFinite(e.damage) && e.seconds > 0) {
     const priced = e.damage * elapsed / e.seconds;
     if (lost > priced + (e.oneHit || 0)) return `${Math.round(lost * 10) / 10} health lost in ${secs(now - hold.at)}, more than the ${Math.round(priced * 10) / 10} it was priced at by then`;
+  } else if (lost >= UNPRICED_LOSS) {
+    // A stance chosen with no price said ends on what it has cost as one
+    // with a price does (note 952): 25592 (mid-242-ka-nether-1, 2026-10-02
+    // 21:45:44Z) held await_in_reach in its box, four blazes 13 to 16
+    // blocks off landing fireballs and fire, from 20 health to 0.8 in nine
+    // seconds, and was never asked again.
+    return `${Math.round(lost * 10) / 10} health lost in ${secs(now - hold.at)} under a stance chosen with no price said`;
   }
   const solo = soloArrowShooter(mobs, hold.choice);
   // One gone of several is news only when it was the nearest of them, or
