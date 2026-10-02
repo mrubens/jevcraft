@@ -191,10 +191,16 @@ const RUNS = {
   },
   async tunnel_home(d, bounded) {
     let error = null, r = null;
+    const hurts = []; let lastHp = bot.health, lastY = bot.entity.position.y;
+    const onHp = () => { if (bot.health < lastHp) { const p = bot.entity.position; hurts.push({ hp: Math.round(bot.health * 10) / 10, at: [Math.round(p.x * 10) / 10, Math.round(p.y * 10) / 10, Math.round(p.z * 10) / 10], fromY: Math.round(lastY * 10) / 10 }); } lastHp = bot.health; };
+    const iv = setInterval(() => { if (bot.entity.onGround) lastY = bot.entity.position.y; }, 50);
+    bot.on('health', onHp);
     try { r = await require('../src/bridging').tunnelStraight(bot, bounded, vec(d.target), { maxSteps: 120 }); } catch (err) { error = err.message; }
     const p = bot.entity.position, across = Math.hypot(p.x - d.target[0] - 0.5, p.z - d.target[2] - 0.5);
-    return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, error } };
+    clearInterval(iv); bot.removeListener('health', onHp);
+    return { pass: !watch.died && across <= 5 && Math.abs(p.y - d.target[1]) <= 2 && !hurts.length, detail: { ...r, across: Math.round(across * 10) / 10, y: Math.round(p.y * 10) / 10, health: bot.health, hurts, error } };
   },
+  async tunnel_home_cavern(d, bounded) { return RUNS.tunnel_home(d, bounded); },
   async rise_and_swim_lake(d, bounded) {
     const u = require('../src/unstuck');
     const plan = u.risePlan(u.liveView(bot), bot.entity.position.floored());

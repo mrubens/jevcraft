@@ -457,15 +457,30 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4 } = {
     const sides = [new Vec3(d.z, 0, d.x), new Vec3(-d.z, 0, -d.x)].filter(v => !lastSide || !(v.x === -lastSide.x && v.z === -lastSide.z));
     if (lastSide) sides.sort((a, b) => (b.x === lastSide.x && b.z === lastSide.z) - (a.x === lastSide.x && a.z === lastSide.z));
     const tries = [[d, want], [d, 0], [d, 1], [d, -1]].filter(([, y], i, all) => all.findIndex(([, q]) => q === y) === i).map(([v, y]) => ({ v, y, side: false }));
+    // Over open air with the target below and near (note 867): a step down
+    // on blocks laid (stairsDown's own step), so the tunnel does not arrive
+    // level over a drop to its target. Only once the way left across is no
+    // more than the drop left and a few blocks: farther off the rock may
+    // come back under it, and each laid step is two or three blocks.
+    if (want === -1 && flatTo(here.offset(0.5, 0, 0.5)) <= (here.y - target.y) + 3) tries.splice(1, 0, { v: d, y: -1, side: false, laid: true });
     if (sideRun < 6) for (const v of sides) tries.push({ v, y: 0, side: true });
     const whys = [];
     let went = null;
     for (const t of tries) {
-      try { await step(here, t.v, t.y); went = t; break; }
+      try {
+        if (t.laid) {
+          const before = Math.floor(bot.entity.position.y);
+          await stairsDown(bot, task, new Vec3(here.x + t.v.x * 16, here.y - 2, here.z + t.v.z * 16), { maxSteps: 1 });
+          if (Math.floor(bot.entity.position.y) >= before) throw new Error('the laid step down did not go down');
+          laid += 2;
+        } else await step(here, t.v, t.y);
+        went = t; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] ${here} ${t.laid ? 'laid-down' : t.side ? 'aside' : t.y} -> ${bot.entity.position.floored()} hp ${bot.health}`); break;
+      }
       catch (err) {
         task.check();
         if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
-        whys.push(`${t.side ? 'aside' : t.y > 0 ? 'up' : t.y < 0 ? 'down' : 'level'}: ${String(err.message).slice(0, 80)}`);
+        if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] ${here} ${t.laid ? 'laid-down' : t.side ? 'aside' : t.y} FAILED ${err.message} at ${bot.entity.position.floored()} hp ${bot.health}`);
+        whys.push(`${t.laid ? 'down on laid blocks' : t.side ? 'aside' : t.y > 0 ? 'up' : t.y < 0 ? 'down' : 'level'}: ${String(err.message).slice(0, 80)}`);
         // Moved off the cell by a step that failed part way: read again from where it is.
         if (!bot.entity.position.floored().equals(here)) break;
       }

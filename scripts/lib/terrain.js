@@ -269,6 +269,21 @@ const TERRAIN = Object.freeze([
     target: [5240, 71, 5200],
   },
   {
+    name: 'tunnel_home_cavern',
+    why: 'Note 867: the tunnel comes out of the rock into a cavern with its target twelve below on the far floor; it lays its floor across and steps down on laid blocks as it nears, not arriving level over the drop.',
+    dimension: 'the_nether', seconds: 150,
+    start: [5300.5, 81, 5200.5],
+    kit: [['cobblestone', 64], ['iron_pickaxe', 1]],
+    build: [
+      'forceload add 5290 5190 5350 5210',
+      'fill 5295 60 5192 5303 90 5208 minecraft:netherrack',
+      'fill 5304 60 5192 5345 90 5208 minecraft:air',
+      'fill 5304 60 5192 5345 68 5208 minecraft:netherrack',
+      'fill 5299 81 5199 5301 83 5201 minecraft:air',
+    ],
+    target: [5334, 69, 5200],
+  },
+  {
     name: 'rise_and_swim_lake',
     why: 'first-days-236: a cave under a lake, its stone roof under the water; the rise and swim (note 855) rose and then never swam (855c, 855d).',
     dimension: 'overworld', seconds: 60,
