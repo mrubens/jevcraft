@@ -587,7 +587,7 @@ class SurvivalMovements extends Movements {
     try {
       this.maxDropDown = limit + 1;
       const landing = super.getLandingBlock(node, direction);
-      return landing && node.y - landing.position.y <= limit ? landing : null;
+      return landing?.position && node.y - landing.position.y <= limit ? landing : null;
     } finally { this.maxDropDown = limit; }
   }
 

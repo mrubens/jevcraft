@@ -206,9 +206,12 @@ function looseEnds(goal, now = Date.now()) {
 // (Survival.report), which falls through to its next answer; nothing more
 // is needed here.
 const walksFailed = (...errors) => /navigation timed out|without reaching new ground|No route|noPath|No path to the goal|No reachable surveyed ground|Took to long to decide path|The walk is not begun/i.test(errors.filter(Boolean).join(' '));
+// A step's own "from" can be a place, not a name (restock_blocks: the cell
+// it left): no thing is named in it either (note 880: "key.replace is not a
+// function" out of the stall's question).
 // A key with no thing named in it ("rung:none") is the work in hand: said
 // "Keep at the none" to 25591 on its islet (critic 11:36Z item 1, note 751).
-const thingOf = key => { const t = key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ').trim(); return !t || /^none\b/.test(t) ? 'work in hand' : t; };
+const thingOf = key => { if (typeof key !== 'string') return 'work in hand'; const t = key.replace(/^\w+:/, '').replace(/^rung:/, '').replace(/:/g, ' ').replaceAll('_', ' ').trim(); return !t || /^none\b/.test(t) ? 'work in hand' : t; };
 // The rung's own question (note 571): its budget ran ten minutes with no
 // new best (tried.js watchRung), or a way below had nothing left to try and
 // escalated to it. Asked as the stall's question is, with the rung's best,
@@ -264,7 +267,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // (mid-243-ap, 21:14Z) was offered "Keep at the detour until rest ends
   // another way", a question about its own detour.
   const own = /^(detour|persist|shake loose|work free)\b/.test(thingOf(stall.key));
-  const thing = own ? thingOf(goal.step?.from || (goal.rungTime?.phase ? `rung:${goal.rungTime.phase}` : 'none')) : thingOf(stall.key);
+  const thing = own ? thingOf((typeof goal.step?.from === 'string' && goal.step.from) || (goal.rungTime?.phase ? `rung:${goal.rungTime.phase}` : 'none')) : thingOf(stall.key);
   const tried = require('./tried');
   // A rung set aside is not brought to its own question while it waits
   // (tried.js rungOf): the stall's question is asked instead (note 600).
@@ -7353,7 +7356,11 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
     // 478 askings in six minutes, each answer back within a second.
     const water = buckets ? require('./water').waterKnown(bot) : null;
     if (water?.kind === 'source' && !tree.fill_water) offer('fill_water', `The cast's own want: fill the empty bucket at the water in view ${water.distance} blocks off at (${water.at.x}, ${water.at.y}, ${water.at.z}), about ${Math.max(2, Math.round(water.distance / 4.3) + 1)} seconds, and the frame's next block can be poured.`,
-      async (t, save) => { await require('./water').collectWater(bot, t, goal, save, { navigate, explore }); }, { ...water.at });
+      // Run as the other detours are, bounded and with no arguments (offer
+      // calls run()): written to take a task and a save, it was handed
+      // neither and threw "Cannot read properties of undefined (reading
+      // 'check')" every time it was chosen, six times on 2026-10-02 (note 880).
+      async () => { await require('./water').collectWater(bot, bounded, goal, save, { navigate, explore }); }, { ...water.at });
     for (const [key, node] of Object.entries(tree)) {
       if (/^travel_/.test(key) && holdsWater({ biome: key.slice(7), has: biomeFacts(key.slice(7)) })) node.description += ` It has water, which is what the portal frame's cast is waiting for: no water bucket is carried; ${bucketSays}.`;
     }
