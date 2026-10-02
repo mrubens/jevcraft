@@ -304,9 +304,25 @@ function trackWarnings(bot, shooters, now = Date.now()) {
   return out;
 }
 // Due: the warning's shots can come now (or one is in the air).
+// A shooter with no line to the bot now (out of the look's sight) is due
+// only for its warning's own longest (WARNS.most) past the warning's start
+// or the last look that had it in sight, whichever is later (note 919): it
+// cannot shoot without a line, and the moment it has one it is in sight and
+// due again, its shot in the air the reflex's besides. A blaze that loses
+// its line keeps its glow, so its warning stays on for as long as it stays
+// hidden, and the shield's answer held the body with it: 25581 (mid-237-cm,
+// 2026-10-02 16:57:31 to 17:12:36Z and on), a fresh world's first rod
+// carried at 0.3 health, stood locked by "answer: shield up to the blaze"
+// for fifteen minutes on end beside a blaze 2.7 blocks off behind rock,
+// every key but the shield let go: its tunnel home "could not step" level,
+// up, down or aside, its walks timed out, its pillar "would not rise".
 function warnDue(bot, e, now = Date.now()) {
   const w = e._shotWarn;
-  if (w) return now - w.at >= WARNS[w.kind].dueFrom * 1000;
+  if (w) {
+    if (now - w.at < WARNS[w.kind].dueFrom * 1000) return false;
+    if (bot._shotInSight && !bot._shotInSight.has(e.id) && now - Math.max(w.at, e._shotSeenAt || 0) > WARNS[w.kind].most * 1000) return false;
+    return true;
+  }
   const a = bot._shotAnswers?.get(e.id);
   return !!(a?.endsAt && now <= a.endsAt);
 }
@@ -399,6 +415,7 @@ function tick(bot, survival, now = Date.now()) {
       const found = threats(bot, 64).filter(t => warnKind(t.entity.name) && (t.visible || t.distance <= 24));
       shooters = found.map(t => t.entity);
       bot._shotInSight = new Set(found.filter(t => t.visible).map(t => t.entity.id));
+      for (const t of found) if (t.visible) t.entity._shotSeenAt = now;
     } catch (_) { shooters = []; }
     bot._shotShooters = shooters.map(e => e.id);
     const warned = trackWarnings(bot, shooters, now);
