@@ -4758,6 +4758,25 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   // At the place worked out and still none in view: it is not there.
   if (p.estimated && Math.hypot(p.x - here.x, p.z - here.z) <= 8) return false;
   goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
+  // A tunnel chosen toward this portal (portal_way's tunnel_home) goes on from
+  // where it stopped, before any walk (note 866): 25597 (mid-241-cc-nether-1,
+  // 2026-10-02 12:25 to 12:33Z), two rods carried, tunnelled fifty blocks
+  // toward its portal, and the next pass's walk "back the way it came in"
+  // took it back down its own tunnel to where it began, twice. It ends when
+  // the tunnel arrives, stops short having made no ground, or ten minutes
+  // pass with none made; a threat's turn between does not end it.
+  const th = goal.tunnelHome;
+  if (where === 'nether' && th && Math.hypot(th.x - p.x, th.z - p.z) <= 6 && Date.now() - th.at < TUNNEL_HOME_HOLD_MS) {
+    const flatNow = () => Math.hypot(p.x - bot.entity.position.x, p.z - bot.entity.position.z), before = flatNow();
+    goal.step = { action: 'tunnel_home', target: { x: Math.round(p.x), y: Math.round(p.y), z: Math.round(p.z) }, held: true }; save();
+    let r = null, why = null;
+    try { r = await require('./bridging').tunnelStraight(bot, task, pos(p), { maxSteps: 96 }); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
+    if (r?.arrived) { delete goal.tunnelHome; save(); }
+    else if (before - flatNow() >= 4) { goal.tunnelHome = { ...th, at: Date.now() }; save(); return true; }
+    else { delete goal.tunnelHome; setAside(goal, 'tunnel_home', 'nether', why || 'it made no ground', 5 * 60000); save(); }
+    goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z } }; save();
+  }
   // Close enough to route: walk. Otherwise, or when the walk gives out, dig
   // a staircase toward it the way an ore is reached; a portal at y=-11 is
   // not on any surface route. What each way ended in is kept, for the
@@ -5039,6 +5058,10 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
     try { await require('./bridging').tunnelStraight(bot, task, target, { maxSteps: 96 }); }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = err.message; console.log(`[tunnel] ${String(why).slice(0, 300)}`); }
     cameTo(why);
+    // Held while it makes ground (walkToKnownPortal goes on with it, note 866).
+    const at = bot.entity.position, made = startOff - Math.hypot(p.x - at.x, p.z - at.z);
+    if (made >= 4) goal.tunnelHome = { x: p.x, y: p.y, z: p.z, at: Date.now() }; else delete goal.tunnelHome;
+    save();
     return true;
   }
   if (pick === 'dig_across') {
@@ -5068,6 +5091,8 @@ async function portalWay(bot, task, goal, save, p, where, { walk, pickaxeWanted 
   cameTo(leg.why);
   return true;
 }
+// How long a tunnel home chosen is carried on without ground made (note 866).
+const TUNNEL_HOME_HOLD_MS = 10 * 60000;
 // With rods carried, what the tunnel is to them (note 860).
 function rodsHere(bot) {
   let rods = 0; try { rods = require('./walk-out').rodsCarried(bot); } catch (_) { rods = 0; }
