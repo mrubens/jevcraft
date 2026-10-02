@@ -452,6 +452,8 @@ const ROUTE_DROP = 3;
 const RISING_RECORD = { rising: 506, hits: 2100, since: '06:00Z on 2026-09-30 to about midnight' };
 // The stances that hide from shooters, by a line cut or height (note 770).
 const LINE_HIDES = new Set(['out_of_sight', 'take_cover', 'nook', 'bunker', 'pillar', 'dig_in']);
+// A stance's answer is thrown away for a blow landed while it was out once, not twice within this (note 926).
+const STALE_ONCE_MS = 3000;
 const MOVING_STANCES = new Set(['retreat', 'leave_reach', 'fight_from_footing', 'out_of_the_push', 'rail_and_fight', 'seal', 'bunker', 'charge_shooter', 'creeper_dance', 'come_down', 'dig_down', 'eat', 'eat_golden_apple', 'drink_fire_resistance']);
 // Two blocks up: from the pillar's report to two up took a second and a
 // half to two seconds in mid-92-e, mid-92-g and mid-110-k (2026-09-26).
@@ -6102,7 +6104,21 @@ class Survival {
         // Its none-good answers counted by this scene, not the whole state's
         // fingerprint (stance-scene.js, note 659).
         const asking = this.decide(task, goal, save, { id: 'encounter_stance', state, tree, situation: `stance:${scene.key}`,
-          isFresh: () => Math.abs(bot.health - state.health) < 4 }).finally(() => { answered = true; });
+          // A blow that lands while it is out (four health or more gone
+          // since it was asked) no longer throws every answer away (note
+          // 926): an answer that guards, covers or leaves is the more right
+          // for the health gone and is acted on, late by a blow; one that
+          // closes with the mobs (fight, charge and the rest of shot-reflex.js
+          // STANCE_SHOTS.closing) or leaves them be is asked again with the
+          // health as it is, once and not twice within three seconds. Every
+          // answer was thrown away so: against a mob that takes four or more
+          // a blow (an enderman 5.3 through iron, a piglin 6.7, a wither
+          // skeleton) the last thing recorded was a stance "stale, not acted
+          // on" in 14 of the 749 deaths since 2026-09-29 and 3 of 60 on
+          // 2026-10-02 (12:00 to 18:20Z), 25591 among them with four rods
+          // banked (18:05:13Z, an enderman, 9.4 to none in a second and a
+          // half, shield guard or leaving never begun).
+          isFresh: () => true }).finally(() => { answered = true; });
         // And swings at what is in reach meanwhile, as a player fights on
         // while thinking: mid-227-i's fight with magma cubes was asked again
         // every two seconds, each answer two seconds with no swing, and the
@@ -6130,6 +6146,11 @@ class Survival {
       // again from where the bot is then.
       if (decision.stale) return true;
       choice = decision.path.at(-1);
+      if (Math.abs(bot.health - state.health) >= 4 && (require('./shot-reflex').STANCE_SHOTS.closing.has(choice) || choice === 'keep_working') && Date.now() - (this.state.stanceStaleAt || 0) >= STALE_ONCE_MS) {
+        this.state.stanceStaleAt = Date.now();
+        console.log(`[stance] ${choice.replaceAll('_', ' ')} was answered at ${Math.round(state.health * 10) / 10} health and ${Math.round(bot.health * 10) / 10} is left: asked again with the health as it is`);
+        return true;
+      }
       askedNow = !decision.only; noneGoodNow = !!decision.noneGood;
       // Chosen up on the pillar: counted for what the hold says next.
       if (this.lastPillarHold) require('./pillar-wait').noteChoice(this.state, choice);
