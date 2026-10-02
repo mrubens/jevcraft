@@ -5378,6 +5378,7 @@ function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null,
 // river seventy-two blocks off was offered as "walk to the river and carry
 // on" and chosen 0.02 (mid-243-bd, note 630). Null unless the cast is what
 // the rung is on and its next block cannot be poured for want of water.
+const WATER_FIRST_WITHIN = 32, WATER_FIRST_REST_MS = 10 * 60000;
 function castWaterWait(bot, goal) {
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
   if ((goal.rungTime?.phase || goal.gameProgress?.phase) !== 'reach_nether') return null;
@@ -6063,6 +6064,29 @@ async function portalStep(bot, task, goal, save, client) {
     if (siteClimb && !surfaceReturnComplete(bot, goal)) { await surfaceStep(bot, task, goal, save); return false; }
     if (near && !siteClimb && bot.entity.position.distanceTo(new Vec3(near.x, near.y, near.z)) > 12) {
       const at = new Vec3(near.x, near.y, near.z);
+      // The cast's water before the walk to its lava, where water is in view
+      // now and two empty buckets or more are carried (one stays for the
+      // lava): the cast asks for water at its first slot, and beside the lava
+      // there may be none. mid-244-cn (2026-10-02 12:13 to 13:01Z) went down
+      // to the lava at y -55 with three empty buckets, water two blocks from
+      // where it chose the route, dug its site, and at "dig to water" turned
+      // and climbed 97 blocks back up for it, eleven minutes; cut at sixty
+      // minutes with no Nether (note 882). A fill that fails rests ten
+      // minutes and the walk goes on.
+      const wf = goal.portalMethod.waterFirst;
+      if (!countOf(bot, 'water_bucket') && countOf(bot, 'bucket') >= 2 && !(wf?.failedAt > Date.now() - WATER_FIRST_REST_MS)) {
+        const w = require('./water').waterKnown(bot);
+        if (w.kind === 'source' && w.distance <= WATER_FIRST_WITHIN) {
+          goal.step = { action: 'fill_bucket', item: 'water_bucket', count: 1, consumes: { bucket: 1 }, produces: { water_bucket: 1 }, why: "the cast's water, before the walk to its lava", at: w.at }; save();
+          try { await acquireStep(bot, task, 'water_bucket', 1, goal, save); }
+          catch (err) {
+            task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+            goal.portalMethod.waterFirst = { failedAt: Date.now(), why: String(err.message || err).slice(0, 120) }; save();
+          }
+          if (!countOf(bot, 'water_bucket') && !goal.portalMethod.waterFirst?.failedAt) { goal.portalMethod.waterFirst = { failedAt: Date.now(), why: 'no water bucket came of it' }; save(); }
+          return false;
+        }
+      }
       // Three walks that come no nearer and the lava is not walked to:
       // mid-243-f walked at a pool fourteen blocks off for minutes, up and
       // down a hillside above it, until the flip watch ended the trial
