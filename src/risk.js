@@ -75,12 +75,15 @@ function riskNow(bot, { radius = 24, dark = null } = {}) {
     : reach.length ? 'low: the mobs about are a fight the bot wins'
     : about.length ? 'low: none of the mobs about has a way to the bot, and none shoots'
     : shots ? `low: nothing hostile in view, but ${shots === 1 ? 'a shot in the air is' : `${shots} shots in the air are`} coming at the bot` : spawning ? 'low for now: nothing hostile in view, but mobs spawn here in the dark' : 'none in view';
+  let poisoned = null;
+  try { poisoned = require('./combat-estimate').poisonSays(bot); } catch (_) { poisoned = null; }
   return {
     level,
     hostilesWithin: { blocks: radius, shootersTo: SHOOTER_REACH, count: about.length, kinds: [...new Set(about.map(m => m.entity.name))], inSight: about.filter(m => m.visible).length, shooters: about.filter(m => shooter(m.entity)).length, ...(apart.size ? { cannotGetToTheBot: about.filter(t => apart.has(t.entity.id)).length } : {}) },
     ...(shots ? { shotsComingAtTheBot: shots } : {}),
     fightingAllHere: { damageTaken: fight.damageTaken, healthAfter: fight.healthAfter, ...(fight.creeper ? { creeper: fight.creeper } : {}) },
     health, food, healing: food >= 18 ? 'health comes back while hunger stays at eighteen or more' : 'no healing: health comes back only at eighteen hunger or more, so eat first',
+    ...(poisoned ? { poisoned } : {}),
     armourPoints: estimate.armourPoints, weapon: estimate.weapon,
     mobsSpawnAround: spawning,
     ...(animals.length ? { animalsThatHit: { within: 16, near: animals.slice(0, 4), what: Object.fromEntries([...new Set(animals.map(a => a.name))].map(n => [n, `${UNPROVOKED[n].note}; about ${UNPROVOKED[n].hit} a hit`])) } } : {}),

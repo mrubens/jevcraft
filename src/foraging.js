@@ -1,4 +1,5 @@
 'use strict';
+const poisonedNow = bot => { try { return require('./combat-estimate').poisonSays(bot); } catch (_) { return null; } };
 const { goals } = require('mineflayer-pathfinder');
 const { safeFood, checkAir } = require('./vitals');
 const { threats, checkThreats } = require('./danger');
@@ -246,7 +247,7 @@ async function forageChoices(bot, task, goal, save, actions, state, { target = 1
     // A walk at the surface from under cover is a climb first (note 763).
     const leg = require('./levels').surfaceLeg(bot, { back: false });
     return { walkSeconds: seconds, ...(leg.seconds ? { climbFirst: `about ${leg.depth} blocks up to the surface first, ${leg.says.replace(/^the climb to open sky first, \d+ blocks up, /, '')}` } : {}), ...passes(to), ...(dark ? { dark: 'night: mobs spawn along the way' } : tod + seconds * 20 >= DAY.DARK && tod < DAY.DARK ? { dark: 'arrives after dark' } : {}),
-      healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}) };
+      healthNow: Math.round(bot.health ?? 20), ...((bot.food ?? 20) < 18 && (bot.health ?? 20) < 20 ? { healing: `none meanwhile: hunger ${bot.food}, below eighteen` } : {}), ...(poisonedNow(bot) ? { poisoned: poisonedNow(bot) } : {}) };
   };
   const home = homeFood(bot, goal);
   if (home) choices.go_home_for_food = {

@@ -50,6 +50,20 @@ const poisonFloored = (damage, poison, health) => !(poison > 0) || !Number.isFin
 // A poison or wither running on the bot now: the seconds left, the time
 // the server sent it being stamped where it came (session.js effectAt);
 // mineflayer keeps the duration it was sent, not what is left.
+// The poison on the bot now, said wherever its health and healing are
+// (note 852): its seconds left, its pace, where health is when it ends
+// (never under one), and that at one any hit kills. 25591 (mid-239-cm,
+// 2026-10-02 00:47:26Z), poisoned by a witch and at 4.3, was asked
+// survival_priority with "no healing: ... so eat first" and nothing of the
+// poison; it chose a walk to cows past the witch, and her next potion at
+// 0.3 ended it.
+function poisonSays(bot, now = Date.now()) {
+  const left = effectLeft(bot, 'poison', now);
+  if (!(left?.seconds > 0)) return null;
+  const health = bot?.health ?? 20, pace = 1 / POISON.perSecond * (left.amplifier ? 0.5 : 1);
+  const after = Math.max(POISON.floor, health - left.seconds / pace);
+  return `poisoned, about ${round(left.seconds)} seconds left: one health every ${round(pace)} seconds that armour does not stop, down to ${POISON.floor} and no lower, ${after <= POISON.floor + 0.5 ? `so health is at ${POISON.floor} before it ends` : `so health is about ${round(after)} when it ends`}; healing at hunger 18 or 19 (one each four seconds) is slower than it, and a milk bucket ends it. At ${POISON.floor} health any hit or potion kills.`;
+}
 function effectLeft(bot, name, now = Date.now()) {
   const effects = bot?.entity?.effects || {};
   // The registry names some effects in one word ("FireResistance"): matched
@@ -1223,4 +1237,4 @@ function stanceCost({ mobs, setup = 0, seconds = HOLD_SECONDS, reaches = () => f
   return Object.defineProperty(out, 'stillMobs', { value: [...stillMobs] });
 }
 
-module.exports = { STRUCK, FIRE_SHOTS, fireproofBurn, fireproofSays, slimeSize, slimeOf, slimeSplits, ghastShot, bodyBurn, COVER_LEAK, UNSEEN, arrival, arrowHit, shotModel, landsPerSecond, BOW_EVERY, CROSSBOW_EVERY, GHAST_SHOT, burnChance, burnRamp, burnBetween, SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, FIRE_TICKS, landingCost, landingsToEnd, landingsApart, landingsSays, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
+module.exports = { poisonSays, STRUCK, FIRE_SHOTS, fireproofBurn, fireproofSays, slimeSize, slimeOf, slimeSplits, ghastShot, bodyBurn, COVER_LEAK, UNSEEN, arrival, arrowHit, shotModel, landsPerSecond, BOW_EVERY, CROSSBOW_EVERY, GHAST_SHOT, burnChance, burnRamp, burnBetween, SPEAR_SEEN, SPEAR_WAYS, arrives, GIVES_UP, BODY_HEIGHT, bodyHeight, FIRE_SECONDS, BURN_PER_SECOND, FIRE_TICKS, landingCost, landingsToEnd, landingsApart, landingsSays, burnLeft, burnSays, POISON, poisonFloored, effectLeft, MOB_SPEED, blocksPerSecond, followRange, PLAYER_SPRINT, WITHER, SPEAR, SWING_MS, BLAST_CLEAR, FUSE_KEPT, FIRST_SWING, creeperFought, creeperBlocked, creeperFoughtSays, creeperBlast, creeperBlastSays, fightEstimate, fightTimeline, within, stanceCost, afterArmour, armourOf, MOBS, WEAPONS, RANGE, FIRE_REACH, FIREBALL, fireballHit, volleyHit, fireballSays, HOLD_SECONDS, APPROACH, FUSE, LIGHTS_AT, PACE, swingEvery, leadFor };
