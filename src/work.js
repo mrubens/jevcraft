@@ -991,6 +991,13 @@ const UPKEEP_HOLD_MS = 5 * 60 * 1000;
 const NEAR_BED = 64, FOOD_BEFORE_DUSK_S = 180;
 async function upkeepStep(bot, task, goal, save, client, onStep = () => {}) {
   const { options, budget } = await upkeepOffers(bot, task, goal, save);
+  // On the bank's walk out with rods (rod-bank.js) the stems are not gone
+  // for: the walk is the step, the stair and the tunnel dig by hand (notes
+  // 885, 860), and wood is on the far side of the portal. 25594
+  // (mid-242-xa-fortress-3, 2026-10-02 14:40:50Z), two rods carried and
+  // seventeen blocks from its portal, answered fetch_stems at 0.74 and set
+  // off across the Nether for a forest (note 899).
+  if (options.fetch_stems && inNetherNow(bot) && require('./rod-bank').pending(goal)) delete options.fetch_stems;
   const due = Object.keys(options);
   if (!due.length) return false;
   // Falling short of the step and the way home is asked anew, whatever
@@ -3722,6 +3729,7 @@ async function exploreLandYielding(bot, landIds, surface, check = () => {}) {
   return (await require('./block-search').findBlocksYielding(bot, exploreLandSearch(bot, landIds, surface), check)).map(p => p.offset(0, 1, 0));
 }
 
+const PLANKS_REST_MS = 15 * 60000;
 function catalogPlan(bot, item, count, stock, goal = {}) {
   const outputs = Array.isArray(item) ? item : [{ item, count }];
   // A Creative step is sized as the shortfall against `stock`, which has had
@@ -3747,7 +3755,8 @@ function catalogPlan(bot, item, count, stock, goal = {}) {
     try { enchantments = i.enchants.map(e => e.name); } catch (_) {}
     return { name: i.name, enchantments };
   });
-  const nearby = [...new Set([...bot._catalogObservation.nearby, ...knownResourceNames(bot, goal)])];
+  const planksRest = isSetAside(goal, 'source', 'planks');
+  const nearby = [...new Set([...bot._catalogObservation.nearby, ...knownResourceNames(bot, goal)])].filter(name => !(planksRest && /_planks$/.test(name)));
   const equipment = carriedEquipment(bot).map(item => item.name);
   const dimension = bot.game?.dimension;
   const makePlan = nearby => Array.isArray(item) ? batchPlan(bot.registry, outputs, stock, { nearby, tools, equipment, dimension }).steps :
@@ -3836,7 +3845,19 @@ async function prepareMiningTool(bot, task, goal, save, plan, available, { reque
 async function executeAcquisition(bot, task, step, goal, save) {
   goal.step = step;
   save();
-  if (step.action === 'mine') await mine(bot, task, step, goal, save);
+  if (step.action === 'mine') {
+    // Planks the world put somewhere (a mineshaft's) that no walk reaches
+    // rest as a source, and the plan goes back to logs (catalogPlan, note
+    // 898): mid-237-ci (2026-10-02 14:18 to 14:24Z) planned "mine 3 oak
+    // planks" for an iron pickaxe's sticks from a mineshaft at y -39, met
+    // "No reachable surveyed ground while searching for oak_planks" thirteen
+    // times, each plan after the same, and was cut as a loop.
+    try { await mine(bot, task, step, goal, save); }
+    catch (err) {
+      if (/_planks$/.test(String(step.block || '')) && walksFailed(err.message)) { setAside(goal, 'source', 'planks', `no walk reaches the ${String(step.block).replaceAll('_', ' ')} seen: ${String(err.message).slice(0, 100)}`, PLANKS_REST_MS); save(); }
+      throw err;
+    }
+  }
   else if (step.action === 'creative_inventory') await takeCreativeItem(bot, task, step.item, step.count, { keep: wantedItems(goal) });
   else if (step.action === 'craft') await craft(bot, task, step, goal);
   else if (step.action === 'smelt') await smelt(bot, task, step, goal, save);
