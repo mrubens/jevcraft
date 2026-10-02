@@ -402,6 +402,21 @@ const TERRAIN = Object.freeze([
     target: [5502, 50, 5500], yWithin: 3,
   },
   {
+    name: 'tunnel_home_from_ledge_no_blocks',
+    why: 'Note 924: at the mouth of its tunnel in a rock shelf, open air below and its target ten down and three across, a pickaxe carried and no block (25597 over its portal with two rods): blocks are dug from the tunnel\'s own walls and it comes down on laid steps.',
+    dimension: 'the_nether', seconds: 150,
+    start: [5780.5, 82, 5700.5],
+    kit: [['iron_pickaxe', 1]],
+    build: [
+      'forceload add 5765 5690 5800 5712',
+      'fill 5768 62 5690 5796 70 5710 minecraft:netherrack',
+      'fill 5768 71 5690 5796 92 5710 minecraft:air',
+      'fill 5768 78 5696 5780 86 5704 minecraft:netherrack',
+      'fill 5772 82 5700 5780 83 5700 minecraft:air',
+    ],
+    target: [5783, 71, 5700],
+  },
+  {
     name: 'tunnel_home_few_blocks',
     why: 'Note 915: the cavern drill with ten blocks and no pickaxe (25595 fell ten blocks onto its portal\'s floor with ten netherrack carried): the tunnel stops where its blocks run out, on its span, and does not go off it.',
     dimension: 'the_nether', seconds: 150,

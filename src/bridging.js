@@ -577,7 +577,12 @@ async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navi
           try {
             const before = Math.floor(bot.entity.position.y);
             if (how === 'dug') await step(here, v, -1);
-            else { await stairsDown(bot, task, new Vec3(here.x + v.x * 16, here.y - 2, here.z + v.z * 16), { maxSteps: 1 }); laid += 2; }
+            // Short of the blocks the laid steps left will take (two a
+            // step: the one under it and the guard beyond), they are dug
+            // from the walls of its own way first, while it still stands
+            // in rock (notes 906, 924): on the laid steps in open air there
+            // is no wall to dig.
+            else { if (blocksCarried(bot) < Math.min(QUARRY_WANT, 2 * high + 2)) await quarry(here, v); await stairsDown(bot, task, new Vec3(here.x + v.x * 16, here.y - 2, here.z + v.z * 16), { maxSteps: 1 }); laid += 2; }
             if (Math.floor(bot.entity.position.y) >= before) throw new Error('the step did not go down');
             went = true; if (process.env.TUNNEL_DEBUG) console.log(`[tunnel-debug] over the target, ${high} up: ${here} ${how} down -> ${bot.entity.position.floored()} hp ${bot.health}`);
             break;
