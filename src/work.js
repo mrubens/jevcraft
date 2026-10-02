@@ -6191,6 +6191,27 @@ async function portalStep(bot, task, goal, save, client) {
         catch (err) { if (err.name === 'StaircaseStalled') { tries.error = `the staircase set aside: ${err.why}`.slice(0, 80); save(); } throw err; }
       };
       if (goal.portalMethod.nearByStairs) {
+        // The tunnel dug straight at the lava first (bridging.js
+        // tunnelStraight, note 914), the staircase where it makes no
+        // ground. On 2026-10-02 the fresh trials' portal plans were asked
+        // again 45 times for never getting to their lava ("walks toward its
+        // lava came no nearer" 20, the walk set aside 11, the staircase set
+        // aside 14), and 6 of 30 trials with a plan reached the Nether. In
+        // the arena (tunnel_to_pool: 37 blocks of stone and twelve down,
+        // gravel over the line, water beside it, a cave across it) the
+        // tunnel came within four blocks of the lava in 57 seconds, twice
+        // of two, no damage. No cell is dug with lava or water behind it.
+        if (!isSetAside(goal, 'tunnel_lava', at)) {
+          goal.step = { action: 'tunnel', target: { ...near }, toward: 'lava_for_portal', distance: Math.round(d), straight: true }; save();
+          const before = bot.entity.position.distanceTo(at);
+          let why = null;
+          try { await require('./bridging').tunnelStraight(bot, task, at, { maxSteps: 64, near: 4, navigate }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 160); }
+          const made = before - bot.entity.position.distanceTo(at);
+          if (made >= 4) { tries.best = Math.min(tries.best, bot.entity.position.distanceTo(at)); tries.stale = 0; save(); return false; }
+          setAside(goal, 'tunnel_lava', at, why || 'the tunnel toward it made no ground', 10 * 60000); save();
+          console.log(`[tunnel] toward the lava at (${at.x}, ${at.y}, ${at.z}): ${why || 'made no ground'}; the staircase from here`);
+        }
         goal.step = { action: 'tunnel', target: { ...near }, toward: 'lava_for_portal', distance: Math.round(d) }; save();
         await stairs();
         return false;

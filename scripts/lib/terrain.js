@@ -269,6 +269,30 @@ const TERRAIN = Object.freeze([
     target: [5240, 71, 5200],
   },
   {
+    name: 'tunnel_to_pool',
+    why: 'Note 914: in the Overworld, 37 blocks of stone and twelve down to a lava pool in a pocket of its own, gravel over the line, a water pocket beside it and a cave four wide across it: the tunnel gets within four of the lava without opening lava or water and with no damage.',
+    dimension: 'overworld', seconds: 180,
+    start: [5405.5, 60, 5400.5],
+    kit: [['cobblestone', 16], ['iron_pickaxe', 1], ['bucket', 1]],
+    build: [
+      'forceload add 5395 5390 5460 5410',
+      'fill 5398 30 5392 5428 75 5408 minecraft:stone',
+      'fill 5429 30 5392 5458 75 5408 minecraft:stone',
+      // The start's pocket.
+      'fill 5404 60 5399 5406 62 5401 minecraft:air',
+      // Gravel over the line, eight along.
+      'fill 5412 57 5399 5414 62 5401 minecraft:gravel',
+      // A water pocket beside the line.
+      'fill 5418 52 5402 5420 56 5404 minecraft:water',
+      // A cave across the line, four wide, its floor six below.
+      'fill 5424 44 5394 5427 58 5406 minecraft:air',
+      // The pool: lava in a pocket, three of air over it.
+      'fill 5440 48 5398 5444 48 5402 minecraft:lava',
+      'fill 5440 49 5398 5444 51 5402 minecraft:air',
+    ],
+    target: [5442, 48, 5400],
+  },
+  {
     name: 'tunnel_home_cavern',
     why: 'Note 867: the tunnel comes out of the rock into a cavern with its target twelve below on the far floor; it lays its floor across and steps down on laid blocks as it nears, not arriving level over the drop.',
     dimension: 'the_nether', seconds: 150,
