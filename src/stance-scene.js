@@ -191,6 +191,29 @@ function quietOf(bot, danger = [], options = {}, now = Date.now()) {
     says: `Every way here is priced under ${QUIET_DAMAGE} damage in the next fifteen seconds and no mob is within ${NEAR} blocks: whatever is chosen holds those fifteen seconds, and these mobs do not take the turn from the work again meanwhile unless one comes within ${NEAR}, a hit lands, or another comes.` };
 }
 
+// The ways that build before they do anything (a pocket closed, a hole or a
+// nook dug, a box walled), left off the question where every way is priced
+// under a point of damage in the next fifteen seconds and no mob is within
+// NEAR (note 910): they save nothing there and cost their building and the
+// way back out. Read without the quiet scene's own bar on a recent hit: the
+// prices are of now. 25592 (mid-242-eg-nether-1, 2026-10-02 15:49:07Z), a
+// rod carried on its bank's walk, one crossbow piglin ten blocks off and out
+// of sight, every way priced at none, answered seal at 0.26 (conf 0.14): 23
+// blocks and 14 seconds of walls, then 20 seconds getting out of them, and
+// forty seconds on a second pocket of 28 blocks against a piglin thirteen
+// off. -> { keys, says } or null
+const BUILDS = ['seal', 'dig_down', 'nook', 'bunker', 'box_here', 'box_at_spawner', 'dig_in_and_fight'];
+function idleBuilds(bot, danger = [], options = {}) {
+  const mobs = (danger || []).filter(t => t?.entity);
+  if (!mobs.length || mobs.some(t => t.distance <= NEAR)) return null;
+  const priced = Object.values(options || {}).map(o => o?.expects?.damage).filter(Number.isFinite);
+  if (priced.length < 2 || priced.some(d => d >= QUIET_DAMAGE)) return null;
+  const keys = BUILDS.filter(k => options[k]);
+  const left = Object.keys(options).filter(k => !keys.includes(k) && k !== 'none_good');
+  if (!keys.length || !left.length) return null;
+  return { keys, says: `Not offered here: ${keys.map(k => k.replaceAll('_', ' ')).join(', ')}. Every way is priced under ${QUIET_DAMAGE} damage in the next fifteen seconds and no mob is within ${NEAR} blocks: a way that builds first saves nothing over the others, and costs its building and the way back out.` };
+}
+
 // Where the blaze fight has been, in this life: the place (the first stance
 // with a blaze about, within 24 blocks of it the same place), since when, the
 // rods and health gained and lost there, and each stance taken there with the
@@ -231,4 +254,4 @@ function exposureSays(x, now = Date.now()) {
   return `At this place (the blaze fight first met at ${x.at.x}, ${x.at.y}, ${x.at.z}, within ${PLACE} blocks of it) for ${secs(now - x.since)} in this life: ${plural(x.gained, 'blaze rod')} gained here (${plural(x.rods, 'rod')} carried now), ${r1(x.lost)} health lost here in all.${list.length ? ` The stances taken here: ${list.join('; ')}.` : ''}`;
 }
 
-module.exports = { quietOf, QUIET_MS, sceneOf, observe, answered, ran, nothingHere, holdFor, capped, says, changed, tally, cameToNothing, exposure, exposureAnswered, exposureSays, ONCE, NEAR, ABOUT, PLACE };
+module.exports = { idleBuilds, BUILDS, quietOf, QUIET_MS, sceneOf, observe, answered, ran, nothingHere, holdFor, capped, says, changed, tally, cameToNothing, exposure, exposureAnswered, exposureSays, ONCE, NEAR, ABOUT, PLACE };

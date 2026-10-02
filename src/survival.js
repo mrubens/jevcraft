@@ -5915,6 +5915,9 @@ class Survival {
     }
     // A quiet scene (stance-scene.js quietOf, note 700): the answer holds the
     // fifteen seconds it was priced over, said to the question.
+    // The builds are left off where they would save nothing (stance-scene.js idleBuilds, note 910).
+    const idleB = scenes.idleBuilds(bot, danger, options);
+    if (idleB) for (const k of idleB.keys) delete options[k];
     const quiet = scenes.quietOf(bot, danger, options);
     let choice = holding && options[held.choice] ? held.choice : null;
     // One stance possible is no choice: it is taken without asking.
@@ -6019,6 +6022,7 @@ class Survival {
         // re-asked without it, no answer of 8 moved (note 672).
         ...((s => s ? { sameSceneSoFar: s } : {})(scenes.says(book))),
         ...(quiet ? { quietScene: quiet.says } : {}),
+        ...(idleB ? { buildsNotOffered: idleB.says } : {}),
         ...(blazePlace ? { hereSoFar: scenes.exposureSays(blazePlace) } : {}),
         // One shot that lands ends the bot here: the rule, its numbers, and
         // what it did (lethal-line.js, note 701).

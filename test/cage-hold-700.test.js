@@ -176,6 +176,14 @@ test('a quiet scene (25581, 23:03:59Z: crossbow piglins 15 and 25 off, every way
   assert.equal(scenes.quietOf(bot, [piglin(1, 7)], priced), null, 'within eight');
   assert.equal(scenes.quietOf({ _recentHurtAt: Date.now() - 4000 }, [piglin(1, 14.8)], priced), null, 'hit four seconds ago');
   assert.equal(scenes.quietOf(bot, [piglin(1, 14.8)], { ...priced, fight: { expects: { damage: 1.2 } } }), null, 'a way priced over a point');
+  // Where every way is priced under a point and no mob is within eight, the ways that build first are left off (note 910),
+  // a hit five seconds ago or not: 25592 sealed itself twice against one piglin ten and thirteen blocks off.
+  const idle = scenes.idleBuilds({ _recentHurtAt: Date.now() - 5000 }, [piglin(1, 10.4)], priced);
+  assert.deepEqual(idle.keys, ['seal', 'nook']);
+  assert.match(idle.says, /^Not offered here: seal, nook\. Every way is priced under 1 damage in the next fifteen seconds and no mob is within 8 blocks: a way that builds first saves nothing over the others/);
+  assert.equal(scenes.idleBuilds(bot, [piglin(1, 7)], priced), null, 'a mob within eight: the builds stay');
+  assert.equal(scenes.idleBuilds(bot, [piglin(1, 14.8)], { ...priced, fight: { expects: { damage: 1.2 } } }), null, 'a way priced over a point: they stay');
+  assert.equal(scenes.idleBuilds(bot, [piglin(1, 14.8)], { seal: { expects: { damage: 0 } }, nook: { expects: { damage: 0 } } }), null, 'nothing else on offer: they stay');
   // The stance step leaves them to the work for the fifteen seconds, beyond eight.
   const { Survival } = require('../src/survival');
   const { Task } = require('../src/skills');
