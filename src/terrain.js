@@ -563,11 +563,16 @@ function bodyInLava(bot) {
   if (!p) return false;
   if (bot.entity.isInLava) return true;
   const w = (bot.entity.width ?? 0.6) / 2 - 0.001, h = bot.entity.height ?? 1.8;
-  const cells = new Set();
-  for (const x of [p.x - w, p.x + w]) for (const z of [p.z - w, p.z + w]) for (const y of [p.y + 0.001, p.y + h / 2, p.y + h - 0.001]) cells.add(`${Math.floor(x)},${Math.floor(y)},${Math.floor(z)}`);
-  for (const key of cells) {
-    const [x, y, z] = key.split(',').map(Number);
-    if (/^(flowing_)?lava$/.test(bot.blockAt?.(new (require('vec3').Vec3)(x, y, z))?.name || '')) return true;
+  // The cells by their numbers, each read once and without the block's
+  // extras (note 863): asked at every check of the task, it was 6 of the
+  // 98 seconds of an arena fight.
+  const { Vec3 } = require('vec3');
+  const x0 = Math.floor(p.x - w), x1 = Math.floor(p.x + w), z0 = Math.floor(p.z - w), z1 = Math.floor(p.z + w);
+  const y0 = Math.floor(p.y + 0.001), y1 = Math.floor(p.y + h / 2), y2 = Math.floor(p.y + h - 0.001);
+  for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) for (let y = y0; y <= y2; y++) {
+    if (y !== y0 && y !== y1 && y !== y2) continue;
+    const name = bot.blockAt?.(new Vec3(x, y, z), false)?.name;
+    if (name === 'lava' || name === 'flowing_lava') return true;
   }
   return false;
 }

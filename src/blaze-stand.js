@@ -232,8 +232,17 @@ function spawnerAt(bot) {
   // The nearest blaze spawner, not any (note 750d): a bastion's magma cube
   // spawner is no cage of blazes (fortress-map.js spawnerKind).
   const { spawnerKind } = require('./fortress-map');
-  return bot.findBlocks({ matching: id, maxDistance: SPAWNER_SEARCH, count: 4 }).find(p => bot.blockAt(p)?.name === 'spawner' && spawnerKind(bot, p).blaze) || null;
+  // Kept two seconds for the same four-block cell (note 863): a cage does
+  // not move, and the search was made many times a tick by the fight's own
+  // questions, 11 of the 98 seconds of an arena fight by four blazes.
+  const here = bot.entity?.position, key = here ? `${Math.floor(here.x / 4)},${Math.floor(here.y / 4)},${Math.floor(here.z / 4)}` : null;
+  const kept = bot._spawnerAtMemo;
+  if (key && kept && kept.key === key && Date.now() - kept.at < SPAWNER_MEMO_MS && (!kept.value || bot.blockAt(kept.value)?.name === 'spawner')) return kept.value;
+  const value = bot.findBlocks({ matching: id, maxDistance: SPAWNER_SEARCH, count: 4 }).find(p => bot.blockAt(p)?.name === 'spawner' && spawnerKind(bot, p).blaze) || null;
+  if (key) bot._spawnerAtMemo = { key, at: Date.now(), value };
+  return value;
 }
+const SPAWNER_MEMO_MS = 2000;
 function spawnerSite(bot, spawner = spawnerAt(bot), { steps = 24, avoid = [] } = {}) {
   if (!spawner) return null;
   const centre = spawner.offset(0.5, 0.5, 0.5);

@@ -190,6 +190,7 @@ function cellsClear(bot, from, to, open) {
   }
   return false;
 }
+const SIGHT_MEMO_MS = 100;
 function threats(bot, radius = 24) {
   const position = bot.entity.position;
   const list = hostileEntities(bot, radius).map(entity => {
@@ -199,7 +200,21 @@ function threats(bot, radius = 24) {
     // and the bot walled itself in against "something shooting" that was in
     // plain sight (the user, 2026-09-24).
     const eye = position.offset(0, 1.62, 0), height = entity.height || 1.6;
-    const visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => lineClear(bot, eye, entity.position.offset(0, dy, 0)));
+    // The sight of each mob kept a tenth of a second for the same two
+    // places (note 863): the rays were cast again by every caller in a tick,
+    // 9 of the 98 seconds of an arena fight by four blazes.
+    const r = v => Math.round(v * 10);
+    const key = `${entity.id}|${r(position.x)},${r(position.y)},${r(position.z)}|${r(entity.position.x)},${r(entity.position.y)},${r(entity.position.z)}|${r(height)}`;
+    // A block changed anywhere loaded ends what is kept: cover laid or dug is seen at once.
+    if (!bot._sightMemo && typeof bot.on === 'function') { try { bot.on('blockUpdate', () => bot._sightMemo?.clear()); } catch (_) { /* no events */ } }
+    const memo = bot._sightMemo ||= new Map(), had = memo.get(key), now0 = Date.now();
+    let visible;
+    if (had && now0 - had.at < SIGHT_MEMO_MS && now0 >= had.at && had.ray === bot.world?.raycast) visible = had.v;
+    else {
+      visible = [Math.min(height, 1.6), height / 2, 0.15].some(dy => lineClear(bot, eye, entity.position.offset(0, dy, 0)));
+      if (memo.size > 400) memo.clear();
+      memo.set(key, { at: now0, v: visible, ray: bot.world?.raycast });
+    }
     return { entity, distance, visible, sighted: visible };
   }).sort((a, b) => a.distance - b.distance);
   // Hit by a kind of mob a moment ago and none of that kind in sight: the

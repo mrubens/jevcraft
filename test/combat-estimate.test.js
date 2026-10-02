@@ -139,6 +139,8 @@ test('a mob seen close a moment ago stays a threat when it drops out of view for
     world: { raycast: () => blocked ? { position: new Vec3(2, 64, 0), intersect: new Vec3(2, 64.5, 0) } : null } };
   assert.equal(threats(bot, 16)[0].visible, true);
   blocked = true;
+  // A later look: the sight of a mob is kept a tenth of a second (note 863).
+  bot._sightMemo.clear();
   assert.equal(threats(bot, 16)[0].visible, true, 'hidden for a look, still counted');
   bot._seenClose.set(3, Date.now() - 4000);
   assert.equal(threats(bot, 16)[0].visible, false, 'not for good');
