@@ -24,7 +24,13 @@ const { setAside, isSetAside } = require('./progress');
 // The Nether leg held at most this long (the walk out measured 17 to 30
 // blocks a minute, game-progress.js NETHER_TRIPS): past it the bank is
 // ended, said, and the hunt goes on.
-const OUT_MS = 20 * 60000;
+// The walk out is given up when it has come no nearer its portal for twenty
+// minutes (OUT_MS, by the distance left: a gain of eight blocks counts), or
+// has run an hour in all. It was twenty minutes flat: 25592
+// (mid-242-dc-nether-1, 2026-10-02 13:43 to 14:03Z) tunnelled 300 blocks of
+// its way out with a rod, was ended at the twentieth minute 236 blocks from
+// its portal, and turned to walk back to the fortress (note 888).
+const OUT_MS = 20 * 60000, OUT_MAX_MS = 60 * 60000, OUT_GAIN = 8;
 const FAILS = 2, REST_MS = 10 * 60000;
 const P = v => ({ x: Math.floor(v.x), y: Math.floor(v.y), z: Math.floor(v.z) });
 const at = p => `(${p.x}, ${p.y}, ${p.z})`;
@@ -178,9 +184,18 @@ function bankStage(bot, goal, dim, now = Date.now()) {
   const b = pending(goal);
   if (!b) return null;
   if (!carriedKept(bot).some(k => k.item === 'blaze_rod' || k.item === 'blaze_powder')) { end(goal, 'no rods carried now (a death, or used)'); return null; }
-  if (isSetAside(goal, 'rung', 'bank_rods', now)) { end(goal, `set aside: ${require('./progress').attemptsFor(goal).why('rung', 'bank_rods') || 'failed'}`); return null; }
+  // Set aside in the Nether (a step on the way met something else's
+  // failure, note 885): the walk waits the set-aside out and goes on; on the
+  // Overworld side it is the store's own failure, and the bank ends.
+  if (isSetAside(goal, 'rung', 'bank_rods', now)) {
+    if (dim === 'nether' && now - b.at <= OUT_MAX_MS) return null;
+    end(goal, `set aside: ${require('./progress').attemptsFor(goal).why('rung', 'bank_rods') || 'failed'}`); return null;
+  }
   if (dim === 'nether') {
-    if (now - b.at > OUT_MS) { end(goal, 'the walk out ran past twenty minutes'); return null; }
+    let d = null; try { d = require('./game-progress').portalDistance(bot, goal); } catch (_) { d = null; }
+    if (Number.isFinite(d) && (!Number.isFinite(b.best) || d <= b.best - OUT_GAIN)) { b.best = d; b.bestAt = now; }
+    if (now - (b.bestAt || b.at) > OUT_MS) { end(goal, `the walk out came no nearer its portal for twenty minutes${Number.isFinite(b.best) ? ` (${b.best} blocks off at its nearest)` : ''}`); return null; }
+    if (now - b.at > OUT_MAX_MS) { end(goal, 'the walk out ran past an hour'); return null; }
     let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
     if (closed) { end(goal, `the way out closed: ${closed.says}`); return null; }
     return { phase: 'bank_rods', action: 'return_overworld', rods: rs().rodsEquivalent(bot) };
@@ -237,4 +252,4 @@ function collectHere(bot, goal) {
   return rs().collectStage(bot, goal);
 }
 
-module.exports = { OUT_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };
+module.exports = { OUT_MS, OUT_MAX_MS, askBank, bankOnArrival, bankOffer, offerSays, option, bankStage, bank, collectHere, pending, chestThere };

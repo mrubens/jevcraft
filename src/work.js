@@ -5395,7 +5395,7 @@ function buildSays({ obsidian, diamonds, diamondPickaxe, need = 10, trip = null,
 // river seventy-two blocks off was offered as "walk to the river and carry
 // on" and chosen 0.02 (mid-243-bd, note 630). Null unless the cast is what
 // the rung is on and its next block cannot be poured for want of water.
-const WATER_FIRST_WITHIN = 32, WATER_FIRST_REST_MS = 10 * 60000;
+const WATER_FIRST_WITHIN = 48, WATER_FIRST_REST_MS = 10 * 60000;
 function castWaterWait(bot, goal) {
   if (!/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
   if ((goal.rungTime?.phase || goal.gameProgress?.phase) !== 'reach_nether') return null;

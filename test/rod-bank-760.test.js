@@ -153,10 +153,22 @@ test('a bank ends where there is nothing left to bank, the walk out ran past its
   const dead = frameBot({ inventory: { ...BARE, blaze_rod: 0 } }), g1 = { ...huntGoal(), rodBank: { at: Date.now(), rods: 4 } };
   assert.notEqual(nextGameStage(dead, g1).phase, 'bank_rods');
   assert.ok(g1.rodBank.endedAt);
-  // Past twenty minutes in the Nether.
-  const slow = frameBot(), g2 = { ...huntGoal(), rodBank: { at: Date.now() - rb.OUT_MS - 1000, rods: 4 } };
+  // Twenty minutes in the Nether with the portal no nearer (note 888).
+  const slow = frameBot(), g2 = { ...huntGoal(), rodBank: { at: Date.now() - rb.OUT_MS - 1000, rods: 4, best: 1, bestAt: Date.now() - rb.OUT_MS - 1000 } };
   assert.notEqual(nextGameStage(slow, g2).phase, 'bank_rods');
-  assert.match(g2.rodBank.why, /twenty minutes/);
+  assert.match(g2.rodBank.why, /came no nearer its portal for twenty minutes \(1 blocks off at its nearest\)/);
+  // Twenty-five minutes out and nearer than five minutes ago: the walk goes on (25592 was ended 300 blocks into its way).
+  const going = frameBot(), g2b = { ...huntGoal(), rodBank: { at: Date.now() - 25 * 60000, rods: 4, best: 100000, bestAt: Date.now() - 5 * 60000 } };
+  assert.deepEqual([nextGameStage(going, g2b).phase, nextGameStage(going, g2b).action], ['bank_rods', 'return_overworld']);
+  assert.ok(g2b.rodBank.best < 100000 && !g2b.rodBank.endedAt);
+  // Past an hour in all: ended.
+  const long = frameBot(), g2c = { ...huntGoal(), rodBank: { at: Date.now() - rb.OUT_MAX_MS - 1000, rods: 4, best: 100000, bestAt: Date.now() - 60000 } };
+  assert.notEqual(nextGameStage(long, g2c).phase, 'bank_rods');
+  // Set aside on the way (a step for the wrong dimension, note 885): waited out in the Nether, not ended.
+  const g2d = { ...huntGoal(), rodBank: { at: Date.now() - 60000, rods: 4 } };
+  require('../src/progress').setAside(g2d, 'rung', 'bank_rods', 'No oak log in the nether: it is only found in the overworld', 600000);
+  assert.notEqual(nextGameStage(frameBot(), g2d).phase, 'bank_rods');
+  assert.ok(!g2d.rodBank.endedAt, 'the bank stands');
   // Out with no chest and no wood: the chest is the ladder's to make.
   const out = frameBot({ dimension: 'overworld' }), g3 = { ...huntGoal(), rodBank: { at: Date.now(), rods: 4 } };
   const s3 = nextGameStage(out, g3);
