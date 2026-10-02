@@ -206,9 +206,24 @@ async function stepOut(bot, task, plan) {
 }
 
 // A filled cauldron's way: to it and in.
+// The steps in are the body's way out of fire, and held as that while they
+// run (note 923): the shot reflex leaves the keys of a way out of fire to it
+// (vitals.js wayOutRunning: the shield up, the walk its own), and this way
+// never said it was one. 25595 (mid-243-ia-fortress-4, 2026-10-02 16:24 to
+// 16:25Z) burned beside its own cauldron of water among four blazes, the
+// shield's answer on: "into_cauldron: left let go mid-move by something
+// else; pressed again" 23 times, the body never lined up with the bowl, and
+// its last answer was extinguish_in_cauldron at no health.
+async function asWayOut(bot, run) {
+  const mark = () => { bot._bodyWayRunning = { action: 'out_of_fire', at: Date.now() }; };
+  mark();
+  const timer = setInterval(mark, 500);
+  try { return await run(); }
+  finally { clearInterval(timer); if (bot._bodyWayRunning?.action === 'out_of_fire') delete bot._bodyWayRunning; }
+}
 async function extinguishIn(bot, task, plan, onAction = () => {}, since = Date.now()) {
   bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
-  const done = await stepIn(bot, task, plan, onAction, since);
+  const done = await asWayOut(bot, () => stepIn(bot, task, plan, onAction, since));
   if (done) { try { await stepOut(bot, task, plan); } catch (err) { if (err.name === 'Cancelled') throw err; } }
   return done;
 }
@@ -238,4 +253,4 @@ function says(bot) {
   return parts.length ? ` A cauldron of water puts it out at once too, in the Nether as anywhere, by stepping into it: ${parts.join('; ')}.` : '';
 }
 
-module.exports = { struck, says, levelOf, alight, approachFrom, placedCauldron, placeSpot, plans, setDown, stepIn, stepOut, extinguishIn, setDownAndIn, have, nether, CAULDRON_IRON, NEAR, WINDOW, PLACE_SECONDS, HOP_SECONDS, SPRINT, seconds, frame, yawFor };
+module.exports = { asWayOut, struck, says, levelOf, alight, approachFrom, placedCauldron, placeSpot, plans, setDown, stepIn, stepOut, extinguishIn, setDownAndIn, have, nether, CAULDRON_IRON, NEAR, WINDOW, PLACE_SECONDS, HOP_SECONDS, SPRINT, seconds, frame, yawFor };
