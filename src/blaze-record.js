@@ -392,8 +392,33 @@ function rodsBySays(key) {
   const [minutes, rods, deaths] = row, plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   return ` Where the rods came from, ${RODS_BY.from} to ${RODS_BY.to} (the step the bot was in as each of ${RODS_BY.rods} rods was picked up): in ${RODS_BY_SAID[kind]}, ${plural(minutes, 'minute')} in all, ${rods ? plural(rods, 'rod') : 'no rod'} and ${deaths ? plural(deaths, 'death') : 'no death'}${kind === 'close_in' ? '' : `; closing in, ${RODS_BY.rows.close_in[0]} minutes, ${RODS_BY.rows.close_in[1]} rods and ${RODS_BY.rows.close_in[2]} deaths`}.`;
 }
+// What followed each kind of stance among blazes by the health it was chosen
+// at (note 1027): every answer of encounter_stance with a blaze within
+// sixteen blocks in the flight frames of 2026-10-03 00:00Z to 09:10Z,
+// [answers, followed by a death within 45 seconds, by a rod picked up within
+// 45 seconds]. Closing in over 14 health: 5% a death, 10% a rod; at 8 to 14,
+// 29% and 21%; a corner or the shield at 8 or under, 8 of 12 a death and no
+// rod. The rods-by-step row (note 1023) said nothing of health, and at 5.5
+// health among four blazes 25595 (09:06:31Z) charged at 0.27 and died.
+const BY_HEALTH = { from: '2026-10-03 00:00Z', to: '09:10Z',
+  rows: { close: { high: [210, 11, 21], mid: [28, 8, 6], low: [7, 2, 0] }, hold: { high: [144, 10, 7], mid: [17, 7, 0], low: [12, 8, 0] }, leave: { high: [272, 6, 10], mid: [75, 13, 2], low: [26, 8, 1] } } };
+const BY_HEALTH_KIND = { close_in: 'close', charge_nearest: 'close', corner_ambush: 'hold', shield_guard: 'hold', back_to_wall: 'hold',
+  leave_and_heal: 'leave', retreat: 'leave', leave_reach: 'leave', out_of_sight: 'leave', take_cover: 'leave', seal: 'leave', dig_down: 'leave', nook: 'leave' };
+const BY_HEALTH_SAID = { close: 'closing in or a charge', hold: 'a corner, a wall at the back or the shield held where it stands', leave: 'leaving, cover or a hole' };
+const bandNow = health => health > 14 ? 'high' : health > 8 ? 'mid' : 'low';
+const BAND_SAID = { high: 'over 14 health', mid: '8 to 14 health', low: '8 health or under' };
+function byHealthSays(key, health) {
+  const kind = BY_HEALTH_KIND[key];
+  if (!kind) return '';
+  const band = bandNow(health ?? 20), pct = (k, n) => Math.round(100 * k / n);
+  const one = k => { const [n, died, rod] = BY_HEALTH.rows[k][band]; return `${BY_HEALTH_SAID[k]} (${n} answers): ${pct(died, n)}% a death, ${pct(rod, n)}% a rod`; };
+  const others = Object.keys(BY_HEALTH.rows).filter(k => k !== kind);
+  return ` Among blazes at ${BAND_SAID[band]} in the trials of ${BY_HEALTH.from} to ${BY_HEALTH.to}, what followed within 45 seconds of an answer of this kind, ${one(kind)}; of the other kinds at that health, ${others.map(one).join('; ')} (what followed, not what an answer caused).`;
+}
 function optionSays(bot, key, opts = {}) {
-  return blazeRowSays(bot, key, opts) + (/nether/.test(String(bot?.game?.dimension || '')) && blazesAbout(bot).within24 ? rodsBySays(key) : '');
+  const among = /nether/.test(String(bot?.game?.dimension || '')) && blazesAbout(bot).within24;
+  // The rods by step are said over 14 health, where closing in brought them.
+  return blazeRowSays(bot, key, opts) + (among ? byHealthSays(key, bot.health) + ((bot.health ?? 20) > 14 ? rodsBySays(key) : '') : '');
 }
 function blazeRowSays(bot, key, opts = {}) {
   const kind = CLASS_OF[key];
@@ -402,4 +427,4 @@ function blazeRowSays(bot, key, opts = {}) {
   return row ? ` In the fights of ${ANSWERS_OF.from} to ${ANSWERS_OF.to} after an answer of this kind (${CLASS_SAYS[kind].short}) in a situation like this (${situationSays(s)}): ${answerRowSays(row, s)}.` : '';
 }
 
-module.exports = { RODS_BY, rodsBySays, BOXED, boxedSays, lullsSay, COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };
+module.exports = { BY_HEALTH, byHealthSays, RODS_BY, rodsBySays, BOXED, boxedSays, lullsSay, COUNTS, countRow, stayWithin, entryFacts, WAYS, WAYS_OF, WAYS_MIN, waySays, blazesAbout, RECENT, IRON_LOST, ironSays, recentSays, situationOf, answersSay, optionSays, rowOf, HOW, CLASS_OF, CLASS_SAYS, MIN_FIGHTS, ANSWERS, ANSWERS_OF, BLAZES_ABOUT, HEALTH_BAND, cellKeys, DAY, ALL, HEALTH, HUNGER, BLAZES, IRON, DEATHS, says, bandOf, rowSays };

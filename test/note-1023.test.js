@@ -14,6 +14,13 @@ test('the rods by step: closing in brought 77 of 105; a corner none; said on eac
   const bot = { game: { dimension: 'the_nether' }, health: 20, food: 20, entity: { position: new Vec3(0, 64, 0) }, inventory: { items: () => [], slots: {} }, blockAt: () => null,
     entities: { 1: { name: 'blaze', position: new Vec3(5, 64, 0), isValid: true } } };
   assert.match(record.optionSays(bot, 'close_in', {}), /Where the rods came from/);
+  // Note 1027: by the health it is chosen at; the rods by step only over 14 health.
+  assert.match(record.optionSays(bot, 'close_in', {}), /Among blazes at over 14 health in the trials of 2026-10-03 00:00Z to 09:10Z, what followed within 45 seconds of an answer of this kind, closing in or a charge \(210 answers\): 5% a death, 10% a rod; of the other kinds at that health, a corner, a wall at the back or the shield held where it stands \(144 answers\): 7% a death, 5% a rod; leaving, cover or a hole \(272 answers\): 2% a death, 4% a rod/);
+  bot.health = 5.5;
+  const low = record.optionSays(bot, 'charge_nearest', {});
+  assert.match(low, /Among blazes at 8 health or under .*closing in or a charge \(7 answers\): 29% a death, 0% a rod; .*shield held where it stands \(12 answers\): 67% a death, 0% a rod; leaving, cover or a hole \(26 answers\): 31% a death, 4% a rod/);
+  assert.doesNotMatch(low, /Where the rods came from/, 'at 5.5 health the rods by step are not said');
+  bot.health = 20;
   bot.entities = {};
   assert.doesNotMatch(record.optionSays(bot, 'close_in', {}), /Where the rods came from/, 'no blaze about: not said');
 });
