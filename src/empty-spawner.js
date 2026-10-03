@@ -311,8 +311,16 @@ function lullOptions(bot, task, goal, save, actions, known, quiet, { now = Date.
   }
   // Rods on the ground the hunt's pickup (twelve blocks) left.
   const rods = Object.values(bot.entities || {}).filter(e => e.getDroppedItem?.()?.name === 'blaze_rod' && e.position?.distanceTo(bot.entity.position) <= 24);
-  if (rods.length && actions?.navigate) tree.pick_up_rods = { description: `Pick up the ${rods.length} blaze rod${rods.length === 1 ? '' : 's'} on the ground, the nearest ${round(Math.min(...rods.map(e => e.position.distanceTo(bot.entity.position))))} blocks off.`,
-    run: async () => { await require('./drop-collection').collectNearbyDrops(bot, task, 'blaze_rod', { radius: 24, timeoutMs: 8000, move: actions.navigate }); } };
+  if (rods.length && actions?.navigate) {
+    // Said with what they are for and that they do not lie there for good
+    // (note 993): one bare line beside the fights, it was passed over for
+    // ten minutes on 25593 with a rod 0.4 blocks off, its pockets full.
+    let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
+    let full = false; try { full = !require('./inventory-tidy').roomFor(bot, 'blaze_rod'); } catch (_) { full = false; }
+    const nearest = round(Math.min(...rods.map(e => e.position.distanceTo(bot.entity.position))));
+    tree.pick_up_rods = { description: `Pick up the ${rods.length} blaze rod${rods.length === 1 ? '' : 's'} on the ground, the nearest ${nearest} blocks off: ${n ? `the hunt is here for rods (${n.rods} carried, ${n.rodsLeft} still needed of the ${n.rodsWanted} wanted), and each one lying there is one no blaze need be fought for` : 'they are what the hunt is here for'}; a dropped item is gone five minutes after it fell.${full ? ' The pockets are full and none of the stacks is rods, so a rod walked over is not picked up: room is made first (the tidy\'s rule, or asked).' : ''}${require('./mob-hunt').rodBlazesSays?.(bot, rods.slice().sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0].position) || ''}`,
+      run: async () => { await require('./mob-hunt').roomForDrop(bot, task, goal, 'blaze_rod'); await require('./drop-collection').collectNearbyDrops(bot, task, 'blaze_rod', { radius: 24, timeoutMs: 8000, move: actions.navigate }); } };
+  }
   // The blazes out of sight: the hunt's own stalk.
   if (quiet.within16 && blazeNear(bot, goal)) tree.hunt_on = { description: `Go after the ${quiet.within16 === 1 ? 'blaze' : `${quiet.within16} blazes`} out of sight within sixteen, as the hunt does.`,
     run: () => { goal.emptySpawner = { ...(goal.emptySpawner || {}), huntOnUntil: now + HUNT_ON_MS }; save?.(); } };

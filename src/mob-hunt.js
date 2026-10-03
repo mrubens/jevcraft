@@ -417,6 +417,7 @@ function encounter(bot, task, target, expiresAt) {
 async function slotForDrop(bot, task, target, goal, save, actions, site) {
   task.check(); checkAir(bot);
   const state = goal.mobHunt, slot = require('./enderman-slot');
+  await roomForDrop(bot, task, goal, state.item);
   const before = countOf(bot, state.item), deadline = Date.now() + 90000;
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;
@@ -444,6 +445,7 @@ async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs 
   task.check(); checkAir(bot);
   const state = goal.mobHunt, handler = handlers[target.name];
   if (!handler || handler.item !== state?.item || !valid(bot, target) || !canBegin(bot, handler) || !isolated(bot, target, handler)) throw new Error('Mob encounter is no longer feasible');
+  await roomForDrop(bot, task, goal, state.item);
   const before = countOf(bot, state.item), start = bot.entity.position.clone(), deadline = Date.now() + timeoutMs;
   const shieldWear = () => equipped(bot, 'off-hand')?.durabilityUsed || 0;
   const initialShieldWear = shieldWear(), guarded = !handler.passive && equipped(bot, 'off-hand')?.name === 'shield';
@@ -1202,6 +1204,25 @@ function rodBlazesSays(bot, at) {
   const close = byIt.filter(x => x.d <= BLAZE_ARM);
   return ` Blazes by it now: ${byIt.slice(0, 4).map(x => `one ${x.d} blocks from it`).join(', ')}.${close.length ? ` ${close.length === 1 ? 'That one is' : `${close.length} of them are`} within a blaze's arm's length of where the rod lies: a blaze strikes there${blow ? ` for about ${blow} a blow through the armour worn` : ''}, a blow a second while it stays, beside its fireballs.` : ''}`;
 }
+// Room for the hunt's own drop (note 993): a drop is not picked up with
+// the pockets full, and nothing in the hunt looked. 25593 (mid-242-xa-
+// fortress-7, 2026-10-03 05:54 to 06:04Z), 35 kinds in its 36 slots (raw
+// copper, lapis, eggs, wool, a hoe), killed blazes at its spawner for ten
+// minutes with their rods lying beside it, one 0.4 blocks off, "0 of 7
+// carried" throughout, and was burned to 1.8 health for them. Looked at
+// most every twenty seconds: the tidy's own rule first, then Jev's room
+// question (inventory-tidy.js makeRoom).
+const ROOM_EVERY_MS = 20000;
+async function roomForDrop(bot, task, goal, item) {
+  const tidy = require('./inventory-tidy');
+  let room = true; try { room = tidy.roomFor(bot, item); } catch (_) { room = true; }
+  if (room) return true;
+  const state = goal?.mobHunt || {};
+  if (Date.now() - (state.roomAt || 0) < ROOM_EVERY_MS) return false;
+  state.roomAt = Date.now();
+  try { const made = await tidy.makeRoom(bot, task, item, { goal, purpose: `the ${item.replaceAll('_', ' ')} the hunt is for: with the pockets full a drop lies where it falls and is gone in five minutes` }); console.log(`[room] the pockets were full with ${item.replaceAll('_', ' ')}s hunted: ${made ? 'room made' : 'no room made'}`); return !!made; }
+  catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; return false; }
+}
 async function prepareMobHunt(bot, task, step, goal, save, actions) {
   const handler = handlers[step.entity];
   if (!handler || handler.item !== step.item) throw blocked(`Unsupported mob source ${step.entity} for ${step.item}`);
@@ -1216,6 +1237,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // While this runs, mobs of this kind are the hunt's business and not the
   // survival layer's emergency. Refreshed every tick; it lapses in seconds.
   bot._huntingEntity = { name: step.entity, until: Date.now() + 5000 };
+  await roomForDrop(bot, task, goal, step.item);
   // What the bot's time at each spawner known comes to (note 686): said
   // with the way back to it.
   if (step.entity === 'blaze' && goal.fortressSearch?.map?.spawners?.length) {
@@ -4863,4 +4885,4 @@ function claim(bot, goal = {}) {
     ...(walled ? { walledIn: `${walled.own} of the ${walled.of} blocks round it its own` } : {}), ...(cage ? { cage: true } : {}) } };
 }
 
-module.exports = { rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };
+module.exports = { roomForDrop, rodBlazesSays, goldForPiglins, openWallOption, keepClaim, noWayAt, noWayFromHere, blazeSpots, spawnersKnown, wayLeft, BLAZES_AT, knownFortressOutOfView, backFailedHere, triedSays, backToGround, tripHomeClosed, fortressAnchor, seedFortressAt, sameFortress, linkedTo, climbWays, climbOffers, fortressOverhead, CLIMB_REACH, noWaySays, onFortressFloors, onFortressFloor, bestMakeable, makePickaxe, crossingFor, crossingOptions, unwalkedParts, claim, stakeHunt, prepareCombatGear, combatMovement, canBegin, fitness, fitnessSays, isolated, fightForDrop, huntObserved, prepareMobHunt, findFortressStep, fortressLegTarget, turnSweep, chooseLeg, FORTRESS_Y, HEADING_NAMES, rememberSighting, rememberedSpot, approaches, combatRoute, FORTRESS_LEG, fortressFloors, approachFortress, fortressApproaches, bridgeFirstOrder, pickaxeFirst, fortressInView, portalBack, portalTripStart, returnForKitSays, exposedBrick, exposedBricks, blazesAbout, blazesAboutSays, routeSurvey };

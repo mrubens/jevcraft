@@ -437,6 +437,8 @@ async function fetchNearbyRods(bot, task, { navigate, item = 'blaze_rod', near =
   const rods = () => Object.values(bot.entities).filter(e => e.getDroppedItem?.()?.name === item && e.position.distanceTo(origin) < near);
   if (!navigate || !rods().length || stand.volleyComing(bot)) return false;
   if (blazesAbout(bot, 4).length) return false;
+  // Room for it first (mob-hunt.js roomForDrop, note 993).
+  try { await require('./mob-hunt').roomForDrop(bot, task, bot._goal || null, item); } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   if (open) await open();
   const deadline = Date.now() + 8000;
   try {
