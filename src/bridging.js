@@ -924,6 +924,13 @@ async function gatherSpanBlocks(bot, task, want, { navigate, mineAt, deadline = 
 // -> { gained, dug }.
 async function quarryHere(bot, task, want, { names = LAID } = {}) {
   const out = { gained: 0, dug: 0, moves: 0 };
+  // Room for what is dug first (note 977): with the pockets full the drops
+  // lie where they fall. 25594 (mid-242-jg-fortress-7, 2026-10-03 04:2xZ),
+  // 34 kinds carried, dug 11 blocks where it stood and gained none.
+  try {
+    const tidy = require('./inventory-tidy'), first = /nether/.test(String(bot.game?.dimension || '')) && names.includes('netherrack') ? 'netherrack' : names[0];
+    if (typeof tidy.roomFor === 'function' && !tidy.roomFor(bot, first)) await tidy.makeRoom(bot, task, first, { goal: bot._stalls?.goalOf?.() || null, purpose: 'blocks dug here to lay' });
+  } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
   const start = blocksCarried(bot);
   const tools = (bot.inventory?.items?.() || []).filter(i => /_(pickaxe|shovel|axe)$/.test(i.name)).map(i => i.type);
   const drops = b => !b.harvestTools || tools.some(t => b.harvestTools[t]);
