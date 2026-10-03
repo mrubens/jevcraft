@@ -87,7 +87,11 @@ test('bank_rods in the rods stage: offered with 2 or more rods carried, rods sti
   // Offered from the first rod (note 874). Not offered: no rod, the rods done, no portal known, under way already.
   assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 1 } }), huntGoal()).rods, 1);
   assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 0, blaze_powder: 0 } }), huntGoal()), null);
-  assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 7 } }), huntGoal()), null);
+  // Every rod had with pearls still wanted: asked still, and said so (note 1021); with the pearls had too, the way out is the ladder's.
+  const done = rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 7 } }), huntGoal());
+  assert.deepEqual([done.complete, done.left, done.rods], [true, 0, 7]);
+  assert.match(rb.offerSays(done), /^Take the rods out: every rod wanted is had \(7 carried, 7 wanted\), and \d+ ender pearls are still wanted\. Walk back to the portal \d+ blocks off with the 7 blaze rods, go through the portal and put them in .*; the pearls are hunted after, from either side, with no rod in the pack\./);
+  assert.equal(rb.bankOffer(frameBot({ inventory: { ...BARE, blaze_rod: 7, ender_pearl: 16 } }), huntGoal()), null);
   assert.equal(rb.bankOffer(bot, { ...huntGoal(), portals: [] }), null);
   assert.equal(rb.bankOffer(bot, { ...huntGoal(), rodBank: { at: Date.now() } }), null);
   assert.equal(rb.bankOffer(frameBot({ dimension: 'overworld' }), huntGoal()), null);
@@ -302,4 +306,31 @@ test('a chest carried: rods_now offers keeping them here beside out now and stay
   const keys = Object.keys(asked[0]).filter(k => k !== 'none_good').sort();
   assert.deepEqual(keys, ['bank_now', 'keep_here', 'stay_for_more']);
   assert.match(asked[0].keep_here, /^Keep the 2 blaze rods .* Then the hunt goes on here for the 5 rods still needed with nothing in the pack to lose/);
+});
+
+// Note 1021: every rod wanted had (five carried, five in the bot's own
+// chest 30 blocks off), pearls still wanted: rods_now is asked still, and
+// the walk to that chest is an answer.
+test('the rods done with pearls still wanted: asked still, the bot\'s own chest farther off an answer (note 1021)', async () => {
+  const bot = frameBot({ inventory: { ...BARE, blaze_rod: 5 } });
+  const goal = huntGoal(), p = bot.entity.position.floored();
+  goal.rodStashes = [{ position: { x: p.x + 30, y: p.y, z: p.z }, dimension: 'nether', contents: { blaze_rod: 5 }, storedAt: new Date().toISOString() }];
+  const asked = [];
+  const client = { systemOne: async ({ questions }) => { asked.push(questions.branch_0.criteria); return { answers: { branch_0: { choice: 'own_chest', confidence: 0.9 } } }; } };
+  const walked = [];
+  const actions = { navigate: async (_b, _t, g) => { walked.push(g); throw new Error('no route'); } };
+  assert.equal(await rb.askBank(bot, task, goal, () => {}, actions, client), 'stay', 'the walk failed: the hunt goes on, asked again by its pacing');
+  assert.equal(walked.length, 1);
+  assert.match(asked[0].own_chest, new RegExp(`^Walk 30 blocks to the bot's own chest at \\(${p.x + 30}, ${p.y}, ${p.z}\\), which holds 5 blaze rods?, and put the 5 rods carried in with them: .*Then the pearls are hunted with nothing in the pack to lose\\.$`));
+  assert.match(asked[0].bank_now, /^Take the rods out: every rod wanted is had \(5 carried, 5 in the bot's chest in the Nether, counted as held and taken out on the way out, 7 wanted\)/);
+  assert.match(asked[0].stay_for_more, /^Go on to the pearls \(\d+ still wanted\) with the 5 rods in the pack: no walk out now, and every rod carried is lost with a death here/);
+});
+
+test('banked rods are not taken out on the Overworld side before the pearls are had (note 1021)', () => {
+  const goal = huntGoal();
+  const over = frameBot({ inventory: { ...BARE, blaze_rod: 0 }, dimension: 'overworld' }), p = over.entity.position.floored();
+  goal.rodStashes = [{ position: { x: p.x + 3, y: p.y, z: p.z }, dimension: 'overworld', contents: { blaze_rod: 7 }, storedAt: new Date().toISOString() }];
+  assert.equal(rb.collectHere(over, goal), null, 'pearls still wanted: the rods stay in the chest');
+  const all = frameBot({ inventory: { ...BARE, blaze_rod: 0, ender_pearl: 16 }, dimension: 'overworld' });
+  assert.equal(rb.collectHere(all, goal)?.action, 'collect_rod_stash');
 });

@@ -756,9 +756,9 @@ Questions that ride in one call together (the intake batch is one call per chat 
 
 ### `rods_now`
 
-**Blaze rods are carried in the Nether and more are needed: take them out through the portal to a chest now and come back for the rest, or stay and hunt on with them in the pack?**
+**Blaze rods are carried in the Nether and more are needed, or every rod is had and pearls are still wanted: take them out through the portal to a chest now, keep them in a chest here, or go on with them in the pack?**
 
-- When: (The last bank walk, where it ended without reaching the chest within the hour, is said on bank_now and stay_for_more: when it began and ended, its minutes, and why: note 983.) At a spawner or with blazes to hunt (before empty_spawner and hunt_target), a rod or more carried, rods still wanted and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).
+- When: (The last bank walk, where it ended without reaching the chest within the hour, is said on bank_now and stay_for_more: when it began and ended, its minutes, and why: note 983.) At a spawner or with blazes to hunt (before empty_spawner and hunt_target), a rod or more carried, rods still wanted (or every rod had and pearls still wanted: note 1021) and the way to the portal open with its distance known; once for each count of rods carried, again after ten minutes (src/rod-bank.js askBank).
 - Decision tree, choice; stakes medium; ledger kind `strategy`
 - Bar: none
 - Jev unreachable: no fallback: nothing is decided by code; the bot holds, says once that it is waiting for Jev, asks again with a backoff, and asks it fresh when Jev answers
@@ -770,6 +770,7 @@ Questions that ride in one call together (the intake batch is one call per chat 
 | `wood_for_chest` | root | fetch the wood for a chest, then keep the rods in it here | no chest and no wood for one is carried (under eight planks' worth) and stems of a Nether forest are known within 128 blocks (nether-wood.js); said with where the stems are and the way there, what the wood is for, the portal's distance and the rods carried and still needed (note 997) |
 | `bank_now` (trip: the portal) | root | out through the portal with the rods to a chest on the Overworld side, then back for the rest | always here; said with the walk and its record, the chest, the round trip, and the day's record of lives that stayed and that left |
 | `keep_here` | root | put the rods in a chest here and hunt on with nothing to lose, the walk out made once with them all | a chest can go down here out of the shooters' lines, made from what is carried or one carried or known within reach (src/rod-stash.js keepOption, note 931); said with the health and whether it comes back |
+| `own_chest` (trip: the chest) | root | walk to the bot's own chest farther off and put the rods carried in with what it holds | no chest can go down here (keep_here not offered) and a chest the bot left rods in stands in this dimension within 96 blocks and nearer than the portal; said with the walk, what the chest holds and the portal's distance (src/rod-bank.js askBank, note 1021) |
 | `stay_for_more` | root | stay and hunt on with the rods in the pack | always here; said with what a death takes and the record of lives that carried as many |
 
 ## work

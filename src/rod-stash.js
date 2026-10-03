@@ -168,8 +168,9 @@ function stashOffer(bot, goal, { now = Date.now(), underFire = false } = {}) {
   const rods = rodsEquivalent(bot);
   if (rods < ROD_MIN) return null;
   if (isSetAside(goal, 'rod_stash', 'here', now)) return null;
-  let left = 1, wanted = null; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; } catch (_) { left = 1; }
-  if (!left) return null;
+  let left = 1, wanted = null, pearls = 0; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; pearls = n.pearlsLeft; } catch (_) { left = 1; }
+  // Every rod had and no pearl wanted, the way out is next: nothing to keep here for (note 1021).
+  if (!left && !pearls) return null;
   const eyeOf = bot.entity.position.offset(0, 1.62, 0);
   const T = require('./blaze-tactics');
   const seenBy = shooters(bot).filter(e => T.lineThrough(bot, e.position.offset(0, (e.height || 1.8) * 0.85, 0), eyeOf, new Set()));
@@ -275,8 +276,9 @@ function stepOutOffer(bot, goal, now = Date.now()) {
   if (!bot?.entity || !inNether(bot) || bot.game?.gameMode !== 'survival') return null;
   const rods = rodsEquivalent(bot);
   if (rods < ROD_MIN || isSetAside(goal, 'rod_stash', 'here', now)) return null;
-  let left = 1, wanted = null; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; } catch (_) { left = 1; }
-  if (!left) return null;
+  let left = 1, wanted = null, pearls = 0; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; pearls = n.pearlsLeft; } catch (_) { left = 1; }
+  // Every rod had and no pearl wanted, the way out is next: nothing to keep here for (note 1021).
+  if (!left && !pearls) return null;
   const T = require('./blaze-tactics'), eyeOf = bot.entity.position.offset(0, 1.62, 0);
   const all = shooters(bot), seenBy = all.filter(e => T.lineThrough(bot, e.position.offset(0, (e.height || 1.8) * 0.85, 0), eyeOf, new Set()));
   if (!seenBy.length) return null;

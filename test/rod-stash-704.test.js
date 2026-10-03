@@ -103,7 +103,9 @@ test('not offered: a blaze with a line to the bot, no chest and no wood, the rod
   assert.equal(rs.stashOffer(seen, goal), null, 'a blaze sees the bot');
   const bare = { ...rec.inventory, blaze_rod: 4 }; delete bare.oak_log; delete bare.crafting_table;
   assert.equal(rs.stashOffer(frameBot({ inventory: bare }), goal), null, 'no chest, no wood');
-  assert.equal(rs.stashOffer(frameBot({ inventory: { ...rec.inventory, blaze_rod: 7, chest: 1 } }), goal), null, 'the rods done: the portal walk takes them');
+  // The rods done with pearls still wanted: kept here still (note 1021); with the pearls done too, the portal walk takes them.
+  assert.ok(rs.stashOffer(frameBot({ inventory: { ...rec.inventory, blaze_rod: 7, chest: 1 } }), goal), 'the rods done, the pearls not');
+  assert.equal(rs.stashOffer(frameBot({ inventory: { ...rec.inventory, blaze_rod: 7, chest: 1, ender_pearl: 16 } }), goal), null, 'the rods and the pearls done: the portal walk takes them');
   const over = frameBot(); over.game.dimension = 'overworld';
   assert.equal(rs.stashOffer(over, goal), null);
 });

@@ -78,7 +78,15 @@ function bankOffer(bot, goal, { now = Date.now() } = {}) {
   const rods = rs().rodsEquivalent(bot);
   if (rods < BANK_MIN || pending(goal) || isSetAside(goal, 'rod_bank', 'out', now)) return null;
   let n = null; try { n = require('./eye-need').need(bot, goal); } catch (_) { n = null; }
-  if (!n?.rodsLeft) return null;
+  if (!n) return null;
+  // Every rod wanted had, with pearls still wanted (note 1021): the rods
+  // carried are asked about still. The offer ended with the last rod, the
+  // ladder went on to the pearls, and 25590 (mid-242-sc-fortress-9,
+  // 2026-10-03 08:35 to 08:47Z), five rods in a chest and five in its pack,
+  // none still needed, searched for a warped forest past its fortress's
+  // blazes for twelve minutes, alight five times, and was asked nothing.
+  const complete = !n.rodsLeft;
+  if (complete && !(n.pearlsLeft > 0)) return null;
   let closed = null; try { closed = require('./mob-hunt').tripHomeClosed(bot, goal); } catch (_) { closed = null; }
   if (closed && !tunnelOpen(goal, now)) return null;
   const gp = require('./game-progress');
@@ -86,7 +94,7 @@ function bankOffer(bot, goal, { now = Date.now() } = {}) {
   if (d == null) return null;
   const pace = gp.netherPaceSays(bot, d);
   const chest = chestThere(bot, goal);
-  return { rods, wanted: n.rodsWanted, left: n.rodsLeft, what: carriedKept(bot), d, seconds: Math.round(pace.seconds), paceSays: pace.says, chest };
+  return { rods, wanted: n.rodsWanted, left: n.rodsLeft, complete, pearlsLeft: n.pearlsLeft, inChest: n.stashed?.rods || 0, what: carriedKept(bot), d, seconds: Math.round(pace.seconds), paceSays: pace.says, chest };
 }
 
 // The option's words: what goes out and where, the walk and its record, the
@@ -97,6 +105,7 @@ function offerSays(offer) {
   const walk = offer.paceSays ? offer.paceSays.trim() : `About ${Math.max(1, offer.seconds)} seconds at a walk.`;
   const minutes = Math.max(1, Math.round((2 * offer.seconds + (offer.chest.seconds || 0)) / 60));
   let staying = ''; try { staying = ` Staying with them: ${require('./rod-risk').recordSays(offer.rods)}`; } catch (_) { staying = ''; }
+  if (offer.complete) return `Take the rods out: every rod wanted is had (${offer.rods} carried${offer.inChest ? `, ${offer.inChest} in the bot's chest in the Nether, counted as held and taken out on the way out` : ''}, ${offer.wanted} wanted), and ${plural(offer.pearlsLeft, 'ender pearl')} ${offer.pearlsLeft === 1 ? 'is' : 'are'} still wanted. Walk back to the portal ${offer.d} blocks off with the ${what}, go through the portal and put them in ${offer.chest.says}; the pearls are hunted after, from either side, with no rod in the pack. ${walk} The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out when the pearls are had too.${staying}`;
   return `Bank the rods got so far: walk back to the portal ${offer.d} blocks off with the ${what}, go through the portal, put them in ${offer.chest.says}, and come back through for the ${plural(offer.left, 'rod')} still needed. ${walk} There and back is about ${minutes} minute${minutes === 1 ? '' : 's'}${offer.chest.how === 'tree' ? ' and the time the wood takes on the Overworld side' : ''}, no rod meanwhile. The walk out carries them, and a death on it drops them as one here does; once in the chest they are kept through any death after, counted as held, and taken out once the rods carried and banked together are what the goal wants, so a death after loses only the rods got since.${staying}`;
 }
 
@@ -182,7 +191,7 @@ function lastWalkSays(goal, now = Date.now()) {
   const mins = ms => plural(Math.max(1, Math.round(ms / 60000)), 'minute');
   return ` The last bank walk, begun ${mins(now - b.at)} ago with ${plural(b.rods, 'rod')} from ${at(b.from)}, ended ${mins(now - b.endedAt)} ago after ${mins(b.endedAt - b.at)} without reaching the chest: ${String(b.why || 'ended').replace(/[.!?]+$/, '')}.`;
 }
-const ASK_AGAIN_MS = 10 * 60000;
+const ASK_AGAIN_MS = 10 * 60000, OWN_CHEST_REACH = 96;
 async function askBank(bot, task, goal, save, actions, client, { now = Date.now() } = {}) {
   if (!client) return null;
   const offer = bankOffer(bot, goal, { now });
@@ -194,7 +203,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
   let staying = ''; try { staying = require('./rod-risk').recordSays(offer.rods); } catch (_) { staying = ''; }
   const today = `On ${TODAY.day}, ${TODAY.lives} lives carried 2 or more rods at a fortress: ${TODAY.died} stayed and died with them (${TODAY.lost.join(', ')} rods lost), ${TODAY.out} left and carried its ${TODAY.outRods} out.`;
   // The chest here (note 931): the rods kept in the Nether, the hunt on.
-  let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
+  let keep = null; try { keep = rs().keepOption(bot, task, goal, save, actions, { thenSays: offer.complete ? 'Then the pearls are hunted with nothing in the pack to lose, and the chest is emptied on the way out.' : `Then the hunt goes on here for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out is made once, with them all.` }); } catch (_) { keep = null; }
   const last = lastWalkSays(goal, now);
   // No chest and no wood for one: the wood fetched first where stems are
   // known, then the chest here (note 997). On 2026-10-03 (04:00 to 06:40Z)
@@ -209,7 +218,7 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
       const fetch = await nw.fetchStemsOffer(bot, task, goal);
       if (fetch?.place) {
         const said = fetch.describe ? await fetch.describe() : fetch.description;
-        woodFirst = { description: `Get the wood for a chest first, then keep the rods here in it: ${said} With the wood a chest is made (eight planks, two stems' worth) and the ${plural(offer.rods, 'rod')} put in it where the hunt is: no walk to the portal ${offer.d} blocks off, the hunt going on for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose, and the walk out made once, with them all.`,
+        woodFirst = { description: `Get the wood for a chest first, then keep the rods here in it: ${said} With the wood a chest is made (eight planks, two stems' worth) and the ${plural(offer.rods, 'rod')} put in it where the hunt is: no walk to the portal ${offer.d} blocks off, ${offer.complete ? 'the pearls hunted' : `the hunt going on for the ${plural(offer.left, 'rod')} still needed`} with nothing in the pack to lose, and the walk out made once, with them all.`,
           run: async () => {
             const acquireStep = actions?.acquireStep || require('./work').acquireStep;
             try { await nw.fetchStems(bot, task, goal, save, { acquireStep }); }
@@ -223,17 +232,46 @@ async function askBank(bot, task, goal, save, actions, client, { now = Date.now(
     } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; woodFirst = null; }
     if (!woodFirst) delete bot._woodAlso;
   }
+  // The bot's own chest farther off (note 1021): where none is within the
+  // few blocks keep_here walks and none can be made, the chest it left its
+  // rods in is a walk too, and nearer than the portal. 25590's held five
+  // rods 45 blocks from where it stood with five more in its pack, no chest
+  // carried and no wood, its portal 180 off.
+  let ownChest = null;
+  if (!keep) {
+    try {
+      const { Vec3 } = require('vec3'), here = bot.entity.position;
+      const far = rs().stashes(goal).filter(c => c.dimension === rs().dimOf(bot))
+        .map(c => ({ c, d: Math.round(here.distanceTo(new Vec3(c.position.x + 0.5, c.position.y, c.position.z + 0.5))) })).filter(x => x.d <= OWN_CHEST_REACH && x.d < offer.d).sort((x, y) => x.d - y.d)[0];
+      if (far) {
+        const pace = require('./game-progress').netherPaceSays(bot, far.d), p = far.c.position;
+        const holds = rs().listed(far.c.contents || {});
+        ownChest = { description: `Walk ${far.d} blocks to the bot's own chest at (${p.x}, ${p.y}, ${p.z})${holds ? `, which holds ${holds}` : ''}, and put the ${plural(offer.rods, 'rod')} carried in with them: ${String(pace.says || '').trim() || `about ${Math.round(pace.seconds)} seconds at a walk`} The portal is ${offer.d} blocks off. The walk carries them, and a death on it drops them; in the chest they are kept through any death after, counted as held, and taken out on the way out. ${offer.complete ? 'Then the pearls are hunted with nothing in the pack to lose.' : `Then the hunt goes on for the ${plural(offer.left, 'rod')} still needed with nothing in the pack to lose.`}`,
+          trip: 'the chest', secs: Math.round(pace.seconds),
+          run: async () => {
+            const { goals } = require('mineflayer-pathfinder');
+            const acts = { ...actions, navigate: actions?.navigate || require('./skills').navigate };
+            goal.step = { action: 'stash_rods', at: { ...p }, walk: far.d }; save?.();
+            try { await acts.navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 2), { timeoutMs: 180000, stallMs: 8000, passing: true }); }
+            catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] the walk to the bot's chest ended: ${String(err.message || err).slice(0, 200)}`); return false; }
+            return rs().stashRods(bot, task, goal, save, acts, { existing: far.c, what: carriedKept(bot) });
+          } };
+      }
+    } catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; ownChest = null; }
+  }
   const tree = {
     bank_now: { description: `${opt.description}${last} ${bankWalksSays()} ${today} The way out can be the tunnel dug straight at the portal (asked on the way where the walk fails): in the rock nothing sees or pushes the bot.`, trip: 'the portal', run: opt.run },
     ...(keep ? { keep_here: { description: keep.description, run: keep.run } } : {}),
     ...(woodFirst ? { wood_for_chest: woodFirst } : {}),
-    stay_for_more: { description: `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying} ${today} ${bankWalksSays()} Asked again when another rod is carried, or in ten minutes.` },
+    ...(ownChest ? { own_chest: ownChest } : {}),
+    stay_for_more: { description: `${offer.complete ? `Go on to the pearls (${offer.pearlsLeft} still wanted)` : `Stay and hunt on for the ${plural(offer.left, 'rod')} still needed`} with the ${plural(offer.rods, 'rod')} in the pack: no walk out now, and every rod carried is lost with a death here.${last} ${staying} ${today} ${bankWalksSays()} Asked again when another rod is carried, or in ten minutes.` },
   };
   let decision;
   try { decision = await require('./decisions').decide('rods_now', { client, bot, task, goal, save, tree, state: { rodsCarried: offer.rods, rodsWanted: offer.wanted, rodsStillNeeded: offer.left, portalBlocks: offer.d, health: bot.health, food: bot.food } }); }
   catch (err) { task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[rods_now] not asked: ${String(err.message || err).slice(0, 900)}`); return null; }
   if (decision.stale) return null;
   if (decision.path?.at(-1) === 'keep_here') { await tree.keep_here.run(); return 'kept'; }
+  if (decision.path?.at(-1) === 'own_chest') { delete bot._woodAlso; const kept = await tree.own_chest.run(); return kept ? 'kept' : 'stay'; }
   if (decision.path?.at(-1) === 'wood_for_chest') { const kept = await tree.wood_for_chest.run(); return kept ? 'kept' : 'stay'; }
   delete bot._woodAlso;
   if (decision.path?.at(-1) !== 'bank_now') return 'stay';
@@ -321,6 +359,10 @@ function collectHere(bot, goal) {
   const eyes = rs().countOf(bot, 'ender_eye') + inBank.ender_eye;
   const wanted = en.rodsFor(en.eyeTarget(goal) - eyes, rs().countOf(bot, 'blaze_powder') + inBank.blaze_powder);
   if (rs().countOf(bot, 'blaze_rod') + inBank.blaze_rod < wanted) return null;
+  // Not before the pearls are had too (note 1021): an eye wants both, and
+  // rods taken out with pearls still to hunt are rods in the pack again.
+  let pearlsLeft = 0; try { pearlsLeft = en.need(bot, goal).pearlsLeft; } catch (_) { pearlsLeft = 0; }
+  if (pearlsLeft > 0) return null;
   return rs().collectStage(bot, goal);
 }
 
