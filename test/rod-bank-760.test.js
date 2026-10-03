@@ -334,3 +334,4 @@ test('banked rods are not taken out on the Overworld side before the pearls are 
   const all = frameBot({ inventory: { ...BARE, blaze_rod: 0, ender_pearl: 16 }, dimension: 'overworld' });
   assert.equal(rb.collectHere(all, goal)?.action, 'collect_rod_stash');
 });
+

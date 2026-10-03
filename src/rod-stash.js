@@ -25,7 +25,8 @@ const KEPT = Object.freeze(['blaze_rod', 'blaze_powder', 'ender_pearl', 'ender_e
 // 874): a rod kept is a rod kept, whatever the count.
 const ROD_MIN = 1;
 const REACH = 4.3, NEAR_STASH = 12, LAVA_NEAR = 2;
-const REST_MS = 5 * 60000, TAKE_REST_MS = 10 * 60000, TAKE_TRIES = 3;
+// Six tries, ten minutes apart, before a chest is counted out (three till note 1047).
+const REST_MS = 5 * 60000, TAKE_REST_MS = 10 * 60000, TAKE_TRIES = 6;
 // Seconds, measured on a scratch server (scripts/rod-stash-probe.js, note
 // 704): a chest carried put down and 2 stacks put in, 0.8 s; made first from
 // 3 stems with a table carried (planks, the table put down, the chest), 8 s
@@ -364,7 +365,20 @@ async function collect(bot, task, goal, save, actions = {}) {
   try {
     if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) {
       if (!actions.navigate) throw new Error('No way to walk to the chest');
-      await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 120000, stallMs: 8000, passing: true });
+      // Where the walk comes to nothing, a tunnel straight at the chest
+      // (bridging.js tunnelStraight, note 1047), and the walk again from
+      // where it ends: three walks that failed wrote the chest off, and
+      // 25593 (2026-10-03 11:08 to 11:09Z), all seven of its rods kept, had
+      // two walks fail to each of its two Nether chests ("navigation timed
+      // out without reaching new ground"), four rods one failure from being
+      // counted out.
+      try { await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 120000, stallMs: 8000, passing: true }); }
+      catch (err) {
+        task?.check?.(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name) || !/nether/.test(String(bot.game?.dimension || ''))) throw err;
+        console.log(`[stash] the walk to the chest at ${key} failed (${String(err.message || err).slice(0, 120)}): a tunnel straight at it`);
+        await require('./bridging').tunnelStraight(bot, task, cell, { maxSteps: 96, navigate: actions.navigate, down: true, near: 3 });
+        if (bot.entity.position.offset(0, 1.62, 0).distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH) await actions.navigate(bot, task, new goals.GoalNear(cell.x, cell.y, cell.z, 2), { timeoutMs: 30000, stallMs: 6000, passing: true });
+      }
     }
     if (!bot.blockAt(cell)) throw new Error(`The chest at ${key} is not loaded from here`);
     const taken = await withStash(bot, task, entry, save, async window => {
