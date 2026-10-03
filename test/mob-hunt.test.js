@@ -2298,3 +2298,15 @@ test('a way on of the floors the walk ends beside, not on, is passed over with w
   const repeats = walks.filter((w, i) => i && w.x === walks[i - 1].x && w.y === walks[i - 1].y && w.z === walks[i - 1].z);
   assert.equal(repeats.length, 0, `the same way on walked to pass after pass: ${JSON.stringify(walks)}`);
 });
+
+test('endermen left at the hunt\'s question: the stalk ends for the kind, not going on to the next one (note 959)', async () => {
+  // 25593 (mid-242-wb-fortress-5, 2026-10-02 23:00:18Z) and three others
+  // stalked endermen 6 to 10 minutes each, each one left going on to the next.
+  const { bot, goal, task } = fixture('enderman');
+  const { setAside } = require('../src/progress');
+  setAside(goal, 'hunt_kind', 'enderman', 'Jev chose to leave them for now', 120000);
+  const actions = { navigate: async () => {}, tunnel: async () => {} };
+  await assert.rejects(prepareMobHunt(bot, task, { entity: 'enderman', item: 'ender_pearl', count: 1 }, goal, () => {}, actions),
+    err => err.name === 'Blocked' && /The enderman hunt is left for now: Jev chose to leave them/.test(err.message));
+  assert.notEqual(goal.step?.action, 'stalk_mob');
+});

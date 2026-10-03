@@ -923,8 +923,18 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // with three or more blazes within sixteen.
   let fourNear = '';
   if (state.entity === 'blaze') { try { fourNear = require('./blaze-stand').fourNearSays(bot, goal, threats(bot, 16).filter(t => t.entity?.name === 'blaze').length); } catch (_) { fourNear = ''; } }
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  // What leaving them does to the stalk (note 959): 25593 (mid-242-wb-
+  // fortress-5, 2026-10-02 23:00:18Z) answered defer at 0.8 with an enderman
+  // a block off, full health and an iron sword, one pearl needed; it and
+  // 25591, 25592 and 25595 stalked endermen 6 to 10 minutes each, "watching
+  // endermans and getting nowhere", the stalk going on to the next one of
+  // the forest each time one was left.
+  const stalkSays = state.entity !== 'blaze' ? ` Left, the stalk of every ${state.entity.replaceAll('_', ' ')} ends with them for those two minutes, not only these: the way to the ${state.item ? state.item.replaceAll('_', ' ') + 's' : 'goal'} is asked again, the rest of the game beside it.` : '';
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${stalkSays}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
+    // The kind, not only the ones offered (note 959): the stalk had gone on
+    // to the next enderman of a forest, asked again and been left again.
+    if (state.entity !== 'blaze') setAside(goal, 'hunt_kind', state.entity, 'Jev chose to leave them for now', 120000);
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
   } };
@@ -1314,6 +1324,10 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
   // crash, which is what "Cannot access 'state' before initialization"
   // was, thrown out of the recovery branch on every tick the bot was hurt.
   const state = goal.mobHunt;
+  if (step.entity !== 'blaze' && isSetAside(goal, 'hunt_kind', step.entity)) {
+    delete state.stalking; save();
+    throw Object.assign(new Error(`The ${step.entity.replaceAll('_', ' ')} hunt is left for now: Jev chose to leave them at the hunt's question, for two minutes`), { name: 'Blocked' });
+  }
   const near = Object.values(bot.entities || {}).filter(e => e.name === step.entity && e.isValid !== false &&
     !isSetAside(goal, 'hunt_target', e.uuid || e.id) && e.position.distanceTo(bot.entity.position) < 32)
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position))[0];
