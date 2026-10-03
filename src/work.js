@@ -2625,6 +2625,23 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   await surfaceStep(bot, task, goal, save);
 }
 
+// The ore tunnelled toward, of those found through the rock, nearest first
+// (note 1069): the nearest where it is near or the bot is already down at
+// the ore's depth; from well above that depth, one far off gives way to the
+// nearest found down in the ore's own band, and with none found there to the
+// staircase down toward it (null). On 2026-10-03 (11:00 to 14:50Z) the iron
+// rungs took 889 bot-minutes for 1,044 raw iron: 3.4 a minute at y 0 to 29
+// against 1.2 at y 30 to 55 and 0.9 above, with 87% of the minutes spent
+// above y 30, each nearest ore a tunnel of its own to a vein of a few.
+const ORE_NEAR = 16, ORE_ABOVE = 24, ORE_BAND = 16;
+// Only where the step wants a good many (ORE_MANY and more): for a few, the
+// nearest vein is the whole errand.
+const ORE_MANY = 6;
+function oreToTunnel(found, feet, depth, count = Infinity) {
+  const nearest = found[0] || null;
+  if (!nearest || !Number.isFinite(depth) || !feet || !(count >= ORE_MANY) || feet.y <= depth + ORE_ABOVE || nearest.distanceTo(feet) <= ORE_NEAR) return nearest;
+  return found.find(p => p.y <= depth + ORE_BAND) || null;
+}
 async function mineAtSource(bot, task, step, goal, save, selected) {
   const candidates = selected ? [selected] : await miningCandidates(bot, task, step, goal);
   if (!candidates.length) {
@@ -2643,7 +2660,7 @@ async function mineAtSource(bot, task, step, goal, save, selected) {
       // turned between iron ores all round it for two minutes.
       const found = find(bot, names, 64, 16).filter(p => safeFromHostiles(bot, p) && !isSetAside(goal, 'reach', p));
       const held = goal.tunnelOre && found.find(p => p.x === goal.tunnelOre.x && p.y === goal.tunnelOre.y && p.z === goal.tunnelOre.z);
-      const ore = held || found[0];
+      const ore = held || oreToTunnel(found, bot.entity.position, step.depth, step.count ?? 1);
       if (ore) goal.tunnelOre = { x: ore.x, y: ore.y, z: ore.z }; else delete goal.tunnelOre;
       // With no ore in view, down toward the depth along a heading whose
       // staircase is not resting. Always east, a resting staircase threw at
@@ -9254,4 +9271,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { nightUpSays, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
