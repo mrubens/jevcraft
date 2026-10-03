@@ -1364,6 +1364,24 @@ function fireWays(bot, task, onAction = () => {}) {
   ways.burn_out = { description: `Leave it to burn out and go on: ${ends}${nether ? (Object.keys(cauldrons).length ? '; in the Nether only a cauldron\'s water puts it out' : '; in the Nether nothing else puts it out') : ''}. ${drop < 1 ? 'Asked again at the next hurt of the burning' : `Asked again at about ${round(Math.max(0, (bot.health ?? 20) - require('./body').holdDrop(bot.health)))} health (${drop} more)`}, or when another way to put it out comes.`,
     hold: 15, run: async () => false };
   if (apple) ways.eat_golden_apple = eat();
+  // A meal while the fire burns on (note 1013): alight and out of the
+  // flames, nothing moves the fire off the body in the Nether, and a meal
+  // eaten is the health coming back as it burns. 25594 (2026-10-03 07:47:16
+  // to 07:47:26Z) burned nine seconds at hunger 17, 12.6 health to none,
+  // cooked food carried, its answers a block risen on twice, a run and a
+  // strike; no way here was the meal.
+  let meal = null; try { meal = (bot.food ?? 20) < 20 ? chooseFood(bot) || null : null; } catch (_) { meal = null; }
+  if (meal) {
+    const points = bot.registry?.foodsByName?.[meal.name]?.foodPoints || 0, after = Math.min(20, (bot.food ?? 20) + points);
+    const heals = after >= 20 ? 'at hunger 20 with the meal\'s saturation a health comes back each half second, twice what the fire takes' : after >= 18 ? `at hunger ${after} a health comes back each four seconds` : `hunger ${after} after it is still under eighteen, where nothing comes back`;
+    ways.eat_meal = { description: `Eat the ${meal.name.replaceAll('_', ' ')} now while the fire burns on: about ${EAT_MEAL_SECONDS} seconds standing still, hunger ${bot.food} to ${after}; ${heals}${(bot.food ?? 20) < 18 ? ` (at ${bot.food} now nothing does)` : ''}. The fire: ${ends}.`,
+      run: async () => {
+        onAction({ action: 'eat', item: meal.name, food: bot.food, health: bot.health, burning: true });
+        const before = bot.food ?? 0;
+        const r = await require('./meal').eatThrough(bot, task, meal, { eaten: () => (bot.food ?? 0) > before, helps: () => (bot.food ?? 20) < 20, tries: 2 });
+        return r.eaten;
+      } };
+  }
   const potion = drinkWay();
   if (potion) ways.drink_fire_resistance = potion;
   // A mob at arm's length: turning to it and striking it is a way too, and
