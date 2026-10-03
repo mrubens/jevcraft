@@ -8576,6 +8576,25 @@ async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { known
     // yield" with no food gained.
     else if (src.kind === 'herd') { if (await require('./sightings').walkToSighting(bot, task, goal, save, src.animal, src.sighting, navigate)) await huntInView(bot, task, goal, save, [src.animal]); }
     else if (src.kind === 'in_view') await huntInView(bot, task, goal, save, [src.animal]);
+    // The food left cooking in a furnace (healing.js, note 857), gone back
+    // for as upkeep's fetch_batch goes (note 1061). The kind had no way here
+    // and the step came back at once with nothing done: 25592 (2026-10-03
+    // 13:10 to 13:23Z), 12 food points of 80, a batch of mutton in its
+    // furnace 21 blocks off, held food_near_frame for 724 seconds at 21
+    // passes a second, "10 minutes on the nether food without a new best".
+    // One that cannot be had rests ten minutes as a source.
+    else if (src.kind === 'furnace') {
+      const b = goal.smelting;
+      if (!b?.item) { setAside(goal, 'food_source', 'furnace', 'no batch is kept', 600000); save(); return; }
+      const before = countOf(bot, b.item);
+      try { delete b.left; save(); await smelt(bot, task, { item: b.item, from: b.from, fuelItem: b.fuelItem, count: b.count }, goal, save); }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err;
+        setAside(goal, 'food_source', 'furnace', String(err.message).slice(0, 120), 600000); save();
+        console.log(`[food] the batch in the furnace at (${src.at.x}, ${src.at.y}, ${src.at.z}): ${err.message}`);
+      }
+      if (countOf(bot, b.item) <= before && goal.smelting === b && !isSetAside(goal, 'food_source', 'furnace')) { setAside(goal, 'food_source', 'furnace', 'nothing was taken out', 120000); save(); }
+    }
     return;
   }
   const survivalState = goal.survival || {};

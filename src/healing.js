@@ -87,6 +87,8 @@ function foodSources(bot, goal) {
     const food = sm?.item && bot.registry?.foodsByName?.[sm.item];
     const dim = v => String(v || 'overworld').replace(/^minecraft:/, '');
     if (!food || !sm.position || !here || dim(sm.dimension) !== dim(bot.game?.dimension)) return;
+    // Left for good, or gone for and not had (note 1061).
+    if (sm.left?.forgone || require('./progress').isSetAside(goal, 'food_source', 'furnace')) return;
     const at = sm.position, d = Math.round(here.distanceTo(new (require('vec3').Vec3)(at.x + 0.5, at.y, at.z + 0.5)));
     const count = sm.count || 1, done = sm.startedAt && Date.now() - sm.startedAt >= count * 10000;
     found.push({ kind: 'furnace', distance: d, at: { x: at.x, y: at.y, z: at.z }, points: count * food.foodPoints,
