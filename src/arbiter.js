@@ -706,6 +706,19 @@ async function arbitrate(bot, claims, ctx = {}) {
     const threatClaim = live.find(c => c.layer === 'survival' && c.action === 'escape_threat');
     if (winner.layer === 'work' && threatClaim && bot) {
       const ids = mobsNow.map(m => m.id ?? m.entity?.id).filter(id => id != null);
+      // And the one the work's own check stops on now, where it stands past
+      // the six blocks the ruling's mobs are read within (note 1116): a
+      // shooter is a threat from farther off than that. 25589 (2026-10-03
+      // 21:09:47 to 21:09:56Z), at 20 health with a blaze 7 to 8 blocks off,
+      // answered work at 0.58, 0.46 and 0.45; each time the work stopped
+      // nine milliseconds on at "Threat nearby: blaze at 8 blocks", the turn
+      // was asked again and went to survival: two askings every four
+      // seconds, 26 in a quarter hour.
+      try {
+        const stops = require('./danger').immediateThreat(bot);
+        const id = stops?.entity?.id;
+        if (id != null && !stops.projectile && !ids.includes(id)) ids.push(id);
+      } catch (_) { /* no world */ }
       if (ids.length) bot._wavedOff = { ids, until: now + KEEP_ON_MS, byTurn: true };
     }
     Object.assign(result, { winner, by: decision.standIn ? 'stand-in' : 'jev', ruling: state.ruling });
