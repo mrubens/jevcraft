@@ -208,3 +208,17 @@ test('the stall\'s crossing option names the place the gathering was going to', 
   const other = netherAnswers(bot, new Task('stall'), { survival: {}, step: { action: 'mine', target: STEMS } }, () => {});
   assert.match(other.cross_toward.description, /^Go straight at where the work was going, 33 blocks off/);
 });
+
+// Note 1041: the straight tunnel toward where the stalled work was going is an answer beside the crossing, not toward the portal, and rests after it makes no ground.
+test('the stall in the Nether offers the tunnel straight at where the work was going (note 1041)', async () => {
+  const { netherAnswers } = require('../src/nether-travel');
+  const bot = tunnelBot(-145.5);
+  const goal = { survival: {}, step: { action: 'nether_gather', what: 'the crimson stems at (-178, 72, -112)', target: STEMS } };
+  const answers = netherAnswers(bot, new Task('stall'), goal, () => {});
+  assert.match(answers.tunnel_toward.description, /^Dig a tunnel straight at the crimson stems at \(-178, 72, -112\), 33 blocks off and 6 above, through the rock, two high and one wide: a step up with each block until level with it, then level; a block laid where the floor is missing \(\d+ carried\)/);
+  assert.match(answers.tunnel_toward.description, /about (1\.5|5) seconds a block (with the pickaxe carried|by hand \(no pickaxe carried\))/);
+  const portal = netherAnswers(bot, new Task('stall'), { survival: {}, step: { action: 'return_to_portal', portal: STEMS } }, () => {});
+  assert.equal(portal.tunnel_toward, undefined, 'the portal\'s tunnel is portal_way\'s');
+  require('../src/progress').setAside(goal, 'tunnel_toward', `${Math.round(STEMS.x / 16)},${Math.round(STEMS.z / 16)}`, 'it made no ground', 300000);
+  assert.equal(netherAnswers(bot, new Task('stall'), goal, () => {}).tunnel_toward, undefined, 'resting after it made no ground');
+});

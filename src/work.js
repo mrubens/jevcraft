@@ -738,7 +738,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // the rock, the crossing straight at the target, the floor below, the
   // pillar to a floor overhead. Relocations said as tried come last.
   {
-    const first = [...(answers.blocks_from_pockets?.leads ? ['blocks_from_pockets'] : []), ...(answers.blocks_from_shore?.leads ? ['blocks_from_shore'] : []), ...(walksFailing ? ['rise_through', 'cross_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [])];
+    const first = [...(answers.blocks_from_pockets?.leads ? ['blocks_from_pockets'] : []), ...(answers.blocks_from_shore?.leads ? ['blocks_from_shore'] : []), ...(walksFailing ? ['rise_through', 'cross_toward', 'tunnel_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [])];
     const last = Object.keys(answers).filter(k => /^recover_relocate/.test(k) && /Tried: /.test(answers[k].description || ''));
     if (first.length || last.length) {
       const ordered = {};

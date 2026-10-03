@@ -863,6 +863,8 @@ function portalHereSays(bot, goal) {
 // its portal and short of food, and mined nearby 907 times (note 241); and
 // mid-215-d's fortress search took "another way", the one detour, without
 // asking, again and again (note 251).
+// The live tunnels' pace (work.js TUNNEL_SECONDS): seconds a block.
+const TUNNEL_PACE = { pickaxe: 1.5, hand: 5 };
 function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
   if (!inNether(bot) || !bot.entity?.position) return {};
   const answers = {};
@@ -875,6 +877,30 @@ function netherAnswers(bot, task, goal, save, { survival, actions = {} } = {}) {
         if (!target.portal && goal.fortressSearch && !goal.fortressSearch.target) goal.fortressSearch.target = { x: target.at.x, y: target.at.y, z: target.at.z };
         await crossToward(bot, task, goal, save, target.at, { what: target.what });
       } };
+    // A tunnel straight at the same target through the rock (bridging.js
+    // tunnelStraight, the dig the way home uses: note 1041). Of 743 stall
+    // questions answered none good on 2026-10-03 (00:00 to 10:15Z), about
+    // 390 were asked in the Nether after the staircase toward the rung's
+    // target was set aside ("paced the same few cells", "no safe step
+    // toward it"), with keep at it, differently and working free the only
+    // answers; the straight tunnel was offered only toward the portal.
+    const flatOff = flat(target.at, bot.entity.position), up = Math.round(target.at.y - bot.entity.position.y);
+    const tkey = `${Math.round(target.at.x / 16)},${Math.round(target.at.z / 16)}`;
+    if (!target.portal && flatOff > 6 && !isSetAside(goal, 'tunnel_toward', tkey)) {
+      const br = require('./bridging');
+      const pick = (bot.inventory?.items?.() || []).some(i => /_pickaxe$/.test(i.name)), per = pick ? TUNNEL_PACE.pickaxe : TUNNEL_PACE.hand;
+      const stretch = Math.min(96, Math.round(flatOff)), laid = br.blocksCarried(bot);
+      answers.tunnel_toward = { target: target.at, description: `Dig a tunnel straight at ${target.what}, ${Math.round(flatOff)} blocks off${up ? ` and ${Math.abs(up)} ${up < 0 ? 'below' : 'above'}` : ''}, through the rock, two high and one wide: ${up ? `a step ${up < 0 ? 'down' : 'up'} with each block until level with it, then level; ` : ''}a block laid where the floor is missing (${laid} carried), and over, under or round any lava met (no block is dug with lava behind it). Up to 96 blocks a go, about ${per} seconds a block ${pick ? 'with the pickaxe carried' : 'by hand (no pickaxe carried)'}: about ${Math.round(Math.max(stretch, Math.abs(up)) * per)} seconds for ${stretch} blocks, then asked again from where it ends. Inside the rock no ghast or blaze has a line to the bot and there is no drop beside it; where it comes out into open air it lays its floor crouched, and it stops at lava it cannot pass or at open air with no block to lay. It is the dig the way home uses, measured in the arena: 41 blocks of netherrack, ten down, past a lava pocket and four blocks of open air, in 26 seconds with an iron pickaxe, no damage, 2 runs of 2.`,
+        run: async () => {
+          const from = bot.entity.position.clone();
+          goal.step = { action: 'tunnel_toward', target: { x: Math.round(target.at.x), y: Math.round(target.at.y), z: Math.round(target.at.z) }, what: target.what }; save();
+          let why = null;
+          try { await br.tunnelStraight(bot, task, target.at, { maxSteps: 96, navigate: actions.navigate, down: true }); }
+          catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err; why = String(err.message || err); console.log(`[tunnel] toward ${target.what}: ${why.slice(0, 300)}`); }
+          const made = flat(target.at, from) - flat(target.at, bot.entity.position);
+          if (made < 4) { setAside(goal, 'tunnel_toward', tkey, why || 'it made no ground', 5 * 60000); save(); throw new Error(`The tunnel toward ${target.what} made ${Math.max(0, Math.round(made))} blocks${why ? `: ${why.slice(0, 200)}` : ''}`); }
+        } };
+    }
     // Down to the floor and along it toward the same target, where the
     // ground below is walkable and a way down is found (note 568).
     const down = !isSetAside(goal, 'floor_toward', floorKey(bot, target.at)) && actions.navigate ? floorWay(bot) : null;
