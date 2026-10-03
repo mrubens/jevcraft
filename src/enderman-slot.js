@@ -120,6 +120,13 @@ function outSpot(bot, site, list) {
   return null;
 }
 const lineFrom = (bot, mouth, e) => { try { return require('./danger').lineClear(bot, mouth.offset(0.5, 1.62, 0.5), e.position.offset(0, EYES, 0)); } catch (_) { return false; } };
+function heldSite(bot) {
+  const s = bot?._slotAt, here = bot?.entity?.position?.floored?.();
+  if (!s?.site || !here || !here.equals(s.b)) return null;
+  const solid = c => bot.blockAt(c)?.boundingBox === 'block';
+  if (![s.site.a, s.site.b].every(c => solid(c.offset(0, 2, 0)) && solid(c.offset(0, -1, 0)))) return null;
+  return s.site;
+}
 function slotSite(bot, { reach = 6, toward = null } = {}) {
   if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return null;
   const here = bot.entity.position.floored();
@@ -130,6 +137,21 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
     if (s) out.push({ ...s, off: Math.abs(dx) + Math.abs(dz) + Math.abs(dy) });
   }
   out.sort((x, y) => x.off - y.off || x.digs.length - y.digs.length);
+  // The slot the bot stands at the back of comes before any other (note
+  // 1057), and with an enderman turned on the bot about it is the only one:
+  // 25593 (2026-10-03 13:31:56 to 13:32:42Z) waited twenty seconds at its
+  // slot's end for one it had turned, sixteen blocks off, that did not come;
+  // the next fight was given a slot whose mouth was two cells along the
+  // wall, the bot walked out of its own for it, the enderman was on it in
+  // three seconds in the open, and it died there from full health with all
+  // seven rods in its chests.
+  const held = heldSite(bot);
+  if (held) {
+    const turned = endermen(bot, 40).filter(angry);
+    const mine = { ...held, digs: [], off: 0, held: true };
+    if (turned.length) return { ...mine, line: !!toward?.position && lineFrom(bot, mine.mouth, toward), turned: { n: turned.length, off: Math.round(turned[0].position.distanceTo(bot.entity.position)) } };
+    out.unshift(mine);
+  }
   if (!toward?.position) return out[0] || null;
   for (const s of out.slice(0, 24)) if (lineFrom(bot, s.mouth, toward)) return { ...s, line: true };
   // No mouth with a line: a slot from whose mouth a few cells' walk finds
@@ -146,7 +168,7 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
 }
 
 function says(site, n) {
-  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.line ? ' (the mouth has a line to its eyes now)' : site.out ? ` (the mouth has no line to one now: the bot goes ${site.out.steps} cell${site.out.steps === 1 ? '' : 's'} out of it to where one ${site.out.off} blocks off is in sight, looks, and is back at the slot's end before it comes; in the arena, a wall between the mouth and an enderman 21 blocks off, 10 runs of 10, the look turning it in 9 of 10 goings out, no health lost; the first going out live, to a cell a step down beside a ledge with another enderman near, ended in a blow and a fall, and it now goes only to cells on the mouth's level with floor all round and none within twelve blocks)` : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
+  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.turned ? ` (the bot stands at the back of this slot now, and ${site.turned.n === 1 ? 'one enderman is' : `${site.turned.n} endermen are`} turned on it, the nearest ${site.turned.off} blocks off: taking this is waiting for ${site.turned.n === 1 ? 'it' : 'them'} here, where ${site.turned.n === 1 ? 'it does' : 'they do'} not come in, the sword on ${site.turned.n === 1 ? 'it' : 'each'} at the mouth; every other way of the hunt walks out of the slot to ${site.turned.n === 1 ? 'it' : 'them'} in the open)` : site.held && site.line ? ' (the bot stands at the back of this slot now, and the mouth has a line to its eyes)' : site.line ? ' (the mouth has a line to its eyes now)' : site.out ? ` (the mouth has no line to one now: the bot goes ${site.out.steps} cell${site.out.steps === 1 ? '' : 's'} out of it to where one ${site.out.off} blocks off is in sight, looks, and is back at the slot's end before it comes; in the arena, a wall between the mouth and an enderman 21 blocks off, 10 runs of 10, the look turning it in 9 of 10 goings out, no health lost; the first going out live, to a cell a step down beside a ledge with another enderman near, ended in a blow and a fall, and it now goes only to cells on the mouth's level with floor all round and none within twelve blocks)` : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
 }
 
 // The arena's record (scripts/terrain.js enderman_slot, 2026-10-03): an iron
@@ -166,11 +188,14 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   const count = () => (bot.inventory?.items?.() || []).filter(i => i.name === item).reduce((n, i) => n + i.count, 0);
   const had = count(), hp0 = bot.health;
   const out = { kills: 0, pearls: 0, hurt: 0, ended: 'time' };
-  if (!bot.entity.position.floored().equals(site.mouth)) await navigate(bot, task, new goals.GoalBlock(site.mouth.x, site.mouth.y, site.mouth.z), { timeoutMs: 8000, stallMs: 2500 });
-  for (const c of site.digs) { task.check(); await bridging.clearCell(bot, task, c, { wall: true }); }
-  await navigate(bot, task, new goals.GoalBlock(site.b.x, site.b.y, site.b.z), { timeoutMs: 5000, stallMs: 2000 });
+  // Already at its back (note 1057): no walk out to the mouth and in again.
+  if (!bot.entity.position.floored().equals(site.b)) {
+    if (!bot.entity.position.floored().equals(site.mouth)) await navigate(bot, task, new goals.GoalBlock(site.mouth.x, site.mouth.y, site.mouth.z), { timeoutMs: 8000, stallMs: 2500 });
+    for (const c of site.digs) { task.check(); await bridging.clearCell(bot, task, c, { wall: true }); }
+    await navigate(bot, task, new goals.GoalBlock(site.b.x, site.b.y, site.b.z), { timeoutMs: 5000, stallMs: 2000 });
+  }
   if (!bot.entity.position.floored().equals(site.b)) { out.ended = 'the back of the slot was not reached'; return out; }
-  bot._slotAt = { b: site.b.clone(), mouth: site.mouth.clone(), d: site.d.clone(), at: Date.now() };
+  bot._slotAt = { b: site.b.clone(), mouth: site.mouth.clone(), d: site.d.clone(), at: Date.now(), site: { mouth: site.mouth.clone(), a: site.a.clone(), b: site.b.clone(), d: site.d.clone() } };
   const sword = (bot.inventory?.items?.() || []).filter(i => /_sword$|_axe$/.test(i.name)).sort((x, y) => (/_sword$/.test(y.name) ? 1 : 0) - (/_sword$/.test(x.name) ? 1 : 0))[0];
   if (sword) { try { await bot.equip(sword, 'hand'); } catch (_) { /* the hand, then */ } }
   let dead = 0;
