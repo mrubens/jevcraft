@@ -158,7 +158,13 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
     out.unshift(mine);
   }
   if (!toward?.position) return out[0] || null;
-  for (const s of out.slice(0, 24)) if (lineFrom(bot, s.mouth, toward)) return { ...s, line: true };
+  // A line or a look out counts only to one the fight will look at, within
+  // LEVEL of the mouth's height (note 1097): since the fight left the ones
+  // over or under it alone (note 1089), 5 of its 13 fights ended "none of
+  // the N about has a line to the mouth (all more than 4 blocks over or
+  // under it)", the slot offered on a line to one of those.
+  const level = (s, e) => Math.abs(e.position.y - s.mouth.y) <= LEVEL;
+  for (const s of out.slice(0, 24)) if (level(s, toward) && lineFrom(bot, s.mouth, toward)) return { ...s, line: true };
   // No mouth with a line: a slot from whose mouth a few cells' walk finds
   // one in sight (outSpot, notes 1031 and 1035), marked `out`. The slot was
   // offered only with a line from the mouth, and on 2026-10-03 (00:00 to
@@ -166,7 +172,7 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
   // picked up 2 pearls at it, where 16 minutes of slot fights brought 6.
   const about = endermen(bot, 60);
   for (const s of out.slice(0, 12)) {
-    const spot = outSpot(bot, s, about.length ? about : [toward]);
+    const spot = outSpot(bot, s, (about.length ? about : [toward]).filter(e => level(s, e)));
     if (spot) return { ...s, line: false, out: { steps: spot.steps, off: Math.round(spot.e.position.distanceTo(spot.cell.offset(0.5, 0, 0.5))) } };
   }
   return out[0] ? { ...out[0], line: false } : null;

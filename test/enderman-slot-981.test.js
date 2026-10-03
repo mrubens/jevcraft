@@ -27,6 +27,9 @@ test('with an enderman named, the slot found says whether its mouth has a line t
   const seen = slot.slotSite(b, { toward: { position: new Vec3(12.5, 64, 0.5) } });
   assert.strictEqual(seen.line, true);
   b.world = { raycast: (from) => ({ position: from.offset(1, 0, 0), intersect: from.offset(1, 0, 0) }) };
+  // One six blocks over the mouth, in line from it: no line is counted to one the fight leaves alone (note 1097).
+  const over = slot.slotSite(b, { toward: { position: new Vec3(12.5, 70, 0.5) } });
+  assert.notStrictEqual(over?.line, true, 'over the mouth by more than four: not a line');
   const hidden = slot.slotSite(b, { toward: { position: new Vec3(12.5, 64, 0.5) } });
   assert.strictEqual(hidden.line, false);
   assert.match(slot.says(seen, 1), /the mouth has a line to its eyes now/);
