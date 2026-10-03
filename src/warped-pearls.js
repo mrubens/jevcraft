@@ -14,7 +14,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { setAside, isSetAside } = require('./progress');
 
-const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000, AWAY_MS = 60 * 1000;
+const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000, AWAY_MS = 60 * 1000, TUNNEL_NEAR = 96;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
 const inNether = l => /nether/.test(String(l.dimension || ''));
@@ -89,12 +89,20 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
       // other and fell straight to the blind sweep, four navigation stalls
       // in, never digging toward either forest it already had (critic
       // 08:17Z, note 736).
-      if (noRoute && actions.tunnel) {
+      // So too a walk that ran out of its time with the forest near (note
+      // 1073): 25593 (2026-10-03 15:08:59Z), all seven rods in its chests,
+      // 33 blocks from its forest and 19 under it, "navigation timed out
+      // without reaching new ground", rested the forest half an hour and
+      // swept for another, 89 tries at a leg none of which walked.
+      if ((noRoute || known.distance <= TUNNEL_NEAR) && actions.tunnel) {
         const target = new Vec3(l.x, Number.isFinite(l.y) ? l.y : bot.entity.position.y, l.z);
         const before = bot.entity.position.distanceTo(target);
         try { await actions.tunnel(bot, task, goal, save, target, { within: goal.step }); }
         catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
-        if (bot.entity.position.distanceTo(target) < before - 4) { save(); return true; }
+        // Ground gained toward it: its walk's rest is let go, and the next
+        // pass goes on toward it (the rest kept, the next pass swept for
+        // another forest with this one half reached).
+        if (bot.entity.position.distanceTo(target) < before - 4) { require('./progress').attemptsFor(goal).clear('landmark_trip', tripKey(l)); save(); return true; }
       }
       const why = `The walk to the warped forest at (${l.x}, ${l.z}), ${Math.round(known.distance)} blocks off, came no nearer${w?.why ? `: ${w.why}` : ''}${noRoute ? `; tried and unreachable on foot${actions.tunnel ? ', a staircase toward it gaining no ground either' : ''}` : ''}; that walk rests half an hour`;
       require('./tried').record(bot, goal, { q: 'step', method: 'warped_pearls', target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z }, outcome: 'blocked', why });

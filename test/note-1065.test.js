@@ -74,3 +74,22 @@ test('standing in a forest whose walk rests, or one never noted: the hunt is her
   assert.equal(goal.step.action, 'warped_pearls');
   assert.equal(goal.warpedSearch, undefined, 'no sweep begun');
 });
+
+test('a walk to a forest 33 blocks off that ran out of its time: the staircase toward it is tried, and ground gained lets the forest\'s rest go (note 1073)', async t => {
+  const { attemptsFor } = require('../src/progress');
+  const s = scene(t);
+  const forest = { landmark: { kind: 'warped_forest', x: -75, y: 69, z: 28, lastWalk: { why: 'navigation timed out without reaching new ground' } }, distance: 33 };
+  const goal = { kind: 'win' };
+  let open = true;
+  exploration.knownLandmarks.mock.mockImplementation(() => open ? [forest] : []);
+  // The walk comes no nearer and its trip rests, as goToLandmark leaves it.
+  exploration.goToLandmark.mock.mockImplementation(async () => { attemptsFor(goal).fail('landmark_trip', 'warped_forest:-75,28', new Error('came no nearer'), { restMs: 1800000 }); return null; });
+  s.bot.blockAt = p => ({ position: p, name: 'netherrack', biome: { id: 0 } });
+  s.bot.entity.position = new Vec3(-62.5, 50, 5.5);
+  let tunnels = 0;
+  const actions = { navigate: async () => {}, acquireStep: async () => {}, tunnel: async b => { tunnels++; b.entity.position = b.entity.position.offset(-4, 6, 6); } };
+  const done = await warped.warpedPearls(s.bot, { check() {} }, goal, () => {}, actions, { count: 12 }, { now: () => 50_000_000 });
+  assert.equal(done, true);
+  assert.equal(tunnels, 1);
+  assert.equal(attemptsFor(goal).resting('landmark_trip', 'warped_forest:-75,28', 50_000_000), false, 'the rest let go');
+});
