@@ -49,9 +49,9 @@ test('the three hours end a trial with nothing kept; with rods kept in its chest
     const bare = verdict(at, { now, dir, identity, kept: { rods: 0, pearls: 0 } });
     assert.equal(bare.done, true);
     assert.ok(bare.reasons.some(r => /^missing after/.test(r)), JSON.stringify(bare.reasons));
-    const kept = verdict(at, { now, dir, identity, kept: { rods: 6, pearls: 1 } });
+    const kept = verdict(at, { now, dir, identity, kept: { rods: 5, pearls: 1 } });
     assert.equal(kept.done, false, JSON.stringify(kept.reasons));
-    const late = verdict(at, { now: t.t0 + 6.2 * 3600000, dir, identity, kept: { rods: 6, pearls: 1 } });
+    const late = verdict(at, { now: t.t0 + 6.2 * 3600000, dir, identity, kept: { rods: 5, pearls: 1 } });
     assert.equal(late.done, true);
     assert.ok(late.reasons.some(r => /6 hours/.test(r)), JSON.stringify(late.reasons));
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
