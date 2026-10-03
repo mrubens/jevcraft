@@ -808,7 +808,7 @@ test('a restock at the end of a span over the lava sea digs only what it can rea
   const said = options.restock_blocks;
   const [, want, can, need] = said.match(/^Dig (\d+) blocks to lay spans with here, one after another, from the (\d+) that can be dug from ground walked to from here \(\d+ netherrack\).* (\d+) short/);
   assert.equal(Number(want), Math.min(Number(need), Number(can)));
-  assert.match(said, /The longest leg short of blocks needs \d+ laid and 61 are carried/);
+  assert.match(said, /The longest leg short of blocks needs \d+ laid and 58 are carried/);
   assert.match(said, /not to be dug from ground walked to from here [^:]*: [\d,]+ netherrack, 17 cobblestone\./, 'the island across the drop, and the span itself');
   assert.match(said, /the nearest \d+ blocks off, dug from a walk of \d+ blocks? from here, about \d+ seconds in all/);
   // Chosen: gathered in one go, from the outcrop beside the span, the span and the island untouched.
@@ -821,7 +821,7 @@ test('a restock at the end of a span over the lava sea digs only what it can rea
   // within eight blocks of it, and the leg walked the bot back to the span's end between digs.
   bot.entity.position = new Vec3(0.5, 73, -9.5); walks.length = 0; digs.length = 0;
   const have = carried.filter(i => !/_pickaxe$/.test(i.name)).reduce((n, i) => n + i.count, 0);
-  goal.fortressSearch.restock = { want: have + 3, since: Date.now(), said: 30, from: { x: 0, y: 73, z: -20 } };
+  goal.fortressSearch.restock = { want: have - 3 + 3, since: Date.now(), said: 30, from: { x: 0, y: 73, z: -20 } };
   await findFortressStep(bot, new Task('hunt'), goal, () => {}, { ...actions, client: jevStub([]) });
   assert.equal(digs.length, 3, 'the restock went on');
   assert(!walks.some(g => g.constructor.name === 'GoalNearXZ'), 'the leg did not take the tick');
@@ -1672,7 +1672,7 @@ test('a sweep with every leg failing and too few blocks to cross is offered the 
   const client = jevStub(['return_for_blocks']);
   await findFortressStep(bot, new Task('fortress'), goal, () => {}, { ...actions, client });
   const { options } = client.asked[0];
-  assert.match(options.leg_east, /it needs 96 blocks laid, crouched, about 1\.4 seconds a cell, 18 carried: the blocks run out at cell 18/);
+  assert.match(options.leg_east, /it needs 96 blocks laid, crouched, about 1\.4 seconds a cell, 15 carried: the blocks run out at cell 15/);
   assert.equal(options.restock_blocks, undefined, 'nothing within sixteen blocks to mine');
   assert.match(options.return_for_blocks, /the nearest known 18 blocks off at 40, 70, 1/);
   assert.equal(back, 1, 'back through the portal, as Jev chose');
@@ -2087,11 +2087,11 @@ test('on a span over a walkable cavern floor, going down and walking the floor i
   assert.equal(client.asked.length, 1);
   const { options } = client.asked[0];
   // The level legs lay a block a cell out from the span and run out at cell 12; the floor is walked.
-  assert.match(options.leg_east, /it needs 96 blocks laid.*the blocks run out at cell 12/);
+  assert.match(options.leg_east, /it needs 96 blocks laid.*the blocks run out at cell 9/);
   for (const k of ['floor_east', 'floor_south', 'floor_west', 'floor_north']) assert(options[k], `${k} offered`);
   const said = options.floor_east;
   assert.match(said, /^Unseen ahead: [^.]*\. .*Go down to the floor and walk it east 96 blocks, bridging only across the lava and open air on it\. The way down to the floor 17 blocks below \(y 57, seen under \d+ of the 64 columns round the bot\) is \d+ steps ending \d+ blocks across from here, dropping 3 \(no damage\): about \d+ seconds/);
-  assert.match(said, /On the floor, of the 96 cells east: 93 of floor to walk, 3 of lava on the floor, all at y 57; about \d+ seconds\. The lava and open air need 3 blocks laid, 12 carried: 9 left after\./);
+  assert.match(said, /On the floor, of the 96 cells east: 93 of floor to walk, 3 of lava on the floor, all at y 57; about \d+ seconds\. The lava and open air need 3 blocks laid, 9 carried: 6 left after\./);
   assert.match(said, /By the floor that way: 2 piglins\./);
   assert.match(options.floor_west, /of wall to dig/);
   // Chosen: down the ground by the pathfinder, its drops allowed as deep as the way's and the way's cells walked though an

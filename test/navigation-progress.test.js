@@ -266,5 +266,5 @@ test('the way back to a portal from a span over a walkable floor offers going do
   const said = asked[0].options.floor_way;
   assert.match(said, /^Go down to the floor and walk it toward the portal\. The way down to the floor 17 blocks below \(y 57/);
   assert.match(said, /On the floor, of the \d+ cells on the straight line toward it \(\d+ blocks from the foot of the way down(: the way down ends \d+ blocks farther from the portal than the bot stands now, \d+ off|, \d+ nearer than where the bot stands now)?\): \d+ of floor to walk/);
-  assert.match(said, /The portal is 19 blocks above the floor: that height is climbed again at the end .*, 12 blocks carried\.$/);
+  assert.match(said, /The portal is 19 blocks above the floor: that height is climbed again at the end .*, 9 blocks carried\.$/);
 });

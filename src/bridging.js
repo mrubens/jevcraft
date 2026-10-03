@@ -59,7 +59,22 @@ const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', 'soul_soil
 // 25595 was "doomed to fall by Ghast" at 12:35Z.
 const BLAST_PROOF = ['cobblestone', 'cobbled_deepslate', 'blackstone', 'basalt', 'nether_bricks', 'stone', 'andesite', 'diorite', 'granite'];
 const laidOrder = bot => /nether/.test(String(bot?.game?.dimension || '')) ? [...BLAST_PROOF, ...LAID.filter(n => !BLAST_PROOF.includes(n))] : LAID;
-const material = bot => laidOrder(bot).map(n => bot.inventory.items().find(i => i.name === n)).find(Boolean);
+// In the Nether the head of the next pickaxe is kept back from the floor
+// (note 972): three of cobblestone, cobbled deepslate or blackstone, the
+// only heads a pickaxe is made of there (netherrack makes none), and the
+// first kinds a span lays (note 904). On 2026-10-02 and 03 the last pickaxe
+// carried in the Nether went 104 times as an iron one worn out and 83 as a
+// wooden one, 174 of them in a crossing, a tunnel home or the fortress
+// search, and 26% of the time with rods carried had none: 25597 (03:56Z),
+// four rods, stood 150 blocks from its portal with a crafting table, no
+// pickaxe and not a block of cobblestone, every one laid.
+const HEAD_KINDS = ['cobblestone', 'cobbled_deepslate', 'blackstone'], HEAD_KEEP = 3;
+const headsKept = bot => /nether/.test(String(bot?.game?.dimension || '')) ? Math.min(HEAD_KEEP, (bot.inventory?.items?.() || []).filter(i => HEAD_KINDS.includes(i.name)).reduce((n, i) => n + i.count, 0)) : 0;
+const material = bot => {
+  const items = bot.inventory.items(), heads = items.filter(i => HEAD_KINDS.includes(i.name)).reduce((n, i) => n + i.count, 0);
+  const spare = /nether/.test(String(bot?.game?.dimension || '')) ? heads > HEAD_KEEP : true;
+  return laidOrder(bot).filter(n => spare || !HEAD_KINDS.includes(n)).map(n => items.find(i => i.name === n)).find(Boolean);
+};
 // A biter or a hopper that can push the bot off the span within its charge
 // (narrow-footing.js, note 769): the span is walled on both sides as it is
 // laid while one is about. Shooters stop the span outright (underFire).
@@ -245,7 +260,7 @@ function lavaBelow(bot, p, deepest = 48) {
   }
   return false;
 }
-const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => LAID.includes(i.name)).reduce((n, i) => n + i.count, 0);
+const blocksCarried = bot => (bot.inventory?.items?.() || []).filter(i => LAID.includes(i.name)).reduce((n, i) => n + i.count, 0) - headsKept(bot);
 
 // Lay a level span toward `target` from where the bot stands, until beside
 // or above it, out of blocks, or `maxBlocks` placed. Returns the blocks laid.
@@ -947,4 +962,4 @@ async function quarryHere(bot, task, want, { names = LAID } = {}) {
   return out;
 }
 
-module.exports = { quarryHere, spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };
+module.exports = { quarryHere, HEAD_KEEP, headsKept, spanMaterial: material, BLAST_PROOF, tunnelStraight, stairsDown, spanPusher, spanWallsAt, clearCell: clear, stepOntoFooting, bridgeTo, crossAlong, underFire, spanRefused, surveyCrossing, stepToward, blocksCarried, spanBlockSources, gatherSpanBlocks, MATERIALS, LAID, NETHER_WOOD, NATURAL };

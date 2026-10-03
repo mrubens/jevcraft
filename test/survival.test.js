@@ -5315,7 +5315,7 @@ test('carrying on past a walker with no way to the bot says where the work stand
   const options = survival.stanceOptions(new Task('x'), goal, () => {}, piglinAt(bot, 63), false);
   const keep = options.keep_working.description;
   assert.doesNotMatch(keep, /nearest 8 blocks/, 'not priced by the piglin that cannot get to the bot');
-  assert.match(keep, /Where the work stands: its target, a fortress, is 80 blocks off and 5 up; this stretch has 40 blocks to lay, 64 carried; it was making headway when these mobs stopped it/);
+  assert.match(keep, /Where the work stands: its target, a fortress, is 80 blocks off and 5 up; this stretch has 40 blocks to lay, 61 carried; it was making headway when these mobs stopped it/);
   assert.match(keep, /None of the mobs here can get to the bot, and none of them shoots: nothing here stops the work while that holds/);
   assert.ok(options.fight_from_footing, 'firm ground at the bridge\'s start is offered');
   assert.match(options.fight_from_footing.description, /The piglin 7 blocks off has no way to that ground either: nothing here comes to be fought there, and the fight stands and waits for one that does\./);
