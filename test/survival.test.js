@@ -6068,3 +6068,22 @@ test('a zombie at arm\'s length with bare hands: run_from is offered, priced by 
   const none = new Survival(hungry, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [{ entity: zombie, distance: 1.4, visible: true }], false);
   assert.equal(none.run_from, undefined);
 });
+
+test('a run that came to nothing from here is not offered again here for half a minute, and is again from elsewhere (note 1067)', async () => {
+  const bot = creeperBot({ wall: false, creeper: null, weapon: 'dirt', health: 20 });
+  const zombie = { id: 7, name: 'zombie', type: 'hostile', position: new Vec3(1.9, 64, 0.5), height: 1.95, width: 0.6, isValid: true };
+  bot.entities = { 7: zombie };
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => { const e = new Error('No route'); e.name = 'NoRoute'; throw e; } }, { state: { shelters: [] } });
+  const ask = () => survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: zombie, distance: 1.4, visible: true }], false);
+  const first = ask();
+  assert.ok(first.run_from);
+  await assert.rejects(first.run_from.run(), /the run from them came 0 blocks: No route/);
+  assert.equal(survival.state.runFromFailed.blocks, 0);
+  assert.equal(ask().run_from, undefined, 'not from the same place at once');
+  const here = bot.entity.position.clone();
+  bot.entity.position = here.offset(9, 0, 0);
+  assert.ok(ask().run_from, 'nine blocks on it is offered');
+  bot.entity.position = here;
+  survival.state.runFromFailed.at = Date.now() - 31000;
+  assert.ok(ask().run_from, 'and here again after half a minute');
+});
