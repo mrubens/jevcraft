@@ -2410,6 +2410,15 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   // chosen at upkeep is that climb chosen (gatherWood).
   const woodChosen = held?.by === 'upkeep' && LOG_NEED.test(need) && Date.now() - Date.parse(held.at) < UPKEEP_WOOD_MS;
   if (held?.pick === 'climb' && held.asked && ((held.need === need && goal.surfaceReturn) || woodChosen)) return surfaceStep(bot, task, goal, save);
+  // The dawn waited for under the rock, as Jev chose (note 1068): held while
+  // it is still night, a look every second and a half; the climb is asked
+  // again at dawn.
+  if (held?.pick === 'wait_for_dawn' && held.need === need && held.until > Date.now() && nightUpSays(bot)) {
+    goal.step = { action: 'wait_for_dawn', need, until: new Date(held.until).toISOString() }; save();
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    task.check();
+    return;
+  }
   const words = s => String(s || '').replaceAll('_', ' ');
   const cost = tripCost(bot, goal);
   // The ladder's step, when it is the work's turn: a climb survival wants
@@ -2548,8 +2557,20 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
   // with the diamonds it was mining and the portal's lava still owed below.
   const levelFacts = require('./levels').levelsSays(bot, goal, { going: 'up' });
   if (levelFacts) for (const k of ['climb', 'stay_below']) if (tree[k]) tree[k].description += levelFacts;
+  // The night up there, said on the climb (note 1068): of 70 askings on
+  // 2026-10-03 (12:00 to 14:45Z) none said the hour, and the bots went up
+  // into the night about seventy times from 10:00Z ("On my way up to the
+  // surface. Night out there"); of the day's 18 deaths in the Overworld 12
+  // were at the surface, six of them with no sword carried.
+  const night = nightUpSays(bot);
+  if (night) {
+    tree.climb.description += night.climb; for (const k of ['stay_below', 'mine_first', 'dig_site', 'dig_to_water']) if (tree[k]) tree[k].description += night.below;
+    // The dawn waited for here, a way of its own: the climb was made unasked
+    // where nothing else was on offer.
+    if (client && (cost?.up ?? 0) >= 3) tree.wait_for_dawn = { description: `Wait under the rock here for the dawn, about ${night.toDawn} real minute${night.toDawn === 1 ? '' : 's'}, and make the climb for ${need} then, by day: nothing is gained meanwhile but the night up there gone by; the step waits, and mobs spawn in the dark down here as up there, the rock between.` };
+  }
   let pick = 'climb', asked = false;
-  if (tree.stay_below || tree.dig_site || tree.mine_first || tree.dig_to_water) {
+  if (tree.stay_below || tree.dig_site || tree.mine_first || tree.dig_to_water || tree.wait_for_dawn) {
     const decision = await require('./decisions').decide('surface_trip', { client, bot, task, goal, save, tree,
       state: { need, step: phase ? words(phase) : null, ...(cost ? { blocksToOpenSky: cost.up, quickerWayOut: cost.way, minutesUp: Math.round(cost.seconds / 60), pickaxes: cost.state.pickaxes, pickaxeUsesLeft: cost.state.pickaxeUsesLeft } : {}),
         ...(budgetOf() ? { pickaxeBudget: budget.says } : {}),
@@ -2557,6 +2578,12 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
         ...(tree.dig_site ? { siteToDig: { at: { ...siteDig.origin }, blocks: siteDig.cells.length } } : {}) } });
     if (decision.stale) return;
     pick = decision.path.at(-1); asked = true;
+  }
+  if (pick === 'wait_for_dawn') {
+    goal.surfaceTrip = { need, pick, asked, ...(phase ? { phase } : {}), until: Date.now() + Math.max(1, night.toDawn) * 60000, at: new Date().toISOString() };
+    goal.step = { action: 'wait_for_dawn', need, until: new Date(goal.surfaceTrip.until).toISOString() }; save();
+    bot.chat?.(`I'll wait down here for morning before I climb up for ${need}.`);
+    return;
   }
   if (pick === 'mine_first') {
     goal.surfaceTrip = { need, pick, asked, ...(phase ? { phase } : {}), at: new Date().toISOString() };
@@ -8161,6 +8188,24 @@ function foodTopUpSays(bot, goal, pending, item) {
   const left = pending ? ` Meanwhile ${frameSays(pending)}, is left where it stands: nothing keeps the ${first ? 'trip' : 'search'} near it, and the ${pending.frame.cast ? 'cast' : 'frame'} is taken up again only when the bot has walked back to it.` : '';
   return route + left;
 }
+// What a climb to the surface comes out into at night: the minutes to dawn,
+// the surface's record by night against the day's, and the bot as it is.
+// -> { climb, below } or null by day or off the Overworld.
+function nightUpSays(bot) {
+  try {
+    const { DAY: D } = require('./day'), tod = bot.time?.timeOfDay;
+    if (!Number.isFinite(tod) || !/overworld/.test(String(bot.game?.dimension || '')) || !(tod >= D.DARK && tod < D.DAWN)) return null;
+    const toDawn = Math.round(((D.DAWN - tod + 24000) % 24000) / 1200);
+    const weapon = require('./combat').defenseWeapon(bot)?.name?.replaceAll('_', ' ') || 'bare hands';
+    const worn = [5, 6, 7, 8].map(n => bot.inventory?.slots?.[n]?.name).filter(Boolean);
+    const shield = bot.inventory?.slots?.[45]?.name === 'shield' || (bot.inventory?.items?.() || []).some(i => i.name === 'shield');
+    return {
+      toDawn,
+      climb: ` It is night up there, about ${toDawn} real minute${toDawn === 1 ? '' : 's'} to dawn: mobs spawn in the open until then, and the zombies and skeletons out at dawn burn in the sun. The bot comes out with ${weapon}, ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing worn'} and ${shield ? 'a shield' : 'no shield'}.${require('./night-record').keepOnSays('surface', { minutesToDawn: toDawn })}`,
+      below: ` Up there it is night for about ${toDawn} real minute${toDawn === 1 ? '' : 's'} more; this keeps the bot under the rock meanwhile.`,
+    };
+  } catch (_) { return null; }
+}
 async function crossingKitReady(bot, task, goal, save, client = task.opportunityClient, now = Date.now()) {
   if (bot.game?.gameMode !== 'survival') return true;
   const items = kitItems(bot), valuables = valuablesAt(bot, goal);
@@ -9209,4 +9254,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { nightUpSays, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
