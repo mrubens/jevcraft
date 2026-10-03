@@ -1128,6 +1128,7 @@ function horizonSays(ways, blows, burn, hp) {
   const span = Math.min(15, Math.ceil(Math.max(burn.fireLeftSeconds || 0, strike?.seconds || 0)));
   if (!(span > 0)) return;
   const names = blows.mobs.length === 1 ? `the ${blows.mobs[0].name.replaceAll('_', ' ')}` : 'the mobs at arm\'s length';
+  const over = []; let priced = 0;
   for (const [key, way] of Object.entries(ways)) {
     if (key === 'eat_golden_apple' || key === 'drink_fire_resistance') continue;
     const struck = key === 'strike_at_arm';
@@ -1136,8 +1137,19 @@ function horizonSays(ways, blows, burn, hp) {
     const landed = blows.mobs.reduce((n, k, i) => n + (struck && i === 0 ? Math.round(Math.min(span, way.seconds) / k.every * ce.STRUCK) : Math.floor(span / k.every)), 0);
     const hurt = round(blows.mobs.reduce((n, k, i) => n + (struck && i === 0 ? Math.round(Math.min(span, way.seconds) / k.every * ce.STRUCK) : Math.floor(span / k.every)) * k.blow, 0));
     const all = round(hurt + fire);
-    way.description += ` Over the next ${span} seconds this way${struck ? '' : `, if nothing turns to ${names}`}: about ${all} health, ${landed} blow${landed === 1 ? '' : 's'} (${hurt}) and ${fire} of fire, from ${hp}${all >= hp ? ': more than the bot has' : ''}.`;
+    // Said first, and the ways it leaves the bot alive listed before the
+    // ways it does not (note 1018): at the end of each way's own telling,
+    // the walk that left the blaze at the bot's back read as the way out.
+    // 25591 (2026-10-03 08:14:50Z, 7.9 health, a blaze two blocks off):
+    // out of their line 0.38, the meal 0.32, burn out 0.18, each closing
+    // "about 19.4 health ... more than the bot has", and the strike, about
+    // 5.6, 0.06; two blows from behind ended it in two seconds.
+    way.description = `Over the next ${span} seconds this way${struck ? '' : `, if nothing turns to ${names}`}: about ${all} health, ${landed} blow${landed === 1 ? '' : 's'} (${hurt}) and ${fire} of fire, from ${hp}${all >= hp ? ': more than the bot has' : ''}. ${way.description}`;
+    if (all >= hp) over.push(key);
+    priced++;
   }
+  if (over.length && over.length < priced) for (const key of over) { const way = ways[key]; delete ways[key]; ways[key] = way; }
+  return over.length < priced ? over : [];
 }
 // Turn to the mob at arm's length and strike it (strike_at_arm, note 657):
 // until it dies, goes past reach, or `seconds` pass; the look is to it, the
@@ -1260,7 +1272,7 @@ function outOfLineWay(bot, task, onAction, shot, standing) {
 }
 
 function fireWays(bot, task, onAction = () => {}) {
-  const ways = {};
+  const ways = {}; let over = [];
   const standing = inFire(bot), nether = /nether/.test(String(bot.game?.dimension || ''));
   const apple = bot.inventory.items().find(i => i.name === 'enchanted_golden_apple');
   const eat = () => ({ description: `Eat the enchanted golden apple (${apple.count} carried): about ${EAT_MEAL_SECONDS} seconds eating first, then fire resistance for five minutes (burning no longer hurts), sixteen extra health as absorption and strong regeneration.`,
@@ -1390,11 +1402,14 @@ function fireWays(bot, task, onAction = () => {}) {
   if (blows) {
     const strikeIt = strikeWay(bot, task, onAction, blows, burn, hp);
     if (strikeIt) ways.strike_at_arm = strikeIt;
-    horizonSays(ways, blows, burn, hp);
+    over = horizonSays(ways, blows, burn, hp) || [];
   }
   // The old rule: the bucket poured where it can be, else (none carried)
   // the water run into, else nothing.
   const first = pours ? 'douse_bucket' : !bucket && pond ? 'to_water' : 'burn_out';
+  // Not the old rule's way where the next seconds that way take more than
+  // the bot has and another way does not (note 1018).
+  if (over.includes(first)) return ways;
   return { [first]: ways[first], ...ways };
 }
 // The ways off a hot floor (note 579), each said with where it goes and

@@ -104,12 +104,13 @@ test('body_way alight with a blaze seeing the bot: a way to the nearest cell out
   const bot = sceneBot({ alight: true });
   const ways = vitals.fireWays(bot, { check() {} });
   assert.ok(ways.out_of_their_line, Object.keys(ways).join(', '));
-  assert.match(ways.out_of_their_line.description, /^Walk \d+ blocks? to \(-?\d+, \d+, -?\d+\), a cell the blaze in sight has no line to from where it is now \(rock stands between\): about [\d.]+ seconds, in their line until there\. The fire on the body burns on \(about 1 second of it, about 1 health\); there no fireball lands/);
+  assert.match(ways.out_of_their_line.description, /Walk \d+ blocks? to \(-?\d+, \d+, -?\d+\), a cell the blaze in sight has no line to from where it is now \(rock stands between\): about [\d.]+ seconds, in their line until there\. The fire on the body burns on \(about 1 second of it, about 1 health\); there no fireball lands/);
   const at = ways.out_of_their_line.description.match(/to \((-?\d+), (\d+), (-?\d+)\)/).slice(1).map(Number);
   const seer = Object.values(bot.entities).find(e => e.id === 9);
   assert.deepEqual(require('../src/bunker').seenFrom(bot, [seer], new Vec3(...at)), [], 'no line from the blaze there');
-  // burn_out stays the builders' first (the body's safety order is unchanged).
-  assert.equal(Object.keys(ways)[0], 'burn_out');
+  // The blaze is at arm's length and the burn out's seconds take more than the bot has: the strike, which they do not, is first (note 1018).
+  assert.equal(Object.keys(ways)[0], 'strike_at_arm');
+  assert.match(ways.burn_out.description, /^Over the next \d+ seconds this way, if nothing turns to the blaze: .*more than the bot has\. /);
   // No shooter seeing the bot: not offered.
   assert.equal(vitals.fireWays(sceneBot({ alight: true, seen: false }), { check() {} }).out_of_their_line, undefined);
 });

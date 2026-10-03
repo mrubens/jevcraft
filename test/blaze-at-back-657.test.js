@@ -54,13 +54,17 @@ test('alight with a blaze at arm\'s length behind it, the body is told of its bl
   const ways = vitals.fireWays(bot, new Task('t'));
   assert.ok(ways.set_down_cauldron, `offered: ${Object.keys(ways)}`);
   assert.ok(ways.strike_at_arm, `offered: ${Object.keys(ways)}`);
-  assert.match(ways.strike_at_arm.description, /^Turn to the blaze 2\.\d blocks off, behind the bot, and strike it with the iron sword: it has 20 health, about 4 swings, about 3\.6 seconds/);
+  assert.match(ways.strike_at_arm.description, /^Over the next 5 seconds this way: about [\d.]+ health, 1 blow \([\d.]+\) and [\d.]+ of fire, from 17\.3\. Turn to the blaze 2\.\d blocks off, behind the bot, and strike it with the iron sword: it has 20 health, about 4 swings, about 3\.6 seconds/);
   // The cauldron says what the blows come to while it is set down and stepped into, and that a blow stops its steps.
   assert.match(ways.set_down_cauldron.description, /In its about 1\.5 seconds, about 1 blow from the blaze 2\.\d blocks off, about 3\.\d health through the armour worn, each knocking the body back; and after it the blaze is still there, a blow a second, until something turns to it\. A blow knocks the body off the rim or out of line with the bowl: the steps stop at the first blow that lands and the way is asked again\. The 1\.5 seconds were measured with nothing striking; the blows come a second apart, so one is due before the steps are done/);
   // Every way over the same five seconds (the fire left): the cauldron lets the blows land, the strike ends them.
-  assert.match(ways.set_down_cauldron.description, /Over the next 5 seconds this way, if nothing turns to the blaze: about 18\.5 health, 5 blows \(17\) and 1\.5 of fire, from 17\.3: more than the bot has\.$/);
-  assert.match(ways.burn_out.description, /Over the next 5 seconds this way, if nothing turns to the blaze: about 21\.[56] health, 5 blows \(17\) and 4\.[56] of fire, from 17\.3: more than the bot has\.$/);
-  assert.match(ways.strike_at_arm.description, /Killed, it strikes no more and drops a rod about half the time.* Over the next 5 seconds this way: about (8|7\.9) health, 1 blow \(3\.4\) and 4\.[56] of fire, from 17\.3\.$/);
+  assert.match(ways.set_down_cauldron.description, /^Over the next 5 seconds this way, if nothing turns to the blaze: about 18\.5 health, 5 blows \(17\) and 1\.5 of fire, from 17\.3: more than the bot has\. /);
+  assert.match(ways.burn_out.description, /^Over the next 5 seconds this way, if nothing turns to the blaze: about 21\.[56] health, 5 blows \(17\) and 4\.[56] of fire, from 17\.3: more than the bot has\. /);
+  assert.match(ways.strike_at_arm.description, /^Over the next 5 seconds this way: about (8|7\.9) health, 1 blow \(3\.4\) and 4\.[56] of fire, from 17\.3\. .*Killed, it strikes no more and drops a rod about half the time/);
+  // Note 1018: the ways the next seconds leave the bot alive come before the ways they do not.
+  const order = Object.keys(ways), last = k => /more than the bot has/.test(ways[k].description);
+  assert.ok(order.indexOf('strike_at_arm') < order.indexOf('burn_out') && last('burn_out') && !last('strike_at_arm'), order.join(', '));
+  assert.ok(order.slice(order.findIndex(last)).every(last), order.join(', '));
   // The burn out is still there, the old order's fallback.
   assert.ok(ways.burn_out);
 });
