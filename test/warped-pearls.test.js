@@ -206,3 +206,21 @@ test('from the Overworld a forest counts as it will on the far side, within the 
   assert.equal(there.goal.warpedSearch?.legs, 1, 'counted from none');
   assert.equal(warped.warpedOpen(there.goal), true, 'the search is not rested');
 });
+
+test('a forest whose walk rests is walked at again once the sweep has brought the bot 24 blocks nearer than where that walk failed; from the same spot it is not (note 1120)', async () => {
+  // 25592 (2026-10-03 21:19 to 21:25Z): its forest 87 blocks off rested after a walk with no route; the sweep passed 52 blocks from it and never tried again.
+  const { bot, goal } = fixture('the_nether');
+  const forest = { kind: 'warped_forest', x: -82, y: 56, z: 13, dimension: 'nether', lastWalk: { at: Date.now(), from: { x: 5, y: 50, z: 13 }, began: 87, ended: 87, why: 'No route' } };
+  goal.landmarks = [forest];
+  setAside(goal, 'landmark_trip', 'warped_forest:-82,13', 'the walk came no nearer', 30 * 60000);
+  const legs = [];
+  const actions = { navigate: async (b, t, g) => { legs.push([g.x, g.z]); }, acquireStep: async () => {}, notice: () => {} };
+  // From where it failed: the sweep, the rest kept.
+  bot.entity.position = new Vec3(5.5, 50, 13.5);
+  await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 });
+  assert.equal(require('../src/progress').isSetAside(goal, 'landmark_trip', 'warped_forest:-82,13'), true, 'still resting from there');
+  // Fifty-two blocks from it: the rest is let go and the next pass walks at it.
+  bot.entity.position = new Vec3(-82.5, 57, 65.5);
+  assert.equal(await warped.warpedPearls(bot, new Task('pearls'), goal, () => {}, actions, { count: 12 }), true);
+  assert.equal(require('../src/progress').isSetAside(goal, 'landmark_trip', 'warped_forest:-82,13'), false, 'asked again from nearer');
+});

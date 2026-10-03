@@ -14,7 +14,7 @@ const { Vec3 } = require('vec3');
 const { goals } = require('mineflayer-pathfinder');
 const { setAside, isSetAside } = require('./progress');
 
-const SEARCH_AWAY_MS = 5 * 60 * 1000;
+const SEARCH_AWAY_MS = 5 * 60 * 1000, RETRY_NEAR = 32, NEARER_BY = 24;
 const LEG = 64, FOREST_REACH = 512, SEARCH_LEGS = 8, SEARCH_MS = 15 * 60 * 1000, REST_MS = 30 * 60 * 1000, STALL_MS = 15 * 60 * 1000, AWAY_MS = 60 * 1000, TUNNEL_NEAR = 96;
 const HEADINGS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
 const count = (bot, name) => bot.inventory.items().filter(i => i.name === name).reduce((n, i) => n + i.count, 0);
@@ -119,6 +119,19 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
         // pass goes on toward it (the rest kept, the next pass swept for
         // another forest with this one half reached).
         if (bot.entity.position.distanceTo(target) < before - 4) { require('./progress').attemptsFor(goal).clear('landmark_trip', tripKey(l)); save(); return true; }
+        // And the Nether's own crossing straight at it, dug through the rock
+        // and laid over the gaps, as the way to a portal or a fortress is
+        // made where no walk goes (nether-travel.js crossToward, note 1120).
+        // 25592 (2026-10-03 21:19:13Z), seven rods in its chests and its
+        // forest 87 blocks off, had the walk end "No route ... the way
+        // passes along a drop that would kill" and the staircase gain
+        // nothing in a second; the forest rested half an hour, and eight
+        // legs of the sweep later it said "The warped forest known could
+        // not be reached" and went back to the Overworld.
+        try {
+          const crossed = await require('./nether-travel').crossToward(bot, task, goal, save, target, { what: 'the warped forest' });
+          if (crossed.tried && bot.entity.position.distanceTo(target) < before - 4) { require('./progress').attemptsFor(goal).clear('landmark_trip', tripKey(l)); save(); return true; }
+        } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
       }
       const why = `The walk to the warped forest at (${l.x}, ${l.z}), ${Math.round(known.distance)} blocks off, came no nearer${w?.why ? `: ${w.why}` : ''}${noRoute ? `; tried and unreachable on foot${actions.tunnel ? ', a staircase toward it gaining no ground either' : ''}` : ''}; that walk rests half an hour`;
       require('./tried').record(bot, goal, { q: 'step', method: 'warped_pearls', target: { x: l.x, y: Number.isFinite(l.y) ? l.y : Math.round(bot.entity.position.y), z: l.z }, outcome: 'blocked', why });
@@ -145,6 +158,20 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
     goal.step = { action: 'warped_pearls', at: { x: known.landmark.x, y: known.landmark.y, z: known.landmark.z }, pearls: count(bot, 'ender_pearl') }; save();
     await actions.acquireStep(bot, task, 'ender_pearl', stage.count, goal, save);
     return true;
+  }
+  // A forest known whose walk rests, come NEARER_BY blocks nearer than where
+  // that walk failed (or within RETRY_NEAR of it): the rest was from there,
+  // and from here it is walked at again (note 1120). 25592's sweep passed 52
+  // blocks from its rested forest, 35 nearer than where the walk had failed.
+  for (const k of exploration.knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH)) {
+    if (tripOpen(goal, k.landmark, now())) continue;
+    const from = k.landmark.lastWalk?.from, failedAt = from ? Math.hypot(k.landmark.x - from.x, k.landmark.z - from.z) : null;
+    // Always nearer than where it last failed, so a forest that cannot be
+    // reached is not walked at again from the same spot.
+    if (failedAt != null && (k.distance <= failedAt - NEARER_BY || (k.distance <= RETRY_NEAR && k.distance <= failedAt - 8))) {
+      require('./progress').attemptsFor(goal).clear('landmark_trip', tripKey(k.landmark)); save();
+      return true;
+    }
   }
   // None known: sweep for one.
   const search = goal.warpedSearch ||= { legs: 0, heading: Math.floor(Math.random() * 4), fails: 0, tries: 0, startedAt: now() };
