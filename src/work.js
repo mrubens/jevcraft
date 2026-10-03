@@ -8786,12 +8786,19 @@ async function gatherNetherFood(bot, task, goal, save, now = Date.now(), { known
 
 // The executors the game-completion ladder can call, shared by the win
 // objective and by idle dream between requests.
-// What the pearl patrol does now: hunt an enderman in view, else a turn of
-// an expedition or an exploring leg, else the hunt's own search.
+// What the pearl patrol does now: hunt an enderman in view, else an
+// exploring leg on the surface, else the hunt's own search.
 function patrolChoice(bot, trips) {
   const seen = Object.values(bot.entities || {}).some(e => e.name === 'enderman' && e.isValid !== false && e.position?.distanceTo(bot.entity.position) <= 48);
   if (seen) return 'hunt';
-  return ['deep_dark', 'trial_chambers', 'explore'].find(k => trips[k]) || 'search';
+  // Not the bold trips under the ground (note 1119): an ancient city and a
+  // trial chamber hold no pearl, no enderman is met in them, and they are
+  // Jev's to choose as side trips, with what they risk, not the patrol's
+  // to take unasked. 25592 (2026-10-03 21:30:05Z), seven rods in its
+  // chests, was sent "looking for an ancient city in the deep dark
+  // meanwhile", its food left in a chest. The surface walked is where
+  // endermen are met and where a village's cleric sells pearls.
+  return ['explore'].find(k => trips[k]) || 'search';
 }
 
 function gameHandlers(bot, decisionClient) {

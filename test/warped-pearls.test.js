@@ -87,10 +87,11 @@ test('a walk that fails at once is not a leg: the sweep tunnels on and gives up 
   assert.equal(warped.warpedOpen(goal), false, 'a quarter of an hour without a forest: it rests');
 });
 
-test('the pearl patrol hunts an enderman in view, and otherwise goes on an expedition or explores', () => {
+test('the pearl patrol hunts an enderman in view, and otherwise explores the surface; the deep dark is not its to take unasked (note 1119)', () => {
   const { patrolChoice } = require('../src/work');
   const bot = { entity: { position: new Vec3(0, 64, 0) }, entities: {} };
-  assert.equal(patrolChoice(bot, { explore: {}, deep_dark: {} }), 'deep_dark');
+  assert.equal(patrolChoice(bot, { explore: {}, deep_dark: {}, trial_chambers: {} }), 'explore');
+  assert.equal(patrolChoice(bot, { deep_dark: {} }), 'search', 'the deep dark alone: the search, not the trip');
   assert.equal(patrolChoice(bot, { explore: {} }), 'explore');
   assert.equal(patrolChoice(bot, {}), 'search', 'nothing else to do: the search as before');
   bot.entities[4] = { name: 'enderman', position: new Vec3(30, 64, 0), isValid: true };
