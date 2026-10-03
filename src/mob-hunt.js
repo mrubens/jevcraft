@@ -1038,6 +1038,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
     // the worse choice.
     // The rods carried asked on their own first (rod-bank.js askBank, note 871).
     if (state.entity === 'blaze' && await require('./rod-bank').askBank(bot, task, goal, save, actions, client) === 'banked') return true;
+    // What every fight of the kind says alike is said once (said-once.js, note 1104).
+    require('./said-once').saidOnce(tree, Object.keys(tree).filter(k => /^hunt_/.test(k)));
     const interrupt = () => { if (!canBegin(bot, handler)) throw Object.assign(new Error('Combat decision interrupted'), { name: 'CombatInterrupted' }); };
     try { decision = await decide('hunt_target', { client, bot, task, goal, save, tree, state: snapshot, interrupt,
       isFresh: () => canBegin(bot, handler) && bot.health >= snapshot.health - 4 && candidates.every(e => !positions.has(e.id) ||
