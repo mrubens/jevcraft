@@ -633,9 +633,19 @@ async function arbitrate(bot, claims, ctx = {}) {
     const held = state.holder || null;
     const mobsNow = ctx.mobs || (() => { try { return probe.mobs(bot, 16); } catch (_) { return []; } })();
     const tree = Object.fromEntries(live.map(c => withUnkept(bot, state, c, now)).map(c => [c.layer, withSays(optionOf(c, held, now), c, bot, state, mobsNow, now)]));
+    // The biters in sight within sixteen, counted, with how soon the nearest
+    // is at the bot at its speed and what their blows come to together (note
+    // 1025), said on survival's answer and on the work chosen over it. The
+    // answer named the nearest alone and no time: 25590 (2026-10-03
+    // 08:57:14Z), three wither skeletons 7.8, 9.9 and 10.7 blocks off, was
+    // told "Answer the wither skeleton 7.8 blocks off", gave the work the
+    // turn at 0.51 against 0.45, and seven seconds on the three were at it:
+    // 20 health to none in three seconds.
+    const pack = packSays(bot);
+    if (pack && typeof tree.survival?.description?.does === 'string' && live.some(c => c.layer === 'survival' && c.action === 'escape_threat')) tree.survival.description.does += pack;
     // What choosing the work over survival's answer does (note 840), said on it.
     if (tree.work && typeof tree.work.description?.does === 'string' && live.some(c => c.layer === 'survival' && c.action === 'escape_threat') && mobsNow.length)
-      tree.work.description.does += ` Chosen over survival's answer to the mobs about, they are left be for ${KEEP_ON_MS / 1000} seconds as the encounter's keep_working leaves them: the work's own threat check passes them over unless one comes within three blocks, a creeper within its walk to its fuse, or a hit lands.`;
+      tree.work.description.does += ` Chosen over survival's answer to the mobs about, they are left be for ${KEEP_ON_MS / 1000} seconds as the encounter's keep_working leaves them: the work's own threat check passes them over unless one comes within three blocks, a creeper within its walk to its fuse, or a hit lands.${pack || ''}`;
     let setAside = false;
     const askedAt = Date.now();
     // The alerts this question is out about (watchOnce leaves them be).
@@ -1097,4 +1107,25 @@ function unwatch(bot) {
   if (bot) delete bot._preempt;
 }
 
-module.exports = { fightStands, ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };
+// The biters in sight within sixteen blocks, for the turn's question (note
+// 1025): how many, how soon the nearest is at the bot at its own speed, each
+// one's blow through the armour worn and what they come to together against
+// the health the bot has. '' with none.
+function packSays(bot) {
+  try {
+    const ce = require('./combat-estimate'), danger = require('./danger');
+    const near = danger.threats(bot, 16).filter(t => t.visible && !ce.MOBS[t.entity.name]?.shoots && ce.MOBS[t.entity.name]?.hit && t.entity.name !== 'creeper').sort((a, b) => a.distance - b.distance);
+    if (!near.length) return '';
+    const round = n => Math.round(n * 10) / 10, words = n => String(n).replaceAll('_', ' ');
+    const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+    const blow = t => round(ce.afterArmour(ce.MOBS[t.entity.name].hit, worn));
+    const first = near[0], speed = ce.blocksPerSecond(first.entity.name), eta = round(Math.max(0, first.distance - 1.5) / speed);
+    const kinds = [...new Set(near.map(t => t.entity.name))];
+    const who = near.length === 1 ? `a ${words(first.entity.name)} ${round(first.distance)} blocks off` : `${near.length} ${kinds.length === 1 ? `${words(kinds[0])}s` : 'biters'} (${near.slice(0, 4).map(t => `${kinds.length === 1 ? '' : `${words(t.entity.name)} `}${round(t.distance)}`).join(', ')} blocks off)`;
+    const all = round(near.reduce((n, t) => n + blow(t), 0)), hp = round(bot.health ?? 20);
+    const together = near.length > 1 ? `; all ${near.length} at the bot land about ${all} a second together, and the bot has ${hp}${all >= hp ? ': one second of it' : all * 2 >= hp ? ': two seconds of it' : ''}` : '';
+    return ` In sight and able to walk at the bot: ${who}. At its speed (about ${round(speed)} blocks a second) the nearest is at the bot in about ${eta} seconds if it comes; each blow about ${blow(first)} through the armour worn${together}.`;
+  } catch (_) { return ''; }
+}
+
+module.exports = { packSays, fightStands, ASKS, PROMISE_MS, promiseOf, promised, withUnkept, notAsked, blowOf, BLOWS_LEFT, STRUCK_MS, mobWouldSays, rungWatch, ABSENT_PASSES, ASK_MS, answerOrCut, claimSays, ALERTS, mode, arbitrate, rule, take, shadow, watch, watchOnce, unwatch, outranks, observeReflexes, rulesPick, fingerprintOf, foodBand, probe, REFLEXES, LAYERS, CREEPER_REACH, ARM, AIR, HYSTERESIS, RULING_MS, RULING_MAX_MS, FIGHT_ACTIONS, IDLE_MS, WATCH_MS, FOOD_BANDS, broken };
