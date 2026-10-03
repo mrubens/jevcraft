@@ -1757,8 +1757,21 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     const d = e => e.position.distanceTo(box.cell.offset(0.5, 1.6, 0.5));
     // In the box every blaze in line with the window is in front, where the
     // shield faces (the probe's one in thirty), and none has a line past it.
-    const inside = blazeRate(inLine.map(e => ({ d: d(e), sees: true, covered: true })), { shield, shieldUp: true, fireHit, meleeHit });
-    const hold = round(fireOver(inside, ce.HOLD_SECONDS, setup.wall) + ce.burnBetween([{ from: 0, to: ce.HOLD_SECONDS, perSecond: inside.fire }], 0, ce.HOLD_SECONDS, 0, Math.max(0, proof - setup.wall)));
+    // One within two blocks that sees in flies at the window and swings,
+    // into the sword and the shield faced at it: it is killed in the
+    // sword's swings, its blows landing meanwhile as the shield lets them
+    // (whole with none carried). Priced as swinging on for the whole hold,
+    // unanswered, one blaze at the window came to "about 72 damage over
+    // fifteen seconds behind the shield" (25597, 2026-10-03 06:34:41Z, 8.1
+    // health, twelve blazes about), the dearest way on the list, and the
+    // charge was taken at 0.34 (note 999).
+    const atWindow = inLine.filter(e => d(e) <= ce.FIREBALL.meleeReach);
+    const inside = blazeRate(inLine.filter(e => d(e) > ce.FIREBALL.meleeReach).map(e => ({ d: d(e), sees: true, covered: true })), { shield, shieldUp: true, fireHit, meleeHit });
+    const boxWeapon = require('./combat').defenseWeapon(bot)?.name || null;
+    const killSeconds = (ce.fightEstimate({ threats: [{ name: 'blaze', distance: 3, shoots: true, visible: true }], armour: worn, weapon: boxWeapon, health: 20 }).mobs[0]?.swingsToKill || 4) * ce.swingEvery(boxWeapon);
+    const windowDamage = Math.min(ce.HOLD_SECONDS, atWindow.length * killSeconds) * meleeHit * (shield ? SHIELD_LEAK : 1);
+    const hold = round(fireOver(inside, ce.HOLD_SECONDS, setup.wall) + ce.burnBetween([{ from: 0, to: ce.HOLD_SECONDS, perSecond: inside.fire }], 0, ce.HOLD_SECONDS, 0, Math.max(0, proof - setup.wall)) + windowDamage);
+    const windowSays = atWindow.length ? ` (${atWindow.length === 1 ? 'it is' : `${atWindow.length} of them are`} within two blocks of the window and ${atWindow.length === 1 ? 'swings' : 'swing'} at it: each is struck through it and dies in about ${round(killSeconds)} seconds of the sword, its blows ${shield ? 'on the shield meanwhile' : `landing meanwhile, about ${round(meleeHit)} each, with no shield carried`})` : '';
     const cageOff = cageNear ? round(Math.hypot(box.cell.x + 0.5 - cageNear.x - 0.5, box.cell.z + 0.5 - cageNear.z - 0.5)) : null;
     const byCage = cageOff != null && cageOff <= T.BOX_NEAR[1];
     // box_here is not built at the cage on purpose (box_at_spawner is): a
@@ -1811,7 +1824,7 @@ function tacticOptions(bot, danger, { blazes, biting, from, aboutAll, hp, pocket
     options[key] = { kind: 'box', site: box, sees: inLine.length, about: about.length, expects: { damage: round(setup.damage + hold), seconds: round(setup.wall + ce.HOLD_SECONDS), oneHit: fireHit },
       ...(planned && cageNear ? { judgeBy: 'kills' } : {}),
       description: `${where}: ${buildSays}, and hold it: the rod farm players build by hand. Inside, only a blaze in line with the window sees the bot, and every shot from it comes from in front${shield ? ', where the shield faces each volley' : ' (no shield carried to meet it)'}; no fireball's fire lands in the box, and a push meets a wall. What it kills: a blaze that sees the bot and is more than two blocks off hovers where it is and shoots (the game's blaze does not come to a window); one within two that sees in flies at it and swings, into the sword through the window.${byCage ? ' Within four of the cage the spawner puts its blazes beside the box, and those are the ones that come.' : cageNear ? ' The spawner puts its blazes within four of its cage, not beside this box: those that see in through the window shoot from there.' : ' No spawner puts any beside this box: the blazes about now stay where they hover.'}${inRange}${cageNear ? T.windowSays(line) : ''}${crowd ? ` ${crowd === 1 ? 'A blaze is' : `${crowd} blazes are`} within four blocks of that cell now: one in a cell to be walled holds that block out until it moves or is struck.` : ''} Rods fall outside; they are fetched through the block under the window when none is within four and no volley is due, and it is put back.${spawnSays}` +
-        `${already ? ' Nothing left to build; holding it' : ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); holding it`}, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}` : noneInLine}. Food can be eaten in it. ${heldSays}` + (quiet ? ` Now no blaze sees the bot: the walls go up out of their fire.${require('./spawner-clock').jobSays(quiet, walk + build)}` : '') + m.says };
+        `${already ? ' Nothing left to build; holding it' : ` ${box.steps ? 'Walking there and building' : 'Building'} takes about ${setup.time} in their fire${shield ? ' with the shield up for each volley' : ''} (about ${setup.hurt}, the burning included); holding it`}, ${inLine.length ? `${n(inLine.length, 'blaze')} of the ${about.length} about ${inLine.length === 1 ? 'is' : 'are'} in line with the window, about ${hold} damage over fifteen seconds${shield ? ' behind the shield' : ''}${windowSays}` : noneInLine}. Food can be eaten in it. ${heldSays}` + (quiet ? ` Now no blaze sees the bot: the walls go up out of their fire.${require('./spawner-clock').jobSays(quiet, walk + build)}` : '') + m.says };
   }
 
   // Lighting the spawner.
