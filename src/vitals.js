@@ -1563,7 +1563,7 @@ function bodyTask(task) {
     check() { if (task.cancelled) throw new (require('./skills').Cancelled)(task.label); } };
 }
 
-async function maintainVitals(bot, task, onAction = () => {}, { client = null, goal = null, save = () => {} } = {}) {
+async function maintainVitals(bot, task, onAction = () => {}, { client = null, goal = null, save = () => {}, claimed = null } = {}) {
   const own = bodyTask(task);
   own.check();
   const asked = { client, goal, save };
@@ -1655,14 +1655,24 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
   // still with the hand busy, and the health it brings back comes over the
   // next minute: death nineteen ate twice at six health with a zombie
   // beside it. Starvation is the one reason to eat anyway.
-  if (bot.food > 2 && closeHostile(bot)) return false;
+  // The meal the claim made among blazes at hunger under eighteen (notes
+  // 1001, 1006) is run as it was claimed (note 1017): the two stops below
+  // had no word of it, so the turn Jev gave the meal with a stance held ate
+  // nothing and stood the bot where it was. 25590 (2026-10-03 08:08:17 to
+  // 08:08:23Z), 8 health, hunger 17, cooked chicken carried, a retreat
+  // chosen four seconds before: the meal held the turn six seconds with
+  // nothing eaten and no step taken, and a wither skeleton walked up.
+  // Only as the turn Jev gave it (claimed): between a stance's ticks the
+  // meal is still not a reflex.
+  const unhealing = claimed?.action === 'eat' && unhealingAmongBlazes(bot);
+  if (bot.food > 2 && !unhealing && closeHostile(bot)) return false;
   // In an encounter the meal is a stance, Jev's to choose with the others
   // (survival.js stanceOptions, eat): eaten here between two ticks of a
   // stance it stopped the run or the pocket chosen, a second and a half at
   // a time (mid-83-d ate at twelve health in the middle of its retreat).
   // Down to six hunger, where the bot can no longer sprint, it still eats.
   const held = require('./danger').stanceHeld(bot);
-  if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat') return false;
+  if (bot.food > 6 && held && held.choice !== 'keep_working' && held.choice !== 'eat' && !unhealing) return false;
   // The last resort after the safe food, with no rule of its own: its four
   // points are worth more than the three quarters its Hunger may spend, and
   // the gate that ate it only hurt and under eighteen was a threshold of

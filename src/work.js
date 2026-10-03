@@ -8789,7 +8789,7 @@ async function liveTurn(bot, task, goal, activeWork, survival, saveWork, { clien
     // rest of the vitals by the work's.
     vitals: async claimed => {
       task.interruptCheck = bot.game.gameMode === 'creative' ? undefined : claimed?.action === 'eat' ? () => require('./vitals').checkMeal(bot) : () => checkThreats(bot);
-      const ate = await maintainVitals(bot, task, report, { client, goal, save });
+      const ate = await maintainVitals(bot, task, report, { client, goal, save, claimed });
       return !!ate || vitalsActed;
     },
     hunt: () => huntObserved(bot, task, activeWork, saveWork, { navigate }, client),

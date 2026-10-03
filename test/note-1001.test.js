@@ -27,3 +27,22 @@ test('hurt at hunger 17 with a blaze two blocks off, the meal is claimed and pre
   assert.equal(vitals.claim(bot({ health: 18, food: 17 })), null, 'not much hurt: the blaze close keeps the meal off');
   assert.equal(vitals.claim(bot({ health: 3.6, food: 17 })), null, 'one fireball would end it and the shield cuts every bite: the stance\'s turn, not the meal\'s (note 1006)');
 });
+
+// Note 1017: the meal claimed there is eaten there, a stance held or a
+// blaze close: the runner's stops know the claim's exemption.
+test('the meal claimed among blazes with a stance held is eaten when its turn runs (note 1017)', async () => {
+  const { Task } = require('../src/skills');
+  for (const health of [12.6, 3.6]) {
+    const b = bot({ health, food: 17 }), actions = [];
+    b._stance = { choice: 'retreat', at: Date.now(), ranAt: Date.now(), running: true, health };
+    b.equip = async item => { b.heldItem = item; };
+    b.consume = async () => { b.food = 20; };
+    b.deactivateItem = () => {};
+    const ate = await vitals.maintainVitals(b, new Task('meal'), a => actions.push(a.action), { claimed: { action: 'eat' } }).catch(() => false);
+    const claimed = vitals.claim(Object.assign(bot({ health, food: 17 }), { _stance: b._stance }))?.action === 'eat';
+    assert.equal(actions.includes('eat'), claimed, `at ${health} health the run eats exactly where the claim is made`);
+    if (claimed) assert.equal(ate, true);
+    const between = bot({ health, food: 17 }); between._stance = b._stance; between.equip = async () => assert.fail('no meal between a stance\'s ticks');
+    assert.equal(await vitals.maintainVitals(between, new Task('tick')).catch(() => false), false);
+  }
+});
