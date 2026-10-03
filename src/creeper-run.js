@@ -55,14 +55,25 @@ function seesAt(bot, creeper, at, feet, { dug = null } = {}) {
 
 // The way as the feet go along it, from `from` through each step's middle:
 // [{ at, t }], at RUN_PACE along its length.
-function timedWay(from, path, pace = RUN_PACE) {
+// With `wet` (a cell -> whether it is water), the lengths of it in water
+// are swum at SWIM_PACE (note 1059).
+function timedWay(from, path, pace = RUN_PACE, wet = null) {
   const middle = p => Number.isInteger(p.x) && Number.isInteger(p.z) ? new Vec3(p.x + 0.5, p.y, p.z + 0.5) : new Vec3(p.x, p.y, p.z);
   const points = [from.clone(), ...(path || []).map(middle)];
   const out = [{ at: points[0], t: 0 }];
-  let t = 0;
-  for (let i = 1; i < points.length; i++) { t += points[i].distanceTo(points[i - 1]) / pace; out.push({ at: points[i], t }); }
+  let t = 0, swum = 0;
+  for (let i = 1; i < points.length; i++) {
+    const d = points[i].distanceTo(points[i - 1]), inWater = !!wet && wet(points[i - 1]);
+    if (inWater) swum += d;
+    t += d / (inWater ? Math.min(pace, SWIM_PACE * pace / RUN_PACE) : pace); out.push({ at: points[i], t });
+  }
+  out.swum = swum;
   return out;
 }
+// The bot's swim, blocks a second (the game's: about 2.2 at the surface
+// with the keys held, less under it), and whether a point is in water.
+const SWIM_PACE = 2;
+const wetAt = bot => p => { try { return bot.blockAt(p.floored())?.name === 'water'; } catch (_) { return false; } };
 function feetAt(way, t) {
   if (t >= way.at(-1).t) return way.at(-1).at;
   for (let i = 1; i < way.length; i++) {
@@ -123,14 +134,16 @@ function creepersFor(bot, danger, litForOf = () => undefined) {
 // With `slow`, the same way at the slower quarter of the bot's runs.
 function wayAgainstCreepers(bot, path, creepers, { from = bot.entity.position, pace = RUN_PACE, slow = true } = {}) {
   if (!creepers?.length) return null;
+  let swum = 0;
   const worstOf = pace => {
-    const way = timedWay(from, path, pace);
+    const way = timedWay(from, path, pace, wetAt(bot));
+    swum = way.swum || 0;
     const each = creepers.map(c => ({ creeper: c, ...creeperOnWay(bot, c.entity, way, { litFor: c.litFor }) }));
     each.sort((a, b) => (b.goesOff - a.goesOff) || ((b.blast || 0) - (a.blast || 0)) || ((b.clearAt ?? -1) - (a.clearAt ?? -1)));
     return each;
   };
   const each = worstOf(pace);
-  return { worst: each[0], each, ...(slow ? { slow: worstOf(RUN_SLOW)[0] } : {}) };
+  return { worst: each[0], each, ...(swum >= 1 ? { swum: Math.round(swum) } : {}), ...(slow ? { slow: worstOf(RUN_SLOW)[0] } : {}) };
 }
 
 // Standing still `seconds` where the bot is (a route search made before
@@ -149,7 +162,11 @@ function creeperRunSays(result, { worn = { points: 0, toughness: 0 }, health = 2
   const w = result.worst, c = w.creeper, name = `the creeper ${Math.round(c.distance)} blocks off`;
   const state = Number.isFinite(c.litFor) ? `${name}, lit now,` : c.distance < LIGHTS_AT ? `${name}, within three of the bot now,` : name;
   const rule = `A creeper within ${LIGHTS_AT} blocks, or lit, stands where it is, and its fuse burns while the bot is within ${FUSE_KEPT} blocks of it and in its sight, going off after ${FUSE} seconds of burning; past ${FUSE_KEPT} or out of its sight it burns back down, and past ${LIGHTS_AT} it walks after the bot at about ${r1(blocksPerSecond('creeper'))} blocks a second.`;
-  const pace = `at the pace the bot's runs keep in their first seconds (about ${RUN_PACE} blocks a second along the way on the median; one run in four is slower than ${RUN_SLOW})`;
+  // In water it is swum (note 1059): 25583 (2026-10-03 13:25:27Z), two
+  // blocks under in a pond with a creeper 5.8 off, was told of a 30-block
+  // way out "about 5.4 seconds at a run", the creeper never nearer than 4,
+  // at the pace of a run on land.
+  const pace = `at the pace the bot's runs keep in their first seconds (about ${RUN_PACE} blocks a second along the way on the median; one run in four is slower than ${RUN_SLOW})${result.swum ? `, its first ${result.swum} block${result.swum === 1 ? '' : 's'} in water swum at about ${SWIM_PACE}` : ''}`;
   if (w.goesOff) {
     const hit = r1(afterArmour(w.blast, worn));
     const where = w.distance >= BLAST_CLEAR ? `about ${w.distance} blocks from it, where the blast does nothing` : `about ${w.distance} blocks from it and in its sight, about ${Math.round(hit)} after the armour worn${hit >= health ? ', more than the bot has' : ''}`;
@@ -184,4 +201,4 @@ function creeperSteer(creepers) {
   };
 }
 
-module.exports = { RUN_PACE, RUN_SLOW, seesAt, timedWay, creeperOnWay, creepersFor, wayAgainstCreepers, standingAgainstCreepers, creeperRunSays, creeperSteer };
+module.exports = { SWIM_PACE, RUN_PACE, RUN_SLOW, seesAt, timedWay, creeperOnWay, creepersFor, wayAgainstCreepers, standingAgainstCreepers, creeperRunSays, creeperSteer };

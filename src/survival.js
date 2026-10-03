@@ -4835,7 +4835,7 @@ class Survival {
       // blast where it goes off counted in the price (creeper-run.js, note
       // 604); the run told "passing none of them" came back past one, or
       // dropped into its sight beside it.
-      if (scout.destination) { const secs = Math.round(scout.blocks / SPRINT * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = `${scout.back ? require('./way-back').says(scout.back, { sprint: SPRINT }) : ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run.`}${runShot(secs)}${c.says}${footingSight(scout.destination, secs)}`; }
+      if (scout.destination) { const swum = Math.min(scout.blocks, scout.creeper?.swum || 0), secs = Math.round((swum / require('./creeper-run').SWIM_PACE + (scout.blocks - swum) / SPRINT) * 10) / 10, c = creeperRunSays(scout.creeper, { worn: runWorn, health: bot.health }); runExpects = { damage: Math.round((runShotCost(secs) + c.damage) * 10) / 10, seconds: Math.max(1, secs), oneHit }; footing = `${scout.back ? require('./way-back').says(scout.back, { sprint: SPRINT }) : ` A way is found: ${scout.blocks} blocks to footing ${scout.gain} blocks further from every mob about, passing none of them, about ${secs} seconds at a run${swum ? `, its first ${swum} block${swum === 1 ? '' : 's'} swum` : ''}.`}${runShot(secs)}${c.says}${footingSight(scout.destination, secs)}`; }
       else if (!scout.spots) footing = ` Nowhere to run to: no footing within ${scout.radius} blocks is four blocks further than here from every mob about, so a run from here fails at once.${scout.backWhy ? ` Nor back the way it came: ${scout.backWhy}.` : ''}`;
       else if (scout.tried >= scout.candidates) footing = ` No way out: none of the ${plural(scout.candidates, 'spot')} further from every mob has a route that passes none of them, so a run from here fails at once.${scout.backWhy ? ` Nor back the way it came: ${scout.backWhy}.` : ''}`;
       // The rest are searched before a step is taken, up to 150 ms each
@@ -4981,6 +4981,15 @@ class Survival {
       const drowned = danger.filter(t => t.entity.name === 'drowned').length;
       const wet = ` The bot is in water, air ${bot.oxygenLevel ?? 20} of 20 (air runs out in about fifteen seconds under water, then it drowns at two health a second), and sinks unless it swims; a pillar, a pocket or a bunker cannot be built here.${drowned ? ` ${drowned === 1 ? 'The drowned swims' : `${drowned} drowned swim`} faster than the bot in water.` : ''}`;
       if (options.fight) options.fight.description += wet;
+      // The dance in water (note 1059): its backing out is a swim. 25583
+      // (2026-10-03 13:25:27 to 13:25:30Z), two blocks under in a pond, full
+      // iron, took the dance at 0.34 at a creeper with three health left,
+      // told "back out to where its blast does nothing" with no word of the
+      // water; it went off 2.1 blocks from it, 20 health to none.
+      if (options.creeper_dance) {
+        const { SWIM_PACE } = require('./creeper-run'), { BLAST_CLEAR, FUSE } = require('./combat-estimate');
+        options.creeper_dance.description += ` The bot is in water, air ${bot.oxygenLevel ?? 20} of 20, and sinks unless it swims: it backs out at a swim, about ${SWIM_PACE} blocks a second where a walk backs at about 4, so from the 3 blocks where the creeper lights to the ${BLAST_CLEAR} where its blast does nothing is about ${Math.round((BLAST_CLEAR - 3) / SWIM_PACE * 10) / 10} seconds against a fuse of ${FUSE}; held at reach, the swings are as on land.`;
+      }
       // The bank out of the shooters' sight first, and said: mid-211-l and
       // mid-211-n, swimming a stream under four pillager crossbows, had the
       // retreat find no route and every building stance fail in the water

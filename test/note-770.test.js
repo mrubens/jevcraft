@@ -160,4 +160,6 @@ test('in water with a creeper coming, get_out_of_water says where the landing li
   assert.match(d, /At the landing, by the same figures as the other stances: about [\d.]+ damage in the fifteen seconds from now/);
   assert(options.get_out_of_water.expects?.damage > 5, JSON.stringify(options.get_out_of_water.expects) + d);
   if (options.shield_the_blast) assert.match(options.shield_the_blast.description, /In water the shield blocks a blast as on land/);
+  // Note 1059: the dance in water says its backing out is a swim.
+  if (options.creeper_dance) assert.match(options.creeper_dance.description, /it backs out at a swim, about 2 blocks a second where a walk backs at about 4, so from the 3 blocks where the creeper lights to the 6 where its blast does nothing is about 1\.5 seconds against a fuse of 1\.5/);
 });

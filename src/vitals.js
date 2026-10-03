@@ -1548,6 +1548,12 @@ function creeperKeepOff(bot, creepers) {
   }
   return cells;
 }
+function creeperAtFuse(bot) {
+  try {
+    const { FUSE_KEPT } = require('./combat-estimate');
+    return require('./danger').threats(bot, FUSE_KEPT + 1).some(t => t.entity.name === 'creeper' && t.visible);
+  } catch (_) { return false; }
+}
 function airWays(bot, task, onAction = () => {}) {
   const ways = {};
   const breath = breathSeconds(bot), left = breath + drowningSeconds(bot);
@@ -1704,7 +1710,14 @@ async function maintainVitals(bot, task, onAction = () => {}, { client = null, g
     own.check();
   }
   if (bot.oxygenLevel > 12 && atWaterTop(bot)) { onAction({ action: 'surface', oxygen: bot.oxygenLevel, bob: true }); await bobUp(bot, own); }
-  else if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately)) {
+  // With breath in hand (over 12 of 20, nine seconds and more) the way up is
+  // not asked while a creeper is within its fuse's reach in sight of the
+  // bot (note 1059): the stance chosen at it is the answer running, and the
+  // question and its swim are most of a fuse. 25583 (2026-10-03 13:25:28Z),
+  // air 19, a second into the dance it chose at a creeper 3.2 blocks off
+  // with three health left, was asked its way to air, swam 1.2 seconds up
+  // to 1.3 blocks from it, lit, and it went off before a swing landed.
+  else if (bot.oxygenLevel <= 12 || (headSubmerged(bot) && !lately && !creeperAtFuse(bot))) {
     // The way up is Jev's (body_way); with none found, the old swim, which
     // throws that no way up was found.
     const ways = airWays(bot, own, onAction);
@@ -1832,4 +1845,4 @@ function claim(bot) {
 // stepOnce runs it too): the turn they took was the vitals'.
 const ACTIONS = new Set(['dig_out_of_block', 'douse', 'eat', 'out_of_fire', 'off_hot_floor', 'out_of_powder_snow', 'surface']);
 
-module.exports = { bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
+module.exports = { bodyColumns, wayOutRunning, atWaterTop, bobUp, blowsAtBody, blowsDuring, strikeAtArm, strikeWay, BLOW_REACH, shootersAtBody, flamesAbout, pourFloor, claim, checkMeal, closeHostile, ACTIONS, onHotFloor, hotFloorRoute, hotFloorWays, offHotFloor, crouchOnHotFloor, suffocatingBlock, douse, intoWater, pondNear, fireWays, headWays, creeperAtFuse, airWays, asideCell, inFire, fireRoute, outOfFire, inPowderSnow, snowRoute, outOfPowderSnow, lastResortFood, lastResortFoods, sideEffectSays, SIDE_EFFECTS, chooseFood, safeFood, maintainVitals, needsAir, checkAir, headSubmerged, headInBlock, NeedsAir, digWithAirGuard, airRoute, surfaceForAir, straightUp, breathSeconds, breathShort, STEP_S, fireToAnswer, onFire };
