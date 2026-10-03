@@ -5,7 +5,7 @@
 // midgame deaths of 2026-09-27 followed a restart by seconds (notes 338,
 // 353, 357, 358, 361). The request is a file touched after the process
 // began; the bot quits once nothing hostile is within sixteen blocks and it
-// stands on dry ground, off any span or seat, or after five minutes anyway.
+// stands on dry ground, off any span or seat, or after fifteen minutes anyway.
 // A bot that quits is started again by its port's supervisor
 // (scripts/trials/supervisor.sh); with none running nothing does, and
 // mid-242-bd stood down at minute 33 for three hours, judged "missing after
@@ -14,13 +14,28 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
-const WAIT_MS = 5 * 60000;
+// Fifteen minutes, and quiet means healed and out of a shooter's reach too
+// (note 988): 25593 (2026-10-03 05:47:11Z), six rods banked and one wanted,
+// quit for a new build at 11.2 health in the middle of leaving four blazes
+// to heal, the nearest 19 blocks off and so "quiet"; back eight seconds
+// later with nothing held it was shot at once and was dead in half a
+// minute. With a build shipped every ten minutes or so the five minutes'
+// wait ran out in most fights.
+const WAIT_MS = 15 * 60000;
+const QUIET_HEALTH = 16, SHOOTER_REACH = 48;
+const SHOOTERS = /^(blaze|ghast|skeleton|stray|bogged|pillager|wither_skeleton|piglin|piglin_brute|hoglin)$/;
 
 function quiet(bot) {
   const e = bot.entity;
   if (!e || !bot.isAlive) return false;
   if (e.onGround === false || e.isInWater || e.isInLava || bot.vehicle || bot._seatedIn != null || bot._spanning) return false;
-  try { if (require('./danger').hostileEntities(bot, 16).length) return false; } catch (_) { return false; }
+  if ((bot.health ?? 20) < QUIET_HEALTH) return false;
+  try {
+    const danger = require('./danger');
+    if (danger.hostileEntities(bot, 24).length) return false;
+    if (danger.hostileEntities(bot, SHOOTER_REACH).some(x => SHOOTERS.test(x.name))) return false;
+  } catch (_) { return false; }
+  try { if (require('./combat-estimate').burnLeft(bot) > 0) return false; } catch (_) { /* not read: not held against it */ }
   return true;
 }
 
@@ -48,7 +63,7 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
     }
     if (quiet(bot) || now() - askedAt > WAIT_MS) {
       clearInterval(timer);
-      console.log(`[restart] asked for, and ${quiet(bot) ? 'quiet now' : 'five minutes waited'}: quitting for the new build`);
+      console.log(`[restart] asked for, and ${quiet(bot) ? 'quiet now' : 'fifteen minutes waited'}: quitting for the new build`);
       try { bot.quit('restart for a new build'); } catch (_) { /* gone already */ }
       setTimeout(exit, 500);
     }

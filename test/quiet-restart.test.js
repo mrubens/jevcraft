@@ -58,3 +58,16 @@ test('a supervisor is found by the process list; no port, none', () => {
   assert.equal(supervised(null), false);
   assert.equal(supervised(1), false);
 });
+
+test('not quiet while hurt or with a shooter within forty-eight blocks (note 988)', () => {
+  const { quiet } = require('../src/quiet-restart');
+  const blaze = { id: 3, name: 'blaze', type: 'hostile', position: new Vec3(19, 64, 0), height: 1.8, isValid: true };
+  const bot = { isAlive: true, health: 20, entity: { position: new Vec3(0, 64, 0), onGround: true }, entities: {} };
+  assert.equal(quiet(bot), true);
+  bot.health = 11.2;
+  assert.equal(quiet(bot), false, 'hurt: not now');
+  bot.health = 20; bot.entities[3] = blaze;
+  assert.equal(quiet(bot), false, 'a blaze nineteen blocks off: not now');
+  blaze.position = new Vec3(60, 64, 0);
+  assert.equal(quiet(bot), true);
+});

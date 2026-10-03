@@ -448,7 +448,14 @@ function closeInCost(bot, danger, { shield = shieldCarried(bot), horizon = CLOSE
   // a line to the cell the sword strikes from (note 614: four behind the
   // walls, counted as seeing a one-block step to a blaze at four, priced
   // the charge over the fight beside it by half again).
-  const strikeAt = upTo === 1 ? (() => { const n = seen.filter(t => strikeCells(bot, t.entity).length).sort((a, b) => a.distance - b.distance)[0]; return n ? strikeCells(bot, n.entity)[0] : null; })() : null;
+  // The nearest the sword can reach, seen or not (note 988): the charge
+  // goes to it either way. With none in sight there was no strike cell, and
+  // only those within sixteen of the bot were counted: 25593 (2026-10-03
+  // 05:47:31Z), 3.6 health, six rods banked and one wanted, read "about 3.1
+  // damage ... 0.5 after" for a charge at a blaze 15.9 off out of sight, "5
+  // more about out of sight farther off, not counted", walked in among them
+  // and was dead in twelve seconds.
+  const strikeAt = upTo === 1 ? (() => { const reachable = t => strikeCells(bot, t.entity).length; const n = seen.filter(reachable).sort((a, b) => a.distance - b.distance)[0] || blazes.filter(reachable).sort((a, b) => a.distance - b.distance)[0]; return n ? strikeCells(bot, n.entity)[0] : null; })() : null;
   // Within sixteen of the bot, or of the cell the sword strikes from (note
   // 849): the charge goes there, and those about it are in its fight.
   const strikeStand = strikeAt ? strikeAt.offset(0.5, 0, 0.5) : null;
