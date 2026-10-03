@@ -62,6 +62,9 @@ test('mid-243-cc: the staircase is priced by the rock on its way, not the dirt b
   // With no landing seen the stairs head east (heading 0), up by the height of open sky here.
   const target = feet.offset(24, 32, 0);
   const { options, estimate } = climbOptions(bot, target, column);
+  // What a way back down costs where none is kept, said on both climbs (note 975).
+  assert.match(options.staircase.description, /a walk back down to this mine later \(dug again instead, a staircase down these \d+ blocks is about \d+ seconds: 17 staircases down of 441 blocks on 2026-10-02 and 03 made a block of depth every 1\.9 seconds\)\./);
+  if (options.straight_up) assert.match(options.straight_up.description, /no way back down is left: a way back down later is a staircase dug down, about \d+ seconds for these \d+ blocks/);
   // Said then: "about 249 blocks dug ... about 5 minutes with bare hands".
   assert(minutes(estimate.staircase) > 25, `the staircase by hand: ${minutes(estimate.staircase).toFixed(1)} minutes`);
   assert.match(options.staircase.description, /about \d+ blocks dug \((stone|granite|andesite|diorite)[^)]*\).*about (2[5-9]|[3-9]\d) minutes with bare hands/);

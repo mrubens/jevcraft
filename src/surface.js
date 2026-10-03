@@ -311,6 +311,16 @@ function walkedColumn(bot, feet, usesLeft, hereSeconds, { exclude = [] } = {}) {
 // takes (stone 1.5 hardness; the game's tool speeds).
 const TIER = { wooden_pickaxe: 0, golden_pickaxe: 0, stone_pickaxe: 1, iron_pickaxe: 2, diamond_pickaxe: 3, netherite_pickaxe: 4 };
 const PICK_USES = { wooden_pickaxe: 59, stone_pickaxe: 131, iron_pickaxe: 250 };
+// What a way back down costs where none is kept (note 975): a staircase dug
+// down, as measured. The staircase up was chosen at 0.65 against the climb
+// straight up at 0.23 (25589, 2026-10-03 03:58Z: about 8 minutes against 70
+// seconds), its one advantage "a walk back down later" with no price on the
+// other side; ascend_to_surface was 111 of the 368 Overworld minutes clocked
+// on 2026-10-03.
+const DOWN_RECORD = { secondsABlock: 1.9, runs: 17, blocks: 441, of: '2026-10-02 and 03' };
+const downSays = (blocks, how) => !(blocks > 0) ? '' : how === 'saved'
+  ? ` (dug again instead, a staircase down these ${blocks} blocks is about ${Math.round(blocks * DOWN_RECORD.secondsABlock)} seconds: ${DOWN_RECORD.runs} staircases down of ${DOWN_RECORD.blocks} blocks on ${DOWN_RECORD.of} made a block of depth every ${DOWN_RECORD.secondsABlock} seconds)`
+  : `: a way back down later is a staircase dug down, about ${Math.round(blocks * DOWN_RECORD.secondsABlock)} seconds for these ${blocks} blocks (${DOWN_RECORD.runs} staircases down of ${DOWN_RECORD.blocks} blocks on ${DOWN_RECORD.of} made a block of depth every ${DOWN_RECORD.secondsABlock} seconds)`;
 const PICK_SECONDS = { wooden_pickaxe: 1.15, stone_pickaxe: PICKAXE_STONE_SECONDS, iron_pickaxe: 0.4 };
 const words = n => String(n).replaceAll('_', ' ').replace(/^(?=[a-z])/, m => (/^[aeiou]/.test(n) ? 'an ' : 'a '));
 function carriedFor(bot) {
@@ -370,7 +380,7 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
   // Under falling blocks the figure is not what the staircase does: said,
   // with the record of staircases chosen with sand or gravel on their way.
   const underFalls = stairs.fallen ? ` But ${stairs.fallen} of these stairs ha${stairs.fallen === 1 ? 's' : 've'} sand or gravel over the head, and the staircase does not dig a stair under falling blocks (dug out, they come down on the head): it goes round at its own height instead, so the time is not what it digs. ${UNDER_FALLS_RECORD}` : '';
-  options.staircase = { ...(stairs.fallen ? { underFalls: stairs.fallen } : {}), description: `Dig a staircase ${toward}: about ${stairs.digs} blocks dug${stairs.kinds ? ` (${stairs.kinds})` : ''}, up to three for each block of height and two for each stair across, and ${stairs.stairs} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}${stairs.fallen ? ' were they dug as planned' : ''}.${wearNote(stairs.digs, stairs.wears)}${measuredSays('staircase')}${underFalls} The stairs stay open behind: a walk back down to this mine later.${rests ? ` Now ${rests}: taken, it digs nothing until then.` : ''}` };
+  options.staircase = { ...(stairs.fallen ? { underFalls: stairs.fallen } : {}), description: `Dig a staircase ${toward}: about ${stairs.digs} blocks dug${stairs.kinds ? ` (${stairs.kinds})` : ''}, up to three for each block of height and two for each stair across, and ${stairs.stairs} stairs walked; ${duration(estimate.staircase)} with ${picks.length ? 'the pickaxe' : 'bare hands'}${stairs.fallen ? ' were they dug as planned' : ''}.${wearNote(stairs.digs, stairs.wears)}${measuredSays('staircase')}${underFalls} The stairs stay open behind: a walk back down to this mine later${downSays(stairRise, 'saved')}.${rests ? ` Now ${rests}: taken, it digs nothing until then.` : ''}` };
 
   if (column?.cells) {
     const wearing = column.cells.filter(b => digSeconds(bot, b).wears).length;
@@ -386,7 +396,7 @@ function climbOptions(bot, target, column, { landing = false, rests = null, walk
     else {
       estimate.straight_up = priced('straight_up', seconds, column.up, picks.length ? Math.min(wearing, usesLeft) : null);
       const through = drain ? ` ${drainSays(drain)}` : ' Nothing that falls or flows is in or beside the column.';
-      options.straight_up = { ...(drain ? { drain: drain.mode } : {}), description: `Dig straight up this column to open sky: ${column.up} blocks up, ${column.cells.length} blocks to dig${kinds ? ` (${kinds})` : ''}, a block put under the feet at each of the ${column.up} steps (${scaffold} building blocks carried); ${duration(estimate.straight_up)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(wearing, wearing > 0)}${measuredSays('straight_up')}${through} The column is filled behind with the blocks put down: no way back down is left.` };
+      options.straight_up = { ...(drain ? { drain: drain.mode } : {}), description: `Dig straight up this column to open sky: ${column.up} blocks up, ${column.cells.length} blocks to dig${kinds ? ` (${kinds})` : ''}, a block put under the feet at each of the ${column.up} steps (${scaffold} building blocks carried); ${duration(estimate.straight_up)} with ${picks.length ? 'the pickaxe' : 'bare hands'}.${wearNote(wearing, wearing > 0)}${measuredSays('straight_up')}${through} The column is filled behind with the blocks put down: no way back down is left${downSays(column.up, 'owed')}.` };
     }
   }
   // Straight up from a column walked to first, where that is a minute or
