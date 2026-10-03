@@ -158,7 +158,13 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // tunnel", gathering wood by its chest.
   const rodsNow = rodsCarriedNow(a.frames);
   const rodsGot = Math.max(rodsNow, Number(best?.rods) || 0);
-  const loops = rodsGot >= 1 ? [] : loopsSeen;
+  // Nor once a pearl has been got (note 1011): the hunt for them is a stalk
+  // and a fight in turn, which reads as a flip between two steps.
+  // mid-242-ug-nether-1 (25597, 2026-10-03 07:20 to 07:38Z) took three
+  // ender pearls from the slot in eighteen minutes, the most of any trial,
+  // and was cut as "loop: flipping stalk_mob <-> acquire".
+  const pearlsGot = Number(best?.pearls) || 0;
+  const loops = rodsGot >= 1 || pearlsGot >= 1 ? [] : loopsSeen;
   const minute = t => Math.round((t - from) / 60000);
   const windowMs = to - from;
   // Time with no bot running (quit for a restart and not started again, a
