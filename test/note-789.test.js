@@ -143,6 +143,26 @@ test('the hold is asked through when the bot is hurt since the stay, and says on
   assert.equal(hurt.survival.state.sealHold.stayHealth, 15);
 });
 
+test('a mob within 5 blocks, or hunger with nothing to eat, asks the held stay once when it comes, not at every pass it stays so (note 1088)', async () => {
+  const { origin, bot } = pocketBot({ mobs: [{ name: 'zombie', at: new Vec3(4, 100, 0) }], health: 3.2, food: 14 });
+  bot.inventory.items = () => [];
+  const hold = { at: Date.now() - 60000, kinds: ['threat'], dawn: false, threat: true, heal: false, health: 3.2, stayHealth: 3.2, clearSince: null, origin: { ...origin } };
+  const plan = { choice: 'stay', key: 'other', at: Date.now() - 20000, until: Date.now() + 70000 };
+  // New to the stay: asked, and the stay answered knows both.
+  const first = await pocketPass(bot, origin, { sealHold: { ...hold }, pocketPlan: { ...plan } });
+  assert.equal(first.asked.length, 1);
+  assert.deepEqual([...first.survival.state.sealHold.knownAtStay].sort(), ['a mob within 5 blocks', 'hunger under 18 with no food carried']);
+  // The next passes, both still so: held, not asked.
+  const again = await pocketPass(bot, origin, { sealHold: { ...first.survival.state.sealHold }, pocketPlan: { ...plan, at: Date.now() - 5000 } });
+  assert.equal(again.asked.length, 0, 'known to the stay: not asked again');
+  assert.equal(again.waited, 1);
+  // Hurt since the stay still asks.
+  bot.health = 1.2;
+  const hurt = await pocketPass(bot, origin, { sealHold: { ...first.survival.state.sealHold }, pocketPlan: { ...plan, at: Date.now() - 5000 } });
+  assert.equal(hurt.asked.length, 1);
+  assert.equal(hurt.asked[0].state.sealHold.askedAgainFor, 'hurt since the stay');
+});
+
 // --- a failed seal is a fact ---
 
 test('a pocket whose blocks the server refuses is a failed seal, kept and said; the stay-up chat says it (note 789, the critic\'s 25581)', async () => {

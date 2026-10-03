@@ -10599,7 +10599,12 @@ class Survival {
       // rests as any wait does. mid-242-dc-fortress-22 held three such stays
       // for four and a half minutes (note 679).
       const plan = this.state.pocketPlan;
-      const forNothing = plan?.choice === 'stay' && waitSays?.waitsForNothing && Date.now() - (plan.at || 0) >= require('./tried').WAIT_JUDGED_MS;
+      // A stay to a dawn that burns what stands outside is a wait for
+      // something (pocket-outside.js, note 1088): 25598 (17:06:10Z), sealed
+      // at 20 health with a zombie outside under open sky and two minutes
+      // of the night left, chose the stay at 0.84, was asked again five
+      // seconds on as a wait for nothing, and tunnelled out on a tie.
+      const forNothing = plan?.choice === 'stay' && waitSays?.waitsForNothing && !/a stay to the dawn outlasts/.test(outsideFacts.stay) && Date.now() - (plan.at || 0) >= require('./tried').WAIT_JUDGED_MS;
       // A choice among go_for_food's own ways (return_for_food, hoglin_food,
       // ...) lives in foodWays, not options: checking options[plan.choice]
       // alone found nothing for it, so the hold never took and a food way
@@ -10621,10 +10626,23 @@ class Survival {
       if (sealHold && !sealHold.origin && Date.now() - sealHold.at <= 180000) sealHold.origin = { ...refuge.origin };
       if (sealHold && (!sealHold.origin || pos(sealHold.origin).distanceTo(pos(refuge.origin)) > 2 || offWorld)) { delete this.state.sealHold; sealHold = null; }
       const holdRead = sealHold ? NR.holdNow(sealHold, { night: require('./day').night(bot) && !below, threatNear: sealThreatNear(bot, NR.CLEAR_WITHIN), health: bot.health ?? 20 }) : null;
-      const holdBreak = !sealHold ? null : threats(bot, 5).length ? 'a mob within 5 blocks'
-        : (bot.health ?? 20) < (sealHold.stayHealth ?? sealHold.health ?? 20) - 0.5 ? 'hurt since the stay'
-          : (bot.food ?? 20) < 18 && !foodSupply(bot) ? 'hunger under 18 with no food carried'
-            : options.go_to_bed || options.sleep_in_nook || options.sleep_beside ? 'the bed can be slept in' : null;
+      // Each of these asks once, when it comes, not at every pass it stays
+      // true (note 1088): the ones true when the stay was last chosen are
+      // known to that answer. A mob outside within 5 blocks and hunger under
+      // eighteen with nothing to eat stay so for as long as the stay lasts:
+      // 25598 (2026-10-03 17:07:20 to 17:07:47Z), back to life bare at night
+      // and sealed at 3.2 health, was asked the stay five times in 27
+      // seconds, for the one and the other in turn, each asking told the
+      // last "changed nothing" (0.61, 0.43, 0.41, 0.41), took the food at
+      // 0.41 on the fifth, and died to the zombie outside 30 seconds on;
+      // 25597 left its pocket the same way at 0.5 health (17:01 to 17:04Z).
+      const breaksNow = !sealHold ? [] : [
+        threats(bot, 5).length ? 'a mob within 5 blocks' : null,
+        (bot.health ?? 20) < (sealHold.stayHealth ?? sealHold.health ?? 20) - 0.5 ? 'hurt since the stay' : null,
+        (bot.food ?? 20) < 18 && !foodSupply(bot) ? 'hunger under 18 with no food carried' : null,
+        options.go_to_bed || options.sleep_in_nook || options.sleep_beside ? 'the bed can be slept in' : null].filter(Boolean);
+      if (sealHold) { const known = new Set(sealHold.knownAtStay || []); sealHold.breaksNow = breaksNow; for (const k of [...known]) if (!breaksNow.includes(k)) known.delete(k); sealHold.knownAtStay = [...known]; }
+      const holdBreak = breaksNow.find(b => b === 'hurt since the stay' || !(sealHold?.knownAtStay || []).includes(b)) || null;
       if (holdRead && !holdRead.holds) {
         this.report(goal, save, { action: 'seal_hold_ended', ended: holdRead.ended, sealedFor: sealHold.kinds, minutes: Math.round((Date.now() - sealHold.at) / 6000) / 10 });
         if (plan?.choice === 'stay') delete this.state.pocketPlan;
@@ -10680,7 +10698,7 @@ class Survival {
         choice = decision.path.at(-1);
         require('./seal-reason').noteAfter(this.state, decision.path[0]);
         this.state.pocketPlan = { choice, key, at: Date.now(), until: Date.now() + 90000 };
-        if (this.state.sealHold) { if (choice === 'stay') this.state.sealHold.stayHealth = bot.health ?? 20; else delete this.state.sealHold; }
+        if (this.state.sealHold) { if (choice === 'stay') { this.state.sealHold.stayHealth = bot.health ?? 20; this.state.sealHold.knownAtStay = [...(this.state.sealHold.breaksNow || [])].filter(b => b !== 'hurt since the stay'); } else delete this.state.sealHold; }
       }
       // A choice that opens the pocket's wall on the mobs is carried out
       // once: the pocket sealed again after it is a new question, not the
