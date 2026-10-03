@@ -2033,6 +2033,23 @@ function pickaxeReserve(bot, feet) {
 // reach of it was chosen as if the wait came out even).
 const BOOM_ACROSS = 15, BOOM_UP = 20;
 const BOOM_DAMAGE = { easy: 6, normal: 10, hard: 15 };
+// The blows that end the bot at the health it has, through what is worn, for
+// a walk out into the night's mobs. 25589 (2026-10-03 19:37Z), bare at 6
+// health and hunger 17 under the rock, a minute before dawn, was told the
+// climb for food "comes out among its mobs. 6 health now, not coming back",
+// took it, and two arrows ended it a minute on (note 1098).
+function nightEnds(bot) {
+  const hp = Math.round((bot.health ?? 20) * 10) / 10;
+  if (hp >= 20) return '';
+  try {
+    const ce = require('./combat-estimate');
+    const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
+    const each = n => Math.max(0.5, ce.afterArmour(ce.MOBS[n].hit, worn)), hits = n => Math.max(1, Math.ceil(hp / each(n)));
+    const says = (n, word) => `${hits(n)} ${word}${hits(n) === 1 ? '' : 's'} (about ${Math.round(each(n) * 10) / 10} each)`;
+    return `: ${says('skeleton', 'skeleton arrow')} or ${says('zombie', 'zombie hit')} end it through what is worn; zombies and skeletons under open sky burn from dawn, spiders turn peaceful by day and creepers stay`;
+  } catch (_) { return ''; }
+}
+
 function wardenSays(bot) {
   const warden = threats(bot, 32).filter(t => t.entity.name === 'warden').sort((a, b) => a.distance - b.distance)[0];
   const booms = (bot._sonicBooms || []).filter(t => Date.now() - t < 60000).length;
@@ -11295,8 +11312,8 @@ class Survival {
     // audit, 2026-09-25): hungry in the dark, the food was never offered.
     // Said with the hunger, the points carried and what the reserve is for
     // and wants, and the errand so far (food-errand.js, note 702).
-    if (needsFood) tree.obtain_food = { description: `${errands.says(bot, goal, { supply: supplyNow, desired: desiredFood, hungry, errand, now, holder: this.state })} Keep the player request saved.` + (night(bot) && needsShelter ? ` Night: mobs spawn on the way; starvation at hunger 0.` : '') +
-        (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}.` : ''),
+    if (needsFood) tree.obtain_food = { description: `${errands.says(bot, goal, { supply: supplyNow, desired: desiredFood, hungry, errand, now, holder: this.state })} Keep the player request saved.` + (night(bot) && needsShelter ? ` Night: mobs spawn on the way${nightEnds(bot) ? `, and at ${Math.round(bot.health * 10) / 10} health${nightEnds(bot)}` : ''}; starvation at hunger 0.` : '') +
+        (night(bot) && underground ? ` Food is mostly on the surface, and it is night there until dawn, about ${minutesToDawn(bot)} real minutes off; the climb up comes out among its mobs. ${Math.round(bot.health * 10) / 10} health now${healing ? ', not coming back' : ''}${nightEnds(bot)}.` : ''),
       children: offWorld && this.actions.returnOverworld ? this.offWorldFood(task, goal, save) : await forageChoices(bot, task, goal, save, this.actions, this.state, { target: desiredFood }) };
     if (tree.obtain_food && !Object.keys(tree.obtain_food.children).length) delete tree.obtain_food;
     // Food or the work, priced from the record (note 784): each way's
@@ -11915,4 +11932,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };

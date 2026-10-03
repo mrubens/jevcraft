@@ -1292,7 +1292,7 @@ test('hungry at night, food is offered with the dark said, and staying up names 
   const survival = new Survival(bot, { navigate: async () => {}, dig: async () => {}, place: async () => {}, explore: async () => {} }, { client: { systemOne: async () => ({}) } });
   survival.decide = async (task, goal, save, q) => { tree = q.tree; return { path: ['secure_shelter'], action: { run: async () => {} }, stale: false }; };
   await survival.step(new Task('t', 'night'), { kind: 'win', request: 'beat the game' }, () => {});
-  assert.match(tree.obtain_food.description, /Hunger 6, under eighteen: health does not come back until it is eaten back to eighteen, 12 points short; nothing carried covers any of it\. This is for the hunger\..*Night: mobs spawn on the way; starvation at hunger 0\./);
+  assert.match(tree.obtain_food.description, /Hunger 6, under eighteen: health does not come back until it is eaten back to eighteen, 12 points short; nothing carried covers any of it\. This is for the hunger\..*Night: mobs spawn on the way(, and at [\d.]+ health: \d+ skeleton arrows? \(about [\d.]+ each\) or \d+ zombie hits? \(about [\d.]+ each\) end it through what is worn; zombies and skeletons under open sky burn from dawn, spiders turn peaceful by day and creepers stay)?; starvation at hunger 0\./);
   assert.match(tree.continue_request.description, /1 hostile mob, 1 of them out of sight, creepers among them/);
   assert.match(tree.continue_request.description, /Health does not come back meanwhile: hunger 6/);
 });
