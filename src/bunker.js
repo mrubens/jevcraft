@@ -547,6 +547,7 @@ async function holdBunker(bot, task, goal, save, bunker, { item = 'blaze_rod', w
       // reach.
       const stand = require('./blaze-stand');
       if (await stand.putOutFlames(bot, task)) continue;
+      if (await stand.eatInHold(bot, task)) continue;
       // A rod fallen just outside the mouth, picked up between volleys: a
       // step out and back.
       const out = bunker.watch && bunker.watch !== bunker.inside ? bunker.watch : null;

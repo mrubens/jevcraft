@@ -516,6 +516,7 @@ async function holdBox(bot, task, goal, save, site, { navigate, seconds = 45, it
       goal.step = { action: 'hold_box', inLine: inLine.length, about: about.length, kills, health: bot.health, held: Math.round((Date.now() - started) / 1000) }; save?.();
       if (!inBox(bot, site)) { debug('hold: back in'); await require('./bunker').stepTo(bot, task, site.cell); continue; }
       if (await stand.putOutFlames(bot, task)) { debug('hold: flames'); continue; }
+      if (await stand.eatInHold(bot, task)) { debug('hold: meal'); continue; }
       if (await strikeInReach(bot, task)) { stats.swings++; continue; }
       // Behind the window: every shot comes through it (note 623).
       if (await stand.shieldVolley(bot, task, { face })) continue;
@@ -808,6 +809,7 @@ async function holdCorner(bot, task, goal, save, site, { navigate, seconds = 30,
       if (startHealth - (bot.health ?? 20) >= STANCE_HEALTH) { stats.ended = 'hurt'; break; }
       const came = biter(); if (came) { stats.ended = came; break; }
       if (await stand.putOutFlames(bot, task)) continue;
+      if (await stand.eatInHold(bot, task)) continue;
       if (await strikeInReach(bot, task)) { stats.swings++; continue; }
       if (await stand.shieldVolley(bot, task)) continue;
       if (!feetCell(bot).equals(c)) { await bunker.stepTo(bot, task, c); continue; }

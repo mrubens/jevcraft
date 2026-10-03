@@ -672,6 +672,28 @@ function flamesTouching(bot) {
   return [...found.values()];
 }
 // Put out with a punch, as a player does: fire breaks at the first hit.
+// A meal in a hold (note 990): health comes back only at hunger eighteen or
+// more, and a hold is where there is time for one. 25597 (2026-10-03
+// 05:50:44 to 05:52:51Z) held its box beside the spawner two minutes at 6.6
+// health and hunger 17, food carried, nothing eaten (the holds put flames
+// out, strike, shield and fetch rods), and two fireballs through the window
+// ended it. Eaten between volleys, the shield down for its 1.6 seconds; not
+// begun again within five seconds of one cut short.
+const HOLD_MEAL_EVERY_MS = 5000;
+async function eatInHold(bot, task) {
+  if ((bot.food ?? 20) >= 18 || (bot.health ?? 20) >= 20) return false;
+  if (Date.now() - (bot._holdMealAt || 0) < HOLD_MEAL_EVERY_MS) return false;
+  let item = null; try { item = require('./vitals').chooseFood(bot) || null; } catch (_) { item = null; }
+  if (!item) return false;
+  try { if (volleyComing(bot) || require('./shot-reflex').shotComing(bot)) return false; } catch (_) { /* not read: eaten */ }
+  bot._holdMealAt = Date.now();
+  bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
+  require('./combat').lowerShield(bot);
+  const before = bot.food ?? 0;
+  const r = await require('./meal').eatThrough(bot, task, item, { eaten: () => (bot.food ?? 0) > before, helps: () => (bot.food ?? 20) < 18, tries: 2 });
+  if (r.eaten) console.log(`[hold] ate ${item.name.replaceAll('_', ' ')} in the hold: hunger ${before} to ${bot.food}, health ${Math.round((bot.health ?? 0) * 10) / 10}`);
+  return true;
+}
 async function putOutFlames(bot, task) {
   const flames = flamesTouching(bot);
   if (!flames.length || typeof bot.dig !== 'function') return false;
@@ -2042,6 +2064,7 @@ function noteTacticHold(bot, goal, save, option, stats, { startedAt, before = 0 
 async function holdBeat(bot, task, goal, save, face, home = null) {
   const { defendNearby } = require('./combat');
   if (await putOutFlames(bot, task)) return true;
+  if (await eatInHold(bot, task)) return true;
   if (await defendNearby(bot, task, goal, save)) return true;
   if (await shieldVolley(bot, task)) return true;
   if (home && await sortie(bot, task, goal, save, home)) return true;
@@ -2253,4 +2276,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
