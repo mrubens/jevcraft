@@ -369,6 +369,28 @@ const RUNS = {
     return { pass: !watch.died && !!site && (r?.kills || 0) >= 1 && hp - bot.health <= 2, detail: { site: site ? `${site.mouth}` : null, digs: site?.digs.length, ...r, health: bot.health, error: error && error.slice(0, 140) } };
   },
   async enderman_slot_out(d, bounded) { return RUNS.enderman_slot(d, bounded); },
+  async trident_swim(d, bounded) {
+    const reflex = require('../src/shot-reflex');
+    reflex.install(bot, null);
+    const hurts = []; let lastHp = bot.health, came = 0, held = 0, i = 0; const ids = new Set();
+    const onHp = () => { if (bot.health < lastHp) hurts.push(Math.round(bot.health * 10) / 10); lastHp = bot.health; };
+    bot.on('health', onHp);
+    const ends = d.ends.map(vec), started = Date.now();
+    try {
+      while (Date.now() - started < 40000 && !watch.died) {
+        bounded.check();
+        for (const s of bot._shots?.values?.() || []) if (s.name === 'trident' && s.hitting && !ids.has(s.id)) { ids.add(s.id); came++; }
+        if (bot._shotHold) held++;
+        const to = ends[i % 2], p = bot.entity.position;
+        if (Math.hypot(p.x - to.x, p.z - to.z) < 1.5) i++;
+        await bot.look(Math.atan2(-(to.x - p.x), -(to.z - p.z)), 0, true);
+        bot.setControlState('forward', true); bot.setControlState('jump', true);
+        await sleep(100);
+      }
+    } catch (err) { if (err.name !== 'OutOfTime') throw err; }
+    bot.clearControlStates(); bot.removeListener('health', onHp);
+    return { pass: !watch.died && came >= 4 && hurts.length <= 1, detail: { came, landed: hurts.length, hurts: hurts.slice(0, 8), drowned: (() => { const e = Object.values(bot.entities).find(x => x.name === 'drowned'); return e ? `${Math.round(e.position.distanceTo(bot.entity.position))} off at y ${e.position.y.toFixed(1)}, holding ${e.heldItem?.name || e.equipment?.[0]?.name || 'nothing seen'}` : 'none'; })(), shots: [...ids].length, heldTicks: held, crossings: i, refused: bot._shotRefused?.why || null, health: bot.health } };
+  },
   async enderman_slot_forest(d, bounded) {
     const slot = require('../src/enderman-slot');
     let site = null, error = null, fights = 0;

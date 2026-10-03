@@ -61,6 +61,8 @@ const RISE_MS = 250;
 const STALL_MS = 1500;
 const swingingNow = (bot, now = Date.now()) => now - (bot._defenseAttackAt || 0) < STALL_MS;
 const MOVE_KEYS = ['forward', 'back', 'left', 'right', 'jump', 'sprint'];
+// The breath (of 20) under which a shot is not held for in water.
+const WATER_AIR = 8;
 // The shots, the shooters that fire them, and how near a line passes the
 // body and still hits (the fireball's own width and a blast's reach).
 const SHOTS = {
@@ -335,18 +337,27 @@ function holdRefused(bot) {
   if (bot._spanning) return 'laying a span';
   if (bot.pathfinder?.isBuilding?.()) return 'placing a block on the way';
   if (bot._creativeFlight?.active || bot.vehicle) return 'flying or riding';
-  if (e.isInWater || e.isInLava) return 'in water or lava';
+  if (e.isInLava) return 'in lava';
+  // In water the shield is turned to a shot as on land, the body kept up by
+  // the swim's own key (note 1058), while there is breath for it: 25592
+  // (2026-10-03 13:40:12 to 13:40:42Z), full iron, a shield in its off hand,
+  // swam a pond with a drowned throwing tridents from 18 to 24 blocks: nine
+  // came on a line to it, each "shield down", six landed at 4.8 a throw, and
+  // it died there from 20 health.
+  if (e.isInWater && (bot.oxygenLevel ?? 20) < WATER_AIR) return 'under water, short of breath';
   const at = e.position.floored(), feet = bot.blockAt?.(at);
   if (/ladder|vine|scaffolding/.test(feet?.name || '')) return 'on a ladder';
   // A meal the reflex cut for a shot on its way is not a refusal: the cut
   // is the raise (note 701).
   if (mainHandBusy(bot) && !require('./meal').mealOn(bot)?.cut) return 'eating or drawing a bow';
-  if (!e.onGround) {
+  if (!e.onGround && !e.isInWater) {
     // In the air: over lava, or over a drop of more than three.
     for (let dy = 0; dy >= -4; dy--) {
       const b = bot.blockAt?.(at.offset(0, dy, 0));
       if (!b) break;
       if (/lava/.test(b.name)) return 'in the air over lava';
+      // Over water (the swim's own bob out of it): no fall to take.
+      if (b.name === 'water') break;
       if (b.boundingBox === 'block') { if (dy <= -4) return 'in the air over a drop'; break; }
       if (dy === -4) return 'in the air over a drop';
     }
@@ -519,10 +530,15 @@ function tick(bot, survival, now = Date.now()) {
   // seconds or more of their last 90, against 8 of 31 other deaths.
   let walkingStance = false;
   try { const st = require('./danger').stanceHeld(bot, now); walkingStance = !!st && STANCE_SHOTS.walking.has(st.choice); } catch (_) { walkingStance = false; }
-  hold.free = !!wayOut || moving || walkingStance || (!cover && guard.every(g => g.closing));
+  // In water the hold is the body's whatever walks (note 1058): the swim
+  // waits the shot's flight with the face and the shield to it; a shield up
+  // behind a swim away covers nothing the shot comes from, and no edge is
+  // walked off there.
+  const afloat = !!bot.entity.isInWater;
+  hold.free = afloat ? moving : !!wayOut || moving || walkingStance || (!cover && guard.every(g => g.closing));
   if (hold.free) { hold.why = guard[0]?.why || hold.why; if (require('./combat').raiseShield(bot)) hold.raised = true; return; }
   const { set, look } = bot._shotRaw;
-  for (const k of MOVE_KEYS) set(k, false);
+  for (const k of MOVE_KEYS) set(k, afloat && k === 'jump');
   if (require('./terrain').onSpan?.(bot)) set('sneak', true);
   if (cover && !guard.length) return walkCover(bot, cover);
   const { point } = facingFor(bot, guard);
