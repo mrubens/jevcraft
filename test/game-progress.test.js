@@ -375,3 +375,27 @@ test('a "go back" Jev chose ends with the stay it was chosen in: in again by the
   bot.game.dimension = 'minecraft:the_nether'; observeProgress(bot, goal, t0 + 240000);
   assert.equal(netherLeaveHeld(goal, 'food', t0 + 241000), false, 'a new stay: the way back is Jev\'s to choose again');
 });
+
+test('after the first Nether entry, with a stone pickaxe that works and armour still to make, the iron goes to the armour before another iron pickaxe (note 1108)', () => {
+  // 25591 (2026-10-03 18:57 to 20:28Z): nine rods and seven pearls in its chest, handed the iron pickaxe seven times as each wore out; ninety minutes for one pair of leggings.
+  const { bot, goal } = fixture(); observeProgress(bot, goal);
+  const { setAside } = require('../src/progress');
+  setAside(goal, 'rod_bank', 'arrival', 'answered', 30 * 60000);
+  const kit = [{ name: 'stone_pickaxe', count: 1 }, { name: 'iron_sword', count: 1 }, { name: 'shield', count: 1 }, { name: 'water_bucket', count: 1 }, { name: 'white_bed', count: 1 },
+    { name: 'iron_helmet', count: 1 }, { name: 'iron_chestplate', count: 1 }, { name: 'golden_boots', count: 1 }];
+  bot.inventory.items = () => kit;
+  // Before the Nether the iron pickaxe is the ladder's, as it was.
+  assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe');
+  goal.gameProgress.milestones.nether_entered = { at: Date.now(), dimension: 'nether' };
+  assert.equal(nextGameStage(bot, goal).phase, 'iron_leggings', 'the leggings first');
+  // The armour whole: the iron pickaxe comes back.
+  bot.inventory.items = () => kit.concat({ name: 'iron_leggings', count: 1 });
+  assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe');
+  // The armour set aside: the iron pickaxe is not held back by it.
+  bot.inventory.items = () => kit;
+  goal.survival = {}; setAside(goal, 'rung', 'iron_leggings', 'failed twice without progress', 1800000);
+  assert.equal(nextGameStage(bot, goal).phase, 'iron_pickaxe');
+  // With no pickaxe that works, a pickaxe first as before.
+  bot.inventory.items = () => kit.filter(i => i.name !== 'stone_pickaxe');
+  assert.match(nextGameStage(bot, goal).phase, /_pickaxe$/);
+});

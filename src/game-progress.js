@@ -382,6 +382,15 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // A worn tool is still in the inventory, so the replacement is one more
   // than what is carried; asking for one would be satisfied by the worn one.
   const another = item => ({ phase: item, action: 'acquire', item, count: carried.filter(n => n === item).length + 1 });
+  // A piece of iron armour still to make whose rung is not resting (the
+  // armour rung below, read ahead).
+  const armourOwed = () => {
+    const lacks = ['helmet', 'chestplate', 'leggings', 'boots']
+      .filter(piece => !carried.some(name => (/^(iron|diamond|netherite)_/.test(name) || (piece === 'boots' && name === 'golden_boots')) && name.endsWith(`_${piece}`)));
+    const gold = !carried.includes('golden_boots') && ready({ phase: 'golden_boots' });
+    const owed = lacks.filter(piece => !(piece === 'boots' && gold)).map(piece => `iron_${piece}`);
+    return owed.length > 0 && ready({ phase: lacks.length === 4 ? 'iron_armour' : owed[0] });
+  };
   // A spare may wait its turn: with a worn pickaxe of the tier still carried
   // and working, the rung Jev left (surface_trip, a climb for its wood) is
   // not handed straight back. mid-229-q's spare, the iron one at 49 uses,
@@ -408,7 +417,16 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   // that failed twice without progress, work.js persist): nothing after them
   // needs them to start. The tools before them cannot.
   if (!carried.some(n => /_bed$/.test(n)) && !goal.survival?.home?.bed?.claimedAt && !isSetAside(goal, 'bed_search', 'wool') && ready({ phase: 'bed' })) return bedRung(bot, goal);
-  if (best('pickaxe') < 3 && !spare('iron_pickaxe', 3)) return another('iron_pickaxe');
+  // After the first Nether entry, with a stone pickaxe that works carried
+  // and a piece of armour still to make and not set aside, the iron goes to
+  // what is worn before another iron pickaxe: stone mines the iron, the
+  // rock and the netherrack, and three ingots are near half the leggings.
+  // 25591 (2026-10-03 18:57 to 20:28Z), back from the Nether with nine rods
+  // and seven pearls in its chest, was handed the iron pickaxe seven times,
+  // with no other rung beside it, as each one wore out on the tunnels to
+  // the ore: ninety minutes for one pair of leggings (note 1108).
+  const pickAfterArmour = best('pickaxe') < 3 && !spare('iron_pickaxe', 3) && best('pickaxe') >= 2 && !beforeNether(goal) && armourOwed();
+  if (best('pickaxe') < 3 && !spare('iron_pickaxe', 3) && !pickAfterArmour) return another('iron_pickaxe');
   if (!carried.includes('shield') && ready({ phase: 'shield' })) return { phase: 'shield', action: 'acquire', item: 'shield', count: 1 };
   if (best('sword') < 3 && ready({ phase: 'iron_sword' })) return another('iron_sword');
   if (!carried.includes('bucket') && !carried.includes('water_bucket') && ready({ phase: 'bucket' })) return { phase: 'bucket', action: 'acquire', item: 'bucket', count: 1 };
@@ -433,6 +451,8 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   const missing = short.filter(piece => !(piece === 'boots' && goldFeet)).map(piece => `iron_${piece}`);
   const armourPhase = short.length === 4 ? 'iron_armour' : missing[0];
   if (missing.length && ready({ phase: armourPhase })) return { phase: armourPhase, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
+  // The iron pickaxe that waited for the armour (note 1108).
+  if (pickAfterArmour) return another('iron_pickaxe');
   if (!carried.includes('golden_boots') && ready({ phase: 'golden_boots' })) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   // Most of the run's deaths were arrows: skeletons in the caves, crossbow
   // piglins in the Nether, and a bot that could only answer at arm's length.
