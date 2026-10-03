@@ -51,6 +51,16 @@ async function eatThrough(bot, task, item, { eaten, helps = () => true, tries = 
     if (!have) return { eaten: false, tries: n - 1, cuts, why: `no ${item.name.replaceAll('_', ' ')} left` };
     await bot.equip(have, 'hand');
     for (let k = 0; k < 10 && bot.heldItem?.name !== item.name; k++) { task.check(); await sleep(50); }
+    // A shield up as the meal begins is let down first (note 1079): with the
+    // off hand in use nothing is eaten, and once the meal is on the shield's
+    // lowering only notes it down (combat.js lowerShield takes it as down
+    // already). 25595 (2026-10-03 15:51:37 to 15:51:41Z), alight among four
+    // blazes at 4.8 health, chose the meal at 0.79 and again at 0.58 with
+    // its shield raised to their fireballs: the shield stayed up through
+    // both, hunger stayed 17, and it burned to death.
+    let up = !!bot._shieldRaised;
+    try { up = up || require('./shot-reflex').shieldActive(bot) === true; } catch (_) { /* no flags read */ }
+    if (up) { try { bot.deactivateItem(); } catch (_) { /* nothing in use */ } bot._shieldRaised = false; bot._shieldLowered = { at: Date.now(), by: 'meal' }; }
     await sleep(SETTLE_MS);
     const meal = bot._meal = { item: item.name, at: Date.now(), endsAt: Date.now() + EAT_MS + 400, cut: null };
     let result;

@@ -200,3 +200,26 @@ test('with a blaze in line and food a meal helps with, the eat says whether it i
   assert.match(o.step_out_and_eat.description, /^Walk 1 block \(about 0.2 seconds, in their fire meanwhile\) to a spot no line from the blaze reaches, then eat the beef there \(about 1.6 seconds\)\..* over the walk and the meal, the 0.2 seconds of walking there included/);
   assert.ok(o.step_out_and_eat.description.length < 700, o.step_out_and_eat.description);
 });
+
+test('a shield up as the meal begins is let down before the eating, and the meal is eaten (note 1079)', async () => {
+  const { bot, calls } = fightBot();
+  const order = [];
+  bot._shieldRaised = true; bot._shieldRaisedAt = Date.now();
+  const lower = bot.deactivateItem?.bind(bot);
+  bot.deactivateItem = () => { order.push('lowered'); lower?.(); };
+  bot.consume = () => { order.push('consume'); return new Promise(resolve => setTimeout(() => { bot.food = 20; resolve(); }, 30)); };
+  bot.equip = async item => { bot.heldItem = { name: item.name }; };
+  const r = await meal.eatThrough(bot, { check() {} }, { name: 'beef' }, { eaten: () => bot.food > 17 });
+  assert.equal(r.eaten, true);
+  assert.deepEqual(order, ['lowered', 'consume']);
+  assert.equal(bot._shieldRaised, false);
+  // With no shield up nothing is let down.
+  const plain = fightBot().bot;
+  let lowered = 0;
+  plain.deactivateItem = () => { lowered++; };
+  plain.consume = () => new Promise(resolve => setTimeout(() => { plain.food = 20; resolve(); }, 30));
+  plain.equip = async item => { plain.heldItem = { name: item.name }; };
+  await meal.eatThrough(plain, { check() {} }, { name: 'beef' }, { eaten: () => plain.food > 17 });
+  assert.equal(lowered, 0);
+  void calls;
+});
