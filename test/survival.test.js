@@ -4741,6 +4741,8 @@ test('in a corridor with a skeleton down its length, the side opening out of its
   const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
   assert(options.out_of_sight, Object.keys(options).join(','));
   assert.match(options.out_of_sight.description, /^Walk 4 blocks to a spot [\d.]+ blocks off that no line from the skeleton reaches \(rock stands between\), about 0\.9 seconds in their fire on the way/);
+  // The record of first answers to a skeleton is said on it in the Overworld (note 1100).
+  assert.match(options.out_of_sight.description, /the arrows a skeleton landed in the minute after the first answer to it: a walk out of its sight/);
   assert.match(options.out_of_sight.description, /About [\d.]+ damage from the mobs here in the next fifteen seconds this way, the 0\.9 seconds of walking there included/);
   await options.out_of_sight.run();
   assert.deepEqual(went, new Vec3(-3, 64, 1));
@@ -4763,7 +4765,7 @@ test('a hiding spot whose walk ended where it began is said with why and passed 
   assert.equal(survival.state.stanceWhy, 'the walk to the spot at (-3, 64, 1) ended 3.2 blocks short of it, where it began: No path to the goal!');
   options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);
   assert.match(options.out_of_sight.description, /^Walk 5 blocks to a spot/, 'the next spot, not the one just failed');
-  assert.match(options.out_of_sight.description, /Not the spot tried just now: the walk to the spot at \(-3, 64, 1\) ended 3\.2 blocks short of it, where it began: No path to the goal!, 1 seconds ago\.$/);
+  assert.match(options.out_of_sight.description, /Not the spot tried just now: the walk to the spot at \(-3, 64, 1\) ended 3\.2 blocks short of it, where it began: No path to the goal!, 1 seconds ago\.( In the record \(.*)?$/);
   await options.out_of_sight.run();
   assert.deepEqual(walks[1], new Vec3(-3, 64, 2));
   options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, skeleton)], false);

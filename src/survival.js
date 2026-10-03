@@ -5478,6 +5478,13 @@ class Survival {
     // drop of 37 blocks into lava a block off, took the guard at 0.48.
     if (options.shield_guard && dropHere && dropHere.blocksAway <= 1 && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20)))
       options.shield_guard.description = `Held here, the shield does not hold the bot's ground: a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}, each blow the shield takes still knocks the bot about half a block with a hop, and the second or third puts it over. In the trials of 2026-10-03 (00:00Z to 09:20Z), of 6 falls into lava that began with the shield held at a drop (4 from this guard, 2 from the shield raised at a shot), 5 were deaths. ${options.shield_guard.description}`;
+    // A skeleton in sight in the Overworld: what the first answer to one
+    // cost in the record, on the three ways that leave it be (skeleton-
+    // record.js, note 1100).
+    if (bot.game?.dimension === 'overworld' && danger.some(t => t.entity.name === 'skeleton' && t.visible)) {
+      const sr = require('./skeleton-record'), carried = bot.inventory.items().some(i => i.name === 'shield') || bot.inventory.slots?.[45]?.name === 'shield';
+      for (const k of ['retreat', 'take_cover', 'out_of_sight']) if (options[k] && typeof options[k].description === 'string') options[k].description += sr.says(k, carried);
+    }
     // The pillar at a drop that kills with a hoglin about (note 1078): its
     // toss reaches a player two up, and a block from the edge the one blow
     // is the fall. The pillar said "about 2.8 damage ... none of them reaches
