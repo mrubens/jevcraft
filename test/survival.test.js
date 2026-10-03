@@ -4285,6 +4285,31 @@ test('at bedtime in a pocket on open ground, with a bed carried and no nook, sle
   assert.match(tree.sleep_beside?.description || '', /put the carried bed down on level ground beside it, \d+ blocks off, and sleep/, Object.keys(tree).join(','));
 });
 
+test('the bed beside planned at dusk is carried out unasked at bedtime only with nothing hostile within sixteen blocks; with a skeleton ten blocks off the pocket is asked about (note 1094)', async () => {
+  // 25589 (2026-10-03 19:29Z): the plan made with skeletons 21 blocks off opened the pocket at bedtime with one 10 blocks off; four arrows in ten seconds.
+  const run = async mobs => {
+    const origin = new Vec3(0, 64, 0);
+    const shell = new Set(require('../src/shelter').shell(origin).map(String));
+    const blockAt = p => { const f = p.floored(); const solid = f.y < 64 || shell.has(`${f}`); return { position: f, name: solid ? (f.y < 64 ? 'grass_block' : 'cobblestone') : 'air', boundingBox: solid ? 'block' : 'empty', diggable: true }; };
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, entities: mobs, health: 20, food: 20, registry: require('minecraft-data')('26.1'),
+      time: { timeOfDay: 13000, isDay: false }, entity: { position: origin.offset(0.5, 0, 0.5), onGround: true, velocity: new Vec3(0, 0, 0) }, oxygenLevel: 20,
+      inventory: { items: () => [{ name: 'white_bed', count: 1 }, { name: 'iron_pickaxe', count: 1 }, { name: 'cobblestone', count: 32 }], emptySlotCount: () => 10, slots: [] },
+      blockAt, world: { raycast: from => ({ name: 'cobblestone', position: new Vec3(1, 65, 0), intersect: from.offset(0.5, 0, 0) }) } });
+    const survival = new Survival(bot, { dig: async () => {}, place: async () => {}, navigate: async () => {} }, { state: { shelters: [{ origin: { ...origin }, dimension: 'overworld', verifiedAt: new Date().toISOString() }] }, client: { systemOne: async () => ({}) } });
+    survival.state.bedBesidePlan = { until: Date.now() + 600000 };
+    let asked = 0, left = 0;
+    survival.decide = async (task, goal, save, { id }) => { if (id === 'pocket_next') asked++; return { path: ['stay'], stale: false }; };
+    survival.wait = async () => {};
+    survival.leave = async () => { left++; };
+    survival.sleepStep = async () => {};
+    await survival.step(new Task('night'), { kind: 'win' }, () => {});
+    return { asked, left };
+  };
+  assert.deepEqual(await run({}), { asked: 0, left: 1 }, 'nothing about: the plan is carried out');
+  const skeleton = { id: 4, name: 'skeleton', type: 'hostile', position: new Vec3(10.5, 64, 0.5), height: 1.99, width: 0.6, isValid: true };
+  assert.deepEqual(await run({ 4: skeleton }), { asked: 1, left: 0 }, 'a skeleton ten blocks off: asked');
+});
+
 test('at dusk with a bed carried and no nook, a pocket now and the bed beside it at bedtime is offered, and kept at bedtime', async () => {
   // The night was asked at dusk, before a bed could be slept in, and answered with a pocket; mid-211-o's nights were 62 of 180 minutes (2026-09-27).
   const origin = new Vec3(0, 64, 0);

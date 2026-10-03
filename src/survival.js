@@ -10706,7 +10706,13 @@ class Survival {
         // 20:10:37Z) sat walled in underground eight minutes before the
         // pocket's question came (note 752i).
         || (this.state.sealedWait?.until > Date.now() && (bot.food ?? 20) < 18 && options.stay && !below ? 'stay' : null)
-        || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside ? 'sleep_beside' : null);
+        // The bed beside chosen at dusk is carried out unasked only while
+        // nothing hostile is within sixteen blocks: with one there the pocket
+        // is asked about, the bed among its ways. 25589 (19:29Z) chose it
+        // with skeletons twenty-one blocks off, and at bedtime, one ten
+        // blocks off behind the wall, opened the pocket unasked: four arrows
+        // in ten seconds, dead at 19:29:33Z (note 1094).
+        || (this.state.bedBesidePlan?.until > Date.now() && options.sleep_beside && !watcher && !about.length ? 'sleep_beside' : null);
       if (!choice) {
         const tree = Object.fromEntries(Object.entries(options).map(([k, o]) => [k, { description: o.description, ...(o.waits ? { waits: o.waits } : {}), ...(o.children ? { children: Object.fromEntries(Object.entries(o.children).map(([ck, c]) => [ck, { description: c.description }])) } : {}) }]));
         // Every way here resting goes up to survival_priority, which asks
