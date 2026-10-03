@@ -2444,6 +2444,13 @@ async function surfaceTrip(bot, task, goal, save, need, { siteDig = null, lava =
     const o = siteDig.origin, n = siteDig.cells.length;
     const off = Math.round(bot.entity.position.floored().distanceTo(o));
     tree.dig_site = { description: `Dig a site for the frame out of the rock here instead: the frame's cells and a walkway either side of it, four across and five high, ${n ? `${n} blocks to dig (${siteDig.kinds.join(', ')}), about ${Math.max(5, Math.round(n * 1.5))} seconds and ${n} pickaxe uses` : 'already open'}, at ${o.x}, ${o.y}, ${o.z} ${off <= 4 ? 'where the bot stands' : `${off} blocks from where the bot stands`}; the floor under it is solid and no water, lava or falling block is beside it. The frame goes down there${lava ? `, ${Math.round(Math.hypot(lava.x - o.x, lava.y - o.y, lava.z - o.z))} blocks from the lava chosen` : ''}.${castSiteSays(o, cast)}` };
+    // The two side by side on the climb, and the site first (note 976): with
+    // a site to dig out on offer the climb was still taken 86 times of 156
+    // on 2026-10-02 and 03 (25589, 03:58Z: 60 blocks up for a frame 64 over
+    // its lava, against 21 blocks dug in 32 seconds ten blocks from it), the
+    // question saying "the step in hand needs the surface".
+    if (cost) tree.climb.description += ` Against the site dug out here: about ${Math.max(5, Math.round(n * 1.5))} seconds of digging and the frame is begun ${off ? `${off} blocks from here` : 'where the bot stands'}; the climb is about ${Math.round(cost.seconds)} seconds before a site is even looked for up top.`;
+    { const first = { dig_site: tree.dig_site }; for (const k of Object.keys(tree)) { if (k !== 'dig_site') first[k] = tree[k]; delete tree[k]; } Object.assign(tree, first); }
   }
   // The climb's site is not known until the top; its bucket trips are at
   // least the height back down to the lava, said beside the dug site's
