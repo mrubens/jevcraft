@@ -4917,7 +4917,15 @@ class Survival {
             this.report(goal, save, { action: 'run_from', threats: biters.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
             lowerShield(bot);
             const at = lead.entity.position, from = bot.entity.position.clone();
-            try { await this.actions.navigate(bot, task, new goals.GoalInvert(new goals.GoalNear(at.x, at.y, at.z, RUN_FROM)), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
+            // On foot first; where no walk leads out (a pit, a pocket it dug: 25598,
+            // 2026-10-03 12:53:37Z, four zombies come down into its shaft, "the run
+            // from them came 1 blocks: No route"), the same run with a block dug or
+            // laid where the way wants one (note 1054).
+            const goalAway = () => new goals.GoalInvert(new goals.GoalNear(at.x, at.y, at.z, RUN_FROM));
+            try {
+              try { await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
+              catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name) || bot.entity.position.distanceTo(from) >= 4) throw err; await this.actions.navigate(bot, task, goalAway(), { timeoutMs: 9000, stallMs: 2500, sprint: true }); }
+            }
             catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); }
           } };
       }
