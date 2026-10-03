@@ -658,7 +658,20 @@ function shotOptions(bot, warned) {
     } catch (_) { return { keep: '', shield: '' }; }
   })();
   if (tree.shield_up && bitersSay.shield) tree.shield_up.description += bitersSay.shield;
-  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.${bitersSay.keep}${heldSays}` };
+  // A ghast's fireball that lands also pushes: by a deadly drop it is priced
+  // by the fall. 25581 (2026-10-03 19:48:54Z), on a span 36 blocks over
+  // lava at 4.6 health, was told of keeping on only "the ghast's fireball,
+  // about 3.4 health a landing", kept on, and the next one put it in the
+  // lava (note 1099).
+  const pushSays = (() => {
+    try {
+      if (!warned.some(e => e.name === 'ghast')) return '';
+      const drop = require('./terrain').dropNear(bot, bot.entity.position.floored(), 2);
+      if (!drop || !(drop.into === 'lava' || drop.damage >= (bot.health ?? 20))) return '';
+      return ` A fireball that lands also throws the bot (1.7 blocks half the time, up to 4.2 nine times in ten): ${drop.blocksAway ? `the drop ${drop.blocksAway} block${drop.blocksAway === 1 ? '' : 's'} off` : 'the drop under the bot'} is ${drop.fallBlocks} block${drop.fallBlocks === 1 ? '' : 's'}${drop.into === 'lava' ? ' into lava' : ''}, so a landing here is priced by that fall, not by its hurt; a fireball struck as it comes does not land.`;
+    } catch (_) { return ''; }
+  })();
+  tree.keep_on = { description: `Leave the shield down and keep on with ${doing}: the shots that land, ${hits.join('; ') || 'for what they cost'}, at ${round(bot.health ?? 20)} health.${pushSays}${bitersSay.keep}${heldSays}` };
   // What has been hitting the bot, first on every answer, and a hit taken
   // with the shield up from a side it does not face (note 752b: 25594 took
   // two hits "(shield up)" and was offered shield_up and keep_on five times

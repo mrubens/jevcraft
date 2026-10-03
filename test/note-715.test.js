@@ -232,3 +232,15 @@ test('a lone ghast far off holds its last shot_answer for its next warning too, 
   await new Promise(r => setImmediate(r));
   assert.equal(asked.length, 2, 'asked again once it came notably nearer');
 });
+
+test('keeping on under a ghast on a span over lava says the fall its fireball\'s push is; on firm ground it does not (note 1099)', () => {
+  // 25581 (2026-10-03 19:48:54Z): 4.6 health on a span 36 blocks over lava, keep_on told only "about 3.4 health a landing".
+  const { bot, ghast } = ghastWorld({ distance: 26 });
+  bot.health = 4.6;
+  // A span one wide along x at y 69, lava 36 below.
+  bot.blockAt = p => { const f = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }; const name = f.y === 69 && f.z === 0 ? 'netherrack' : f.y <= 33 ? 'lava' : 'air'; return { name, position: f, boundingBox: name === 'netherrack' ? 'block' : 'empty' }; };
+  const span = reflex.shotOptions(bot, [ghast]);
+  assert.match(span.keep_on.description, /A fireball that lands also throws the bot .*the drop 1 block off is \d+ blocks into lava, so a landing here is priced by that fall, not by its hurt/);
+  bot.blockAt = p => { const f = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }; const solid = f.y <= 69; return { name: solid ? 'netherrack' : 'air', position: f, boundingBox: solid ? 'block' : 'empty' }; };
+  assert.doesNotMatch(reflex.shotOptions(bot, [ghast]).keep_on.description, /priced by that fall/);
+});
