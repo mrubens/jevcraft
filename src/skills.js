@@ -339,6 +339,16 @@ function digGuardPlugin(bot) {
     const p = bot.entity?.position, cell = block?.position;
     let why = null;
     try { why = p && cell ? require('./terrain').digExposes(require('./terrain').atOf(bot), p, cell, { health: bot.health ?? 20 }) : null; } catch (_) { why = null; }
+    // Buried already, the head in a block: the dig that would let sand or
+    // gravel down onto the body is the dig that gets it out, a block of the
+    // column at a time (note 1003). 25585 (2026-10-03 06:43:10 to 06:43:15Z),
+    // its head in sand on the climb to the surface, had the sand at its
+    // head refused three times ("would come down through the body ...
+    // buried, it suffocates") and suffocated there, 11.7 health to none.
+    if (why && /would come down through the body/.test(why)) {
+      let headIn = null; try { headIn = bot.blockAt(p.offset(0, 1.62, 0).floored()); } catch (_) { headIn = null; }
+      if (headIn?.boundingBox === 'block') why = null;
+    }
     if (why) {
       const err = Object.assign(new Error(`Not dug: the ${String(block.name || 'block').replaceAll('_', ' ')} at (${cell.x}, ${cell.y}, ${cell.z}): ${why}`), { name: 'DigRefused' });
       console.log(`[dig] ${err.message}`);
