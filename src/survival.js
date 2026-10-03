@@ -541,7 +541,8 @@ const HIDING_STANCES = new Set(['out_of_sight', 'nook', 'take_cover']);
 // held to its end with none of these failed; any stance that ended without
 // them, with nothing changed about it since, would end the same again.
 // Stances that stand behind the raised shield from their first moment.
-const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge', 'shield_the_blast']);
+const SHIELD_STANCES = new Set(['shield_guard', 'shield_the_charge', 'shield_the_blast', 'shield_the_tridents']);
+const TRIDENT_RANGE = 24;
 // The runs, and how long one may stand still before it has failed (note 752h).
 const RUN_STANCES = new Set(['retreat', 'leave_reach']), RUN_STUCK_MS = 2000;
 // How long a held stance's mobs may stay unseen and no nearer before it ends (note 752j).
@@ -4121,6 +4122,46 @@ class Survival {
             raiseShield(bot);
             await sleep(100);
           }
+          return true;
+        } };
+    }
+    // A drowned with a trident met as a player meets one (note 1093): the
+    // shield kept toward it, backing away until it has no line or is past
+    // its throw. It throws about every two seconds at anything in its sight,
+    // eight before armour, and a shield raised toward it takes each whole.
+    // 25598 (2026-10-03 19:20:48 to 19:20:53Z), nothing worn and a shield in
+    // its off hand, a drowned 16 blocks off: the first trident landed with
+    // the shield a quarter second up, the meal chosen at 12 health lowered
+    // it for the second, the swim out for the third; 20 health to none in
+    // four seconds, and no way offered kept the shield to it.
+    const tridents = danger.filter(t => t.entity.name === 'drowned' && t.entity.heldItem?.name === 'trident' && t.visible && t.distance <= TRIDENT_RANGE);
+    if (tridents.length && (shielded || bot.inventory.items().some(i => i.name === 'shield'))) {
+      const near = tridents.sort((a, b) => a.distance - b.distance)[0];
+      const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+      const hit = Math.round(require('./combat-estimate').afterArmour(8, require('./combat-estimate').armourOf(worn)) * 10) / 10;
+      options.shield_the_tridents = { expects: { damage: 0, seconds: 15, oneHit: hit },
+        description: `Face the drowned ${Math.round(near.distance)} blocks off with the shield raised${shielded ? '' : ' (taken to the off hand first)'} and back away from it, the shield kept to it the whole way, until it has no line to the bot or is ${TRIDENT_RANGE} blocks off: it throws a trident about every two seconds at what it sees, about ${hit} through what is worn (8 before it), ${Math.ceil((bot.health ?? 20) / Math.max(hit, 0.1))} of them end the bot from ${Math.round((bot.health ?? 20) * 10) / 10} health, and a shield raised toward it takes each one whole (the game's rule; the shield blocks a quarter second after it is raised). Nothing is eaten, dug or swum for meanwhile: each of those lowers the shield or turns it away. The backing stops at a drop or at lava behind.`,
+        run: async () => {
+          this.report(goal, save, { action: 'shield_the_tridents', threats: tridents.map(t => t.entity.name), health: bot.health, stance: true });
+          if (!shielded) { const sh = bot.inventory.items().find(i => i.name === 'shield'); if (sh) await bot.equip(sh, 'off-hand'); }
+          const e = near.entity;
+          try {
+            for (const until = Date.now() + 15000; Date.now() < until;) {
+              task.check();
+              if (e.isValid === false || !e.position) break;
+              const d = e.position.distanceTo(bot.entity.position);
+              const seen = threats(bot, TRIDENT_RANGE + 8).find(t => t.entity === e)?.visible;
+              if (d > TRIDENT_RANGE || !seen) break;
+              await bot.lookAt?.(e.position.offset(0, 1.5, 0), true);
+              raiseShield(bot);
+              // Backward, the face and the shield to it; not over an edge.
+              const yaw = bot.entity.yaw, behind = bot.entity.position.offset(Math.sin(yaw) * 1.2, 0, Math.cos(yaw) * 1.2).floored();
+              const safe = !besideDrop(bot, behind) && !lavaBeside(bot, behind);
+              bot.setControlState?.('back', safe);
+              if (bot.entity.isInWater) bot.setControlState?.('jump', true);
+              await sleep(100);
+            }
+          } finally { bot.setControlState?.('back', false); bot.setControlState?.('jump', false); }
           return true;
         } };
     }

@@ -6126,3 +6126,27 @@ test('a pillar with a hoglin at the bot before the blocks are down says so first
   assert.match(near.pillar.description, /^The hoglin 2\.3 blocks off is at the bot in about 0\.2 seconds, before the pillar's two blocks are down \(about [\d.]+\): its blow lands on the way up and throws the bot off the first block/);
   assert.doesNotMatch(far.pillar.description, /before the pillar's two blocks are down/);
 });
+
+test('a drowned with a trident in sight and a shield carried: shield_the_tridents is offered, said by the trident, and backs away with the shield to it (note 1093)', async () => {
+  const bot = creeperBot({ wall: false, creeper: null, weapon: 'iron_sword', health: 20 });
+  const drowned = { id: 7, name: 'drowned', type: 'hostile', position: new Vec3(16.5, 64, 0.5), height: 1.95, width: 0.6, isValid: true, heldItem: { name: 'trident' } };
+  bot.entities = { 7: drowned };
+  const items = bot.inventory.items();
+  bot.inventory.items = () => [...items, { name: 'shield', count: 1 }];
+  const keys = [], equipped = [];
+  bot.setControlState = (k, v) => { keys.push([k, v]); };
+  bot.equip = async (item, where) => { equipped.push([item.name, where]); };
+  bot.lookAt = async () => {};
+  bot.activateItem = () => {}; bot.deactivateItem = () => {};
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: drowned, distance: 16, visible: true }], false);
+  assert.ok(options.shield_the_tridents, `offered: ${Object.keys(options)}`);
+  assert.match(options.shield_the_tridents.description, /Face the drowned 16 blocks off with the shield raised and back away from it.*throws a trident about every two seconds.*8 before it/);
+  setTimeout(() => { drowned.isValid = false; }, 250);
+  await options.shield_the_tridents.run();
+  assert.ok(keys.some(([k, v]) => k === 'back' && v === true), JSON.stringify(keys));
+  assert.deepEqual(keys.at(-2), ['back', false]);
+  // No trident held, or no shield: not offered.
+  const plain = { ...drowned, heldItem: null };
+  assert.equal(survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: plain, distance: 16, visible: true }], false).shield_the_tridents, undefined);
+});
