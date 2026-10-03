@@ -1562,6 +1562,36 @@ function airWays(bot, task, onAction = () => {}) {
   const up = secondsUp(bot);
   if (up != null && up <= left) ways.straight_up = { description: `Swim and dig straight up to air: about ${round(up)} seconds, against ${round(breath)} seconds of breath${up > breath ? ' (past the breath, into the drowning)' : ''}.`,
     run: async () => { onAction({ action: 'surface', oxygen: bot.oxygenLevel, way: 'straight_up' }); await straightUp(bot, task); } };
+  // A mob at arm's length while the head is under (note 1036): the blows it
+  // lands over the next seconds are said first on each way, the strike is a
+  // way where the breath left covers it, and the ways that leave the bot
+  // alive come before the ways that do not, as alight (note 1018). 25584
+  // (2026-10-03 09:52:20 to 09:52:38Z), head under at 20 health with a
+  // drowned at arm's length, took swim_to_air ("about 0.8 seconds") twice
+  // and nothing else was asked for sixteen seconds: fourteen blows, no swing.
+  const blows = blowsAtBody(bot);
+  if (blows?.mobs?.length && Object.keys(ways).length) {
+    const ce = require('./combat-estimate'), { defenseWeapon } = require('./combat');
+    const k = blows.mobs[0], hp = round(bot.health ?? 20), words = n => String(n).replaceAll('_', ' ');
+    const weapon = defenseWeapon(bot)?.name || null, dmg = ce.WEAPONS[weapon]?.[0] ?? 1, health = ce.MOBS[k.name]?.health ?? 20;
+    const swings = Math.ceil(health / ce.afterArmour(dmg, { points: ce.MOBS[k.name]?.armor || 0, toughness: 0 }));
+    const secs = round(swings * ce.swingEvery(weapon)), span = Math.max(2, Math.ceil(secs));
+    if (secs <= left) {
+      const landed = Math.round(secs / k.every * ce.STRUCK);
+      ways.strike_at_arm = { seconds: secs, description: `Turn to the ${words(k.name)} ${k.distance} blocks off${k.behind ? ', behind the bot,' : ''} and strike it with the ${weapon ? words(weapon) : 'fist'}, head under: it has ${health} health, about ${swings} swing${swings === 1 ? '' : 's'}, about ${secs} seconds, against ${round(breath)} seconds of breath${secs > breath ? ' (past the breath, into the drowning)' : ''}. A mob being struck is knocked back by each swing and lands about a third of its blows: about ${landed} of them, about ${round(landed * k.blow)} health through the armour worn. Killed, it strikes no more, and the way to air is asked of then.`,
+        run: () => strikeAtArm(bot, task, k.id, onAction, { seconds: secs + 2 }) };
+    }
+    const over = []; let priced = 0;
+    for (const [key, way] of Object.entries(ways)) {
+      const struck = key === 'strike_at_arm';
+      const landed = struck ? Math.round(secs / k.every * ce.STRUCK) : Math.floor(span / k.every);
+      const hurt = round(landed * k.blow);
+      way.description = `Over the next ${span} seconds this way${struck ? '' : `, if nothing turns to the ${words(k.name)} at arm's length`}: about ${hurt} health, ${landed} blow${landed === 1 ? '' : 's'}, from ${hp}${hurt >= hp ? ': more than the bot has' : ''} (each blow about ${k.blow} through the armour worn and knocking the body back off its swim). ${way.description}`;
+      if (hurt >= hp) over.push(key);
+      priced++;
+    }
+    if (over.length && over.length < priced) for (const key of over) { const way = ways[key]; delete ways[key]; ways[key] = way; }
+  }
   return ways;
 }
 
