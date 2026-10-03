@@ -59,6 +59,18 @@ const netherBlocks = bot => ['cobblestone', 'cobbled_deepslate', 'netherrack', '
 // 654, 655).
 const SPARE_PICKAXE_DURABILITY = 24, PICKAXES_TAKEN = 2;
 const PICK_TIER = { stone: 2, iron: 3, diamond: 4, netherite: 5 };
+// The uses the pickaxes carried have between them, and what a stay takes: a
+// new iron pickaxe's 250, or two stone ones'. 25585 (2026-10-03 18:38Z)
+// crossed with an iron and a stone pickaxe, each over the twenty-four and
+// near worn out, and no wood: both broke seven minutes in on a tunnel and
+// the netherrack mined for blocks, and an hour on it stood at a fortress
+// with no block to lay and every leg refused (note 1095).
+const NETHER_PICK_USES = 250;
+const pickUses = bot => soundPickaxes(bot).reduce((n, i) => {
+  const max = bot.registry?.itemsByName?.[i.name]?.maxDurability;
+  return n + (max ? max - (i.durabilityUsed || 0) : Infinity);
+}, 0);
+const pickShort = bot => soundPickaxes(bot).length < PICKAXES_TAKEN || pickUses(bot) < NETHER_PICK_USES;
 // The pockets read whole, the cursor and the grid too (note 779).
 const soundPickaxes = bot => require('./pickaxe-roles').carriedItems(bot).filter(i => {
   const m = /^(\w+)_pickaxe$/.exec(i.name), max = bot.registry?.itemsByName?.[i.name]?.maxDurability;
@@ -113,8 +125,9 @@ function kitItems(bot) {
   const uses = pickaxeDurability(bot);
   const best = Number.isFinite(uses) ? uses : null;
   const sound = soundPickaxes(bot).length;
-  items.push({ key: 'pickaxe', rung: 'nether_pickaxe', short: sound < PICKAXES_TAKEN, carried: sound, wants: PICKAXES_TAKEN,
-    says: `Pickaxe: ${picks.length ? `${picks.map(i => words(i.name)).join(', ')} carried, the best with ${best ?? 'many'} uses left` : 'none carried'}; the code would take ${PICKAXES_TAKEN}, stone or better with at least ${SPARE_PICKAXE_DURABILITY} uses each, the one in use and a spare: the way out of a pocket, a fortress wall or a buried portal is dug. A stone pickaxe is three cobblestone or blackstone and two sticks.${kitBudgetSays(bot)}` });
+  const between = pickUses(bot);
+  items.push({ key: 'pickaxe', rung: 'nether_pickaxe', short: pickShort(bot), carried: sound, wants: PICKAXES_TAKEN,
+    says: `Pickaxe: ${picks.length ? `${picks.map(i => words(i.name)).join(', ')} carried, the best with ${best ?? 'many'} uses left${Number.isFinite(between) ? `, ${between} between the sound ones` : ''}` : 'none carried'}; the code would take ${PICKAXES_TAKEN}, stone or better with at least ${SPARE_PICKAXE_DURABILITY} uses each and ${NETHER_PICK_USES} between them (a new iron pickaxe's, or two new stone ones'), the one in use and a spare: the way out of a pocket, a fortress wall or a buried portal is dug, a tunnel two high wears two uses a block and netherrack mined for blocks one each, and with no wood carried a pickaxe that breaks there is not made again. A stone pickaxe is three cobblestone or blackstone and two sticks.${kitBudgetSays(bot)}` });
   // A piece of gold worn: piglins leave a player wearing one be, and go for
   // one with none on sight. mid-242-g crossed in iron with no gold, a piglin
   // hit it from twenty to eight in two blows and the second threw it into
@@ -281,9 +294,9 @@ function kitRungs(bot, goal = {}) {
   if (!stay) return [];
   const out = [];
   const sound = soundPickaxes(bot).length;
-  if (sound < PICKAXES_TAKEN) {
+  if (pickShort(bot)) {
     const item = countOf(bot, 'iron_ingot') + require('./pickaxe-budget').smeltableIron(bot).ingots >= 3 ? 'iron_pickaxe' : 'stone_pickaxe';
-    out.push({ phase: 'nether_pickaxe', action: 'acquire', item, count: countOf(bot, item) + 1, kit: 'pickaxe', carried: sound, wants: PICKAXES_TAKEN });
+    out.push({ phase: 'nether_pickaxe', action: 'acquire', item, count: countOf(bot, item) + 1, kit: 'pickaxe', carried: sound, wants: PICKAXES_TAKEN, ...(Number.isFinite(pickUses(bot)) ? { uses: pickUses(bot) } : {}) });
   }
   const blocks = netherBlocks(bot);
   if (blocks < NETHER_BLOCKS) out.push({ phase: 'nether_blocks', action: 'acquire', item: 'cobblestone', count: countOf(bot, 'cobblestone') + NETHER_BLOCKS - blocks, kit: 'blocks', carried: blocks, wants: NETHER_BLOCKS });
@@ -333,7 +346,7 @@ function chestRungSays(rung) {
 // The steps a pickaxe or the blocks take come beside it (strategy.js
 // rungTakes); the food's ways are priced here, the nearest first.
 function kitRungSays(bot, goal, rung) {
-  if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? (countOf(bot, 'iron_ingot') >= 3 ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : `Iron: 3 of the ${require('./pickaxe-budget').smeltableIron(bot).says}, about 250 uses.`) : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}${kitBudgetSays(bot)}${spareSaid(bot, goal)}`;
+  if (rung.kit === 'pickaxe') return ` ${rung.carried} of the ${rung.wants} pickaxes the crossing takes are carried (stone or better, ${SPARE_PICKAXE_DURABILITY} uses or more each${rung.uses != null ? `; ${rung.uses} uses between them, of the ${NETHER_PICK_USES} a stay takes: a tunnel two high wears two a block, netherrack mined for blocks one each` : ''}): the one in use and a spare, since the way out of a pocket, a wall or a buried portal is dug, and 5 of 7 bots in the Nether had no pickaxe left (notes 654, 655). ${rung.item === 'iron_pickaxe' ? (countOf(bot, 'iron_ingot') >= 3 ? `Iron: 3 of the ${countOf(bot, 'iron_ingot')} iron ingots carried, about 250 uses.` : `Iron: 3 of the ${require('./pickaxe-budget').smeltableIron(bot).says}, about 250 uses.`) : 'Stone: 3 cobblestone, about 131 uses (3 iron ingots would make it iron, about 250).'}${kitBudgetSays(bot)}${spareSaid(bot, goal)}`;
   if (rung.kit === 'blocks') return ` ${rung.carried} blocks carried of the ${rung.wants} the crossing takes (cobblestone, netherrack, dirt and the like): a portal can open on a ledge or an island over lava, a bridge takes a block a step, and spans stopped where the blocks ran out (notes 650, 655). Stone mined wears the pickaxe a use a block.`;
   if (rung.kit === 'chest') return chestRungSays(rung);
   if (rung.kit !== 'food') return '';
@@ -352,4 +365,4 @@ function kitRungSays(bot, goal, rung) {
   return ` ${rung.carried} food points carried, ${rung.wants} wanted: the Nether stay the goal still needs, about ${stay.minutes} minutes for ${left}, at about ${NETHER_HUNGER_AN_HOUR} hunger an hour. Health comes back only at hunger 18 or more, and in the Nether a hoglin is the only meat. At the crossing ${c.none} of ${c.n} carried no food and ${c.shortOfStay} were short of the stay (note 664).${ways}`;
 }
 
-module.exports = { kitBlocksWanted, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, chestRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };
+module.exports = { kitBlocksWanted, NETHER_PICK_USES, pickUses, SPARE_PICKAXE_DURABILITY, KIT_PHASES, chestWood, CHEST_PLANKS, kitRungs, kitRungSays, chestRungSays, soundPickaxes, PICKAXES_TAKEN, cauldronSet, stayCauldron, netherStay, staySays, NETHER_HUNGER_AN_HOUR, netherHitSays, kitItems, valuablesAt, kitSummary, netherBlocks, logsCarried, NETHER_HEALTH, NETHER_BLOCKS, SPARE_PICKAXE_DURABILITY, EXPEDITION_LOGS };

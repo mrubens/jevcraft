@@ -62,7 +62,7 @@ test('with no spare pickaxe the spare is a rung: iron when three ingots are carr
   const [rung] = openRungs(iron, goal);
   assert.deepEqual([rung.phase, rung.item, rung.count], ['nether_pickaxe', 'iron_pickaxe', 2], 'one more than the one carried');
   const said = rungOption(rung, true, iron, goal).description;
-  assert.match(said, /^Get a spare pickaxe for the Nether\. 1 of the 2 pickaxes the crossing takes are carried \(stone or better, 24 uses or more each\)/);
+  assert.match(said, /^Get a spare pickaxe for the Nether\. 1 of the 2 pickaxes the crossing takes are carried \(stone or better, 24 uses or more each; 250 uses between them, of the 250 a stay takes: a tunnel two high wears two a block, netherrack mined for blocks one each\)/);
   assert.match(said, /5 of 7 bots in the Nether had no pickaxe left \(notes 654, 655\)\. Iron: 3 of the 5 iron ingots carried, about 250 uses\./);
   const stone = atPortal({ ...FED, stone_pickaxe: 0, iron_ingot: 1 });
   assert.deepEqual(openRungs(stone, goal).map(r => [r.phase, r.item]), [['nether_pickaxe', 'stone_pickaxe']]);
