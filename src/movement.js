@@ -587,7 +587,15 @@ class SurvivalMovements extends Movements {
     try {
       this.maxDropDown = limit + 1;
       const landing = super.getLandingBlock(node, direction);
-      return landing?.position && node.y - landing.position.y <= limit ? landing : null;
+      if (!(landing?.position && node.y - landing.position.y <= limit)) return null;
+      // No drop of two or more onto a cell with a deadly fall beside it
+      // (note 1046): a body that drops carries on past where it lands, and
+      // a landing one block wide at a cliff's edge is the edge. 25593
+      // (2026-10-03 11:09:23Z), seven rods kept, on its walk to the portal
+      // dropped three from (-57, 60, 63) for the one-wide step at (-56, 57,
+      // 62), slid past it and fell thirty blocks into the lava sea.
+      if (node.y - landing.position.y >= 2 && !landing.liquid && this.deadlyDropBeside({ x: landing.position.x, y: landing.position.y, z: landing.position.z })) return null;
+      return landing;
     } finally { this.maxDropDown = limit; }
   }
 
