@@ -100,3 +100,29 @@ test('past fifteen minutes the restart still waits for a calm moment, and quits 
   assert.equal(bot2.quitted, true);
   stop2();
 });
+
+test('a loop spun a minute with nothing done and no hurt is restarted for the new build though a mob is near (note 1064)', async () => {
+  const { spun } = require('../src/quiet-restart');
+  const now = Date.now();
+  const creeper = { id: 2, name: 'creeper', type: 'hostile', position: new Vec3(3, 64, 0), height: 1.7, isValid: true };
+  const bot = { isAlive: true, entity: { position: new Vec3(0, 64, 0), onGround: true }, entities: { 2: creeper }, quit() { this.quitted = true; } };
+  assert.equal(spun(bot, now), false, 'no spin');
+  bot._spin = { since: now - 30000, last: now };
+  assert.equal(spun(bot, now), false, 'thirty seconds of it: not yet');
+  bot._spin = { since: now - 90000, last: now - 20000 };
+  assert.equal(spun(bot, now), false, 'ended twenty seconds ago');
+  bot._spin = { since: now - 90000, last: now }; bot._recentHurtAt = now - 5000;
+  assert.equal(spun(bot, now), false, 'hurt meanwhile');
+  delete bot._recentHurtAt;
+  assert.equal(spun(bot, now), true);
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'jev-')), 'restart-requested');
+  let exited = 0;
+  const lines = [], log = console.log; console.log = l => lines.push(String(l));
+  const stop = watchRestartRequest(bot, file, { startedAt: Date.now() - 1000, every: 20, exit: () => { exited++; }, port: 25594, watched: () => true });
+  try {
+    fs.writeFileSync(file, '');
+    for (let i = 0; i < 40 && !bot.quitted; i++) { bot._spin.last = Date.now(); await new Promise(r => setTimeout(r, 25)); }
+    assert.equal(bot.quitted, true);
+    assert(lines.some(l => /its loop has spun for \d+ seconds with nothing done, not hurt meanwhile: quitting for the new build/.test(l)), lines.join('\n'));
+  } finally { console.log = log; stop(); }
+});

@@ -8746,7 +8746,7 @@ async function runIdle(bot, task, goal, store, { survival, decisionClient, recov
   // Paced as runGoal's is: a stall answered at once, or an escalation
   // thrown and caught, went straight round again with no pause, 52,000
   // escalations in the idle loop of mid-242-ah-nether-1-fortress-1 (note 609).
-  const spin = spinGuard();
+  const spin = spinGuard(bot);
   try {
   while (!until()) {
     await spin(goal);
@@ -8883,12 +8883,16 @@ const reportedLayer = (before, after) => after?.at && after.at !== before && req
 // mid-242-ah-nether-1-fortress-1 and mid-243-af-nether-3-fortress-2 then
 // stood in the idle loop for the rest of their trials (note 609).
 const shown = (v, n) => String(JSON.stringify(v) ?? 'none').slice(0, n);
-function spinGuard() {
+// How long the spin has gone on is kept on the bot (bot._spin: since, last),
+// a spin within five seconds of the last being the same one: the restart
+// asked for reads it (quiet-restart.js, note 1064).
+function spinGuard(bot = null) {
   let passes = [];
   return async goal => {
     await new Promise(resolve => setImmediate(resolve));
     const now = Date.now(); passes = passes.filter(t => now - t < 1000); passes.push(now);
     if (passes.length > 20) {
+      if (bot) bot._spin = { since: bot._spin && now - bot._spin.last < 5000 ? bot._spin.since : now, last: now };
       if (passes.length === 21 || passes.length % 200 === 0) console.log(`[loop] spinning: ${passes.length} passes in a second at ${shown(goal?.step, 200)} survival=${shown(goal?.survivalAction, 160)} error=${goal?.lastError || ''}`);
       await new Promise(resolve => setTimeout(resolve, 250));
     }
@@ -8918,7 +8922,7 @@ async function runGoal(bot, task, goal, store, { maxSteps = Infinity, onStep = (
   // timed the player out and the process sat at 110% CPU four evenings
   // running. Every pass lets I/O run; more than twenty passes a second
   // is a spin, logged with the step so it can be found, and slowed.
-  const spin = spinGuard();
+  const spin = spinGuard(bot);
   for (let n = 0; n < (goal.kind === 'follow' ? Infinity : goal.kind === 'build' ? Math.max(maxSteps, 30000) : maxSteps); n++) {
     await spin(goal);
     task.interruptCheck = undefined;

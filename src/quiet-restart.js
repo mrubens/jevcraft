@@ -56,6 +56,21 @@ function calm(bot) {
   return true;
 }
 
+// The loop spinning a minute and more (work.js spinGuard), on the ground,
+// not hurt in that time (note 1064): nothing is being done that a restart
+// would cut, and the new build may be what ends it. 25594 (2026-10-03
+// 14:17Z on), sealed in its pocket with a creeper 3 blocks off, spun on a
+// question that was never asked; the build that mends it was asked for at
+// 14:38Z, and with the creeper within 24 blocks no moment was quiet: it
+// spun on for the forty-five minutes.
+const SPIN_MS = 60000;
+function spun(bot, now = Date.now()) {
+  const s = bot._spin, e = bot.entity;
+  if (!s || !e || !bot.isAlive || now - s.last > 5000 || s.last - s.since < SPIN_MS) return false;
+  if (e.onGround === false || e.isInWater || e.isInLava || bot._spanning) return false;
+  return !((bot._recentHurtAt || 0) >= s.since);
+}
+
 // Is a supervisor running for this port? (Asked of the process list, as
 // retry.sh does; anything that cannot be asked counts as none.)
 function supervised(port) {
@@ -79,7 +94,8 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
       return;
     }
     const waited = now() - askedAt;
-    const why = quiet(bot) ? 'quiet now' : waited > LAST_MS ? 'forty-five minutes waited' : waited > WAIT_MS && calm(bot) ? 'fifteen minutes waited and calm now' : null;
+    const why = quiet(bot) ? 'quiet now' : waited > LAST_MS ? 'forty-five minutes waited' : waited > WAIT_MS && calm(bot) ? 'fifteen minutes waited and calm now'
+      : spun(bot, now()) ? `its loop has spun for ${Math.round((bot._spin.last - bot._spin.since) / 1000)} seconds with nothing done, not hurt meanwhile` : null;
     if (why) {
       clearInterval(timer);
       console.log(`[restart] asked for, and ${why}: quitting for the new build`);
@@ -91,4 +107,4 @@ function watchRestartRequest(bot, file, { startedAt = Date.now(), every = 2000, 
   return () => clearInterval(timer);
 }
 
-module.exports = { watchRestartRequest, quiet, calm, supervised, WAIT_MS, LAST_MS };
+module.exports = { watchRestartRequest, quiet, calm, spun, supervised, WAIT_MS, LAST_MS };
