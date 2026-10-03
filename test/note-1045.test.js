@@ -16,9 +16,11 @@ const goalWith = contents => ({ kind: 'win', survival: { home: { origin: { x: 0,
 test('an empty chest forty blocks off, iron and sticks carried: a spare pickaxe and sword made and left, said with the day\'s record', () => {
   const b = bot({ iron_pickaxe: 1, iron_sword: 1, iron_ingot: 9, stick: 6, cooked_beef: 8 });
   const o = stash.spareKitOffer(b, goalWith({}));
+  // The deaths that followed a death are said with it (note 1115).
+  assert.match(o.says, /of 110 deaths 20 were followed by another of the same trial within ten minutes and 30 within twenty, the bot back with empty hands among the mobs by its bed: a sword and a pickaxe in the chest are in hand the moment it is back\.$/);
   assert.ok(o, 'offered');
   assert.deepEqual(o.makes.map(m => m.item), ['iron_pickaxe', 'iron_sword']);
-  assert.match(o.says, /^Leave a spare kit in the stash chest at home first, \d+ blocks off, about \d+ seconds each way: make a spare iron pickaxe \(3 of the 9 iron ingots carried\) and a spare iron sword \(2 of the 9 iron ingots carried\), a few seconds at a crafting table, and leave them there \(the chest holds nothing yet\)\. A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on 2026-10-03 the 4 deaths in the Nether with the chest empty were back in the Nether 22 to 52 minutes later, a median 37, the kit mined and smelted again\.$/);
+  assert.match(o.says, /^Leave a spare kit in the stash chest at home first, \d+ blocks off, about \d+ seconds each way: make a spare iron pickaxe \(3 of the 9 iron ingots carried\) and a spare iron sword \(2 of the 9 iron ingots carried\), a few seconds at a crafting table, and leave them there \(the chest holds nothing yet\)\. A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on 2026-10-03 the 4 deaths in the Nether with the chest empty were back in the Nether 22 to 52 minutes later, a median 37, the kit mined and smelted again\./);
 });
 
 test('stone where no iron is spare; nothing where the chest holds both, the pockets make neither, or the chest is out of reach', () => {

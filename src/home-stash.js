@@ -614,6 +614,16 @@ async function stashValuables(bot, task, goal, save, actions, { now = Date.now()
 // Nether 22 to 52 minutes later, a median 37, the kit mined and smelted
 // again from bare hands. -> { home, far, lacks, makes, holds, says } or null
 const REGEAR = Object.freeze({ day: '2026-10-03', deaths: 4, min: 22, max: 52, median: 37 });
+// And the deaths that followed a death, the bot back bare (night-record.js
+// BARE, note 1114): what a sword in the chest by the bed is against (note
+// 1115). The spare kit was offered 183 times at the crossing on 2026-10-03
+// (12:00 to 20:00Z) and taken none, told only of the minutes of regearing.
+function bareAgainSays() {
+  try {
+    const { BARE } = require('./night-record');
+    return ` And on ${BARE.day} (${BARE.from} to ${BARE.to}), of ${BARE.deaths} deaths ${BARE.again10} were followed by another of the same trial within ten minutes and ${BARE.again20} within twenty, the bot back with empty hands among the mobs by its bed: a sword and a pickaxe in the chest are in hand the moment it is back.`;
+  } catch (_) { return ''; }
+}
 function spareKitOffer(bot, goal, { now = Date.now() } = {}) {
   if (bot.game?.gameMode !== 'survival' || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
   const { homeOf, homeDistance, HOME_REACH } = base();
@@ -639,7 +649,7 @@ function spareKitOffer(bot, goal, { now = Date.now() } = {}) {
   const made = makes.length ? `make ${makes.map(m => `a spare ${words(m.item)} (${m.from})`).join(' and ')}, a few seconds at a crafting table, and ` : '';
   const carried = spare.length ? `${makes.length ? 'with ' : ''}the spare ${spare.join(' and ')} carried` : '';
   return { home, far, lacks, makes, holds,
-    says: `Leave a spare kit in the stash chest at home first, ${far} blocks off, about ${Math.max(5, Math.round(far / 4.3))} seconds each way: ${made}leave ${makes.length ? `${makes.length === 1 ? 'it' : 'them'}${carried ? ` ${carried}` : ''}` : carried} there (the chest holds ${holds || 'nothing yet'}). A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on ${REGEAR.day} the ${REGEAR.deaths} deaths in the Nether with the chest empty were back in the Nether ${REGEAR.min} to ${REGEAR.max} minutes later, a median ${REGEAR.median}, the kit mined and smelted again.` };
+    says: `Leave a spare kit in the stash chest at home first, ${far} blocks off, about ${Math.max(5, Math.round(far / 4.3))} seconds each way: ${made}leave ${makes.length ? `${makes.length === 1 ? 'it' : 'them'}${carried ? ` ${carried}` : ''}` : carried} there (the chest holds ${holds || 'nothing yet'}). A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on ${REGEAR.day} the ${REGEAR.deaths} deaths in the Nether with the chest empty were back in the Nether ${REGEAR.min} to ${REGEAR.max} minutes later, a median ${REGEAR.median}, the kit mined and smelted again.${bareAgainSays()}` };
 }
 // Made, carried home and put in. -> the moves stored
 async function leaveSpareKit(bot, task, goal, save, actions, offer) {
