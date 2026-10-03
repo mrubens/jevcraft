@@ -411,6 +411,35 @@ function encounter(bot, task, target, expiresAt) {
   return () => { bot._combatEncounter = previous; };
 }
 
+// The fight from a slot (enderman-slot.js), kept as fightForDrop keeps its
+// own: the kind claimed for as long as it runs, the body's floor, the result
+// in the hunt's history.
+async function slotForDrop(bot, task, target, goal, save, actions, site) {
+  task.check(); checkAir(bot);
+  const state = goal.mobHunt, slot = require('./enderman-slot');
+  const before = countOf(bot, state.item), deadline = Date.now() + 90000;
+  const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
+  const previousInterrupt = task.interruptCheck;
+  const claim = () => { bot._huntingEntity = { name: target.name, until: Date.now() + 5000 }; };
+  claim();
+  task.interruptCheck = () => { claim(); previousInterrupt?.(); checkAir(bot); checkThreats(bot); };
+  bot._provokedMobs ||= new Map(); bot._provokedMobs.set(target.id, target);
+  goal.step = { action: 'slot_fight', entity: target.name, entityId: target.id, item: state.item, at: { x: site.mouth.x, y: site.mouth.y, z: site.mouth.z } }; save();
+  let r = null;
+  try { r = await slot.fight(bot, task, site, { navigate: actions.navigate, seconds: 75, item: state.item }); }
+  finally { task.interruptCheck = previousInterrupt; movement.restore(); restoreEncounter(); }
+  const pickedUp = Math.max(0, countOf(bot, state.item) - before);
+  const result = { at: new Date().toISOString(), entity: target.name, entityId: target.id, item: state.item, slot: true,
+    deathObserved: r.kills > 0, kills: r.kills, hurt: Math.round(r.hurt * 10) / 10, ended: r.ended, pickedUp, health: bot.health,
+    outcome: pickedUp ? 'pickup_confirmed' : r.kills ? 'no_pickup' : `slot: ${r.ended}` };
+  state.history = [...(state.history || []), result].slice(-40);
+  state.slotFights = [...(state.slotFights || []), { at: Date.now(), kills: r.kills, pearls: pickedUp, hurt: result.hurt, ended: r.ended }].slice(-12);
+  // One that did not come is left a while, and the slot with it.
+  if (!r.kills) setAside(goal, 'hunt_target', target.uuid || target.id, result.outcome, 120000);
+  bot.emit('mob_hunt', result); save();
+  return result;
+}
+
 async function fightForDrop(bot, task, target, goal, save, actions, { timeoutMs = 30000, pickupWaitMs = 2500 } = {}) {
   task.check(); checkAir(bot);
   const state = goal.mobHunt, handler = handlers[target.name];
@@ -755,6 +784,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
+      // An enderman is also taken from a slot dug in the rock at hand, with
+      // no walk to it wanted (enderman-slot.js, note 981).
+      if (target.name === 'enderman' && typeof bot.dig === 'function' && !Object.keys(tree).some(k => k.startsWith('slot_'))) {
+        let site = null; try { site = require('./enderman-slot').slotSite(bot); } catch (_) { site = null; }
+        if (site) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off. ${require('./enderman-slot').recordSays()}`,
+          run: () => slotForDrop(bot, task, target, goal, save, actions, site) };
+      }
       // A blaze no walk reaches is still a fight with a bow in range (note
       // 774): offered as the bow's alone, said so below (bowOnly).
       const reached = canStrike(bot, target) || await combatRoute(bot, task, target, movement, 400, { pushed });

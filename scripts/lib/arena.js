@@ -214,6 +214,11 @@ const DRILLS = Object.freeze([
   { name: 'enderman_single', mode: 'hunt', entity: 'enderman', item: 'ender_pearl', count: 1, arena: 'room', stand: 'open',
     at: [[2016.5, 77, 2010.5]], seconds: 60, expect: { deaths: 0, cleared: true, damage: 12 },
     why: 'Death eighteen. Forty health and four a hit through iron, and it teleports: running is no answer, only the fight or a roof it cannot stand under.' },
+  // Note 981: the same enderman with a wall three blocks off: the slot is on
+  // offer beside the open fight, and Jev's to take.
+  { name: 'enderman_wall', mode: 'hunt', entity: 'enderman', item: 'ender_pearl', count: 1, arena: 'room', stand: 'wall',
+    at: [[2016.5, 77, 2010.5]], seconds: 90, expect: { deaths: 0, cleared: true, damage: 6 },
+    why: 'Note 981: an enderman with rock at hand is fought from a slot two high it cannot come into; in the open the trials\' kit died in 3 of 13.' },
   // A warped forest as the hunt actually finds one: three endermen within
   // six blocks of each other and of the bot, the density warped-pearls.js
   // walks to (note 713). The bot has never carried more than 5 of the 13

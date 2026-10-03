@@ -95,6 +95,9 @@ function awayPitch(bot, yaw = bot.entity.yaw, pitch = bot.entity.pitch) {
 
 function gazePlugin(bot) {
   const tick = () => {
+    // A stare meant (enderman-slot.js, note 981): from the back of a slot
+    // two high the enderman it brings cannot reach the bot.
+    if (bot._stareMeant?.until > Date.now()) return;
     if (lowerGaze(bot)) bot.entity.pitch = DOWN;
     const away = awayPitch(bot);
     if (away != null) bot.entity.pitch = away;
