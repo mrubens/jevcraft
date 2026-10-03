@@ -8215,7 +8215,25 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const woodOf = () => bot.inventory.items().filter(i => /_(log|stem|planks)$/.test(i.name)).reduce((n, i) => n + (/_planks$/.test(i.name) ? i.count : i.count * 4), 0);
   const heads = bot.inventory.items().filter(i => /^(cobblestone|cobbled_deepslate|blackstone)$/.test(i.name)).reduce((n, i) => n + i.count, 0);
   const sticksShort = countOf(bot, 'stick') < 4 && woodOf() >= 2 && heads >= 3 ? { sticks: countOf(bot, 'stick'), heads, table: countOf(bot, 'crafting_table') > 0 } : null;
-  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !spareMade && !sticksShort && !empty.length && !entry.length) { delete goal.preparingNether; return true; }
+  // A spare pickaxe and sword left in the chest at home (home-stash.js spareKitOffer, note 1045).
+  let spareKit = null; try { spareKit = require('./home-stash').spareKitOffer(bot, goal); } catch (_) { spareKit = null; }
+  // The blaze rods carried, left in a chest on this side before the crossing
+  // (rod-bank.js, note 1048): the bank on arrival is only for rods still
+  // wanted, and with every rod had the crossing for pearls took them back
+  // into the Nether in the pack. 25593 (2026-10-03 11:08Z) set about taking
+  // its four Nether rods out of their chests with thirteen pearls still to
+  // hunt.
+  let rodsToBank = null;
+  try {
+    const rb = require('./rod-bank'), rsx = require('./rod-stash');
+    const rods = rsx.rodsEquivalent(bot);
+    if (rods >= 1 && !rb.pending(goal) && !isSetAside(goal, 'rod_bank', 'store')) {
+      const there = rb.chestThere(bot, goal), n = require('./eye-need').need(bot, goal);
+      rodsToBank = { rods, how: there.how, says: `Put the ${rods} blaze rod${rods === 1 ? '' : 's'} carried in ${there.says} before crossing, a few seconds: ${n.rodsLeft ? `${n.rodsLeft} more ${n.rodsLeft === 1 ? 'is' : 'are'} wanted` : `every rod wanted is had, and the Nether is entered for ${n.pearlsLeft} pearl${n.pearlsLeft === 1 ? '' : 's'}`}. A death in the Nether drops what is carried, often into lava; rods in the chest are counted as held through any death and taken out when the pearls are had too.` };
+    }
+  } catch (_) { rodsToBank = null; }
+  // Asked for these too, with nothing short (notes 1045, 1048).
+  if (!short.length && !valuables && !cauldron && !chest && !noPickaxe && !spareMade && !sticksShort && !empty.length && !entry.length && !spareKit && !rodsToBank) { delete goal.preparingNether; return true; }
   // A record left from another crossing, untouched half an hour, starts afresh.
   if (goal.crossingKit && now - (goal.crossingKit.lastAt || 0) > 30 * 60000) delete goal.crossingKit;
   const kit = goal.crossingKit ||= { workedMs: 0, spent: {} };
@@ -8282,9 +8300,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const lead = i.key === 'health' && hungryWait ? `Eat the ${waitMeal.item.name.replaceAll('_', ' ')} first (hunger ${bot.food}${waitMeal.after ? ` to ${waitMeal.after}` : ''}; health comes back from eighteen), then wait here and heal, to sixteen.` : TOP_UP[i.key];
     tree[`top_up_${i.key}`] = { description: `${lead}${i.key === 'health' ? healWaitSays(bot, i, waitMeal) : ''} ${i.says}${soFar(i)}` };
   }
-  // A spare pickaxe and sword left in the chest at home (home-stash.js spareKitOffer, note 1045).
-  let spareKit = null; try { spareKit = require('./home-stash').spareKitOffer(bot, goal); } catch (_) { spareKit = null; }
   if (spareKit) tree.spare_kit = { description: spareKit.says };
+  if (rodsToBank) tree.bank_rods_first = { description: rodsToBank.says };
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
   const keys = Object.keys(tree).sort().join(',');
@@ -8318,7 +8335,11 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
   const started = Date.now();
   try {
-    if (pick === 'spare_kit') await require('./home-stash').leaveSpareKit(bot, task, goal, save, homeActions(), spareKit);
+    if (pick === 'bank_rods_first') {
+      goal.rodBank = { at: Date.now(), rods: rodsToBank.rods, from: { x: Math.round(bot.entity.position.x), y: Math.round(bot.entity.position.y), z: Math.round(bot.entity.position.z) }, chest: rodsToBank.how, onArrival: true }; save();
+      bot.chat?.(`The ${rodsToBank.rods === 1 ? 'rod' : `${rodsToBank.rods} rods`} into a chest here before I cross.`);
+    }
+    else if (pick === 'spare_kit') await require('./home-stash').leaveSpareKit(bot, task, goal, save, homeActions(), spareKit);
     else if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
     else if (pick === 'top_up_pickaxe') {

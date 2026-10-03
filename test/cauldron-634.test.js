@@ -169,3 +169,18 @@ test('the inventory-room question says what the cauldron and the water bucket ar
   assert.match(offered.drop_cauldron || '', /for a fire on the body in the Nether: put down and filled from a water bucket \(1 carried\), a body that steps into it is put out at once/);
   assert.match(offered.drop_water_bucket || '', /and the water for the cauldron carried: emptied into it, it fills it, in the Nether as anywhere \(a poured bucket evaporates there\)/);
 });
+
+// Note 1048: blaze rods carried at the crossing can be left in a chest on this side first.
+test('crossing_kit offers to put the rods carried in a chest before crossing, and the pick begins the bank (note 1048)', async () => {
+  const { crossingKitReady } = require('../src/work');
+  const b = bot({ items: [['stick', 4], ['cobblestone', 128], ['stone_pickaxe'], ['stone_pickaxe'], ['golden_boots'], ['oak_log', 8], ['crafting_table'], ['chest'], ['blaze_rod', 7]], dimension: 'overworld' });
+  b.game.difficulty = 'peaceful'; b.game.gameMode = 'survival'; b.chat = () => {};
+  let asked = null;
+  const client = { systemOne: async ({ questions }) => { asked = questions.branch_0.criteria; return { answers: { branch_0: { choice: 'bank_rods_first', confidence: 0.8 } } }; } };
+  const goal = { kind: 'win' };
+  const ready = await crossingKitReady(b, { check() {}, opportunityClient: client }, goal, () => {}, client);
+  assert.ok(asked?.bank_rods_first, Object.keys(asked || {}).join(','));
+  assert.match(asked.bank_rods_first, /^Put the 7 blaze rods carried in .* before crossing, a few seconds: every rod wanted is had, and the Nether is entered for \d+ pearls\. A death in the Nether drops what is carried, often into lava; rods in the chest are counted as held through any death and taken out when the pearls are had too\.$/);
+  assert.notEqual(ready, true, 'not crossed yet: the bank first');
+  assert.equal(goal.rodBank?.rods, 7);
+});
