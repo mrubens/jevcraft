@@ -36,7 +36,12 @@ function pick(variants, last, ...args) {
   const fresh = said.length > 1 ? said.filter(l => l !== last) : said;
   return fresh[Math.min(fresh.length - 1, Math.floor(random() * fresh.length))];
 }
-const names = action => [...new Set((action.threats || []).map(t => name(t.name || t)))];
+// A count reported where the names go is no names (note 1032): the cap
+// overhead reported its mobs as a number, the map threw, and the error ended
+// the goal in hand four times on 2026-10-03 (25592 01:08Z, 25591 06:52Z,
+// 25598 08:35Z and 09:31Z).
+const threatsOf = action => Array.isArray(action?.threats) ? action.threats : [];
+const names = action => [...new Set(threatsOf(action).map(t => name(t.name || t)))];
 const SURVIVAL = {
   gather_shelter_materials: ["It's getting dark. I'd better grab some blocks to dig in with.", 'Night soon. Grabbing some blocks for a shelter.', "Sun's going down. I need blocks to wall myself in."],
   seal_shelter: ['Walling myself in for the night.', 'Sealing up my little hideout.', 'Closing myself in till morning.'],
@@ -62,7 +67,7 @@ const SURVIVAL = {
     (goal, action) => names(action).length ? `Nope, not fighting that ${names(action).join(' and that ')}. Running!` : 'Nope. Running!',
     (goal, action) => names(action).length ? `There's a ${names(action).join(' and a ')} after me! Backing off.` : 'Something is after me! Backing off.'],
   hold_defensive_position: ["I'm cornered. I'll hold here and fight.", 'Nowhere to go. I stand my ground here.'],
-  dig_in_bunker: (goal, action) => `Too many of them out here (${[...new Set(action.threats || [])].join(', ')}). I'll dig into the rock and take them one at a time.`,
+  dig_in_bunker: (goal, action) => `Too many of them out here (${[...new Set(threatsOf(action))].join(', ')}). I'll dig into the rock and take them one at a time.`,
   fight: [(goal, action) => `Come on then, ${names(action).join(' and ')}!`, (goal, action) => `Take that, ${names(action).join(' and ')}!`, (goal, action) => `Fighting the ${names(action).join(' and the ')}!`],
   // Not "nowhere to run": said with the retreat on offer beside it (25590,
   // note 752g).
@@ -345,7 +350,7 @@ function narrate(bot, goal, { now = Date.now() } = {}) {
     const phrase = survivalLines(action.action, { dimension: bot.game?.dimension, morning: isMorning(bot), fed: fed(bot) });
     let line = pick(phrase, state.line, goal, action);
     if (action.action === 'escape_threat') {
-      const names = [...new Set((action.threats || []).map(t => name(t.name || t)))].sort().join(',');
+      const names = [...new Set(threatsOf(action).map(t => name(t.name || t)))].sort().join(',');
       const repeat = escape && escape.names === names && now - escape.at < ESCAPE_REPEAT_MS;
       state.escape = { at: now, names, resolved: false, announced: repeat ? escape.announced : false };
       if (repeat) { state.survival = action.at; return null; }

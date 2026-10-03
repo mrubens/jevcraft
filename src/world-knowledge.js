@@ -14,7 +14,13 @@
 // running goal is the freshest copy there is.
 // The explored map and the landmarks found (exploration.js) are the
 // world's too: an area walked once is known to every goal after.
-const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch', 'explored', 'landmarks', 'looted'];
+// The chests the bot left its rods in (rod-stash.js, rod-bank.js) are the
+// world's too (note 1032): they stand where they were put whatever goal is
+// running. 25598 (mid-242-we-nether-1, 2026-10-03 09:31:40Z) had banked
+// three blaze rods past its portal; a step's error ended its goal, the
+// dream launched the next one, and that goal knew no chest: "First: obtain
+// blaze rods", seven wanted again.
+const WORLD_FIELDS = ['portals', 'portalFrame', 'villages', 'endPortal', 'strongholdSearch', 'explored', 'landmarks', 'looted', 'rodStashes'];
 // Progress toward beating the game belongs to the run, and every run of it
 // in this world is the same run: the milestones are observations of this
 // bot in this world.

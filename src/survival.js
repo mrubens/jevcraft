@@ -4507,7 +4507,7 @@ class Survival {
         options.cap_fight = { ...(plan.kind !== 'here' ? { expects: { damage: capCost.damage, seconds: capCost.seconds, oneHit } } : {}),
           description: `${stepWords}: an enderman cannot path into a cell that low, so once the lid is up none still about can ever land a hit, and the sword goes on reaching its legs from here.` + (plan.kind === 'place' ? buildCost : '') + (plan.kind === 'here' ? '' : costSays(capCost, bot.health, mobs, { doing: plan.kind === 'place' ? 'placing the lid' : 'stepping in', done: 'Capped' })) + (danger.length > 1 ? ` ${danger.length} endermen about; capped, they are taken one at a time, whichever is struck.` : ''),
           run: async () => {
-            this.report(goal, save, { action: 'cap_overhead', kind: plan.kind, blocks: plan.blocks, threats: danger.length, health: bot.health, stance: true });
+            this.report(goal, save, { action: 'cap_overhead', kind: plan.kind, blocks: plan.blocks, threats: danger.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
             if (!await roof.takeRoof(bot, task, this.actions, plan)) return false;
             return fightStance ? fightStance.run() : false;
           } };
