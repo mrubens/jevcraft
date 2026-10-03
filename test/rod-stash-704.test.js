@@ -294,3 +294,13 @@ test('seen by a blaze, the chest here is offered by a step out of its line first
   // No chest and no wood for one: not offered either way.
   assert.equal(rs.keepOption(frameBot({ inventory: { blaze_rod: 2, iron_sword: 1 }, blazes: seeing }), { check() {} }, huntGoal(), () => {}, {}), null);
 });
+
+test('pearls carried with no rod in the pack are offered the chest too, said as pearls (note 1092)', () => {
+  const goal = { kind: 'win', request: 'beat the game' };
+  const bot = frameBot({ inventory: { ...rec.inventory, blaze_rod: 0, ender_pearl: 4, chest: 1 } });
+  const offer = rs.stashOffer(bot, goal);
+  assert.ok(offer, 'offered with four pearls and no rod');
+  assert.deepEqual(offer.what.filter(w => w.item === 'ender_pearl'), [{ item: 'ender_pearl', count: 4 }]);
+  assert.match(rs.carriedSays(offer), /^4 ender pearls carried and no rod\. A death drops them where the bot falls/);
+  assert.equal(rs.stashOffer(frameBot({ inventory: { ...rec.inventory, blaze_rod: 0, ender_pearl: 0, chest: 1 } }), goal), null, 'nothing to keep: no offer');
+});

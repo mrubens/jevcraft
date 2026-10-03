@@ -164,10 +164,16 @@ const lullNow = (bot, now) => { try { return require('./spawner-clock').lull(bot
 // and the caller prices the seconds in their fire: at a swarm some blaze
 // always has a line, and 2 of 70 deaths with rods (2026-09-29T23:00Z to
 // 2026-09-30T17:00Z) had it offered in their last minute.
+const pearlsHeld = bot => countOf(bot, 'ender_pearl') + countOf(bot, 'ender_eye');
 function stashOffer(bot, goal, { now = Date.now(), underFire = false } = {}) {
   if (!bot?.entity || !inNether(bot) || bot.game?.gameMode !== 'survival') return null;
   const rods = rodsEquivalent(bot);
-  if (rods < ROD_MIN) return null;
+  // Pearls carried alone are kept too (note 1092): the offer wanted a rod in
+  // the pack, and a bot whose rods were in its chest already was never asked
+  // about the pearls it got after. 25593's port (2026-10-03 18:28 to
+  // 18:48Z), six rods in its chest, hunted endermen to four pearls in its
+  // pack and lost them to a wither skeleton.
+  if (rods < ROD_MIN && !pearlsHeld(bot)) return null;
   if (isSetAside(goal, 'rod_stash', 'here', now)) return null;
   let left = 1, wanted = null, pearls = 0; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; pearls = n.pearlsLeft; } catch (_) { left = 1; }
   // Every rod had and no pearl wanted, the way out is next: nothing to keep here for (note 1021).
@@ -205,6 +211,10 @@ function offerSays(offer, { riskInState = false } = {}) {
 }
 // The rods carried and what a death does to them, with the records' row.
 function carriedSays(offer) {
+  if (!offer.rods) {
+    const pearls = (offer.what || []).filter(w => /ender_(pearl|eye)/.test(w.item)).reduce((n, w) => n + w.count, 0);
+    return `${plural(pearls, 'ender pearl')} carried and no rod. A death drops them where the bot falls (lava burns them; on the ground they vanish five minutes after) and the bot comes back to life in the Overworld, far from them.`;
+  }
   const of = offer.wanted ? `, ${offer.rods} of the ${offer.wanted} the goal wants` : '';
   return `${plural(offer.rods, 'blaze rod')} carried${of}. A death drops them where the bot falls (lava burns them; on the ground they vanish five minutes after) and the bot comes back to life in the Overworld, far from them. ${heldSays(offer.rods)}`;
 }
@@ -276,7 +286,7 @@ async function stashRods(bot, task, goal, save, actions, offer, { step = 'stash_
 function stepOutOffer(bot, goal, now = Date.now()) {
   if (!bot?.entity || !inNether(bot) || bot.game?.gameMode !== 'survival') return null;
   const rods = rodsEquivalent(bot);
-  if (rods < ROD_MIN || isSetAside(goal, 'rod_stash', 'here', now)) return null;
+  if ((rods < ROD_MIN && !pearlsHeld(bot)) || isSetAside(goal, 'rod_stash', 'here', now)) return null;
   let left = 1, wanted = null, pearls = 0; try { const n = require('./eye-need').need(bot, goal); left = n.rodsLeft; wanted = n.rodsWanted; pearls = n.pearlsLeft; } catch (_) { left = 1; }
   // Every rod had and no pearl wanted, the way out is next: nothing to keep here for (note 1021).
   if (!left && !pearls) return null;

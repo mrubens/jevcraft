@@ -937,6 +937,13 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // The rods got so far out through the portal to a chest on the Overworld
   // side, and back for the rest (rod-bank.js, note 760).
   if (state.entity === 'blaze') { const bank = require('./rod-bank').bankOffer(bot, goal); if (bank) tree.bank_rods = require('./rod-bank').option(bot, task, goal, save, actions, bank); }
+  // The pearls got so far kept in a chest before the next enderman (rod-
+  // stash.js keepOption, note 1092): the one already here where it is near,
+  // else one put down from the pack.
+  if (state.entity === 'enderman' && state.item === 'ender_pearl' && require('./rod-stash').countOf(bot, 'ender_pearl') > 0) {
+    let keep = null; try { keep = require('./rod-stash').keepOption(bot, task, goal, save, actions, { thenSays: 'Then the hunt goes on with nothing in the pack to lose.' }); } catch (_) { keep = null; }
+    if (keep) tree.keep_pearls = { description: keep.description, run: keep.run };
+  }
   // Walled in by its own blocks with no blaze a walk reaches: the wall
   // opened toward the nearest is a way of its own (note 891). The walk the
   // attacks are counted by digs nothing (note 774), so from inside a box no
