@@ -24,8 +24,12 @@ test('in a hold with hunger under eighteen and health short, the food carried is
   const bot = holdBot();
   assert.equal(await stand.eatInHold(bot, new Task('hold')), true);
   assert.equal(bot.food, 20);
-  const fed = holdBot({ food: 18 });
-  assert.equal(await stand.eatInHold(fed, new Task('hold')), false);
+  const fed = holdBot({ food: 18, health: 16 });
+  assert.equal(await stand.eatInHold(fed, new Task('hold')), false, 'healing at eighteen with sixteen health: not eaten');
+  // Fourteen health or less at eighteen or nineteen: eaten for the saturation's fast healing (note 994).
+  const slow = holdBot({ food: 19, health: 12.9 });
+  assert.equal(await stand.eatInHold(slow, new Task('hold')), true);
+  assert.equal(slow.food, 20);
   const whole = holdBot({ health: 20 });
   assert.equal(await stand.eatInHold(whole, new Task('hold')), false);
   const none = holdBot({ stock: [['iron_sword', 1]] });

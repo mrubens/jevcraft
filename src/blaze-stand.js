@@ -679,9 +679,16 @@ function flamesTouching(bot) {
 // out, strike, shield and fetch rods), and two fireballs through the window
 // ended it. Eaten between volleys, the shield down for its 1.6 seconds; not
 // begun again within five seconds of one cut short.
-const HOLD_MEAL_EVERY_MS = 5000;
+const HOLD_MEAL_EVERY_MS = 5000, HOLD_MEAL_HEALTH = 14;
 async function eatInHold(bot, task) {
-  if ((bot.food ?? 20) >= 18 || (bot.health ?? 20) >= 20) return false;
+  // Under eighteen nothing heals; at eighteen and nineteen a health comes
+  // back each four seconds, and at twenty with a meal's saturation one each
+  // half second (note 994): with fourteen health or less the meal is eaten
+  // for that. 25594 (2026-10-03 06:06:42 to 06:07:14Z) healed 5 health in
+  // 32 seconds at hunger 18 and 19, cooked beef carried, was back at 17 by
+  // the next volley and died there at 06:08:12; 25593 the same at 06:11.
+  const food = bot.food ?? 20, health = bot.health ?? 20;
+  if (health >= 20 || food >= 20 || !(food < 18 || health <= HOLD_MEAL_HEALTH)) return false;
   if (Date.now() - (bot._holdMealAt || 0) < HOLD_MEAL_EVERY_MS) return false;
   let item = null; try { item = require('./vitals').chooseFood(bot) || null; } catch (_) { item = null; }
   if (!item) return false;
@@ -690,7 +697,7 @@ async function eatInHold(bot, task) {
   bot.pathfinder?.setGoal?.(null); bot.clearControlStates?.();
   require('./combat').lowerShield(bot);
   const before = bot.food ?? 0;
-  const r = await require('./meal').eatThrough(bot, task, item, { eaten: () => (bot.food ?? 0) > before, helps: () => (bot.food ?? 20) < 18, tries: 2 });
+  const r = await require('./meal').eatThrough(bot, task, item, { eaten: () => (bot.food ?? 0) > before, helps: () => (bot.food ?? 20) < 20, tries: 2 });
   if (r.eaten) console.log(`[hold] ate ${item.name.replaceAll('_', ' ')} in the hold: hunger ${before} to ${bot.food}, health ${Math.round((bot.health ?? 0) * 10) / 10}`);
   return true;
 }
