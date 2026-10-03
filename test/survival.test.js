@@ -6228,3 +6228,25 @@ test('striking a ghast\'s fireball back with calm zombified piglins about says t
   assert.match(about.return_fireball.description, /3 zombified piglins stand within 32 blocks, the nearest \d+ off, calm now: a fireball the bot strikes is the bot's own from then, and where it bursts within about two blocks of one, every zombified piglin about turns on the bot, about [\d.]+ a blow each/);
   assert.doesNotMatch(none.return_fireball.description, /zombified piglin/);
 });
+
+test('a pillar a block from a drop into lava with a zombie at hand leads with the fall, its figure the fall; well back from the edge it does not (note 1118)', () => {
+  // 25598 (2026-10-03 21:19:13Z): on a span 17 over lava, a piglin 1.7 blocks off, the pillar taken at 0.43; its arrow landed as the bot rose and it was in the lava a second on.
+  const zombie = { id: 3, name: 'zombie', type: 'hostile', position: new Vec3(2.5, 64, 0.5), height: 1.95, width: 0.6, isValid: true };
+  const world = ledgeWorld();
+  const make = x => {
+    const z = { ...zombie, position: new Vec3(x - 3, 64, 0.5) };
+    const bot = Object.assign(new EventEmitter(), { game: { dimension: 'the_nether', gameMode: 'survival', difficulty: 'normal' }, health: 19.6, food: 20,
+      entity: { position: new Vec3(x, 64, 0.5), onGround: true }, entities: { 3: z }, time: { timeOfDay: 6000 },
+      inventory: { items: () => [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 16 }], slots: {} }, world: { raycast: () => null },
+      blockAt: p => world(p), pathfinder: { movements: {}, setGoal() {}, getPathTo: () => ({ status: 'noPath', path: [] }) }, clearControlStates() {} });
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: z, distance: 3, visible: true }], false);
+  };
+  const edge = make(5.5), back = make(-4.5);
+  assert(edge.pillar, Object.keys(edge).join(','));
+  {
+    assert.match(edge.pillar.description, /On a pillar a block from this drop the first blow or shot that lands is the fall: the zombie 3 blocks off is at the bot before the blocks are down/);
+    assert.ok(edge.pillar.expects.damage >= 19, JSON.stringify(edge.pillar.expects));
+  }
+  assert.doesNotMatch(back.pillar?.description || '', /the first blow or shot that lands is the fall/);
+});

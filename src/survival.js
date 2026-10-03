@@ -5528,6 +5528,18 @@ class Survival {
       options.pillar.description = `On a pillar a block from this drop the first blow that lands is the fall: a ${tosser.replaceAll('_', ' ')}'s blow reaches a player two up and throws the bot up and back, up to about ${tossReach} blocks, and a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}; the pillar's own figure below counts the blow and not the fall. On 2026-10-03 one such pillar, a hoglin 7 blocks off and 19 blocks of drop into lava a block away, ended in the lava seven seconds after it was chosen. ${options.pillar.description}`;
       options.pillar.expects = { ...options.pillar.expects, damage: Math.max(options.pillar.expects?.damage || 0, Math.round(bot.health ?? 20)) };
     }
+    // And with anything about that hits or shoots (note 1118), not only one
+    // that tosses: a blow or a shot on the way up, or on the one-block top,
+    // knocks the bot off it, and a block from the drop that is the fall.
+    // 25598 (2026-10-03 21:19:13Z), on a span 17 blocks over lava with a
+    // piglin 1.7 blocks off, took the pillar at 0.43, priced by the blows
+    // alone; the piglin's arrow landed as it rose and it was in the lava a
+    // second on, 20 health to none in four.
+    const pusher = !tosser && danger.find(t => t.visible !== false && t.entity.name !== 'creeper' && (shooter(t.entity) ? t.distance <= 24 : t.distance <= 6));
+    if (options.pillar && pusher && dropHere && dropHere.blocksAway <= 1 && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20))) {
+      options.pillar.description = `On a pillar a block from this drop the first blow or shot that lands is the fall: the ${pusher.entity.name.replaceAll('_', ' ')} ${Math.round(pusher.distance * 10) / 10} blocks off ${shooter(pusher.entity) ? 'shoots' : 'is at the bot before the blocks are down'}, each hit knocks the bot about half a block off a top one block wide, and a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}; the pillar's own figure below counts the hit and not the fall. ${options.pillar.description}`;
+      options.pillar.expects = { ...options.pillar.expects, damage: Math.max(options.pillar.expects?.damage || 0, Math.round(bot.health ?? 20)) };
+    }
     // The stand to return a ghast's fireball, a block from a drop that kills
     // (note 1085): a fireball not struck pushes the bot whether the shield
     // takes it or not, and the stand's record counts what landed, not what
