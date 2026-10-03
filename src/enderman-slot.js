@@ -159,17 +159,35 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
         const centre = c => c.offset(0.5, 0, 0.5);
         await walkTo(bot, task, centre(site.mouth), site.d.scaled(-1));
         const until = Date.now() + STARE_MS;
+        // How far off its eyes the look was at its worst while it was held
+        // (something else turning the head shows here), for the miss's line.
+        let worst = 0;
+        const aimError = () => {
+          const eye = bot.entity.position.offset(0, 1.62, 0), to = e.position.offset(0, EYES, 0).minus(eye), d = to.norm() || 1;
+          const yaw = bot.entity.yaw, pitch = bot.entity.pitch;
+          const look = { x: -Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: -Math.cos(yaw) * Math.cos(pitch) };
+          const dot = Math.max(-1, Math.min(1, (look.x * to.x + look.y * to.y + look.z * to.z) / d));
+          return Math.acos(dot) * 180 / Math.PI;
+        };
         while (Date.now() < until && e.isValid !== false) {
           task.check();
           bot._stareMeant = { id: e.id, until: Date.now() + 500 };
           await bot.lookAt(e.position.offset(0, EYES, 0), true);
           await sleep(50);
+          worst = Math.max(worst, aimError());
         }
+        const staredFrom = bot.entity.position.clone(), staredAt = e.position.clone();
         await walkTo(bot, task, centre(site.b), site.d.scaled(-1), e);
         delete bot._stareMeant;
         // Whether it turned: the server's word, a moment after.
         for (let i = 0; i < 10 && !angry(e); i++) { task.check(); await sleep(100); }
-        if (!angry(e)) misses++;
+        if (!angry(e)) {
+          misses++;
+          // Why a look did not turn it, for the next reading of these (note 1007).
+          let line = null; try { line = require('./danger').lineClear(bot, staredFrom.offset(0, 1.62, 0), staredAt.offset(0, EYES, 0)); } catch (_) { line = null; }
+          const need = Math.acos(Math.max(-1, 1 - 0.025 / Math.max(1, staredFrom.distanceTo(staredAt)))) * 180 / Math.PI;
+          console.log(`[slot] look ${misses} did not turn it: ${Math.round(staredFrom.distanceTo(staredAt))} blocks off, ${Math.round(staredAt.y - staredFrom.y)} up, line from where it was looked at ${line}, the look at worst ${Math.round(worst * 10) / 10} degrees off its eyes (the game wants under ${Math.round(need * 10) / 10}), held ${STARE_MS} ms, its state ${JSON.stringify((e.metadata || []).slice(15, 19))}, in hand ${bot.heldItem?.name || 'nothing'}, head ${bot.inventory?.slots?.[5]?.name || 'bare'}`);
+        }
       }
       // One looked at stands where it is: the eyes go to the mouth's floor
       // while it is waited for.
