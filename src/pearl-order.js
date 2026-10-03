@@ -177,6 +177,28 @@ function tree(bot, goal, r, now = Date.now()) {
   return { tree: out, overlap: o };
 }
 
+// The pearl way held, ended by name (note 982): the ladder goes on with the
+// rods, the answer standing as the order until a named fact changes.
+function endHeld(goal, why, now = Date.now()) {
+  const h = held(goal, now);
+  if (!h || !KIND[h.pick] || h.ended) return false;
+  h.ended = { at: now, why };
+  return true;
+}
+// The rods again from a pearl way held and getting nowhere, as an answer
+// at the stall: null where no pearl way is held.
+function rodsAgain(bot, goal, now = Date.now()) {
+  const h = held(goal, now);
+  if (!h || !KIND[h.pick] || h.ended) return null;
+  const o = overlap(bot, goal, routes(bot, goal, now));
+  let blazes = [];
+  try { blazes = require('./danger').threats(bot, 48).filter(t => t.entity?.name === 'blaze'); } catch (_) { blazes = []; }
+  const got = Math.max(0, count(bot, 'ender_pearl') - (h.pearlsAt ?? count(bot, 'ender_pearl')));
+  const about = blazes.length ? ` ${plural(blazes.length, 'blaze')} within forty-eight blocks now, ${blazes.filter(t => t.visible).length} in sight, the nearest ${Math.round(blazes[0].distance)} blocks off.` : '';
+  return { description: `Go back to the rods, the ladder's order, and drop the pearl way chosen ${plural(Math.max(1, Math.round((now - h.at) / 60000)), 'minute')} ago (${h.pick.replaceAll('_', ' ')}; ${plural(got, 'pearl')} from it so far): ${o.fortress}; rods ${o.rods}.${about} The pearls come after the rods, or while they rest; the question of the order is asked again when a way to them not on offer then turns up, or its half hour is out.`,
+    run: () => endHeld(goal, 'left at a stall for the rods', now) };
+}
+
 // Asked, and the answer held. Returns the pick, or null when the question
 // came back stale (asked again at the next pass).
 async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {}) {
@@ -211,4 +233,4 @@ async function ask(bot, task, goal, save, actions = {}, { now = Date.now() } = {
   return pick;
 }
 
-module.exports = { routes, held, askAgainBecause, orderStage, stageFor, overlap, tree, ask, HOLD_MS, NONE_GOOD_MS, ENDERMAN_REACH, HUNT_SIGHT, FOREST_REACH, KIND };
+module.exports = { endHeld, rodsAgain, routes, held, askAgainBecause, orderStage, stageFor, overlap, tree, ask, HOLD_MS, NONE_GOOD_MS, ENDERMAN_REACH, HUNT_SIGHT, FOREST_REACH, KIND };

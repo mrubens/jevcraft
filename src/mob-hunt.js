@@ -966,11 +966,17 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // endermans and getting nowhere", the stalk going on to the next one of
   // the forest each time one was left.
   const stalkSays = state.entity !== 'blaze' ? ` Left, the stalk of every ${state.entity.replaceAll('_', ' ')} ends with them for those two minutes, not only these: the way to the ${state.item ? state.item.replaceAll('_', ' ') + 's' : 'goal'} is asked again, the rest of the game beside it.` : '';
-  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${stalkSays}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
+  const orderSays = state.entity === 'enderman' && (() => { try { const h = require('./pearl-order').held(goal); return !!h && h.pick === 'hunt_enderman' && !h.ended; } catch (_) { return false; } })() ? ' The endermen were taken up before the rods at pearl_order: left, that way ends and the rods are the step again.' : '';
+  tree.defer = { description: `Leave these targets alone for now if the observed situation is unsuitable; keep the resource goal saved.${stillShoot}${deferSays}${deferGain}${stalkSays}${orderSays}${deferNext}${fourNear} ${fitSaid}${fit.fit ? '' : ' Left alone, the hunt recovers first: food if any is carried, cover from the shooters, and health while hunger is eighteen or more.'}`, run: async () => {
     for (const target of candidates) setAside(goal, 'hunt_target', target.uuid || target.id, 'Jev chose to leave it for now', 120000);
     // The kind, not only the ones offered (note 959): the stalk had gone on
     // to the next enderman of a forest, asked again and been left again.
     if (state.entity !== 'blaze') setAside(goal, 'hunt_kind', state.entity, 'Jev chose to leave them for now', 120000);
+    // Left, an enderman way held from pearl_order ends with them (note
+    // 982): 25594, eight blazes in sight and no rod, answered defer, and
+    // three seconds on the rung was "getting nowhere with the ender pearl",
+    // the stall's ways all other pearl ways: it left for the Overworld.
+    if (state.entity === 'enderman') { try { if (require('./pearl-order').endHeld(goal, 'Jev left the endermen in reach')) bot.chat?.('Leaving the endermen. Back to the rods.'); } catch (_) { /* the order stands */ } }
     if (blazesInSight.length) setAside(goal, 'hunt_stand', 'blaze', 'Jev chose to leave them for now', 120000);
     save();
   } };

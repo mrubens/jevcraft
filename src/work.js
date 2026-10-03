@@ -554,6 +554,10 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
       answers[key] = { description: `${option.description}${survey}`, ...(option.target ? { target: option.target } : {}), run: () => option.run(task) };
     }
     if (routes.notOffered.length) pearlsNotOffered = routes.notOffered;
+    // The rods again, where the pearls were taken up before them at
+    // pearl_order (pearl-order.js rodsAgain, note 982).
+    let again = null; try { again = require('./pearl-order').rodsAgain(bot, goal, now); } catch (_) { again = null; }
+    if (again) answers.rods_first = { description: again.description, run: async () => { again.run(); save(); bot.chat?.('Back to the rods.'); } };
   }
   // Every way to it resting until a time: other work until then, as one
   // choice that holds, with the minutes said. mid-226-f kept its resting
