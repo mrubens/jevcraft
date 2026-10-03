@@ -29,6 +29,7 @@ const faces = [...directions, new Vec3(0, 1, 0), new Vec3(0, -1, 0)];
 // frozen lake had every heading refused for "packed ice in the way"
 // (the Fable advice on note 432). Plain ice melts to water and is not here.
 const natural = /^(packed_ice|blue_ice|stone|deepslate|granite|diorite|andesite|tuff|calcite|dripstone_block|pointed_dripstone|smooth_basalt|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|grass_block|mud|clay|moss_block|gravel|sand|red_sand|sandstone|red_sandstone|terracotta|(white|orange|yellow|red|brown|light_gray)_terracotta|snow_block|cobblestone|cobbled_deepslate|netherrack|crimson_nylium|warped_nylium|nether_wart_block|warped_wart_block|shroomlight|crimson_stem|warped_stem|crimson_hyphae|warped_hyphae|glowstone|soul_sand|soul_soil|basalt|blackstone|nether_bricks|nether_brick_fence|nether_brick_stairs|nether_brick_slab|nether_brick_wall|end_stone)$|_ore$|_leaves$/;
+const TALL_FLOOR = /(_fence|_fence_gate|_wall)$/;
 const dangerous = block => !block || ['lava', 'water', 'fire', 'magma_block', 'powder_snow'].includes(block.name);
 const falling = block => block && (['sand', 'red_sand', 'gravel'].includes(block.name) || block.name.endsWith('_concrete_powder'));
 
@@ -206,6 +207,13 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
     // (note 933): refused, every step up a beach, a desert or a gravel layer
     // had "no floor to step onto", and the climb's stairs could not rise
     // through the layer they had drained the way into.
+    // Nor a fence, a wall or a gate underfoot (note 1127): it stands a
+    // block and a half high, and the cell over it is not one a body stands
+    // in. 25594 (mid-242-sc-fortress-10, 2026-10-03 21:32 to 22:02Z), seven
+    // rods and eight pearls in its chests, had the stair's step chosen onto
+    // the cell over a nether brick fence at (-35, 33, 35), "No route ...
+    // (noPath)" to a cell one block off, every ten seconds for half an hour.
+    if (TALL_FLOOR.test(floor?.name || '')) { block(destination, 'a fence or a wall underfoot, a block and a half high'); continue; }
     if (dangerous(floor) || (falling(floor) && !restsOnSolid(bot, floor.position)) || floor.boundingBox !== 'block') { block(destination, dangerous(floor) ? 'lava or water underfoot' : falling(floor) ? 'sand or gravel underfoot over a gap' : 'no floor to step onto (a gap, for a span or a pillar)'); continue; }
     // Nor onto a lip beside a deadly drop: a step down carries on past its
     // cell, and a stop mid-step leaves the body going. mid-244-q stepped two
@@ -853,4 +861,4 @@ function descentTargets(feet, depth) {
   return [24, 48].flatMap(r => unit.map(([dx, dz]) => feet.offset(Math.round(dx * r / Math.hypot(dx, dz)), depth - feet.y, Math.round(dz * r / Math.hypot(dx, dz)))));
 }
 
-module.exports = { restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
+module.exports = { stairChoices, restsOnSolid, fallingOver, drainColumn, STAIR_ACROSS, stairFromHere, stairSays, digSeconds, caveUnder, liftStaircaseRest, landingKey, STAIRCASE_REST_MS, descentTargets, natural, NoSafeWay, StaircaseStalled, WaysResting, staircaseResting, staircaseWhy, staircaseUntil, restingSays, restingWay, lavaWay, lavaResting, noteProgress, stairOptions, tunnelStep, resourceTunnelStep, retreatForTunnel, safeExcavation };
