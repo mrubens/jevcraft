@@ -472,7 +472,7 @@ const CREEPER_WALKS = 0.75;
 const CREEPER_BLAST_REACH = 6;
 // A run: about five and a half blocks a second sprinting. The route searches
 // made before the stance is asked, at most (scoutRetreat).
-const SPRINT = 5.6, SCOUT_MS = 300;
+const SPRINT = 5.6, SCOUT_MS = 300, RUN_FROM = 16;
 // A creeper this near ends the shield guard faced elsewhere (note 813).
 const GUARD_CREEPER_REACH = 5;
 // The retreat's scout with nothing close (no biter within 4, no creeper
@@ -4892,6 +4892,36 @@ class Survival {
       ? ' A phantom flies and swoops from above at the bot wherever it runs: no footing on the ground is out of its reach, and the run ends with it still there.' : '');
     options.retreat = { ...(runExpects ? { expects: runExpects } : {}), description: 'Run for footing out of the mobs\' reach and sight by a route that passes none of them; shooters keep shooting while the bot runs.' + backShots + riderSays + endermanSays + footing + chase + runChase.says + unseen,
       run: () => this.runAway(task, goal, save, danger) };
+    // Run from them with no footing picked first (note 1051): to the first
+    // cell the walk reaches sixteen blocks or more from the nearest that
+    // bites, at a sprint, where every biter within eight blocks is slower
+    // than the bot runs. The retreat's run is to one footing found
+    // beforehand, and where no route to that one cell is found it ends
+    // where it began and is not offered again: 25594 (2026-10-03 11:18:35
+    // and 11:18:52Z), come back to life bare-handed at night with a zombie
+    // at arm's length, chose the retreat at 0.82, "No route from here to
+    // (212, 70, 14)", and was left a fight with its fists or a pocket of
+    // nine blocks: none good at 0.36 to 0.64, and dead twice in 24 seconds.
+    {
+      const ce = require('./combat-estimate');
+      const biters = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && t.distance <= 8 && (t.visible || t.distance <= 4) && ce.MOBS[t.entity.name]?.hit);
+      const slowest = biters.length && biters.every(t => ce.blocksPerSecond(t.entity.name) <= SPRINT - 1);
+      // Not from a pillar's top (come_down is that question's own).
+      if (biters.length && slowest && !onPillar && !options.come_down && (bot.food ?? 20) > 6 && !inWater(bot) && typeof goals.GoalInvert === 'function') {
+        const lead = biters[0], speed = Math.round(ce.blocksPerSecond(lead.entity.name) * 10) / 10;
+        const secs = Math.round(RUN_FROM / (SPRINT - speed) * 10) / 10;
+        const others = danger.filter(t => shooter(t.entity) && t.visible).length;
+        options.run_from = { expects: { damage: Math.round(runShotCost(secs) * 10) / 10, seconds: Math.max(1, secs), oneHit },
+          description: `Run from ${biters.length === 1 ? `the ${lead.entity.name.replaceAll('_', ' ')}` : `the ${biters.length} that bite`} at a sprint, to the first cell the walk reaches ${RUN_FROM} blocks or more from ${biters.length === 1 ? 'it' : 'the nearest of them'}: no footing is picked beforehand and nothing is searched while standing. The ${lead.entity.name.replaceAll('_', ' ')} walks about ${speed} blocks a second and the bot sprints about ${SPRINT}: the gap opens about ${Math.round((SPRINT - speed) * 10) / 10} a second, ${RUN_FROM} blocks in about ${secs} seconds, the back to ${biters.length === 1 ? 'it' : 'them'} and the shield down while it runs${others ? `; ${others} that shoot keep shooting` : ''}. Where it ends is open ground, and what follows is asked of there.`,
+          run: async () => {
+            this.report(goal, save, { action: 'run_from', threats: biters.map(t => t.entity.name).slice(0, 4), health: bot.health, stance: true });
+            lowerShield(bot);
+            const at = lead.entity.position, from = bot.entity.position.clone();
+            try { await this.actions.navigate(bot, task, new goals.GoalInvert(new goals.GoalNear(at.x, at.y, at.z, RUN_FROM)), { timeoutMs: 9000, stallMs: 2500, sprint: true, onFoot: true }); }
+            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; if (bot.entity.position.distanceTo(from) < 4) throw Object.assign(new Error(`the run from them came ${Math.round(bot.entity.position.distanceTo(from))} blocks: ${String(err.message || err).slice(0, 120)}`), { name: 'StanceFailed' }); }
+          } };
+      }
+    }
     // With no way passing every mob, the way past the reach of what bites,
     // found before the question (scoutRetreat, reachFootings): the
     // shooters' fire over the run said, and how each that bites follows and

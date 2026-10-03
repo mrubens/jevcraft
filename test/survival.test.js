@@ -6046,3 +6046,25 @@ test('the biters out of sight that are at the bot inside the fight\'s own time a
   assert(four.fight.expects.damage > two.fight.expects.damage + 1, `${four.fight.expects.damage} vs ${two.fight.expects.damage}`);
   assert.doesNotMatch(four.fight.description, /not those out of sight below/);
 });
+
+// Note 1051: a biter slower than the sprint can be run from with no footing picked first.
+test('a zombie at arm\'s length with bare hands: run_from is offered, priced by its speed against the sprint, and runs to sixteen blocks from it (note 1051)', async () => {
+  const bot = creeperBot({ wall: false, creeper: null, weapon: 'dirt', health: 20 });
+  const zombie = { id: 7, name: 'zombie', type: 'hostile', position: new Vec3(1.9, 64, 0.5), height: 1.95, width: 0.6, isValid: true };
+  bot.entities = { 7: zombie };
+  const walked = [];
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async (_b, _t, goal, opts) => { walked.push({ goal, opts }); bot.entity.position = new Vec3(-20.5, 64, 0.5); } }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [{ entity: zombie, distance: 1.4, visible: true }], false);
+  assert.ok(options.run_from, `offered: ${Object.keys(options)}`);
+  assert.match(options.run_from.description, /Run from the zombie at a sprint, to the first cell the walk reaches 16 blocks or more from it: no footing is picked beforehand and nothing is searched while standing\. The zombie walks about [\d.]+ blocks a second and the bot sprints about 5\.6: the gap opens about [\d.]+ a second, 16 blocks in about [\d.]+ seconds/);
+  await options.run_from.run();
+  assert.equal(walked.length, 1);
+  assert.equal(walked[0].opts.sprint, true);
+  assert.equal(typeof walked[0].goal.isEnd, 'function');
+  assert.equal(walked[0].goal.isEnd({ x: 3, y: 64, z: 0 }), false, 'beside it is not the end');
+  assert.equal(walked[0].goal.isEnd({ x: -20, y: 64, z: 0 }), true, 'sixteen and more from it is');
+  // Hunger too low to sprint: not offered.
+  const hungry = creeperBot({ wall: false, creeper: null, weapon: 'dirt', health: 20 }); hungry.food = 5; hungry.entities = { 7: zombie };
+  const none = new Survival(hungry, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [{ entity: zombie, distance: 1.4, visible: true }], false);
+  assert.equal(none.run_from, undefined);
+});
