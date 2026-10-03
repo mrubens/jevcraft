@@ -5,9 +5,11 @@
 // with a skeleton among those named first, by the stance chosen first and
 // whether a shield was carried: the arrows that landed in the minute after,
 // whatever was chosen next. Ten of the forty-three deaths of 2026-10-03
-// 14:00 to 20:00Z were a skeleton's arrows, eight of them with nothing
-// worn, and seven of the ten began with a run: the run's own words priced it
-// at about a tenth of an arrow.
+// 14:00 to 20:00Z were a skeleton's arrows, six of them with nothing worn
+// and one in a chestplate alone (read ten seconds before each death; note
+// 1100's count of eight read the frame after it), and seven of the ten
+// began with a run: the run's own words priced it at about a tenth of an
+// arrow.
 const RECORD = {
   from: '2026-10-02', to: '2026-10-03',
   // choice: { bare: [encounters, arrows], shield: [encounters, arrows] }

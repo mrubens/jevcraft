@@ -5184,15 +5184,24 @@ class Survival {
       // Open until the first cell that cuts a line is down (the floor under
       // it first where it hangs over air).
       coverWindow = cut.length ? Math.min(...cut.map(p => p.plan.cutAfter || p.plan.cells.length)) * BLOCK_SECONDS + madeSetup : 0;
-      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS + madeSetup, reaches: m => !m.shoots || m.name === 'creeper' || open.some(p => p.t.entity.name === m.name), shield: shielded });
+      // A witch's potion is thrown, not shot: it bursts on the cover and
+      // its splash reaches about four blocks round, the bot behind the block
+      // too, so cover does not keep a witch off and is not priced as if it
+      // did. 25581 (2026-10-03 20:09:21Z), a witch ten blocks off, was told
+      // "a shot does not come through a block" and about 14 damage, took the
+      // cover twice, and the potions took it from 19.6 health to none in
+      // nine seconds behind it (note 1101).
+      const witchCut = [...cut, ...behind].some(p => p.t.entity.name === 'witch');
+      const coverCost = stanceCost({ mobs, setup: coverBlocks * BLOCK_SECONDS + madeSetup, reaches: m => !m.shoots || m.name === 'creeper' || m.name === 'witch' || open.some(p => p.t.entity.name === m.name), shield: shielded });
       const says = [
         ...cut.map(p => `${p.plan.cells.length === 1 ? 'a block' : `${p.plan.cells.length} blocks, two high,`} in the line from the eyes of ${named(p.t)} to the bot's, ${whereSays(bot, p.plan.cuts)}`),
         ...behind.map(p => `nothing for ${named(p.t)}: the ${p.plan.stoppedBy.name.replaceAll('_', ' ')} at ${p.plan.stoppedBy.cell} is in its line already`)];
       // Against a ghast, which of the blocks carried its blast breaks: the
       // cover is put from one that holds (ghast.js, note 551).
       const ghastCovered = cut.some(p => p.t.entity.name === 'ghast');
+      const witchSays = witchCut ? ' A witch\'s potion is thrown, not shot: it bursts on the cover and its splash reaches about four blocks round, the bot behind the block too; the cover does not keep the witch off, and it is counted here as landing. A shut pocket stops it, and a witch dead throws nothing.' : '';
       const openSays = open.length ? ` No cover can go in the line of ${open.map(p => `${named(p.t)} (${p.plan.why})`).join(', ')}: it still has the bot in its fire.` : '';
-      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, quick: { seconds: Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10, says: coverBlocks ? `cover of ${plural(coverBlocks, 'block')}, about ${Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10} seconds` : 'cover already standing' }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSetup ? `, the ${coverMade.item.replaceAll('_', ' ')} for it made first from the logs carried (${coverMade.available}), about a second more` : ''}` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
+      options.take_cover = { expects: { damage: coverCost.damage, seconds: coverCost.seconds, oneHit }, quick: { seconds: Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10, says: coverBlocks ? `cover of ${plural(coverBlocks, 'block')}, about ${Math.round((coverBlocks * BLOCK_SECONDS + madeSetup) * 10) / 10} seconds` : 'cover already standing' }, description: `${coverBlocks ? `Put ${says.join('; and ')}, and stay behind it: ${coverBlocks} block${coverBlocks === 1 ? '' : 's'}, about ${Math.round(coverBlocks * BLOCK_SECONDS * 10) / 10} seconds${madeSetup ? `, the ${coverMade.item.replaceAll('_', ' ')} for it made first from the logs carried (${coverMade.available}), about a second more` : ''}` : `Stay here behind what stands in the line already: ${says.join('; ')}`}; a shooter fires only with a line to the bot, a shot does not come through a block, and a shooter that moves round finds the bot open again.${witchSays}${openSays}` + (ghastCovered ? require('./ghast').coverSays(bot, shelter.buildingMaterials) : '') + costSays(coverCost, bot.health, mobs, { doing: 'placing it', done: 'Behind it' }) + edge,
         run: async () => {
           if (madeSetup && shelter.materialStock(bot) < coverBlocks) {
             try { await this.actions.acquireStep(bot, task, coverMade.item, countOf(bot, coverMade.item) + Math.min(coverMade.available, Math.ceil(coverBlocks / 4) * 4), goal, save); }

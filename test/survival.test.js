@@ -5970,6 +5970,22 @@ test('a ghast in sight: its fireball can be struck back, and it can be shot past
   assert.match(options.fight.description, /At 7 health, 2 fireballs from the ghast \(about 6 each after armour\) end it/);
 });
 
+test('cover against a witch says its potion bursts round the block and is priced as landing (note 1101)', async () => {
+  // 25581 (2026-10-03 20:09:21Z): a witch ten blocks off, cover told as "a shot does not come through a block", about 14 damage; 19.6 health to none in nine seconds behind it.
+  const make = name => {
+    const bot = rockWorld(p => p.y >= 64, ['cobblestone']);
+    const mob = { id: 31, name, type: 'hostile', position: new Vec3(9.5, 64, 0.5), height: 1.95, width: 0.6, isValid: true };
+    bot.entities = { 31: mob };
+    const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+    return survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, mob)], false);
+  };
+  const witch = make('witch'), skeleton = make('skeleton');
+  assert(witch.take_cover, Object.keys(witch).join(','));
+  assert.match(witch.take_cover.description, /A witch's potion is thrown, not shot: it bursts on the cover and its splash reaches about four blocks round, the bot behind the block too; the cover does not keep the witch off/);
+  assert.doesNotMatch(skeleton.take_cover?.description || '', /potion is thrown/);
+  assert(witch.take_cover.expects.damage >= witch.fight.expects.damage * 0.8, `cover from a witch is priced near standing in its fire: ${witch.take_cover.expects.damage} against ${witch.fight?.expects?.damage}`);
+});
+
 test('cover from a ghast is put from a block its blast does not break, and what breaks is said (note 551)', async () => {
   const bot = rockWorld(p => p.y >= 64, ['netherrack', 'cobblestone']);
   bot.game.dimension = 'the_nether';
