@@ -125,11 +125,21 @@ function slotSite(bot, { reach = 6, toward = null } = {}) {
   out.sort((x, y) => x.off - y.off || x.digs.length - y.digs.length);
   if (!toward?.position) return out[0] || null;
   for (const s of out.slice(0, 24)) if (lineFrom(bot, s.mouth, toward)) return { ...s, line: true };
+  // No mouth with a line: a slot from whose mouth a few cells' walk finds
+  // one in sight (outSpot, notes 1031 and 1035), marked `out`. The slot was
+  // offered only with a line from the mouth, and on 2026-10-03 (00:00 to
+  // 09:50Z) the trials stalked endermen in the Nether for 187 minutes and
+  // picked up 2 pearls at it, where 16 minutes of slot fights brought 6.
+  const about = endermen(bot, 60);
+  for (const s of out.slice(0, 12)) {
+    const spot = outSpot(bot, s, about.length ? about : [toward]);
+    if (spot) return { ...s, line: false, out: { steps: spot.steps, off: Math.round(spot.e.position.distanceTo(spot.cell.offset(0.5, 0, 0.5))) } };
+  }
   return out[0] ? { ...out[0], line: false } : null;
 }
 
 function says(site, n) {
-  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.line ? ' (the mouth has a line to its eyes now)' : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
+  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.line ? ' (the mouth has a line to its eyes now)' : site.out ? ` (the mouth has no line to one now: the bot goes ${site.out.steps} cell${site.out.steps === 1 ? '' : 's'} out of it to where one ${site.out.off} blocks off is in sight, looks, and is back at the slot's end before it comes; in the arena, a wall between the mouth and an enderman 21 blocks off, 10 runs of 10, the look turning it in 9 of 10 goings out, no health lost)` : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
 }
 
 // The arena's record (scripts/terrain.js enderman_slot, 2026-10-03): an iron

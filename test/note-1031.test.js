@@ -25,6 +25,11 @@ test('behind a wall from the mouth, in sight two cells out: that cell, its path 
   assert.ok(spot.steps <= slot.OUT_STEPS && spot.path.length === spot.steps);
   assert.ok(slot.lineFrom(far.bot, spot.cell, far.bot.entities[5]));
   assert.ok(spot.e.position.distanceTo(spot.cell.offset(0.5, 0, 0.5)) >= spot.gap - 0.5, 'far enough off to be back first');
+  // Note 1035: the slot is found for it, marked as one the look goes out for, and said so.
+  far.bot.entity.position = new Vec3(0.5, 64, 0.5);
+  const site = slot.slotSite(far.bot, { toward: far.bot.entities[5], reach: 0 });
+  assert.ok(site && !site.line && site.out, JSON.stringify(site && { line: site.line, out: site.out }));
+  assert.match(slot.says(site, 1), /the mouth has no line to one now: the bot goes \d cells? out of it to where one \d+ blocks off is in sight, looks, and is back at the slot's end before it comes/);
   // Eight blocks off it would be at the bot before the slot's end: no cell.
   const near = world(new Vec3(8.5, 64, 3.5));
   assert.equal(slot.outSpot(near.bot, near.site, [near.bot.entities[5]]), null);

@@ -802,8 +802,8 @@ async function huntObserved(bot, task, goal, save, actions, client) {
       // no walk to it wanted (enderman-slot.js, note 981).
       if (target.name === 'enderman' && typeof bot.dig === 'function' && !Object.keys(tree).some(k => k.startsWith('slot_'))) {
         let site = null; try { site = require('./enderman-slot').slotSite(bot, { toward: target }); } catch (_) { site = null; }
-        if (site && !site.line) slotNoLine = true;
-        if (site?.line && !slotMissedHere(bot, state)) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off. ${require('./enderman-slot').recordSays()}`,
+        if (site && !site.line && !site.out) slotNoLine = true;
+        if ((site?.line || site?.out) && !slotMissedHere(bot, state)) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off. ${require('./enderman-slot').recordSays()}`,
           run: () => slotForDrop(bot, task, target, goal, save, actions, site) };
       }
       // A blaze no walk reaches is still a fight with a bow in range (note
@@ -1488,7 +1488,7 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
       const slot = require('./enderman-slot');
       let site = null; try { site = slot.slotSite(bot, { toward: near }); } catch (_) { site = null; }
       const client = actions.client || task.opportunityClient;
-      if (site?.line && !slotMissedHere(bot, state) && client) {
+      if ((site?.line || site?.out) && !slotMissedHere(bot, state) && client) {
         setAside(goal, 'hunt_slot', key, 'asked', 120000); save();
         const about = Object.values(bot.entities || {}).filter(e => e.name === 'enderman' && e.isValid !== false && e.position?.distanceTo(bot.entity.position) <= 40).length;
         let seen = true; try { seen = !!threats(bot, 48).find(t => t.entity === near)?.visible; } catch (_) { seen = true; }
