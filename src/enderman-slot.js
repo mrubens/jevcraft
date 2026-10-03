@@ -16,10 +16,15 @@ const EYES = 2.55, REACH = 3, SWING_MS = 650, HURT_STOP = 6;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const STARE_MS = 450, STARE_EVERY_MS = 12000;
 // A look that does not turn it is tried again after three seconds, three
-// times, and one turned is waited for twenty seconds (note 996): of the
+// times, and one turned is waited for (note 996; the wait below): of the
 // first five fights live (2026-10-03), three ran their whole minute with an
 // enderman about that never came, a look every twelve seconds.
-const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 20000, NO_LINE_MS = 12000;
+// The wait for one turned is forty-five seconds (note 1076): it stays turned
+// on the bot when the wait ends, and the slot's end is where it cannot come.
+// 25593 (2026-10-03 15:15:38 to 15:18:34Z), all seven rods in its chests,
+// waited its twenty seconds, left the slot for the sweep's walk, and was
+// struck in the open two minutes on, 18.2 health to 5.7 in three seconds.
+const STARE_AGAIN_MS = 3000, STARE_MISSES = 3, TURNED_WAIT_MS = 45000, NO_LINE_MS = 12000;
 // The server's own word that it has been stared at or screams (its entity
 // data, 17 and 18): one brought is not gone out to again.
 const angry = e => !!(e.metadata?.[17] || e.metadata?.[18]);
@@ -298,7 +303,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
         // 2026-10-03 said nothing of the enderman.
         const at = () => `${Math.round(e.position.distanceTo(bot.entity.position))} blocks off, ${Math.round(e.position.y - bot.entity.position.y)} up`;
         turnedWhere ??= at();
-        if (Date.now() - turnedAt > TURNED_WAIT_MS) { out.ended = `it turned and did not come to the mouth in twenty seconds (${turnedWhere} when the wait began, ${at()} at its end, ${lineFrom(bot, site.mouth, e) ? 'a line' : 'no line'} from the mouth to it)`; break; }
+        if (Date.now() - turnedAt > TURNED_WAIT_MS) { out.ended = `it turned and did not come to the mouth in ${TURNED_WAIT_MS / 1000} seconds (${turnedWhere} when the wait began, ${at()} at its end, ${lineFrom(bot, site.mouth, e) ? 'a line' : 'no line'} from the mouth to it)`; break; }
         await bot.lookAt(site.mouth.offset(0.5, 0, 0.5), true);
       } else if (misses >= STARE_MISSES) {
         out.ended = `${STARE_MISSES} looks from the mouth did not turn it (no line to its eyes from there)`; break;
