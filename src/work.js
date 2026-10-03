@@ -8878,7 +8878,7 @@ function gameHandlers(bot, decisionClient) {
           return near ? emptyCache(bot, task, goal, save, homeActions(), near.cache) : false;
         },
         find_stronghold: (bot, task, goal, save) => findStronghold(bot, task, goal, save, {
-          navigate, explore, surfaceStep,
+          navigate, explore, surfaceStep, acquireStep,
           tunnel: async (bot, task, goal, save, target, resource) => {
             if (pickaxeTier(bot) < 1) { await acquireStep(bot, task, 'stone_pickaxe', 1, goal, save); return; }
             await resourceTunnelStep(bot, task, goal, save, target, resource, { dig, navigate });

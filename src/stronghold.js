@@ -89,6 +89,7 @@ async function recoverEye(bot, task, search, save, actions) {
   } finally { policy.restore(); Object.assign(movement, beforeMovement); }
 }
 
+const WATER_GAIN = 8, WALK_ON_MS = 3 * 60000;
 async function walkBearing(bot, task, goal, save, target, actions, client) {
   const search = goal.strongholdSearch, surface = surfaceMovement(bot);
   try {
@@ -101,6 +102,24 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
     const key = p => `${Math.floor(p.x / 8)},${Math.floor(p.z / 8)}`;
     const score = p => horizontal(p, target) + (search.visited[key(p)] || 0) * 24;
     land.sort((a, b) => score(a) - score(b));
+    // No land in reach WATER_GAIN blocks nearer the place the Eyes point at
+    // than the bot stands: water (or the like) lies across the way, and the
+    // walk takes only dry ground. The boat, Jev's to choose with the swim it
+    // saves (boats.js), else the swim across along the bearing
+    // (exploration.js swimAcross), before any waypoint is asked (note 1122).
+    // The rehearsal of 2026-10-03 (21:53 to 21:56Z), 1,500 blocks from its
+    // stronghold, came to a shore 260 blocks on and walked the beach: the
+    // waypoint's question six times in thirteen seconds, none good at half
+    // of them, then "every way it had from here rests" twice a second.
+    const hereNow = bot.entity.position, gain = land.length ? horizontal(hereNow, target) - Math.min(...land.map(p => horizontal(p, target))) : 0;
+    if (gain < WATER_GAIN) {
+      surface.restore();
+      try {
+        if (await require('./boats').boatTravelStep(bot, task, goal, save, vector({ x: target.x, y: hereNow.y, z: target.z }), { acquireStep: actions.acquireStep }, client)) { search.moves++; save(); return; }
+        const heading = (Math.round(Math.atan2(target.z - hereNow.z, target.x - hereNow.x) / (Math.PI / 4)) + 8) % 8;
+        if (await require('./exploration').swimAcross(bot, task, goal, save, heading)) { search.moves++; save(); return; }
+      } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[stronghold] the water across the bearing: ${String(err.message || err).slice(0, 200)}`); }
+    }
     const seen = new Set(), tree = {};
     for (const p of land) {
       task.check(); checkAir(bot);
@@ -127,6 +146,11 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
       await actions.explore(bot, task, goal, save, 'stronghold approach', { surfaceOnly: true });
       search.moves++; save(); return;
     }
+    // The walk toward the bearing, once answered, goes on by the nearest
+    // waypoint to it for WALK_ON_MS without the question again (note 1122):
+    // the waypoints are fifty blocks apart and all one walk, and a
+    // stronghold a thousand blocks off was thirty askings of the same thing.
+    if (search.walkOn > Date.now()) { await Object.values(tree)[0].run(); return; }
     const origin = bot.entity.position.clone(), dimension = bot.game.dimension;
     const decision = await decide('stronghold_waypoint', { client, bot, task, goal, save, tree, interrupt: () => checkThreats(bot),
       state: { request: goal.request, task: 'Follow observed Eyes of Ender', target,
@@ -134,7 +158,7 @@ async function walkBearing(bot, task, goal, save, target, actions, client) {
         // The time and the risk, as other walks say them (the decision audit).
         timeOfDay: bot.time?.timeOfDay, riskNow: (() => { try { return require('./risk').riskNow(bot); } catch (_) { return null; } })() },
       isFresh: () => bot.game.dimension === dimension && bot.entity.position.distanceTo(origin) < 1 });
-    if (!decision.stale) await decision.action.run();
+    if (!decision.stale) { search.walkOn = Date.now() + WALK_ON_MS; save(); await decision.action.run(); }
   } finally { surface.restore(); }
 }
 
