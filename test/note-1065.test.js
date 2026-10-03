@@ -42,3 +42,35 @@ test('fifteen minutes in the forest, looked at pass after pass, with no pearl: t
   assert.equal(await s.run(goal, t0 + 15 * 60000 + 30000), false);
   assert.match(s.said.join(' '), /No pearls from the warped forest for a while/);
 });
+
+test('standing in the forest, the walk to its landmark\'s own point is not made, and the hunt begins (note 1072)', async t => {
+  const registry = require('minecraft-data')('26.1');
+  const t0 = 30_000_000, s = scene(t);
+  s.bot.registry = registry;
+  s.bot.blockAt = p => ({ position: p, name: 'warped_nylium', biome: { id: registry.biomesByName.warped_forest.id } });
+  let walks = 0;
+  exploration.goToLandmark.mock.mockImplementation(async () => { walks++; return null; });
+  const goal = { kind: 'win' };
+  assert.equal(await s.run(goal, t0), true);
+  assert.equal(walks, 0);
+  assert.equal(s.hunts(), 1);
+  assert.equal(warped.inForest(s.bot), true);
+  // Off it, the walk is made as before; one that comes no nearer is no arrival.
+  s.bot.blockAt = p => ({ position: p, name: 'netherrack', biome: { id: registry.biomesByName.nether_wastes.id } });
+  assert.equal(warped.inForest(s.bot), false);
+  assert.equal(await s.run(goal, t0 + 1000), false);
+  assert.equal(walks, 1);
+});
+
+test('standing in a forest whose walk rests, or one never noted: the hunt is here, not the sweep for another (note 1072)', async t => {
+  const registry = require('minecraft-data')('26.1');
+  const s = scene(t);
+  s.bot.registry = registry;
+  s.bot.blockAt = p => ({ position: p, name: 'warped_nylium', biome: { id: registry.biomesByName.warped_forest.id } });
+  exploration.knownLandmarks.mock.mockImplementation(() => []);
+  const goal = { kind: 'win' };
+  assert.equal(await s.run(goal, 40_000_000), true);
+  assert.equal(s.hunts(), 1);
+  assert.equal(goal.step.action, 'warped_pearls');
+  assert.equal(goal.warpedSearch, undefined, 'no sweep begun');
+});

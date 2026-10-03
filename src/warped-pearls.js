@@ -42,6 +42,17 @@ function warpedOpen(goal, now = Date.now(), { bot = null } = {}) {
   return known.length > 0 || !isSetAside(goal, 'rung', 'warped_search', now);
 }
 
+// Whether the bot stands in a warped forest: the biome at its feet, or
+// warped nylium within six blocks.
+function inForest(bot) {
+  try {
+    const here = bot.entity.position.floored(), id = bot.registry?.biomesByName?.warped_forest?.id;
+    if (id != null && bot.blockAt?.(here)?.biome?.id === id) return true;
+    const nylium = bot.registry?.blocksByName?.warped_nylium?.id;
+    return nylium != null && typeof bot.findBlocks === 'function' && bot.findBlocks({ matching: [nylium], maxDistance: 6, count: 1 }).length > 0;
+  } catch (_) { return false; }
+}
+
 async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.now } = {}) {
   const exploration = require('./exploration');
   actions.notice?.(bot, goal, save);
@@ -52,9 +63,18 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
   // "Looking for a warped forest" and "No warped forest found" three times
   // in a second each (note 680).
   const toWalk = () => exploration.knownLandmarks(bot, goal, 'warped_forest', FOREST_REACH).find(k => tripOpen(goal, k.landmark, now())) || null;
-  const known = toWalk();
+  // Standing in a forest counts as one known, its walk resting or not, and
+  // whether or not it was ever noted (note 1072).
+  const feet = bot.entity.position.floored();
+  const known = toWalk() || (inForest(bot) ? { landmark: { kind: 'warped_forest', x: feet.x, y: feet.y, z: feet.z }, distance: 0 } : null);
   if (known) {
-    const arrived = await exploration.goToLandmark(bot, task, goal, save, ['warped_forest'], { navigate: actions.navigate, reach: 512, arrive: 16 });
+    // In the forest already (its biome underfoot, or its nylium within six
+    // blocks): arrived, wherever in it the landmark's own point lies (note
+    // 1072). 25593 (2026-10-03 15:08Z), back in the Nether with all seven
+    // rods in its chests and standing in its forest at (-64, 59, 28), walked
+    // at the point noted for it at (-75, 28) on another level, "33 blocks
+    // off, came no nearer", rested the forest, and went sweeping for another.
+    const arrived = inForest(bot) ? known.landmark : (await exploration.goToLandmark(bot, task, goal, save, ['warped_forest'], { navigate: actions.navigate, reach: 512, arrive: 16 })) || (inForest(bot) ? known.landmark : null);
     // A walk that came no nearer sets the trip aside: said as the step's own
     // failure, with where and why, and kept in the ledger, not a quiet
     // return the progress watch calls "No measurable progress" (note 583).
@@ -171,4 +191,4 @@ async function warpedPearls(bot, task, goal, save, actions, stage, { now = Date.
 const SPENT_NEAR = 8;
 const HEADING_NAMES = ['east', 'south', 'west', 'north'];
 
-module.exports = { warpedKnown, warpedOpen, warpedPearls, SEARCH_LEGS, LEG };
+module.exports = { inForest, warpedKnown, warpedOpen, warpedPearls, SEARCH_LEGS, LEG };
