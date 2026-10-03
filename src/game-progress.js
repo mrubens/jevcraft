@@ -931,7 +931,19 @@ function nextGameStage(bot, goal, skip = new Set()) {
   // Elsewhere the rods carried are what the eyes are made of.
   const kept = where === 'nether' ? require('./rod-stash').stashed(goal) : null;
   const keptRods = kept ? rodsFor(target - eyes - kept.ender_eye, count(bot, 'blaze_powder') + kept.blaze_powder) : rods;
-  const rodsShort = count(bot, 'blaze_rod') + (kept?.blaze_rod || 0) < keptRods;
+  // In the Overworld with pearls still wanted, the rods in the bot's chests
+  // on either side are held as they are in the Nether (note 1056): counted
+  // by what is carried alone, a bot with every rod banked was short of
+  // seven there and held seven in the Nether. 25593 (2026-10-03 12:54 to
+  // 13:05Z), six rods in its Overworld chest and one in the Nether, crossed
+  // its portal six times in eleven minutes, "the Nether now" on one side
+  // and "heading back to the Overworld" on the other. With the pearls had,
+  // the rods carried are what the eyes are made of, as before.
+  const keptAll = where === 'overworld' ? require('./rod-stash').stashed(goal) : null;
+  const pearlsWanting = count(bot, 'ender_pearl') + (keptAll?.ender_pearl || 0) < target - eyes;
+  const rodsShort = keptAll && pearlsWanting
+    ? count(bot, 'blaze_rod') + (keptAll.blaze_rod || 0) < rodsFor(target - eyes - (keptAll.ender_eye || 0), count(bot, 'blaze_powder') + (keptAll.blaze_powder || 0))
+    : count(bot, 'blaze_rod') + (kept?.blaze_rod || 0) < keptRods;
   const pearlsHereShort = count(bot, 'ender_pearl') + (kept?.ender_pearl || 0) < target - eyes - (kept?.ender_eye || 0);
   const collect = where === 'nether' && kept?.chests.length ? require('./rod-stash').collectStage(bot, goal) : null;
   // The pearls from the Overworld's endermen, Jev's route while the rods

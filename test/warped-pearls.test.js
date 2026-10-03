@@ -162,3 +162,18 @@ test('a forest remembered past the walk\'s reach is not a leg found: the sweep c
   assert.equal(said.filter(m => /Looking for a warped forest/.test(m)).length, 1);
   assert.equal(said.filter(m => /No warped forest found/.test(m)).length, 0);
 });
+
+// Note 1056: every rod in the bot's chests and pearls still wanted, the Overworld's ladder is the pearls', not the Nether for rods.
+test('in the Overworld with every rod kept in chests and none carried, the stage is the pearls\', not a crossing for rods (note 1056)', () => {
+  const { bot, goal } = fixture('overworld');
+  const items = bot.inventory.items();
+  items.splice(items.findIndex(i => i.name === 'blaze_rod'), 1);
+  setAside(goal, 'rod_bank', 'arrival', 'answered', 30 * 60000);
+  setAside(goal, 'rung', 'warped_search', 'none found', 600000);
+  // No chests known: short of rods, the Nether is next.
+  assert.equal(nextGameStage(bot, goal).action, 'enter_nether');
+  goal.rodStashes = [{ position: { x: -40, y: 94, z: 132 }, dimension: 'overworld', contents: { blaze_rod: 6 } }, { position: { x: -172, y: 66, z: 112 }, dimension: 'nether', contents: { blaze_rod: 2 } }];
+  const stage = nextGameStage(bot, goal);
+  assert.equal(stage.phase, 'obtain_ender_pearls', JSON.stringify(stage));
+  assert.equal(stage.action, 'pearl_patrol');
+});
