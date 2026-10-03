@@ -346,6 +346,21 @@ function noneGood(id, decision, listed, { bot, goal, state, last = null }) {
       if (stay) { passedOver = `${passedOver ? `${passedOver}; ` : ''}${path[0].replaceAll('_', ' ')} leaves the fortress, and leaving is not taken for none good: ${stay.replaceAll('_', ' ')}, the best listed that does not, was taken`; path = down(stay).path; }
     }
   }
+  // Taking up again a rung Jev set aside is Jev's, chosen (work.js take_up_
+  // <rung>, marked takeBack), so not the code's least bad when none was good
+  // (note 989): the best listed that takes nothing back is taken instead,
+  // where one is on offer. 25590 (2026-10-03 05:35 to 05:37Z) set its bank
+  // walk aside at 0.72, 0.69 and 0.71, and three times within the minute the
+  // rung's question, none good on top at 0.50 to 0.53, had take_up_bank_rods
+  // taken for it at 0.26 to 0.30: 1,064 blocks walked in a quarter hour to
+  // end 23 from where it began.
+  // (The stall's own take_up carries it as takesUp: asideStands holds its
+  // offering, not the gate of decisions/asides.js.)
+  const takesBack = k => !!(listed[k]?.takeBack || listed[k]?.takesUp);
+  if (!why && takesBack(path[0])) {
+    const keep = keys.filter(k => k !== NONE_GOOD_KEY && !takesBack(k)).sort((a, b) => (weights[b] || 0) - (weights[a] || 0))[0];
+    if (keep) { passedOver = `${passedOver ? `${passedOver}; ` : ''}${path[0].replaceAll('_', ' ')} takes up again what was set aside, and that is not taken for none good: ${keep.replaceAll('_', ' ')}, the best listed that does not, was taken`; path = down(keep).path; }
+  }
   // None good far above the best listed (note 749c): the listed are not
   // Jev's choice in any sense, and the least bad taken on a sliver of weight
   // is a guess acted on. 25598 at 14:15:14Z: none_good 0.83, take_up_nether_

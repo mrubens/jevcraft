@@ -7698,6 +7698,8 @@ async function breakStillness(bot, task, goal, save, { client, survival, onStep 
   // read an option by its target (failed-places.js, note 785).
   for (const w of work.filter(w => PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run, w.target);
   for (const [key, answer] of Object.entries(answers)) offer(key, answer.description, answer.run, answer.target, answer.waits);
+  // A rung taken up again, marked for the none-good rule (decisions/index.js, note 989).
+  for (const [key, answer] of Object.entries(answers)) if (answer.takeBack && tree[key]) tree[key].takesUp = answer.takeBack;
   for (const w of work.filter(w => !PORTAL_JOB.test(w.key))) offer(w.key, w.description, w.run, w.target);
   // A walk to water is what the portal frame's cast is waiting for when it
   // has none: said on the travel to a biome that has some (the walk is built
