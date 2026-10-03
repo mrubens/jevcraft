@@ -44,6 +44,14 @@ const LIMIT_MS = Number(process.env.MIDGAME_HOURS || 3) * 3600000;
 // its three hours with six of seven blaze rods in its chests and a pearl;
 // mid-242-uf-nether-1 (25592) with six.
 const KEPT_LIMIT_MS = Math.max(LIMIT_MS, Number(process.env.MIDGAME_KEPT_HOURS || 6) * 3600000);
+// With all seven rods in its chests a trial plays to twelve hours (note
+// 1071): what is left is the pearls, and the six hours ended the two trials
+// that had got furthest. mid-242-we-nether-1 (25598, 2026-10-03) was ended
+// at 14:59Z with 10 blaze rods and 2 pearls in its chests, on its way into
+// the Nether for the rest; mid-242-xa-fortress-9 (25590) at 14:58Z with 8.
+const RODS_WANTED = 7;
+const FULL_LIMIT_MS = Math.max(KEPT_LIMIT_MS, Number(process.env.MIDGAME_FULL_HOURS || 12) * 3600000);
+const limitFor = kept => kept && kept.rods >= RODS_WANTED ? FULL_LIMIT_MS : kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
 const BLAZE_RODS = 6, PEARLS = 12;
 const trials = () => { try { return fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.json')).map(f => JSON.parse(fs.readFileSync(path.join(LOG_DIR, f), 'utf8'))).sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt)); } catch (_) { return []; } };
 const saveTrial = t => { fs.mkdirSync(LOG_DIR, { recursive: true }); fs.writeFileSync(path.join(LOG_DIR, `${t.world}.json`), JSON.stringify(t, null, 2)); };
@@ -139,7 +147,7 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
-  const limit = kept && (kept.rods >= 1 || kept.pearls >= 1) ? KEPT_LIMIT_MS : LIMIT_MS;
+  const limit = limitFor(kept);
   let to = Math.min(now, from + limit), a = read(to), spells = a ? spellsOf(a.frames) : [];
   for (let i = 0; a && spells.length && i < 4; i++) {
     const next = Math.min(now, from + limit + overlapMs(spells, from, to));
@@ -320,4 +328,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
+module.exports = { limitFor, keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
