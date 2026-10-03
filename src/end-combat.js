@@ -482,7 +482,18 @@ async function fightEndStep(bot, task, goal, save, actions, client, { shot = sho
       state.emptyChoice = { at: Date.now(), position: { ...bot.entity.position }, safe, unsafe: safe ? [] : unsafeBecause(bot, bot.entity.position).slice(0, 6),
         crystals: crystals.length, dragon: !!dragon, bow, arrows: countOf(bot, 'arrow'), focus: focus?.name, idle: state.idleObservations || 0 };
       save();
-      throw blocked(`No observed safe End route, reachable dragon head or clear bow shot; supplies and position are saved (${JSON.stringify(state.emptyChoice)})`);
+      // One look with nothing to choose is a bad moment, not the end of the
+      // fight (note 1132): a second's wait and the next step looks again,
+      // counted against the fight's own budget of steps without progress
+      // (eighty, above). As a Blocked error it ended three rehearsals of
+      // 2026-10-03 within their first half minute (23:00, 23:05 and 23:09Z):
+      // on the entry platform, and at the foot of the island's slope a
+      // moment after landing, the dragon away and the crystals out of a
+      // clear shot.
+      state.noProgress = (state.noProgress || 0) + 1; save();
+      goal.step = { action: 'end_wait', looks: state.noProgress, crystals: crystals.length, dragon: !!dragon }; save();
+      for (let n = 0; n < 10; n++) { check(); await sleep(100); }
+      return;
     }
     const decision = await decide('dragon_fight', { client, bot, goal, tree, context: { safe }, interrupt: check, watchMs: 50,
       state: endDecisionState({ request: goal.request, health: bot.health, food: bot.food, arrows: countOf(bot, 'arrow'),
