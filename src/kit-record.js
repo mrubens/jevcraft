@@ -108,11 +108,21 @@ const pctOf = (a, b) => b ? Math.round(100 * a / b) : 0;
 // "no benefit" and made only if chosen, and from 18:53Z Fable's check-in
 // found sealed waiting the largest waste (9.9 hours).
 const BEFORE_NETHER = {
-  bed: { says: 'its nights in the record (fresh trials 2026-09-30 12:00Z to 2026-10-01 22:30Z): on the surface at night 1478 bot-minutes awake, 468 of them sealed in a pocket waiting and 101 holding against mobs (7 deaths), 15 asleep; a night slept passes in seconds, one awake is about eight and a half real minutes from bedtime' },
+  bed: { says: 'its nights in the record (fresh trials 2026-09-30 12:00Z to 2026-10-01 22:30Z): on the surface at night 1478 bot-minutes awake, 468 of them sealed in a pocket waiting and 101 holding against mobs (7 deaths), 15 asleep; a night slept passes in seconds, one awake is about eight and a half real minutes from bedtime',
+    verdict: 'a benefit before the Nether, in the nights it saves (the first Nether stays are not what it is for): made before the Nether unless set aside' },
+  // Iron armour by what its blaze fights take (note 1020), not by the first
+  // stays: those said "no benefit" (45% of stays with it ended in a death
+  // against 71% without, a rod 19 points less often), the ladder left the
+  // leggings and boots to be chosen, and with no leggings worn Jev took the
+  // Nether first 47 times and the leggings 4 on 2026-10-03 (00:00 to
+  // 08:40Z). 19 of 41 Nether entries were short of a piece, 130 of 184
+  // blaze fights were fought in two, and those took three times the health.
+  iron_armour: { says: 'its blaze fights in the record (scripts/blaze-record.js, fights begun over 16 health): 2026-10-03 04:00Z to 08:40Z, in a helmet and chestplate 130 fights took 12.9 health each, in three or four iron pieces 54 took 4.4; 2026-09-28 and 2026-09-29, 380 took 17.1 and 105 took 11.5',
+    verdict: 'a benefit before the Nether, in the health a blaze fight takes (the first stays differ in other ways): each piece short is made before the Nether unless set aside' },
 };
 function benefitOf(phase) {
   const before = BEFORE_NETHER[familyOf(phase)];
-  if (before) return { measured: true, benefit: true, before: before.says };
+  if (before) return { measured: true, benefit: true, before: before.says, verdict: before.verdict };
   const s = RUNG_STAYS[familyOf(phase)];
   if (!s) return { measured: false, benefit: false };
   const [[wn, wd, wr], [on, od, or]] = s;
@@ -123,7 +133,7 @@ function benefitOf(phase) {
 }
 // Whether a rung that may wait stays on the ladder before the Nether.
 const needBeforeNether = phase => benefitOf(phase).benefit;
-const ruleSays = `a rung that may wait is made before the Nether unasked only where the first Nether stays with what it makes did better than those without (at least ${BENEFIT_MIN} stays each side; a blaze rod got ${BENEFIT_POINTS} points more often, or a death ${BENEFIT_POINTS} points less often with a rod no more than ${ROD_SLACK} points less often); the bed by the nights it saves before the Nether (note 841)`;
+const ruleSays = `a rung that may wait is made before the Nether unasked only where the first Nether stays with what it makes did better than those without (at least ${BENEFIT_MIN} stays each side; a blaze rod got ${BENEFIT_POINTS} points more often, or a death ${BENEFIT_POINTS} points less often with a rod no more than ${ROD_SLACK} points less often); the bed by the nights it saves before the Nether (note 841), iron armour by the health its blaze fights take (note 1020)`;
 // The record of a rung before the Nether: what it took, whether it was
 // finished, and what the stays with and without it came to; then where the
 // rule puts it. One sentence, the same wherever the rung is weighed.
@@ -135,7 +145,7 @@ function rungRecordSays(phase) {
   if (s) parts.push(`first Nether stays (${RUNG_STAYS.stays}, ${RUNG_STAYS.window}; the played record, not a forecast, and the trials differ in other ways): with it ${s[0][0]}, ${pctOf(s[0][1], s[0][0])}% ended in a death, ${pctOf(s[0][2], s[0][0])}% got a blaze rod; without it ${s[1][0]}, ${pctOf(s[1][1], s[1][0])}% and ${pctOf(s[1][2], s[1][0])}%`);
   const b = benefitOf(phase);
   if (b.before) parts.push(b.before);
-  const verdict = b.before ? 'a benefit before the Nether, in the nights it saves (the first Nether stays are not what it is for): made before the Nether unless set aside' : b.benefit ? 'a benefit in the record: made before the Nether unless set aside' : b.measured ? 'no benefit in the record: optional before the Nether, made only if chosen' : 'too few stays on a side to measure: optional before the Nether, made only if chosen';
+  const verdict = b.before ? b.verdict : b.benefit ? 'a benefit in the record: made before the Nether unless set aside' : b.measured ? 'no benefit in the record: optional before the Nether, made only if chosen' : 'too few stays on a side to measure: optional before the Nether, made only if chosen';
   return ` In the record: ${parts.join('; ')}. ${verdict[0].toUpperCase()}${verdict.slice(1)} (${ruleSays}).`;
 }
 
@@ -145,7 +155,7 @@ function rungRecordShort(phase) {
   const fam = familyOf(phase), r = RUNGS[fam], s = RUNG_STAYS[fam];
   if (!r && !s) return '';
   const b = benefitOf(phase);
-  return ` Its record: ${r ? `${r[0]} of ${RUNGS.trials} trials worked on it before the Nether, a median ${r[2]} minutes each${r[4] ? `, ${r[3]} of ${r[4]} had it by the Nether` : ''}` : 'not worked on in the trials measured'}${s ? `; first Nether stays with it ${pctOf(s[0][1], s[0][0])}% ended in a death and ${pctOf(s[0][2], s[0][0])}% got a rod (${s[0][0]}), without it ${pctOf(s[1][1], s[1][0])}% and ${pctOf(s[1][2], s[1][0])}% (${s[1][0]})` : ''}; ${b.benefit ? 'a benefit in the record' : b.measured ? 'no benefit in the record' : 'too few stays to measure'}.`;
+  return ` Its record: ${r ? `${r[0]} of ${RUNGS.trials} trials worked on it before the Nether, a median ${r[2]} minutes each${r[4] ? `, ${r[3]} of ${r[4]} had it by the Nether` : ''}` : 'not worked on in the trials measured'}${s ? `; first Nether stays with it ${pctOf(s[0][1], s[0][0])}% ended in a death and ${pctOf(s[0][2], s[0][0])}% got a rod (${s[0][0]}), without it ${pctOf(s[1][1], s[1][0])}% and ${pctOf(s[1][2], s[1][0])}% (${s[1][0]})` : ''}; ${b.before ? `${b.before}: a benefit before the Nether` : b.benefit ? 'a benefit in the record' : b.measured ? 'no benefit in the record' : 'too few stays to measure'}.`;
 }
 
 module.exports = { BEFORE_NETHER, rungRecordShort, MINUTES, STAYS, RUNGS, RUNG_STAYS, BENEFIT_MIN, BENEFIT_POINTS, ROD_SLACK, familyOf, benefitOf, needBeforeNether, ruleSays, minutesSays, staysSays, rungRecordSays };

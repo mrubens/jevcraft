@@ -425,11 +425,14 @@ function ladderRung(bot, goal, waiting, { allOptional = false } = {}) {
   const worn = carried;
   // Golden boots count for the feet: one piece of gold keeps piglins
   // neutral, which is the whole encounter class that shot the run dead.
-  const missing = ['helmet', 'chestplate', 'leggings', 'boots']
-    .filter(piece => !worn.some(name => (/^(iron|diamond|netherite)_/.test(name) || (piece === 'boots' && name === 'golden_boots')) && name.endsWith(`_${piece}`)))
-    .map(piece => `iron_${piece}`);
-  const armourPhase = missing.length === 4 ? 'iron_armour' : `iron_${missing[0]?.replace('iron_', '')}`;
-  if (missing.length && ready({ phase: armourPhase })) return { phase: missing.length === 4 ? 'iron_armour' : `iron_${missing[0].replace('iron_', '')}`, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
+  const short = ['helmet', 'chestplate', 'leggings', 'boots']
+    .filter(piece => !worn.some(name => (/^(iron|diamond|netherite)_/.test(name) || (piece === 'boots' && name === 'golden_boots')) && name.endsWith(`_${piece}`)));
+  // The feet are the golden boots' where those are still to be made (the
+  // rung below): no iron boots made first to be taken off for them (note 1020).
+  const goldFeet = !carried.includes('golden_boots') && ready({ phase: 'golden_boots' });
+  const missing = short.filter(piece => !(piece === 'boots' && goldFeet)).map(piece => `iron_${piece}`);
+  const armourPhase = short.length === 4 ? 'iron_armour' : missing[0];
+  if (missing.length && ready({ phase: armourPhase })) return { phase: armourPhase, action: 'acquire_set', item: missing[0], items: missing, count: missing.length };
   if (!carried.includes('golden_boots') && ready({ phase: 'golden_boots' })) return { phase: 'golden_boots', action: 'acquire', item: 'golden_boots', count: 1 };
   // Most of the run's deaths were arrows: skeletons in the caves, crossbow
   // piglins in the Nether, and a bot that could only answer at arm's length.

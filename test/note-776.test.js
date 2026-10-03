@@ -21,6 +21,8 @@ const levels = require('../src/levels');
 
 // A bed carried: the bed is the ladder's before the Nether now (note 841).
 const GEAR = ['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'golden_boots', 'white_bed'];
+// Iron armour is the ladder's before the Nether now (note 1020): carried here where the test is of the other rungs.
+const ARMOUR = ['iron_helmet', 'iron_chestplate', 'iron_leggings'];
 function fixture(names = GEAR, extra = {}) {
   const items = [...names.map(name => ({ name, count: 1 })), ...Object.entries(extra).map(([name, count]) => ({ name, count }))];
   const bot = Object.assign(new EventEmitter(), { registry, _client: new EventEmitter(), game: { dimension: 'overworld', gameMode: 'survival', difficulty: 'normal' }, chat() {},
@@ -34,11 +36,14 @@ test('the record and its rule: a rung that may wait is the ladder\'s before the 
   assert.equal(record.needBeforeNether('golden_boots'), true);
   assert.equal(record.needBeforeNether('iron_sword'), true);
   // No benefit: the food (67% died against 55%), the bed (rods 26% against
-  // 41%), the armour (rods 23% against 42%), the kit's blocks and pickaxe.
-  for (const p of ['nether_food', 'iron_armour', 'iron_helmet', 'nether_blocks', 'nether_pickaxe', 'nether_chest', 'bow']) assert.equal(record.needBeforeNether(p), false, p);
+  // 41%), the kit's blocks and pickaxe.
+  for (const p of ['nether_food', 'nether_blocks', 'nether_pickaxe', 'nether_chest', 'bow']) assert.equal(record.needBeforeNether(p), false, p);
   // The bed by the nights it saves (note 841), not the first stays.
   assert.equal(record.needBeforeNether('bed'), true);
   assert.match(record.rungRecordSays('bed'), /on the surface at night 1478 bot-minutes awake, 468 of them sealed in a pocket waiting .* A benefit before the Nether, in the nights it saves/);
+  // Iron armour by the health its blaze fights take (note 1020), not the first stays.
+  for (const p of ['iron_armour', 'iron_helmet', 'iron_leggings']) assert.equal(record.needBeforeNether(p), true, p);
+  assert.match(record.rungRecordSays('iron_leggings'), /in a helmet and chestplate 130 fights took 12\.9 health each, in three or four iron pieces 54 took 4\.4.* A benefit before the Nether, in the health a blaze fight takes \(the first stays differ in other ways\): each piece short is made before the Nether unless set aside/);
   // Too few stays without it to measure: no benefit shown.
   assert.deepEqual([record.benefitOf('shield').measured, record.benefitOf('shield').benefit], [false, false]);
   const food = record.rungRecordSays('nether_food');
@@ -50,13 +55,12 @@ test('the record and its rule: a rung that may wait is the ladder\'s before the 
 });
 
 test('the ladder goes on to the portal past the optional rungs; chosen, one is the ladder\'s until made; after a first Nether the ladder is as it was', () => {
-  const { bot, goal } = fixture(GEAR, { cobblestone: 10 });
-  // No bed, no armour, no food, ten blocks, one pickaxe: all optional.
+  const { bot, goal, items } = fixture([...GEAR, ...ARMOUR], { cobblestone: 10 });
+  // No food, ten blocks, one pickaxe: all optional.
   assert.equal(gp.nextGameStage(bot, goal).action, 'enter_nether', 'the portal next');
   assert.deepEqual(gp.openRungs(bot, goal), []);
   const optional = gp.optionalRungs(bot, goal).map(r => r.phase);
-  // (The golden boots worn count for the feet: the armour's first piece missing is the helmet.)
-  for (const p of ['iron_helmet', 'nether_pickaxe', 'nether_blocks', 'nether_food']) assert(optional.includes(p), `${p} in ${optional}`);
+  for (const p of ['nether_pickaxe', 'nether_blocks', 'nether_food']) assert(optional.includes(p), `${p} in ${optional}`);
   // Chosen: the ladder's next, until it is made.
   gp.optIn(goal, 'nether_food');
   assert.equal(gp.nextGameStage(bot, goal).phase, 'nether_food');
@@ -72,6 +76,8 @@ test('the ladder goes on to the portal past the optional rungs; chosen, one is t
   // After a first Nether entry the ladder rebuilds what a death took, as before.
   gp.observeProgress(bot, goal);
   goal.gameProgress.milestones.nether_entered = { at: Date.now(), dimension: 'nether' };
+  // (The golden boots worn count for the feet: the armour's first piece missing is the helmet.)
+  for (const name of ARMOUR) items.splice(items.findIndex(i => i.name === name), 1);
   assert.equal(gp.nextGameStage(bot, goal).phase, 'iron_helmet');
   assert.deepEqual(gp.optionalRungs(bot, goal), []);
 });
@@ -80,17 +86,20 @@ test('a tool that may not wait still comes first, and the golden boots stay on t
   const { bot, goal } = fixture(['stone_pickaxe', 'stone_sword']);
   // The bed before the mine again, by the nights it saves (note 841).
   assert.equal(gp.nextGameStage(bot, goal).phase, 'bed');
-  const g2 = fixture(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'white_bed']);
+  const g2 = fixture(['diamond_pickaxe', 'iron_sword', 'shield', 'water_bucket', 'white_bed', ...ARMOUR]);
   assert.equal(gp.nextGameStage(g2.bot, g2.goal).phase, 'golden_boots');
+  // Short of a piece of iron, the armour is the ladder's before the Nether (note 1020).
+  const g3 = fixture([...GEAR, 'iron_helmet', 'iron_chestplate']);
+  assert.equal(gp.nextGameStage(g3.bot, g3.goal).phase, 'iron_leggings');
 });
 
 test('win_strategy offers each optional rung with its record beside the Nether, and a choice of one holds', async () => {
   const { strategyStep, strategyOptions } = require('../src/strategy');
-  const { bot, goal, task } = fixture(GEAR, { cobblestone: 10 });
+  const { bot, goal, task } = fixture([...GEAR, ...ARMOUR], { cobblestone: 10 });
   const stage = gp.nextGameStage(bot, goal);
   const options = strategyOptions(bot, goal, stage, {});
   assert(options.stage_reach_nether?.ladderNext, Object.keys(options).join(','));
-  assert(options.rung_nether_food && options.rung_iron_helmet && !options.rung_bed, Object.keys(options).join(','));
+  assert(options.rung_nether_food && !options.rung_iron_helmet && !options.rung_bed, Object.keys(options).join(','));
   assert.equal(options.rung_nether_food.ladderNext, false);
   assert.match(options.rung_nether_food.description, /^Get food carried for the Nether stay\./);
   assert.match(options.rung_nether_food.description, /No benefit in the record: optional before the Nether, made only if chosen/);
@@ -117,7 +126,7 @@ test('win_strategy offers each optional rung with its record beside the Nether, 
 // diamond sword chosen: the plan by level puts the surface first, once, and
 // the depth with the portal's lava last.
 function deepBot(extra = {}) {
-  const items = Object.entries({ iron_pickaxe: 3, coal: 125, iron_ingot: 29, cobblestone: 128, mutton: 5, iron_sword: 1, shield: 1, bucket: 1, golden_boots: 1, furnace: 1, white_bed: 1, ...extra })
+  const items = Object.entries({ iron_pickaxe: 3, coal: 125, iron_ingot: 29, cobblestone: 128, mutton: 5, iron_sword: 1, shield: 1, bucket: 1, golden_boots: 1, furnace: 1, white_bed: 1, iron_helmet: 1, iron_chestplate: 1, iron_leggings: 1, ...extra })
     .map(([name, count]) => ({ name, count }));
   return {
     registry, health: 20, food: 18, game: { gameMode: 'survival', dimension: 'overworld', difficulty: 'normal' }, time: { timeOfDay: 1000 },
