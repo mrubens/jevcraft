@@ -371,3 +371,13 @@ test('the dig to shore does not take a route with the head under water longer th
     if (!taken) assert.equal(goal.shoreRecovery.dig.tried[0].breathShort.breath, 13);
   }
 });
+
+test('no notch is cut into a bank of sand: it comes down on the head of the bot that steps in (note 1128)', async () => {
+  // 25590 (2026-10-03 22:33Z): a notch cut into a beach, the bot stepped in and suffocated from 20 health in ten seconds.
+  const { notchOut } = require('../src/shore');
+  const { bot, dug } = pool({ waterBeside: false });
+  const at = bot.blockAt;
+  bot.blockAt = p => { const b = at(p); return b.name === 'dirt' && b.position.y >= 63 ? { ...b, name: 'sand' } : b; };
+  assert.equal(await notchOut(bot, new Task('beach'), {}, () => {}), false);
+  assert.equal(dug.size, 0, 'nothing dug');
+});

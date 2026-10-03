@@ -310,6 +310,7 @@ async function clearHeadroom(bot, task) {
 // or a wooden pickaxe (5.6) is not (note 945; until then the limit was four
 // seconds for the two blocks together, and a grass-topped bank never passed).
 const NOTCH_DIG_MS = 5000;
+const FALLING = /^(sand|red_sand|gravel|suspicious_sand|suspicious_gravel)$|_concrete_powder$/;
 // A pool whose banks stand too high to climb from the water: a step cut
 // into the bank at the waterline, the two blocks over it dug out, and the
 // bot climbs onto it. The live run swam in a one-wide pool with its banks
@@ -345,6 +346,15 @@ async function notchOut(bot, task, goal, save) {
         // takes about twenty-five times as long, and two of stone drowned
         // the live bot sinking while it dug. The game's own dig time says
         // how long; each block is dug at the surface with the air guarded.
+        // Not where sand or gravel is one of the cells dug or lies over
+        // them (note 1128): it comes down into the notch as it is cut, on
+        // the head of the bot that steps in, and a block over the head dug
+        // by hand from the water is not dug in the ten seconds it takes to
+        // suffocate. 25590 (2026-10-03 22:33:00 to 22:33:16Z) cut its notch
+        // into a beach at (-139, 62, 334), stepped in, and went from 20
+        // health to none in the wall, the dig of the block on its head its
+        // only way and never done.
+        if ([body, head, head.offset(0, 1, 0), head.offset(0, 2, 0)].some(c => FALLING.test(bot.blockAt(c)?.name || ''))) continue;
         const toDig = [body, head].map(c => bot.blockAt(c)).filter(b => b?.boundingBox === 'block');
         if (toDig.some(b => (typeof bot.digTime === 'function' ? bot.digTime(b) : 500) > NOTCH_DIG_MS)) continue;
         options.push({ from, step, body, head, up, cost: Math.abs(dx) + Math.abs(dz) + toDig.length + up });
