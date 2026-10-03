@@ -530,8 +530,15 @@ function huntKin(bot, now = Date.now()) {
   const hunt = bot?._huntingEntity;
   if (!hunt || !(hunt.until > now)) return undefined;
   const { FIRE_REACH } = require('./combat-estimate');
-  const kin = threats(bot, 24).filter(t => t.entity.name === hunt.name && t.visible && shooter(t.entity) && t.distance <= (FIRE_REACH[t.entity.name] || 16));
-  return kin.length >= 2 ? { ...kin[0], huntKin: kin } : undefined;
+  // In sight, or seen in the last ten seconds (survival.js keeps the
+  // shooters seen, note 1034): round a cage they pass behind its bars and a
+  // pillar between looks. 25592 (2026-10-03 09:41:59Z), 8.7 health, four
+  // blazes six to ten blocks off and one of them in sight at that look, was
+  // asked the hunt or the work, answered none good at 0.50, took the work
+  // and was dead thirteen seconds on.
+  const lately = t => { const at = bot._shootersSeen?.get?.(t.entity.id); return Number.isFinite(at) && now - at < 10000; };
+  const kin = threats(bot, 24).filter(t => t.entity.name === hunt.name && (t.visible || lately(t)) && shooter(t.entity) && t.distance <= (FIRE_REACH[t.entity.name] || 16));
+  return kin.length >= 2 && kin.some(t => t.visible) ? { ...kin.find(t => t.visible), huntKin: kin } : undefined;
 }
 function immediateThreat(bot, { stoodOff = false, huntKin: kin = false } = {}) {
   if (kin) return immediateThreat(bot) || immediateThreat(bot, { stoodOff: true }) ? undefined : huntKin(bot);

@@ -25,6 +25,17 @@ test('hunting blazes with three in sight five to seven blocks off: no threat by 
   const kin = danger.immediateThreat(b, { huntKin: true });
   assert.equal(kin?.entity.id, 20);
   assert.equal(kin.huntKin.length, 3);
+  // Note 1034: one in sight and two seen within the last ten seconds count; seen longer ago, they do not.
+  const partly = bot([4.7, 5.3, 7.3]);
+  partly.world.raycast = (from, dir, range) => (range > 5.1 ? { position: from.plus(dir.scaled(2)).floored(), intersect: from.plus(dir.scaled(2)) } : null);
+  assert.equal(danger.threats(partly, 24).filter(t => t.visible).length, 1, 'one in sight');
+  assert.equal(danger.immediateThreat(partly, { huntKin: true }), undefined, 'one in sight alone is the hunt\'s');
+  partly._shootersSeen = new Map([[21, Date.now() - 3000], [22, Date.now() - 3000]]);
+  const seen = danger.immediateThreat(partly, { huntKin: true });
+  assert.equal(seen?.entity.id, 20, 'the one in sight is named');
+  assert.equal(seen.huntKin.length, 3);
+  partly._shootersSeen = new Map([[21, Date.now() - 20000], [22, Date.now() - 20000]]);
+  assert.equal(danger.immediateThreat(partly, { huntKin: true }), undefined);
   // One alone is the hunt's; no hunt, nothing.
   assert.equal(danger.immediateThreat(bot([4.7]), { huntKin: true }), undefined);
   const idle = bot([4.7, 5.3]); delete idle._huntingEntity;
