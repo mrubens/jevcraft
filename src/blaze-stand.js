@@ -1017,12 +1017,24 @@ const volleyComing = bot => shieldCarried(bot) && (volleyWatch(bot), blazesSeein
 // thrown (2026-09-28 04:56). Only between volleys, only to ground a push
 // lands on, and only two steps from the stand.
 const SORTIE_STEPS = 2;
+// One fireball's hit through what is worn and its four of fire, and four
+// more: under it no sortie is made.
+function sortieFloor(bot) {
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  return round(ce.afterArmour(ce.MOBS.blaze.hit, ce.armourOf(worn)) + 4 + 4);
+}
 async function sortie(bot, task, goal, save, home, { reach = 5, ms = 3500 } = {}) {
   if (!home) return false;
   const { canStrike, strike } = require('./combat');
   const near = blazesSeeing(bot).filter(e => e.position.distanceTo(bot.entity.position) <= reach && !canStrike(bot, e))
     .sort((a, b) => a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position));
   if (!near.length || volleyComing(bot)) return false;
+  // Not with the health one landing and a little more would end (note
+  // 1004): the step out is with the shield down, in the sight of whatever
+  // is about. 25597 (2026-10-03 07:17:02 to 07:17:18Z), four rods held,
+  // went out from its bunker on a sortie at 3 health, healed to 10.6 out
+  // there, and a fireball and a blow took it in two seconds.
+  if ((bot.health ?? 20) <= sortieFloor(bot)) return false;
   const blaze = near[0];
   const cell = strikeCells(bot, blaze).find(c => Math.abs(c.x - home.x) + Math.abs(c.z - home.z) <= SORTIE_STEPS && Math.abs(c.y - home.y) <= 1);
   if (!cell) return false;
@@ -2296,4 +2308,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
