@@ -605,6 +605,57 @@ async function stashValuables(bot, task, goal, save, actions, { now = Date.now()
   return false;
 }
 
+// A spare pickaxe and sword left in the chest before a Nether trip (note
+// 1045): what the chest lacks of them, a spare of each carried or what the
+// pockets make one from (iron ingots first, three and two; else cobblestone;
+// two sticks and one, or the wood for them). On 2026-10-03 thirteen of
+// fourteen trials had a bed and a stash chest and twelve of the chests were
+// empty; the four deaths in the Nether that were played on were back in the
+// Nether 22 to 52 minutes later, a median 37, the kit mined and smelted
+// again from bare hands. -> { home, far, lacks, makes, holds, says } or null
+const REGEAR = Object.freeze({ day: '2026-10-03', deaths: 4, min: 22, max: 52, median: 37 });
+function spareKitOffer(bot, goal, { now = Date.now() } = {}) {
+  if (bot.game?.gameMode !== 'survival' || !/overworld/.test(String(bot.game?.dimension || 'overworld'))) return null;
+  const { homeOf, homeDistance, HOME_REACH } = base();
+  const home = homeOf(bot, goal);
+  if (!home?.stash?.position || homeDistance(bot, home) > HOME_REACH) return null;
+  if (isSetAside(goal, 'stash', 'chest', now) || isSetAside(goal, 'stash', 'spare_kit', now)) return null;
+  const items = bot.inventory.items();
+  const n = name => countOf(bot, name);
+  const sticks = n('stick') + 4 * items.filter(i => /_planks$/.test(i.name)).reduce((c, i) => c + i.count, 0) / 2 + 8 * items.filter(i => /_(log|stem)$/.test(i.name)).reduce((c, i) => c + i.count, 0);
+  let ingots = n('iron_ingot'), stone = n('cobblestone') + n('cobbled_deepslate') + n('blackstone'), sticksLeft = sticks;
+  const lacks = [], makes = [], spare = [];
+  for (const slot of SPARE_KIT.filter(k => k.tool)) {
+    if (storedIn(bot, home, slot) >= slot.count) continue;
+    lacks.push(slot.tool);
+    if (spares(bot, slot, items).length) { spare.push(slot.tool); continue; }
+    const head = slot.tool === 'pickaxe' ? 3 : 2, handle = slot.tool === 'pickaxe' ? 2 : 1;
+    if (sticksLeft < handle) continue;
+    if (ingots >= head) { makes.push({ item: `iron_${slot.tool}`, from: `${head} of the ${n('iron_ingot')} iron ingots carried` }); ingots -= head; sticksLeft -= handle; }
+    else if (stone >= head) { makes.push({ item: `stone_${slot.tool}`, from: `${head} of the stone carried` }); stone -= head; sticksLeft -= handle; }
+  }
+  if (!makes.length && !spare.length) return null;
+  const far = Math.round(homeDistance(bot, home)), holds = describeContents(contentsOf(home));
+  const made = makes.length ? `make ${makes.map(m => `a spare ${words(m.item)} (${m.from})`).join(' and ')}, a few seconds at a crafting table, and ` : '';
+  const carried = spare.length ? `${makes.length ? 'with ' : ''}the spare ${spare.join(' and ')} carried` : '';
+  return { home, far, lacks, makes, holds,
+    says: `Leave a spare kit in the stash chest at home first, ${far} blocks off, about ${Math.max(5, Math.round(far / 4.3))} seconds each way: ${made}leave ${makes.length ? `${makes.length === 1 ? 'it' : 'them'}${carried ? ` ${carried}` : ''}` : carried} there (the chest holds ${holds || 'nothing yet'}). A death in the Nether comes back to life at the bed with empty hands, and what is in the chest is taken up from there: on ${REGEAR.day} the ${REGEAR.deaths} deaths in the Nether with the chest empty were back in the Nether ${REGEAR.min} to ${REGEAR.max} minutes later, a median ${REGEAR.median}, the kit mined and smelted again.` };
+}
+// Made, carried home and put in. -> the moves stored
+async function leaveSpareKit(bot, task, goal, save, actions, offer) {
+  for (const m of offer.makes) {
+    goal.step = { action: 'spare_kit', item: m.item }; save();
+    try { await actions.acquireStep(bot, task, m.item, countOf(bot, m.item) + 1, goal, save); }
+    catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare kit] the ${words(m.item)} was not made: ${String(err.message || err).slice(0, 160)}`); }
+  }
+  let stored = [];
+  try { stored = await stockStash(bot, task, goal, save, offer.home, actions, { only: m => m.slot === 'pickaxe' || m.slot === 'sword' }); }
+  catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; console.log(`[spare kit] not put in the chest: ${String(err.message || err).slice(0, 160)}`); }
+  if (!stored.length) { setAside(goal, 'stash', 'spare_kit', 'nothing went into the chest', RETRY_MS); save(); }
+  else bot.chat?.(`Left ${describeMoves(stored)} in the chest at home: a kit to come back to.`);
+  return stored;
+}
+
 // The chore Jev chooses between the others: stock the chest with spares.
 function stashChores(bot, goal) {
   const { homeOf, homeDistance, HOME_REACH } = base();
@@ -622,4 +673,5 @@ function stashChores(bot, goal) {
 }
 
 module.exports = { withChest, moveIn, chestRoomFor, CHEST_MAX, expandStash, SPARE_KIT, VALUABLES, KEEPSAKES, KIT_FOOD_POINTS, NETHER_FOOD_POINTS, slotFits, keepsakeOf, isKeepsake, isKitMaterial, stashDeposits, stashWithdrawals, rungWants, planIngredients, stashStatus, forgetChest, rememberContents,
+  spareKitOffer, leaveSpareKit, REGEAR,
   restockStage, placeStashChest, stockStash, restockFromStash, stashValuables, stashChores, describeContents };

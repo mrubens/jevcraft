@@ -122,7 +122,7 @@ function option(bot, task, goal, save, actions, offer) {
       // began and the bot went on into the fortress (note 887).
       require('./progress').attemptsFor(goal).clear('rung', 'bank_rods');
       save?.();
-      bot.chat?.(`Taking the ${plural(offer.rods, 'blaze rod')} out to a chest past the portal, then back for the rest.`);
+      bot.chat?.(`Taking the ${plural(offer.rods, 'blaze rod')} out to a chest past the portal, ${offer.complete ? 'every rod I need is had with them: the pearls after' : 'then back for the rest'}.`);
       if (actions?.returnOverworld) await actions.returnOverworld(bot, task, goal, save);
     } };
 }

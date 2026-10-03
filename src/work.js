@@ -8282,6 +8282,9 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
     const lead = i.key === 'health' && hungryWait ? `Eat the ${waitMeal.item.name.replaceAll('_', ' ')} first (hunger ${bot.food}${waitMeal.after ? ` to ${waitMeal.after}` : ''}; health comes back from eighteen), then wait here and heal, to sixteen.` : TOP_UP[i.key];
     tree[`top_up_${i.key}`] = { description: `${lead}${i.key === 'health' ? healWaitSays(bot, i, waitMeal) : ''} ${i.says}${soFar(i)}` };
   }
+  // A spare pickaxe and sword left in the chest at home (home-stash.js spareKitOffer, note 1045).
+  let spareKit = null; try { spareKit = require('./home-stash').spareKitOffer(bot, goal); } catch (_) { spareKit = null; }
+  if (spareKit) tree.spare_kit = { description: spareKit.says };
   if (valuables?.how === 'stash') tree.stash_valuables = { description: `Walk ${valuables.far} blocks to the stash chest at home first and leave the valuables in it (${valuables.what}), about ${Math.round(valuables.far / 4.3)} seconds each way: a death in the Nether drops everything carried, often into lava.` };
   if (valuables?.how === 'cache') tree.cache_valuables = { description: `Put ${valuables.chest} down here first and leave the valuables in it (${valuables.what}): home's chest is out of reach, and a death in the Nether drops everything carried, often into lava. They are taken back passing by.${pickaxeLeft(bot, valuables.spends)}` };
   const keys = Object.keys(tree).sort().join(',');
@@ -8315,7 +8318,8 @@ async function crossingKitReady(bot, task, goal, save, client = task.opportunity
   const spent = item && (kit.spent[item.key] ||= { ms: 0, from: item.carried });
   const started = Date.now();
   try {
-    if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
+    if (pick === 'spare_kit') await require('./home-stash').leaveSpareKit(bot, task, goal, save, homeActions(), spareKit);
+    else if (pick === 'stash_valuables') await stashValuables(bot, task, goal, save, homeActions());
     else if (pick === 'cache_valuables') await require('./field-cache').cacheValuables(bot, task, goal, save, homeActions());
     else if (pick === 'top_up_pickaxe') {
       goal.step = { action: 'pickaxe_for_nether', item: pickMade }; save();
