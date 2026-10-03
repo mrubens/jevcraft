@@ -47,10 +47,19 @@ function mobsAbout(bot, radius = 24) {
   // counted apart and left out of the figures, as every stance leaves them
   // (note 566). mid-244-ad-nether-2's stance was told "fighting all here:
   // 8.2 damage" for a sword piglin with no way onto its bridge.
+  // A slime or a magma cube about is priced as itself, not as the family a
+  // kill would make of it: what is about is what can come. Over 2026-10-02
+  // and 2026-10-03, 306 questions with one magma cube alone within 24 blocks
+  // said "fighting all here" at a median 47 damage, 227 of them "high: the
+  // mobs about could kill the bot if they all came", and in those two days
+  // magma cubes landed 28 hits on the bots in 18 meetings; 25594 (20:17Z),
+  // 8 pearls kept and 15 endermen about, answered its hunt's question
+  // "none good" under that risk and left the forest (note 1103). A fight
+  // chosen with one is priced with its splits, as before.
   let apart = new Set();
   try { apart = require('./danger').noWayIds(bot, about); } catch (_) { apart = new Set(); }
   const reach = about.filter(t => !apart.has(t.entity.id));
-  const estimate = fightEstimate({ threats: [...reach, ...about.filter(t => apart.has(t.entity.id))].slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(slimeSize(t.entity) ? { size: slimeSize(t.entity) } : {}), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true, ...(apart.has(t.entity.id) ? { apart: true } : {}) })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
+  const estimate = fightEstimate({ threats: [...reach, ...about.filter(t => apart.has(t.entity.id))].slice(0, 8).map(t => ({ name: t.entity.name, distance: t.distance, shoots: shooter(t.entity), ...(slimeSize(t.entity) ? { size: slimeSize(t.entity) } : {}), ...(/^(magma_cube|slime)$/.test(t.entity.name) ? { noSplits: true } : {}), ...(t.entity.heldItem?.name ? { held: t.entity.heldItem.name } : {}), visible: true, ...(apart.has(t.entity.id) ? { apart: true } : {}) })), armour, weapon, health, shield: bot.inventory?.slots?.[45]?.name === 'shield' });
   return { about, apart, reach, estimate, health };
 }
 

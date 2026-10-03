@@ -50,3 +50,14 @@ test('a shooter beyond twenty-four blocks is counted, and a shot in the air comi
   assert.match(said.level, /nothing hostile in view, but a shot in the air is coming at the bot/);
   assert.equal(said.shotsComingAtTheBot, 1, 'the arrow flying across is not');
 });
+
+test('one magma cube about is priced as itself, not as the family a kill would make of it (note 1103)', () => {
+  // 2026-10-02 and 03: 306 questions with one magma cube alone about said a median 47 damage, 227 of them "high"; magma cubes landed 28 hits in 18 meetings.
+  const risk = riskNow(botWith({ mobs: [['magma_cube', 12]], weapon: 'iron_sword' }));
+  assert.doesNotMatch(risk.level, /^high/, risk.level);
+  assert(risk.fightingAllHere.damageTaken < 20, `one cube: ${risk.fightingAllHere.damageTaken}`);
+  // A fight chosen with it keeps its splits.
+  const { fightEstimate } = require('../src/combat-estimate');
+  const whole = fightEstimate({ threats: [{ name: 'magma_cube', distance: 12 }], weapon: 'iron_sword' }).fightHere.damageTaken;
+  assert(whole > risk.fightingAllHere.damageTaken * 2, `with its splits ${whole}, itself ${risk.fightingAllHere.damageTaken}`);
+});

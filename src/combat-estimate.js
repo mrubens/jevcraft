@@ -957,6 +957,8 @@ function fightEstimate({ threats, armour = [], weapon = null, health = 20, shiel
   // Each comes only when the one it came from dies (bornOf, below).
   threats = threats.flatMap(t => {
     const out = [t];
+    // The ones about, not what a kill would make of them (risk.js, note 1103).
+    if (t.noSplits) return out;
     let parents = [t];
     for (const s of slimeSplits(t) || MOBS[t.name]?.splits || []) {
       const per = Math.round(s.count / parents.length);
