@@ -183,6 +183,32 @@ const PIECES = [['torso', 'iron_chestplate', 8, 6], ['legs', 'iron_leggings', 7,
 // health in 15 seconds, 3 a blow; the chestplate its iron made takes a
 // zombie's blow to about 2.
 function netherPiece(bot) { return /nether/.test(dimOf(bot)) ? ironPiece(bot) : null; }
+// In the Nether with no gold worn and none carried, the golden boots the
+// pockets make (note 1087): four gold ingots, carried or smelted from the
+// raw gold carried with a furnace (or eight stone) and fuel, at a table or
+// four planks. Piglins attack a player wearing no gold. 25595 (2026-10-03
+// 16:37Z, 2 raw gold) and 25588 (17:03Z, full iron and 5 raw gold in its
+// pockets) were each shot dead by piglins with no gold on, and no step or
+// question in the Nether made the boots. Not with a mob within 24 blocks.
+// -> { seconds, says } or null
+const GOLD = /^golden_(helmet|chestplate|leggings|boots)$/;
+function goldBoots(bot) {
+  if (!/nether/.test(dimOf(bot)) || bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory.slots?.[slot]?.name).filter(Boolean);
+  if (worn.some(n => GOLD.test(n)) || (bot.inventory.items?.() || []).some(i => GOLD.test(i.name))) return null;
+  const here = bot.entity?.position;
+  if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)) return null;
+  const ingots = countOf(bot, 'gold_ingot'), raw = countOf(bot, 'raw_gold'), smelt = smeltKit(bot);
+  const smelted = Math.max(0, 4 - ingots);
+  if (ingots + (smelt.ok ? raw : 0) < 4) return null;
+  const table = countOf(bot, 'crafting_table') > 0, planks = sum(bot, /_planks$/) + 4 * sum(bot, /_(log|stem|wood|hyphae)$/);
+  if (!table && planks < 4) return null;
+  const seconds = (smelted ? smelted * SMELT_SECONDS + (smelt.furnace ? PUT_DOWN_SECONDS : PUT_DOWN_SECONDS + CRAFT_SECONDS) : 0) + CRAFT_SECONDS;
+  const piglins = here ? Object.values(bot.entities || {}).filter(e => /^piglin(_brute)?$/.test(e.name || '') && e.position && e.position.distanceTo(here) <= 64).length : 0;
+  const from = smelted ? `${4 - smelted ? `${4 - smelted} of the gold ingots carried and ` : ''}${smelted} smelted from the ${raw} raw gold carried (${SMELT_SECONDS} seconds an ingot in ${smelt.furnace ? 'the furnace carried' : 'a furnace made from 8 of the stone carried'}, the ${smelt.fuel.replaceAll('_', ' ')} carried for fuel)` : `4 of the ${ingots} gold ingots carried`;
+  const feet = bot.inventory.slots?.[8]?.name;
+  return { seconds, says: `Make golden boots now and put them on, from what is carried (${from}), ${mins(seconds)} standing here${feet ? `; they take the place of the ${feet.replaceAll('_', ' ')} worn, a point of armour less` : ''}. No gold is worn: a piglin attacks a player wearing none on sight, sword or crossbow, and leaves one wearing any piece alone (the game's rule; a brute attacks either way)${piglins ? `; ${piglins} within 64 blocks now, none within 24` : ''}. On 2026-10-03 two bots with the gold for the boots in their pockets were shot dead by piglins in the Nether with none on.` };
+}
 function ironPiece(bot) {
   if (bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
   const nether = /nether/.test(dimOf(bot));
@@ -214,4 +240,4 @@ function ironPiece(bot) {
   return { item, seconds, says: `Make ${/s$/.test(item) ? '' : 'an '}${item.replaceAll('_', ' ')} now and put ${/s$/.test(item) ? 'them' : 'it'} on, from what is carried (${plural(need, 'iron ingot')}: ${from.says}${wood.says ? `; ${wood.says.replace(/^0 of the \d+ planks carried, /, '')}` : ''}), ${mins(seconds)} standing here.${hits}${record}` };
 }
 
-module.exports = { netherPiece, ironPiece, RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };
+module.exports = { netherPiece, ironPiece, goldBoots, RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };

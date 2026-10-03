@@ -1232,6 +1232,14 @@ async function upkeepOffers(bot, task, goal, save) {
   // piece's own look refuses it with a mob within 24 blocks.
   const pieceWeather = /overworld/.test(String(bot.game?.dimension || '')) ? bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater : reserveWeather(bot);
   const piece = goal.kind === 'win' && pieceWeather ? require('./entry-kit').ironPiece(bot) : null;
+  // Golden boots in the Nether from the gold carried, where none is worn (entry-kit.js goldBoots, note 1087).
+  const boots = goal.kind === 'win' && reserveWeather(bot) ? require('./entry-kit').goldBoots(bot) : null;
+  if (boots) options.gold_boots = { description: boots.says,
+    run: async () => {
+      goal.step = { action: 'gold_boots', item: 'golden_boots' }; save();
+      await acquireStep(bot, task, 'golden_boots', countOf(bot, 'golden_boots') + 1, goal, save);
+      try { await require('./mob-policy').wearBestArmour(bot); } catch (err) { task.check(); }
+    } };
   if (piece) options.iron_piece = { description: piece.says,
     run: async () => {
       goal.step = { action: 'iron_piece', item: piece.item }; save();
