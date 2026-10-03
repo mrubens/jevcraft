@@ -8705,7 +8705,11 @@ class Survival {
   // One Jev decision over a tree the code built: the question is defined in
   // decisions/survival.js and asked the one way every question is.
   decide(task, goal, save, { id, state, tree, context, isFresh = () => true, interrupt = () => {}, situation = undefined, aside = false }) {
-    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt, situation, aside });
+    // A question not asked for a creeper within its alert (decisions/index.js
+    // creeperFirst) is kept for the step: the creeper's own answer follows it
+    // in the same pass (step, note 1063).
+    return decide(id, { client: this.client, bot: this.bot, task, goal, save, tree, state, context, isFresh, interrupt, situation, aside })
+      .then(d => { if (d?.creeperFirst) this._creeperRefused = { id, facts: d.creeperFirst, at: Date.now() }; return d; });
   }
 
   // The carried bed goes down where the night caught us and comes back up
@@ -9426,7 +9430,28 @@ class Survival {
   // it. Air, danger, cancellation and stalls go on up as always.
   async step(task, goal, save, onStep = () => {}) {
     try {
+      delete this._creeperRefused;
       const acted = await this.stepOnce(task, goal, save, onStep);
+      // A question of the step's turned back for a creeper is answered with
+      // the creeper's own (note 1063): the question came back stale, the
+      // step said it had acted, the turn was given again for the creeper,
+      // and the same question was put again. 25594 (2026-10-03 14:17:44 to
+      // 14:30Z and on), sealed in its pocket with a creeper 3 blocks off,
+      // had "pocket_next not asked: a creeper 3 blocks off is the turn's
+      // first" over nine thousand times in twelve minutes, the turn held
+      // for creeper_back_off and no stance asked.
+      const refused = this._creeperRefused;
+      if (refused && !this._answeringCreeper) {
+        delete this._creeperRefused;
+        this._answeringCreeper = true;
+        try {
+          if (!(this._creeperSaidAt > Date.now() - 10000)) { this._creeperSaidAt = Date.now(); console.log(`[survival] ${refused.id} was not asked for a creeper${refused.facts?.creeper != null ? ` ${refused.facts.creeper} blocks off` : ''}: its stance is asked in the same step`); }
+          await this.flee(task, goal, save);
+          onStep(goal); return true;
+        } catch (inner) {
+          if (inner.name !== 'SetAside') throw inner;
+        } finally { this._answeringCreeper = false; }
+      }
       // A pass that leaves a threat at hand unanswered is not done: the work
       // loop then arms the threat check for the same mob and every step
       // after throws on it (the Fable advice on note 430). The encounter's
