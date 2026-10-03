@@ -206,7 +206,14 @@ async function findStronghold(bot, task, goal, save, actions, client) {
     bot.emit('stronghold_search', { kind: 'eye_bearing', bearing, estimate: search.estimate }); save(); return;
   }
   if (!target) throw blocked('Eye observation did not establish a usable stronghold direction');
-  await walkBearing(bot, task, goal, save, target, actions, client);
+  // A move is ground made (note 1129): a pass that ends within four blocks
+  // of where it began is not one of the 512 the search has. The rehearsal
+  // of 2026-10-03 (22:28 to 22:57Z) sat out a night under the ground 730
+  // blocks from its stronghold, every pass counted, and the search ended
+  // "budget exhausted" with one Eye thrown and 19 carried.
+  const began = bot.entity.position.clone(), movesWere = search.moves;
+  try { await walkBearing(bot, task, goal, save, target, actions, client); }
+  finally { if (search.moves > movesWere && bot.entity.position.distanceTo(began) < 4) { search.moves = movesWere; save(); } }
 }
 
 module.exports = { observedPortal, portalAt, frameOffsets, travelTarget, findStronghold };
