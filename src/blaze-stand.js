@@ -1607,7 +1607,14 @@ function blazeStands(bot, danger, { dig = true, hunted = false, pocket = false, 
   // shield the walk goes straight in and every fireball lands at its
   // chance, and the price says so.
   const reachable = blazes.filter(t => blazeReach(bot, t.entity)).sort((a, b) => a.distance - b.distance);
-  if (reachable.length) {
+  // Not with a biter at arm's length (note 1005): the walk in on a blaze is
+  // made with the back to it, a blow a second landing all the way. 25598
+  // (2026-10-03 07:19:49 to 07:19:55Z) charged a blaze eight blocks off with
+  // a wither skeleton 1.5 blocks from it, and four of its blows took it from
+  // 20 health to 0.8 in four seconds; the wither had the rest. The fight
+  // and the guard, which face what is at arm's length, stay on offer.
+  let atArm = []; try { atArm = require('./blaze-tactics').bitersAtArm(bot); } catch (_) { atArm = []; }
+  if (reachable.length && !atArm.length) {
     const first = reachable[0], over = blazes.length - reachable.length, shield = shieldCarried(bot);
     const walk = round(Math.max(0, first.distance - 3) / WALK);
     const m = measuredSays('close', bot);
