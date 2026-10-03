@@ -2205,6 +2205,15 @@ async function takeStand(bot, task, goal, save, option, { navigate, stallMs } = 
 // rise_to_strike and await_in_reach (note 774), run: the walk and the
 // pillar, then the strike at the one blaze; or the hold behind the shield
 // facing it, a swing when it comes in. -> true when it ran
+// A mob that bites (not a blaze, not a shooter, not a creeper's fuse) within
+// BITER_REACH of the bot and in sight, other than the one awaited.
+const BITER_REACH = 3.5;
+function biterInReach(bot, awaited) {
+  try {
+    const { threats } = require('./danger'), { shooter } = require('./combat');
+    return threats(bot, BITER_REACH + 1).find(t => t.entity !== awaited && t.entity.name !== 'blaze' && t.entity.name !== 'creeper' && !shooter(t.entity) && t.visible !== false && t.distance <= BITER_REACH) || null;
+  } catch (_) { return null; }
+}
 async function riseOrAwait(bot, task, goal, save, option, { navigate, seconds = 15 } = {}) {
   const { site, kind } = option;
   const blaze = bot.entities?.[site.target];
@@ -2227,7 +2236,16 @@ async function riseOrAwait(bot, task, goal, save, option, { navigate, seconds = 
   const deadline = Date.now() + seconds * 1000;
   let swung = 0;
   while (Date.now() < deadline && live()) {
-    task.check(); bot._threatResponseAt = Date.now(); claimBlazes(bot);
+    task.check();
+    // The wait is for the one blaze: a mob that bites come within reach
+    // meanwhile ends it, and what to do with that one is asked (note 1111).
+    // 25584 (2026-10-03 20:46:07 to 20:46:15Z), awaiting a blaze six blocks
+    // off, kept its eyes on it while a wither skeleton came to arm's length
+    // and struck four times in five seconds, 20 health to 3, no question
+    // asked between; the fire of the next fireball ended it.
+    const biter = biterInReach(bot, blaze);
+    if (biter) throw Object.assign(new Error(`a ${biter.entity.name.replaceAll('_', ' ')} came within ${Math.round(biter.distance * 10) / 10} blocks while the blaze was awaited: it bites, and the wait watches only the blaze`), { name: 'StanceFailed' });
+    bot._threatResponseAt = Date.now(); claimBlazes(bot);
     if (await putOutFlames(bot, task)) continue;
     if (canStrike(bot, blaze)) {
       const wait = (ce.SWING_MS?.sword || 625) - (Date.now() - (bot._defenseAttackAt || 0));
@@ -2343,4 +2361,4 @@ async function runTactic(bot, task, goal, save, option, { navigate, seconds, ite
   return null;
 }
 
-module.exports = { reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
+module.exports = { biterInReach, riseOrAwait, reachWalk, REACH_MEMO_MS, sortieFloor, eatInHold, fourNearSays, FOUR_NEAR, walkTakes, behindAtStrike, spawnerNewcomers, SPAWN_CAP, SPAWN_SECONDS, rodsNeeded, rodsTarget, rodsOf, towardRods, ROD_CHANCE, TACTICS, tacticOptions, runTactic, claimBlazes, blazeRate, closeInCost, closeInSays, shieldArc, SHIELD_LEAK, SHIELD_COVER, DUE_SECONDS, holdSays, heldHereSays, breakSite, breakSpawner, sortie, spawnerHoleSite, VOLLEY, MEASURED, volleyComing, flamesTouching, putOutFlames, CLOSE_SECONDS, charged, volleyWatch, volleyDue, volleyIn, shieldVolley, closeIn, strikeCells, measuredSays, blazeStands, holeSite, windowSite, inHole, wallSite, spawnerSite, spawnerReach, spawnerAt, standCost, knockSays, knockLands, lavaWithin, takeStand, huntFromStand, BLAZE_WAYS, noteSiteFailed, siteFailedNear, SITE_FAILED_MS, walkableToBlaze, blazeReach, pushedOnly, REACH_STEPS, riseSite, riseOrAwait };
