@@ -4957,6 +4957,28 @@ function tunnelHomeResting(bot, goal) {
   if (/no blocks carried/.test(why) && carried >= TUNNEL_BLOCKS_BACK) { attemptsFor(goal).clear('tunnel_home', 'nether'); return false; }
   return true;
 }
+// Whether the way to a portal in the Overworld is the surface's: the bot
+// under the rock, the portal PORTAL_SURFACE_FLAT blocks or more across, and
+// the rock straight at it (ROCK_PACE blocks a second, the day's tunnels: 401
+// minutes for 6,138 blocks gained on 2026-10-03, 0.26) 1.3 times or more the
+// climb (levels.js upSecondsABlock), the walk on top (4.3 a second) and the
+// stair down to it where it lies under the ground. -> { up, rock, over }
+// in blocks and seconds, or null.
+const PORTAL_SURFACE_FLAT = 64, ROCK_PACE = 0.26, DOWN_SECONDS = 3, SURFACE_WINS = 1.3;
+function portalSurfaceFirst(bot, p) {
+  try {
+    const here = bot.entity.position, { surfaceObserver, climbToSurface } = require('./surface');
+    if (!/overworld/.test(String(bot.game?.dimension || '')) || surfaceObserver(bot)(here)) return null;
+    const flat = Math.hypot(p.x - here.x, p.z - here.z);
+    if (flat < PORTAL_SURFACE_FLAT) return null;
+    const up = climbToSurface(bot, here);
+    if (!(up >= 8)) return null;
+    const rock = Math.hypot(flat, p.y - here.y) / ROCK_PACE;
+    const down = Math.max(0, here.y + up - p.y - 4);
+    const over = up * require('./levels').LEVEL_RECORD.upSecondsABlock + flat / 4.3 + down * DOWN_SECONDS;
+    return rock >= SURFACE_WINS * over ? { up, rock: Math.round(rock), over: Math.round(over) } : null;
+  } catch (_) { return null; }
+}
 async function walkToKnownPortal(bot, task, goal, save, where) {
   const here = bot.entity.position;
   // One Jev chose to pass over for a portal made here (portal_way) is not
@@ -5023,6 +5045,23 @@ async function walkToKnownPortal(bot, task, goal, save, where) {
   }
   // The way in stopped: the ways on are Jev's, with what it came to.
   if (walk) return portalWay(bot, task, goal, save, p, where, { walk });
+  // Under the rock in the Overworld with the portal far across: up to open
+  // sky first, where the legs are walked, when the rock straight at it
+  // takes 1.3 times the climb and the walk or more (portalSurfaceFirst, note
+  // 1112). 25597 (2026-10-03 20:10 to 20:18Z), at y -10 with its portal
+  // some 150 blocks across and 100 up, went at it in legs through the rock,
+  // ten blocks every thirty seconds, each leg ended "navigation timed out".
+  if (where === 'overworld' && !isSetAside(goal, 'portal_surface', pos(p))) {
+    const first = portalSurfaceFirst(bot, p);
+    if (first) {
+      goal.step = { action: 'return_to_portal', portal: { x: p.x, y: p.y, z: p.z }, via: 'surface', up: first.up }; save();
+      try { await surfaceTrip(bot, task, goal, save, 'the walk to the portal'); return true; }
+      catch (err) {
+        task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled', 'Stalled'].includes(err.name)) throw err;
+        setAside(goal, 'portal_surface', pos(p), `the climb to open sky for it failed: ${String(err.message || err).slice(0, 160)}`, 5 * 60000); save();
+      }
+    }
+  }
   if (distance <= 48) {
     try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 3), { timeoutMs: 60000, stallMs: 8000, passing: where === 'nether' }); return true; }
     catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; walk = `the walk there failed (${String(err.message || err).slice(0, 80)})`; }
@@ -9310,4 +9349,4 @@ function constructionObservation(bot, goal) {
   return JSON.stringify(positions.map(p => [p.x, p.y, p.z, bot.blockAt(pos(p))?.stateId ?? bot.blockAt(pos(p))?.name ?? null]));
 }
 
-module.exports = { nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
+module.exports = { portalSurfaceFirst, nightUpSays, oreToTunnel, gatherRests, gatherResting, relightPortalAt, stairPickaxeWanted, pickaxeForStair, siteHoldEnds, exploreLand, exploreLandIds, woodWhileUp, WOOD_UP, wantedItems, keepRoom, tidyMoment, smeltBatch, ladderSmeltWants, foodReservePrice, siteByLava, foodTrips, supportMaterialHere, preparePortalSupports, portalJobs, castSiteCost, castSiteSays, NO_WOOD_DEEP, smeltNeedSays, takeBackPlace, detourWork, restWork, restWorkSays, upkeepOffers, kitFoodStep, foodNearFrame, cookable, FUELS, answerOrPutOff, opensPit, persist, returnFromNether, climbSays, holdForRest, liveTurn, workClaim, methodSoFar, gatherBlocks, sculkStep, opensLava, descentTargets, portalInteriorBlockers, nearestLava, lavaGone, mineAtSource, timed, portalHere, walkToKnownPortal, portalWay, lineSays, buildPortalFrame, ruinSays, portalMethod, portalStep, crossingKitReady, walksFailed, occupant, bodyIn, occupiedSays, waitingThere, settleCraftInventory, tripTime, WOOD_RESERVE, woodUnits, crossingWater, sideTrips, plugLeak, leakResponse, logInView, patrolChoice, upkeepStep, moreOfSource, whileCooking, workstation, noteError, localBatch, takeOutBatch, castUnderWay, leftBatch, batchNoRoute, LEAVE_BATCH_MS, smelt, turnSearch, searchFor, enterPortal, gameHandlers, breakStillness, reachableBlocks, hitboxIntrudes, terrainShortage, runGoal, runIdle, idleWork, idleOptions, createSurvival, acquireStep, inventory, planningInventory, catalogPlan, selectSite, explore, dig, place, waitFor, constructionObservation, Blocked, designedBuildStep, surfaceStep, surfaceTrip, answerStall, looseEnds, breakOut, tunnelToward, stairsOrWay, craft, gatherWood, moveOnFromResource, moveOnHistorySays, pickaxeCraftHistorySays, maintainPickaxe, MOVE_ON_MEMORY_MS, PICKAXE_CRAFT_MEMORY_MS, stationCellOk, droppedFoodNear, planDueNow, planRoutes, lavaKnownFrom, straightToward };
