@@ -176,8 +176,16 @@ function netherSpare(bot) {
 // (or eight stone) and fuel; a crafting table carried or four planks.
 // Not while a mob is about (the caller's weather). -> { item, seconds, says } or null
 const PIECES = [['torso', 'iron_chestplate', 8, 6], ['legs', 'iron_leggings', 7, 7], ['head', 'iron_helmet', 5, 5], ['feet', 'iron_boots', 4, 8]];
-function netherPiece(bot) {
-  if (!/nether/.test(dimOf(bot)) || bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
+// In the Overworld too (note 1066): the armour's rung there gathers the iron
+// for every piece before it smelts any. 25593 (2026-10-03 13:55 to 14:17Z),
+// back to life bare, mined iron for 22 minutes down to y -53 with 13 raw
+// iron in its pockets and nothing on, and four zombies ended it from 20
+// health in 15 seconds, 3 a blow; the chestplate its iron made takes a
+// zombie's blow to about 2.
+function netherPiece(bot) { return /nether/.test(dimOf(bot)) ? ironPiece(bot) : null; }
+function ironPiece(bot) {
+  if (bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
+  const nether = /nether/.test(dimOf(bot));
   const wornAt = slot => bot.inventory.slots?.[slot]?.name || null;
   const here = bot.entity?.position;
   if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)) return null;
@@ -185,7 +193,8 @@ function netherPiece(bot) {
   const iron = ingots + (smelt.ok ? raw : 0);
   const table = countOf(bot, 'crafting_table') > 0, planks = sum(bot, /_planks$/) + 4 * sum(bot, /_(log|stem|wood|hyphae)$/);
   if (!table && planks < 4) return null;
-  const piece = PIECES.find(([, item, need, slot]) => !wornAt(slot) && !countOf(bot, item) && !(item === 'iron_boots' && countOf(bot, 'golden_boots')) && iron >= need);
+  // The feet are the golden boots' in the ladder's kit (note 1020): no iron boots made on the way to them.
+  const piece = PIECES.find(([, item, need, slot]) => !wornAt(slot) && !countOf(bot, item) && !(item === 'iron_boots' && (countOf(bot, 'golden_boots') || !nether)) && iron >= need);
   if (!piece) return null;
   const [, item, need] = piece;
   const from = ironFor(bot, need), wood = planksFor(bot, 0);
@@ -195,10 +204,14 @@ function netherPiece(bot) {
     const ce = require('./combat-estimate'), worn = [5, 6, 7, 8].map(wornAt).filter(Boolean), round = n => Math.round(n * 10) / 10;
     const through = names => [round(ce.afterArmour(ce.MOBS.blaze.hit, ce.armourOf(names))), round(ce.afterArmour(ce.MOBS.wither_skeleton.hit, ce.armourOf(names)))];
     const [f0, w0] = through(worn), [f1, w1] = through([...worn, item]);
-    hits = ` Worn now: ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing'}; a blaze's fireball lands about ${f0} and a wither skeleton's blade about ${w0}, with the ${item.replace('iron_', '')} about ${f1} and ${w1} (the fire a fireball sets is not reduced).`;
+    const over = names => [round(ce.afterArmour(ce.MOBS.zombie.hit, ce.armourOf(names))), round(ce.afterArmour(ce.MOBS.creeper.hit, ce.armourOf(names)))];
+    const [z0, c0] = over(worn), [z1, c1] = over([...worn, item]);
+    hits = nether
+      ? ` Worn now: ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing'}; a blaze's fireball lands about ${f0} and a wither skeleton's blade about ${w0}, with the ${item.replace('iron_', '')} about ${f1} and ${w1} (the fire a fireball sets is not reduced).`
+      : ` Worn now: ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing'}; a zombie's blow or a skeleton's arrow lands about ${z0} and a creeper's blast two blocks off about ${c0}, with the ${item.replace('iron_', '')} about ${z1} and ${c1}. The armour's own step gathers the iron for every piece before it smelts any; this one is worn from now, and the iron still to mine is that much less.`;
   } catch (_) { hits = ''; }
-  try { record = ` Iron armour: ${require('./kit-record').BEFORE_NETHER.iron_armour.says}.`; } catch (_) { record = ''; }
+  try { record = nether ? ` Iron armour: ${require('./kit-record').BEFORE_NETHER.iron_armour.says}.` : ''; } catch (_) { record = ''; }
   return { item, seconds, says: `Make ${/s$/.test(item) ? '' : 'an '}${item.replaceAll('_', ' ')} now and put ${/s$/.test(item) ? 'them' : 'it'} on, from what is carried (${plural(need, 'iron ingot')}: ${from.says}${wood.says ? `; ${wood.says.replace(/^0 of the \d+ planks carried, /, '')}` : ''}), ${mins(seconds)} standing here.${hits}${record}` };
 }
 
-module.exports = { netherPiece, RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };
+module.exports = { netherPiece, ironPiece, RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };

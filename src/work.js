@@ -1228,7 +1228,10 @@ async function upkeepOffers(bot, task, goal, save) {
     run: async () => { goal.step = { action: 'spare_shield', item: 'shield' }; save(); await acquireStep(bot, task, 'shield', countOf(bot, 'shield') + 1, goal, save); } };
   // A piece of iron armour gone without in the Nether, made from the pockets
   // (entry-kit.js netherPiece, note 1024).
-  const piece = goal.kind === 'win' && reserveWeather(bot) ? require('./entry-kit').netherPiece(bot) : null;
+  // In the Overworld too (note 1066), under the rock at night as by day: the
+  // piece's own look refuses it with a mob within 24 blocks.
+  const pieceWeather = /overworld/.test(String(bot.game?.dimension || '')) ? bot.game?.gameMode !== 'creative' && !bot.entity?.isInWater : reserveWeather(bot);
+  const piece = goal.kind === 'win' && pieceWeather ? require('./entry-kit').ironPiece(bot) : null;
   if (piece) options.iron_piece = { description: piece.says,
     run: async () => {
       goal.step = { action: 'iron_piece', item: piece.item }; save();
