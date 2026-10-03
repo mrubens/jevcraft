@@ -329,13 +329,16 @@ const RUNS = {
     const goal = {}; let error = null, o = null, r = null;
     const end = vec(d.spanEnd);
     try {
-      await navigate(bot, bounded, new goals.GoalBlock(end.x, end.y, end.z), { timeoutMs: 40000, stallMs: 8000 });
+      // Over a drop that kills the pathfinder walks no span: out crouched, a cell at a time, as the crossing lays it.
+      if (d.creepOut) { for (let x = Math.floor(bot.entity.position.x) + 1; x <= end.x; x++) { if (!await bridging.creepTo(bot, bounded, vec([x, end.y, end.z]), 2500)) throw new Error(`could not creep out to x ${x}`); } }
+      else await navigate(bot, bounded, new goals.GoalBlock(end.x, end.y, end.z), { timeoutMs: 40000, stallMs: 8000 });
       o = shore.offer(bot, goal);
       if (o) r = await shore.run(bot, bounded, goal, () => {}, o, { navigate });
     } catch (err) { error = err.message; }
     const p = bot.entity.position;
     return { pass: !watch.died && !!o && (r?.gained || 0) >= 16 && Math.hypot(p.x - end.x - 0.5, p.z - end.z - 0.5) <= 4, detail: { offered: !!o, back: o?.back, gained: r?.gained, carried: bridging.blocksCarried(bot), x: Math.round(p.x * 10) / 10, error: error && error.slice(0, 140) } };
   },
+  async blocks_from_shore_over_lava(d, bounded) { return RUNS.blocks_from_shore(d, bounded); },
   async wither_slot(d, bounded) {
     // The stance's own way: wither-guard's plan, the slot's entry, its guard.
     const wg = require('../src/wither-guard'), slot = require('../src/enderman-slot'), { threats } = require('../src/danger');

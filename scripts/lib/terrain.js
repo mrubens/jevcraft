@@ -460,6 +460,23 @@ const TERRAIN = Object.freeze([
     spanEnd: [6230, 81, 6200],
   },
   {
+    name: 'blocks_from_shore_over_lava',
+    why: 'Note 995: the same trip with the lava sea under the span: the pathfinder walks no way "along a drop that would kill", and the span is the bot\'s own way back (4 of the first 5 trips live ended "no route"; 25597, left at its span\'s end, was knocked off it by a fireball).',
+    dimension: 'the_nether', seconds: 180,
+    start: [6203.5, 81, 6260.5],
+    kit: [['iron_pickaxe', 1]],
+    build: [
+      'forceload add 6190 6250 6240 6270',
+      'fill 6195 60 6252 6240 95 6268 minecraft:air',
+      'fill 6195 58 6252 6240 59 6268 minecraft:netherrack',
+      'fill 6195 60 6252 6240 61 6268 minecraft:lava',
+      'fill 6195 70 6252 6210 90 6268 minecraft:netherrack',
+      'fill 6202 81 6260 6210 82 6260 minecraft:air',
+      'fill 6211 80 6260 6230 80 6260 minecraft:cobblestone',
+    ],
+    spanEnd: [6230, 81, 6260], creepOut: true,
+  },
+  {
     name: 'wither_slot',
     why: 'Note 987: 25595 (2026-10-03 05:19Z), four wither skeletons at eight blocks, full health, an iron kit and 158 blocks: every stance priced past its health, shield_guard taken at 0.81, dead in six seconds. A slot two high dug two cells into the rock beside it: they cannot come in, and one stands at the mouth at a time.',
     dimension: 'the_nether', seconds: 90,

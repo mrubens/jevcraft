@@ -56,14 +56,43 @@ async function run(bot, task, goal, save, o, { navigate }) {
   const cells = require('./walk-out').wayInOf(bot, goal)?.cells || [];
   const start = bot.entity.position.floored(), had = bridging.blocksCarried(bot);
   goal.step = { action: 'blocks_from_shore', to: { x: o.cell.x, y: o.cell.y, z: o.cell.z }, back: { x: start.x, y: start.y, z: start.z } }; save?.();
+  // Along its own cells: the pathfinder's walk a leg at a time, and where it
+  // finds no route, crouched a cell at a time on the keys (note 995). A span
+  // one wide over the lava sea is a way "along a drop that would kill" to
+  // the pathfinder, and it is the bot's own way back: of the first five
+  // trips live (2026-10-03) four ended "no route" at the first leg, and
+  // 25597, left at its span's end with no block, was knocked off it by a
+  // blaze's fireball from 28 blocks (06:16:13Z).
+  const solidAt = c => bot.blockAt(c)?.boundingBox === 'block';
+  const creep = async (from, to) => {
+    const dir = Math.sign(to - from) || 1;
+    for (let k = from + dir; dir > 0 ? k <= to : k >= to; k += dir) {
+      task.check();
+      const c = cells[k]; if (!c) throw new Error('the way back has no more cells');
+      const cell = at(c), feet = bot.entity.position.floored();
+      if (feet.equals(cell)) continue;
+      if (Math.abs(cell.x - feet.x) + Math.abs(cell.z - feet.z) > 2 || Math.abs(cell.y - feet.y) > 1) throw new Error(`the next cell of the way back at (${cell.x}, ${cell.y}, ${cell.z}) is not beside the bot`);
+      if (!solidAt(cell.offset(0, -1, 0)) || solidAt(cell) || solidAt(cell.offset(0, 1, 0))) throw new Error(`the way back is broken at (${cell.x}, ${cell.y}, ${cell.z})`);
+      if (!await bridging.creepTo(bot, task, cell, 2500, cell.y > feet.y ? ['forward', 'jump'] : ['forward'])) throw new Error(`could not step to (${cell.x}, ${cell.y}, ${cell.z}) on the way back`);
+    }
+  };
+  // Once the pathfinder has refused a leg the rest is crept: each refusal
+  // costs its own seconds, and the span does not change under the bot.
+  let creeping = false;
+  const nearest = (lo, hi) => { const p = bot.entity.position; let best = lo, bd = Infinity; for (let j = Math.max(0, lo); j <= Math.min(cells.length - 1, hi); j++) { const q = cells[j]; const dd = Math.hypot(q[0] + 0.5 - p.x, q[1] - p.y, q[2] + 0.5 - p.z); if (dd < bd) { bd = dd; best = j; } } return best; };
   const walk = async (from, to) => {
     const dir = Math.sign(to - from) || 1;
     for (let k = from; k !== to;) {
       task.check();
-      k = dir > 0 ? Math.min(to, k + LEG) : Math.max(to, k - LEG);
-      const c = cells[k]; if (!c) break;
-      // The last leg ends in the cell itself: a block short of it is still the span.
-      await navigate(bot, task, k === to ? new goals.GoalBlock(c[0], c[1], c[2]) : new goals.GoalNear(c[0], c[1], c[2], 1), { timeoutMs: 30000, stallMs: 8000 });
+      const leg = dir > 0 ? Math.min(to, k + LEG) : Math.max(to, k - LEG);
+      const c = cells[leg]; if (!c) break;
+      if (!creeping) {
+        // The last leg ends in the cell itself: a block short of it is still the span.
+        try { await navigate(bot, task, leg === to ? new goals.GoalBlock(c[0], c[1], c[2]) : new goals.GoalNear(c[0], c[1], c[2], 1), { timeoutMs: 10000, stallMs: 3000 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; creeping = true; }
+      }
+      if (creeping) await creep(nearest(Math.min(from, to), Math.max(from, to)), leg);
+      k = leg;
     }
   };
   let why = null;
@@ -76,7 +105,7 @@ async function run(bot, task, goal, save, o, { navigate }) {
   } catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; why = String(err.message || err).slice(0, 160); }
   const gained = bridging.blocksCarried(bot) - had;
   // Back to where it stood, with whatever was got.
-  try { if (gained > 0) { await walk(o.to, o.from); await navigate(bot, task, new goals.GoalNear(start.x, start.y, start.z, 1), { timeoutMs: 15000, stallMs: 5000 }); } }
+  try { if (gained > 0) { await walk(o.to, o.from); if (!creeping) await navigate(bot, task, new goals.GoalNear(start.x, start.y, start.z, 1), { timeoutMs: 15000, stallMs: 5000 }); } }
   catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; why ||= String(err.message || err).slice(0, 160); }
   console.log(`[shore] ${gained} blocks from the rock ${o.back} cells back${why ? `: ${why}` : ''}`);
   if (!gained) throw Object.assign(new Error(`No blocks were got from the rock ${o.back} cells back${why ? `: ${why}` : ''}`), { name: 'Blocked' });
