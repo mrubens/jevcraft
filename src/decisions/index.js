@@ -609,6 +609,14 @@ async function decide(id, { client, bot, task, goal, save = () => {}, tree, stat
     // The creeper alone: the body's own looks (the fire's hold among them,
     // body.js held) are left to their own askers, untouched here.
     try { const a = require('../arbiter'); creeper = a.observeReflexes(bot, undefined, { ...a.probe, inLava: () => false, burning: () => false, headInBlock: () => false, hotFloor: () => null, burnLeft: () => false }).find(r => r.key === 'creeper') || null; } catch (_) { creeper = null; }
+    // Sealed in a pocket with the creeper out of sight, the wall between
+    // (note 1075): the pocket's own question is the one about it (stay,
+    // tunnel out away from it, leave), and it is asked. 25594 (2026-10-03
+    // 14:17 to 15:19Z), sealed with a creeper 3 blocks off outside, had it
+    // turned back nine thousand times, and then the fight's stance every
+    // thirty seconds for sixteen minutes, block the creeper and the dance
+    // turn about, neither of them a thing to do through a wall.
+    if (creeper && id === 'pocket_next' && creeper.facts?.seen === false) creeper = null;
     if (creeper) { console.log(`[creeper] ${id} not asked: a creeper ${creeper.facts?.creeper} blocks off is the turn's first`); return { id, stale: true, creeperFirst: creeper.facts || true }; }
   }
   // No question while the body is in lava with nothing to keep it from

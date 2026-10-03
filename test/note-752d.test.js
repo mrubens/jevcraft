@@ -79,3 +79,29 @@ test('while turn_priority is out over a creeper\'s alert, the bot backs from it 
   assert.equal(out.winner.layer, 'survival');
   assert(backs >= 2, `backed ${backs} times`);
 });
+
+test('sealed in with the creeper out of sight, the pocket\'s own question is asked; in sight it is the creeper first as before (note 1075)', async () => {
+  const { decide } = require('../src/decisions');
+  const creeper = { id: 9, name: 'creeper', type: 'hostile', position: new Vec3(3.2, 64, 0.5), height: 1.7, metadata: [] };
+  let hidden = true;
+  const bot = { game: { dimension: 'overworld', difficulty: 'normal', gameMode: 'survival' }, health: 16, food: 18, oxygenLevel: 20, time: { timeOfDay: 18000 },
+    entity: { position: new Vec3(0.5, 64, 0.5), eyeHeight: 1.62, metadata: [0] }, entities: { 9: creeper }, inventory: { items: () => [], slots: [] }, registry: { entitiesByName: {} },
+    // Out of the bot's sight (the look's ray stopped), with a way round to it still.
+    blockAt: p => p.y < 64 ? { name: 'stone', boundingBox: 'block', position: p, shapes: [[0, 0, 0, 1, 1, 1]] } : { name: 'air', boundingBox: 'empty', position: p, shapes: [] },
+    world: { raycast: (from, dir, len) => hidden ? { position: new Vec3(1, 65, 0), intersect: from.plus(dir) } : null } };
+  let sent = 0;
+  const client = { model: 'x', systemOne: async req => { sent++; return { answers: Object.fromEntries(Object.entries(req.questions).map(([id, q]) => [id, { choice: Object.keys(q.criteria)[0], confidence: 0.9 }])) }; } };
+  const tree = { stay: { description: 'Stay in the pocket.' }, tunnel_out: { description: 'Dig a passage out.' } };
+  const d = await decide('pocket_next', { client, bot, goal: { kind: 'win' }, task: { check() {} }, tree, state: {} });
+  assert.notEqual(d.stale, true); assert.equal(sent, 1);
+  // Another question is still the creeper's first there.
+  const other = await decide('shelter_method', { client, bot, goal: { kind: 'win' }, task: { check() {} }, tree: { seal_here: { description: 'Seal here.' }, shaft_pocket: { description: 'A shaft pocket.' } }, state: {} });
+  assert.equal(other.stale, true, 'another question, the creeper hidden'); assert(other.creeperFirst);
+  // The wall open, the creeper in sight: the pocket's question waits for it.
+  hidden = false;
+  // (A fresh creeper: the look's sight of one is kept a moment.)
+  delete bot.entities[9]; bot.entities[10] = { ...creeper, id: 10 };
+  await new Promise(r => setTimeout(r, 30));
+  const seen = await decide('pocket_next', { client, bot, goal: { kind: 'win' }, task: { check() {} }, tree, state: {} });
+  assert.equal(seen.stale, true, 'the pocket question, the creeper in sight'); assert(seen.creeperFirst);
+});
