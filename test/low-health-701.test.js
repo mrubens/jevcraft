@@ -88,6 +88,8 @@ test('25597 23:26:15: a shield_up answer due while the chosen meal is eaten neit
 
 test('a fireball on its way that lands inside the meal cuts it for the shield; one landing after the meal does not (note 701)', () => {
   const { bot, calls, client, blaze } = fightBot();
+  // At hunger eighteen the health comes back without the meal: cut for the shield (under it, eaten through: note 991).
+  bot.food = 18;
   reflex.watchShots(bot);
   const now = Date.now();
   bot._meal = { item: 'beef', at: now, endsAt: now + 1900, cut: null };

@@ -464,6 +464,18 @@ function tick(bot, survival, now = Date.now()) {
       // the meal goes on.
       const inMs = h.seconds * 1000;
       if (inMs < RISE_MS || now + inMs > meal.endsAt) continue;
+      // A meal the health does not come back without is eaten through the
+      // shot (note 991): at hunger under eighteen nothing heals, and a
+      // shield held up at 17 heals nothing either. 25595 (2026-10-03
+      // 05:59:44 to 05:59:59Z), hunger 17, alight among five blazes, began
+      // its cooked mutton twice and had it cut for the shield both times,
+      // "nothing eaten", and burned from 14.9 to none; 25597 and 25593 the
+      // same minutes before. Eaten, a meal's saturation gives a health each
+      // half second, more than the fire takes. Cut still where the shot
+      // landing would end it before the meal does anything (health no more
+      // than its hit and a second of fire), unless the fire on the body
+      // takes what is left anyway.
+      if (mealThroughShot(bot, s)) continue;
       require('./meal').cutMeal(bot, `a ${s.name.replaceAll('_', ' ')} on its way to the bot, landing in about ${round(h.seconds)} seconds, inside the meal: the shield raised for it`, now);
       eating = false;
     }
@@ -911,4 +923,14 @@ function install(bot, survival) {
 // shooter's line, strike it first or take its shots.
 const answeredOtherwise = (bot, id, now = Date.now()) => { const a = id != null ? answerFor(bot, id, now) : null; return !!a && a.choice !== 'shield_up' && a.choice !== 'reflex'; };
 
-module.exports = { strikeFireball, STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS, ask, farHeld, FAR, FAR_HOLD_MS, FAR_NEARER_BY, shotWord };
+function mealThroughShot(bot, shot) {
+  if ((bot.food ?? 20) >= 18 || !/^(small_fireball|arrow|spectral_arrow|tipped_arrow)$/.test(String(shot?.name || ''))) return false;
+  const ce = require('./combat-estimate');
+  const worn = [5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean);
+  let hit = 5; try { hit = ce.afterArmour(ce.MOBS.blaze.hit, ce.armourOf(worn)); } catch (_) { hit = 5; }
+  const hp = bot.health ?? 20;
+  if (hp > hit + 1) return true;
+  try { return !!require('./body').lasts(bot, 'fire', { inFire: false })?.burnsToDeath; } catch (_) { return false; }
+}
+
+module.exports = { mealThroughShot, strikeFireball, STANCE_SHOTS, stanceShotsOf, stanceAnswer, shotComing, shotRule, behindSays, SHOT_W, SEEN_W, install, tick, hitting, shotAt, holdRefused, facingFor, shotOptions, answerFor, answeredOtherwise, trackWarnings, warnDue, warningOn, shieldActive, shieldHeld, mainHandBusy, watchShots, settle, release, lockBody, coverCell, blockedSays, MEASURED, SHOTS, WARNS, RISE_MS, ask, farHeld, FAR, FAR_HOLD_MS, FAR_NEARER_BY, shotWord };
