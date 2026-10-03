@@ -344,3 +344,21 @@ test('with no rock beside the bot, a hole in the rock within six blocks is plann
   assert.equal(plan.blocks, 4);
   assert.match(wg.holeSays(), /10 runs, 40 of 40 killed from its end/);
 });
+
+// Note 1030: the shield guard held a block from a drop into lava says first
+// that the shield's blows still knock the bot, and what that came to.
+test('the shield guard at a drop into lava leads with the knock over it; with no drop it does not (note 1030)', () => {
+  const { bot, threat } = cavernBot();
+  const plain = new Survival(bot, { navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [threat()], false);
+  assert.doesNotMatch(plain.shield_guard.description, /does not hold the bot's ground/);
+  const edge = cavernBot(), feet = edge.bot.entity.position.floored(), was = edge.bot.blockAt;
+  // The column one block east is open down to lava ten blocks under the feet.
+  edge.bot.blockAt = p => {
+    const c = p.floored();
+    if (c.x === feet.x + 1 && c.z === feet.z && c.y <= feet.y + 1 && c.y > feet.y - 10) return { name: 'air', position: c, boundingBox: 'empty', type: 0 };
+    if (c.x === feet.x + 1 && c.z === feet.z && c.y === feet.y - 10) return { name: 'lava', position: c, boundingBox: 'empty', type: 1 };
+    return was(p);
+  };
+  const options = new Survival(edge.bot, { navigate: async () => {} }, { state: { shelters: [] } }).stanceOptions(new Task('x'), {}, () => {}, [edge.threat()], false);
+  assert.match(options.shield_guard.description, /^Held here, the shield does not hold the bot's ground: a drop of 9 blocks into lava is a block off, each blow the shield takes still knocks the bot about half a block with a hop, and the second or third puts it over\. In the trials of 2026-10-03 \(00:00Z to 09:20Z\), of 6 falls into lava that began with the shield held at a drop \(4 from this guard, 2 from the shield raised at a shot\), 5 were deaths\. /);
+});

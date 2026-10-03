@@ -5336,6 +5336,16 @@ class Survival {
       : blows;
     const lead = [hitSays, shootSays, blowsFramed].filter(Boolean).join(' ');
     if (lead) for (const o of Object.values(options)) o.description = `${lead} ${o.description}`;
+    // The shield held at a drop that kills (note 1030): a blow the shield
+    // takes still knocks the bot half a block with a hop, and a block from
+    // the edge the second is over it. The guard said the knock, and the drop
+    // only 3,400 characters in, of an arrow. Of 27 times a bot went into
+    // lava on 2026-10-03 (00:00 to 09:20Z), 4 began from the shield guard
+    // held at a drop and 2 from the shield raised at a shot there, 5 of the
+    // 6 deaths: 25584 (07:10:16Z), a wither skeleton at arm's length and a
+    // drop of 37 blocks into lava a block off, took the guard at 0.48.
+    if (options.shield_guard && dropHere && dropHere.blocksAway <= 1 && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20)))
+      options.shield_guard.description = `Held here, the shield does not hold the bot's ground: a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}, each blow the shield takes still knocks the bot about half a block with a hop, and the second or third puts it over. In the trials of 2026-10-03 (00:00Z to 09:20Z), of 6 falls into lava that began with the shield held at a drop (4 from this guard, 2 from the shield raised at a shot), 5 were deaths. ${options.shield_guard.description}`;
     // The mobs past their follow range, left out of the figures (note 770).
     const pastSays = pastFollowSays(pastFollow);
     if (pastSays) for (const o of Object.values(options)) o.description += pastSays;
