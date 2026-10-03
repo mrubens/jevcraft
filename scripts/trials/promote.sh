@@ -8,7 +8,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 PORT=$1; LETTER=${2:-a}
 cd "$ROOT" || exit 1
 V=$(FIRST_DAYS_PORT=$PORT node scripts/first-days.js verdict 2>/dev/null)
-echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);if(!v.done||v.reasons.some(r=>/death/.test(r))){console.error('not promotable: '+JSON.stringify({done:v.done,reasons:v.reasons}));process.exit(1)}})" || exit 1
+echo "$V" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s);if(!v.done||v.reasons.some(r=>/death|^died /.test(r))){console.error('not promotable: '+JSON.stringify({done:v.done,reasons:v.reasons}));process.exit(1)}})" || exit 1
 set -- $(sh scripts/trials/harvest.sh "$PORT") || exit 1
 SRC=$1; ARC=$2; N=${SRC##*first-days-}
 MIDGAME_PORT=$PORT node scripts/midgame.js start "mid-$N-$LETTER" "$SRC" "$ARC"

@@ -69,6 +69,16 @@ function rodsCarriedNow(frames) {
   }
   return 0;
 }
+// The rods and pearls kept in the bot's own chests now (goal.rodStashes in
+// its state file: a stash in the Nether, a bank past the portal).
+function keptNow(identity = IDENTITY) {
+  try {
+    const g = JSON.parse(fs.readFileSync(path.join(STATE, `${identity}.json`), 'utf8')), goal = g.goal || g;
+    const chests = (goal.rodStashes || []).filter(c => !c.lostAt && !c.unreachable);
+    const sum = k => chests.reduce((n, c) => n + Number(c.contents?.[k] || 0), 0);
+    return { rods: sum('blaze_rod') + sum('blaze_powder') / 2 + sum('ender_eye') / 2, pearls: sum('ender_pearl') + sum('ender_eye') };
+  } catch (_) { return { rods: 0, pearls: 0 }; }
+}
 function reached(frames) {
   const at = {}, best = { rods: 0, pearls: 0 };
   const mark = (k, t) => { if (!(k in at)) at[k] = t; };
@@ -118,7 +128,7 @@ function cutReasons(world, playedMinutes, reachedAtMinute = {}, { casting = fals
 // every verdict on 25581, 25583 and 25584 failed on "loop: N× TypeSafe 402"
 // a minute or two in, and the overnight loop started a new world each time.
 const STRANDED_DOWN_SHARE = 0.1;
-function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY } = {}) {
+function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY, kept = keptNow(identity) } = {}) {
   const from = Date.parse(trial.startedAt);
   const read = to => analyse({ identity, from, to, ...(dir ? { dir } : {}) });
   // The window: the three hours played, run on by the Jev-down time in it.
@@ -185,11 +195,23 @@ function verdict(trial, { now = Date.now(), dir = undefined, identity = IDENTITY
   // Not while Jev was down for a tenth of that half hour: it could answer nothing.
   const strandedSeen = all ? null : strandedFromFrames(a.frames, { now: to });
   const stranded = strandedSeen && overlapMs(spells, to - strandedSeen.minutes * 60000, to) < STRANDED_DOWN_SHARE * strandedSeen.minutes * 60000 ? strandedSeen : null;
-  const reasons = [...(deaths.length ? [`${deaths.length} death(s)${deaths.some(t => within(spells, t, SLACK)) ? `, ${deaths.filter(t => within(spells, t, SLACK)).length} while Jev was down` : ''}`] : []), ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
+  // A death does not end the trial while rods or pearls are kept in the
+  // bot's chests (note 1022): the chest is there to outlast a death, and the
+  // trial that filled it is the one that goes back for it. It fails the
+  // trial all the same (said as "died", which the watcher does not end on).
+  // mid-242-sc-fortress-9 (25590, 2026-10-03 08:21 to 08:52Z) got ten blaze
+  // rods in thirty minutes, the most of any trial, put five in a chest by
+  // its fortress, and was ended at its first death with them still there.
+  const keeps = kept && (kept.rods >= 1 || kept.pearls >= 1);
+  const downSays = deaths.some(t => within(spells, t, SLACK)) ? `, ${deaths.filter(t => within(spells, t, SLACK)).length} while Jev was down` : '';
+  const deathSays = !deaths.length ? [] : keeps
+    ? [`died ${deaths.length} time${deaths.length === 1 ? '' : 's'}${downSays} with ${[kept.rods >= 1 ? `${kept.rods} blaze rod${kept.rods === 1 ? '' : 's'}` : null, kept.pearls >= 1 ? `${kept.pearls} ender pearl${kept.pearls === 1 ? '' : 's'}` : null].filter(Boolean).join(' and ')} kept in its chests: played on`]
+    : [`${deaths.length} death(s)${downSays}`];
+  const reasons = [...deathSays, ...loops.map(l => `loop: ${l}`), ...(stranded ? [stranded.says] : []),
     ...(timedOut ? MILESTONES.filter(k => !(k in at)).map(k => `missing ${said}: ${k}`) : []),
     ...(all ? [] : cutReasons(trial.world, Math.round(playedMs / 60000), Object.fromEntries(Object.entries(at).map(([k, t]) => [k, Math.round(playedBy(t) / 60000)])), { casting: castingLately(a.frames, to) }))];
   return { world: trial.world, source: trial.source, ...(trial.arm ? { arm: trial.arm } : {}), from: new Date(from).toISOString(), minutes: Math.round((to - from) / 60000),
-    pass: all && !reasons.length, done: all || timedOut || reasons.length > 0, failedAlready: reasons.length > 0, reasons, ...(stranded ? { stranded } : {}),
+    pass: all && !reasons.length, done: all || timedOut || reasons.some(r => !/^died /.test(r)), failedAlready: reasons.length > 0, reasons, ...(deaths.length && keeps ? { playedOnAfterDeath: { deaths: deaths.length, kept } } : {}), ...(stranded ? { stranded } : {}),
     ...(!/fortress|nether/.test(trial.world || '') && at.nether != null && playedBy(at.nether) > CUT_MINUTES * 60000 ? { netherAfterTheHour: Math.round(playedBy(at.nether) / 60000) } : {}),
     ...(rodsGot >= 1 && loopsSeen.length ? { loopsWithRodsCarried: { rods: rodsNow, got: rodsGot, loops: loopsSeen } } : {}),
     playedMinutes: Math.round(playedMs / 60000), absentMinutes: Math.round(absentMs / 60000), unplayed,
@@ -290,4 +312,4 @@ async function main() {
 }
 
 if (require.main === module) main().catch(err => { console.error(err.message); process.exit(1); });
-module.exports = { reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
+module.exports = { keptNow, reached, counts, verdict, cutReasons, CUT_MINUTES, MILESTONES };
