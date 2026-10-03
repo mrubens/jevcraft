@@ -48,7 +48,8 @@ const { NETHER_WOOD } = require('./shelter');
 // carried 83 soul sand and no pickaxe; its tunnel home stopped five times
 // at the first open cell, "no blocks carried to lay the tunnel's floor",
 // 338 to 421 blocks from its portal, and it went back to the search.
-const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', 'soul_soil', 'soul_sand', ...NETHER_WOOD];
+// And the blocks the pack makes (pocket-blocks.js, note 1029), last.
+const LAID = [...MATERIALS, 'nether_wart_block', 'warped_wart_block', 'soul_soil', 'soul_sand', ...NETHER_WOOD, 'glowstone', 'raw_copper_block', 'quartz_block', 'coal_block'];
 // In the Nether the kinds a ghast's fireball does not break go down first
 // (note 904): its blast takes netherrack (blast resistance 0.4) and dirt
 // out from under the bot and leaves cobblestone, the stones, blackstone (6)

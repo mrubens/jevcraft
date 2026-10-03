@@ -441,6 +441,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
     if (shore) answers.blocks_from_shore = { leads: !!shoreFor, description: require('./shore-blocks').says(bot, shore) + shoreFor,
       run: async () => { await require('./shore-blocks').run(bot, task, goal, save, shore, { navigate }); } };
   }
+  // Blocks from the pack (pocket-blocks.js, note 1029): with under eight to
+  // lay, what the coal, glowstone dust, raw copper and quartz carried make.
+  if (!idle) {
+    let pocket = null; try { pocket = require('./bridging').blocksCarried(bot) < 8 ? require('./pocket-blocks').offer(bot) : null; } catch (_) { pocket = null; }
+    if (pocket) answers.blocks_from_pockets = { leads: !answers.blocks_from_shore, description: require('./pocket-blocks').says(bot, pocket, { carried: require('./bridging').blocksCarried(bot) }),
+      run: async () => { await require('./pocket-blocks').run(bot, task, goal, save, pocket, { acquireStep }); } };
+  }
   if (rising?.move && walksFailing && !idle) answers.rise_through = { description: `${rising.move.does} The walks from here have found no route${stall.error ? ` (${String(stall.error).slice(0, 160)})` : ''}; this changes the height the work is come at from, and the work is taken up again from the top.`,
     run: async () => {
       const u = require('./unstuck');
@@ -731,7 +738,7 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // the rock, the crossing straight at the target, the floor below, the
   // pillar to a floor overhead. Relocations said as tried come last.
   {
-    const first = [...(answers.blocks_from_shore?.leads ? ['blocks_from_shore'] : []), ...(walksFailing ? ['rise_through', 'cross_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [])];
+    const first = [...(answers.blocks_from_pockets?.leads ? ['blocks_from_pockets'] : []), ...(answers.blocks_from_shore?.leads ? ['blocks_from_shore'] : []), ...(walksFailing ? ['rise_through', 'cross_toward', 'floor_toward', 'pillar_up'].filter(k => answers[k]) : [])];
     const last = Object.keys(answers).filter(k => /^recover_relocate/.test(k) && /Tried: /.test(answers[k].description || ''));
     if (first.length || last.length) {
       const ordered = {};
