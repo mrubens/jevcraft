@@ -485,7 +485,7 @@ async function stairsDown(bot, task, target, { maxSteps = 40 } = {}) {
 // trial ended there, the best rod run of the record. Ends within `near`
 // blocks of the target across, after maxSteps, or where no way on is safe.
 // -> { steps, laid, arrived }
-const QUARRY_WANT = 24, QUARRY_BACK = 12, QUARRY_MOVES = 4;
+const QUARRY_WANT = 24, QUARRY_BACK = 12, QUARRY_MOVES = 8;
 // Arrived across and more than this over the target: the tunnel comes down (note 920).
 const OVER = 1;
 async function tunnelStraight(bot, task, target, { maxSteps = 96, near = 4, navigate = null, down = false } = {}) {
@@ -960,7 +960,12 @@ async function quarryHere(bot, task, want, { names = LAID } = {}) {
     }
     if (round === QUARRY_MOVES || blocksCarried(bot) - start >= want) break;
     // Into a cell it opened, on a floor that stands with its head clear.
-    const next = opened.find(c => solid(bot.blockAt(c.offset(0, -1, 0))) && !solid(bot.blockAt(c)) && !solid(bot.blockAt(c.offset(0, 1, 0))));
+    // The one with the most rock round it: into the rock, not back out to
+    // the open side it came from (note 978). 25590's trip to the shore
+    // (2026-10-03 04:2xZ) came back with 10 blocks, used them and stood
+    // short again under its fortress.
+    const rockRound = c => near.reduce((n, v) => n + (solid(bot.blockAt(c.plus(v))) ? 1 : 0) + (solid(bot.blockAt(c.plus(v).offset(0, 1, 0))) ? 1 : 0), 0) + (solid(bot.blockAt(c.offset(0, 2, 0))) ? 1 : 0);
+    const next = opened.filter(c => solid(bot.blockAt(c.offset(0, -1, 0))) && !solid(bot.blockAt(c)) && !solid(bot.blockAt(c.offset(0, 1, 0)))).sort((x, y) => rockRound(y) - rockRound(x))[0];
     if (!next || !await creepTo(bot, task, next, 2500)) break;
     out.moves++;
   }

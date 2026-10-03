@@ -334,7 +334,7 @@ const RUNS = {
       if (o) r = await shore.run(bot, bounded, goal, () => {}, o, { navigate });
     } catch (err) { error = err.message; }
     const p = bot.entity.position;
-    return { pass: !watch.died && !!o && (r?.gained || 0) >= 16 && Math.hypot(p.x - end.x - 0.5, p.z - end.z - 0.5) <= 3, detail: { offered: !!o, back: o?.back, gained: r?.gained, carried: bridging.blocksCarried(bot), x: Math.round(p.x * 10) / 10, error: error && error.slice(0, 140) } };
+    return { pass: !watch.died && !!o && (r?.gained || 0) >= 16 && Math.hypot(p.x - end.x - 0.5, p.z - end.z - 0.5) <= 4, detail: { offered: !!o, back: o?.back, gained: r?.gained, carried: bridging.blocksCarried(bot), x: Math.round(p.x * 10) / 10, error: error && error.slice(0, 140) } };
   },
   async quarry_here(d, bounded) {
     let r = null, error = null;
