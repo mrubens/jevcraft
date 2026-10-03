@@ -445,6 +445,21 @@ const TERRAIN = Object.freeze([
     target: [6120, 69, 6100],
   },
   {
+    name: 'blocks_from_shore',
+    why: 'Note 974: at the end of its own span over the void with a pickaxe and no block, the bot walks back along the way it came to rock, digs a stack there and comes back with it (25590 stood at its span\'s end 27 blocks out over the lava sea, 33 of 83 answers none_good).',
+    dimension: 'the_nether', seconds: 150,
+    start: [6203.5, 81, 6200.5],
+    kit: [['iron_pickaxe', 1]],
+    build: [
+      'forceload add 6190 6190 6240 6210',
+      'fill 6195 60 6192 6240 95 6208 minecraft:air',
+      'fill 6195 70 6192 6210 90 6208 minecraft:netherrack',
+      'fill 6202 81 6200 6210 82 6200 minecraft:air',
+      'fill 6211 80 6200 6230 80 6200 minecraft:cobblestone',
+    ],
+    spanEnd: [6230, 81, 6200],
+  },
+  {
     name: 'tunnel_home_from_span',
     why: 'Note 920: the tunnel begins on a block in open air ten over its target and three across (25595 on its own span over its portal): it comes down on laid steps and ends on the floor, no fall.',
     dimension: 'the_nether', seconds: 150,

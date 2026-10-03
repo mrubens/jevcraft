@@ -422,6 +422,13 @@ async function answerStall(bot, task, goal, save, stall, { client, survival, onS
   // work_free said the rise to y 96 (22 seconds) in passing, and Jev chose
   // walk_off, relocations of two blocks and hunts whose walks found no way
   // for nine minutes on one ledge (note 775).
+  // Blocks from the shore (shore-blocks.js, note 974): from a span's end
+  // with nothing to lay and nothing to dig, back along the way in to rock.
+  if (!idle) {
+    let shore = null; try { shore = require('./bridging').blocksCarried(bot) < 8 ? require('./shore-blocks').offer(bot, goal) : null; } catch (_) { shore = null; }
+    if (shore) answers.blocks_from_shore = { description: require('./shore-blocks').says(bot, shore),
+      run: async () => { await require('./shore-blocks').run(bot, task, goal, save, shore, { navigate }); } };
+  }
   if (rising?.move && walksFailing && !idle) answers.rise_through = { description: `${rising.move.does} The walks from here have found no route${stall.error ? ` (${String(stall.error).slice(0, 160)})` : ''}; this changes the height the work is come at from, and the work is taken up again from the top.`,
     run: async () => {
       const u = require('./unstuck');
