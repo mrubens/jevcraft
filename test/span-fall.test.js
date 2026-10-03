@@ -137,4 +137,19 @@ test('on the span over the lava sea with a ghast in sight, return_fireball is pr
   assert.match(back, /Priced by that record \(7 of the 9 fireballs that came to the bot sent back, none landed\): about 0\.4 of the next 2 fireballs landing, and here the first that lands is the push over the drop below: the price is that fall, the bot's death, and everything carried lost with it, not its 3\.4 damage\./);
   assert.doesNotMatch(back, /Priced by that record[^.]*about [\d.]+ damage in about/);
   assert.match(back, /Open here to the ghast 43 blocks off \(in sight\): one fireball that lands pushes the bot off its feet/);
+  // Note 1085: a block from the drop, the stand leads with the fall and carries it as its figure.
+  if (/a block off|under the bot's edge/.test(back.slice(0, 260))) {
+    assert.match(back, /^.*Stood here, a fireball that is not struck is the fall: it pushes the bot whether or not a shield takes it, and a drop of \d+ blocks into lava is/);
+    assert.ok(options.return_fireball.expects.damage >= 19);
+  }
+});
+
+test('the stand to return a fireball a block from the span\'s drop leads with the fall (note 1085)', () => {
+  const ghast = ghastAt(190.5, 62, 160.5);
+  const { bot } = spanBot({ items: [{ name: 'iron_sword', count: 1 }, { name: 'netherrack', count: 20 }], ghast });
+  const survival = new Survival(bot, { place: async () => {}, dig: async () => {}, navigate: async () => {} }, { state: { shelters: [] } });
+  const options = survival.stanceOptions(new Task('x'), {}, () => {}, [threat(bot, ghast)], false);
+  const d = options.return_fireball.description;
+  assert.match(d, /Stood here, a fireball that is not struck is the fall: it pushes the bot whether or not a shield takes it, and a drop of \d+ blocks into lava is (a block off|under the bot's edge)\. The record below counts the fireballs that landed, not those that pushed/);
+  assert.ok(options.return_fireball.expects.damage >= Math.round(bot.health));
 });

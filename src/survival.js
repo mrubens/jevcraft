@@ -5415,6 +5415,18 @@ class Survival {
       options.pillar.description = `On a pillar a block from this drop the first blow that lands is the fall: a ${tosser.replaceAll('_', ' ')}'s blow reaches a player two up and throws the bot up and back, up to about ${tossReach} blocks, and a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}; the pillar's own figure below counts the blow and not the fall. On 2026-10-03 one such pillar, a hoglin 7 blocks off and 19 blocks of drop into lava a block away, ended in the lava seven seconds after it was chosen. ${options.pillar.description}`;
       options.pillar.expects = { ...options.pillar.expects, damage: Math.max(options.pillar.expects?.damage || 0, Math.round(bot.health ?? 20)) };
     }
+    // The stand to return a ghast's fireball, a block from a drop that kills
+    // (note 1085): a fireball not struck pushes the bot whether the shield
+    // takes it or not, and the stand's record counts what landed, not what
+    // pushed. 25589 (2026-10-03 15:33:27Z) and 25594 (16:42:10Z), each a
+    // block from a drop of 27 blocks into the lava sea, took the stand at
+    // 0.84 and 0.75 told "0 landed", and each was in the lava within two
+    // seconds, dead in five.
+    // Only where the stand is open to the push (its own words): walled toward it, the drop is not the fireball's.
+    if (options.return_fireball && /the first that lands is the push over the drop|Open here to the ghast/.test(options.return_fireball.description) && dropHere && dropHere.blocksAway <= 1 && (dropHere.into === 'lava' || dropHere.damage >= (bot.health ?? 20))) {
+      options.return_fireball.description = `Stood here, a fireball that is not struck is the fall: it pushes the bot whether or not a shield takes it, and a drop of ${dropHere.fallBlocks} blocks${dropHere.into === 'lava' ? ' into lava' : ''} is ${dropHere.blocksAway < 1 ? 'under the bot\'s edge' : 'a block off'}. The record below counts the fireballs that landed, not those that pushed: on 2026-10-03 two such stands a block from the lava sea's edge ended in it within two seconds of being chosen. ${options.return_fireball.description}`;
+      options.return_fireball.expects = { ...options.return_fireball.expects, damage: Math.max(options.return_fireball.expects?.damage || 0, Math.round(bot.health ?? 20)) };
+    }
     // A hoglin at the bot before the pillar is up (note 1081): its blow lands
     // on the way up and throws the bot off the first block, up to four back
     // and three up, among the rest of them. 25588 (2026-10-03 16:02:22 to
