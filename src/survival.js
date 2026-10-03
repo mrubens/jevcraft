@@ -2952,7 +2952,7 @@ class Survival {
     for (const [id, at] of seenShooters) if (now - at > SHOOTER_KEPT_MS) seenShooters.delete(id);
     const keptShooter = t => shooter(t.entity) && seenShooters.has(t.entity.id) && t.distance <= (RANGE[t.entity.name] || 15);
     const danger = all.filter(t => (t.distance <= 24 || keptShooter(t)) && (t.visible || keptShooter(t) || (t.entity.name === 'creeper' && t.distance <= 4) || (t.entity.name === 'warden' && t.distance <= 24)));
-    const urgent = require('./danger').immediateThreat(bot) || require('./danger').immediateThreat(bot, { stoodOff: true });
+    const urgent = require('./danger').immediateThreat(bot) || require('./danger').immediateThreat(bot, { stoodOff: true }) || require('./danger').immediateThreat(bot, { huntKin: true });
     if (urgent && !urgent.projectile && !danger.some(t => t.entity.id === urgent.entity.id)) danger.push(urgent), danger.sort((a, b) => a.distance - b.distance);
     // A ghast in sight past the twenty-four looked at, whose push can put
     // the bot over a drop that kills beside it (danger.js pushOverDrop):
@@ -10562,7 +10562,8 @@ class Survival {
         await this.nightMine(task, goal, save)) { onStep(goal); return true; }
     // Or one that has stood off, whose claim Jev gave the turn to (note
     // 752): answered as any, by the stance.
-    const emergency = immediateThreat(bot) || immediateThreat(bot, { stoodOff: true });
+    // Or the others of the kind hunted, the same (note 1028).
+    const emergency = immediateThreat(bot) || immediateThreat(bot, { stoodOff: true }) || immediateThreat(bot, { huntKin: true });
     if (emergency) {
       // Sealing a nearby prepared site is faster than a long retreat. Otherwise
       // get clear first; ordinary digging must never continue under fire.
@@ -11570,6 +11571,12 @@ function claim(bot, goal = {}, survival = null) {
     const t = pushOver.pushers[0];
     return make('escape_threat', 'pressing', { threat: t.projectile ? { name: t.entity.name, distance: round(t.distance), projectile: true } : shooter(t.entity) ? { ...mob(t), ...firing(t), ...reachOf(t) } : { ...mob(t), ...reachOf(t) }, ...(heldStance.stance ? { stance: { ...heldStance.stance, other: true } } : {}), ...edgeFact, ...pocket });
   }
+  // The others of the kind hunted, in sight within their fire's reach
+  // (danger.js huntKin, note 1028): offered beside the hunt and the work as
+  // routine; chosen, the stance is asked of them all.
+  const kin = immediateThreat(bot, { huntKin: true });
+  if (kin) return make('escape_threat', 'routine', { threat: { ...mob(kin), ...firing(kin) }, huntKin: { name: kin.entity.name, inSight: kin.huntKin.length, distances: kin.huntKin.slice(0, 5).map(t => round(t.distance)) },
+    ...(heldStance.stance ? { stance: { ...heldStance.stance, other: true } } : {}), ...edgeFact, ...pocket, ...onPillar });
   // sleepDebt() without its first-look write of sleptAtAge.
   const debt = Number.isFinite(worldAge(bot)) && Number.isFinite(state.sleptAtAge) && worldAge(bot) - state.sleptAtAge > SLEEP_DEBT_TICKS;
   const nightFree = nightFreeBelow(bot, goal, state, { underground, debt, now });

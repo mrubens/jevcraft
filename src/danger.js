@@ -517,7 +517,24 @@ const SPAWNER_MELEE = 3;
 // { stoodOff: true }: the mob that would be the threat but that it has
 // stood off (standsOff), for the claim that offers it beside the work
 // (survival.js claim, note 752); undefined when a real threat is about.
-function immediateThreat(bot, { stoodOff = false } = {}) {
+// { huntKin: true }: the others of the kind hunted (note 1028). The hunt
+// strikes one at a time, and the scan passes the whole kind over (hunted)
+// unless one has just hit the bot; with two or more of them in sight
+// within their fire's reach and no other threat, the nearest is offered as
+// survival's answer beside the hunt and the work, the stance asked of them
+// all. On 2026-10-03 (00:00 to 09:10Z) turn_priority was answered none good
+// 288 times, 231 of them with the hunt and the work its only two answers
+// and a blaze within sixteen blocks; none good took the work, closing in:
+// 25590 (08:10:44Z), five blazes 4.7 to 7.3 blocks off, none good at 0.48.
+function huntKin(bot, now = Date.now()) {
+  const hunt = bot?._huntingEntity;
+  if (!hunt || !(hunt.until > now)) return undefined;
+  const { FIRE_REACH } = require('./combat-estimate');
+  const kin = threats(bot, 24).filter(t => t.entity.name === hunt.name && t.visible && shooter(t.entity) && t.distance <= (FIRE_REACH[t.entity.name] || 16));
+  return kin.length >= 2 ? { ...kin[0], huntKin: kin } : undefined;
+}
+function immediateThreat(bot, { stoodOff = false, huntKin: kin = false } = {}) {
+  if (kin) return immediateThreat(bot) || immediateThreat(bot, { stoodOff: true }) ? undefined : huntKin(bot);
   if (stoodOff) {
     if (immediateThreat(bot)) return undefined;
     const t = immediateThreat(bot, { keepStoodOff: true });
