@@ -602,6 +602,11 @@ async function walkTo(bot, task, goal, { timeoutMs, stallMs, stopWhen, sprint, b
   if (movements) bad.push(...hazardSpots(bot, goal).map(e => ({ x: e.x, y: e.y, z: e.z, hazard: true })));
   const hadAreas = bad.length && Object.hasOwn(movements, 'exclusionAreasStep'), areasWere = bad.length ? movements.exclusionAreasStep : undefined;
   if (bad.length) movements.exclusionAreasStep = [...(areasWere || []), block => {
+    // A block with no place (the pathfinder asks of cells in chunks not
+    // loaded): no cost. It threw "Cannot read properties of undefined
+    // (reading 'x')" out of the path search, six times in two trials' logs
+    // on 2026-10-03 (25594, 25589), and the walk ended there (note 1105).
+    if (!block?.position) return 0;
     const near = bad.filter(s => Math.abs(block.position.x - s.x) <= 1 && Math.abs(block.position.y - s.y) <= 1 && Math.abs(block.position.z - s.z) <= 1);
     return near.some(s => s.lava && block.position.y === s.y) ? SCOOPED_COST : near.some(s => s.hazard) ? HAZARD_COST : near.some(s => !s.lava) ? STALL_SPOT_COST : 0;
   }];

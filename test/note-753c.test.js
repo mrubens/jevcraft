@@ -100,6 +100,9 @@ test('a lava source just scooped is not stepped into on the walk away (25584 mid
   assert.equal(cost({ position: new Vec3(162, 18, 96) }), SCOOPED_COST, 'the cell the lava comes back into');
   assert.equal(cost({ position: new Vec3(162, 18, 95) }), SCOOPED_COST, 'and beside it at the pool\'s level');
   assert.equal(cost({ position: new Vec3(162, 19, 95) }), 0, 'the shore a block above is walked');
+  // A block with no place (a cell in a chunk not loaded) costs nothing and does not throw (note 1105).
+  assert.equal(cost({ name: 'air' }), 0);
+  assert.equal(cost(null), 0);
   assert.equal(movements.exclusionAreasStep, undefined);
 });
 
