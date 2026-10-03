@@ -21,6 +21,17 @@ test('a slot is found in the wall nearest the bot: mouth, two cells in, four blo
   assert.match(slot.says(site, 1), /4 blocks to dig/);
 });
 
+test('with an enderman named, the slot found says whether its mouth has a line to its eyes (note 1000)', () => {
+  const b = wall();
+  b.world = { raycast: () => null };
+  const seen = slot.slotSite(b, { toward: { position: new Vec3(12.5, 64, 0.5) } });
+  assert.strictEqual(seen.line, true);
+  b.world = { raycast: (from) => ({ position: from.offset(1, 0, 0), intersect: from.offset(1, 0, 0) }) };
+  const hidden = slot.slotSite(b, { toward: { position: new Vec3(12.5, 64, 0.5) } });
+  assert.strictEqual(hidden.line, false);
+  assert.match(slot.says(seen, 1), /the mouth has a line to its eyes now/);
+});
+
 test('no slot on open ground, beside lava, or where the back is open', () => {
   assert.strictEqual(slot.slotSite(world((x, y) => y <= 63 ? 'netherrack' : 'air')), null);
   assert.strictEqual(slot.slotSite(wall((x, y, z) => x <= 3 && y === 66 ? 'lava' : null)), null, 'lava over the roof');

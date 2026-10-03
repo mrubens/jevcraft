@@ -71,8 +71,12 @@ function slotFrom(bot, f) {
 }
 
 // The nearest slot within `reach` of the bot: where it stands, or a cell at
-// its height (a block up or down) walked to.
-function slotSite(bot, { reach = 6 } = {}) {
+// its height (a block up or down) walked to. With `toward` (an enderman),
+// a slot whose mouth has a line to its eyes comes first, marked `line`
+// (note 1000): the look that brings it is from the mouth, and where rock or
+// a stem stands between it does not turn.
+const lineFrom = (bot, mouth, e) => { try { return require('./danger').lineClear(bot, mouth.offset(0.5, 1.62, 0.5), e.position.offset(0, EYES, 0)); } catch (_) { return false; } };
+function slotSite(bot, { reach = 6, toward = null } = {}) {
   if (!bot?.entity?.position || typeof bot.blockAt !== 'function') return null;
   const here = bot.entity.position.floored();
   const out = [];
@@ -81,11 +85,14 @@ function slotSite(bot, { reach = 6 } = {}) {
     const s = slotFrom(bot, f);
     if (s) out.push({ ...s, off: Math.abs(dx) + Math.abs(dz) + Math.abs(dy) });
   }
-  return out.sort((x, y) => x.off - y.off || x.digs.length - y.digs.length)[0] || null;
+  out.sort((x, y) => x.off - y.off || x.digs.length - y.digs.length);
+  if (!toward?.position) return out[0] || null;
+  for (const s of out.slice(0, 24)) if (lineFrom(bot, s.mouth, toward)) return { ...s, line: true };
+  return out[0] ? { ...out[0], line: false } : null;
 }
 
 function says(site, n) {
-  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes to bring it. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
+  return `Fight it from a slot: dig a tunnel one wide and two high two cells into the rock ${site.off ? `${site.off} blocks off at (${site.mouth.x}, ${site.mouth.y}, ${site.mouth.z})` : 'beside where the bot stands'} (${site.digs.length} blocks to dig), stand at its back and look the enderman in the eyes from its mouth to bring it${site.line ? ' (the mouth has a line to its eyes now)' : ''}. An enderman is 2.9 blocks tall and does not come into a space two high; from the mouth its blow falls about 0.4 blocks short of the bot, and the sword reaches it there. Each is struck until it dies and its drop taken from the mouth${n > 1 ? `; ${n} are about, and those that come are taken one after another` : ''}.`;
 }
 
 // The arena's record (scripts/terrain.js enderman_slot, 2026-10-03): an iron
@@ -250,4 +257,4 @@ async function stand(bot, task, site, { navigate, names = ['wither_skeleton'], s
   return out;
 }
 
-module.exports = { enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };
+module.exports = { lineFrom, enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };

@@ -411,6 +411,11 @@ function encounter(bot, task, target, expiresAt) {
   return () => { bot._combatEncounter = previous; };
 }
 
+const SLOT_MISS_MS = 120000, SLOT_MISS_NEAR = 12;
+function slotMissedHere(bot, state, now = Date.now()) {
+  const m = state?.slotMiss, p = bot?.entity?.position;
+  return !!m && !!p && now - m.at < SLOT_MISS_MS && Math.hypot(m.x + 0.5 - p.x, m.y - p.y, m.z + 0.5 - p.z) <= SLOT_MISS_NEAR;
+}
 // The fight from a slot (enderman-slot.js), kept as fightForDrop keeps its
 // own: the kind claimed for as long as it runs, the body's floor, the result
 // in the hunt's history.
@@ -437,6 +442,11 @@ async function slotForDrop(bot, task, target, goal, save, actions, site) {
   state.slotFights = [...(state.slotFights || []), { at: Date.now(), kills: r.kills, pearls: pickedUp, hurt: result.hurt, ended: r.ended }].slice(-12);
   // One that did not come is left a while, and the slot with it.
   if (!r.kills) setAside(goal, 'hunt_target', target.uuid || target.id, result.outcome, 120000);
+  // A look that turned nothing, kept with the place (note 1000): the slot is
+  // not offered again within twelve blocks of it for two minutes. 25598
+  // (2026-10-03 06:50 to 06:54Z) took the slot at seven askings running,
+  // one enderman after another, each "3 looks from the mouth did not turn it".
+  if (!r.kills && /did not turn it|did not come/.test(String(r.ended))) { const p = bot.entity.position; state.slotMiss = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), at: Date.now(), why: String(r.ended).slice(0, 120) }; }
   bot.emit('mob_hunt', result); save();
   return result;
 }
@@ -783,14 +793,17 @@ async function huntObserved(bot, task, goal, save, actions, client) {
   // with each blaze left unoffered for it (note 774).
   let walled;
   const walledSays = () => { if (walled === undefined) { try { walled = require('./walled-in').walledInSays(bot) ? ' (the bot is walled in by its own blocks; the walk counted is over open ground, no block dug)' : ''; } catch (_) { walled = ''; } } return walled; };
+  // A slot at hand with no line from its mouth to the enderman's eyes is not offered (note 1000).
+  let slotNoLine = false;
   for (const target of candidates.slice(0, 4)) {
     const restore = encounter(bot, task, target, Date.now() + 1500), movement = combatMovement(bot);
     try {
       // An enderman is also taken from a slot dug in the rock at hand, with
       // no walk to it wanted (enderman-slot.js, note 981).
       if (target.name === 'enderman' && typeof bot.dig === 'function' && !Object.keys(tree).some(k => k.startsWith('slot_'))) {
-        let site = null; try { site = require('./enderman-slot').slotSite(bot); } catch (_) { site = null; }
-        if (site) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off. ${require('./enderman-slot').recordSays()}`,
+        let site = null; try { site = require('./enderman-slot').slotSite(bot, { toward: target }); } catch (_) { site = null; }
+        if (site && !site.line) slotNoLine = true;
+        if (site?.line && !slotMissedHere(bot, state)) tree[`slot_${target.id}`] = { description: require('./enderman-slot').says(site, candidates.filter(e => e.name === 'enderman').length) + ` The enderman is ${Math.round(target.position.distanceTo(bot.entity.position))} blocks off. ${require('./enderman-slot').recordSays()}`,
           run: () => slotForDrop(bot, task, target, goal, save, actions, site) };
       }
       // A blaze no walk reaches is still a fight with a bow in range (note
@@ -1473,9 +1486,9 @@ async function prepareMobHunt(bot, task, step, goal, save, actions) {
     // for each in two minutes, beside the walk up and leaving it.
     if (comesNot && distance > 3 && distance <= 40 && typeof bot.dig === 'function' && !isSetAside(goal, 'hunt_slot', key)) {
       const slot = require('./enderman-slot');
-      let site = null; try { site = slot.slotSite(bot); } catch (_) { site = null; }
+      let site = null; try { site = slot.slotSite(bot, { toward: near }); } catch (_) { site = null; }
       const client = actions.client || task.opportunityClient;
-      if (site && client) {
+      if (site?.line && !slotMissedHere(bot, state) && client) {
         setAside(goal, 'hunt_slot', key, 'asked', 120000); save();
         const about = Object.values(bot.entities || {}).filter(e => e.name === 'enderman' && e.isValid !== false && e.position?.distanceTo(bot.entity.position) <= 40).length;
         let seen = true; try { seen = !!threats(bot, 48).find(t => t.entity === near)?.visible; } catch (_) { seen = true; }
