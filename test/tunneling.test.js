@@ -884,3 +884,18 @@ test('in the Nether a stair step the walk onto it refuses (lava beside it) is no
   const overworld = stairOptions(make('overworld'), {}, target, { approach: true });
   assert.equal(overworld[0].destination.x, 1, 'in the Overworld the step toward the target is still dug');
 });
+
+test('a step found wet as it was dug is not chosen again (note 1016)', async () => {
+  const bot = world(), target = new Vec3(8, 80, 0), goal = {};
+  const first = stairOptions(bot, goal, target)[0].destination;
+  // Digging the step lets water in beside it.
+  await assert.rejects(tunnelStep(bot, new Task('ascend'), goal, () => {}, target, {
+    dig: async (_bot, _task, p) => { bot.blocks.set(`${p}`, { name: 'air' }); bot.blocks.set(`${first.offset(0, 2, 0)}`, { name: 'water' }); },
+    navigate: async (_bot, _task, g) => { bot.entity.position = new Vec3(g.x + 0.5, g.y, g.z + 0.5); },
+  }), /exposed a liquid/);
+  assert(goal.tunnel.wet[`${first}`], 'the step is kept as wet');
+  bot.blocks.delete(`${first.offset(0, 2, 0)}`);
+  const again = stairOptions(bot, goal, target);
+  assert(again.every(o => !o.destination.equals(first)), 'the next choice goes another way');
+  assert.match(JSON.stringify(again.blocked), /found behind it as it was dug/);
+});

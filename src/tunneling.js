@@ -166,6 +166,8 @@ function stairOptions(bot, goal, target, { approach = false } = {}) {
     .sort((a, b) => nearest(b.destination) - nearest(a.destination) || a.score - b.score);
 }
 
+// A step found wet as it was dug is not chosen again for ten minutes.
+const WET_MS = 10 * 60000;
 function stairChoices(bot, goal, target, { hostiles, approach = false }) {
   const feet = bot.entity.position.floored();
   // An exit being dug by hand clears stone without a tool: slowly, and for
@@ -193,6 +195,7 @@ function stairChoices(bot, goal, target, { hostiles, approach = false }) {
         if (below.boundingBox === 'block') { if (!falling(below)) dropTo = destination.offset(0, -n + 1, 0); break; }
       }
     }
+    if (goal.tunnel?.wet?.[`${destination}`] > Date.now() - WET_MS) { block(destination, 'water or lava found behind it as it was dug'); continue; }
     if (hostiles && !safeFromHostiles(bot, destination.offset(0.5, 0, 0.5), Array.isArray(hostiles) ? hostiles : undefined)) { block(destination, 'a hostile'); continue; }
     const floor = bot.blockAt((dropTo || destination).offset(0, -1, 0));
     // Open air under the step is a gap the staircase does not cross: it
@@ -666,7 +669,17 @@ async function tunnelStep(bot, task, goal, save, target, { dig, navigate, place 
     for (let tries = 0; !passable(bot.blockAt(p)); tries++) {
       task.check();
       if (tries >= 5) throw new Error('Falling blocks keep obstructing the staircase');
-      if (!safeExcavation(bot, p)) throw new Error('Staircase excavation exposed a liquid or unstable wet ceiling');
+      if (!safeExcavation(bot, p)) {
+        // The step is kept as wet, and the next choice goes another way
+        // (note 1016): found only as it was dug (what stood over it fell,
+        // or the cell beside opened onto water), the same step was chosen
+        // again at the next pass. 25592 (2026-10-03 08:03 to 08:15Z), three
+        // rods carried out to the Overworld, stood under an ocean at y 43
+        // with its stair east stopped at a trench of it, "exposed a liquid
+        // or unstable wet ceiling", until every way of the climb rested.
+        tunnel.wet = { ...(tunnel.wet || {}), [`${choice.destination}`]: Date.now() }; save();
+        throw new Error('Staircase excavation exposed a liquid or unstable wet ceiling');
+      }
       // The stair reaches the roof of a cave: a floor under it first, as a
       // player sets a block in the gap and digs on. Stood on, the stair is
       // the cell dug, not the drop past it.
