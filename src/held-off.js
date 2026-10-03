@@ -34,7 +34,7 @@ const SAMPLE_MS = 5000, GONE_MS = 60000;
 // is said with that fact (danger.js reachSays) and is no threat that ends
 // the work while it holds; it is one again the moment it comes nearer, to
 // its reach, or its kind lands a hit.
-const STANDOFF_MS = 60000, ARM = 3, GAP_MS = 15000;
+const STANDOFF_MS = 60000, ARM = 3, GAP_MS = 15000, COMING_WITHIN = 12;
 // Past this, in the played record, a shooter's shots coming at the bot
 // seldom landed (the flight records' shot frames of 2026-09-26 to 30, the
 // nearest ghast's distance at each: from 40 blocks and more 9 of 149
@@ -117,6 +117,16 @@ function stoodOff(bot, t, { now = Date.now(), ms = STANDOFF_MS, shoots = false }
   const unseen = creeper && !t.visible && !!m && now - m.since >= ms && m.samples.filter(x => now - x.t <= ms + SAMPLE_MS).every(x => !x.v);
   if (creeper && (t.approach >= 1 || (t.distance <= CREEPER_NEAR && !(unseen && t.distance > CREEPER_LIGHTS)))) return null;
   if ((bot?._hurtBy?.[kind] || 0) > now - ms || (bot?._hurtById?.[id] || 0) > now - ms) return null;
+  // One that walks and is coming at the bot now does not stand off, however
+  // the minute behind it reads (note 1124): closing a block a second or
+  // more within COMING_WITHIN, or NEARER blocks nearer than at the last
+  // look. 25594 (2026-10-03 22:07:56Z), seven rods and eight pearls in its
+  // chests, was told of a wither skeleton 5.9 blocks off and walking at it
+  // "it has stood off 136 seconds, 5.9 to 33 blocks off, no nearer ...: not
+  // a threat that stops the work", answered work at 0.71, and its first
+  // blow landed a second on; dead at 22:08:09Z.
+  const lastLook = m?.samples?.at?.(-1);
+  if (!shoots && !creeper && t.distance <= COMING_WITHIN && (t.approach >= 1 || (lastLook && now - lastLook.t <= GAP_MS && lastLook.d - t.distance >= NEARER))) return null;
   if (!m || now - m.since < ms) return null;
   const win = m.samples.filter(s => now - s.t <= ms + SAMPLE_MS);
   if (win.length < 2 || now - win[0].t < ms - SAMPLE_MS) return null;
