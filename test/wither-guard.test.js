@@ -330,3 +330,17 @@ test('the guard is said with what the bot\'s own runs of it came to, by the kind
   assert.match(wg.recordSays('hoglin'), /none ended in death/);
   assert.equal(wg.recordSays('spider'), '');
 });
+
+test('with no rock beside the bot, a hole in the rock within six blocks is planned, walked to (note 987)', () => {
+  const far = cavernBot({ at: new Vec3(5.5, 64, 0.5), skeletonAt: new Vec3(14.5, 64, 0.5) });
+  // Plain ground, and a rock wall from x <= 1: four blocks west of the bot.
+  far.bot.blockAt = p => { const f = p.floored(); return f.y >= 64 && f.x <= 1 ? flat(new Vec3(f.x, 60, f.z)) && { ...flat(new Vec3(f.x, 60, f.z)), position: f } : flat(p); };
+  const plan = wg.lowCeilingPlan(far.bot, [far.threat()]);
+  assert.ok(plan, 'a plan');
+  assert.equal(plan.kind, 'dig');
+  assert.deepEqual([plan.mouth.x, plan.mouth.y, plan.mouth.z], [2, 64, 0]);
+  assert.deepEqual([plan.stand.x, plan.stand.y, plan.stand.z], [0, 64, 0]);
+  assert.equal(plan.off, 3);
+  assert.equal(plan.blocks, 4);
+  assert.match(wg.holeSays(), /10 runs, 40 of 40 killed from its end/);
+});

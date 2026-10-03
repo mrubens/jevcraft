@@ -8051,9 +8051,15 @@ class Survival {
     // order they came, lost two runs in five that way (note 601).
     const { arrives: arrivesAt } = require('./combat-estimate');
     const first = mobs.filter(m => plan.tall.includes(m.id) && arrivesAt(m) < plan.shutAt);
-    const tallIds = new Set(plan.tall.filter(id => !first.some(m => m.id === id)));
+    // A hole's mouth is one wide and its end out of their reach whoever is
+    // there first (note 987): one at the bot before it is dug lands its
+    // blows until the bot stands at the end, the digging's seconds priced
+    // below, and none after. A ceiling's block does not go in where one
+    // stands, so there the first is fought.
+    const tallIds = new Set(plan.kind === 'dig' ? plan.tall : plan.tall.filter(id => !first.some(m => m.id === id)));
     const price = stanceCost({ mobs, setup: plan.seconds, fight: { only: m => !tallIds.has(m.id), lead: true }, reaches: m => m.shoots, shield: shielded, health: bot.health });
-    const raceSays = first.length ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the ${plan.kind === 'roof' ? 'blocks over the cells round the bot are in' : 'hole is dug'} (${plan.shutAt} seconds): one there first stands where a block goes or at the mouth, the ${plan.kind === 'roof' ? 'block does not go in (the game puts none where a body is)' : 'bot is struck while it digs'}, and it is fought there as in the fight, priced so.` : ` The ${plan.kind === 'roof' ? 'blocks over the cells round the bot go in first, those toward it first' : 'hole is dug'}: in after about ${plan.shutAt} seconds, before it can be at the bot.`;
+    const raceDig = first.length && plan.kind === 'dig' ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the bot is at the hole's end (${plan.shutAt} seconds): its blows land on the bot's back until then, and none reach the end once the bot stands there; the hole is one wide, so one stands at its mouth at a time.` : '';
+    const raceSays = raceDig ? raceDig : first.length ? ` The ${first[0].name.replaceAll('_', ' ')} ${Math.round(first[0].distance)} blocks off can be at the bot in about ${Math.round(arrivesAt(first[0]) * 10) / 10} seconds at its own speed, before the ${plan.kind === 'roof' ? 'blocks over the cells round the bot are in' : 'hole is dug'} (${plan.shutAt} seconds): one there first stands where a block goes or at the mouth, the ${plan.kind === 'roof' ? 'block does not go in (the game puts none where a body is)' : 'bot is struck while it digs'}, and it is fought there as in the fight, priced so.` : ` The ${plan.kind === 'roof' ? 'blocks over the cells round the bot go in first, those toward it first' : 'hole is dug'}: in after about ${plan.shutAt} seconds, before it can be at the bot.`;
     const names = [...new Set(tall.map(t => t.entity.name))];
     const who = names.map(n => `a ${n.replaceAll('_', ' ')} is ${bodyHeight(n)} blocks tall`).join(' and ');
     const compass = ([dx, dz]) => dx > 0 ? 'east' : dx < 0 ? 'west' : dz > 0 ? 'south' : 'north';
@@ -8063,7 +8069,7 @@ class Survival {
       ? `${plan.steps ? 'Step one block along this level, under' : 'Stay under'} the ceiling two up over the bot and the cells round it, and fight from under it`
       : plan.kind === 'roof'
       ? `${plan.steps ? 'Step one block along this level, then put' : 'Put'} ${plan.blocks} block${plan.blocks === 1 ? '' : 's'} of ${plan.material.replaceAll('_', ' ')} in two up over the bot and over each cell round it that is open there (about ${plan.seconds} seconds of placing, the shield down meanwhile), and fight from under that ceiling`
-      : `Dig a hole two in and two high into the ${rock} to the ${compass(plan.dir)} (4 blocks ${digsWith(bot, bot.blockAt(plan.dug[0]))}, about ${plan.seconds} seconds of digging, the shield down meanwhile), step to its end and fight from there`;
+      : `${plan.mouth ? `Walk ${plan.off} block${plan.off === 1 ? '' : 's'} to the ${rock} at (${plan.mouth.x}, ${plan.mouth.y}, ${plan.mouth.z}) and dig` : 'Dig'} a hole two in and two high into ${plan.mouth ? 'it' : `the ${rock}`} to the ${compass(plan.dir)} (${plan.blocks} block${plan.blocks === 1 ? '' : 's'} ${digsWith(bot, bot.blockAt(plan.dug.find(c => bot.blockAt(c)?.boundingBox === 'block') || plan.dug[0]))}, about ${plan.seconds} seconds ${plan.mouth ? 'of walking and digging' : 'of digging'}, the shield down meanwhile), each pair of blocks stepped into as it is dug, and fight from its end${wg.holeSays()}`;
     const others = mobs.filter(m => !plan.tall.includes(m.id) && !m.apart && !m.far && !m.shoots && m.name !== 'creeper');
     const shortSays = others.length ? ` The others that bite are shorter and come under it: fought there as they come.` : '';
     return { expects: { damage: price.damage, seconds: price.seconds, oneHit },
@@ -8080,12 +8086,11 @@ class Survival {
           if (!feetCell(bot).equals(cell)) throw Object.assign(new Error(`the step to (${cell.x}, ${cell.y}, ${cell.z}) ended at ${feetCell(bot)}`), { name: 'StanceFailed' });
         };
         if (plan.kind === 'dig') {
-          for (const c of plan.dug) {
-            if (bot.blockAt(c)?.boundingBox !== 'block') continue;
-            try { await this.actions.dig(bot, task, c, { requireDrops: false }); }
-            catch (err) { task.check(); if (['NeedsAir', 'Cancelled'].includes(err.name)) throw err; throw Object.assign(new Error(`the hole's block at (${c.x}, ${c.y}, ${c.z}) was not dug: ${err.message}`), { name: 'StanceFailed' }); }
-          }
-          await walkTo(plan.stand);
+          // Each pair dug and stepped into, the back to what comes
+          // (enderman-slot.js enter, the way the arena measured it).
+          const d = new Vec3(plan.dir[0], 0, plan.dir[1]);
+          const site = { mouth: plan.mouth || plan.stand.minus(d.scaled(2)), a: plan.stand.minus(d), b: plan.stand, d };
+          await require('./enderman-slot').enter(bot, task, site, { navigate: this.actions.navigate });
         } else {
           if (plan.steps) await walkTo(plan.stand);
           // To the middle of the cell first: the ceiling keeps it out a

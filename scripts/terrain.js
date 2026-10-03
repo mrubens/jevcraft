@@ -336,6 +336,28 @@ const RUNS = {
     const p = bot.entity.position;
     return { pass: !watch.died && !!o && (r?.gained || 0) >= 16 && Math.hypot(p.x - end.x - 0.5, p.z - end.z - 0.5) <= 4, detail: { offered: !!o, back: o?.back, gained: r?.gained, carried: bridging.blocksCarried(bot), x: Math.round(p.x * 10) / 10, error: error && error.slice(0, 140) } };
   },
+  async wither_slot(d, bounded) {
+    // The stance's own way: wither-guard's plan, the slot's entry, its guard.
+    const wg = require('../src/wither-guard'), slot = require('../src/enderman-slot'), { threats } = require('../src/danger');
+    let plan = null, error = null, inAt = null, swings = 0, dead = 0, low = bot.health;
+    const onDead = e => { if (e?.name === 'wither_skeleton') dead++; };
+    const onHp = () => { low = Math.min(low, bot.health); };
+    bot.on('entityDead', onDead); bot.on('health', onHp);
+    const t0 = Date.now();
+    try {
+      for (let i = 0; i < 20 && !threats(bot, 24).some(t => t.entity.name === 'wither_skeleton'); i++) await new Promise(r => setTimeout(r, 100));
+      plan = wg.lowCeilingPlan(bot, threats(bot, 24).filter(wg.tallWalker));
+      if (plan?.kind === 'dig') {
+        const dir = vec([plan.dir[0], 0, plan.dir[1]]);
+        await slot.enter(bot, bounded, { mouth: plan.mouth || plan.stand.minus(dir.scaled(2)), a: plan.stand.minus(dir), b: plan.stand, d: dir }, { navigate });
+        inAt = Date.now() - t0;
+        for (const until = Date.now() + 60000; Date.now() < until && dead < 4;) { const r = await wg.guard(bot, bounded, { until: Math.min(until, Date.now() + 15000), radius: 16 }); swings += r.swings; if (r.ended === 'none left') await new Promise(r2 => setTimeout(r2, 1500)); }
+      }
+    } catch (err) { error = err.message; }
+    bot.removeListener('entityDead', onDead); bot.removeListener('health', onHp);
+    return { pass: !watch.died && plan?.kind === 'dig' && dead >= 4 && 20 - low <= 10, detail: { kind: plan?.kind, off: plan?.off, planSeconds: plan?.seconds, inAt, kills: dead, swings, hurt: Math.round((20 - low) * 10) / 10, health: bot.health, error: error && error.slice(0, 140) } };
+  },
+  async wither_slot_close(d, bounded) { const r = await RUNS.wither_slot(d, bounded); return r; },
   async enderman_slot(d, bounded) {
     const slot = require('../src/enderman-slot');
     let site = null, r = null, error = null;

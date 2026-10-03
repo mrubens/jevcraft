@@ -142,6 +142,23 @@ function lowCeilingPlan(bot, danger, { blockSeconds = 0.6 } = {}) {
     plans.push({ kind: 'dig', stand: b, at, placed: [], dug: cells, steps: 2, blocks: 4, digMs, dir: [dx, dz], shutAt: Math.round((digMs / 1000 + 0.6) * 10) / 10,
       seconds: Math.round((digMs / 1000 + 0.6) * 10) / 10 });
   }
+  // No rock beside the bot: a hole in the rock within six blocks, walked to
+  // (enderman-slot.js slotSite, note 987). 25595 (2026-10-03 05:19Z) had
+  // four wither skeletons eight blocks off, full health and an iron kit,
+  // no rock at its side, and every stance priced past its health.
+  if (!plans.some(p => p.kind === 'dig')) {
+    let site = null; try { site = require('./enderman-slot').slotSite(bot, { reach: 6 }); } catch (_) { site = null; }
+    if (site && site.off > 0) {
+      const cells = [site.a.offset(0, 1, 0), site.a, site.b.offset(0, 1, 0), site.b];
+      const digMs = cells.map(c => bot.blockAt(c)).filter(solid).reduce((n, x) => n + blockDigMs(bot, x), 0);
+      const at = new Vec3(site.b.x + 0.5, site.b.y, site.b.z + 0.5);
+      const walk = Math.round(site.off / 4.3 * 10) / 10;
+      if (Number.isFinite(digMs) && keptOff(at, { dug: cells })) {
+        const seconds = Math.round((walk + digMs / 1000 + 0.6) * 10) / 10;
+        plans.push({ kind: 'dig', stand: site.b, at, placed: [], dug: cells, steps: site.off + 2, blocks: site.digs.length, digMs, dir: [site.d.x, site.d.z], mouth: site.mouth, off: site.off, shutAt: seconds, seconds });
+      }
+    }
+  }
   if (!plans.length) return null;
   const best = plans.sort((x, y) => x.seconds - y.seconds)[0];
   // The eye's distance to where it stood, said: a block placed from here.
@@ -168,6 +185,11 @@ const MEASURED = {
   fight: { one: { runs: 5, kills: 5, of: 5, damage: 2.8, seconds: 8.2, deaths: 0 }, two: { runs: 5, kills: 10, of: 10, damage: 5.3, seconds: 10.2, deaths: 0 } },
 };
 const WAYS = { guard: 'this way', low: 'this way', fight: 'fought as Jev chose its stances before either was offered' };
+// The hole, measured (scripts/terrain.js wither_slot and wither_slot_close,
+// note 987): four wither skeletons coming from nine blocks and from five,
+// an iron kit, an iron pickaxe, rock four blocks from the bot.
+const HOLE = { runs: 10, kills: 40, of: 40, hurt: 4, inSeconds: 1.9, seconds: 14 };
+const holeSays = () => HOLE.runs ? `. The hole measured in the arena, four wither skeletons coming from nine blocks off and from five, rock four blocks from the bot, an iron kit and an iron pickaxe: ${HOLE.runs} runs, ${HOLE.kills} of ${HOLE.of} killed from its end, the bot at its end about ${HOLE.inSeconds} seconds after beginning, ${HOLE.hurt ? `${HOLE.hurt} health lost in all` : 'no health lost in any'}, about ${HOLE.seconds} seconds a run` : '';
 function measuredSays(kind, count = 1, { also = [] } = {}) {
   const scene = count >= 2 ? 'two' : 'one';
   const row = (k, r) => { const x = MEASURED[k][r]; return `${WAYS[k]}, ${SCENES[r]}, ${x.runs} runs: ${x.kills} of ${x.of} killed, about ${x.damage} damage a run on the median over about ${x.seconds} seconds, ${x.deaths ? `${x.deaths} death${x.deaths === 1 ? '' : 's'}` : 'no deaths'}`; };
@@ -276,4 +298,4 @@ async function guard(bot, task, { until, radius = 8, stop = () => false, focus =
   return { swings, hurt: Math.round(Math.max(0, start - bot.health) * 10) / 10, ended };
 }
 
-module.exports = { WIDEN, BLOW_EVERY, AFTER_BLOW_MS, watchSwings, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };
+module.exports = { HOLE, holeSays, WIDEN, BLOW_EVERY, AFTER_BLOW_MS, watchSwings, bladeReaches, tallWalker, attachOrder, lowCeilingPlan, MEASURED, SCENES, measuredSays, RECORD, recordSays, guardable, inGuard, UNSEEN_WITHIN, guard };

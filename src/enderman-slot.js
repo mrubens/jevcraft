@@ -10,7 +10,7 @@
 // 152 of 272 hunt_target askings, and 129 bot-minutes of stalking and
 // hunting them brought 16 pearls.
 const { Vec3 } = require('vec3');
-const ROCK = /^(netherrack|warped_nylium|crimson_nylium|blackstone|basalt|soul_soil|soul_sand|stone|deepslate|dirt|grass_block|andesite|diorite|granite|tuff|cobblestone|nether_wart_block|warped_wart_block|end_stone|sandstone)$/;
+const ROCK = /^(netherrack|warped_nylium|crimson_nylium|blackstone|basalt|soul_soil|soul_sand|stone|deepslate|dirt|grass_block|andesite|diorite|granite|tuff|cobblestone|nether_wart_block|warped_wart_block|end_stone|sandstone|nether_bricks)$/;
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const EYES = 2.55, REACH = 3, SWING_MS = 650, HURT_STOP = 6;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -161,4 +161,58 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   return out;
 }
 
-module.exports = { slotSite, slotFrom, says, fight, recordSays, RECORD };
+// The same slot against tall walkers that come on their own (note 987): a
+// wither skeleton is 2.4 blocks tall and 0.7 wide, does not go under a roof
+// two high, and its blow reaches about 1.5 blocks centre to centre; the bot
+// at the slot's back stands 1.85 from the nearest it can stand. No look
+// brings them and none is gone out to: they are struck as each comes to the
+// mouth, one at a time, the slot being one wide. Dug with the back to them:
+// the two cells nearest first and stepped into, then the two behind.
+const TALL = { wither_skeleton: 2.4, enderman: 2.9 };
+// Into the slot, the back to what comes: to its mouth, the two cells
+// nearest dug and stepped into, then the two behind. Throws StanceFailed
+// where its back is not reached.
+async function enter(bot, task, site, { navigate } = {}) {
+  const { goals } = require('mineflayer-pathfinder');
+  const bridging = require('./bridging');
+  if (!bot.entity.position.floored().equals(site.mouth)) await navigate(bot, task, new goals.GoalBlock(site.mouth.x, site.mouth.y, site.mouth.z), { timeoutMs: 6000, stallMs: 2000 });
+  const centre = c => c.offset(0.5, 0, 0.5), outward = site.d.scaled(-1);
+  for (const cell of [site.a, site.b]) {
+    for (const c of [cell.offset(0, 1, 0), cell]) { task.check(); await bridging.clearCell(bot, task, c, { wall: true }); }
+    await walkTo(bot, task, centre(cell), outward);
+  }
+  if (!bot.entity.position.floored().equals(site.b)) throw Object.assign(new Error(`the back of the slot at (${site.b.x}, ${site.b.y}, ${site.b.z}) was not reached`), { name: 'StanceFailed' });
+}
+async function stand(bot, task, site, { navigate, names = ['wither_skeleton'], seconds = 45 } = {}) {
+  const hp0 = bot.health, out = { kills: 0, hurt: 0, ended: 'time', inAt: null };
+  const t0 = Date.now();
+  const about = (within) => Object.values(bot.entities || {}).filter(e => names.includes(e.name) && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= within)
+    .sort((x, y) => x.position.distanceTo(bot.entity.position) - y.position.distanceTo(bot.entity.position));
+  try { await enter(bot, task, site, { navigate }); }
+  catch (err) { task.check(); if (err.name !== 'StanceFailed') throw err; out.ended = err.message; out.hurt = Math.max(0, hp0 - bot.health); return out; }
+  out.inAt = Date.now() - t0;
+  const sword = (bot.inventory?.items?.() || []).filter(i => /_sword$|_axe$/.test(i.name)).sort((x, y) => (/_sword$/.test(y.name) ? 1 : 0) - (/_sword$/.test(x.name) ? 1 : 0))[0];
+  if (sword) { try { await bot.equip(sword, 'hand'); } catch (_) { /* the hand, then */ } }
+  let dead = 0, lastSwing = 0, quietSince = null;
+  const onDead = e => { if (names.includes(e?.name)) dead++; };
+  bot.on('entityDead', onDead);
+  const deadline = Date.now() + seconds * 1000;
+  try {
+    while (Date.now() < deadline) {
+      task.check();
+      const e = about(24)[0];
+      if (!e) { quietSince ??= Date.now(); if (Date.now() - quietSince > 4000) { out.ended = dead ? 'none left' : 'none came'; break; } await sleep(150); continue; }
+      quietSince = null;
+      const eye = bot.entity.position.offset(0, 1.62, 0);
+      const d = Math.hypot(e.position.x - eye.x, e.position.z - eye.z, Math.max(e.position.y - eye.y, 0, eye.y - (e.position.y + (TALL[e.name] || 2))));
+      if (d <= REACH + 0.3 && Date.now() - lastSwing >= SWING_MS) { await bot.lookAt(e.position.offset(0, 1.0, 0), true); bot.attack(e); lastSwing = Date.now(); }
+      else await bot.lookAt(site.mouth.offset(0.5, 1.2, 0.5), true);
+      await sleep(80);
+    }
+  } finally { bot.removeListener('entityDead', onDead); }
+  out.kills = dead; out.hurt = Math.max(0, hp0 - (bot.health ?? hp0));
+  console.log(`[slot] stood in the slot against ${names.join(', ').replaceAll('_', ' ')}: in after ${out.inAt} ms, ${out.kills} killed, ${Math.round(out.hurt * 10) / 10} health lost: ${out.ended}`);
+  return out;
+}
+
+module.exports = { enter, stand, TALL, slotSite, slotFrom, says, fight, recordSays, RECORD };
