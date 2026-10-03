@@ -3487,7 +3487,7 @@ class Survival {
     const BT = require('./blaze-tactics');
     const mods = [[require('./bunker'), ['lineRegained', 'seenFrom', 'coverWithin', 'nookSite', 'wayTo']], [require('./blaze-stand'), ['blazeStands']], [BT, Object.keys(BT).filter(k => typeof BT[k] === 'function')]];
     for (const [M, names] of mods) for (const name of names) if (typeof M[name] === 'function') wrap(M, name);
-    try { return this.stanceOptionsBuilt(task, goal, save, danger, swung); }
+    try { return require('./stance-profile').around(() => this.stanceOptionsBuilt(task, goal, save, danger, swung)); }
     finally {
       for (const [name, v] of Object.entries(timed)) v.M[name] = v.f;
       const ms = Date.now() - t0;
