@@ -369,6 +369,21 @@ const RUNS = {
     return { pass: !watch.died && !!site && (r?.kills || 0) >= 1 && hp - bot.health <= 2, detail: { site: site ? `${site.mouth}` : null, digs: site?.digs.length, ...r, health: bot.health, error: error && error.slice(0, 140) } };
   },
   async enderman_slot_out(d, bounded) { return RUNS.enderman_slot(d, bounded); },
+  async enderman_slot_forest(d, bounded) {
+    const slot = require('../src/enderman-slot');
+    let site = null, error = null, fights = 0;
+    const hp = bot.health, total = { kills: 0, pearls: 0 }, ends = [];
+    const until = Date.now() + 115000;
+    try {
+      site = slot.slotSite(bot);
+      while (site && Date.now() < until && !watch.died) {
+        const r = await slot.fight(bot, bounded, site, { navigate, seconds: Math.max(10, Math.min(60, Math.round((until - Date.now()) / 1000))), want: 12 });
+        fights++; total.kills += r.kills || 0; total.pearls += r.pearls || 0; ends.push(r.ended);
+        if (!Object.values(bot.entities).some(e => e.name === 'enderman' && e.isValid !== false)) break;
+      }
+    } catch (err) { error = err.message; }
+    return { pass: !watch.died && total.kills >= 3 && hp - bot.health <= 6, detail: { site: site ? `${site.mouth}` : null, fights, ...total, ends: ends.slice(0, 6), health: bot.health, error: error && error.slice(0, 140) } };
+  },
   async quarry_here(d, bounded) {
     let r = null, error = null;
     try { r = await require('../src/bridging').quarryHere(bot, bounded, 16); } catch (err) { error = err.message; }

@@ -423,7 +423,7 @@ async function slotForDrop(bot, task, target, goal, save, actions, site) {
   task.check(); checkAir(bot);
   const state = goal.mobHunt, slot = require('./enderman-slot');
   await roomForDrop(bot, task, goal, state.item);
-  const before = countOf(bot, state.item), deadline = Date.now() + 90000;
+  const before = countOf(bot, state.item), deadline = Date.now() + 135000;
   const restoreEncounter = encounter(bot, task, target, deadline), movement = combatMovement(bot);
   const previousInterrupt = task.interruptCheck;
   const claim = () => { bot._huntingEntity = { name: target.name, until: Date.now() + 5000 }; };
@@ -432,7 +432,10 @@ async function slotForDrop(bot, task, target, goal, save, actions, site) {
   bot._provokedMobs ||= new Map(); bot._provokedMobs.set(target.id, target);
   goal.step = { action: 'slot_fight', entity: target.name, entityId: target.id, item: state.item, at: { x: site.mouth.x, y: site.mouth.y, z: site.mouth.z } }; save();
   let r = null;
-  try { r = await slot.fight(bot, task, site, { navigate: actions.navigate, seconds: 75, item: state.item }); }
+  // As many as are still wanted, not the first alone (note 1042): the bot
+  // stays at the slot's end while they come.
+  let want = 1; try { want = state.item === 'ender_pearl' ? Math.max(1, require('./eye-need').need(bot, goal).pearlsLeft || 1) : 1; } catch (_) { want = 1; }
+  try { r = await slot.fight(bot, task, site, { navigate: actions.navigate, seconds: 120, item: state.item, want }); }
   finally { task.interruptCheck = previousInterrupt; movement.restore(); restoreEncounter(); }
   const pickedUp = Math.max(0, countOf(bot, state.item) - before);
   const result = { at: new Date().toISOString(), entity: target.name, entityId: target.id, item: state.item, slot: true,

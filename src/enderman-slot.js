@@ -151,9 +151,9 @@ function says(site, n) {
 
 // The arena's record (scripts/terrain.js enderman_slot, 2026-10-03): an iron
 // sword, no armour, no shield, a slot dug with an iron pickaxe.
-const RECORD = { runs: 26, kills: 26, damage: 0, seconds: 15, late: { runs: 10, pearls: 7 } };
+const RECORD = { runs: 26, kills: 26, damage: 0, seconds: 15, late: { runs: 10, pearls: 7 }, forest: { runs: 7, about: 6, kills: 41, pearls: 19, seconds: 60 } };
 function recordSays() {
-  return `The arena's record of this way, one enderman, an iron sword and no armour or shield: ${RECORD.runs} fights, ${RECORD.kills} kills, no damage taken in any, about ${RECORD.seconds} seconds each with the slot's four blocks dug by an iron pickaxe; with the drop waited for where it falls, ${RECORD.late.pearls} pearls from the last ${RECORD.late.runs}. With Jev's own answers and the trials' kit, a wall three blocks off: 3 fights, the slot chosen in each, 3 kills, 2 pearls, no damage. It goes out to look only at one that has not turned, three looks at most, and one turned is waited for twenty seconds.`;
+  return `With ${RECORD.forest.about} endermen about on open ground and the rock five blocks off (the arena, ${RECORD.forest.runs} runs, no armour or shield): ${RECORD.forest.kills} of ${RECORD.forest.runs * RECORD.forest.about} killed from the slot's end, about ${RECORD.forest.seconds} seconds a run, ${RECORD.forest.pearls} pearls, no health lost; the bot stays at the end while they come and takes the drops between them. The arena's record of this way, one enderman, an iron sword and no armour or shield: ${RECORD.runs} fights, ${RECORD.kills} kills, no damage taken in any, about ${RECORD.seconds} seconds each with the slot's four blocks dug by an iron pickaxe; with the drop waited for where it falls, ${RECORD.late.pearls} pearls from the last ${RECORD.late.runs}. With Jev's own answers and the trials' kit, a wall three blocks off: 3 fights, the slot chosen in each, 3 kills, 2 pearls, no damage. It goes out to look only at one that has not turned, three looks at most, and one turned is waited for twenty seconds.`;
 }
 
 const endermen = (bot, within = 40) => Object.values(bot.entities || {}).filter(e => e.name === 'enderman' && e.isValid !== false && e.position && e.position.distanceTo(bot.entity.position) <= within)
@@ -182,7 +182,22 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
   const onHealth = () => { if (bot.health < hp) { const e = endermen(bot)[0]; console.log(`[slot] hurt ${(hp - bot.health).toFixed(1)} at (${bot.entity.position.x.toFixed(1)}, ${bot.entity.position.z.toFixed(1)}), slot back (${site.b.x + 0.5}, ${site.b.z + 0.5}), enderman ${e ? `(${e.position.x.toFixed(1)}, ${e.position.y.toFixed(1)}, ${e.position.z.toFixed(1)})` : 'none'}`); } hp = bot.health; };
   bot.on('health', onHealth);
   const deadline = Date.now() + seconds * 1000;
-  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, noLineSince = null, outs = 0;
+  let lastSwing = 0, lastStare = 0, misses = 0, turnedAt = null, noLineSince = null, outs = 0, collected = 0;
+  // The drops where the last fell, walked out for and back (see below).
+  const collect = async () => {
+      const safety = err => { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; };
+      const drops = () => Object.values(bot.entities || {}).filter(x => x.getDroppedItem?.()?.name === item && x.position.distanceTo(fell) <= 6);
+      while (Date.now() - fellAt < 1200) { task.check(); await sleep(100); }
+      try { await navigate(bot, task, new goals.GoalNear(fell.x, fell.y, fell.z, 1), { timeoutMs: 5000, stallMs: 1500 }); } catch (err) { safety(err); }
+      for (const until = Date.now() + 4000; Date.now() < until;) {
+        task.check();
+        const drop = drops()[0];
+        if (!drop) { if (Date.now() - fellAt > 2500) break; await sleep(150); continue; }
+        const p = drop.position;
+        try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 0), { timeoutMs: 2500, stallMs: 1000 }); } catch (err) { safety(err); }
+        await sleep(250);
+      }
+  };
   try {
     while (Date.now() < deadline) {
       task.check();
@@ -195,6 +210,21 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
       // 1.4 degrees off its eyes, well inside what the game wants, at an
       // enderman that had gone ten blocks up out of the mouth's line.
       const all = endermen(bot);
+      // Between two of them (note 1042): with one killed since the last
+      // pickup, none turned and none within ten blocks, the drops are taken
+      // from the mouth and the bot is back at the slot's end. The fight
+      // ended at its first pearl and the next was asked for from outside
+      // the slot; in the arena, six about, it kills five or six in a minute
+      // from the end with no health lost, and their pearls lay to the end.
+      if (dead > collected && fell && Date.now() - fellAt > 1200 && !all.some(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 10)) {
+        collected = dead;
+        await collect();
+        try { await navigate(bot, task, new goals.GoalBlock(site.mouth.x, site.mouth.y, site.mouth.z), { timeoutMs: 3000, stallMs: 1200 }); }
+        catch (err) { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; }
+        await walkTo(bot, task, site.b.offset(0.5, 0, 0.5), site.d.scaled(-1));
+        if (count() - had >= want) { out.ended = 'pearl'; break; }
+        continue;
+      }
       const e = all.find(x => angry(x) || x.position.distanceTo(bot.entity.position) <= 5) || all.find(x => lineFrom(bot, site.mouth, x)) || null;
       if (!e && all.length) {
         noLineSince ??= Date.now();
@@ -291,20 +321,7 @@ async function fight(bot, task, site, { navigate, seconds = 60, want = 1, item =
     // seen within six blocks walked to (note 996: in the arena's first 26
     // kills 7 pearls were carried, where about half drop one; the walk had
     // come and gone before the pearl lay there).
-    if (fell && !endermen(bot, 8).length) {
-      const safety = err => { task.check(); if (['NeedsAir', 'NeedsSafety', 'Cancelled'].includes(err.name)) throw err; };
-      const drops = () => Object.values(bot.entities || {}).filter(x => x.getDroppedItem?.()?.name === item && x.position.distanceTo(fell) <= 6);
-      while (Date.now() - fellAt < 1200) { task.check(); await sleep(100); }
-      try { await navigate(bot, task, new goals.GoalNear(fell.x, fell.y, fell.z, 1), { timeoutMs: 5000, stallMs: 1500 }); } catch (err) { safety(err); }
-      for (const until = Date.now() + 4000; Date.now() < until;) {
-        task.check();
-        const drop = drops()[0];
-        if (!drop) { if (Date.now() - fellAt > 2500) break; await sleep(150); continue; }
-        const p = drop.position;
-        try { await navigate(bot, task, new goals.GoalNear(p.x, p.y, p.z, 0), { timeoutMs: 2500, stallMs: 1000 }); } catch (err) { safety(err); }
-        await sleep(250);
-      }
-    }
+    if (fell && !endermen(bot, 8).length) await collect();
   } finally { bot.removeListener('entityDead', onDead); bot.removeListener('health', onHealth); delete bot._stareMeant; }
   out.kills = dead; out.pearls = count() - had; out.hurt = Math.max(0, hp0 - (bot.health ?? hp0));
   console.log(`[slot] ${out.kills} endermen killed from the slot, ${out.pearls} pearls, ${Math.round(out.hurt * 10) / 10} health lost: ${out.ended}`);
