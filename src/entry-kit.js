@@ -166,4 +166,39 @@ function netherSpare(bot) {
   return { band, seconds, says: `Make a spare shield now, from what is carried (an iron ingot: ${iron.says}; ${wood.says}), ${mins(seconds)} standing here: ${SW.says(bot, s)} The worn one stays in the off hand until it breaks, and the spare goes on by itself then. Of the ${r.breaks} shields that broke in the Nether in the record, the pockets made a spare at ${r.makeableAtBreak} breaks and none was made; the Nether minutes after a break killed ${r.afterRate} an hour against ${r.otherRate}.` };
 }
 
-module.exports = { RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };
+// In the Nether: a piece of iron armour the bot goes without, made from the
+// pockets (note 1024). On 2026-10-03 (00:00 to 09:00Z) 47 bot starts in the
+// Nether wore no leggings with the seven ingots' worth of iron for them
+// carried (25590: a helmet and chestplate, 61 raw iron, a furnace and 117
+// coal), and no step or question there made a piece: the armour's rung is
+// the Overworld's. The piece that takes the most off a hit first, of those
+// the iron carried covers: the ingots carried, or raw iron with a furnace
+// (or eight stone) and fuel; a crafting table carried or four planks.
+// Not while a mob is about (the caller's weather). -> { item, seconds, says } or null
+const PIECES = [['torso', 'iron_chestplate', 8, 6], ['legs', 'iron_leggings', 7, 7], ['head', 'iron_helmet', 5, 5], ['feet', 'iron_boots', 4, 8]];
+function netherPiece(bot) {
+  if (!/nether/.test(dimOf(bot)) || bot?.game?.gameMode !== 'survival' || !bot.inventory) return null;
+  const wornAt = slot => bot.inventory.slots?.[slot]?.name || null;
+  const here = bot.entity?.position;
+  if (here && Object.values(bot.entities || {}).some(e => (e.type === 'hostile' || e.kind === 'Hostile mobs') && e.position && e.position.distanceTo(here) <= 24)) return null;
+  const ingots = countOf(bot, 'iron_ingot'), raw = countOf(bot, 'raw_iron'), smelt = smeltKit(bot);
+  const iron = ingots + (smelt.ok ? raw : 0);
+  const table = countOf(bot, 'crafting_table') > 0, planks = sum(bot, /_planks$/) + 4 * sum(bot, /_(log|stem|wood|hyphae)$/);
+  if (!table && planks < 4) return null;
+  const piece = PIECES.find(([, item, need, slot]) => !wornAt(slot) && !countOf(bot, item) && !(item === 'iron_boots' && countOf(bot, 'golden_boots')) && iron >= need);
+  if (!piece) return null;
+  const [, item, need] = piece;
+  const from = ironFor(bot, need), wood = planksFor(bot, 0);
+  const seconds = from.seconds + wood.seconds + CRAFT_SECONDS;
+  let hits = '', record = '';
+  try {
+    const ce = require('./combat-estimate'), worn = [5, 6, 7, 8].map(wornAt).filter(Boolean), round = n => Math.round(n * 10) / 10;
+    const through = names => [round(ce.afterArmour(ce.MOBS.blaze.hit, ce.armourOf(names))), round(ce.afterArmour(ce.MOBS.wither_skeleton.hit, ce.armourOf(names)))];
+    const [f0, w0] = through(worn), [f1, w1] = through([...worn, item]);
+    hits = ` Worn now: ${worn.length ? worn.map(n => n.replaceAll('_', ' ')).join(', ') : 'nothing'}; a blaze's fireball lands about ${f0} and a wither skeleton's blade about ${w0}, with the ${item.replace('iron_', '')} about ${f1} and ${w1} (the fire a fireball sets is not reduced).`;
+  } catch (_) { hits = ''; }
+  try { record = ` Iron armour: ${require('./kit-record').BEFORE_NETHER.iron_armour.says}.`; } catch (_) { record = ''; }
+  return { item, seconds, says: `Make ${/s$/.test(item) ? '' : 'an '}${item.replaceAll('_', ' ')} now and put ${/s$/.test(item) ? 'them' : 'it'} on, from what is carried (${plural(need, 'iron ingot')}: ${from.says}${wood.says ? `; ${wood.says.replace(/^0 of the \d+ planks carried, /, '')}` : ''}), ${mins(seconds)} standing here.${hits}${record}` };
+}
+
+module.exports = { netherPiece, RECORD, offers, netherSpare, shieldCost, ironFor, planksFor, armourHad, rateSays, goingWithout, GHAST_PROOF, STONE_KIT, IRON_FOR, WORN_BANDS };

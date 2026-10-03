@@ -1219,6 +1219,15 @@ async function upkeepOffers(bot, task, goal, save) {
   const shieldSpare = goal.kind === 'win' && reserveWeather(bot) ? require('./entry-kit').netherSpare(bot) : null;
   if (shieldSpare) options.spare_shield = { description: shieldSpare.says, band: shieldSpare.band,
     run: async () => { goal.step = { action: 'spare_shield', item: 'shield' }; save(); await acquireStep(bot, task, 'shield', countOf(bot, 'shield') + 1, goal, save); } };
+  // A piece of iron armour gone without in the Nether, made from the pockets
+  // (entry-kit.js netherPiece, note 1024).
+  const piece = goal.kind === 'win' && reserveWeather(bot) ? require('./entry-kit').netherPiece(bot) : null;
+  if (piece) options.iron_piece = { description: piece.says,
+    run: async () => {
+      goal.step = { action: 'iron_piece', item: piece.item }; save();
+      await acquireStep(bot, task, piece.item, countOf(bot, piece.item) + 1, goal, save);
+      try { await require('./mob-policy').wearBestArmour(bot); } catch (err) { task.check(); }
+    } };
   // Where the bot is decides what running short costs: at the trees it is a
   // minute's cutting; in the mine it is the climb out, and back.
   // The depth is to open sky over the column (surface.js), not to the
