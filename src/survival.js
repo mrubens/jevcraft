@@ -110,15 +110,15 @@ const above = (bot, danger) => {
 // and was biting again under three seconds after the run ended (note 532).
 // Shooters are said by their shots; a rider and an enderman on their own.
 function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runSeconds = null } = {}) {
-  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && !t.entity.vehicle && t.entity.name !== 'enderman' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name))
+  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && t.entity.name !== 'enderman' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name))
     .sort((a, b) => a.distance - b.distance).slice(0, 3);
   if (!chasers.length) return '';
   const r1 = x => Math.round(x * 10) / 10;
   const dest = destination ? new Vec3(destination.x + 0.5, destination.y, destination.z + 0.5) : null;
   const each = chasers.map(t => {
-    const name = t.entity.name.replaceAll('_', ' '), v = blocksPerSecond(t.entity.name), range = followRange(t.entity.name);
+    const name = `${t.entity.name.replaceAll('_', ' ')}${t.entity.vehicle ? ` on its ${t.entity.vehicle.name?.replaceAll('_', ' ') || 'mount'}` : ''}`, v = paceOf(t), range = followRange(t.entity.name);
     const climbs = REACH_UP[t.entity.name] === 'climbs' ? ', climbing walls' : '';
-    const head = `the ${name} ${Math.round(t.distance)} blocks off at about ${r1(v)} blocks a second${climbs}`;
+    const head = `the ${name} ${Math.round(t.distance)} blocks off at ${t.entity.vehicle ? `the run's pace or more, mounted` : `about ${r1(v)} blocks a second`}${climbs}`;
     if (!dest || !runSeconds) return `${head}${v >= SPRINT ? ', as fast as the run or faster' : `, about ${r1(SPRINT - v)} a second slower than the run`}, and it gives up only more than ${range} blocks behind`;
     const toDest = t.entity.position.distanceTo(dest), arrives = Math.max(0, toDest - 1.5) / v, behind = toDest - v * runSeconds;
     if (behind > range) return `${head}: about ${Math.round(behind)} blocks behind when the run ends, past the ${range} it follows to, and it gives up`;
@@ -133,7 +133,7 @@ function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runS
   if (dest && runSeconds) {
     const { effectLeft, WITHER } = require('./combat-estimate');
     const left = effectLeft(bot, 'wither')?.seconds || 0;
-    const first = chasers.map(t => { const v = blocksPerSecond(t.entity.name), toDest = t.entity.position.distanceTo(dest); return toDest - v * runSeconds > followRange(t.entity.name) ? null : Math.max(0, toDest - 1.5) / v; }).filter(x => x != null).sort((a, b) => a - b)[0];
+    const first = chasers.map(t => { const v = paceOf(t), toDest = t.entity.position.distanceTo(dest); return toDest - v * runSeconds > followRange(t.entity.name) ? null : Math.max(0, toDest - 1.5) / v; }).filter(x => x != null).sort((a, b) => a - b)[0];
     if (left > 0 && first != null) {
       const then = Math.max(0, (bot.health ?? 20) - Math.min(left, first) * WITHER.perSecond);
       witherSays = ` The wither on the bot runs on meanwhile: about ${r1(then)} health when the first of them is at the bot again${then < 1 ? ', or none' : ''}.`;
@@ -154,6 +154,16 @@ function chaseSays(bot, danger, { apartIds = new Set(), destination = null, runS
 // told only that it would be six blocks behind and at the bot 1.2 seconds
 // after the run: it struck as the run began, 5.1 to 0.6, and the wither did
 // the rest (note 601). -> { damage, says }
+// A rider goes at its mount's pace, a running player's or more (mid-215-a,
+// 2026-09-26, caught four times by a zombie on a zombie horse), and a spear
+// in a mob's hand makes its blow the thrust (combat-estimate SPEAR_HIT),
+// landed from the spear's reach. 25593 (2026-10-03 23:27:09Z), bare at 7.2
+// health with a spear zombie on a zombie horse 2.7 blocks off, was told the
+// run back the way it came was "about 0 damage over about 2 seconds" and
+// the sprint from it that "the zombie walks about 2.3 blocks a second ...
+// the gap opens": it took the run twice and was speared three times on the
+// way, 11.5 health to none (note 1135).
+const paceOf = t => t.entity.vehicle ? Math.max(blocksPerSecond(t.entity.name), SPRINT) : blocksPerSecond(t.entity.name);
 const RUN_START = 0.3;
 function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runSeconds = null, seconds = 15 } = {}) {
   if (!destination || !runSeconds) return { damage: 0, says: '' };
@@ -161,20 +171,20 @@ function chaseCost(bot, danger, { apartIds = new Set(), destination = null, runS
   const worn = ce.armourOf([5, 6, 7, 8].map(slot => bot.inventory?.slots?.[slot]?.name).filter(Boolean));
   const dest = new Vec3(destination.x + 0.5, destination.y, destination.z + 0.5);
   const r1 = x => Math.round(x * 10) / 10;
-  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && !t.entity.vehicle && t.entity.name !== 'enderman' && t.entity.name !== 'creeper' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name) && ce.MOBS[t.entity.name]?.hit > 0);
+  const chasers = danger.filter(t => t.entity?.position && !shooter(t.entity) && t.entity.name !== 'enderman' && t.entity.name !== 'creeper' && !apartIds.has(t.entity.id) && t.distance <= followRange(t.entity.name) && ce.MOBS[t.entity.name]?.hit > 0);
   let damage = 0, withering = null;
   const parts = [];
   for (const t of chasers) {
-    const m = ce.MOBS[t.entity.name], name = t.entity.name.replaceAll('_', ' ');
-    const hit = r1(ce.afterArmour(m.hit, worn)), every = m.blowEvery || 1, v = blocksPerSecond(t.entity.name);
+    const m = ce.MOBS[t.entity.name], spear = require('./danger').holdsSpear(t.entity), name = `${t.entity.name.replaceAll('_', ' ')}${spear ? ' with a spear' : ''}${t.entity.vehicle ? ` on its ${t.entity.vehicle.name?.replaceAll('_', ' ') || 'mount'}` : ''}`;
+    const hit = r1(ce.afterArmour(spear ? ce.SPEAR_SEEN[t.entity.name] ?? Math.max(m.hit, ce.SPEAR_HIT) : m.hit, worn)), every = m.blowEvery || 1, v = paceOf(t);
     const toDest = t.entity.position.distanceTo(dest), behind = toDest - v * runSeconds;
     const blows = [];
-    const atReach = t.distance <= 2.5;
+    const atReach = t.distance <= (spear ? ce.SPEAR.reach : 2.5);
     if (v >= SPRINT && (atReach || Math.max(0, toDest - 1.5) / v <= runSeconds)) for (let s = atReach ? RUN_START : Math.max(0, toDest - 1.5) / v; s < runSeconds; s += every) blows.push(s);
     else if (atReach) blows.push(RUN_START);
     else { const arrives = Math.max(0, toDest - 1.5) / v; if (arrives <= runSeconds) blows.push(arrives); }
     // At the bot again after the run, where it follows that far.
-    if (v < SPRINT && behind <= followRange(t.entity.name)) { const again = Math.max(0, toDest - 1.5) / v; if (again > runSeconds && again < seconds) blows.push(again); }
+    if (behind <= followRange(t.entity.name)) { const again = Math.max(0, toDest - 1.5) / v; if (again > runSeconds && again < seconds) blows.push(again); }
     if (!blows.length) continue;
     damage += blows.length * hit;
     if (m.withers) { const from = Math.min(...blows), to = Math.min(seconds, Math.max(...blows) + ce.WITHER.seconds); withering = [Math.min(withering?.[0] ?? from, from), Math.max(withering?.[1] ?? to, to)]; }
@@ -4981,7 +4991,7 @@ class Survival {
     {
       const ce = require('./combat-estimate');
       const biters = danger.filter(t => !shooter(t.entity) && t.entity.name !== 'creeper' && t.distance <= 8 && (t.visible || t.distance <= 4) && ce.MOBS[t.entity.name]?.hit);
-      const slowest = biters.length && biters.every(t => ce.blocksPerSecond(t.entity.name) <= SPRINT - 1);
+      const slowest = biters.length && biters.every(t => paceOf(t) <= SPRINT - 1);
       // Not from a pillar's top (come_down is that question's own).
       // A run that came to nothing from here rests half a minute here (note
       // 1067), and where the search for a way out found none the run says
@@ -12000,4 +12010,4 @@ function claim(bot, goal = {}, survival = null) {
   return made;
 }
 
-module.exports = { nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
+module.exports = { nightEnds, sealThreatNear, scoutBudget, SCOUT_MS, SCOUT_FAR_MS, mealSays, nightMinePickSays, bedSafetyAt, healWaitSays, WAITS_IN, wearGoldOf, piglinGoldClause, blowsLead, pastFollowOf, sealedWaitSaysFor: (bot, opts) => sealedWaitSays(bot, opts), lavaExitCost, nookSaysFor: (bot, nook, opts) => nookSays(bot, nook, opts), nightMineHolds, NIGHT_MINE_IDLE_MS, underRock, sleepRefusalSays, shellUnfinishedSays, spawnerMob, routeOf, shotsDue, shotChanceNow, routeEdge, pushCarries, pushFooting, blastPushesOver, blastOverSays, pushAtSays, shotPushers, BLAST_THROW, wallCells, wallStock, searchBudget, lavaTop, lavaFill, swimReach, pocketPlan, pocketRestsOf, pocketBiters, farBiters, piglinGoldSays, claim, chaseSays, chaseCost, groundBeside, onPillarTop, eatApple, LAVA_BLOCKS_A_SECOND, effectsSay, spawnerAbout, unseenBiters, fartherShootersSay, mobSourceAbout, shieldFacing, biterAtArm, pickaxeReserve, chargeSays, creeperSays, costSays, openCells, eatSays, mealHelps, EAT_AFTER, PILLAR_SECONDS, BLOCK_SECONDS, EAT_SECONDS, CLIMBERS, MOVING_STANCES, chargeStopsAt, usesToClimbOut, SLEEP_DEBT_TICKS, Survival, inLava, inWater, lavaExit, besideDrop, firmGround, night, shelterNeeded, lavaBeside, bedSite, bedNook, monstersByBed, monstersAtBed, refusalSays, nearbyHomeBed, observedBed, sleepable, SLEEP_FROM, keepShieldForStance, SHIELD_STANCES, ORE_YIELD, nightMineOn };
