@@ -866,7 +866,12 @@ function watchBlocks(bot) {
   bot.on('blockUpdate', (was, now) => {
     const p = (now || was)?.position, here = bot.entity?.position;
     if (!p || !here || (!bot._reachWalk && !bot._wayOutWalk)) return;
-    if ((was?.boundingBox === now?.boundingBox) && (was?.name === now?.name)) return;
+    // Only a change a walk reads: a block come or gone, or lava or water
+    // (note 1090). Fire lit and burnt out by the blazes' fireballs changed
+    // a name every moment at a spawner and let the map go each time: the
+    // builds since stayed at a median 484 ms, blazeStands 282 ms a call.
+    const wet = b => /lava|water/.test(b?.name || '');
+    if (was?.boundingBox === now?.boundingBox && !wet(was) && !wet(now)) return;
     if (Math.abs(p.x - here.x) <= REACH_CHANGE && Math.abs(p.z - here.z) <= REACH_CHANGE && Math.abs(p.y - here.y) <= REACH_CHANGE) { bot._reachWalk = null; bot._wayOutWalk = null; }
   });
 }

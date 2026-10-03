@@ -31,8 +31,14 @@ test('made once and kept for the cell stood in; made again from another cell, af
   bot.emit('blockUpdate', { position: new Vec3(200, 64, 0), name: 'air', boundingBox: 'empty' }, { position: new Vec3(200, 64, 0), name: 'netherrack', boundingBox: 'block' });
   bot.emit('blockUpdate', { position: new Vec3(3, 64, 0), name: 'air', boundingBox: 'empty' }, { position: new Vec3(3, 64, 0), name: 'air', boundingBox: 'empty' });
   assert.equal(reachWalk(bot), second);
+  // Fire lit beside it (note 1090): a name changed, nothing a walk reads.
+  bot.emit('blockUpdate', { position: new Vec3(3, 64, 1), name: 'air', boundingBox: 'empty' }, { position: new Vec3(3, 64, 1), name: 'fire', boundingBox: 'empty' });
+  assert.equal(reachWalk(bot), second);
+  bot.emit('blockUpdate', { position: new Vec3(3, 64, 1), name: 'air', boundingBox: 'empty' }, { position: new Vec3(3, 64, 1), name: 'lava', boundingBox: 'empty' });
+  const afterLava = reachWalk(bot);
+  assert.notEqual(afterLava, second, 'lava come: let go');
   t.mock.timers.setTime(1_006_000);
-  assert.notEqual(reachWalk(bot), second, 'past three seconds');
+  assert.notEqual(reachWalk(bot), afterLava, 'past three seconds');
   bot.entity.position = new Vec3(4.5, 64, 0.5);
   const moved = reachWalk(bot);
   bot.entity.position = new Vec3(5.5, 64, 0.5);
